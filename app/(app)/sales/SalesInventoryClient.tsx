@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PackagePlus, Pencil, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { toHebrewError } from "@/lib/error-messages";
 import { Input } from "@/components/ui/input";
@@ -14,13 +15,7 @@ import { useRevealOnScroll } from "@/hooks/useRevealOnScroll";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { loadMoreInventory } from "@/app/(app)/sales/actions";
 import type { InventoryItem, ProductsFilters } from "@/app/(app)/sales/loadProducts";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 
@@ -678,29 +673,28 @@ export default function SalesInventoryClient({
 
       {success ? <p className="text-sm text-success-soft-foreground">{success}</p> : null}
 
-      <Dialog
+      <FormDialog
         open={adjustmentOpen}
         onOpenChange={(open) => {
-          if (!open && submitting) return;
           setAdjustmentOpen(open);
-          if (!open && !submitting) {
-            resetAdjustmentForm();
-          }
+          if (!open) resetAdjustmentForm();
         }}
+        title="עדכון רכישות / החזרות / התאמות"
+        description="בחירת מוצר, סוג פעולה, כמות והערות לעדכון המלאי."
+        size="form2xl"
+        onSubmit={() => void adjustInventory()}
+        submitLabel="ביצוע התאמה"
+        busyLabel="מעדכן..."
+        busy={submitting}
+        error={error || undefined}
       >
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>עדכון רכישות / החזרות / התאמות</DialogTitle>
-            <DialogDescription>בחירת מוצר, סוג פעולה, כמות והערות לעדכון המלאי.</DialogDescription>
-          </DialogHeader>
           <div className="space-y-3">
-            <div className="grid gap-3 md:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
               <div className="space-y-1 md:col-span-2">
                 <label className="text-sm font-medium">מוצר</label>
-                <select
+                <NativeSelect
                   value={productId}
                   onChange={(e) => setProductId(e.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 >
                   <option value="">בחרו מוצר...</option>
                   {productOptions.map((option) => (
@@ -709,14 +703,13 @@ export default function SalesInventoryClient({
                       {option.sku ? ` (${option.sku})` : ""}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium">סוג פעולה</label>
-                <select
+                <NativeSelect
                   value={adjustmentType}
                   onChange={(e) => setAdjustmentType(e.target.value as AdjustmentType)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 >
                   <option value="purchase_in">רכישה (הוספה למלאי)</option>
                   <option value="customer_return_in">החזרת לקוח (הוספה)</option>
@@ -724,7 +717,7 @@ export default function SalesInventoryClient({
                   <option value="damage_out">נזק / פחת (הפחתה)</option>
                   <option value="manual_in">התאמה ידנית (+)</option>
                   <option value="manual_out">התאמה ידנית (-)</option>
-                </select>
+                </NativeSelect>
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium">כמות</label>
@@ -742,42 +735,28 @@ export default function SalesInventoryClient({
               <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
             </div>
 
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-            <div className="mt-4 flex justify-end gap-2">
-              <Button type="button" variant="secondary" disabled={submitting} onClick={() => setAdjustmentOpen(false)}>
-                ביטול
-              </Button>
-              <Button type="button" disabled={submitting} onClick={() => void adjustInventory()}>
-                {submitting ? "מעדכן..." : "ביצוע התאמה"}
-              </Button>
-            </div>
           </div>
-        </DialogContent>
-      </Dialog>
+      </FormDialog>
 
-      <Dialog
+      <FormDialog
         open={editOpen}
-        onOpenChange={(open) => {
-          if (!open && editSubmitting) return;
-          setEditOpen(open);
-        }}
+        onOpenChange={setEditOpen}
+        title="עריכת תנועת מלאי"
+        description={`${(editProductId && productNameById.get(editProductId)) || "מוצר"} · עדכון סוג, כמות והערה. שינוי הכמות או הכיוון יעדכן את המלאי בהתאם.`}
+        size="formXl"
+        onSubmit={() => void saveMovementEdit()}
+        submitLabel="שמירת שינויים"
+        busyLabel="שומר..."
+        busy={editSubmitting}
+        error={editError || undefined}
       >
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>עריכת תנועת מלאי</DialogTitle>
-            <DialogDescription>
-              {`${(editProductId && productNameById.get(editProductId)) || "מוצר"} · עדכון סוג, כמות והערה. שינוי הכמות או הכיוון יעדכן את המלאי בהתאם.`}
-            </DialogDescription>
-          </DialogHeader>
           <div className="space-y-3">
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div className="space-y-1">
                 <label className="text-sm font-medium">סוג פעולה</label>
-                <select
+                <NativeSelect
                   value={editType}
                   onChange={(e) => changeEditType(e.target.value as AdjustmentType)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 >
                   <option value="purchase_in">רכישה (הוספה למלאי)</option>
                   <option value="customer_return_in">החזרת לקוח (הוספה)</option>
@@ -785,7 +764,7 @@ export default function SalesInventoryClient({
                   <option value="damage_out">נזק / פחת (הפחתה)</option>
                   <option value="manual_in">התאמה ידנית (+)</option>
                   <option value="manual_out">התאמה ידנית (-)</option>
-                </select>
+                </NativeSelect>
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium">כמות</label>
@@ -802,19 +781,8 @@ export default function SalesInventoryClient({
               <Textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={2} />
             </div>
 
-            {editError ? <p className="text-sm text-destructive">{editError}</p> : null}
-
-            <div className="mt-4 flex justify-end gap-2">
-              <Button type="button" variant="secondary" disabled={editSubmitting} onClick={() => setEditOpen(false)}>
-                ביטול
-              </Button>
-              <Button type="button" disabled={editSubmitting} onClick={() => void saveMovementEdit()}>
-                {editSubmitting ? "שומר..." : "שמירת שינויים"}
-              </Button>
-            </div>
           </div>
-        </DialogContent>
-      </Dialog>
+      </FormDialog>
 
       <ConfirmDialog
         open={deleteRow !== null}
@@ -838,10 +806,9 @@ export default function SalesInventoryClient({
           <div className="flex flex-col gap-2">
             <CardTitle className="text-base">תנועות מלאי</CardTitle>
             <div className="flex flex-wrap items-center gap-2">
-              <select
+              <NativeSelect dense
                 value={movProduct}
                 onChange={(e) => setMovProduct(e.target.value)}
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
               >
                 <option value="">כל המוצרים</option>
                 {productOptions.map((option) => (
@@ -849,11 +816,10 @@ export default function SalesInventoryClient({
                     {option.label}
                   </option>
                 ))}
-              </select>
-              <select
+              </NativeSelect>
+              <NativeSelect dense
                 value={movType}
                 onChange={(e) => setMovType(e.target.value)}
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
               >
                 <option value="">כל הסוגים</option>
                 <option value="in">כניסה</option>
@@ -861,17 +827,16 @@ export default function SalesInventoryClient({
                 <option value="reserve">שמירה</option>
                 <option value="release">שחרור</option>
                 <option value="adjustment">התאמה</option>
-              </select>
-              <select
+              </NativeSelect>
+              <NativeSelect dense
                 value={movSource}
                 onChange={(e) => setMovSource(e.target.value)}
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
               >
                 <option value="">כל המקורות</option>
                 <option value="order">הזמנה</option>
                 <option value="manual_adjustment">התאמת מלאי</option>
                 <option value="manual_product">יצירת מוצר</option>
-              </select>
+              </NativeSelect>
               {movementsFiltered ? (
                 <Button
                   type="button"

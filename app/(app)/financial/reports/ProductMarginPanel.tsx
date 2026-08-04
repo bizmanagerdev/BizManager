@@ -3,6 +3,7 @@
 import { Fragment, useMemo, useState } from "react";
 import { AlertTriangle, ChevronDown } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
 import type { ProductMarginOrder, ProductMarginReport } from "@/lib/financial/productMargin";
 
@@ -83,9 +84,9 @@ export default function ProductMarginPanel({ report }: { report: ProductMarginRe
 
   if (report.months.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
+      <EmptyState>
         אין נתוני מכירות להצגה עבור התקופה שנבחרה.
-      </div>
+      </EmptyState>
     );
   }
 

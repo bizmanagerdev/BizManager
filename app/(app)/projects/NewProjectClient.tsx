@@ -1,12 +1,14 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Check, Pencil, Search, User, UserPlus, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, Pencil, Search, Sparkles, User, UserPlus, X } from "lucide-react";
+import { StepWizard } from "@/components/ui/step-wizard";
+import { SummaryRow, SummarySection } from "@/components/ui/summary";
+import { NativeSelect } from "@/components/ui/native-select";
 import { cn } from "@/lib/utils";
 import { offlineFetch, saveDraft, loadDraft, clearDraft } from "@/lib/offline-queue";
 import { toHebrewError } from "@/lib/error-messages";
 import { resyncAlerts } from "@/lib/ui/alerts-refresh";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AddressLink } from "@/components/ui/address-link";
 import { WazeIcon } from "@/components/ui/waze-icon";
 import { Button } from "@/components/ui/button";
@@ -27,9 +29,10 @@ import {
 import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import { PAYMENT_TERMS_OPTIONS, computeDueDate } from "@/lib/paymentTerms";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
+import { omitUnknownPlace } from "@/lib/ui/cities";
 
 type Row = Record<string, unknown>;
-type Step = 1 | 2 | 3;
+type Step = 1 | 2 | 3 | 4;
 
 /** Serialisable in-progress form, persisted to localStorage so a create draft
  *  survives going offline / leaving the app / a reload (attachments excluded —
@@ -117,6 +120,10 @@ function projectTypeLabel(value: string) {
   }
 }
 
+function termsLabelFor(value: string) {
+  return PAYMENT_TERMS_OPTIONS.find((option) => option.value === value)?.label ?? value;
+}
+
 function isMovingProjectType(value: string) {
   return value === "moving";
 }
@@ -173,8 +180,8 @@ export function mapProjectCustomer(row: Row): ProjectCustomerOption | null {
     phone: getString(row, ["phone", "mobile", "tel"]),
     whatsapp: getString(row, ["whatsapp"]),
     email: getString(row, ["email"]),
-    address,
-    city: getString(row, ["city"]) ?? extractCityFromAddress(address),
+    address: omitUnknownPlace(address),
+    city: omitUnknownPlace(getString(row, ["city"]) ?? extractCityFromAddress(address)),
     contacts,
   };
 }
@@ -197,82 +204,8 @@ const WIZARD_STEPS: { n: Step; label: string }[] = [
   { n: 1, label: "לקוח" },
   { n: 2, label: "פרטים" },
   { n: 3, label: "תשלום" },
+  { n: 4, label: "סיכום" },
 ];
-
-const STEP_TITLES: Record<Step, string> = {
-  1: "למי הפרויקט?",
-  2: "פרטי הפרויקט",
-  3: "תשלום וחיוב",
-};
-
-/** Top progress indicator: numbered steps with labels, connected by a track. RTL-aware. */
-function WizardStepper({
-  current,
-  canClick,
-  onStepClick,
-}: {
-  current: Step;
-  canClick: (n: Step) => boolean;
-  onStepClick: (n: Step) => void;
-}) {
-  return (
-    <div className="flex items-start">
-      {WIZARD_STEPS.map((s, i) => {
-        const done = s.n < current;
-        const active = s.n === current;
-        const clickable = canClick(s.n);
-        return (
-          <Fragment key={s.n}>
-            <div className="flex shrink-0 flex-col items-center gap-1">
-              <button
-                type="button"
-                aria-current={active ? "step" : undefined}
-                disabled={!clickable}
-                onClick={() => clickable && onStepClick(s.n)}
-                className={cn(
-                  "flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-semibold transition-colors",
-                  active && "border-primary text-primary",
-                  done && "border-primary bg-primary text-primary-foreground",
-                  !active && !done && "border-border text-muted-foreground",
-                  clickable && !active ? "cursor-pointer hover:border-primary/60" : "cursor-default"
-                )}
-              >
-                {done ? <Check className="h-3.5 w-3.5" /> : s.n}
-              </button>
-              <div
-                className={cn(
-                  "w-14 text-center text-[10px] font-medium leading-tight",
-                  active || done ? "text-foreground" : "text-muted-foreground"
-                )}
-              >
-                {s.label}
-              </div>
-            </div>
-            {i < WIZARD_STEPS.length - 1 ? (
-              <div
-                className={cn(
-                  "mx-1 mt-[14px] h-0.5 flex-1 rounded-full sm:mx-2",
-                  done ? "bg-primary" : "bg-border"
-                )}
-              />
-            ) : null}
-          </Fragment>
-        );
-      })}
-    </div>
-  );
-}
-
-function ValueField({ label, value, className = "" }: { label: string; value: ReactNode; className?: string }) {
-  return (
-    <div className={`rounded-xl border border-border/70 bg-background/70 px-4 py-3 ${className}`.trim()}>
-      <div className="text-xs font-medium text-muted-foreground">{label}</div>
-      <div className="mt-2 text-sm font-medium leading-6 text-foreground">{value}</div>
-    </div>
-  );
-}
-
-const fieldClass = "h-10 w-full rounded-md border border-input bg-background px-3 text-sm";
 
 export default function NewProjectClient({
   customers,
@@ -337,6 +270,10 @@ export default function NewProjectClient({
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerTab, setCustomerTab] = useState<"existing" | "new">("existing");
   const [editingCustomer, setEditingCustomer] = useState(false);
+  // Mobile master→detail, same as the order wizard: after a customer is picked
+  // the results list collapses so the detail/edit card is not buried under a
+  // long list. lg keeps both columns visible.
+  const [mobileListCollapsed, setMobileListCollapsed] = useState(false);
   // Hold the chosen customer independently of the search list so searching again
   // doesn't drop the selection.
   const [pickedCustomer, setPickedCustomer] = useState<ProjectCustomerOption | null>(
@@ -377,7 +314,7 @@ export default function NewProjectClient({
   const initialDue = initialProject?.due_date ? initialProject.due_date.slice(0, 10) : null;
   const [name, setName] = useState(initialProject?.name ?? restoredDraft?.name ?? "");
   const [projectType, setProjectType] = useState(
-    initialProject?.project_type ?? restoredDraft?.projectType ?? projectTypeOptions[0]
+    initialProject?.project_type ?? restoredDraft?.projectType ?? ""
   );
   const [status, setStatus] = useState(
     initialProject?.status ?? restoredDraft?.status ?? initialStatus ?? statusOptions[0]
@@ -641,29 +578,36 @@ export default function NewProjectClient({
     onCancel();
   }
 
-  const title = STEP_TITLES[step];
-
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {/* Pinned top bar: step progress + close (X moved here from the dialog corner) */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-border/70 bg-background px-4 py-2.5 sm:px-6">
-        <div className="min-w-0 flex-1">
-          <WizardStepper current={step} canClick={canClickStep} onStepClick={goToStep} />
-        </div>
-        <button
-          type="button"
-          onClick={handleCancel}
-          aria-label="סגירה"
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-        >
-          <X className="h-5 w-5" />
-        </button>
-      </div>
-
-      {/* Scrollable body — only this section scrolls; the bars stay pinned. */}
-      <div ref={bodyRef} className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-6">
-        <h2 className="text-xl font-semibold text-foreground">{title}</h2>
-
+    <StepWizard
+      steps={WIZARD_STEPS}
+      current={step}
+      canClickStep={canClickStep}
+      onStepClick={goToStep}
+      onClose={handleCancel}
+      onBack={step > 1 ? goBack : undefined}
+      backDisabled={actionLocked}
+      onNext={() => (step === 4 ? void submit() : goToStep((step + 1) as Step))}
+      nextLabel={
+        step === 4
+          ? submitting
+            ? isEditMode
+              ? "שומר..."
+              : "יוצר..."
+            : isEditMode
+              ? "שמירת שינויים"
+              : "יצירת פרויקט"
+          : undefined
+      }
+      nextDisabled={
+        step === 4
+          ? submitting
+          : actionLocked || (step === 1 ? customerFormOpen || !customerId : !name.trim())
+      }
+      isLastStep={step === 4}
+      error={error || undefined}
+      bodyRef={bodyRef}
+    >
         {customerSearchError ? (
           <p className="text-sm text-destructive">שגיאת חיפוש לקוחות: {customerSearchError}</p>
         ) : null}
@@ -699,14 +643,14 @@ export default function NewProjectClient({
           </div>
 
           {customerTab === "new" ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <h3 className="flex items-center gap-2 text-base font-semibold">
                   <UserPlus className="h-5 w-5 text-primary" /> לקוח חדש
-                </CardTitle>
+                </h3>
                 <p className="mt-1 text-xs text-muted-foreground">בסיום הלקוח ייבחר אוטומטית לפרויקט.</p>
-              </CardHeader>
-              <CardContent>
+              </div>
+              <div>
                 <div className="mx-auto max-w-lg">
                   <CustomerForm
                     mode="create"
@@ -714,13 +658,13 @@ export default function NewProjectClient({
                     onSaved={({ customer }) => handleCustomerSaved(customer)}
                   />
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           ) : (
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               {/* Search + list */}
-              <Card>
-                <CardContent className="space-y-3 pt-5">
+              <div className="space-y-3">
+                <div className="space-y-3">
                   <div className="relative">
                     {customerQuery ? (
                       <button
@@ -736,17 +680,20 @@ export default function NewProjectClient({
                     )}
                     <Input
                       value={customerQuery}
-                      onChange={(e) => setCustomerQuery(e.target.value)}
+                      onChange={(e) => {
+                        setCustomerQuery(e.target.value);
+                        setMobileListCollapsed(false);
+                      }}
                       placeholder="חיפוש..."
                       aria-label="חיפוש לקוח"
                       className="pe-9"
                     />
                   </div>
                   {customerSearchLoading ? (
-                    <p className="text-xs text-muted-foreground">מחפש לקוחות...</p>
+                    <p className={cn("text-xs text-muted-foreground", mobileListCollapsed && "hidden lg:block")}>מחפש לקוחות...</p>
                   ) : null}
 
-                  <div className="max-h-[24rem] space-y-2 overflow-auto pe-1">
+                  <div className={cn("max-h-[24rem] space-y-2 overflow-auto pe-1", mobileListCollapsed && "hidden lg:block")}>
                     {filteredCustomers.map((customer) => {
                       const isSelected = customer.id === customerId;
                       return (
@@ -759,6 +706,9 @@ export default function NewProjectClient({
                             setPickedCustomer(customer);
                             setCustomerQuery("");
                             setEditingCustomer(false);
+                            if (typeof window !== "undefined" && window.innerWidth < 1024) {
+                              setMobileListCollapsed(true);
+                            }
                           }}
                           className={cn(
                             "flex w-full items-start gap-3 rounded-2xl border px-3 py-2.5 text-right transition-all duration-200",
@@ -813,36 +763,39 @@ export default function NewProjectClient({
                       </div>
                     ) : null}
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
 
               {/* Selected customer detail */}
-              <Card>
-                <CardContent className="pt-5">
+              <div className="space-y-3">
+                <div>
                   {selectedCustomer ? (
-                    <div className="space-y-4">
+                    <div className="space-y-4 rounded-xl border border-border/70 bg-background p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <h3 className="truncate text-lg font-semibold text-foreground">{selectedCustomer.name}</h3>
                           {selectedCustomer.contacts?.[0]?.full_name ? (
-                            <p className="mt-0.5 text-sm text-muted-foreground">
+                            <p className="mt-0.5 truncate text-sm text-muted-foreground">
                               {selectedCustomer.contacts[0].full_name}
                               {selectedCustomer.email ? ` · ${selectedCustomer.email}` : ""}
                             </p>
                           ) : selectedCustomer.email ? (
-                            <p className="mt-0.5 text-sm text-muted-foreground">{selectedCustomer.email}</p>
+                            <p className="mt-0.5 truncate text-sm text-muted-foreground">{selectedCustomer.email}</p>
                           ) : null}
                         </div>
                         <div className="flex flex-wrap items-center justify-end gap-1.5">
                           <Badge variant="success">נבחר</Badge>
                           <Button
                             type="button"
-                            size="sm"
+                            size="icon"
                             variant="secondary"
+                            className="h-8 w-8"
                             onClick={() => setEditingCustomer((v) => !v)}
                             disabled={actionLocked}
+                            aria-label={editingCustomer ? "סגירת העריכה" : "עריכת פרטי הלקוח"}
+                            title={editingCustomer ? "סגירת העריכה" : "עריכת פרטי הלקוח"}
                           >
-                            <Pencil className="h-3.5 w-3.5" /> {editingCustomer ? "סגירה" : "עריכה"}
+                            {editingCustomer ? <X className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
                           </Button>
                         </div>
                       </div>
@@ -856,29 +809,38 @@ export default function NewProjectClient({
                           onSaved={({ customer }) => handleCustomerSaved(customer)}
                         />
                       ) : (
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <ValueField label="טלפון" value={selectedCustomer.phone || "-"} />
-                          <ValueField label="וואטסאפ" value={selectedCustomer.whatsapp || "-"} />
-                          <ValueField label="אימייל" value={selectedCustomer.email || "-"} />
-                          <ValueField
-                            label="עיר / כתובת"
-                            value={
-                              selectedCustomer.address || selectedCustomer.city ? (
-                                <AddressLink
-                                  address={selectedCustomer.address || selectedCustomer.city}
-                                  className="inline-flex items-center gap-1"
-                                >
-                                  <WazeIcon className="h-3.5 w-3.5 shrink-0" />
-                                  {selectedCustomer.address || selectedCustomer.city}
-                                </AddressLink>
+                        /* All fields shown (even empty); empty ones show a dash rather
+                           than calling out "missing". */
+                        <div className="space-y-1 border-t border-border/60 pt-2 text-sm">
+                          {[
+                            { label: "טלפון", value: selectedCustomer.phone, ltr: true },
+                            { label: "וואטסאפ", value: selectedCustomer.whatsapp, ltr: true },
+                            { label: "אימייל", value: selectedCustomer.email, ltr: true },
+                            { label: "כתובת", value: omitUnknownPlace(selectedCustomer.address || selectedCustomer.city), ltr: false, isAddress: true },
+                            { label: "שם לחשבונית", value: selectedCustomer.nameForInvoice, ltr: false },
+                          ].map((row) => (
+                            <p key={row.label} className="break-words leading-5">
+                              <span className="text-muted-foreground">{row.label}: </span>
+                              {row.value ? (
+                                row.isAddress ? (
+                                  <AddressLink
+                                    address={row.value}
+                                    className="inline-flex items-center gap-1 font-medium text-foreground"
+                                  >
+                                    <WazeIcon className="h-3.5 w-3.5 shrink-0" />
+                                    {row.value}
+                                  </AddressLink>
+                                ) : (
+                                  <span dir={row.ltr ? "ltr" : undefined} className="font-medium text-foreground">
+                                    {/* LRI…PDI forces LTR ordering for emails/phones in the RTL line */}
+                                    {row.ltr ? `⁦${row.value}⁩` : row.value}
+                                  </span>
+                                )
                               ) : (
-                                "-"
-                              )
-                            }
-                          />
-                          {selectedCustomer.nameForInvoice ? (
-                            <ValueField label="שם לחשבונית" value={selectedCustomer.nameForInvoice} className="sm:col-span-2" />
-                          ) : null}
+                                <span className="font-medium text-muted-foreground">—</span>
+                              )}
+                            </p>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -891,8 +853,8 @@ export default function NewProjectClient({
                       <p className="text-sm text-muted-foreground">פרטי הלקוח יוצגו כאן וניתן יהיה לערוך אותם.</p>
                     </div>
                   )}
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -902,19 +864,7 @@ export default function NewProjectClient({
       {step === 2 ? (
         <fieldset disabled={submitting} className="contents">
           <div className="grid gap-4">
-            {selectedCustomer ? (
-              <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm">
-                <div className="text-xs text-muted-foreground">לקוח נבחר</div>
-                <div className="mt-1 font-medium text-foreground">
-                  {selectedCustomer.name}
-                  {selectedCustomer.phone ? (
-                    <span className="text-muted-foreground"> · {selectedCustomer.phone}</span>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <label className="space-y-1.5 text-sm sm:col-span-2">
                 <span className="font-medium">שם פרויקט *</span>
                 <Input value={name} onChange={(e) => setName(e.target.value)} />
@@ -922,24 +872,24 @@ export default function NewProjectClient({
 
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium">סוג פרויקט *</span>
-                <select className={fieldClass} value={projectType} onChange={(e) => setProjectType(e.target.value)}>
+                <NativeSelect value={projectType} onChange={(e) => setProjectType(e.target.value)}>
                   {projectTypeOptions.map((v) => (
                     <option key={v} value={v}>
                       {projectTypeLabel(v)}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </label>
 
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium">סטטוס *</span>
-                <select className={fieldClass} value={status} onChange={(e) => setStatus(e.target.value)}>
+                <NativeSelect value={status} onChange={(e) => setStatus(e.target.value)}>
                   {statusOptions.map((v) => (
                     <option key={v} value={v}>
                       {statusLabel(v)}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </label>
 
               <label className="space-y-1.5 text-sm">
@@ -949,6 +899,9 @@ export default function NewProjectClient({
                   onChange={(e) => {
                     const next = e.target.value;
                     setStartDate(next);
+                    // Most projects start and finish the same day, so mirror it —
+                    // the end date stays editable afterwards.
+                    setEndDate(next);
                     const computed = computeDueDate(next, paymentTerms);
                     if (computed) setDueDate(computed);
                   }}
@@ -962,8 +915,7 @@ export default function NewProjectClient({
 
               <label className="space-y-1.5 text-sm sm:col-span-2">
                 <span className="font-medium">מנהל פרויקט</span>
-                <select
-                  className={fieldClass}
+                <NativeSelect
                   value={projectManagerId}
                   onChange={(e) => setProjectManagerId(e.target.value)}
                 >
@@ -973,7 +925,7 @@ export default function NewProjectClient({
                       {m.label}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </label>
 
               <label className="space-y-1.5 text-sm sm:col-span-2">
@@ -984,7 +936,7 @@ export default function NewProjectClient({
               {isMovingProjectType(projectType) ? (
                 <div className="space-y-2 text-sm sm:col-span-2">
                   <span className="font-medium">כתובות ההובלה</span>
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <MovingEndpointFields title="מוצא (מאיפה)" value={origin} onChange={setOrigin} />
                     <MovingEndpointFields title="יעד (לאן)" value={destination} onChange={setDestination} />
                   </div>
@@ -1036,18 +988,6 @@ export default function NewProjectClient({
       {step === 3 ? (
         <fieldset disabled={submitting} className="contents">
           <div className="grid gap-4">
-            {selectedCustomer ? (
-              <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm">
-                <div className="text-xs text-muted-foreground">לקוח נבחר</div>
-                <div className="mt-1 font-medium text-foreground">
-                  {selectedCustomer.name}
-                  {selectedCustomer.phone ? (
-                    <span className="text-muted-foreground"> · {selectedCustomer.phone}</span>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-
             <div className="space-y-1.5 text-sm">
               <span className="font-medium">מחיר בסיס מוסכם</span>
               <CurrencyInput
@@ -1079,11 +1019,10 @@ export default function NewProjectClient({
               </label>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium">צורת תשלום</span>
-                <select
-                  className={fieldClass}
+                <NativeSelect
                   value={paymentTerms}
                   onChange={(e) => {
                     const t = e.target.value;
@@ -1097,7 +1036,7 @@ export default function NewProjectClient({
                       {option.label}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </label>
 
               <label className="space-y-1.5 text-sm">
@@ -1119,47 +1058,43 @@ export default function NewProjectClient({
         </fieldset>
       ) : null}
 
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      </div>
+      {/* ------------------------------------------------------------- STEP 4 */}
+      {step === 4 ? (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 rounded-md border border-secondary/35 bg-secondary/10 px-3 py-2.5 text-sm text-foreground">
+            <Sparkles className="h-4 w-4 shrink-0 text-secondary" />
+            <span>
+              בדקו שהכל תקין ולחצו <span className="font-semibold">{isEditMode ? "שמירת שינויים" : "יצירת פרויקט"}</span>.
+            </span>
+          </div>
 
-      {/* Pinned bottom bar */}
-      <div className="shrink-0 border-t border-border/70 bg-background px-4 py-3 sm:px-6">
-        <div className="flex items-center justify-between gap-2">
-          {step === 1 ? (
-            <Button type="button" variant="secondary" onClick={handleCancel} disabled={actionLocked} className="min-w-0">
-              ביטול
-            </Button>
-          ) : (
-            <Button type="button" variant="secondary" onClick={goBack} disabled={actionLocked} className="min-w-0">
-              חזרה
-            </Button>
-          )}
+          <SummarySection icon={<User className="h-4 w-4" />} title="לקוח" onEdit={() => goToStep(1)} editDisabled={actionLocked}>
+            <SummaryRow label="לקוח" value={pickedCustomer?.name ?? ""} />
+            <SummaryRow label="טלפון" value={pickedCustomer?.phone ?? ""} />
+          </SummarySection>
 
-          {step === 3 ? (
-            <Button type="button" onClick={() => void submit()} disabled={submitting} className="min-w-0 shrink">
-              {submitting
-                ? isEditMode
-                  ? "שומר..."
-                  : "יוצר..."
-                : isEditMode
-                  ? "שמירת שינויים"
-                  : "יצירת פרויקט"}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              onClick={() => goToStep((step + 1) as Step)}
-              disabled={
-                actionLocked ||
-                (step === 1 ? customerFormOpen || !customerId : !name.trim())
-              }
-              className="min-w-0 shrink"
-            >
-              {step === 1 ? "המשך לפרטים" : "המשך לתשלום"}
-            </Button>
-          )}
+          <SummarySection title="פרטי הפרויקט" onEdit={() => goToStep(2)} editDisabled={actionLocked}>
+            <SummaryRow label="שם הפרויקט" value={name.trim()} />
+            <SummaryRow label="סוג" value={projectTypeLabel(projectType)} />
+            <SummaryRow label="סטטוס" value={statusLabel(status)} />
+            <SummaryRow label="תאריך התחלה" value={startDate} />
+            <SummaryRow label="תאריך סיום" value={endDate} />
+            {notes.trim() ? <SummaryRow label="הערות" value={notes.trim()} /> : null}
+          </SummarySection>
+
+          <SummarySection title="תשלום וחיוב" onEdit={() => goToStep(3)} editDisabled={actionLocked}>
+            <SummaryRow
+              label="מחיר מוסכם"
+              value={noCharge ? "ללא חיוב" : agreedBasePrice ? `₪${agreedBasePrice}` : ""}
+            />
+            <SummaryRow label="המחיר כולל מע״מ" value={priceIncludesVat ? "כן" : "לא"} />
+            <SummaryRow label="תנאי תשלום" value={termsLabelFor(paymentTerms)} />
+            <SummaryRow label="תאריך פירעון" value={dueDate} />
+            <SummaryRow label="חיוב הוצאות בנפרד" value={expensesSeparately ? "כן" : "לא"} />
+          </SummarySection>
         </div>
-      </div>
-    </div>
+      ) : null}
+
+    </StepWizard>
   );
 }

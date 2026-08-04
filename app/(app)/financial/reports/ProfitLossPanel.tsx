@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Download, Printer } from "lucide-react";
 import DomainBarChart from "@/components/charts/DomainBarChart";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatShortDate } from "@/lib/date";
 import { cn } from "@/lib/utils";
@@ -243,7 +244,7 @@ export default function ProfitLossPanel({
       </div>
 
       {/* Summary cards */}
-      <section className="grid gap-3 sm:grid-cols-3">
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="text-right">סה״כ הכנסות</CardDescription>
@@ -346,9 +347,9 @@ export default function ProfitLossPanel({
         </CardHeader>
         <CardContent>
           {view.rows.length === 0 ? (
-            <div className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
+            <EmptyState>
               אין נתונים להצגה עבור התקופה והסינון שנבחרו.
-            </div>
+            </EmptyState>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-right text-sm">
@@ -540,7 +541,7 @@ export default function ProfitLossPanel({
               </div>
             </CardHeader>
             {domainProofOpen ? (
-              <CardContent className="grid gap-4 md:grid-cols-2">
+              <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
                   <div className="mb-1 text-xs font-medium text-muted-foreground">הכנסות</div>
                   {proof.income.length === 0 ? (
@@ -599,9 +600,9 @@ export default function ProfitLossPanel({
         </CardHeader>
         <CardContent>
           {categoryRows.length === 0 ? (
-            <div className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+            <EmptyState>
               אין הוצאות להצגה עבור התקופה והסינון שנבחרו.
-            </div>
+            </EmptyState>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-right text-sm">

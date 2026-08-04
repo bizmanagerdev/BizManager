@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { ChevronLeft, CalendarDays } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { CalendarEntry } from "@/lib/projectSchedule";
@@ -80,9 +81,9 @@ export default function WeekOverview({ entries }: { entries: CalendarEntry[] }) 
             </Link>
           ))
         ) : (
-          <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+          <EmptyState dense>
             אין פריטים מתוכננים להיום.
-          </div>
+          </EmptyState>
         )}
       </CardContent>
     </Card>

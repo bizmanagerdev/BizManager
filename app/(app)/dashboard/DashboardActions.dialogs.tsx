@@ -6,14 +6,14 @@
 // state and can't be prop-threaded safely without a larger state refactor.
 
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { DateInput } from "@/components/ui/date-input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { AdaptiveDialog } from "@/components/layout/page-layout";
-import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
+import { ViewDialog } from "@/components/ui/view-dialog";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
@@ -26,9 +26,6 @@ import {
   formatWeekRangeLabel,
   shortWeekDay,
 } from "@/app/(app)/dashboard/DashboardActions.helpers";
-
-const fieldClass =
-  "h-11 w-full rounded-xl border border-input bg-background/80 px-4 py-2 text-sm shadow-sm outline-none transition-all focus:border-destructive/40 focus:ring-2 focus:ring-ring";
 
 // "מה יש השבוע" — read-only 7-day calendar built from the shared weekView.
 export function WeekOverviewDialog({
@@ -49,12 +46,13 @@ export function WeekOverviewDialog({
   weeklyBuckets: WeekDayBucket[];
 }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <AdaptiveDialog size="form2xl">
-        <DialogHeader className="text-right">
-          <DialogTitle>{HEBREW.thisWeek}</DialogTitle>
-          <DialogDescription>{`${formatWeekRangeLabel(weekStart, weekEnd)} • ${weeklyEntryCount} פריטים השבוע`}</DialogDescription>
-        </DialogHeader>
+    <ViewDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={HEBREW.thisWeek}
+      description={`${formatWeekRangeLabel(weekStart, weekEnd)} • ${weeklyEntryCount} פריטים השבוע`}
+      size="form2xl"
+    >
 
         <div className="space-y-4">
           {/* Ongoing projects legend */}
@@ -145,8 +143,7 @@ export function WeekOverviewDialog({
             </div>
           </div>
         </div>
-      </AdaptiveDialog>
-    </Dialog>
+    </ViewDialog>
   );
 }
 
@@ -179,7 +176,6 @@ export function WorkerPaymentDialog({
   onNotesChange,
   error,
   onSave,
-  onCancel,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -206,18 +202,22 @@ export function WorkerPaymentDialog({
   onNotesChange: (value: string) => void;
   error: string | null;
   onSave: () => void;
-  onCancel: () => void;
 }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <AdaptiveDialog size="form2xl">
-        <DialogHeader className="text-right">
-          <DialogTitle>{"תשלום לעובד"}</DialogTitle>
-          <DialogDescription>{"רישום תשלום לעובד שעתי / חודשי / קבלן. התשלום יקוזז מהיתרה הפתוחה (תלושים / משמרות)."}</DialogDescription>
-        </DialogHeader>
-
-        <fieldset disabled={submitting} className="contents">
-          <div className="grid gap-3 md:grid-cols-2">
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="תשלום לעובד"
+      description="רישום תשלום לעובד שעתי / חודשי / קבלן. התשלום יקוזז מהיתרה הפתוחה (תלושים / משמרות)."
+      size="form2xl"
+      onSubmit={onSave}
+      submitLabel="שמירת תשלום"
+      busyLabel={HEBREW.saving}
+      busy={submitting}
+      submitDisabled={debtLoading}
+      error={error || undefined}
+    >
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <label className="space-y-2 text-right text-sm md:col-span-2">
               <span className="font-medium">{"עובד *"}</span>
               <SearchableSelect
@@ -260,8 +260,7 @@ export function WorkerPaymentDialog({
 
             <label className="space-y-2 text-right text-sm">
               <span className="font-medium">{HEBREW.paymentMethod}</span>
-              <select
-                className={`${fieldClass} text-right`}
+              <NativeSelect 
                 value={method}
                 onChange={(e) => {
                   const m = e.target.value;
@@ -275,7 +274,7 @@ export function WorkerPaymentDialog({
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </label>
 
             <AccountSelect
@@ -298,19 +297,6 @@ export function WorkerPaymentDialog({
               <Textarea value={notes} onChange={(e) => onNotesChange(e.target.value)} rows={2} />
             </label>
           </div>
-        </fieldset>
-
-        {error ? <p className="text-right text-sm text-destructive">{error}</p> : null}
-
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={onCancel} disabled={submitting}>
-            {HEBREW.cancel}
-          </Button>
-          <Button type="button" onClick={onSave} disabled={submitting || debtLoading}>
-            {submitting ? HEBREW.saving : "שמירת תשלום"}
-          </Button>
-        </div>
-      </AdaptiveDialog>
-    </Dialog>
+    </FormDialog>
   );
 }

@@ -1,24 +1,20 @@
 "use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { invalidateCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
-import { Check, ChevronLeft, ChevronRight, Info, Plus, Sparkles, UserRound, Users } from "lucide-react";
-import {
-  AdaptiveDialog,
-  AdaptiveGrid,
-} from "@/components/layout/page-layout";
+import { Plus, Sparkles, UserRound, Users } from "lucide-react";
+import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { SummaryRow, SummarySection } from "@/components/ui/summary";
+import { StepWizardDialog } from "@/components/ui/step-wizard";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
 import { offlineFetch } from "@/lib/offline-queue";
 
 export type CreatedCustomer = {
@@ -400,12 +396,14 @@ export function CreateCustomerDialog({
           : null;
         if (!contactResult.ok || !contactJson?.contact) {
           const detail = contact.full_name || `#${idx + 1}`;
-          if (typeof window !== "undefined") {
-            window.alert(
-              (contactResult.ok ? undefined : contactResult.error) ??
-                `הלקוח נוצר, אבל איש הקשר ${detail} לא נוצר בהצלחה.`
-            );
-          }
+          // The customer itself saved — this is a partial failure, so it's a
+          // toast, not a native alert box the user has to dismiss.
+          toast.error(
+            toHebrewError(
+              contactResult.ok ? undefined : contactResult.error,
+              `הלקוח נוצר, אבל איש הקשר ${detail} לא נוצר בהצלחה.`
+            )
+          );
           break;
         }
         createdContacts.push(contactJson.contact);
@@ -439,30 +437,26 @@ export function CreateCustomerDialog({
   const visibleContactsCount = contacts.length;
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <AdaptiveDialog
-        size="formLg"
-        className="flex max-h-[92svh] flex-col gap-0 overflow-y-hidden p-0 sm:p-0"
-      >
-        {/* Pinned top bar: title + step progress. Stays put while the body scrolls. */}
-        <div className="shrink-0 space-y-2 border-b border-border/70 bg-background px-4 py-3 sm:px-6">
-          <DialogHeader className="space-y-1 text-start">
-            <DialogTitle>הוספת לקוח חדש</DialogTitle>
-            <DialogDescription className="sr-only">{description}</DialogDescription>
-          </DialogHeader>
-
-          <CustomerWizardStepper current={step} canClick={canClickStep} onStepClick={goToStep} />
-        </div>
-
-        <form
-          className="flex min-h-0 flex-1 flex-col"
-          onSubmit={(e) => {
-            e.preventDefault();
-            goNext();
-          }}
-        >
-          {/* Scrollable body — only this section scrolls; the bars stay pinned. */}
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6">
+    <StepWizardDialog
+      open={open}
+      onOpenChange={handleOpenChange}
+      dialogTitle="הוספת לקוח חדש"
+      dialogDescription={description}
+      steps={WIZARD_STEPS}
+      current={step}
+      canClickStep={canClickStep}
+      onStepClick={goToStep}
+      closeDisabled={submitting}
+      onBack={step > 1 ? goBack : undefined}
+      backDisabled={submitting}
+      onNext={goNext}
+      nextLabel={step === 4 ? (submitting ? "יוצר..." : "יצירת לקוח") : undefined}
+      nextDisabled={submitting}
+      isLastStep={step === 4}
+      submitOnEnter
+      error={error ?? undefined}
+      note={submitting ? "יוצר לקוח חדש, נא להמתין..." : undefined}
+    >
         {!similarDismissed && similar.length > 0 ? (
           <div className="sticky top-0 z-10 -mx-4 bg-background px-4 pb-2 pt-1 sm:-mx-6 sm:px-6">
           <div className="space-y-2 rounded-md border border-warning bg-warning/15 p-3 text-sm text-warning-strong">
@@ -584,16 +578,15 @@ export function CreateCustomerDialog({
                 </Field>
 
                 <Field label="עיר" required>
-                  <select
+                  <NativeSelect
                     value={city}
                     onChange={(e) => setCity(e.target.value)}
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   >
                     <option value=""></option>
                     {CREATE_CUSTOMER_CITY_OPTIONS.map((c) => (
                       <option key={c} value={c}>{c}</option>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </Field>
 
                 {city === "אחר" ? (
@@ -643,20 +636,15 @@ export function CreateCustomerDialog({
 
             {step === 3 ? (
               <div className="space-y-3">
-                <div className="flex items-center gap-2 rounded-md border border-secondary/35 bg-secondary/10 px-3 py-2.5 text-sm text-foreground">
-                  <Info className="h-4 w-4 shrink-0 text-secondary" />
-                  <span>אפשר להוסיף אנשי קשר כבר עכשיו, או לדלג ולהוסיף מאוחר יותר.</span>
-                </div>
-
                 <div className="flex items-center gap-2 text-sm font-medium">
                   <Users className="h-4 w-4 text-muted-foreground" />
                   אנשי קשר
                 </div>
 
                 {contacts.length === 0 ? (
-                  <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                  <EmptyState>
                     עדיין לא נוספו אנשי קשר.
-                  </div>
+                  </EmptyState>
                 ) : null}
 
                 {contacts.map((contact, index) => (
@@ -758,7 +746,7 @@ export function CreateCustomerDialog({
                   </span>
                 </div>
 
-                <SummarySection icon={<UserRound className="h-4 w-4" />} title="פרטי הלקוח">
+                <SummarySection icon={<UserRound className="h-4 w-4" />} title="פרטי הלקוח" onEdit={() => goToStep(1)} editDisabled={submitting}>
                   <SummaryRow label="שם לקוח" value={name.trim()} />
                   <SummaryRow label="טלפון" value={phone.trim()} />
                   <SummaryRow label="וואטסאפ" value={whatsapp.trim()} />
@@ -766,7 +754,7 @@ export function CreateCustomerDialog({
                   <SummaryRow label="עיר" value={finalCity} />
                 </SummarySection>
 
-                <SummarySection title="חיוב וכתובת">
+                <SummarySection title="חיוב וכתובת" onEdit={() => goToStep(2)} editDisabled={submitting}>
                   <SummaryRow label="שם לחשבונית" value={nameForInvoice.trim()} />
                   <SummaryRow label="ח.פ / ת.ז" value={regNumber.trim()} />
                   <SummaryRow label="כתובת" value={address.trim()} />
@@ -777,7 +765,7 @@ export function CreateCustomerDialog({
                   {notes.trim() ? <SummaryRow label="הערות" value={notes.trim()} /> : null}
                 </SummarySection>
 
-                <SummarySection icon={<Users className="h-4 w-4" />} title="אנשי קשר">
+                <SummarySection icon={<Users className="h-4 w-4" />} title="אנשי קשר" onEdit={() => goToStep(3)} editDisabled={submitting}>
                   {visibleContactsCount === 0 ? (
                     <div className="px-3 py-2.5 text-sm text-muted-foreground">לא נוספו אנשי קשר.</div>
                   ) : (
@@ -793,159 +781,10 @@ export function CreateCustomerDialog({
               </div>
             ) : null}
           </fieldset>
-          </div>
-
-          {/* Pinned bottom bar */}
-          <div className="shrink-0 space-y-2 border-t border-border/70 bg-background px-4 py-3 sm:px-6">
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
-            {submitting ? (
-              <p className="text-xs text-muted-foreground">יוצר לקוח חדש, נא להמתין...</p>
-            ) : null}
-
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">שלב {step} מתוך 4</span>
-                {step > 1 ? (
-                  <Button type="button" variant="secondary" size="sm" onClick={goBack} disabled={submitting}>
-                    <ChevronRight className="h-4 w-4" />
-                    חזרה
-                  </Button>
-                ) : null}
-              </div>
-              {/* No "ביטול" button — the dialog's X already closes it, and two
-                  ways out crowded the bar next to the primary action. */}
-              <div className="flex items-center gap-2">
-                <Button type="submit" disabled={submitting}>
-                  {step === 4 ? (
-                    <>
-                      <Check className="h-4 w-4" />
-                      {submitting ? "יוצר..." : "יצירת לקוח"}
-                    </>
-                  ) : (
-                    <>
-                      הבא
-                      <ChevronLeft className="h-4 w-4" />
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </form>
-      </AdaptiveDialog>
-    </Dialog>
+    </StepWizardDialog>
   );
 }
 
-/** Top progress indicator: numbered steps with labels, connected by a track. RTL-aware. */
-function CustomerWizardStepper({
-  current,
-  canClick,
-  onStepClick,
-}: {
-  current: WizardStep;
-  canClick: (n: WizardStep) => boolean;
-  onStepClick: (n: WizardStep) => void;
-}) {
-  return (
-    <div className="flex items-start px-1 pb-1">
-      {WIZARD_STEPS.map((s, i) => {
-        const done = s.n < current;
-        const active = s.n === current;
-        const clickable = canClick(s.n);
-        return (
-          <Fragment key={s.n}>
-            <div className="flex shrink-0 flex-col items-center gap-1">
-              <button
-                type="button"
-                aria-current={active ? "step" : undefined}
-                disabled={!clickable}
-                onClick={() => clickable && onStepClick(s.n)}
-                className={cn(
-                  "flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-semibold transition-colors",
-                  active && "border-primary text-primary",
-                  done && "border-primary bg-primary text-primary-foreground",
-                  !active && !done && "border-border text-muted-foreground",
-                  clickable && !active ? "cursor-pointer hover:border-primary/60" : "cursor-default"
-                )}
-              >
-                {done ? <Check className="h-3.5 w-3.5" /> : s.n}
-              </button>
-              <div
-                className={cn(
-                  "w-16 text-center text-[10px] font-medium leading-tight",
-                  active || done ? "text-foreground" : "text-muted-foreground"
-                )}
-              >
-                {s.label}
-              </div>
-            </div>
-            {i < WIZARD_STEPS.length - 1 ? (
-              <div
-                className={cn(
-                  "mx-1 mt-[14px] h-0.5 flex-1 rounded-full sm:mx-2",
-                  done ? "bg-primary" : "bg-border"
-                )}
-              />
-            ) : null}
-          </Fragment>
-        );
-      })}
-    </div>
-  );
-}
-
-function SummarySection({
-  icon,
-  title,
-  children,
-}: {
-  icon?: React.ReactNode;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2 text-sm font-medium">
-        {icon ? <span className="text-muted-foreground">{icon}</span> : null}
-        {title}
-      </div>
-      <div className="divide-y rounded-xl border">{children}</div>
-    </div>
-  );
-}
-
-function SummaryRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-start justify-between gap-4 px-3 py-2.5 text-sm">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="text-end font-medium text-foreground">{value || "—"}</span>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  hint,
-  required = false,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1">
-      <label className="text-sm font-medium">
-        {label}
-        {required ? <span className="text-destructive"> *</span> : null}
-        {hint ? <span className="font-normal text-muted-foreground"> · {hint}</span> : null}
-      </label>
-      {children}
-    </div>
-  );
-}
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

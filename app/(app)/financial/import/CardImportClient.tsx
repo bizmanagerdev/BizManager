@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { toHebrewError } from "@/lib/error-messages";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -640,21 +641,20 @@ export default function CardImportClient({
             {sheets.length > 1 ? (
               <div className="space-y-1">
                 <label className="text-sm font-medium">גיליון</label>
-                <select
+                <NativeSelect dense
                   value={sheetIndex}
-                  onChange={(e) => selectSheet(Number(e.target.value))}
-                  className="h-9 w-full max-w-xs rounded-md border border-input bg-background px-3 text-sm"
+                  onChange={(e) => selectSheet(Number(e.target.value))} className="max-w-xs"
                 >
                   {sheets.map((s, i) => (
                     <option key={i} value={i}>
                       {s.name}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
             ) : null}
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-1">
                 <label className="text-sm font-medium">שורת כותרת</label>
                 <input
@@ -724,7 +724,7 @@ export default function CardImportClient({
                 <Card>
                   <CardContent className="space-y-2 py-3">
                     <div className="text-sm font-medium">כרטיסים שזוהו (שם הכרטיס = קטגוריה)</div>
-                    <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       {detectedCards.map((card) => (
                         <div key={card} className="flex items-center gap-2">
                           <Input
@@ -845,10 +845,9 @@ function ColumnSelect({
   return (
     <div className="space-y-1">
       <label className="text-sm font-medium">{label}</label>
-      <select
+      <NativeSelect dense
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
       >
         <option value={-1}>{optional ? "— ללא —" : "— בחר —"}</option>
         {Array.from({ length: columnCount }).map((_, ci) => (
@@ -856,7 +855,7 @@ function ColumnSelect({
             {colLetter(ci)} — {String(headerCells[ci] ?? "").trim() || "(ריק)"}
           </option>
         ))}
-      </select>
+      </NativeSelect>
     </div>
   );
 }

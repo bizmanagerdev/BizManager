@@ -5,18 +5,14 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Check, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
-import {
-  Dialog,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
+import { FormDialog } from "@/components/ui/form-dialog";
+import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { type Loan, type LoanRepayment } from "@/lib/loans";
 import { deleteRepayment, markInstallmentPaid, saveInstallmentPlan, updateInstallment } from "./actions";
@@ -25,7 +21,7 @@ import RepaymentPlanPicker, {
   planStateFromInstallments,
   type RepaymentPlanState,
 } from "./RepaymentPlanPicker";
-import { Field, METHOD_OPTIONS, SELECT_CLASS, formatDate, formatIls, todayIso } from "./shared";
+import { Field, METHOD_OPTIONS, formatDate, formatIls, todayIso } from "./shared";
 
 // ════════════════════════════════════════════════════════════════════════════
 // The repayment schedule of one loan, inside the החזרים dialog: the list of
@@ -345,16 +341,20 @@ function MarkPaidDialog({
   }
 
   return (
-    <Dialog open={Boolean(installment)} onOpenChange={onOpenChange}>
-      <AdaptiveDialog size="formLg">
-        <DialogHeader>
-          <DialogTitle>רישום תשלום</DialogTitle>
-          <DialogDescription>
-            {installment
-              ? `תשלום שנקבע ל-${formatDate(installment.repayment_date)} על ${formatIls(installment.amount)}. אפשר לשנות את הסכום והתאריך בפועל.`
-              : ""}
-          </DialogDescription>
-        </DialogHeader>
+    <FormDialog
+      open={Boolean(installment)}
+      onOpenChange={onOpenChange}
+      title="רישום תשלום"
+      description={
+        installment
+          ? `תשלום שנקבע ל-${formatDate(installment.repayment_date)} על ${formatIls(installment.amount)}. אפשר לשנות את הסכום והתאריך בפועל.`
+          : undefined
+      }
+      onSubmit={submit}
+      submitLabel="רישום התשלום"
+      busyLabel="רושם..."
+      busy={pending}
+    >
 
         <div className="space-y-3">
           <AdaptiveGrid variant="formTwo">
@@ -371,8 +371,7 @@ function MarkPaidDialog({
               />
             </Field>
             <Field label="אופן">
-              <select
-                className={SELECT_CLASS}
+              <NativeSelect
                 value={form.method}
                 onChange={(e) => {
                   const method = e.target.value;
@@ -388,7 +387,7 @@ function MarkPaidDialog({
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </Field>
             <AccountSelect
               required
@@ -408,22 +407,8 @@ function MarkPaidDialog({
             value={form.notes}
             onChange={(e) => set("notes", e.target.value)}
           />
-          <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => onOpenChange(false)}
-              disabled={pending}
-            >
-              ביטול
-            </Button>
-            <Button type="button" onClick={submit} disabled={pending}>
-              {pending ? "רושם..." : "רישום התשלום"}
-            </Button>
-          </div>
         </div>
-      </AdaptiveDialog>
-    </Dialog>
+    </FormDialog>
   );
 }
 
@@ -481,12 +466,17 @@ function EditInstallmentDialog({
   }
 
   return (
-    <Dialog open={Boolean(installment)} onOpenChange={onOpenChange}>
-      <AdaptiveDialog size="formMd">
-        <DialogHeader>
-          <DialogTitle>עריכת תשלום</DialogTitle>
-          <DialogDescription>שינוי התאריך או הסכום של תשלום שטרם שולם.</DialogDescription>
-        </DialogHeader>
+    <FormDialog
+      open={Boolean(installment)}
+      onOpenChange={onOpenChange}
+      title="עריכת תשלום"
+      description="שינוי התאריך או הסכום של תשלום שטרם שולם."
+      size="formMd"
+      onSubmit={submit}
+      submitLabel="שמירה"
+      busyLabel="שומר..."
+      busy={pending}
+    >
 
         <div className="space-y-3">
           <AdaptiveGrid variant="formTwo">
@@ -515,21 +505,7 @@ function EditInstallmentDialog({
             value={form.notes}
             onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
           />
-          <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => onOpenChange(false)}
-              disabled={pending}
-            >
-              ביטול
-            </Button>
-            <Button type="button" onClick={submit} disabled={pending}>
-              {pending ? "שומר..." : "שמירה"}
-            </Button>
-          </div>
         </div>
-      </AdaptiveDialog>
-    </Dialog>
+    </FormDialog>
   );
 }

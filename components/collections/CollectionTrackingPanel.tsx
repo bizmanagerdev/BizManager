@@ -6,6 +6,7 @@ import Link from "next/link";
 import { BellRing, Check, Pencil, X } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { DateTimeInput } from "@/components/ui/date-input";
 import { Textarea } from "@/components/ui/textarea";
@@ -297,31 +298,28 @@ export default function CollectionTrackingPanel({
   const callFormBlock = showCallForm ? (
     <div className="rounded-xl border border-border/70 bg-background/60 p-3">
       <div className="mb-2 text-sm font-semibold">תיעוד שיחה</div>
-      <div className="grid gap-2 sm:grid-cols-3">
-        <select
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <NativeSelect
           value={channel}
           onChange={(e) => setChannel(e.target.value)}
-          className="h-10 rounded-md border border-input bg-background px-3 text-sm"
         >
           {COMMUNICATION_CHANNELS.map((c) => (
             <option key={c.value} value={c.value}>
               {c.label}
             </option>
           ))}
-        </select>
-        <select
+        </NativeSelect>
+        <NativeSelect
           value={direction}
           onChange={(e) => setDirection(e.target.value)}
-          className="h-10 rounded-md border border-input bg-background px-3 text-sm"
         >
           <option value="outgoing">שיחה יוצאת</option>
           <option value="incoming">שיחה נכנסת</option>
           <option value="missed">שלא נענתה</option>
-        </select>
-        <select
+        </NativeSelect>
+        <NativeSelect
           value={topic}
           onChange={(e) => setTopic(e.target.value)}
-          className="h-10 rounded-md border border-input bg-background px-3 text-sm"
           title="נושא"
         >
           {TOPICS.map((t) => (
@@ -329,7 +327,7 @@ export default function CollectionTrackingPanel({
               {t.label}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </div>
       <Textarea
         className="mt-2"
@@ -349,7 +347,7 @@ export default function CollectionTrackingPanel({
       </label>
       {withFollowUp ? (
         <div className="mt-2 space-y-2">
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <DateTimeInput value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} />
             <input
               value={followUpContent}
@@ -389,12 +387,11 @@ export default function CollectionTrackingPanel({
   const reminderFormBlock = showReminderForm ? (
     <div className="rounded-xl border border-border/70 bg-background/60 p-3">
       <div className="mb-2 text-sm font-semibold">קביעת תזכורת</div>
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <DateTimeInput value={reminderDate} onChange={(e) => setReminderDate(e.target.value)} />
-        <select
+        <NativeSelect
           value={reminderTopic}
           onChange={(e) => setReminderTopic(e.target.value)}
-          className="h-10 rounded-md border border-input bg-background px-3 text-sm"
           title="נושא"
         >
           {TOPICS.map((t) => (
@@ -402,7 +399,7 @@ export default function CollectionTrackingPanel({
               {t.label}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </div>
       <input
         value={reminderNote}

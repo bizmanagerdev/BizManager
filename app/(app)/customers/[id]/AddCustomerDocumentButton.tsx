@@ -7,14 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { offlineUpload } from "@/lib/offline-upload";
-import { AdaptiveDialog } from "@/components/layout/page-layout";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 
 /** "+ מסמך" — upload documents linked to this customer, from the customer page. */
 export default function AddCustomerDocumentButton({
@@ -97,18 +90,17 @@ export default function AddCustomerDocumentButton({
       >
         + מסמך
       </Button>
-      <Dialog
+      <FormDialog
         open={open}
-        onOpenChange={(next) => {
-          if (!next && busy) return;
-          setOpen(next);
-        }}
+        onOpenChange={setOpen}
+        title="העלאת מסמך"
+        description={`לקוח: ${customerName}`}
+        onSubmit={() => void upload()}
+        submitLabel="העלאה"
+        busyLabel="מעלה..."
+        busy={busy}
+        error={error || undefined}
       >
-        <AdaptiveDialog size="formLg">
-          <DialogHeader>
-            <DialogTitle>העלאת מסמך</DialogTitle>
-            <DialogDescription>לקוח: {customerName}</DialogDescription>
-          </DialogHeader>
           <div className="space-y-3">
             <FileUploadActions
               files={files}
@@ -126,18 +118,8 @@ export default function AddCustomerDocumentButton({
                 disabled={busy}
               />
             </div>
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
-            <DialogFooter>
-              <Button type="button" variant="secondary" onClick={() => setOpen(false)} disabled={busy}>
-                ביטול
-              </Button>
-              <Button type="button" onClick={() => void upload()} disabled={busy}>
-                {busy ? "מעלה..." : "העלאה"}
-              </Button>
-            </DialogFooter>
           </div>
-        </AdaptiveDialog>
-      </Dialog>
+      </FormDialog>
     </>
   );
 }

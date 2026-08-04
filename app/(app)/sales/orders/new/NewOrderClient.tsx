@@ -12,6 +12,7 @@ import {
   Plus,
   Search,
   ShoppingCart,
+  Sparkles,
   Trash2,
   User,
   UserPlus,
@@ -20,8 +21,10 @@ import {
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { cn } from "@/lib/utils";
 import { toHebrewError } from "@/lib/error-messages";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
+import { omitUnknownPlace } from "@/lib/ui/cities";
 import { Badge } from "@/components/ui/badge";
 import { DateInput } from "@/components/ui/date-input";
 import AccountSelect from "@/components/financial/AccountSelect";
@@ -43,13 +46,13 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
 import { PAYMENT_TERMS_OPTIONS, computeDueDate } from "@/lib/paymentTerms";
+import { SummaryRow, SummarySection } from "@/components/ui/summary";
+import { StepWizard } from "@/components/ui/step-wizard";
 import {
   type CustomerOption,
   type Step,
   ORDER_STATUS_OPTIONS,
-  STEP_HEADINGS,
-  SummaryRow,
-  WizardStepper,
+  WIZARD_STEPS,
   extractCityFromAddress,
   formatCurrency,
   getNumber,
@@ -828,23 +831,20 @@ export default function NewOrderClient({
     setEditingCustomer(false);
   }
 
-  const heading = STEP_HEADINGS[step];
   const nextDisabled =
     actionLocked || customerFormOpen || (step < 4 ? !stepUnlocked((step + 1) as Step) : submitting);
+  // Only the final action is spelled out here — the wizard labels the
+  // intermediate steps from the step list itself.
   const nextLabel =
-    step === 1
-      ? "המשך למוצרים"
-      : step === 2
-        ? "המשך לתשלום"
-        : step === 3
-          ? "המשך לסקירה"
-          : submitting
-            ? isEditMode
-              ? "שומר..."
-              : "יוצר..."
-            : isEditMode
-              ? "שמירת שינויים"
-              : "יצירת הזמנה";
+    step === 4
+      ? submitting
+        ? isEditMode
+          ? "שומר..."
+          : "יוצר..."
+        : isEditMode
+          ? "שמירת שינויים"
+          : "יצירת הזמנה"
+      : undefined;
 
   // Add or update a customer in the local list and select it (used by the inline create/edit form).
   function handleCustomerSaved(customer: CustomerRecord) {
@@ -872,17 +872,7 @@ export default function NewOrderClient({
   }
 
   return (
-    <div
-      ref={topRef}
-      className={cn(
-        embedded
-          // Dialog: a fixed-height column — pinned step bar on top, pinned action
-          // bar at the bottom, and only the middle scrolls (same shape as the
-          // new-project wizard).
-          ? "flex min-h-0 flex-1 flex-col"
-          : "flex flex-col gap-5 pb-28 md:pb-0"
-      )}
-    >
+    <>
       <ConfirmDialog
         open={prepaymentConfirmOpen}
         onOpenChange={setPrepaymentConfirmOpen}
@@ -897,48 +887,46 @@ export default function NewOrderClient({
           void submitOrder(true);
         }}
       />
-      {/* Step bar. Embedded: pinned to the top of the dialog, carrying the close
-          button (the dialog's own X is hidden so there's only one). Standalone:
-          a flush full-width bar on mobile, a pinned rounded card on md+. */}
-      <div
-        className={cn(
-          "z-20 border-border/70 bg-background",
-          embedded
-            ? "flex shrink-0 items-center gap-2 border-b px-4 py-2.5 sm:px-6"
-            : "-mx-4 -mt-4 mb-1 border-b px-3 py-2.5 shadow-[0_2px_12px_rgb(0_0_0_/_0.06)] sm:px-4 md:sticky md:top-16 md:-mt-6 md:mx-0 md:rounded-2xl md:border md:shadow-lg lg:-mt-8"
-        )}
+      <StepWizard
+        variant={embedded ? "dialog" : "page"}
+        rootRef={topRef}
+        bodyRef={bodyRef}
+        steps={WIZARD_STEPS}
+        current={step}
+        canClickStep={canClickStep}
+        onStepClick={goToStep}
+        // Embedded, the X in the step bar is the single way out. Standalone there
+        // is no X, so the action bar keeps an explicit cancel link instead.
+        onClose={embedded ? onCancel : undefined}
+        closeDisabled={actionLocked}
+        onBack={step > 1 ? goBack : undefined}
+        backDisabled={actionLocked}
+        onNext={goNext}
+        nextLabel={nextLabel}
+        nextDisabled={nextDisabled}
+        isLastStep={step === 4}
+        footerStart={
+          embedded ? undefined : (
+            <Button type="button" variant="secondary" asChild disabled={actionLocked} className="me-auto">
+              <Link href={cancelHref}>ביטול</Link>
+            </Button>
+          )
+        }
+        footerCenter={
+          lines.length > 0 ? (
+            <div className="order-first w-full text-center leading-tight sm:order-none sm:w-auto sm:text-end">
+              <div className="whitespace-nowrap text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                {effectiveOrderDiscount > 0 ? "סכום לתשלום" : "סכום ביניים"}
+              </div>
+              <div className="whitespace-nowrap text-base font-bold text-foreground">
+                {formatCurrency(totalAmount)}
+              </div>
+            </div>
+          ) : null
+        }
       >
-        <div className={cn(embedded && "min-w-0 flex-1")}>
-          <WizardStepper current={step} canClick={canClickStep} onStepClick={goToStep} />
-        </div>
-        {embedded ? (
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={actionLocked}
-            aria-label="סגירה"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        ) : null}
-      </div>
-
-      {/* Scrollable body. Embedded: the only scrolling area, so the bars stay put.
-          Standalone: `contents` dissolves this wrapper so the page keeps its
-          existing single-column flow. */}
-      <div
-        ref={bodyRef}
-        className={cn(
-          embedded ? "min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-6" : "contents"
-        )}
-      >
-      <div>
-        <h2 className="text-lg font-semibold text-foreground sm:text-xl">{heading.title}</h2>
-        {/* Subtitle is guidance only — hidden on mobile to free vertical room. */}
-        <p className="mt-0.5 hidden text-sm text-muted-foreground sm:block">{heading.subtitle}</p>
-      </div>
-
+      {/* No step heading here — the stepper above already names the step, and on
+          a phone the heading was two lines of vertical room saying it twice. */}
       {customersError ? <p className="text-sm text-destructive">שגיאת לקוחות: {customersError}</p> : null}
       {productsError ? <p className="text-sm text-destructive">שגיאת מוצרים: {productsError}</p> : null}
       {customerSearchError ? <p className="text-sm text-destructive">שגיאת חיפוש לקוחות: {customerSearchError}</p> : null}
@@ -975,14 +963,14 @@ export default function NewOrderClient({
           </div>
 
           {customerTab === "new" ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <h3 className="flex items-center gap-2 text-base font-semibold">
                   <UserPlus className="h-5 w-5 text-primary" /> לקוח חדש
-                </CardTitle>
-                <p className="mt-1 text-xs text-muted-foreground">בסיום הלקוח ייבחר אוטומטית להזמנה.</p>
-              </CardHeader>
-              <CardContent>
+                </h3>
+                <p className="text-xs text-muted-foreground">בסיום הלקוח ייבחר אוטומטית להזמנה.</p>
+              </div>
+              <div>
                 <div className="mx-auto max-w-lg">
                   <CustomerForm
                     mode="create"
@@ -993,13 +981,12 @@ export default function NewOrderClient({
                     }}
                   />
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           ) : (
             <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0">
-              {/* Search + list */}
-              <Card className="min-w-0">
-                <CardContent className="space-y-3 pt-5">
+              {/* Search + list — no Card: the results are already boxed rows. */}
+              <div className="min-w-0 space-y-3">
                   <div className="relative">
                     {customerQuery ? (
                       <button
@@ -1110,15 +1097,13 @@ export default function NewOrderClient({
                       </div>
                     ) : null}
                   </div>
-                </CardContent>
-              </Card>
+              </div>
 
               {/* Selected customer detail — scroll target when a customer is picked */}
               <div ref={customerDetailRef} className="min-w-0 scroll-mt-28">
-              <Card className="min-w-0">
-                <CardContent className="min-w-0 pt-5">
+              <div className="min-w-0">
                   {selectedCustomer ? (
-                    <div className="space-y-4">
+                    <div className="space-y-4 rounded-xl border border-border/70 bg-background p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <h3 className="truncate text-lg font-semibold text-foreground">
@@ -1140,12 +1125,15 @@ export default function NewOrderClient({
                           ) : null}
                           <Button
                             type="button"
-                            size="sm"
+                            size="icon"
                             variant="secondary"
+                            className="h-8 w-8"
                             onClick={() => setEditingCustomer((v) => !v)}
                             disabled={actionLocked}
+                            aria-label={editingCustomer ? "סגירת העריכה" : "עריכת פרטי הלקוח"}
+                            title={editingCustomer ? "סגירת העריכה" : "עריכת פרטי הלקוח"}
                           >
-                            <Pencil className="h-3.5 w-3.5" /> {editingCustomer ? "סגירה" : "עריכה"}
+                            {editingCustomer ? <X className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
                           </Button>
                         </div>
                       </div>
@@ -1161,12 +1149,12 @@ export default function NewOrderClient({
                       ) : (
                         /* All fields shown (even empty); empty ones show a dash
                            rather than calling out "missing". */
-                        <div className="space-y-1 rounded-lg border border-border/60 px-3 py-2 text-sm">
+                        <div className="space-y-1 border-t border-border/60 pt-2 text-sm">
                           {[
                             { label: "טלפון", value: selectedCustomer.phone, ltr: true },
                             { label: "וואטסאפ", value: selectedCustomer.whatsapp, ltr: true },
                             { label: "אימייל", value: selectedCustomer.email, ltr: true },
-                            { label: "כתובת", value: selectedCustomer.address || selectedCustomer.city, ltr: false, isAddress: true },
+                            { label: "כתובת", value: omitUnknownPlace(selectedCustomer.address || selectedCustomer.city), ltr: false, isAddress: true },
                             { label: "שם לחשבונית", value: selectedCustomer.nameForInvoice, ltr: false },
                             { label: "אופן תשלום", value: selectedCustomer.requiresPrepayment ? "תשלום מראש" : "רגיל", ltr: false },
                           ].map((row) => (
@@ -1207,8 +1195,7 @@ export default function NewOrderClient({
                       <p className="text-sm text-muted-foreground">פרטי הלקוח יוצגו כאן וניתן יהיה לערוך אותם.</p>
                     </div>
                   )}
-                </CardContent>
-              </Card>
+              </div>
               </div>
             </div>
           )}
@@ -1217,10 +1204,11 @@ export default function NewOrderClient({
 
       {/* ---------------------------------------------------------------- STEP 2 */}
       {step === 2 ? (
-        <div className="grid gap-4 lg:grid-cols-[1fr_24rem]">
-          {/* Product picker */}
-          <Card>
-            <CardContent className="space-y-3 pt-5">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_24rem]">
+          {/* Product picker — deliberately NOT wrapped in a Card. The products
+              are cards themselves, and a card-in-a-card cost ~70px of width on a
+              phone: the search box and every product card are that much wider. */}
+          <div className="space-y-3">
               <div className="relative">
                 <Search className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -1233,7 +1221,7 @@ export default function NewOrderClient({
               </div>
               {productSearchLoading ? <p className="text-xs text-muted-foreground">מחפש מוצרים...</p> : null}
 
-              <div className="rounded-xl border border-border/70 bg-muted/10 p-2.5 lg:max-h-[28rem] lg:overflow-auto">
+              <div className="lg:max-h-[28rem] lg:overflow-auto">
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {filteredProducts.map((product) => {
                     const selected = selectedLineByProductId.get(product.id);
@@ -1244,16 +1232,16 @@ export default function NewOrderClient({
                         disabled={actionLocked}
                         onClick={() => addProduct(product.id)}
                         className={cn(
-                          "group min-h-[8rem] rounded-xl border p-2.5 text-right transition-colors",
+                          "group min-w-0 min-h-[8rem] rounded-xl border p-2.5 text-right transition-colors",
                           selected
                             ? "border-primary bg-primary/5 shadow-sm"
                             : "border-border/70 bg-background active:bg-primary/5 md:hover:border-primary/40 md:hover:bg-primary/5",
                           actionLocked && "cursor-not-allowed opacity-70"
                         )}
                       >
-                        <div className="flex h-full flex-col justify-between gap-2">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="line-clamp-3 break-words text-sm font-semibold leading-5">
+                        <div className="flex h-full min-w-0 flex-col justify-between gap-2">
+                          <div className="flex min-w-0 items-start justify-between gap-2">
+                            <div className="min-w-0 line-clamp-3 break-words text-sm font-semibold leading-5">
                               {product.name}
                             </div>
                             {selected ? (
@@ -1263,7 +1251,7 @@ export default function NewOrderClient({
                             ) : null}
                           </div>
 
-                          <div className="space-y-0.5 text-xs text-muted-foreground">
+                          <div className="min-w-0 space-y-0.5 text-xs text-muted-foreground">
                             {product.code ? <div className="truncate">מק״ט: {product.code}</div> : null}
                             {product.stock !== null ? <div className="truncate">מלאי: {product.stock}</div> : null}
                           </div>
@@ -1290,35 +1278,41 @@ export default function NewOrderClient({
                   <p className="p-4 text-center text-sm text-muted-foreground">לא נמצאו מוצרים.</p>
                 ) : null}
               </div>
-            </CardContent>
-          </Card>
+          </div>
 
           {/* Order items cart — fills its grid cell so its height matches the product picker; the product column stays its natural size and the cart scrolls once it reaches that height */}
           <div className={cn(lines.length > 0 && "lg:relative")}>
             <div className={cn(lines.length > 0 && "lg:absolute lg:inset-0")}>
-            <Card
+            {/* Above the cart card, not inside it — adding a free line is an
+                action on the cart, not one of its rows. */}
+            <div className="mb-3 lg:shrink-0">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={addCustomLine}
+                disabled={actionLocked}
+                className="w-full sm:w-auto"
+              >
+                <Plus className="me-1 h-3.5 w-3.5" /> שורה חופשית
+              </Button>
+            </div>
+
+            {/* The cart IS a card: it's a distinct panel beside the picker, not a
+                wrapper around cards. */}
+            <div
               className={cn(
+                "space-y-3 rounded-xl border border-border/70 bg-background p-3",
                 lines.length > 0 && "lg:flex lg:h-full lg:flex-col"
               )}
             >
-            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 lg:shrink-0">
-              <CardTitle className="flex items-center gap-2 text-base">
+            <div className="flex flex-row items-center justify-between gap-2 lg:shrink-0">
+              <h3 className="flex items-center gap-2 text-base font-semibold">
                 <ShoppingCart className="h-5 w-5 text-primary" /> פריטי הזמנה
-              </CardTitle>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  onClick={addCustomLine}
-                  disabled={actionLocked}
-                >
-                  <Plus className="me-1 h-3.5 w-3.5" /> שורה חופשית
-                </Button>
-                <Badge variant="info">{totalUnits}</Badge>
-              </div>
-            </CardHeader>
-            <CardContent className={cn("space-y-3", lines.length > 0 && "lg:flex lg:min-h-0 lg:flex-1 lg:flex-col")}>
+              </h3>
+              <Badge variant="info">{totalUnits}</Badge>
+            </div>
+            <div className={cn("space-y-3", lines.length > 0 && "lg:flex lg:min-h-0 lg:flex-1 lg:flex-col")}>
               {lines.length === 0 ? (
                 <p className="rounded-xl border border-dashed p-4 text-center text-sm text-muted-foreground">
                   עדיין לא נוספו מוצרים. הקליקו על מוצר כדי להוסיף.
@@ -1552,8 +1546,8 @@ export default function NewOrderClient({
                   </div>
                 </div>
               )}
-            </CardContent>
-            </Card>
+            </div>
+            </div>
             </div>
           </div>
         </div>
@@ -1562,15 +1556,10 @@ export default function NewOrderClient({
       {/* ---------------------------------------------------------------- STEP 3 */}
       {step === 3 ? (
         <div className="space-y-4">
-          {/* Payment — invoice, terms, due date and the payments themselves */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <CreditCard className="h-5 w-5 text-primary" /> תשלום
-              </CardTitle>
-              <p className="mt-1 text-xs text-muted-foreground">חשבונית, אופן התשלום והתשלומים בפועל.</p>
-            </CardHeader>
-            <CardContent className="space-y-4">
+          {/* Payment — invoice, terms, due date and the payments themselves.
+              No Card wrapper: its padding cost width the fields needed. */}
+          <div className="space-y-3">
+            <div className="space-y-4">
               {/* Invoice toggle + payment terms — one compact row */}
               <div className="flex flex-wrap items-end gap-3">
                 <button
@@ -1631,18 +1620,17 @@ export default function NewOrderClient({
 
                 <div className="w-full space-y-1 sm:w-44">
                   <label className="text-xs font-medium text-muted-foreground">צורת תשלום</label>
-                  <select
+                  <NativeSelect
                     value={paymentTerms}
                     onChange={(e) => applyPaymentTerms(e.target.value)}
                     disabled={actionLocked}
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   >
                     {PAYMENT_TERMS_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
                       </option>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </div>
 
                 {paymentTerms !== "immediate" ? (
@@ -1668,7 +1656,7 @@ export default function NewOrderClient({
                   <p className="text-xs font-medium text-muted-foreground">תשלומים קיימים</p>
                   {initialPayments.map((payment) => (
                     <div key={payment.id} className="space-y-2 rounded-xl border bg-muted/20 p-3 text-sm">
-                      <div className="grid gap-2 sm:grid-cols-4">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
                         <div>
                           <div className="text-xs text-muted-foreground">תאריך</div>
                           <div>{payment.payment_date || "-"}</div>
@@ -1703,9 +1691,9 @@ export default function NewOrderClient({
               ) : null}
 
               {newPayments.length === 0 ? (
-                <div className="rounded-xl border border-dashed p-3 text-sm text-muted-foreground">
+                <EmptyState dense>
                   עדיין לא הוזנו תשלומים חדשים.
-                </div>
+                </EmptyState>
               ) : null}
 
               {newPayments.map((payment, index) => (
@@ -1717,7 +1705,7 @@ export default function NewOrderClient({
                     </Button>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div className="space-y-1">
                       <label className="text-xs text-muted-foreground">סכום *</label>
                       <CurrencyInput
@@ -1740,10 +1728,10 @@ export default function NewOrderClient({
                     </div>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div className="space-y-1">
                       <label className="text-xs text-muted-foreground">אמצעי תשלום *</label>
-                      <select
+                      <NativeSelect
                         value={payment.payment_method}
                         disabled={actionLocked}
                         onChange={(e) => {
@@ -1753,7 +1741,6 @@ export default function NewOrderClient({
                             account_id: payment.account_id || defaultAccountForMethod(paymentAccountsList, m),
                           });
                         }}
-                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                       >
                         <option value="">בחר אמצעי תשלום...</option>
                         {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
@@ -1761,7 +1748,7 @@ export default function NewOrderClient({
                             {option.label}
                           </option>
                         ))}
-                      </select>
+                      </NativeSelect>
                     </div>
                     <AccountSelect
                       required
@@ -1804,7 +1791,7 @@ export default function NewOrderClient({
 
                   <details className="rounded-xl border border-dashed p-3" open={Boolean(payment.reference_number || payment.notes)}>
                     <summary className="cursor-pointer text-xs font-medium text-muted-foreground">פרטי תשלום נוספים</summary>
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div className="space-y-1">
                         <label className="text-xs text-muted-foreground">מספר אסמכתא</label>
                         <Input
@@ -1833,26 +1820,29 @@ export default function NewOrderClient({
                   {PREPAYMENT_WIZARD_WARNING}
                 </div>
               ) : null}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
       ) : null}
 
       {/* ---------------------------------------------------------------- STEP 4 */}
       {step === 4 ? (
         <div className="space-y-4">
+          <div className="flex items-center gap-2 rounded-md border border-secondary/35 bg-secondary/10 px-3 py-2.5 text-sm text-foreground">
+            <Sparkles className="h-4 w-4 shrink-0 text-secondary" />
+            <span>
+              בדקו שהכל תקין ולחצו <span className="font-semibold">{isEditMode ? "שמירת שינויים" : "יצירת הזמנה"}</span>.
+            </span>
+          </div>
+
           <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0">
             {/* Customer */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <User className="h-5 w-5 text-primary" /> לקוח
-                </CardTitle>
-                <Button type="button" size="sm" variant="secondary" onClick={() => goToStep(1)} disabled={actionLocked}>
-                  <Pencil className="h-3.5 w-3.5" /> עריכה
-                </Button>
-              </CardHeader>
-              <CardContent className="space-y-1">
+            <SummarySection
+              icon={<User className="h-4 w-4" />}
+              title="לקוח"
+              onEdit={() => goToStep(1)}
+              editDisabled={actionLocked}
+            >
                 <SummaryRow label="שם" value={selectedCustomer?.name || "-"} />
                 {selectedCustomer?.contacts?.[0]?.full_name ? (
                   <SummaryRow label="איש קשר" value={selectedCustomer.contacts[0].full_name} />
@@ -1880,20 +1870,16 @@ export default function NewOrderClient({
                     <Badge variant="warning">תשלום מראש</Badge>
                   </div>
                 ) : null}
-              </CardContent>
-            </Card>
+              
+            </SummarySection>
 
             {/* Items */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <ShoppingCart className="h-5 w-5 text-primary" /> פריטים ({lines.length})
-                </CardTitle>
-                <Button type="button" size="sm" variant="secondary" onClick={() => goToStep(2)} disabled={actionLocked}>
-                  <Pencil className="h-3.5 w-3.5" /> עריכה
-                </Button>
-              </CardHeader>
-              <CardContent className="space-y-1">
+            <SummarySection
+              icon={<ShoppingCart className="h-4 w-4" />}
+              title={`פריטים (${lines.length})`}
+              onEdit={() => goToStep(2)}
+              editDisabled={actionLocked}
+            >
                 {lines.map((line, index) => {
                   const lineTotal = line.quantity_ordered * line.unit_price - line.discount_amount;
                   return (
@@ -1914,38 +1900,37 @@ export default function NewOrderClient({
                     <span className="text-lg font-bold text-foreground">{formatCurrency(totalAmount)}</span>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
+              
+            </SummarySection>
           </div>
 
           <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0">
             {/* Order details — editable inline here, sensible defaults */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
+            <div className="space-y-3 rounded-xl border border-border/70 bg-background p-3">
+              <div className="space-y-1">
+                <h3 className="flex items-center gap-2 text-base font-semibold">
                   <FileText className="h-5 w-5 text-primary" /> פרטי הזמנה
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid gap-3 sm:grid-cols-2">
+                </h3>
+              </div>
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <label className="text-sm font-medium">תאריך הזמנה *</label>
                     <DateInput value={orderDate} onChange={(e) => applyOrderDate(e.target.value)} placeholder="בחר תאריך הזמנה" />
                   </div>
                   <div className="space-y-1">
                     <label className="text-sm font-medium">סטטוס הזמנה</label>
-                    <select
+                    <NativeSelect
                       value={orderStatus}
                       onChange={(e) => setOrderStatus(e.target.value)}
                       disabled={actionLocked}
-                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                     >
                       {ORDER_STATUS_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>
                           {option.label}
                         </option>
                       ))}
-                    </select>
+                    </NativeSelect>
                   </div>
                 </div>
                 <div className="space-y-1">
@@ -1958,20 +1943,16 @@ export default function NewOrderClient({
                     placeholder="הערות להזמנה (אופציונלי)"
                   />
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
 
             {/* Payment summary — read-only; edit jumps back to the payment step */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <CreditCard className="h-5 w-5 text-primary" /> תשלום
-                </CardTitle>
-                <Button type="button" size="sm" variant="secondary" onClick={() => goToStep(3)} disabled={actionLocked}>
-                  <Pencil className="h-3.5 w-3.5" /> עריכה
-                </Button>
-              </CardHeader>
-              <CardContent className="space-y-1">
+            <SummarySection
+              icon={<CreditCard className="h-4 w-4" />}
+              title="תשלום"
+              onEdit={() => goToStep(3)}
+              editDisabled={actionLocked}
+            >
                 <SummaryRow label="חשבונית" value={needsInvoice ? "צריך חשבונית" : "לא צריך חשבונית"} />
                 <SummaryRow label="גבייה" value={collectOnDelivery ? "הנהג גובה תשלום במסירה" : "תשלום למשרד"} />
                 <SummaryRow label="צורת תשלום" value={termsLabel(paymentTerms)} />
@@ -1979,8 +1960,8 @@ export default function NewOrderClient({
                 <SummaryRow label="סטטוס תשלום" value={paymentStatusLabel(paymentStatus)} />
                 <SummaryRow label="שולם / יוזן" value={formatCurrency(combinedPaidTotal)} />
                 <SummaryRow label="יתרה אחרי שמירה" value={formatCurrency(remainingBalance)} />
-              </CardContent>
-            </Card>
+              
+            </SummarySection>
           </div>
 
           {submitError ? <p className="text-sm text-destructive">{submitError}</p> : null}
@@ -1994,55 +1975,7 @@ export default function NewOrderClient({
 
       {/* Inline submit error for steps before review */}
       {submitError && step !== 4 ? <p className="text-sm text-destructive">{submitError}</p> : null}
-      </div>
-
-      {/* ---------------------------------------------------------------- FOOTER */}
-      <div className={cn(
-        // Action bar. Embedded: pinned to the bottom of the dialog. Standalone:
-        // an edge-to-edge bar flush above the bottom nav on mobile (no floating
-        // card overlapping content); a rounded card on md+.
-        "border-border/70 bg-background/95 backdrop-blur",
-        embedded
-          ? "shrink-0 border-t px-4 py-3 sm:px-6"
-          : "fixed inset-x-0 bottom-[58px] z-40 border-t px-3 py-3 shadow-[0_-2px_12px_rgb(0_0_0_/_0.06)] sm:px-4 md:sticky md:inset-x-auto md:bottom-0 md:z-10 md:mt-1 md:rounded-2xl md:border md:shadow-lg"
-      )}>
-        {/* Wraps when cramped: total drops to its own row above the buttons on
-            narrow screens (me-auto on the back button keeps cancel⇄next spread),
-            and sits inline between them when there's room (sm+). */}
-        <div className="flex flex-wrap items-center gap-2">
-          {step === 1 ? (
-            embedded ? (
-              <Button type="button" variant="secondary" onClick={onCancel} disabled={actionLocked} className="me-auto">
-                ביטול
-              </Button>
-            ) : (
-              <Button type="button" variant="secondary" asChild disabled={actionLocked} className="me-auto">
-                <Link href={cancelHref}>ביטול</Link>
-              </Button>
-            )
-          ) : (
-            <Button type="button" variant="secondary" onClick={goBack} disabled={actionLocked} className="me-auto">
-              חזרה
-            </Button>
-          )}
-
-          {lines.length > 0 ? (
-            <div className="order-first w-full text-center leading-tight sm:order-none sm:w-auto sm:text-end">
-              <div className="whitespace-nowrap text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                {effectiveOrderDiscount > 0 ? "סכום לתשלום" : "סכום ביניים"}
-              </div>
-              <div className="whitespace-nowrap text-base font-bold text-foreground">
-                {formatCurrency(totalAmount)}
-              </div>
-            </div>
-          ) : null}
-
-          <Button type="button" onClick={goNext} disabled={nextDisabled} className="shrink-0">
-            {step === 4 ? <Check className="h-4 w-4" /> : null}
-            {nextLabel}
-          </Button>
-        </div>
-      </div>
-    </div>
+      </StepWizard>
+    </>
   );
 }

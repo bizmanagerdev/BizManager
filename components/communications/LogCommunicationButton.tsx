@@ -5,16 +5,10 @@ import { Phone } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { AssigneeSelect } from "@/components/collections/AssigneeSelect";
 import { useAssignableUsers } from "@/hooks/useAssignableUsers";
 import { offlineFetch } from "@/lib/offline-queue";
@@ -181,56 +175,59 @@ export default function LogCommunicationButton({
         </Button>
       )}
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent dir="rtl" className="w-[calc(100vw-1rem)] max-w-md p-4 text-right sm:p-6">
-          <DialogHeader>
-            <DialogTitle>תיעוד שיחה</DialogTitle>
-            <DialogDescription>רישום פנייה נכנסת או יוצאת, מתויגת לפי נושא.</DialogDescription>
-          </DialogHeader>
+      <FormDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="תיעוד שיחה"
+        description="רישום פנייה נכנסת או יוצאת, מתויגת לפי נושא."
+        size="formMd"
+        onSubmit={() => void submit()}
+        submitLabel="שמירה"
+        busyLabel="שומר..."
+        busy={submitting}
+        error={error || undefined}
+      >
 
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <label className="text-sm font-medium">ערוץ</label>
-                <select
+                <NativeSelect
                   value={channel}
                   onChange={(e) => setChannel(e.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 >
                   {CHANNELS.map((c) => (
                     <option key={c.value} value={c.value}>
                       {c.label}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium">כיוון</label>
-                <select
+                <NativeSelect
                   value={direction}
                   onChange={(e) => setDirection(e.target.value as "outgoing" | "incoming" | "missed")}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 >
                   <option value="outgoing">יוצאת</option>
                   <option value="incoming">נכנסת</option>
                   <option value="missed">שלא נענתה</option>
-                </select>
+                </NativeSelect>
               </div>
             </div>
 
             <div className="space-y-1">
               <label className="text-sm font-medium">נושא</label>
-              <select
+              <NativeSelect
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 {TOPICS.map((t) => (
                   <option key={t.value} value={t.value}>
                     {t.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
 
             <div className="space-y-1">
@@ -255,19 +252,8 @@ export default function LogCommunicationButton({
               </div>
             ) : null}
 
-            {error ? <div className="text-sm text-destructive">{error}</div> : null}
           </div>
-
-          <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => setOpen(false)} disabled={submitting}>
-              ביטול
-            </Button>
-            <Button type="button" onClick={() => void submit()} disabled={submitting}>
-              {submitting ? "שומר..." : "שמירה"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </FormDialog>
     </>
   );
 }

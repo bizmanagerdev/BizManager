@@ -5,19 +5,14 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
 import { DateInput } from "@/components/ui/date-input";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
-import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { AdaptiveGrid } from "@/components/layout/page-layout";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { ORDER_PAYMENT_METHOD_OPTIONS } from "@/lib/orders/paymentStatus";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
@@ -215,24 +210,26 @@ export function AddIncomeDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <AdaptiveDialog size="formLg">
-        <DialogHeader>
-          <DialogTitle>{isEditing ? "עריכת הכנסה" : "\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05db\u05e0\u05e1\u05d4"}</DialogTitle>
-          <DialogDescription>
-            {isEditing
-              ? "עדכון פרטי ההכנסה של הפרויקט."
-              : "\u05d4\u05d4\u05db\u05e0\u05e1\u05d4 \u05ea\u05d9\u05e8\u05e9\u05dd \u05db\u05ea\u05e7\u05d1\u05d5\u05dc \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8."}
-          </DialogDescription>
-        </DialogHeader>
-
-        <form
-          className="mt-4 space-y-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void submit();
-          }}
-        >
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={isEditing ? "עריכת הכנסה" : "הוספת הכנסה"}
+      description={
+        isEditing
+          ? "עדכון פרטי ההכנסה של הפרויקט."
+          : "ההכנסה תירשם כתקבול לפרויקט."
+      }
+      onSubmit={() => void submit()}
+      submitLabel={isEditing ? "עדכון" : "שמירה"}
+      busyLabel="שומר..."
+      busy={submitting}
+      submitDisabled={!canSubmit}
+      footerStart={
+        !canSubmit && !submitting ? (
+          <span className="text-xs text-destructive">{addIncomeValidationMessage}</span>
+        ) : null
+      }
+    >
           <div className="text-xs text-muted-foreground">
             {"\u05e9\u05d3\u05d5\u05ea \u05d4\u05de\u05e1\u05d5\u05de\u05e0\u05d9\u05dd \u05d1-* \u05d4\u05dd \u05e9\u05d3\u05d5\u05ea \u05d7\u05d5\u05d1\u05d4."}
           </div>
@@ -283,7 +280,7 @@ export function AddIncomeDialog({
           <AdaptiveGrid variant="formTwo">
             <div className="space-y-1">
               <div className="text-sm font-medium">{"\u05d0\u05de\u05e6\u05e2\u05d9 \u05ea\u05e9\u05dc\u05d5\u05dd *"}</div>
-              <select
+              <NativeSelect
                 value={paymentMethod}
                 onChange={(e) => {
                   const m = e.target.value;
@@ -292,12 +289,7 @@ export function AddIncomeDialog({
                   setPaymentAccountId((prev) => prev || defaultAccountForMethod(paymentAccountsList, m));
                 }}
                 onBlur={() => setPaymentMethodTouched(true)}
-                aria-invalid={showPaymentMethodError}
-                className={
-                  showPaymentMethodError
-                    ? "h-10 w-full rounded-md border border-destructive bg-background px-3 text-sm focus-visible:ring-destructive"
-                    : "h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                }
+                aria-invalid={showPaymentMethodError} className={showPaymentMethodError ? "border-destructive focus-visible:ring-destructive" : undefined}
               >
                 <option value="">בחר אמצעי תשלום...</option>
                 {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
@@ -305,7 +297,7 @@ export function AddIncomeDialog({
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
               {showPaymentMethodError ? (
                 <div className="text-xs text-destructive">{paymentMethodError}</div>
               ) : null}
@@ -467,22 +459,7 @@ export function AddIncomeDialog({
             ) : null}
           </div>
 
-          <DialogFooter className="mt-6">
-            {!canSubmit && !submitting ? (
-              <div className="me-auto text-xs text-destructive">{addIncomeValidationMessage}</div>
-            ) : (
-              <div className="me-auto" />
-            )}
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
-              {"\u05d1\u05d9\u05d8\u05d5\u05dc"}
-            </Button>
-            <Button type="submit" disabled={submitting || !canSubmit}>
-              {submitting ? "\u05e9\u05d5\u05de\u05e8..." : isEditing ? "עדכון" : "\u05e9\u05de\u05d9\u05e8\u05d4"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </AdaptiveDialog>
-    </Dialog>
+    </FormDialog>
   );
 }
 

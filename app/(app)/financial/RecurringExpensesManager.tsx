@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Repeat, Pencil, Trash2, BellPlus, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { toHebrewError } from "@/lib/error-messages";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -248,17 +249,16 @@ export default function RecurringExpensesManager(props: Props) {
       {!props.missingSchema && props.templates.length > 0 && props.accounts.length > 0 ? (
         <div className="flex items-center justify-end gap-2">
           <span className="text-xs text-muted-foreground">חשבון:</span>
-          <select
+          <NativeSelect dense
             value={accountFilter}
             onChange={(e) => setAccountFilter(e.target.value)}
-            aria-label="סינון לפי חשבון"
-            className="h-9 rounded-lg border bg-background px-2 text-sm text-foreground"
+            aria-label="סינון לפי חשבון" className="text-foreground"
           >
             <option value="">כל החשבונות</option>
             {props.accounts.map((a) => (
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
       ) : null}
 

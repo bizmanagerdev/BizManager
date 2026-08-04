@@ -4,17 +4,11 @@ import { toHebrewError } from "@/lib/error-messages";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import {
   ORDER_PAYMENT_METHOD_OPTIONS,
   derivePaymentStatus,
@@ -217,7 +211,7 @@ export default function OrderPaymentDialog({
         עדכון תשלום
       </Button>
 
-      <Dialog
+      <FormDialog
         open={open}
         onOpenChange={(nextOpen) => {
           setOpen(nextOpen);
@@ -225,19 +219,21 @@ export default function OrderPaymentDialog({
             setEntryType(paidAmount > totalAmount ? "refund" : "payment");
           }
         }}
+        title={entryType === "refund" ? "רישום החזר" : "עדכון תשלום"}
+        description={
+          entryType === "refund"
+            ? "אפשר לרשום החזר ללקוח ולעדכן את יתרת ההזמנה."
+            : "אפשר להוסיף תשלום נוסף להזמנה, גם אם היא משולמת בכמה חלקים ובכמה אמצעים."
+        }
+        onSubmit={() => void submitPayment()}
+        submitLabel={entryType === "refund" ? "שמירת החזר" : "שמירת תשלום"}
+        busyLabel="שומר..."
+        busy={submitting}
+        error={error || undefined}
       >
-        <DialogContent className="max-h-[90svh] w-[calc(100vw-1rem)] max-w-lg overflow-y-auto p-4 sm:p-6">
-          <DialogHeader>
-            <DialogTitle>{entryType === "refund" ? "רישום החזר" : "עדכון תשלום"}</DialogTitle>
-            <DialogDescription>
-              {entryType === "refund"
-                ? "אפשר לרשום החזר ללקוח ולעדכן את יתרת ההזמנה."
-                : "אפשר להוסיף תשלום נוסף להזמנה, גם אם היא משולמת בכמה חלקים ובכמה אמצעים."}
-            </DialogDescription>
-          </DialogHeader>
 
           <div className="grid gap-3">
-            <div className="grid gap-2 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-2 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-3">
               <div>
                 <div className="text-muted-foreground">סכום הזמנה</div>
                 <div className="font-medium">{formatCurrency(totalAmount)}</div>
@@ -256,17 +252,16 @@ export default function OrderPaymentDialog({
 
             <div className="space-y-1">
               <label className="text-sm font-medium">סוג פעולה</label>
-              <select
+              <NativeSelect
                 value={entryType}
                 onChange={(e) => setEntryType(e.target.value === "refund" ? "refund" : "payment")}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="payment">תשלום</option>
                 <option value="refund">החזר</option>
-              </select>
+              </NativeSelect>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <label className="text-sm font-medium">{entryType === "refund" ? "סכום החזר *" : "סכום תשלום *"}</label>
                 <CurrencyInput
@@ -286,14 +281,13 @@ export default function OrderPaymentDialog({
 
             <div className="space-y-1">
               <label className="text-sm font-medium">{entryType === "refund" ? "אמצעי החזר *" : "אמצעי תשלום *"}</label>
-              <select
+              <NativeSelect
                 value={paymentMethod}
                 onChange={(e) => {
                   const m = e.target.value;
                   setPaymentMethod(m);
                   setAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
                 }}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="">{entryType === "refund" ? "בחר אמצעי החזר..." : "בחר אמצעי תשלום..."}</option>
                 {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
@@ -301,7 +295,7 @@ export default function OrderPaymentDialog({
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
 
             <AccountSelect
@@ -340,7 +334,7 @@ export default function OrderPaymentDialog({
               />
             ) : null}
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <label className="text-sm font-medium">{entryType === "refund" ? "מספר אסמכתא להחזר" : "מספר אסמכתא"}</label>
                 <Input
@@ -374,19 +368,8 @@ export default function OrderPaymentDialog({
               </div>
             </div>
 
-            {error ? <div className="text-sm text-destructive">{error}</div> : null}
           </div>
-
-          <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => setOpen(false)} disabled={submitting}>
-              ביטול
-            </Button>
-            <Button type="button" onClick={() => void submitPayment()} disabled={submitting}>
-              {submitting ? "שומר..." : entryType === "refund" ? "שמירת החזר" : "שמירת תשלום"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </FormDialog>
     </>
   );
 }

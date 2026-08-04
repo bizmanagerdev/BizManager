@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { DomainSelect } from "@/components/financial/DomainSelect";
@@ -175,8 +176,7 @@ export function TaskDomainSection({
       {showTargetPicker && derivedTargetType === "property" ? (
         <div className="space-y-1">
           <div className="text-sm font-medium">נכס *</div>
-          <select
-            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+          <NativeSelect
             value={propertyId}
             onChange={(e) => onPropertyIdChange(e.target.value)}
           >
@@ -186,7 +186,7 @@ export function TaskDomainSection({
                 {property.label}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
       ) : null}
 
@@ -270,8 +270,7 @@ export function TaskPeopleSection({
     <div className="space-y-3 rounded-md border bg-muted/20 p-3">
       <div className="space-y-1">
         <div className="text-sm font-medium">אחראי</div>
-        <select
-          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+        <NativeSelect
           value={assignedUserId}
           onChange={(e) => onAssignedChange(e.target.value)}
         >
@@ -281,7 +280,7 @@ export function TaskPeopleSection({
               {user.label}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </div>
 
       {canAddSelf ? (
@@ -380,8 +379,7 @@ export function TaskLocationSection({
             <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
             עיר
           </div>
-          <select
-            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+          <NativeSelect
             value={cityOther ? "אחר" : city}
             onChange={(e) => {
               const value = e.target.value;
@@ -400,7 +398,7 @@ export function TaskLocationSection({
                 {option}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
         <div className="space-y-1">
           <div className="text-sm font-medium">כתובת</div>
@@ -592,8 +590,7 @@ export function TaskLabelsSection({
       <AdaptiveGrid variant="formTwo">
         <div className="space-y-1">
           <div className="text-sm font-medium">עדיפות</div>
-          <select
-            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+          <NativeSelect
             value={priority}
             onChange={(e) => onPriorityChange(e.target.value as TaskPriority)}
           >
@@ -602,12 +599,11 @@ export function TaskLabelsSection({
                 {getTaskPriorityLabel(option)}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
         <div className="space-y-1">
           <div className="text-sm font-medium">סטטוס</div>
-          <select
-            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+          <NativeSelect
             value={status}
             onChange={(e) => onStatusChange(e.target.value as TaskStatus)}
           >
@@ -616,7 +612,7 @@ export function TaskLabelsSection({
                 {getTaskStatusLabel(option)}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
       </AdaptiveGrid>
     </div>

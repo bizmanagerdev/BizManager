@@ -4,14 +4,8 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import type { ReactNode } from "react";
 import SalaryProtected from "@/components/payroll/SalaryProtected";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { NativeSelect } from "@/components/ui/native-select";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -47,7 +41,7 @@ import type {
 } from "@/lib/payroll-center";
 import { toHebrewError } from "@/lib/error-messages";
 import type { SessionFormState, SplitPartDraft } from "./SalaryCenter.types";
-import { Field, selectClassName, toDateTimeLocalValue } from "./SalaryCenterUi";
+import { Field, toDateTimeLocalValue } from "./SalaryCenterUi";
 
 function createSessionSplitPart(
   domain: ExpenseBusinessDomain,
@@ -449,8 +443,7 @@ export default function SessionEditorDialog({
     return (
       <label className="space-y-1 text-right">
         <span className="block text-xs text-muted-foreground">{label}</span>
-        <select
-          className="h-9 w-44 rounded-md border border-input bg-background px-3 text-right text-sm"
+        <NativeSelect dense className="w-44"
           value={value}
           onChange={(event) => onChange(event.target.value)}
         >
@@ -460,7 +453,7 @@ export default function SessionEditorDialog({
               {option.label}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </label>
     );
   }
@@ -635,30 +628,25 @@ export default function SessionEditorDialog({
   ]);
 
   return (
-    <Dialog
+    <FormDialog
       open={open}
       onOpenChange={(next) => {
-        if (!next && isPending) return;
-        if (!next) {
-          setSessionSplitParts([]);
-        }
+        if (!next) setSessionSplitParts([]);
         onOpenChange(next);
       }}
+      title={sessionMode === "create" ? "הוספת משמרת" : "עריכת משמרת"}
+      description="מנהלים ומשרד יכולים ליצור ולעדכן משמרות לשני סוגי העובדים, כל עוד התקופה לא נעולה."
+      size="details4xl"
+      onSubmit={() => saveSession()}
+      submitLabel="שמירה"
+      busyLabel="שומר..."
+      busy={isPending}
+      submitDisabled={sessionSplitEnabled && Boolean(sessionDialogSplitError)}
     >
-      <DialogContent
-        dir="rtl"
-        className="max-h-[90vh] w-[calc(100vw-2rem)] max-w-4xl overflow-y-auto overflow-x-hidden text-right"
-      >
-        <DialogHeader className="text-right">
-          <DialogTitle>{sessionMode === "create" ? "הוספת משמרת" : "עריכת משמרת"}</DialogTitle>
-          <DialogDescription>
-            {"מנהלים ומשרד יכולים ליצור ולעדכן משמרות לשני סוגי העובדים, כל עוד התקופה לא נעולה."}
-          </DialogDescription>
-        </DialogHeader>
 
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <Field label="עובד">
-            <select
+            <NativeSelect
               value={sessionForm.user_id}
               onChange={(event) => {
                 const nextUserId = event.target.value;
@@ -676,7 +664,6 @@ export default function SessionEditorDialog({
                   bill_to_customer_amount: "",
                 }));
               }}
-              className={selectClassName}
             >
               <option value="">{"בחירה"}</option>
               {workers
@@ -692,7 +679,7 @@ export default function SessionEditorDialog({
                     {user.full_name ?? user.email ?? "עובד"}
                   </option>
                 ))}
-            </select>
+            </NativeSelect>
           </Field>
           <Field label="תחום">
             <DomainSelect
@@ -710,10 +697,9 @@ export default function SessionEditorDialog({
           </Field>
           {sessionForm.business_domain === "logistics_projects" ? (
             <Field label="פרויקט">
-              <select
+              <NativeSelect
                 value={sessionForm.project_id}
                 onChange={(event) => setSessionForm((current) => ({ ...current, project_id: event.target.value }))}
-                className={selectClassName}
               >
                 <option value="">{"בחירה"}</option>
                 {projectOptions.map((option) => (
@@ -721,15 +707,14 @@ export default function SessionEditorDialog({
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </Field>
           ) : null}
           {sessionForm.business_domain === "property_management" ? (
             <Field label="נכס">
-              <select
+              <NativeSelect
                 value={sessionForm.property_id}
                 onChange={(event) => setSessionForm((current) => ({ ...current, property_id: event.target.value }))}
-                className={selectClassName}
               >
                 <option value="">{"בחירה"}</option>
                 {propertyOptions.map((option) => (
@@ -737,11 +722,11 @@ export default function SessionEditorDialog({
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </Field>
           ) : null}
           {shouldShowSessionHours(sessionDialogWorkerType) ? (
-            <div className="md:col-span-2 grid gap-3 md:grid-cols-3">
+            <div className="md:col-span-2 grid grid-cols-1 gap-3 md:grid-cols-3">
               <Field label="כניסה">
                 <DateTimeInput
                   value={sessionForm.clock_in}
@@ -831,7 +816,7 @@ export default function SessionEditorDialog({
           {sessionSplitEnabled ? null : (
             <>
               <Field label="חיוב לקוח">
-                <select
+                <NativeSelect
                   value={sessionForm.is_billable_to_customer ? "yes" : "no"}
                   onChange={(event) => {
                     // Toggling billing resets "touched" so the amount re-syncs to the current cost.
@@ -841,11 +826,10 @@ export default function SessionEditorDialog({
                       is_billable_to_customer: event.target.value === "yes",
                     }));
                   }}
-                  className={selectClassName}
                 >
                   <option value="no">{"לא"}</option>
                   <option value="yes">{"כן"}</option>
-                </select>
+                </NativeSelect>
               </Field>
               {sessionForm.is_billable_to_customer ? (
                 <Field label="סכום לחיוב">
@@ -869,7 +853,7 @@ export default function SessionEditorDialog({
               onUnlockSuccess={onUnlockSuccess}
             >
               <Field label="שולם עכשיו">
-                <select
+                <NativeSelect
                   value={sessionForm.mark_paid_now ? "yes" : "no"}
                   onChange={(event) =>
                     setSessionForm((current) => ({
@@ -877,11 +861,10 @@ export default function SessionEditorDialog({
                       mark_paid_now: event.target.value === "yes",
                     }))
                   }
-                  className={selectClassName}
                 >
                   <option value="no">{"לא"}</option>
                   <option value="yes">{"כן"}</option>
-                </select>
+                </NativeSelect>
               </Field>
               {sessionForm.mark_paid_now ? (
                 <>
@@ -1172,18 +1155,6 @@ export default function SessionEditorDialog({
 
         {sessionMode === "edit" ? editExtras : null}
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
-            {"ביטול"}
-          </Button>
-          <Button
-            onClick={() => saveSession()}
-            disabled={isPending || (sessionSplitEnabled && Boolean(sessionDialogSplitError))}
-          >
-            {"שמירה"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </FormDialog>
   );
 }

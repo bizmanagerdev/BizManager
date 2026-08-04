@@ -58,7 +58,7 @@ export default async function SearchPage({
               </CardContent>
             </Card>
 
-            <div className="grid gap-4 xl:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
               {results.groups.map((group) => (
                 <Card key={group.key}>
                   <CardHeader className="pb-3">

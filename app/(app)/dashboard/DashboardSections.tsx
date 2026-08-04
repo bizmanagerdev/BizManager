@@ -60,7 +60,7 @@ export function PanelsFallback() {
     <>
       <Skeleton className="h-28 w-full rounded-[1.5rem]" />
       <Skeleton className="h-40 w-full rounded-[1.5rem]" />
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Skeleton className="h-48 w-full rounded-[1.5rem]" />
         <Skeleton className="h-48 w-full rounded-[1.5rem]" />
       </div>

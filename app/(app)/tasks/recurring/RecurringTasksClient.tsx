@@ -3,18 +3,14 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { toHebrewError } from "@/lib/error-messages";
 import { Card, CardContent } from "@/components/ui/card";
 import { DateInput } from "@/components/ui/date-input";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { AdaptiveGrid } from "@/components/layout/page-layout";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -103,6 +99,8 @@ export default function RecurringTasksClient(props: Props) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<FormState>(createEmptyForm());
+  // Deleting asks through the styled ConfirmDialog, never window.confirm.
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const requirement = linkRequirement(form.business_domain);
   const canSave =
@@ -200,9 +198,6 @@ export default function RecurringTasksClient(props: Props) {
   }
 
   async function remove(id: string) {
-    const ok = window.confirm("למחוק את המשימה הקבועה?");
-    if (!ok) return;
-
     const res = await fetch("/api/recurring-tasks/delete", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -215,6 +210,7 @@ export default function RecurringTasksClient(props: Props) {
     }
     router.refresh();
     toast.success("המשימה הקבועה נמחקה");
+    setPendingDeleteId(null);
   }
 
   return (
@@ -305,7 +301,7 @@ export default function RecurringTasksClient(props: Props) {
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      <Button type="button" variant="destructive" size="sm" onClick={() => void remove(template.id)}>
+                      <Button type="button" variant="destructive" size="sm" onClick={() => setPendingDeleteId(template.id)}>
                         מחיקה
                       </Button>
                     </div>
@@ -375,7 +371,7 @@ export default function RecurringTasksClient(props: Props) {
                           <Button type="button" variant="outline" size="sm" onClick={() => openEdit(template)}>
                             עריכה
                           </Button>
-                          <Button type="button" variant="destructive" size="sm" onClick={() => void remove(template.id)}>
+                          <Button type="button" variant="destructive" size="sm" onClick={() => setPendingDeleteId(template.id)}>
                             מחיקה
                           </Button>
                         </div>
@@ -389,28 +385,17 @@ export default function RecurringTasksClient(props: Props) {
         </>
       )}
 
-      <Dialog
+      <FormDialog
         open={open}
-        onOpenChange={(next) => {
-          if (!next && saving) return;
-          setOpen(next);
-        }}
+        onOpenChange={setOpen}
+        title={form.id ? "עריכת משימה קבועה" : "משימה קבועה חדשה"}
+        description="אפשר להשתמש בטוקנים {{month_label}}, {{month_key}}, {{due_date}}."
+        onSubmit={() => void save()}
+        submitLabel="שמירה"
+        busyLabel="שומר..."
+        busy={saving}
+        submitDisabled={!canSave}
       >
-        <AdaptiveDialog size="formLg">
-          <DialogHeader>
-            <DialogTitle>{form.id ? "עריכת משימה קבועה" : "משימה קבועה חדשה"}</DialogTitle>
-            <DialogDescription>
-              אפשר להשתמש בטוקנים `{"{{month_label}}"}`, `{"{{month_key}}"}`, `{"{{due_date}}"}`.
-            </DialogDescription>
-          </DialogHeader>
-
-          <form
-            className="mt-4 space-y-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void save();
-            }}
-          >
             <div className="space-y-1">
               <div className="text-sm font-medium">דומיין *</div>
               <DomainSelect
@@ -435,8 +420,7 @@ export default function RecurringTasksClient(props: Props) {
             {requirement === "property" ? (
               <div className="space-y-1">
                 <div className="text-sm font-medium">נכס *</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                <NativeSelect
                   value={form.property_id}
                   onChange={(e) => updateForm("property_id", e.target.value)}
                 >
@@ -446,7 +430,7 @@ export default function RecurringTasksClient(props: Props) {
                       {property.label}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
             ) : null}
 
@@ -507,8 +491,7 @@ export default function RecurringTasksClient(props: Props) {
             <AdaptiveGrid variant="formTwo">
               <div className="space-y-1">
                 <div className="text-sm font-medium">עדיפות ברירת מחדל</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                <NativeSelect
                   value={form.default_priority}
                   onChange={(e) => updateForm("default_priority", e.target.value as TaskPriority)}
                 >
@@ -517,12 +500,11 @@ export default function RecurringTasksClient(props: Props) {
                       {getTaskPriorityLabel(priority)}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
               <div className="space-y-1">
                 <div className="text-sm font-medium">סטטוס ברירת מחדל</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                <NativeSelect
                   value={form.default_status}
                   onChange={(e) => updateForm("default_status", e.target.value as TaskStatus)}
                 >
@@ -531,7 +513,7 @@ export default function RecurringTasksClient(props: Props) {
                       {getTaskStatusLabel(status)}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
             </AdaptiveGrid>
 
@@ -562,17 +544,21 @@ export default function RecurringTasksClient(props: Props) {
               </>
             ) : null}
 
-            <DialogFooter className="mt-6">
-              <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
-                ביטול
-              </Button>
-              <Button type="submit" disabled={!canSave || saving}>
-                {saving ? "שומר..." : "שמירה"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </AdaptiveDialog>
-      </Dialog>
+      </FormDialog>
+
+      <ConfirmDialog
+        open={pendingDeleteId !== null}
+        onOpenChange={(next) => {
+          if (!next) setPendingDeleteId(null);
+        }}
+        destructive
+        title="מחיקת משימה קבועה"
+        description="המשימות שכבר נוצרו מהתבנית יישארו. התבנית לא תיצור משימות חדשות."
+        confirmLabel="מחיקה"
+        onConfirm={() => {
+          if (pendingDeleteId) void remove(pendingDeleteId);
+        }}
+      />
     </div>
   );
 }

@@ -2,21 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import {
-  AdaptiveDialog,
+import {
   AdaptiveGrid,
 } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Field } from "@/components/ui/field";
 import { toHebrewError } from "@/lib/error-messages";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { CITY_OPTIONS } from "@/lib/ui/cities";
 import { TagPicker, fetchExistingTagIds } from "@/components/tags/TagPicker";
 import { Tag } from "lucide-react";
@@ -317,34 +312,18 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
   }
 
   return (
-    <Dialog
+    <FormDialog
       open={open}
-      onOpenChange={(next) => {
-        if (!next && loading) return;
-        onOpenChange(next);
-      }}
+      onOpenChange={onOpenChange}
+      title="עריכת לקוח"
+      description="עדכון פרטי לקוח ופרטי חשבונית."
+      onSubmit={() => void save()}
+      submitLabel="שמירת שינויים"
+      busyLabel="שומר..."
+      busy={loading}
+      error={err || undefined}
+      bodyClassName="space-y-3"
     >
-      <AdaptiveDialog
-        size="formLg"
-        className="flex max-h-[92svh] flex-col gap-0 overflow-y-hidden p-0 sm:p-0"
-      >
-        {/* Pinned top bar */}
-        <div className="shrink-0 border-b border-border/70 bg-background px-4 py-3 sm:px-6">
-          <DialogHeader className="space-y-1 text-start">
-            <DialogTitle>עריכת לקוח</DialogTitle>
-            <DialogDescription>עדכון פרטי לקוח ופרטי חשבונית.</DialogDescription>
-          </DialogHeader>
-        </div>
-        <form
-          className="flex min-h-0 flex-1 flex-col"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void save();
-          }}
-        >
-          {/* Scrollable body — only this section scrolls; the bars stay pinned. */}
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
-          <fieldset disabled={loading} className="space-y-3">
             <Field label="שם לקוח *">
               <Input value={name} onChange={(e) => setName(e.target.value)} />
             </Field>
@@ -366,16 +345,15 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
               <Input value={reg} onChange={(e) => setReg(e.target.value)} />
             </Field>
             <Field label="עיר">
-              <select
+              <NativeSelect
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="">בחר עיר...</option>
                 {CITY_OPTIONS.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
-              </select>
+              </NativeSelect>
             </Field>
             {city === "אחר" ? (
               <Field label="עיר (הקלדה חופשית)">
@@ -512,33 +490,6 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
                   </div>
                 ))}
             </div>
-          </fieldset>
-          </div>
-
-          {/* Pinned bottom bar */}
-          <div className="shrink-0 space-y-2 border-t border-border/70 bg-background px-4 py-3 sm:px-6">
-            {err ? <p className="text-sm text-destructive">{err}</p> : null}
-            {loading ? <p className="text-xs text-muted-foreground">שומר, נא להמתין...</p> : null}
-            <DialogFooter className="mt-0">
-              <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={loading}>
-                ביטול
-              </Button>
-              <Button type="submit" disabled={loading}>
-                {loading ? "שומר..." : "שמירת שינויים"}
-              </Button>
-            </DialogFooter>
-          </div>
-        </form>
-      </AdaptiveDialog>
-    </Dialog>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <label className="text-sm font-medium">{label}</label>
-      {children}
-    </div>
+    </FormDialog>
   );
 }

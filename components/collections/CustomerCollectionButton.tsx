@@ -4,13 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ViewDialog } from "@/components/ui/view-dialog";
 import CollectionTrackingPanel from "@/components/collections/CollectionTrackingPanel";
 
 type Props = {
@@ -62,20 +56,19 @@ export default function CustomerCollectionButton({
         {iconOnly ? null : label}
       </Button>
 
-      <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="max-h-[90svh] w-[calc(100vw-1rem)] max-w-lg overflow-y-auto p-4 sm:p-6">
-          <DialogHeader>
-            <DialogTitle>מעקב גבייה</DialogTitle>
-            <DialogDescription>תיעוד שיחות ותזכורות מול {customerName}</DialogDescription>
-          </DialogHeader>
-          <CollectionTrackingPanel
-            customerId={customerId}
-            customerName={customerName}
-            customerPhone={customerPhone}
-            onChanged={() => setDirty(true)}
-          />
-        </DialogContent>
-      </Dialog>
+      <ViewDialog
+        open={open}
+        onOpenChange={handleOpenChange}
+        title="מעקב גבייה"
+        description={`תיעוד שיחות ותזכורות מול ${customerName}`}
+      >
+        <CollectionTrackingPanel
+          customerId={customerId}
+          customerName={customerName}
+          customerPhone={customerPhone}
+          onChanged={() => setDirty(true)}
+        />
+      </ViewDialog>
     </>
   );
 }

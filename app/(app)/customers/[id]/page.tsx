@@ -623,7 +623,7 @@ export default async function CustomerDetailsPage({
 
         {/* The one urgent fact first: debt bar (hidden entirely when nothing is owed). */}
         {openBalance > 0.009 ? (
-          <section className="grid overflow-hidden rounded-3xl border border-destructive/20 shadow-sm lg:grid-cols-[minmax(180px,1fr)_2fr_minmax(180px,1fr)]">
+          <section className="grid grid-cols-1 overflow-hidden rounded-3xl border border-destructive/20 shadow-sm lg:grid-cols-[minmax(180px,1fr)_2fr_minmax(180px,1fr)]">
             <div className="space-y-1 bg-destructive-soft/60 p-4">
               <div className="flex items-center gap-1.5 text-sm font-semibold text-destructive">
                 <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -688,7 +688,7 @@ export default async function CustomerDetailsPage({
           </section>
         ) : null}
 
-        <div className="grid gap-3 lg:grid-cols-3 lg:items-start">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 lg:items-start">
           {/* Activity column: orders, projects, collection, payments */}
           <div className="space-y-3 lg:col-span-2">
             {orders.length === 0 ? (

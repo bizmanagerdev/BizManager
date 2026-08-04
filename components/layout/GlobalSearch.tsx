@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { ViewDialog } from "@/components/ui/view-dialog";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import { cn } from "@/lib/utils";
@@ -320,40 +320,47 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
       ) : null}
 
       {!desktopOnly ? (
-        <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>
-          <DialogContent className="w-[calc(100vw-1rem)] max-w-2xl rounded-[1.5rem] border-border/60 p-0">
-            <div className="border-b border-border/70 p-4">
-              <DialogTitle className="text-right">חיפוש גלובלי</DialogTitle>
-              <DialogDescription className="mt-1 text-right">
-                מצאו כל דבר במערכת ממקום אחד.
-              </DialogDescription>
-              <div className="relative mt-4">
-                <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  ref={mobileInputRef}
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      submitSearch();
-                    }
-                  }}
-                  placeholder="חיפוש בכל המערכת..."
-                  className="ps-9"
-                />
-              </div>
+        <ViewDialog
+          open={mobileOpen}
+          onOpenChange={setMobileOpen}
+          title="חיפוש גלובלי"
+          description="מצאו כל דבר במערכת ממקום אחד."
+          size="form2xl"
+          bodyClassName="p-0 sm:p-0"
+          headerBelow={
+            <div className="relative">
+              <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                ref={mobileInputRef}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    submitSearch();
+                  }
+                }}
+                placeholder="חיפוש בכל המערכת..."
+                className="ps-9"
+              />
             </div>
-            <SearchResults results={results} query={query} compact offline={offlineFallback} onNavigate={() => setMobileOpen(false)} />
-            {query.trim().length >= 2 ? (
-              <div className="border-t border-border/70 p-3">
-                <Button className="w-full rounded-xl" onClick={submitSearch}>
-                  לכל התוצאות
-                </Button>
-              </div>
-            ) : null}
-          </DialogContent>
-        </Dialog>
+          }
+          footer={
+            query.trim().length >= 2 ? (
+              <Button className="w-full rounded-xl" onClick={submitSearch}>
+                לכל התוצאות
+              </Button>
+            ) : null
+          }
+        >
+          <SearchResults
+            results={results}
+            query={query}
+            compact
+            offline={offlineFallback}
+            onNavigate={() => setMobileOpen(false)}
+          />
+        </ViewDialog>
       ) : null}
     </>
   );

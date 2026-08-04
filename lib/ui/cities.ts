@@ -203,3 +203,16 @@ export function formatDeliveryAddress(input: {
 
   return [street, cityClean].filter(Boolean).join(", ");
 }
+
+/**
+ * A place we don't actually know. Some customer rows literally store "לא ידוע"
+ * as the city OR as the address, which is worse than showing nothing: it spends
+ * a line (and a Waze link that goes nowhere) to say we have no data. Returns
+ * null for those and for blanks, so callers can just skip rendering.
+ */
+export function omitUnknownPlace(value: string | null | undefined): string | null {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed) return null;
+  if (trimmed === "לא ידוע" || trimmed === "לא-ידוע" || trimmed === "לא ידועה") return null;
+  return trimmed;
+}

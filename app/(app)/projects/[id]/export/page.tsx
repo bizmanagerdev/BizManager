@@ -273,7 +273,7 @@ export default async function ProjectWorkerExportPage({
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <section className="rounded-xl border p-3">
                 <div className="text-xs text-muted-foreground">לקוח</div>
                 <div className="mt-1 font-medium">{getFirstString(overview as UnknownRow, ["customer_name"]) ?? "—"}</div>
@@ -316,14 +316,14 @@ export default async function ProjectWorkerExportPage({
             ) : null}
           </header>
 
-          <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+          <section className="grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_0.8fr]">
             <div className="space-y-6">
               <section className="space-y-2">
                 <h2 className="text-lg font-semibold">צוות עובדים</h2>
                 {workerList.length === 0 ? (
                   <div className="rounded-xl border p-3 text-muted-foreground">עדיין אין עובדים רשומים לפרויקט הזה.</div>
                 ) : (
-                  <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {workerList.map((worker) => (
                       <div key={worker.id} className="rounded-xl border p-3">
                         <div className="font-medium">{worker.name}</div>
@@ -396,7 +396,7 @@ export default async function ProjectWorkerExportPage({
           {photoAttachments.length > 0 ? (
             <section className="space-y-3">
               <h2 className="text-lg font-semibold">תמונות מצורפות</h2>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {photoAttachments.slice(0, 6).map((attachment) => (
                   <div key={attachment.id} className="overflow-hidden rounded-xl border p-2">
                     {attachment.url ? (

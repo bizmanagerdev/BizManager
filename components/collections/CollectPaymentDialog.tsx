@@ -12,8 +12,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
-import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
-import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AdaptiveGrid } from "@/components/layout/page-layout";
+import { FormDialog } from "@/components/ui/form-dialog";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -37,9 +38,6 @@ type Debtor = {
   outstanding_amount: number;
   overdue_amount: number;
 };
-
-const fieldClass =
-  "h-11 w-full rounded-xl border border-input bg-background/80 px-4 py-2 text-sm shadow-sm outline-none transition-all focus:border-destructive/40 focus:ring-2 focus:ring-ring";
 
 function receivableTitle(receivable: CustomerReceivable) {
   if (receivable.title && receivable.title.trim()) return receivable.title;
@@ -274,23 +272,22 @@ export function CollectPaymentDialog({
   const loanReceivables = (receivables ?? []).filter((r) => r.source_type === "loan");
 
   return (
-    <Dialog
+    <FormDialog
       open={open}
       onOpenChange={(next) => {
-        if (!next && submitting) return;
         onOpenChange(next);
         if (!next) reset();
       }}
+      title="קליטת תשלום"
+      description="רישום כסף שהתקבל מלקוח וזיכוי החוב הפתוח שלו — בלי לצאת מהמסך הנוכחי."
+      size="form2xl"
+      onSubmit={() => void save()}
+      submitLabel="שמירת תשלום"
+      busyLabel="שומר..."
+      busy={submitting}
+      submitDisabled={!selectedReceivable}
+      error={error || undefined}
     >
-      <AdaptiveDialog size="form2xl">
-        <DialogHeader className="text-right">
-          <DialogTitle>קליטת תשלום</DialogTitle>
-          <DialogDescription>
-            רישום כסף שהתקבל מלקוח וזיכוי החוב הפתוח שלו — בלי לצאת מהמסך הנוכחי.
-          </DialogDescription>
-        </DialogHeader>
-
-        <fieldset disabled={submitting} className="contents">
           <div className="space-y-4">
             <div className="space-y-2 text-right text-sm">
               <span className="font-medium">לקוח *</span>
@@ -417,8 +414,7 @@ export function CollectPaymentDialog({
 
                   <label className="space-y-2 text-right text-sm">
                     <span className="font-medium">אמצעי תשלום *</span>
-                    <select
-                      className={`${fieldClass} text-right`}
+                    <NativeSelect 
                       value={method}
                       onChange={(e) => {
                         const next = e.target.value;
@@ -432,7 +428,7 @@ export function CollectPaymentDialog({
                           {option.label}
                         </option>
                       ))}
-                    </select>
+                    </NativeSelect>
                   </label>
 
                   <AccountSelect
@@ -468,20 +464,7 @@ export function CollectPaymentDialog({
               </>
             ) : null}
           </div>
-        </fieldset>
-
-        {error ? <p className="text-right text-sm text-destructive">{error}</p> : null}
-
-        <div className="mt-4 flex justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={submitting}>
-            ביטול
-          </Button>
-          <Button type="button" onClick={() => void save()} disabled={submitting || !selectedReceivable}>
-            {submitting ? "שומר..." : "שמירת תשלום"}
-          </Button>
-        </div>
-      </AdaptiveDialog>
-    </Dialog>
+    </FormDialog>
   );
 }
 

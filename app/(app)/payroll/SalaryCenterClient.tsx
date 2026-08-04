@@ -8,19 +8,16 @@ import { AlertTriangle, Banknote, CalendarCheck, Coins, Hammer, LockKeyhole, Pen
 import SalaryProtected from "@/components/payroll/SalaryProtected";
 import SessionEditorDialog from "./SessionEditorDialog";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
+import { ViewDialog } from "@/components/ui/view-dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { LoadingDots } from "@/components/ui/loading-dots";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { StatusBadge } from "@/components/ui/status-badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -106,7 +103,6 @@ import {
   getPayslipItemTypeLabel,
   getRoleLabel,
   isExceptionItemType,
-  selectClassName,
   sharedPaymentStatusLabel,
   toDateTimeLocalValue,
 } from "./SalaryCenterUi";
@@ -2128,21 +2124,20 @@ export default function SalaryCenterClient({
       {!isWorkerDetailMode ? <>
       <div className="space-y-2 py-1 text-center">
         <div className="flex justify-center">
-          <select
+          <NativeSelect
             value={selectedSummaryMonth}
-            onChange={(event) => setSelectedSummaryMonth(event.target.value)}
-            className="min-w-[220px] border-0 bg-transparent px-2 text-center text-lg font-semibold shadow-none focus-visible:ring-0"
+            onChange={(event) => setSelectedSummaryMonth(event.target.value)} className="min-w-[220px] border-0 bg-transparent text-center text-lg font-semibold shadow-none"
           >
             {selectedSummaryMonthOptions.map((monthKey) => (
               <option key={monthKey} value={monthKey}>
                 {monthLabelFromKey(monthKey)}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <SalaryProtected
           unlocked={salaryUnlocked}
           hasPasswordConfigured={hasPasswordConfigured}
@@ -2175,7 +2170,7 @@ export default function SalaryCenterClient({
         }
       >
         <Card>
-          <CardContent className="grid gap-3 py-4 sm:grid-cols-3">
+          <CardContent className="grid grid-cols-1 gap-3 py-4 sm:grid-cols-3">
             <MiniStat
               label="קבלנות"
               loading={protectedLoading}
@@ -2247,9 +2242,9 @@ export default function SalaryCenterClient({
                   than the viewport by its own nowrap content (email / amounts). */}
               <div className="space-y-3 lg:hidden">
                 {employeeWorkers.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed p-4 text-center text-sm text-muted-foreground">
+                  <EmptyState dense>
                     {"אין עובדים להצגה."}
-                  </div>
+                  </EmptyState>
                 ) : (
                   employeeWorkers.map((worker) => {
                     const workerType = normalizePayrollWorkerType(worker.payroll_worker_type, worker.pay_tracking_mode);
@@ -2512,9 +2507,9 @@ export default function SalaryCenterClient({
                   than the viewport by its own nowrap content (email / amounts). */}
               <div className="space-y-3 lg:hidden">
                 {laborWorkers.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed p-4 text-center text-sm text-muted-foreground">
+                  <EmptyState dense>
                     {"אין פועלים להצגה."}
-                  </div>
+                  </EmptyState>
                 ) : (
                   laborWorkers.map((worker) => {
                     const workerType = normalizePayrollWorkerType(worker.payroll_worker_type, worker.pay_tracking_mode);
@@ -2746,16 +2741,15 @@ export default function SalaryCenterClient({
           {attendanceFiltersOpen ? (
           <Card>
             <CardContent
-              className="grid gap-3 py-5 md:grid-cols-3 xl:grid-cols-6"
+              className="grid grid-cols-1 gap-3 py-5 md:grid-cols-3 xl:grid-cols-6"
               dir="rtl"
             >
               <Field label="עובד">
-                <select
+                <NativeSelect
                   value={attendanceFilters.workerId}
                   onChange={(event) =>
                     setAttendanceFilters((current) => ({ ...current, workerId: event.target.value }))
                   }
-                  className={selectClassName}
                 >
                   <option value="">{"הכול"}</option>
                   {publicUsers
@@ -2765,7 +2759,7 @@ export default function SalaryCenterClient({
                         {user.full_name ?? user.email ?? "עובד"}
                       </option>
                     ))}
-                </select>
+                </NativeSelect>
               </Field>
               <Field label="תחום">
                 <DomainSelect
@@ -2778,12 +2772,11 @@ export default function SalaryCenterClient({
                 />
               </Field>
               <Field label="פרויקט">
-                <select
+                <NativeSelect
                   value={attendanceFilters.projectId}
                   onChange={(event) =>
                     setAttendanceFilters((current) => ({ ...current, projectId: event.target.value }))
                   }
-                  className={selectClassName}
                 >
                   <option value="">{"הכול"}</option>
                   {projectOptions.map((option) => (
@@ -2791,22 +2784,21 @@ export default function SalaryCenterClient({
                       {option.label}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </Field>
               <Field label="סטטוס">
-                <select
+                <NativeSelect
                   value={attendanceFilters.status}
                   onChange={(event) =>
                     setAttendanceFilters((current) => ({ ...current, status: event.target.value }))
                   }
-                  className={selectClassName}
                 >
                   <option value="">{"הכול"}</option>
                   <option value="open">{"פתוח"}</option>
                   <option value="closed">{"סגור"}</option>
                   <option value="locked">{"נעול"}</option>
                   <option value="editable">{"ניתן לעריכה"}</option>
-                </select>
+                </NativeSelect>
               </Field>
             <Field label="מתאריך">
                 <DateInput
@@ -2837,9 +2829,9 @@ export default function SalaryCenterClient({
               {/* Narrow screens / large font: stacked session cards instead of the wide table. */}
               <div className="space-y-3 lg:hidden">
                 {filteredSessions.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed p-4 text-center text-sm text-muted-foreground">
+                  <EmptyState dense>
                     {"אין משמרות להצגה."}
-                  </div>
+                  </EmptyState>
                 ) : (
                   filteredSessions.map((session) => {
                     const worker = usersById.get(session.user_id);
@@ -3100,9 +3092,9 @@ export default function SalaryCenterClient({
                 {/* Narrow screens / large font: one card per worker, listing agreements. */}
                 <div className="space-y-3 lg:hidden">
                   {agreementUsersWithAgreements.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed p-4 text-center text-sm text-muted-foreground">
+                    <EmptyState dense>
                       {"אין משכורות להצגה."}
-                    </div>
+                    </EmptyState>
                   ) : (
                     agreementUsersWithAgreements.map((worker) => {
                       const workerAgreements = agreementsByUserId.get(worker.id) ?? [];
@@ -3346,7 +3338,7 @@ export default function SalaryCenterClient({
                         <div className="font-semibold">{worker?.full_name ?? worker?.email ?? "עובד"}</div>
                       </div>
 
-                      <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <MiniStat label="דקות עבודה" value={formatMinutes(payslip.total_work_minutes)} />
                         <MiniStat label="ברוטו" value={formatCurrency(payslip.gross_salary)} />
                       </div>
@@ -3449,14 +3441,14 @@ export default function SalaryCenterClient({
             </div>
 
             {/* Period Management Dialog */}
-            <Dialog open={periodManagementDialogOpen} onOpenChange={setPeriodManagementDialogOpen}>
-              <DialogContent className="max-h-[85vh] w-full overflow-y-auto text-right sm:max-w-lg" dir="rtl">
-                <DialogHeader>
-                  <DialogTitle>{"ניהול תקופות שכר"}</DialogTitle>
-                  <DialogDescription>{"יצירת תקופה חדשה ובחירת תקופה לעבודה"}</DialogDescription>
-                </DialogHeader>
+            <ViewDialog
+              open={periodManagementDialogOpen}
+              onOpenChange={setPeriodManagementDialogOpen}
+              title="ניהול תקופות שכר"
+              description="יצירת תקופה חדשה ובחירת תקופה לעבודה"
+            >
                 <div className="space-y-4">
-                  <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto]">
                     <Field label="חודש לתקופה חדשה">
                       <Input
                         type="month"
@@ -3516,34 +3508,34 @@ export default function SalaryCenterClient({
                     )}
                   </div>
                 </div>
-              </DialogContent>
-            </Dialog>
+            </ViewDialog>
 
             {/* Add Payslip Item Dialog */}
-            <Dialog
+            <FormDialog
               open={!!payslipItemForm.payslip_id}
               onOpenChange={(open) => {
                 if (!open) setPayslipItemForm(DEFAULT_PAYSLIP_ITEM_FORM);
               }}
+              title="הוספת רכיב שכר"
+              description="רכיב נוסף (בונוס, ניכוי, החזר) שייכנס לתלוש הזה."
+              onSubmit={() => addPayslipItem()}
+              submitLabel="הוספת רכיב"
+              busyLabel="שומר..."
+              busy={isPending}
             >
-              <DialogContent className="w-full text-right sm:max-w-lg" dir="rtl">
-                <DialogHeader>
-                  <DialogTitle>{"הוספת רכיב שכר"}</DialogTitle>
-                </DialogHeader>
                 <div className="space-y-3">
-                  <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <Field label="סוג רכיב">
-                      <select
+                      <NativeSelect
                         value={payslipItemForm.item_type}
                         onChange={(event) =>
                           setPayslipItemForm((current) => ({ ...current, item_type: event.target.value }))
                         }
-                        className={selectClassName}
                       >
                         {PAYSLIP_ITEM_TYPES.map((type) => (
                           <option key={type.value} value={type.value}>{type.label}</option>
                         ))}
-                      </select>
+                      </NativeSelect>
                     </Field>
                     <Field label="סכום (שלילי = ניכוי)">
                       <CurrencyInput
@@ -3565,17 +3557,8 @@ export default function SalaryCenterClient({
                       />
                     </Field>
                   </div>
-                  <div className="flex flex-wrap justify-end gap-2">
-                    <Button onClick={() => addPayslipItem()} disabled={isPending}>
-                      {"הוספת רכיב"}
-                    </Button>
-                    <Button variant="outline" onClick={() => setPayslipItemForm(DEFAULT_PAYSLIP_ITEM_FORM)}>
-                      {"ביטול"}
-                    </Button>
                   </div>
-                </div>
-              </DialogContent>
-            </Dialog>
+            </FormDialog>
           </SalaryProtected>
         </TabsContent>
       </Tabs>
@@ -3654,7 +3637,7 @@ export default function SalaryCenterClient({
                 >
                   <Card>
                     <CardContent className="py-4">
-                      <div className="grid gap-3 sm:grid-cols-4">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
                         <MiniStat label="סה״כ נצבר" loading={protectedLoading} value={formatCurrency(selectedWorkerBalance?.earned_amount ?? 0)} />
                         <MiniStat label="שולם כולל" loading={protectedLoading} value={formatCurrency(selectedWorkerBalance?.paid_amount ?? 0)} />
                         <MiniStat label="יתרה כוללת" loading={protectedLoading} value={formatCurrency(selectedWorkerBalance?.owed_amount ?? 0)} />
@@ -3670,14 +3653,13 @@ export default function SalaryCenterClient({
 
                 <Card>
                   <CardContent className="py-4">
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <Field label="חודש">
-                        <select
+                        <NativeSelect
                           value={workerPrintFilters.month}
                           onChange={(event) =>
                             setWorkerPrintFilters((current) => ({ ...current, month: event.target.value }))
                           }
-                          className={selectClassName}
                         >
                           <option value="">כל החודשים</option>
                           {Array.from({ length: 12 }, (_, index) => {
@@ -3688,15 +3670,14 @@ export default function SalaryCenterClient({
                               </option>
                             );
                           })}
-                        </select>
+                        </NativeSelect>
                       </Field>
                       <Field label="שנה">
-                        <select
+                        <NativeSelect
                           value={workerPrintFilters.year}
                           onChange={(event) =>
                             setWorkerPrintFilters((current) => ({ ...current, year: event.target.value }))
                           }
-                          className={selectClassName}
                         >
                           <option value="">כל השנים</option>
                           {selectedWorkerPrintYearOptions.map((year) => (
@@ -3704,7 +3685,7 @@ export default function SalaryCenterClient({
                               {year}
                             </option>
                           ))}
-                        </select>
+                        </NativeSelect>
                       </Field>
                     </div>
                   </CardContent>
@@ -4018,7 +3999,7 @@ export default function SalaryCenterClient({
                             selectedWorkerOverrides.map((override, index) => (
                               <div
                                 key={`${override.created_at ?? "override"}-${index}`}
-                                className="grid gap-1 rounded-lg border px-3 py-2 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                                className="grid grid-cols-1 gap-1 rounded-lg border px-3 py-2 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
                               >
                                 <div className="min-w-0 text-right">
                                   <div className="text-muted-foreground text-xs">
@@ -4152,7 +4133,7 @@ export default function SalaryCenterClient({
                           </div>
                         </div>
 
-                        <div className="grid gap-3 sm:grid-cols-3">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                           <MiniStat label="סה״כ נצבר לתקופה" value={formatCurrency(selectedWorkerPrintSummary.earned)} />
                           <MiniStat label="סה״כ שולם לתקופה" value={formatCurrency(selectedWorkerPrintSummary.paid)} />
                           <MiniStat label="יתרה לתשלום" value={formatCurrency(selectedWorkerPrintSummary.owed)} />
@@ -4161,9 +4142,9 @@ export default function SalaryCenterClient({
                         <div className="space-y-2">
                           <div className="font-medium">פירוט עבודה</div>
                           {selectedWorkerPrintSessions.length === 0 ? (
-                            <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                            <EmptyState dense>
                               אין משמרות להצגה במסננים שנבחרו.
-                            </div>
+                            </EmptyState>
                           ) : (
                             <div className="max-h-[70vh] overflow-auto rounded-md border">
                               <table className="w-full text-sm">
@@ -4195,9 +4176,9 @@ export default function SalaryCenterClient({
                         <div className="space-y-2">
                           <div className="font-medium">פירוט תשלומים</div>
                           {selectedWorkerPrintPayments.length === 0 ? (
-                            <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                            <EmptyState dense>
                               אין תשלומים להצגה במסננים שנבחרו.
-                            </div>
+                            </EmptyState>
                           ) : (
                             <div className="max-h-[70vh] overflow-auto rounded-md border">
                               <table className="w-full text-sm">
@@ -4233,19 +4214,28 @@ export default function SalaryCenterClient({
         </section>
       ) : null}
 
-      <Dialog
+      <FormDialog
         open={workerAccessDialogOpen}
-        onOpenChange={(open) => {
-          if (!open && isPending) return;
-          setWorkerAccessDialogOpen(open);
-        }}
+        onOpenChange={setWorkerAccessDialogOpen}
+        title="עדכון פרטי עובד"
+        description="עדכון פרטים אישיים, תפקיד, סטטוס וגישה למערכת."
+        size="formXl"
+        onSubmit={() => saveWorkerAccess()}
+        submitLabel="שמירה"
+        busyLabel="שומר..."
+        busy={isPending}
+        footerStart={
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={() => deleteSelectedWorker()}
+            disabled={isPending}
+          >
+            מחק עובד
+          </Button>
+        }
       >
-        <DialogContent dir="rtl" className="max-w-xl">
-          <DialogHeader className="text-right">
-            <DialogTitle>{"עדכון פרטי עובד"}</DialogTitle>
-            <DialogDescription>{"עדכון פרטים אישיים, תפקיד, סטטוס וגישה למערכת."}</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <Field label="שם מלא">
               <Input
                 value={workerForm.full_name}
@@ -4265,7 +4255,7 @@ export default function SalaryCenterClient({
               />
             </Field>
             <Field label="תפקיד">
-              <select
+              <NativeSelect
                 value={workerForm.role}
                 onChange={(event) =>
                   setWorkerForm((current) => ({
@@ -4274,28 +4264,26 @@ export default function SalaryCenterClient({
                     system_access: event.target.value === "worker_no_access" ? false : current.system_access,
                   }))
                 }
-                className={selectClassName}
               >
                 <option value="admin">{"מנהל"}</option>
                 <option value="office">{"משרד"}</option>
                 <option value="worker">{"עובד"}</option>
                 <option value="worker_no_access">{"עובד ללא גישה"}</option>
-              </select>
+              </NativeSelect>
             </Field>
             <Field label="פעיל">
-              <select
+              <NativeSelect
                 value={workerForm.active ? "yes" : "no"}
                 onChange={(event) =>
                   setWorkerForm((current) => ({ ...current, active: event.target.value === "yes" }))
                 }
-                className={selectClassName}
               >
                 <option value="yes">{"כן"}</option>
                 <option value="no">{"לא"}</option>
-              </select>
+              </NativeSelect>
             </Field>
             <Field label="סוג עובד">
-              <select
+              <NativeSelect
                 value={workerForm.payroll_worker_type}
                 onChange={(event) =>
                   setWorkerForm((current) => ({
@@ -4303,68 +4291,46 @@ export default function SalaryCenterClient({
                     payroll_worker_type: event.target.value as WorkerFormState["payroll_worker_type"],
                   }))
                 }
-                className={selectClassName}
               >
                 <option value="session_only">{"קבלנות"}</option>
                 <option value="monthly_payslip">{"חודשי גלובלי"}</option>
                 <option value="hourly_payslip">{"שעתי עם תלוש"}</option>
-              </select>
+              </NativeSelect>
             </Field>
             <Field label="גישה למערכת">
-              <select
+              <NativeSelect
                 value={workerForm.system_access ? "yes" : "no"}
                 onChange={(event) =>
                   setWorkerForm((current) => ({ ...current, system_access: event.target.value === "yes" }))
                 }
                 disabled={workerForm.role === "worker_no_access"}
-                className={selectClassName}
               >
                 <option value="yes">{"כן"}</option>
                 <option value="no">{"לא"}</option>
-              </select>
+              </NativeSelect>
             </Field>
           </div>
-          <DialogFooter>
-            <Button variant="destructive" onClick={() => deleteSelectedWorker()} disabled={isPending}>
-              {"מחק עובד"}
-            </Button>
-            <Button variant="outline" onClick={() => setWorkerAccessDialogOpen(false)} disabled={isPending}>
-              {"ביטול"}
-            </Button>
-            <Button
-              onClick={() => {
-                saveWorkerAccess();
-              }}
-              disabled={isPending}
-            >
-              {"שמירה"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </FormDialog>
 
-      <Dialog
+      <FormDialog
         open={agreementDialogOpen}
-        onOpenChange={(open) => {
-          if (!open && isPending) return;
-          setAgreementDialogOpen(open);
-        }}
+        onOpenChange={setAgreementDialogOpen}
+        title={agreementForm.agreement_id ? "עריכת משכורת" : "הוספת משכורת"}
+        description={agreementForm.agreement_id ? "עדכון משכורת קיימת." : "הוספת משכורת חדשה ובחירת עובד."}
+        size="details4xl"
+        onSubmit={saveAgreement}
+        submitLabel={agreementForm.agreement_id ? "שמירת שינויים" : "שמירת משכורת"}
+        busyLabel="שומר..."
+        busy={isPending}
+        submitDisabled={!agreementStandardDailyHoursValid || !agreementDueDayValid}
       >
-          <DialogContent dir="rtl" className="max-w-4xl">
-          <DialogHeader className="text-right">
-            <DialogTitle>{agreementForm.agreement_id ? "עריכת משכורת" : "הוספת משכורת"}</DialogTitle>
-            <DialogDescription>
-              {agreementForm.agreement_id ? "עדכון משכורת קיימת." : "הוספת משכורת חדשה ובחירת עובד."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="עובד">
-              <select
+              <NativeSelect
                 value={agreementForm.user_id}
                 onChange={(event) =>
                   setAgreementForm((current) => ({ ...current, user_id: event.target.value }))
                 }
-                className={selectClassName}
                 disabled={Boolean(agreementForm.agreement_id)}
               >
                 <option value="">{"בחירת עובד"}</option>
@@ -4373,10 +4339,10 @@ export default function SalaryCenterClient({
                     {worker.full_name ?? worker.email ?? "עובד"}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </Field>
             <Field label="סוג שכר">
-              <select
+              <NativeSelect
                 value={agreementForm.salary_type}
                 onChange={(event) =>
                   setAgreementForm((current) => ({
@@ -4384,11 +4350,10 @@ export default function SalaryCenterClient({
                     salary_type: event.target.value as "hourly" | "monthly",
                   }))
                 }
-                className={selectClassName}
               >
                 <option value="hourly">{"שעתי"}</option>
                 <option value="monthly">{"חודשי"}</option>
-              </select>
+              </NativeSelect>
             </Field>
             <Field label="בתוקף מתאריך">
               <DateInput
@@ -4455,12 +4420,11 @@ export default function SalaryCenterClient({
                 ) : null}
                 {agreementForm.business_domain === "property_management" ? (
                   <Field label="נכס">
-                    <select
+                    <NativeSelect
                       value={agreementForm.property_id}
                       onChange={(event) =>
                         setAgreementForm((current) => ({ ...current, property_id: event.target.value }))
                       }
-                      className={selectClassName}
                     >
                       <option value="">{"בחירה"}</option>
                       {propertyOptions.map((option) => (
@@ -4468,7 +4432,7 @@ export default function SalaryCenterClient({
                           {option.label}
                         </option>
                       ))}
-                    </select>
+                    </NativeSelect>
                     <div className="mt-1 text-xs text-muted-foreground">
                       כל המשכורת החודשית תירשם כהוצאה על הנכס הזה.
                     </div>
@@ -4530,33 +4494,20 @@ export default function SalaryCenterClient({
               </Field>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAgreementDialogOpen(false)} disabled={isPending}>
-              {"ביטול"}
-            </Button>
-            <Button
-              onClick={saveAgreement}
-              disabled={isPending || !agreementStandardDailyHoursValid || !agreementDueDayValid}
-            >
-              {agreementForm.agreement_id ? "שמירת שינויים" : "שמירת משכורת"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </FormDialog>
 
-      <Dialog
+      <FormDialog
         open={overrideDialogOpen}
-        onOpenChange={(open) => {
-          if (!open && isPending) return;
-          setOverrideDialogOpen(open);
-        }}
+        onOpenChange={setOverrideDialogOpen}
+        title="הוספת חריגת שכר שעתי"
+        description="תעריף שונה שיחול על העובד בטווח זמן מוגדר."
+        size="formXl"
+        onSubmit={() => saveOverride()}
+        submitLabel="שמירת חריגה"
+        busyLabel="שומר..."
+        busy={isPending}
       >
-        <DialogContent dir="rtl" className="max-w-xl">
-          <DialogHeader className="text-right">
-            <DialogTitle>{"הוספת חריגת שכר שעתי"}</DialogTitle>
-            <DialogDescription>{"תעריף שונה שיחול על העובד בטווח זמן מוגדר."}</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="תעריף שעתי חריג (₪)">
               <CurrencyInput
                 inputMode="decimal"
@@ -4607,34 +4558,24 @@ export default function SalaryCenterClient({
               </Field>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOverrideDialogOpen(false)} disabled={isPending}>
-              {"ביטול"}
-            </Button>
-            <Button onClick={() => saveOverride()} disabled={isPending}>
-              {"שמירת חריגה"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </FormDialog>
 
-      <Dialog
+      <FormDialog
         open={createUserOpen}
         onOpenChange={(open) => {
-          if (!open && isPending) return;
           setCreateUserOpen(open);
           if (!open) resetCreateUserForm();
         }}
+        title="הוספת משתמש"
+        description="אפשר ליצור מכאן עובד, פועל, משרד או מנהל, עם סטטוס פעיל וגישה למערכת לפי הצורך."
+        size="form2xl"
+        onSubmit={() => createUser()}
+        submitLabel="שמירת משתמש"
+        busyLabel="שומר..."
+        busy={isPending}
+        error={createUserError || undefined}
       >
-        <DialogContent dir="rtl" className="max-w-2xl">
-          <DialogHeader className="text-right">
-            <DialogTitle>{"הוספת משתמש"}</DialogTitle>
-            <DialogDescription>
-              {"אפשר ליצור מכאן עובד, פועל, משרד או מנהל, עם סטטוס פעיל וגישה למערכת לפי הצורך."}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <Field label="שם מלא">
               <Input
                 value={createUserForm.full_name}
@@ -4672,7 +4613,7 @@ export default function SalaryCenterClient({
               />
             </Field>
             <Field label="תפקיד">
-              <select
+              <NativeSelect
                 value={createUserForm.role}
                 onChange={(event) =>
                   setCreateUserForm((current) => ({
@@ -4681,28 +4622,26 @@ export default function SalaryCenterClient({
                     system_access: event.target.value === "worker_no_access" ? false : current.system_access,
                   }))
                 }
-                className={selectClassName}
               >
                 <option value="worker">{"עובד"}</option>
                 <option value="worker_no_access">{"פועל"}</option>
                 <option value="office">{"משרד"}</option>
                 <option value="admin">{"מנהל"}</option>
-              </select>
+              </NativeSelect>
             </Field>
             <Field label="פעיל">
-              <select
+              <NativeSelect
                 value={createUserForm.active ? "yes" : "no"}
                 onChange={(event) =>
                   setCreateUserForm((current) => ({ ...current, active: event.target.value === "yes" }))
                 }
-                className={selectClassName}
               >
                 <option value="yes">{"כן"}</option>
                 <option value="no">{"לא"}</option>
-              </select>
+              </NativeSelect>
             </Field>
             <Field label="סוג עובד">
-              <select
+              <NativeSelect
                 value={createUserForm.payroll_worker_type}
                 onChange={(event) =>
                   setCreateUserForm((current) => ({
@@ -4710,25 +4649,23 @@ export default function SalaryCenterClient({
                     payroll_worker_type: event.target.value as CreateUserFormState["payroll_worker_type"],
                   }))
                 }
-                className={selectClassName}
               >
                 <option value="session_only">{"קבלנות"}</option>
                 <option value="monthly_payslip">{"חודשי גלובלי"}</option>
                 <option value="hourly_payslip">{"שעתי עם תלוש"}</option>
-              </select>
+              </NativeSelect>
             </Field>
             <Field label="גישה למערכת">
-              <select
+              <NativeSelect
                 value={createUserForm.system_access ? "yes" : "no"}
                 onChange={(event) =>
                   setCreateUserForm((current) => ({ ...current, system_access: event.target.value === "yes" }))
                 }
                 disabled={createUserForm.role === "worker_no_access"}
-                className={selectClassName}
               >
                 <option value="yes">{"כן"}</option>
                 <option value="no">{"לא"}</option>
-              </select>
+              </NativeSelect>
             </Field>
             {createUserForm.role !== "worker_no_access" && createUserForm.system_access ? (
               <div className="md:col-span-2">
@@ -4744,36 +4681,23 @@ export default function SalaryCenterClient({
                 </Field>
               </div>
             ) : null}
-            {createUserError ? <div className="md:col-span-2 text-sm text-destructive">{createUserError}</div> : null}
           </div>
+      </FormDialog>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateUserOpen(false)} disabled={isPending}>
-              {"ביטול"}
-            </Button>
-            <Button onClick={() => createUser()} disabled={isPending}>
-              {"שמירת משתמש"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
+      <FormDialog
         open={workerPaymentDialogOpen}
-        onOpenChange={(open) => {
-          if (!open && isPending) return;
-          setWorkerPaymentDialogOpen(open);
-        }}
+        onOpenChange={setWorkerPaymentDialogOpen}
+        title={workerPaymentForm.payment_id ? "עדכון תשלום לעובד" : "הוספת תשלום לעובד"}
+        description="רישום תשלום והקצאה שלו למשמרות או לתלושים פתוחים."
+        size="details4xl"
+        onSubmit={() => saveWorkerPayment()}
+        submitLabel={workerPaymentForm.payment_id ? "שמירת עדכון" : "שמירת תשלום"}
+        busyLabel="שומר..."
+        busy={isPending}
+        error={workerPaymentError || undefined}
       >
-        <DialogContent dir="rtl" className="w-[calc(100vw-2rem)] max-w-3xl">
-          <DialogHeader className="text-right">
-            <DialogTitle>{workerPaymentForm.payment_id ? "עדכון תשלום לעובד" : "הוספת תשלום לעובד"}</DialogTitle>
-            <DialogDescription>
-              {"רישום תשלום והקצאה שלו למשמרות או לתלושים פתוחים."}
-            </DialogDescription>
-          </DialogHeader>
 
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <Field label="תאריך תשלום">
               <DateInput
                 value={workerPaymentForm.payment_date}
@@ -4835,15 +4759,15 @@ export default function SalaryCenterClient({
               </Button>
             </div>
             {workerPaymentForm.allocations.length === 0 ? (
-              <div className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
+              <EmptyState dense>
                 {"אין פריטי חוב פתוחים לעובד הזה — אפשר לרשום את התשלום ללא שיוך (תשלום כללי / מקדמה)."}
-              </div>
+              </EmptyState>
             ) : (
               <div className="space-y-2">
                 {workerPaymentForm.allocations.map((allocation) => (
                   <div
                     key={allocation.source_id}
-                    className="grid gap-3 rounded-2xl border p-3 md:grid-cols-[minmax(0,1fr)_180px]"
+                    className="grid grid-cols-1 gap-3 rounded-2xl border p-3 md:grid-cols-[minmax(0,1fr)_180px]"
                   >
                     <div className="text-right">
                       <div className="font-medium">{allocation.title}</div>
@@ -4865,22 +4789,8 @@ export default function SalaryCenterClient({
                 ))}
               </div>
             )}
-            {workerPaymentError ? <div className="text-sm text-destructive">{workerPaymentError}</div> : null}
           </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setWorkerPaymentDialogOpen(false)} disabled={isPending}>
-              {"ביטול"}
-            </Button>
-            <Button
-              onClick={() => saveWorkerPayment()}
-              disabled={isPending}
-            >
-              {workerPaymentForm.payment_id ? "שמירת עדכון" : "שמירת תשלום"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </FormDialog>
 
       <SessionEditorDialog
         open={sessionDialogOpen}
@@ -4921,7 +4831,7 @@ export default function SalaryCenterClient({
                 </div>
                 {sessionDialogDebtItem ? (
                   <>
-                    <div className="grid gap-3 sm:grid-cols-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
                       <MiniStat label="עלות משמרת" value={formatCurrency(sessionDialogDebtItem.earned_amount)} />
                       <MiniStat label="שולם" value={formatCurrency(sessionDialogDebtItem.paid_amount)} />
                       <MiniStat label="יתרה" value={formatCurrency(sessionDialogDebtItem.owed_amount)} />
@@ -4988,38 +4898,22 @@ export default function SalaryCenterClient({
         }
       />
 
-      <Dialog
+      <ConfirmDialog
         open={Boolean(pendingDeletion)}
         onOpenChange={(open) => {
-          if (!open && !isPending) {
-            setPendingDeletion(null);
-          }
+          if (!open) setPendingDeletion(null);
         }}
+        destructive
+        title={pendingDeletionDetails?.title ?? "אישור מחיקה"}
+        description={pendingDeletionDetails?.description ?? "הפעולה תתבצע רק לאחר אישור."}
+        confirmLabel="מחיקה"
+        loading={isPending}
+        onConfirm={() => confirmPendingDeletion()}
       >
-        <DialogContent dir="rtl">
-          <DialogHeader className="text-right">
-            <DialogTitle>{pendingDeletionDetails?.title ?? "אישור מחיקה"}</DialogTitle>
-            <DialogDescription>
-              {pendingDeletionDetails?.description ?? "הפעולה תתבצע רק לאחר אישור."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="text-right text-sm">
-            למחוק את <span className="font-medium">{pendingDeletionDetails?.label ?? "הרשומה"}</span>?
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPendingDeletion(null)} disabled={isPending}>
-              {"ביטול"}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => confirmPendingDeletion()}
-              disabled={isPending || !pendingDeletion}
-            >
-              {isPending ? "מוחק..." : "מחיקה"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        <p className="text-sm">
+          למחוק את <span className="font-medium">{pendingDeletionDetails?.label ?? "הרשומה"}</span>?
+        </p>
+      </ConfirmDialog>
     </div>
   );
 }

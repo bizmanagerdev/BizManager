@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -1705,7 +1706,6 @@ export function ExpenseDialog({
             {expEyebrow(<Car className="h-4 w-4" />, "רכב")}
             {expTitle("לשייך לרכב?", "אפשר לדלג")}
             <TagPicker value={tagIds} onChange={setTagIds} />
-            {expContinue()}
           </>
         );
       case "date":
@@ -1726,7 +1726,6 @@ export function ExpenseDialog({
                 </button>
               ))}
             </div>
-            {expContinue()}
           </>
         );
       case "recurrence":
@@ -1860,7 +1859,6 @@ export function ExpenseDialog({
                   ? `ייווצר כל ${recurInterval} חודשים ביום ${Number((expenseDate || todayIso()).slice(8, 10)) || 1}.`
                   : `ייווצר בכל חודש ביום ${Number((expenseDate || todayIso()).slice(8, 10)) || 1}.`}
             </p>
-            {expContinue()}
           </>
         );
       case "status":
@@ -1915,8 +1913,7 @@ export function ExpenseDialog({
             {accountsList.length === 0 ? (
               <>
                 <p className="text-sm text-muted-foreground">לא הוגדרו חשבונות — אפשר להמשיך בלי שיוך.</p>
-                {expContinue()}
-              </>
+                  </>
             ) : (
               <div className="grid gap-2">
                 {accountsList.map((a, i) =>
@@ -1967,7 +1964,6 @@ export function ExpenseDialog({
               rows={installmentRows}
               onChange={setInstallmentRows}
             />
-            {expContinue()}
           </>
         );
       case "billing":
@@ -2034,7 +2030,6 @@ export function ExpenseDialog({
                 <Button type="button" variant="secondary" size="sm" onClick={() => setAttachmentFiles([])}>נקה</Button>
               ) : null}
             </div>
-            {expContinue()}
           </>
         );
       case "worker":
@@ -2089,7 +2084,7 @@ export function ExpenseDialog({
           <>
             {expEyebrow(<CalendarDays className="h-4 w-4" />, "שעות עבודה")}
             {expTitle("מתי עבד/ה?")}
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div className="space-y-1">
                 <div className="text-sm font-medium">כניסה *</div>
                 <DateTimeInput value={clockIn} onChange={(e) => setClockIn(e.target.value)} />
@@ -2140,7 +2135,6 @@ export function ExpenseDialog({
                 setClockOut(`${next}T10:00`);
               }}
             />
-            {expContinue()}
           </>
         );
       case "wlabor":
@@ -2176,7 +2170,6 @@ export function ExpenseDialog({
                 <CurrencyInput value={billToCustomerAmount} onChange={(e) => setBillToCustomerAmount(e.target.value)} placeholder="למשל 650" />
               </div>
             ) : null}
-            {expContinue()}
           </>
         );
       case "wpayment":
@@ -2244,8 +2237,7 @@ export function ExpenseDialog({
             {accountsList.length === 0 ? (
               <>
                 <p className="text-sm text-muted-foreground">לא הוגדרו חשבונות — אפשר להמשיך בלי שיוך.</p>
-                {expContinue()}
-              </>
+                  </>
             ) : (
               <div className="grid gap-2">
                 {accountsList.map((a, i) =>
@@ -2358,21 +2350,10 @@ export function ExpenseDialog({
   function renderExpress(): ReactNode {
     return (
       <form className="mt-2 flex flex-col" onSubmit={(e) => e.preventDefault()}>
-        {/* Back button inline with the progress bar — the bar alone conveys
-            progress, so no separate "N / total" counter row is needed. */}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => expressGo(-1)}
-            disabled={expIndex === 0}
-            className="flex h-7 w-7 flex-none items-center justify-center rounded-lg border border-input bg-background text-muted-foreground transition-colors hover:bg-muted disabled:opacity-0"
-            aria-label="חזרה"
-          >
-            <ArrowRight className="h-4 w-4" />
-          </button>
-          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${expProgress}%` }} />
-          </div>
+        {/* The bar alone conveys progress — back/forward live in the action
+            bar at the bottom, like every other dialog. */}
+        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+          <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${expProgress}%` }} />
         </div>
 
         {/* No "משויך ל" banner here — the source is already stated on the summary
@@ -2395,6 +2376,28 @@ export function ExpenseDialog({
             {errorMessage}
           </div>
         ) : null}
+
+        {/* Action bar in the same shape as the shared dialogs: a line, back at the
+            start, forward at the end. Stages with their own semantics (דלג, a
+            disabled rule, a keypad confirm) still render their own button above. */}
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border/70 pt-3">
+          <Button
+            type="button"
+            variant="secondary"
+            className="me-auto min-w-0"
+            onClick={() => expressGo(-1)}
+            disabled={expIndex === 0}
+          >
+            <ArrowRight className="h-4 w-4" />
+            חזרה
+          </Button>
+          {expIndex < expressSteps.length - 1 ? (
+            <Button type="button" onClick={() => expressGo(1)}>
+              המשך
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          ) : null}
+        </div>
       </form>
     );
   }
@@ -2518,8 +2521,7 @@ export function ExpenseDialog({
               {!isEditing && effectiveDomain === "sales" && recurringOrders.length > 0 && (
                 <div className="space-y-1">
                   <div className="text-sm font-medium">הזמנה</div>
-                  <select
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  <NativeSelect
                     value={orderId}
                     onChange={(e) => setOrderId(e.target.value)}
                   >
@@ -2527,15 +2529,14 @@ export function ExpenseDialog({
                     {recurringOrders.map((o) => (
                       <option key={o.id} value={o.id}>{o.label}</option>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </div>
               )}
 
               {!isEditing && effectiveDomain === "property_management" && recurringProperties.length > 0 && (
                 <div className="space-y-1">
                   <div className="text-sm font-medium">נכס *</div>
-                  <select
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  <NativeSelect
                     value={propertyId}
                     onChange={(e) => setPropertyId(e.target.value)}
                   >
@@ -2543,7 +2544,7 @@ export function ExpenseDialog({
                     {recurringProperties.map((p) => (
                       <option key={p.id} value={p.id}>{p.label}</option>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </div>
               )}
             </>
@@ -2554,8 +2555,7 @@ export function ExpenseDialog({
           {/* Category (dropdown; "אחר" reveals a free-text field) */}
           <div className="space-y-1">
             <div className="text-sm font-medium">קטגוריה *</div>
-            <select
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            <NativeSelect
               value={category}
               disabled={isEditingSession}
               onChange={(e) => {
@@ -2567,7 +2567,7 @@ export function ExpenseDialog({
               {categoryOptions.map((option) => (
                 <option key={option} value={option}>{option}</option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
 
           {category === OTHER_CATEGORY ? (
@@ -2597,8 +2597,7 @@ export function ExpenseDialog({
               {canManageWorkerSessions ? (
                 <div className="space-y-1">
                   <div className="text-sm font-medium">עובד *</div>
-                  <select
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  <NativeSelect
                     value={workerUserId}
                     onChange={(e) => setWorkerUserId(e.target.value)}
                   >
@@ -2606,7 +2605,7 @@ export function ExpenseDialog({
                     {workerList.map((u) => (
                       <option key={u.id} value={u.id}>{u.label}</option>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </div>
               ) : null}
 
@@ -2651,7 +2650,7 @@ export function ExpenseDialog({
               ) : null}
 
               {showSessionTimingFields ? (
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div className="space-y-1">
                     <div className="text-sm font-medium">כניסה *</div>
                     <DateTimeInput value={clockIn} onChange={(e) => setClockIn(e.target.value)} />
@@ -2746,15 +2745,14 @@ export function ExpenseDialog({
                   <h4 className="text-sm font-semibold">תשלום לעובד</h4>
                   <div className="space-y-1">
                     <div className="text-sm font-medium">סטטוס תשלום לעובד</div>
-                    <select
-                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    <NativeSelect
                       value={workerPaymentChoice}
                       onChange={(e) => setWorkerPaymentChoice(e.target.value as PaymentChoice)}
                     >
                       <option value="none">לא שולם</option>
                       <option value="paid">שולם במלואו</option>
                       <option value="partial">שולם חלקית</option>
-                    </select>
+                    </NativeSelect>
                   </div>
                   {isEditingSession && existingWorkerPaidAmount > 0 ? (
                     <div className="text-xs text-muted-foreground">
@@ -2774,8 +2772,7 @@ export function ExpenseDialog({
                       </div>
                       <div className="space-y-1">
                         <div className="text-sm font-medium">אמצעי תשלום</div>
-                        <select
-                          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                        <NativeSelect
                           value={workerPaymentMethod}
                           onChange={(e) => {
                             const m = e.target.value;
@@ -2787,7 +2784,7 @@ export function ExpenseDialog({
                           {PAYMENT_METHOD_OPTIONS.map((option) => (
                             <option key={option.value} value={option.value}>{option.label}</option>
                           ))}
-                        </select>
+                        </NativeSelect>
                       </div>
                       <AccountSelect
                         required
@@ -2858,11 +2855,10 @@ export function ExpenseDialog({
                     />
                     <div className="text-xs text-muted-foreground">השם שיופיע ברשימת ההוצאות הקבועות. אם ריק — ייגזר מהקטגוריה.</div>
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div className="space-y-1">
                       <div className="text-sm font-medium">כל כמה זמן</div>
-                      <select
-                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      <NativeSelect
                         value={recurrenceKeyOf(recurFrequency, recurInterval)}
                         onChange={(e) => {
                           const c = RECURRENCE_CHOICES.find((o) => o.key === e.target.value) ?? RECURRENCE_CHOICES[0];
@@ -2876,20 +2872,19 @@ export function ExpenseDialog({
                         {RECURRENCE_CHOICES.map((c) => (
                           <option key={c.key} value={c.key}>{c.label}</option>
                         ))}
-                      </select>
+                      </NativeSelect>
                     </div>
                     {recurFrequency === "yearly" ? (
                       <div className="space-y-1">
                         <div className="text-sm font-medium">חודש</div>
-                        <select
-                          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                        <NativeSelect
                           value={recurMonth}
                           onChange={(e) => setRecurMonth(e.target.value)}
                         >
                           {MONTH_OPTIONS.map((m) => (
                             <option key={m.value} value={m.value}>{m.label}</option>
                           ))}
-                        </select>
+                        </NativeSelect>
                       </div>
                     ) : null}
                     <div className="space-y-1">
@@ -3048,11 +3043,10 @@ export function ExpenseDialog({
               ) : null}
 
               {installmentsMode && installmentRows.some((r) => r.paid) ? (
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <div className="text-sm font-medium">אמצעי תשלום</div>
-                    <select
-                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    <NativeSelect
                       value={paymentMethod}
                       onChange={(e) => {
                         const m = e.target.value;
@@ -3064,7 +3058,7 @@ export function ExpenseDialog({
                       {PAYMENT_METHOD_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>{option.label}</option>
                       ))}
-                    </select>
+                    </NativeSelect>
                   </div>
                   <AccountSelect
                     required
@@ -3117,11 +3111,10 @@ export function ExpenseDialog({
               </div>
 
               {(paymentStatus === "paid" || paymentStatus === "partial") && (
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <div className="text-sm font-medium">אמצעי תשלום</div>
-                    <select
-                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    <NativeSelect
                       value={paymentMethod}
                       onChange={(e) => {
                         const m = e.target.value;
@@ -3133,7 +3126,7 @@ export function ExpenseDialog({
                       {PAYMENT_METHOD_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>{option.label}</option>
                       ))}
-                    </select>
+                    </NativeSelect>
                   </div>
                   <AccountSelect
                     required

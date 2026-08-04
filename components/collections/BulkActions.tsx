@@ -4,19 +4,14 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { DateTimeInput } from "@/components/ui/date-input";
 import { Textarea } from "@/components/ui/textarea";
 import { AssigneeSelect } from "@/components/collections/AssigneeSelect";
 import { useAssignableUsers } from "@/hooks/useAssignableUsers";
 import { whatsappHref } from "@/lib/whatsapp";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
+import { ViewDialog } from "@/components/ui/view-dialog";
 import { REMINDER_ACTION_TYPES } from "@/lib/communications";
 import type { CollectionCustomerGroup } from "@/lib/collections";
 
@@ -109,26 +104,33 @@ export default function BulkActions({
       </div>
 
       {/* Create one reminder per selected customer */}
-      <Dialog open={mode === "reminder"} onOpenChange={(o) => { if (!o) setMode(null); }}>
-        <DialogContent className="w-[calc(100vw-1rem)] max-w-md" dir="rtl">
-          <DialogHeader>
-            <DialogTitle>תזכורת ל-{targets.length} לקוחות</DialogTitle>
-            <DialogDescription>תיווצר תזכורת זהה לכל אחד מהלקוחות שנבחרו.</DialogDescription>
-          </DialogHeader>
+      <FormDialog
+        open={mode === "reminder"}
+        onOpenChange={(o) => {
+          if (!o) setMode(null);
+        }}
+        title={`תזכורת ל-${targets.length} לקוחות`}
+        description="תיווצר תזכורת זהה לכל אחד מהלקוחות שנבחרו."
+        size="formMd"
+        onSubmit={() => void createReminders()}
+        submitLabel="צור תזכורות"
+        busyLabel="שומר..."
+        busy={busy}
+        error={error || undefined}
+      >
           <div className="space-y-2 text-right">
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <DateTimeInput value={remindAt} onChange={(e) => setRemindAt(e.target.value)} />
-              <select
+              <NativeSelect
                 value={actionType}
                 onChange={(e) => setActionType(e.target.value)}
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
               >
                 {REMINDER_ACTION_TYPES.map((a) => (
                   <option key={a.value} value={a.value}>
                     {a.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
             <Textarea
               rows={2}
@@ -140,26 +142,19 @@ export default function BulkActions({
               <div className="text-xs text-muted-foreground">אחראי</div>
               <AssigneeSelect value={assignee} onChange={setAssignee} includeMeDefault />
             </div>
-            {error ? <div className="text-sm text-destructive">{error}</div> : null}
           </div>
-          <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => setMode(null)} disabled={busy}>
-              ביטול
-            </Button>
-            <Button type="button" onClick={() => void createReminders()} disabled={busy}>
-              {busy ? "שומר..." : "צור תזכורות"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </FormDialog>
 
       {/* Quick-send WhatsApp to each selected customer */}
-      <Dialog open={mode === "whatsapp"} onOpenChange={(o) => { if (!o) setMode(null); }}>
-        <DialogContent className="max-h-[85svh] w-[calc(100vw-1rem)] max-w-md overflow-y-auto" dir="rtl">
-          <DialogHeader>
-            <DialogTitle>וואטסאפ ל-{targets.length} לקוחות</DialogTitle>
-            <DialogDescription>הוסיפו הערה משותפת ושלחו לכל לקוח בלחיצה.</DialogDescription>
-          </DialogHeader>
+      <ViewDialog
+        open={mode === "whatsapp"}
+        onOpenChange={(o) => {
+          if (!o) setMode(null);
+        }}
+        title={`וואטסאפ ל-${targets.length} לקוחות`}
+        description="הוסיפו הערה משותפת ושלחו לכל לקוח בלחיצה."
+        size="formMd"
+      >
           <Textarea
             className="text-right"
             rows={2}
@@ -200,13 +195,7 @@ export default function BulkActions({
               );
             })}
           </div>
-          <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => setMode(null)}>
-              סגירה
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </ViewDialog>
     </div>
   );
 }

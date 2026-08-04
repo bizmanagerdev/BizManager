@@ -60,7 +60,7 @@ export default function InventoryHealth({ data }: { data: InventoryHealthData })
           </Link>
         </div>
       </CardHeader>
-      <CardContent className="grid gap-3 sm:grid-cols-3">
+      <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {cards.map((card) => {
           const Icon = card.icon;
           return (

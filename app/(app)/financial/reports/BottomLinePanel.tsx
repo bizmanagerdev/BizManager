@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
 import type { ProfitLossDomainRow } from "@/lib/financial";
 import type { EarnedRevenueReport } from "@/lib/financial/earnedRevenue";
@@ -240,9 +241,9 @@ export default function BottomLinePanel({
       <p className="text-xs text-muted-foreground print:hidden">{BASIS_HINT[basis]}</p>
 
       {!hasData ? (
-        <div className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
+        <EmptyState>
           אין נתונים להצגה עבור התקופה שנבחרה.
-        </div>
+        </EmptyState>
       ) : (
         <>
           {/* Headline result */}
@@ -328,7 +329,7 @@ function DetailBlock({ detail, effectiveBasis }: { detail: RowDetail; effectiveB
     effectiveBasis === "earned" ? "על מה הוצאתי" : effectiveBasis === "accrual" ? "הוצאות (כולל פתוחים)" : "מה ששילמתי";
   return (
     <div className="mb-2 mt-1 rounded-lg border bg-muted/30 p-3">
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <DetailColumn
           title={incomeTitle}
           items={detail.income}

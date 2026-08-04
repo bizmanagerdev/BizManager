@@ -29,13 +29,13 @@ import {
 import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ViewDialog } from "@/components/ui/view-dialog";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedLines, parseTaskLines } from "@/components/tasks/taskLines.helpers";
 import { TaskVoiceFillButton, type ParsedTaskFields } from "@/components/tasks/TaskVoiceFillButton";
 import {
   Dialog,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -950,7 +950,9 @@ export function TaskUpsertDialog(props: Props) {
       }}
     >
       <AdaptiveDialog size={isEditing && targetTaskId ? "details4xl" : "form2xl"}>
-        <DialogHeader>
+        {/* A line under the name block, so the header reads as a pinned bar like
+            every other dialog even though this one owns its own layout. */}
+        <DialogHeader className="border-b border-border/70 pb-3">
           <DialogTitle className="sr-only">{subject.trim() ? subject : dialogTitle}</DialogTitle>
           {/* pe-8 keeps the end button clear of the dialog's close X (top-left in RTL). */}
           {/* items-start, not items-center: the name grows downward when it's a list. */}
@@ -1196,24 +1198,28 @@ export function TaskUpsertDialog(props: Props) {
                 />
               ) : null}
 
-          {wizard && nextWizardStep(openSection) ? (
-            <div className="flex justify-end">
-              <Button type="button" variant="secondary" onClick={() => setOpenSection(nextWizardStep(openSection))}>
+          {/* Action bar — the same shape as every other dialog: a line, then the
+              primary action at the end. No cancel button; the X closes (through
+              attemptClose, so the unsaved-changes guard still runs). */}
+          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border/70 pt-3">
+            {wizard && nextWizardStep(openSection) ? (
+              <Button
+                type="button"
+                variant="secondary"
+                className="me-auto"
+                onClick={() => setOpenSection(nextWizardStep(openSection))}
+              >
                 הבא ›
               </Button>
-            </div>
-          ) : null}
-
-          <DialogFooter className="mt-4">
-            <Button type="button" variant="secondary" onClick={attemptClose}>
-              {isEditing ? "סגירה" : "ביטול"}
-            </Button>
+            ) : (
+              <div className="me-auto" />
+            )}
             {!isEditing || dirty ? (
               <Button type="submit" disabled={!canSubmit || saving || loading}>
                 {saving ? "שומר..." : isEditing ? "שמירת שינויים" : "יצירה"}
               </Button>
             ) : null}
-          </DialogFooter>
+          </div>
         </form>
 
         {/* Card extras — left column beside the form (stacks on mobile). */}
@@ -1248,29 +1254,14 @@ export function TaskUpsertDialog(props: Props) {
     {/* The name has several lines — is it a list, or one long name? Only the
         person typing knows, so ask. Three real choices, which is why this isn't
         a ConfirmDialog (its "cancel" would have to lie about what it does). */}
-    <Dialog open={splitAsk} onOpenChange={setSplitAsk}>
-      <AdaptiveDialog size="formSm" dir="rtl" className="text-right">
-        <DialogHeader>
-          <DialogTitle>{subjectLines.length} שורות בשם המשימה</DialogTitle>
-          <DialogDescription>ליצור משימה נפרדת לכל שורה, או משימה אחת?</DialogDescription>
-        </DialogHeader>
-
-        <ul className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-border/60 p-2 text-sm">
-          {subjectLines.map((line, i) => (
-            <li key={`${line}-${i}`} className="flex items-start gap-2">
-              <span className="text-muted-foreground">{i + 1}.</span>
-              <span className="min-w-0 flex-1">{line}</span>
-            </li>
-          ))}
-        </ul>
-        <p className="text-xs text-muted-foreground">
-          כל המשימות יקבלו את אותו אחראי, תאריך ושאר הפרטים שמילאת.
-        </p>
-
-        <DialogFooter>
-          <Button type="button" variant="ghost" onClick={() => setSplitAsk(false)} disabled={saving}>
-            חזרה לעריכה
-          </Button>
+    <ViewDialog
+      open={splitAsk}
+      onOpenChange={setSplitAsk}
+      title={`${subjectLines.length} שורות בשם המשימה`}
+      description="ליצור משימה נפרדת לכל שורה, או משימה אחת?"
+      size="formSm"
+      footer={
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <Button
             type="button"
             variant="secondary"
@@ -1288,9 +1279,21 @@ export function TaskUpsertDialog(props: Props) {
           <Button type="button" disabled={saving} onClick={() => void submitAsSeparateTasks()}>
             {saving ? "יוצר…" : `צור ${subjectLines.length} משימות`}
           </Button>
-        </DialogFooter>
-      </AdaptiveDialog>
-    </Dialog>
+        </div>
+      }
+    >
+      <ul className="space-y-1 rounded-lg border border-border/60 p-2 text-sm">
+        {subjectLines.map((line, i) => (
+          <li key={`${line}-${i}`} className="flex items-start gap-2">
+            <span className="text-muted-foreground">{i + 1}.</span>
+            <span className="min-w-0 flex-1">{line}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-muted-foreground">
+        כל המשימות יקבלו את אותו אחראי, תאריך ושאר הפרטים שמילאת.
+      </p>
+    </ViewDialog>
 
     <ConfirmDialog
       open={confirmDeleteOpen}

@@ -49,7 +49,7 @@ function ProjectTabsSkeleton() {
       </div>
       <div className="animate-pulse space-y-3">
         <div className="h-40 rounded-xl border bg-muted/40" />
-        <div className="grid gap-3 xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
           <div className="h-80 rounded-xl border bg-muted/40" />
           <div className="h-80 rounded-xl border bg-muted/40" />
         </div>

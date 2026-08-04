@@ -1,6 +1,7 @@
 "use client";
 
 import { useAssignableUsers } from "@/hooks/useAssignableUsers";
+import { NativeSelect } from "@/components/ui/native-select";
 
 // Assignee (אחראי) picker for reminders. Empty value means "default to me" on
 // create (the API falls back to the creator) — pass includeMeDefault to label
@@ -26,10 +27,9 @@ export function AssigneeSelect({
   const resolvedEmptyLabel = includeMeDefault ? "אני (ברירת מחדל)" : emptyLabel;
   const currentInList = !value || users.some((u) => u.id === value);
   return (
-    <select
+    <NativeSelect
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className={className ?? "h-10 w-full rounded-md border border-input bg-background px-3 text-sm"}
+      onChange={(e) => onChange(e.target.value)} className={className}
     >
       {resolvedEmptyLabel != null ? <option value="">{resolvedEmptyLabel}</option> : null}
       {value && !currentInList ? <option value={value}>{currentLabel ?? "אחראי נוכחי"}</option> : null}
@@ -38,6 +38,6 @@ export function AssigneeSelect({
           {u.label}
         </option>
       ))}
-    </select>
+    </NativeSelect>
   );
 }

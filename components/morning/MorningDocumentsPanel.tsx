@@ -4,16 +4,10 @@ import { toHebrewError } from "@/lib/error-messages";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { Badge } from "@/components/ui/badge";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 
@@ -102,6 +96,8 @@ export default function MorningDocumentsPanel({
 }) {
   const [docs, setDocs] = useState<MorningLocalDocument[]>(documents);
   const [busyKey, setBusyKey] = useState<string>("");
+  // Deleting asks through the styled ConfirmDialog, never window.confirm.
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [editing, setEditing] = useState<MorningLocalDocument | null>(null);
   const [editNotes, setEditNotes] = useState<string>("");
 
@@ -184,12 +180,7 @@ export default function MorningDocumentsPanel({
   }
 
   async function deleteDocument(localId: string) {
-    const confirmed = typeof window !== "undefined"
-      ? window.confirm(
-          "המסמך יוסר מ-BizH בלבד. הוא ימשיך להתקיים ב-Morning ולא יבוטל שם. להמשיך?"
-        )
-      : true;
-    if (!confirmed) return;
+    setPendingDeleteId(null);
     setBusyKey(`delete:${localId}`);
     try {
       const response = await fetch(`/api/morning/documents/${localId}`, { method: "DELETE" });
@@ -366,7 +357,7 @@ export default function MorningDocumentsPanel({
                   size="sm"
                   variant="ghost"
                   className="h-7 px-2 text-xs text-destructive"
-                  onClick={() => void deleteDocument(document.id)}
+                  onClick={() => setPendingDeleteId(document.id)}
                   disabled={busyKey === `delete:${document.id}`}
                 >
                   {busyKey === `delete:${document.id}` ? "מוחק..." : "מחיקה"}
@@ -394,7 +385,7 @@ export default function MorningDocumentsPanel({
         </div>
       )}
 
-      <Dialog
+      <FormDialog
         open={editing !== null}
         onOpenChange={(open) => {
           if (!open) {
@@ -402,41 +393,36 @@ export default function MorningDocumentsPanel({
             setEditNotes("");
           }
         }}
+        title="עריכת הערה למסמך"
+        description="ההערה נשמרת ב-BizH בלבד ולא מתעדכנת ב-Morning. שימושי לסימון פנימי."
+        size="formMd"
+        onSubmit={() => void saveEdit()}
+        submitLabel="שמירה"
+        busyLabel="שומר..."
+        busy={editing !== null && busyKey === `edit:${editing.id}`}
       >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>עריכת הערה למסמך</DialogTitle>
-            <DialogDescription>
-              ההערה נשמרת ב-BizH בלבד ולא מתעדכנת ב-Morning. שימושי לסימון פנימי.
-            </DialogDescription>
-          </DialogHeader>
           <Textarea
             value={editNotes}
             onChange={(event) => setEditNotes(event.target.value)}
             placeholder="הערה למסמך..."
             rows={4}
           />
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setEditing(null);
-                setEditNotes("");
-              }}
-            >
-              ביטול
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void saveEdit()}
-              disabled={editing !== null && busyKey === `edit:${editing.id}`}
-            >
-              {editing !== null && busyKey === `edit:${editing.id}` ? "שומר..." : "שמירה"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </FormDialog>
+
+      <ConfirmDialog
+        open={pendingDeleteId !== null}
+        onOpenChange={(next) => {
+          if (!next) setPendingDeleteId(null);
+        }}
+        destructive
+        title="הסרת מסמך"
+        description="המסמך יוסר מ-BizH בלבד. הוא ימשיך להתקיים ב-Morning ולא יבוטל שם."
+        confirmLabel="הסרה"
+        loading={busyKey.startsWith("delete:")}
+        onConfirm={() => {
+          if (pendingDeleteId) void deleteDocument(pendingDeleteId);
+        }}
+      />
     </div>
   );
 }

@@ -3,17 +3,9 @@ import { toHebrewError } from "@/lib/error-messages";
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
 import { DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { AssigneeSelect } from "@/components/collections/AssigneeSelect";
 import type { Reminder } from "@/lib/communications";
 import { offlineFetch } from "@/lib/offline-queue";
@@ -93,12 +85,18 @@ export default function EditReminderDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent dir="rtl" className="w-[calc(100vw-1rem)] max-w-md text-right">
-        <DialogHeader>
-          <DialogTitle>עריכת תזכורת</DialogTitle>
-          <DialogDescription>עדכון תאריך, תוכן ואחראי לתזכורת.</DialogDescription>
-        </DialogHeader>
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="עריכת תזכורת"
+      description="עדכון תאריך, תוכן ואחראי לתזכורת."
+      size="formMd"
+      onSubmit={() => void save()}
+      submitLabel="שמירה"
+      busyLabel="שומר..."
+      busy={submitting}
+      error={error || undefined}
+    >
         <div className="space-y-3">
           <div className="space-y-1">
             <label className="text-sm font-medium">תאריך ושעה *</label>
@@ -117,17 +115,7 @@ export default function EditReminderDialog({
               currentLabel={reminder?.assigned_to_name ?? undefined}
             />
           </div>
-          {error ? <div className="text-sm text-destructive">{error}</div> : null}
         </div>
-        <DialogFooter>
-          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={submitting}>
-            ביטול
-          </Button>
-          <Button type="button" onClick={() => void save()} disabled={submitting}>
-            {submitting ? "שומר..." : "שמירה"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </FormDialog>
   );
 }

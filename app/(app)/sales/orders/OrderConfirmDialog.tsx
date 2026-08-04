@@ -4,21 +4,15 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronLeft, ChevronRight, Delete, MapPin, Truck } from "lucide-react";
+import { Delete, MapPin } from "lucide-react";
 import * as Sentry from "@sentry/nextjs";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { offlineUpload } from "@/lib/offline-upload";
 import { toHebrewError } from "@/lib/error-messages";
 import { DateInput } from "@/components/ui/date-input";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { StepWizardDialog } from "@/components/ui/step-wizard";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { formatPin, pinFrom, type DeliveryPin } from "@/lib/delivery-location";
@@ -542,10 +536,15 @@ export default function OrderConfirmDialog({
     return s;
   }, [paidNow, accountsList.length, refundDue]);
 
+  // The wizard chrome wants {n,label} entries; the labels are unused in "bar"
+  // mode, but the count drives the progress bar.
+  const wizardSteps = useMemo(
+    () => steps.map((id, index) => ({ n: index + 1, label: STEP_META[id]?.eyebrow ?? "" })),
+    [steps]
+  );
   const stepIndex = Math.max(0, steps.indexOf(stepId));
   const currentStepId = steps[stepIndex] ?? "items";
   const isLastStep = currentStepId === "review";
-  const progress = ((stepIndex + 1) / steps.length) * 100;
 
   // Navigation reads the latest step list via refs, because a choice mid-flow
   // (paid? / overpayment) reshapes the array between render and click.
@@ -631,7 +630,7 @@ export default function OrderConfirmDialog({
             {deliveryLines.map(({ line, already, remaining, now }, index) => (
               <div
                 key={`${line.product_id}-${index}`}
-                className="grid gap-3 rounded-xl border border-border/70 bg-background/70 p-3 sm:grid-cols-[1fr_130px]"
+                className="grid grid-cols-1 gap-3 rounded-xl border border-border/70 bg-background/70 p-3 sm:grid-cols-[1fr_130px]"
               >
                 <div>
                   <div className="font-medium">{line.product_name}</div>
@@ -757,14 +756,13 @@ export default function OrderConfirmDialog({
         return (
           <div className="mx-auto max-w-xs space-y-1">
             <label className="text-sm font-medium">אמצעי תשלום</label>
-            <select
+            <NativeSelect
               value={paymentMethod}
               onChange={(e) => {
                 const m = e.target.value;
                 setPaymentMethod(m);
                 setPaymentAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
               }}
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
             >
               <option value="">בחר אמצעי תשלום...</option>
               {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
@@ -772,7 +770,7 @@ export default function OrderConfirmDialog({
                   {option.label}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
         );
       case "paymentAccount":
@@ -815,21 +813,20 @@ export default function OrderConfirmDialog({
             </div>
             {recordRefund ? (
               <>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <label className="text-sm font-medium">תאריך החזר</label>
                     <DateInput value={refundDate} onChange={(e) => setRefundDate(e.target.value)} />
                   </div>
                   <div className="space-y-1">
                     <label className="text-sm font-medium">אמצעי החזר</label>
-                    <select
+                    <NativeSelect
                       value={refundMethod}
                       onChange={(e) => {
                         const m = e.target.value;
                         setRefundMethod(m);
                         setRefundAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
                       }}
-                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                     >
                       <option value="">בחר אמצעי החזר...</option>
                       {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
@@ -837,7 +834,7 @@ export default function OrderConfirmDialog({
                           {option.label}
                         </option>
                       ))}
-                    </select>
+                    </NativeSelect>
                   </div>
                   <AccountSelect
                     required
@@ -849,7 +846,7 @@ export default function OrderConfirmDialog({
                     }}
                   />
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <label className="text-sm font-medium">אסמכתא להחזר</label>
                     <Input
@@ -898,7 +895,7 @@ export default function OrderConfirmDialog({
             {(data.deliveryImages ?? []).length > 0 ? (
               <div className="space-y-2">
                 <div className="text-sm font-medium">תמונות קיימות</div>
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {(data.deliveryImages ?? []).map((image) => (
                     <a
                       key={image.id}
@@ -1014,96 +1011,70 @@ export default function OrderConfirmDialog({
   }
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        setOpen(nextOpen);
-        if (!nextOpen) setError(null);
-      }}
-    >
-      <Button type="button" size="sm" variant={buttonVariant} className={buttonClassName ?? "w-full sm:w-auto"} onClick={() => setOpen(true)}>
+    <>
+      <Button
+        type="button"
+        size="sm"
+        variant={buttonVariant}
+        className={buttonClassName ?? "w-full sm:w-auto"}
+        onClick={() => setOpen(true)}
+      >
         {buttonLabel}
       </Button>
-      <DialogContent className="flex max-h-[92svh] w-[calc(100vw-1rem)] max-w-lg flex-col overflow-hidden p-3 sm:p-4">
-        <DialogHeader className="space-y-1.5">
-          <div className="flex items-center gap-2 pe-8">
-            <DialogTitle className="flex items-center gap-2 text-sm">
-              <Truck className="h-4 w-4 shrink-0 text-primary" />
-              <span className="truncate">{customerName ? customerName : title}</span>
-            </DialogTitle>
-            <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-              {stepIndex + 1} / {steps.length}
-            </span>
-          </div>
-          <DialogDescription className="sr-only">{description}</DialogDescription>
-          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} />
-          </div>
-        </DialogHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-          {loading ? (
-            <LoadingDots
-              label="טוען את פרטי ההזמנה"
-              description="אוסף את הכמויות, התשלום והתמונות כדי שתוכלו לאשר אספקה בביטחון."
-            />
-          ) : null}
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      <StepWizardDialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          setOpen(nextOpen);
+          if (!nextOpen) setError(null);
+        }}
+        dialogTitle={customerName || title}
+        dialogDescription={description}
+        // Too many steps to name in a row on a phone, so progress is a bar.
+        progressVariant="bar"
+        steps={wizardSteps}
+        current={stepIndex + 1}
+        canClickStep={() => false}
+        onStepClick={() => {}}
+        closeDisabled={submitting}
+        onBack={stepIndex > 0 ? goBack : undefined}
+        backDisabled={submitting}
+        onNext={isLastStep ? () => void submit() : goNext}
+        nextLabel={isLastStep ? "אישור אספקה" : "הבא"}
+        nextDisabled={submitting || loading || !data}
+        isLastStep={isLastStep}
+        showStepCounter={false}
+        error={error || undefined}
+      >
+        {loading ? (
+          <LoadingDots
+            label="טוען את פרטי ההזמנה"
+            description="אוסף את הכמויות, התשלום והתמונות כדי שתוכלו לאשר אספקה בביטחון."
+          />
+        ) : null}
 
-          {data ? (
-            <div className="space-y-2">
-              {/* Question header for the current step */}
-              <div>
-                <h2 className="text-base font-bold leading-tight">{STEP_META[currentStepId]?.title}</h2>
-                {STEP_META[currentStepId]?.description ? (
-                  <p className="mt-0.5 text-xs text-muted-foreground">{STEP_META[currentStepId]?.description}</p>
-                ) : null}
-              </div>
-
-              {renderStepContent()}
-
-              {/* Hidden loader so the accounts list is known before the account step */}
-              <div className="hidden">
-                <AccountSelect
-                  value={paymentAccountId}
-                  onChange={setPaymentAccountId}
-                  onLoaded={(list) => setAccountsList(list)}
-                />
-              </div>
+        {data ? (
+          <div className="space-y-2">
+            <div>
+              <h2 className="text-base font-bold leading-tight">{STEP_META[currentStepId]?.title}</h2>
+              {STEP_META[currentStepId]?.description ? (
+                <p className="mt-0.5 text-xs text-muted-foreground">{STEP_META[currentStepId]?.description}</p>
+              ) : null}
             </div>
-          ) : null}
-        </div>
 
-        <DialogFooter className="mt-2 flex-row justify-between gap-2 border-t pt-2">
-          {stepIndex > 0 ? (
-            <Button type="button" size="sm" variant="secondary" className="flex-1 sm:flex-none" onClick={goBack} disabled={submitting}>
-              <ChevronRight className="h-4 w-4" />
-              חזרה
-            </Button>
-          ) : (
-            <Button type="button" size="sm" variant="secondary" className="flex-1 sm:flex-none" onClick={() => setOpen(false)} disabled={submitting}>
-              ביטול
-            </Button>
-          )}
-          {isLastStep ? (
-            <Button type="button" size="sm" className="flex-1 sm:flex-none" onClick={() => void submit()} disabled={submitting || loading || !data}>
-              {submitting ? (
-                "שומר..."
-              ) : (
-                <>
-                  <Check className="h-4 w-4" />
-                  אישור אספקה
-                </>
-              )}
-            </Button>
-          ) : (
-            <Button type="button" size="sm" className="flex-1 sm:flex-none" onClick={goNext} disabled={loading || !data}>
-              הבא
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-          )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            {renderStepContent()}
+
+            {/* Hidden loader so the accounts list is known before the account step */}
+            <div className="hidden">
+              <AccountSelect
+                value={paymentAccountId}
+                onChange={setPaymentAccountId}
+                onLoaded={(list) => setAccountsList(list)}
+              />
+            </div>
+          </div>
+        ) : null}
+      </StepWizardDialog>
+    </>
   );
 }

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Paperclip } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { Badge } from "@/components/ui/badge";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatShortDate } from "@/lib/date";
@@ -159,7 +160,7 @@ export default function ChecksClient({ checks }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard label={`לפירעון (${totals.openCount})`} value={formatCurrency(totals.openSum)} />
         <SummaryCard label="להפקדה השבוע" value={formatCurrency(totals.weekSum)} tone="warning" />
         <SummaryCard label="באיחור להפקדה" value={formatCurrency(totals.overdueSum)} tone="danger" />
@@ -178,15 +179,14 @@ export default function ChecksClient({ checks }: Props) {
             {tab.label}
           </Button>
         ))}
-        <select
+        <NativeSelect dense
           value={sort}
           onChange={(e) => setSort(e.target.value as SortKey)}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
         >
           <option value="due">מיון: תאריך פירעון</option>
           <option value="amount">מיון: סכום</option>
           <option value="name">מיון: שם</option>
-        </select>
+        </NativeSelect>
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}

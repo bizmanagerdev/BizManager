@@ -24,12 +24,15 @@ import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { ChevronLeft, FolderKanban, Pencil, Plus, Search, ShoppingCart, SlidersHorizontal, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { NativeSelect } from "@/components/ui/native-select";
 import { SwipeActions } from "@/components/ui/swipe-actions";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 import { AddressLink } from "@/components/ui/address-link";
 import { WazeIcon } from "@/components/ui/waze-icon";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { formatShortDate } from "@/lib/date";
@@ -37,7 +40,6 @@ import MorningCustomerCard from "@/components/morning/MorningCustomerCard";
 import {
   Dialog,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -807,15 +809,16 @@ export default function CustomersClient({
         onSaved={({ customer, contacts }) => applySavedCustomer(customer, contacts)}
       />
 
-      <CustomerDialog
+      <FormDialog
         open={contactOpen}
         onOpenChange={setContactOpen}
         title="הוספת איש קשר"
         description={`לקוח: ${targetCustomerName}`}
-        submitLabel={contactLoading ? "יוצר..." : "יצירת איש קשר"}
+        submitLabel="יצירת איש קשר"
+        busyLabel="יוצר..."
         onSubmit={() => void createContact()}
-        error={contactErr}
-        submitting={contactLoading}
+        error={contactErr || undefined}
+        busy={contactLoading}
       >
         <Field label="שם מלא *">
           <Input value={contactName} onChange={(e) => setContactName(e.target.value)} />
@@ -857,7 +860,7 @@ export default function CustomersClient({
           />
           <span>פעיל</span>
         </label>
-      </CustomerDialog>
+      </FormDialog>
     </PageStack>
   );
 }
@@ -878,15 +881,14 @@ function FilterSelect({
   return (
     <div className="space-y-1">
       <label className="text-sm text-muted-foreground">{label}</label>
-      <select
-        className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+      <NativeSelect
         value={value}
         onChange={(e) => onChange(e.target.value as FilterMode)}
       >
         <option value="all">הכל</option>
         <option value="yes">{yes}</option>
         <option value="no">{no}</option>
-      </select>
+      </NativeSelect>
     </div>
   );
 }
@@ -915,15 +917,6 @@ function ValueField({
     <div className={`rounded-xl border bg-background px-3 py-3 ${className}`.trim()}>
       <div className="text-xs font-medium text-muted-foreground">{label}</div>
       <div className={`mt-2 text-sm font-medium leading-6 text-foreground ${valueClassName}`.trim()}>{value}</div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <label className="text-sm font-medium">{label}</label>
-      {children}
     </div>
   );
 }
@@ -986,7 +979,7 @@ function CustomerDetailsDialog({
             <AdaptiveGrid variant="customerPanels">
               <div className="space-y-2 rounded-md border bg-background p-3 text-sm">
                 <div className="font-semibold">פרטי לקוח</div>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <ValueField label="שם לחשבונית" value={s(row, "name_for_invoice") || "-"} />
                   <ValueField label="ח.פ/ת.ז" value={s(row, "registration_number") || "-"} />
                   <ValueField label="וואטסאפ" value={s(row, "whatsapp") || "-"} />
@@ -1017,7 +1010,7 @@ function CustomerDetailsDialog({
                     valueClassName="whitespace-pre-wrap"
                   />
                 </div>
-                <div className="grid gap-2 pt-1 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-2">
                   <Button type="button" size="sm" variant="outline" onClick={() => onEdit(row)}>
                     עריכת לקוח
                   </Button>
@@ -1157,60 +1150,3 @@ function CustomerDetailsDialog({
   );
 }
 
-function CustomerDialog({
-  open,
-  onOpenChange,
-  title,
-  description,
-  submitLabel,
-  onSubmit,
-  error,
-  submitting = false,
-  children,
-}: {
-  open: boolean;
-  onOpenChange: (next: boolean) => void;
-  title: string;
-  description: string;
-  submitLabel: string;
-  onSubmit: () => void;
-  error: string;
-  submitting?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next && submitting) return;
-        onOpenChange(next);
-      }}
-    >
-      <AdaptiveDialog size="formLg">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        <form
-          className="space-y-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            onSubmit();
-          }}
-        >
-          <fieldset disabled={submitting} className="space-y-3">
-            {children}
-          </fieldset>
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
-          <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={submitting}>
-              ביטול
-            </Button>
-            <Button type="submit" disabled={submitting}>{submitLabel}</Button>
-          </DialogFooter>
-          {submitting ? <p className="text-xs text-muted-foreground">שומר, נא להמתין...</p> : null}
-        </form>
-      </AdaptiveDialog>
-    </Dialog>
-  );
-}

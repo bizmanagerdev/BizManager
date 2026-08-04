@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Card, CardContent } from "@/components/ui/card";
+import { NativeSelect } from "@/components/ui/native-select";
 import { cn } from "@/lib/utils";
 import type { FinancialEntry, FinancialEntryStage, FinancialSourceKind } from "@/lib/financial";
 
@@ -90,13 +91,12 @@ export function SelectField({
   return (
     <label className="space-y-1.5 text-sm text-right">
       <span className="font-medium">{label}</span>
-      <select
+      <NativeSelect
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full rounded-xl border border-input bg-background px-3 text-right text-sm shadow-sm"
       >
         {children}
-      </select>
+      </NativeSelect>
     </label>
   );
 }

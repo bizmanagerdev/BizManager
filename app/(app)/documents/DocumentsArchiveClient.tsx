@@ -17,9 +17,13 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
+import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Badge } from "@/components/ui/badge";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
+import { ViewDialog } from "@/components/ui/view-dialog";
 import { toHebrewError } from "@/lib/error-messages";
 import {
   Card,
@@ -28,13 +32,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { CustomerPicker } from "@/components/customers/CustomerPicker";
@@ -205,14 +202,13 @@ function SelectField({
   ariaLabel: string;
 }) {
   return (
-    <select
-      className="flex h-11 w-full rounded-xl border border-input bg-background/80 px-4 py-2 text-sm shadow-sm transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+    <NativeSelect
       value={value}
       onChange={(event) => onChange(event.target.value)}
       aria-label={ariaLabel}
     >
       {children}
-    </select>
+    </NativeSelect>
   );
 }
 
@@ -910,23 +906,32 @@ export default function DocumentsArchiveClient({
       {/* The document itself: the file rendered inline (image / PDF) plus every
           detail we hold about it. This is what an activity row for a document
           opens — the record, not the list it sits in. */}
-      <Dialog
+      <ViewDialog
         open={Boolean(activePreviewDoc)}
         onOpenChange={(open) => {
           if (open) return;
           setPreviewDoc(null);
           if (focusDocumentId) setFocusDismissed(focusDocumentId);
         }}
+        title={activePreviewDoc?.title ?? "מסמך"}
+        description={
+          activePreviewDoc
+            ? `${getDocumentCategoryLabel(activePreviewDoc.document_type)} · ${fileKindLabel(activePreviewDoc.file_kind)}`
+            : undefined
+        }
+        footer={
+          activePreviewDoc?.url ? (
+            <div className="flex justify-end">
+              <Button asChild>
+                <a href={activePreviewDoc.url} target="_blank" rel="noreferrer">
+                  <ExternalLink className="h-4 w-4" />
+                  פתיחה בכרטיסייה חדשה
+                </a>
+              </Button>
+            </div>
+          ) : null
+        }
       >
-        <AdaptiveDialog size="formLg">
-          <DialogHeader>
-            <DialogTitle>{activePreviewDoc?.title ?? "מסמך"}</DialogTitle>
-            <DialogDescription>
-              {activePreviewDoc
-                ? `${getDocumentCategoryLabel(activePreviewDoc.document_type)} · ${fileKindLabel(activePreviewDoc.file_kind)}`
-                : ""}
-            </DialogDescription>
-          </DialogHeader>
 
           {activePreviewDoc ? (
             <div className="mt-4 space-y-4">
@@ -952,7 +957,7 @@ export default function DocumentsArchiveClient({
                 )}
               </div>
 
-              <dl className="grid gap-2 text-sm sm:grid-cols-2">
+              <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                 <div>
                   <dt className="text-xs text-muted-foreground">שם הקובץ</dt>
                   <dd className="break-words font-medium">{activePreviewDoc.file_name ?? "—"}</dd>
@@ -1011,28 +1016,7 @@ export default function DocumentsArchiveClient({
             </div>
           ) : null}
 
-          <DialogFooter className="mt-6">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setPreviewDoc(null);
-                if (focusDocumentId) setFocusDismissed(focusDocumentId);
-              }}
-            >
-              סגירה
-            </Button>
-            {activePreviewDoc?.url ? (
-              <Button asChild>
-                <a href={activePreviewDoc.url} target="_blank" rel="noreferrer">
-                  <ExternalLink className="h-4 w-4" />
-                  פתיחה בכרטיסייה חדשה
-                </a>
-              </Button>
-            ) : null}
-          </DialogFooter>
-        </AdaptiveDialog>
-      </Dialog>
+      </ViewDialog>
 
       <UploadDocumentDialog
         open={uploadDialogOpen}
@@ -1045,23 +1029,22 @@ export default function DocumentsArchiveClient({
         onUploaded={() => router.refresh()}
       />
 
-      <Dialog
+      <FormDialog
         open={Boolean(editDialogDoc)}
         onOpenChange={(open) => {
-          if (!open && isPending) return;
           if (!open) {
             setEditDialogDoc(null);
             setEditTagValue("");
           }
         }}
+        title="עדכון קטגוריית מסמך"
+        description="שינוי הקטגוריה של המסמך הנבחר."
+        size="formMd"
+        onSubmit={() => void saveTag()}
+        submitLabel="שמירה"
+        busyLabel="שומר..."
+        busy={isPending}
       >
-        <AdaptiveDialog size="formMd">
-          <DialogHeader>
-            <DialogTitle>עדכון קטגוריית מסמך</DialogTitle>
-            <DialogDescription>
-              שינוי הערך של `documents.document_type` עבור המסמך הנבחר.
-            </DialogDescription>
-          </DialogHeader>
           <div className="mt-4 space-y-3">
             <div className="text-sm font-medium">{editDialogDoc?.title ?? "מסמך"}</div>
             <SelectField value={editTagValue} onChange={setEditTagValue} ariaLabel="קטגוריית מסמך">
@@ -1076,100 +1059,46 @@ export default function DocumentsArchiveClient({
               ))}
             </SelectField>
           </div>
-          <DialogFooter className="mt-6">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setEditDialogDoc(null);
-                setEditTagValue("");
-              }}
-              disabled={isPending}
-            >
-              ביטול
-            </Button>
-            <Button type="button" onClick={() => void saveTag()} disabled={isPending}>
-              {isPending ? "שומר..." : "שמירה"}
-            </Button>
-          </DialogFooter>
-        </AdaptiveDialog>
-      </Dialog>
+      </FormDialog>
 
-      <Dialog
+      <FormDialog
         open={Boolean(editDomainDoc)}
         onOpenChange={(open) => {
-          if (!open && isPending) return;
           if (!open) {
             setEditDomainDoc(null);
             setEditDomainValue("");
           }
         }}
+        title="שינוי תחום"
+        description="בחירת התחום העסקי שאליו ישויך המסמך."
+        size="formMd"
+        onSubmit={() => void saveDomain()}
+        submitLabel="שמירה"
+        busyLabel="שומר..."
+        busy={isPending}
       >
-        <AdaptiveDialog size="formMd">
-          <DialogHeader>
-            <DialogTitle>שינוי תחום</DialogTitle>
-            <DialogDescription>בחירת התחום העסקי שאליו ישויך המסמך.</DialogDescription>
-          </DialogHeader>
-          <div className="mt-4 space-y-3">
+          <div className="space-y-3">
             <div className="text-sm font-medium">{editDomainDoc?.title ?? "מסמך"}</div>
             <DomainSelect value={editDomainValue} onChange={setEditDomainValue} ariaLabel="תחום המסמך" />
           </div>
-          <DialogFooter className="mt-6">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setEditDomainDoc(null);
-                setEditDomainValue("");
-              }}
-              disabled={isPending}
-            >
-              ביטול
-            </Button>
-            <Button type="button" onClick={() => void saveDomain()} disabled={isPending}>
-              {isPending ? "שומר..." : "שמירה"}
-            </Button>
-          </DialogFooter>
-        </AdaptiveDialog>
-      </Dialog>
+      </FormDialog>
 
-      <Dialog
+      <ConfirmDialog
         open={Boolean(deleteDialogDoc)}
         onOpenChange={(open) => {
-          if (!open && isPending) return;
           if (!open) setDeleteDialogDoc(null);
         }}
+        destructive
+        title="מחיקת מסמך"
+        description="הפעולה תמחק את קובץ האחסון ואת כל הקישורים של המסמך."
+        confirmLabel="מחיקה"
+        loading={isPending}
+        onConfirm={() => void deleteDocument()}
       >
-        <AdaptiveDialog size="formMd">
-          <DialogHeader>
-            <DialogTitle>מחיקת מסמך</DialogTitle>
-            <DialogDescription>
-              הפעולה תמחק את קובץ האחסון ואת כל הקישורים של המסמך.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="mt-4 text-sm">
-            האם למחוק את <span className="font-medium">{deleteDialogDoc?.title ?? "המסמך"}</span>?
-          </div>
-          <DialogFooter className="mt-6">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setDeleteDialogDoc(null)}
-              disabled={isPending}
-            >
-              ביטול
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => void deleteDocument()}
-              disabled={isPending}
-            >
-              {isPending ? "מוחק..." : "מחיקה"}
-            </Button>
-          </DialogFooter>
-        </AdaptiveDialog>
-      </Dialog>
+        <p className="text-sm">
+          האם למחוק את <span className="font-medium">{deleteDialogDoc?.title ?? "המסמך"}</span>?
+        </p>
+      </ConfirmDialog>
     </div>
   );
 }

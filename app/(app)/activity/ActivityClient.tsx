@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Fragment, useEffect, useRef, useState, useTransition } from "react";
 import { ChevronDown, SlidersHorizontal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
@@ -620,42 +621,39 @@ export default function ActivityClient({
       >
         <div className="min-w-0">
           <label className="text-sm text-muted-foreground">סוג</label>
-          <select
+          <NativeSelect
             value={currentTable}
             onChange={(e) => updateParams({ table: e.target.value })}
-            disabled={isPending}
-            className="mt-1 h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+            disabled={isPending} className="mt-1"
           >
             {tableOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
         <div className="min-w-0">
           <label className="text-sm text-muted-foreground">פעולה</label>
-          <select
+          <NativeSelect
             value={currentAction}
             onChange={(e) => updateParams({ action: e.target.value })}
-            disabled={isPending}
-            className="mt-1 h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+            disabled={isPending} className="mt-1"
           >
             {actionOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
         <div className="min-w-0">
           <label className="text-sm text-muted-foreground">משתמש</label>
-          <select
+          <NativeSelect
             value={currentWorker}
             onChange={(e) => updateParams({ worker: e.target.value })}
-            disabled={isPending}
-            className="mt-1 h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+            disabled={isPending} className="mt-1"
           >
             {workerOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
         <label className="inline-flex cursor-pointer items-center gap-2 py-1 text-sm">
           <input
@@ -681,36 +679,33 @@ export default function ActivityClient({
       {/* Desktop toolbar — inline dropdowns; the sidebar already says where you are. */}
       <div className="hidden md:flex md:items-center md:justify-between md:gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <select
+          <NativeSelect dense
             value={currentTable}
             onChange={(e) => updateParams({ table: e.target.value })}
-            disabled={isPending}
-            className="h-8 max-w-[9rem] rounded-md border border-input bg-background px-2 text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+            disabled={isPending} className="max-w-[9rem] text-xs"
           >
             {tableOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
-          </select>
-          <select
+          </NativeSelect>
+          <NativeSelect dense
             value={currentAction}
             onChange={(e) => updateParams({ action: e.target.value })}
-            disabled={isPending}
-            className="h-8 max-w-[9rem] rounded-md border border-input bg-background px-2 text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+            disabled={isPending} className="max-w-[9rem] text-xs"
           >
             {actionOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
-          </select>
-          <select
+          </NativeSelect>
+          <NativeSelect dense
             value={currentWorker}
             onChange={(e) => updateParams({ worker: e.target.value })}
-            disabled={isPending}
-            className="h-8 max-w-[9rem] rounded-md border border-input bg-background px-2 text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+            disabled={isPending} className="max-w-[9rem] text-xs"
           >
             {workerOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
-          </select>
+          </NativeSelect>
           <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-input bg-background px-2 text-xs shadow-sm">
             <input
               type="checkbox"

@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import MonthlyTrendChart from "@/components/charts/MonthlyTrendChart";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
 import type { MonthlyTrendPoint } from "@/lib/financial";
 
@@ -56,9 +57,9 @@ export default function MonthlyTrendPanel({ points }: { points: MonthlyTrendPoin
 
   if (points.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
+      <EmptyState>
         אין תנועות בפועל להצגה עבור התקופה והסינון שנבחרו.
-      </div>
+      </EmptyState>
     );
   }
 

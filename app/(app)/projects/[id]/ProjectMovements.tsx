@@ -139,7 +139,7 @@ function Details({ movement }: { movement: Movement }) {
   return (
     <div className="space-y-2">
       {hasExtras ? (
-        <dl className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
+        <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
           {movement.extras.map((extra) => (
             <div key={extra.label} className="flex gap-1.5">
               <dt className="text-muted-foreground">{extra.label}:</dt>

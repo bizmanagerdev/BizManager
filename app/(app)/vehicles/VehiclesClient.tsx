@@ -11,9 +11,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { DateInput } from "@/components/ui/date-input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Dialog, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { AdaptiveDialog, PageStack, AdaptiveGrid } from "@/components/layout/page-layout";
+import { PageStack, AdaptiveGrid } from "@/components/layout/page-layout";
 import { formatCurrency } from "@/lib/payroll";
 import { expiryStatus, type VehicleWithRollup } from "@/lib/vehicles";
 import AddReminderButton from "@/components/reminders/AddReminderButton";
@@ -220,13 +220,18 @@ export default function VehiclesClient({ vehicles }: { vehicles: VehicleWithRoll
         </AdaptiveGrid>
       )}
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <AdaptiveDialog size="form2xl">
-          <DialogHeader>
-            <DialogTitle>{editTagId ? "עריכת רכב" : "הוספת רכב"}</DialogTitle>
-          </DialogHeader>
+      <FormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        title={editTagId ? "עריכת רכב" : "הוספת רכב"}
+        description="פרטי הרכב משמשים לתיוג הוצאות, משימות ומסמכים."
+        size="form2xl"
+        onSubmit={submit}
+        submitLabel={editTagId ? "שמירה" : "הוספה"}
+        busy={pending}
+      >
           <div className="space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="space-y-1 text-sm">
                 <span className="font-medium">שם הרכב</span>
                 <Input value={form.name} onChange={(e) => set("name", e.target.value)} />
@@ -275,16 +280,7 @@ export default function VehiclesClient({ vehicles }: { vehicles: VehicleWithRoll
               <Textarea rows={2} value={form.notes} onChange={(e) => set("notes", e.target.value)} />
             </label>
           </div>
-          <div className="mt-4 flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setDialogOpen(false)} disabled={pending}>
-              ביטול
-            </Button>
-            <Button onClick={submit} disabled={pending}>
-              {editTagId ? "שמירה" : "הוספה"}
-            </Button>
-          </div>
-        </AdaptiveDialog>
-      </Dialog>
+      </FormDialog>
 
       <ConfirmDialog
         open={Boolean(deleteTarget)}

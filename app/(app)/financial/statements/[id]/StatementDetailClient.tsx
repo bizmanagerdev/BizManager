@@ -4,14 +4,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Field } from "@/components/ui/field";
 import { toHebrewError } from "@/lib/error-messages";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
-import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AdaptiveDialog } from "@/components/layout/page-layout";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { getBusinessDomainLabel, isExpenseBusinessDomain } from "@/lib/expenses";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { findDuplicate, norm, shiftIso, type ExistingExpense } from "@/lib/financial/cardImport";
@@ -1040,45 +1042,51 @@ export default function StatementDetailClient({
       </Card>
 
       {/* Leave-page guard dialog */}
-      <Dialog open={showLeaveConfirm} onOpenChange={(open) => { if (!open) setShowLeaveConfirm(false); }}>
-        <AdaptiveDialog size="formLg">
-          <DialogHeader>
-            <DialogTitle>לצאת מהפירוט?</DialogTitle>
-            <DialogDescription>
-              יש {progressCounts.ready + progressCounts.needsDomain} שורות שטרם נוצרו כהוצאות
-              {progressCounts.ready > 0 ? ` (${progressCounts.ready} מוכנות ליצירה` : ""}
-              {progressCounts.needsDomain > 0 ? `${progressCounts.ready > 0 ? ", " : " ("}${progressCounts.needsDomain} ממתינות לשיוך` : ""}
-              {(progressCounts.ready > 0 || progressCounts.needsDomain > 0) ? ")" : ""}.
-              הנתונים שמורים — תוכל/י לחזור בכל עת.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="flex-row-reverse gap-2 pt-2">
-            <Button onClick={() => setShowLeaveConfirm(false)}>
-              המשך בפירוט
-            </Button>
-            <Button variant="outline" onClick={() => { bypassGuard.current = true; setShowLeaveConfirm(false); if (leaveTarget) router.push(leaveTarget); else history.back(); }}>
-              צא/י בכל זאת
-            </Button>
-          </DialogFooter>
-        </AdaptiveDialog>
-      </Dialog>
+      <ConfirmDialog
+        open={showLeaveConfirm}
+        onOpenChange={(open) => {
+          if (!open) setShowLeaveConfirm(false);
+        }}
+        title="לצאת מהפירוט?"
+        description={
+          `יש ${progressCounts.ready + progressCounts.needsDomain} שורות שטרם נוצרו כהוצאות. ` +
+          "הנתונים שמורים — תוכל/י לחזור בכל עת."
+        }
+        cancelLabel="המשך בפירוט"
+        confirmLabel="צא/י בכל זאת"
+        onConfirm={() => {
+          bypassGuard.current = true;
+          setShowLeaveConfirm(false);
+          if (leaveTarget) router.push(leaveTarget);
+          else history.back();
+        }}
+      />
 
       {/* Edit dialog */}
-      <Dialog open={editingId !== null} onOpenChange={(open) => { if (!open && !saving) cancelEdit(); }}>
-        <AdaptiveDialog size="formLg">
-          <DialogHeader>
-            <DialogTitle>עריכת שורה</DialogTitle>
-            <DialogDescription>
-              {draft?.expenseExists ? "העדכון יישמר בהוצאה המקושרת." : "השורה עדיין לא הומרה להוצאה — העדכון יישמר בפירוט."}
-            </DialogDescription>
-          </DialogHeader>
+      <FormDialog
+        open={editingId !== null}
+        onOpenChange={(open) => {
+          if (!open) cancelEdit();
+        }}
+        title="עריכת שורה"
+        description={
+          draft?.expenseExists
+            ? "העדכון יישמר בהוצאה המקושרת."
+            : "השורה עדיין לא הומרה להוצאה — העדכון יישמר בפירוט."
+        }
+        onSubmit={() => void saveDialog()}
+        submitLabel="שמירה"
+        busyLabel="שומר..."
+        busy={saving}
+        error={error || undefined}
+      >
           {draft ? (
             <div className="space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="בית עסק">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field size="xs" label="בית עסק">
                 <Input value={draft.description} onChange={(e) => patchDraft({ description: e.target.value })} className="h-9" />
               </Field>
-              <Field label="סכום">
+              <Field size="xs" label="סכום">
                 <CurrencyInput
                   type="number"
                   step="0.01"
@@ -1087,10 +1095,10 @@ export default function StatementDetailClient({
                   className="h-9"
                 />
               </Field>
-              <Field label="קטגוריה (כרטיס)">
+              <Field size="xs" label="קטגוריה (כרטיס)">
                 <Input value={draft.category} onChange={(e) => patchDraft({ category: e.target.value })} className="h-9" />
               </Field>
-              <Field label="תאריך חיוב">
+              <Field size="xs" label="תאריך חיוב">
                 <Input
                   type="date"
                   value={draft.expenseDate}
@@ -1098,7 +1106,7 @@ export default function StatementDetailClient({
                   className="h-9"
                 />
               </Field>
-              <Field label="תאריך עסקה">
+              <Field size="xs" label="תאריך עסקה">
                 <Input
                   type="date"
                   value={draft.transactionDate}
@@ -1106,7 +1114,7 @@ export default function StatementDetailClient({
                   className="h-9"
                 />
               </Field>
-              <Field label="תחום עסקי">
+              <Field size="xs" label="תחום עסקי">
                 <DomainSelect
                   value={draft.businessDomain}
                   onChange={(value) => patchDraft({ businessDomain: value, projectId: "", propertyId: "" })}
@@ -1114,7 +1122,7 @@ export default function StatementDetailClient({
                 />
               </Field>
               {draft.businessDomain === "logistics_projects" ? (
-                <Field label="פרויקט">
+                <Field size="xs" label="פרויקט">
                   <ProjectPicker
                     value={draft.projectId}
                     onChange={(projectId) => patchDraft({ projectId })}
@@ -1125,7 +1133,7 @@ export default function StatementDetailClient({
                   />
                 </Field>
               ) : draft.businessDomain === "property_management" ? (
-                <Field label="נכס">
+                <Field size="xs" label="נכס">
                   <SearchableSelect
                     value={draft.propertyId}
                     onChange={(propertyId) => patchDraft({ propertyId })}
@@ -1137,37 +1145,36 @@ export default function StatementDetailClient({
                   />
                 </Field>
               ) : null}
-              <Field label="הערה">
+              <Field size="xs" label="הערה">
                 <Input value={draft.notes} onChange={(e) => patchDraft({ notes: e.target.value })} className="h-9" />
               </Field>
             </div>
             {draft.assignmentRaw ? (
               <p className="text-xs text-muted-foreground">שיוך מקורי בקובץ: {draft.assignmentRaw}</p>
             ) : null}
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
-            <div className="flex gap-2">
-              <Button onClick={() => void saveDialog()} disabled={saving}>
-                {saving ? "שומר..." : "שמירה"}
-              </Button>
-              <Button variant="outline" onClick={cancelEdit} disabled={saving}>
-                ביטול
-              </Button>
-            </div>
             </div>
           ) : null}
-        </AdaptiveDialog>
-      </Dialog>
-
+      </FormDialog>
       {/* Income dialog (per-row or per-card) */}
-      <Dialog open={incomeOpen} onOpenChange={(open) => { if (!open && !incomeSaving) { setIncomeOpen(false); setIncomeForm(null); } }}>
-        <AdaptiveDialog size="formLg">
-          <DialogHeader>
-            <DialogTitle>צור הכנסה</DialogTitle>
-            <DialogDescription>{incomeTitle} — נרשם כתקבול (ללא הפקת קבלה).</DialogDescription>
-          </DialogHeader>
+      <FormDialog
+        open={incomeOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setIncomeOpen(false);
+            setIncomeForm(null);
+          }
+        }}
+        title="צור הכנסה"
+        description={`${incomeTitle} — נרשם כתקבול (ללא הפקת קבלה).`}
+        onSubmit={() => void submitIncome()}
+        submitLabel="צור הכנסה"
+        busyLabel="יוצר..."
+        busy={incomeSaving}
+        error={incomeError || undefined}
+      >
           {incomeForm ? (
             <div className="space-y-3">
-              <Field label="תחום עסקי *">
+              <Field size="xs" label="תחום עסקי *">
                 <DomainSelect
                   value={incomeForm.businessDomain}
                   onChange={(value) => patchIncome({ businessDomain: value, projectId: "", orderId: "", propertyId: "" })}
@@ -1176,7 +1183,7 @@ export default function StatementDetailClient({
               </Field>
 
               {incomeForm.businessDomain === "logistics_projects" ? (
-                <Field label="פרויקט">
+                <Field size="xs" label="פרויקט">
                   <ProjectPicker
                     value={incomeForm.projectId}
                     onChange={(projectId) => patchIncome({ projectId })}
@@ -1187,11 +1194,10 @@ export default function StatementDetailClient({
                   />
                 </Field>
               ) : incomeForm.businessDomain === "sales" ? (
-                <Field label="הזמנה (אופציונלי)">
-                  <select
+                <Field size="xs" label="הזמנה (אופציונלי)">
+                  <NativeSelect dense
                     value={incomeForm.orderId}
                     onChange={(e) => patchIncome({ orderId: e.target.value })}
-                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
                   >
                     <option value="">— כללי (ללא הזמנה) —</option>
                     {orders.map((o) => (
@@ -1199,10 +1205,10 @@ export default function StatementDetailClient({
                         {o.name}
                       </option>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </Field>
               ) : incomeForm.businessDomain === "property_management" ? (
-                <Field label="נכס">
+                <Field size="xs" label="נכס">
                   <SearchableSelect
                     value={incomeForm.propertyId}
                     onChange={(propertyId) => patchIncome({ propertyId })}
@@ -1215,8 +1221,8 @@ export default function StatementDetailClient({
                 </Field>
               ) : null}
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="סכום *">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field size="xs" label="סכום *">
                   <CurrencyInput
                     type="number"
                     min="0"
@@ -1226,7 +1232,7 @@ export default function StatementDetailClient({
                     className="h-9"
                   />
                 </Field>
-                <Field label="תאריך *">
+                <Field size="xs" label="תאריך *">
                   <Input
                     type="date"
                     value={incomeForm.paymentDate}
@@ -1234,20 +1240,19 @@ export default function StatementDetailClient({
                     className="h-9"
                   />
                 </Field>
-                <Field label="אמצעי תשלום">
-                  <select
+                <Field size="xs" label="אמצעי תשלום">
+                  <NativeSelect dense
                     value={incomeForm.paymentMethod}
                     onChange={(e) => patchIncome({ paymentMethod: e.target.value })}
-                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
                   >
                     {INCOME_METHODS.map((m) => (
                       <option key={m.value} value={m.value}>
                         {m.label}
                       </option>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </Field>
-                <Field label="אסמכתא">
+                <Field size="xs" label="אסמכתא">
                   <Input
                     value={incomeForm.referenceNumber}
                     onChange={(e) => patchIncome({ referenceNumber: e.target.value })}
@@ -1255,36 +1260,15 @@ export default function StatementDetailClient({
                   />
                 </Field>
               </div>
-              <Field label="הערה">
+              <Field size="xs" label="הערה">
                 <Input value={incomeForm.notes} onChange={(e) => patchIncome({ notes: e.target.value })} className="h-9" />
               </Field>
 
-              {incomeError ? <p className="text-sm text-destructive">{incomeError}</p> : null}
-              <div className="flex gap-2">
-                <Button onClick={() => void submitIncome()} disabled={incomeSaving}>
-                  {incomeSaving ? "יוצר..." : "צור הכנסה"}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => { setIncomeOpen(false); setIncomeForm(null); }}
-                  disabled={incomeSaving}
-                >
-                  ביטול
-                </Button>
-              </div>
             </div>
           ) : null}
-        </AdaptiveDialog>
-      </Dialog>
+      </FormDialog>
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <label className="text-xs font-medium text-muted-foreground">{label}</label>
-      {children}
-    </div>
-  );
-}
+

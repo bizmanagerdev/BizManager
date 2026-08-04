@@ -594,7 +594,6 @@ export default function DashboardActions({
         onNotesChange={setWorkerPaymentNotes}
         error={workerPaymentError}
         onSave={() => void saveWorkerPayment()}
-        onCancel={() => setWorkerPaymentOpen(false)}
       />
 
       <Dialog

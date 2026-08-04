@@ -3,15 +3,9 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toHebrewError } from "@/lib/error-messages";
 
@@ -115,64 +109,66 @@ export default function EditCommunicationDialog({
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent dir="rtl" className="w-[calc(100vw-1rem)] max-w-md p-4 text-right sm:p-6">
-          <DialogHeader>
-            <DialogTitle>עריכת פנייה</DialogTitle>
-            <DialogDescription>עדכון פרטי השיחה או מחיקתה.</DialogDescription>
-          </DialogHeader>
+      <FormDialog
+        open={open}
+        onOpenChange={onOpenChange}
+        title="עריכת פנייה"
+        description="עדכון פרטי השיחה או מחיקתה."
+        size="formMd"
+        onSubmit={() => void save()}
+        submitLabel="שמירה"
+        busyLabel="שומר..."
+        busy={busy}
+        error={error || undefined}
+        footerStart={
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={() => setConfirmDelete(true)}
+            disabled={busy}
+          >
+            מחיקה
+          </Button>
+        }
+      >
 
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <label className="text-sm font-medium">ערוץ</label>
-                <select value={channel} onChange={(e) => setChannel(e.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                <NativeSelect value={channel} onChange={(e) => setChannel(e.target.value)}>
                   {CHANNELS.map((c) => (
                     <option key={c.value} value={c.value}>
                       {c.label}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium">כיוון</label>
-                <select value={direction} onChange={(e) => setDirection(e.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                <NativeSelect value={direction} onChange={(e) => setDirection(e.target.value)}>
                   <option value="outgoing">יוצאת</option>
                   <option value="incoming">נכנסת</option>
                   <option value="missed">שלא נענתה</option>
-                </select>
+                </NativeSelect>
               </div>
             </div>
             <div className="space-y-1">
               <label className="text-sm font-medium">נושא</label>
-              <select value={topic} onChange={(e) => setTopic(e.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+              <NativeSelect value={topic} onChange={(e) => setTopic(e.target.value)}>
                 {TOPICS.map((t) => (
                   <option key={t.value} value={t.value}>
                     {t.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
             <div className="space-y-1">
               <label className="text-sm font-medium">תוכן</label>
               <Textarea value={content} onChange={(e) => setContent(e.target.value)} rows={3} />
             </div>
-            {error ? <div className="text-sm text-destructive">{error}</div> : null}
           </div>
-
-          <DialogFooter className="flex-wrap gap-2">
-            <Button type="button" variant="outline" className="me-auto text-destructive" onClick={() => setConfirmDelete(true)} disabled={busy}>
-              מחיקה
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
-              ביטול
-            </Button>
-            <Button type="button" onClick={() => void save()} disabled={busy}>
-              {busy ? "שומר..." : "שמירה"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </FormDialog>
 
       <ConfirmDialog
         open={confirmDelete}

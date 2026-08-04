@@ -7,15 +7,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronDown, GripVertical, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -796,7 +792,7 @@ export default function PayrollAdminClient({
                 {"משמרות עובדים זמינות כבר עכשיו. כדי לצפות או לעדכן שכר בפועל צריך להזין את סיסמת השכר."}
               </div>
             </div>
-            <div className="grid gap-3 md:grid-cols-[minmax(0,320px)_140px]">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,320px)_140px]">
               <Input
                 type="password"
                 value={password}
@@ -972,11 +968,11 @@ export default function PayrollAdminClient({
                     </div>
                   </div>
                   {userSessions.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
+                    <EmptyState dense>
                       {"אין פירוט עבודה מדווח לעובד הזה כרגע."}
-                    </div>
+                    </EmptyState>
                   ) : (
-                    <div className="grid gap-3 xl:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
                       {userSessions.map((session) => {
                         const workedMinutes = sessionWorkedMinutes(session);
                         const laborCost = Math.max(0, toNumber(session.labor_cost));
@@ -1138,10 +1134,9 @@ export default function PayrollAdminClient({
                 {canViewSalary && isEditing ? (
                   <div className="rounded-2xl border p-4">
                     <div className="mb-3 text-base font-semibold">{"משכורת חדשה"}</div>
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
                       <Field label="סוג שכר">
-                        <select
-                          className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                        <NativeSelect
                           value={formState.salary_type}
                           onChange={(event) =>
                             setFormState((current) => ({
@@ -1152,7 +1147,7 @@ export default function PayrollAdminClient({
                         >
                           <option value="monthly">{"גלובלי"}</option>
                           <option value="hourly">{"שעתי"}</option>
-                        </select>
+                        </NativeSelect>
                       </Field>
                       <Field label="בתוקף מ">
                         <DateInput
@@ -1260,20 +1255,20 @@ export default function PayrollAdminClient({
         })}
       </div>
 
-      <Dialog
+      <FormDialog
         open={createUserOpen}
         onOpenChange={(open) => {
           setCreateUserOpen(open);
           if (!open) resetCreateUserForm();
         }}
+        title="הוספת עובד מתוך המערכת"
+        description="העובד יתווסף למרכז השכר ויהיה זמין להגדרת שכר ולעבודה שוטפת."
+        onSubmit={() => void createUser()}
+        submitLabel="שמירת עובד"
+        busyLabel="שומר..."
+        busy={isPending}
+        error={createUserError || undefined}
       >
-        <DialogContent dir="rtl">
-          <DialogHeader className="text-right">
-            <DialogTitle>{"הוספת עובד מתוך המערכת"}</DialogTitle>
-            <DialogDescription>
-              {"העובד יתווסף למרכז השכר ויהיה זמין להגדרת שכר ולעבודה שוטפת."}
-            </DialogDescription>
-          </DialogHeader>
           <div className="space-y-3">
             <Field label="שם מלא">
               <Input
@@ -1313,7 +1308,7 @@ export default function PayrollAdminClient({
               />
             </Field>
             <Field label="סוג גישה">
-              <select
+              <NativeSelect
                 value={createUserForm.role}
                 onChange={(event) =>
                   setCreateUserForm((current) => ({
@@ -1321,50 +1316,42 @@ export default function PayrollAdminClient({
                     role: event.target.value as "worker" | "worker_no_access",
                   }))
                 }
-                className="h-11 w-full rounded-xl border border-input bg-background px-4 py-2 text-sm"
               >
                 <option value="worker">עובד</option>
                 <option value="worker_no_access">עובד ללא גישה</option>
-              </select>
+              </NativeSelect>
             </Field>
             <div className="text-xs text-muted-foreground">
               {"המסך הזה יוצר גם חשבון התחברות וגם את רשומת העובד, כך שאפשר להוסיף עובד ישירות מתוך מערכת השכר."}
             </div>
-            {createUserError ? <div className="text-sm text-destructive">{createUserError}</div> : null}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateUserOpen(false)} disabled={isPending}>
-              {"ביטול"}
-            </Button>
-            <Button onClick={() => void createUser()} disabled={isPending}>
-              {"שמירת עובד"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </FormDialog>
 
-      <Dialog
+      <FormDialog
         open={createSessionOpen}
         onOpenChange={(next) => {
-          if (!next) { clearDraft("session-create"); resetCreateSessionForm(); }
+          if (!next) {
+            clearDraft("session-create");
+            resetCreateSessionForm();
+          }
           setCreateSessionOpen(next);
         }}
+        title="הוספת משמרת ידנית"
+        description="מנהל או משרד יכולים להוסיף משמרת לעובד ולבחור איפה הוא עבד, בלי לבקש ממנו להיכנס או להזין סיסמה."
+        size="form2xl"
+        onSubmit={() => void createSession()}
+        submitLabel="שמירת משמרת"
+        busyLabel="שומר..."
+        busy={isPending}
+        error={createSessionError || undefined}
       >
-        <DialogContent dir="rtl">
-          <DialogHeader className="text-right">
-            <DialogTitle>{"הוספת משמרת ידנית"}</DialogTitle>
-            <DialogDescription>
-              {"מנהל או משרד יכולים להוסיף משמרת לעובד ולבחור איפה הוא עבד, בלי לבקש ממנו להיכנס או להזין סיסמה."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <Field label="עובד">
-              <select
+              <NativeSelect
                 value={createSessionForm.user_id}
                 onChange={(event) =>
                   setCreateSessionForm((current) => ({ ...current, user_id: event.target.value }))
                 }
-                className="h-11 w-full rounded-xl border border-input bg-background px-4 py-2 text-sm"
               >
                 <option value="">בחירה</option>
                 {sessionAssignableUsers.map((user) => (
@@ -1372,7 +1359,7 @@ export default function PayrollAdminClient({
                     {user.full_name ?? user.email ?? "עובד"}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </Field>
             <Field label="תחום">
               <DomainSelect
@@ -1388,7 +1375,7 @@ export default function PayrollAdminClient({
                 }
               />
             </Field>
-            <div className="md:col-span-2 grid gap-3 md:grid-cols-3">
+            <div className="md:col-span-2 grid grid-cols-1 gap-3 md:grid-cols-3">
               <Field label="שעת התחלה">
                 <DateTimeInput
                   value={createSessionForm.clock_in}
@@ -1428,12 +1415,11 @@ export default function PayrollAdminClient({
             </div>
             {createSessionForm.business_domain === "logistics_projects" ? (
               <Field label="פרויקט">
-                <select
+                <NativeSelect
                   value={createSessionForm.project_id}
                   onChange={(event) =>
                     setCreateSessionForm((current) => ({ ...current, project_id: event.target.value }))
                   }
-                  className="h-11 w-full rounded-xl border border-input bg-background px-4 py-2 text-sm"
                 >
                   <option value="">בחירה</option>
                   {projectOptions.map((option) => (
@@ -1441,17 +1427,16 @@ export default function PayrollAdminClient({
                       {option.label}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </Field>
             ) : null}
             {createSessionForm.business_domain === "property_management" ? (
               <Field label="נכס">
-                <select
+                <NativeSelect
                   value={createSessionForm.property_id}
                   onChange={(event) =>
                     setCreateSessionForm((current) => ({ ...current, property_id: event.target.value }))
                   }
-                  className="h-11 w-full rounded-xl border border-input bg-background px-4 py-2 text-sm"
                 >
                   <option value="">בחירה</option>
                   {propertyOptions.map((option) => (
@@ -1459,7 +1444,7 @@ export default function PayrollAdminClient({
                       {option.label}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </Field>
             ) : null}
             {canViewSalary ? (
@@ -1524,39 +1509,20 @@ export default function PayrollAdminClient({
             <div className="md:col-span-2 text-xs text-muted-foreground">
               {`משך: ${formatMinutes(createSessionWorkedMinutes)}`}
             </div>
-            {createSessionError ? (
-              <div
-                role="alert"
-                className="md:col-span-2 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive"
-              >
-                {createSessionError}
-              </div>
-            ) : null}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { clearDraft("session-create"); setCreateSessionOpen(false); }} disabled={isPending}>
-              {"ביטול"}
-            </Button>
-            <Button onClick={() => void createSession()} disabled={isPending}>
-              {"שמירת משמרת"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </FormDialog>
 
-      <Dialog
+      <ConfirmDialog
         open={Boolean(pendingSessionEditConfirm)}
         onOpenChange={(open) => {
           if (!open) cancelSessionFieldEdit();
         }}
+        title="אישור עדכון משמרת"
+        description="השינוי יישמר רק אחרי אישור."
+        confirmLabel="אישור"
+        loading={isPending}
+        onConfirm={() => void confirmSessionCostChange()}
       >
-        <DialogContent dir="rtl">
-          <DialogHeader className="text-right">
-            <DialogTitle>{"אישור עדכון משמרת"}</DialogTitle>
-            <DialogDescription>
-              {"השינוי יישמר רק אחרי אישור."}
-            </DialogDescription>
-          </DialogHeader>
           <div className="space-y-3 text-right">
             <div className="rounded-xl border p-3 text-sm">
               <div className="text-muted-foreground">{"סכום קודם"}</div>
@@ -1575,32 +1541,20 @@ export default function PayrollAdminClient({
               </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => cancelSessionFieldEdit()}>
-              {"ביטול"}
-            </Button>
-            <Button disabled={isPending} onClick={() => void confirmSessionCostChange()}>
-              {"אישור"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </ConfirmDialog>
 
-      <Dialog
+      <ConfirmDialog
         open={Boolean(pendingDeletion)}
         onOpenChange={(open) => {
-          if (!open && !deletingSessionId) {
-            setPendingDeletion(null);
-          }
+          if (!open) setPendingDeletion(null);
         }}
+        destructive
+        title="מחיקת משמרת"
+        description="הפעולה תמחק את המשמרת מרישומי הפרויקט והשכר."
+        confirmLabel="מחיקה"
+        loading={Boolean(deletingSessionId)}
+        onConfirm={() => void confirmDeleteSession()}
       >
-        <DialogContent dir="rtl">
-          <DialogHeader className="text-right">
-            <DialogTitle>{"מחיקת משמרת"}</DialogTitle>
-            <DialogDescription>
-              {"הפעולה תמחק את המשמרת מרישומי הפרויקט והשכר."}
-            </DialogDescription>
-          </DialogHeader>
           <div className="space-y-2 text-right text-sm">
             <div>
               למחוק את המשמרת של{" "}
@@ -1615,20 +1569,7 @@ export default function PayrollAdminClient({
               {pendingDeletion?.session.clock_in ? formatDateTime(pendingDeletion.session.clock_in) : ""}
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPendingDeletion(null)} disabled={Boolean(deletingSessionId)}>
-              {"ביטול"}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => void confirmDeleteSession()}
-              disabled={!pendingDeletion || Boolean(deletingSessionId)}
-            >
-              {deletingSessionId ? "מוחק..." : "מחיקה"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </ConfirmDialog>
     </div>
   );
 }

@@ -5,26 +5,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { offlineFetch } from "@/lib/offline-queue";
-import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <label className="text-sm font-medium">{label}</label>
-      {children}
-    </div>
-  );
-}
+import { AdaptiveGrid } from "@/components/layout/page-layout";
+import { FormDialog } from "@/components/ui/form-dialog";
 
 /** "+ איש קשר" — add a contact straight from the customer details page. */
 export default function AddContactButton({
@@ -108,26 +94,18 @@ export default function AddContactButton({
       >
         + איש קשר
       </Button>
-      <Dialog
+      <FormDialog
         open={open}
-        onOpenChange={(next) => {
-          if (!next && busy) return;
-          setOpen(next);
-        }}
+        onOpenChange={setOpen}
+        title="הוספת איש קשר"
+        description={`לקוח: ${customerName}`}
+        onSubmit={() => void submit()}
+        submitLabel="יצירת איש קשר"
+        busyLabel="יוצר..."
+        busy={busy}
+        error={error || undefined}
       >
-        <AdaptiveDialog size="formLg">
-          <DialogHeader>
-            <DialogTitle>הוספת איש קשר</DialogTitle>
-            <DialogDescription>לקוח: {customerName}</DialogDescription>
-          </DialogHeader>
-          <form
-            className="space-y-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void submit();
-            }}
-          >
-            <fieldset disabled={busy} className="space-y-3">
+            <>
               <Field label="שם מלא *">
                 <Input value={name} onChange={(e) => setName(e.target.value)} />
               </Field>
@@ -156,19 +134,8 @@ export default function AddContactButton({
                 />
                 <span>איש קשר ראשי</span>
               </label>
-            </fieldset>
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
-            <DialogFooter>
-              <Button type="button" variant="secondary" onClick={() => setOpen(false)} disabled={busy}>
-                ביטול
-              </Button>
-              <Button type="submit" disabled={busy}>
-                {busy ? "יוצר..." : "יצירת איש קשר"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </AdaptiveDialog>
-      </Dialog>
+            </>
+      </FormDialog>
     </>
   );
 }

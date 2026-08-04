@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import {
   COMMUNICATION_CHANNELS,
@@ -133,26 +134,24 @@ export default function CommunicationLogItem({
   if (editing) {
     return (
       <div className="rounded-lg border border-border/60 bg-background/50 p-2 text-sm">
-        <div className="grid gap-2 sm:grid-cols-2">
-          <select
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <NativeSelect dense
             value={channel}
             onChange={(e) => setChannel(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
           >
             {COMMUNICATION_CHANNELS.map((c) => (
               <option key={c.value} value={c.value}>
                 {c.label}
               </option>
             ))}
-          </select>
-          <select
+          </NativeSelect>
+          <NativeSelect dense
             value={direction}
             onChange={(e) => setDirection(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
           >
             <option value="outgoing">שיחה יוצאת</option>
             <option value="incoming">שיחה נכנסת</option>
-          </select>
+          </NativeSelect>
         </div>
         <Textarea
           className="mt-2"

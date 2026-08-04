@@ -2,25 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { ReactNode } from "react";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { loadMorePriceList } from "@/app/(app)/sales/actions";
 import type { ProductsFilters } from "@/app/(app)/sales/loadProducts";
 import { Loader2, Pencil, Plus, Search, Send, SlidersHorizontal, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Field } from "@/components/ui/field";
 import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 import { toHebrewError } from "@/lib/error-messages";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 
 type CategoryOption = {
@@ -870,10 +865,9 @@ export default function PriceListClient({
               className="h-11 pr-10"
             />
           </div>
-          <select
+          <NativeSelect
             value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm sm:w-56"
+            onChange={(e) => setCategoryFilter(e.target.value)} className="sm:w-56"
           >
             <option value="">כל הקטגוריות</option>
             {categories.map((category) => (
@@ -881,7 +875,7 @@ export default function PriceListClient({
                 {category.name}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
         <div className="grid grid-cols-2 gap-2 lg:flex lg:items-center">
           <Button type="button" variant="outline" className="h-11 lg:h-10" onClick={() => void sharePriceList()} disabled={shareLoading}>
@@ -898,10 +892,9 @@ export default function PriceListClient({
           don't fit in the header live here, revealed by the filter toggle. */}
       {filtersOpen ? (
         <div className="flex flex-col gap-2 md:hidden">
-          <select
+          <NativeSelect
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           >
             <option value="">כל הקטגוריות</option>
             {categories.map((category) => (
@@ -909,7 +902,7 @@ export default function PriceListClient({
                 {category.name}
               </option>
             ))}
-          </select>
+          </NativeSelect>
           <Button
             type="button"
             variant="outline"
@@ -968,7 +961,7 @@ export default function PriceListClient({
           </div>
 
           <div className="space-y-6 px-10 py-8">
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div className="rounded-3xl border border-brand bg-surface-muted p-5">
                 <div className="text-xs font-medium tracking-[0.14em] text-muted-pdf">קטגוריה</div>
                 <div className="mt-2 text-lg font-semibold">{activeCategoryName ?? "כל הקטגוריות"}</div>
@@ -1186,25 +1179,17 @@ export default function PriceListClient({
       )}
       {tableError ? <p className="text-sm text-destructive">{tableError}</p> : null}
 
-      <Dialog
+      <FormDialog
         open={createOpen}
-        onOpenChange={(open) => {
-          if (!open && createLoading) return;
-          setCreateOpen(open);
-        }}
+        onOpenChange={setCreateOpen}
+        title="הוספת מוצר"
+        description="הגדירו מוצר חדש למחירון."
+        onSubmit={() => void addProduct()}
+        submitLabel="שמירת מוצר"
+        busyLabel="שומר..."
+        busy={createLoading}
+        error={createError || undefined}
       >
-        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>הוספת מוצר</DialogTitle>
-            <DialogDescription>הגדירו מוצר חדש למחירון.</DialogDescription>
-          </DialogHeader>
-          <form
-            className="space-y-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void addProduct();
-            }}
-          >
             <Field label="שם מוצר *">
               <Input value={createName} onChange={(e) => setCreateName(e.target.value)} />
             </Field>
@@ -1212,10 +1197,9 @@ export default function PriceListClient({
               <Input value={createCode} onChange={(e) => setCreateCode(e.target.value)} />
             </Field>
             <Field label="קטגוריה *">
-              <select
+              <NativeSelect
                 value={createCategoryId}
                 onChange={(e) => setCreateCategoryId(e.target.value)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
                 <option value="">בחרו קטגוריה</option>
                 {categories
@@ -1226,11 +1210,11 @@ export default function PriceListClient({
                     </option>
                   ))}
                 <option value={NEW_CATEGORY_VALUE}>+ קטגוריה חדשה</option>
-              </select>
+              </NativeSelect>
             </Field>
             {isCreateNewCategory ? (
               <>
-                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
                   <Field label="שם קטגוריה חדשה">
                     <Input
                       value={createNewCategoryName}
@@ -1250,7 +1234,7 @@ export default function PriceListClient({
                 {createCategoryError ? <p className="text-sm text-destructive">{createCategoryError}</p> : null}
               </>
             ) : null}
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="מחיר מכירה">
                 <CurrencyInput value={createPrice} onChange={(e) => setCreatePrice(e.target.value)} />
               </Field>
@@ -1285,38 +1269,19 @@ export default function PriceListClient({
               />
               <span>מוצר פעיל</span>
             </label>
-            {createError ? <p className="text-sm text-destructive">{createError}</p> : null}
-            <DialogFooter>
-              <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)} disabled={createLoading}>
-                ביטול
-              </Button>
-              <Button type="submit" disabled={createLoading}>
-                {createLoading ? "שומר..." : "שמירת מוצר"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      </FormDialog>
 
-      <Dialog
+      <FormDialog
         open={editOpen}
-        onOpenChange={(open) => {
-          if (!open && editLoading) return;
-          setEditOpen(open);
-        }}
+        onOpenChange={setEditOpen}
+        title="עריכת מוצר"
+        description="עדכון פרטי מוצר במחירון."
+        onSubmit={() => void saveEdit()}
+        submitLabel="שמירת שינויים"
+        busyLabel="שומר..."
+        busy={editLoading}
+        error={editError || undefined}
       >
-        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>עריכת מוצר</DialogTitle>
-            <DialogDescription>עדכון פרטי מוצר במחירון.</DialogDescription>
-          </DialogHeader>
-          <form
-            className="space-y-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void saveEdit();
-            }}
-          >
             <Field label="שם מוצר *">
               <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
             </Field>
@@ -1324,10 +1289,9 @@ export default function PriceListClient({
               <Input value={editCode} onChange={(e) => setEditCode(e.target.value)} />
             </Field>
             <Field label="קטגוריה *">
-              <select
+              <NativeSelect
                 value={editCategoryId}
                 onChange={(e) => setEditCategoryId(e.target.value)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
                 <option value="">בחרו קטגוריה</option>
                 {categories
@@ -1338,11 +1302,11 @@ export default function PriceListClient({
                     </option>
                   ))}
                 <option value={NEW_CATEGORY_VALUE}>+ קטגוריה חדשה</option>
-              </select>
+              </NativeSelect>
             </Field>
             {isEditNewCategory ? (
               <>
-                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
                   <Field label="שם קטגוריה חדשה">
                     <Input
                       value={editNewCategoryName}
@@ -1362,7 +1326,7 @@ export default function PriceListClient({
                 {editCategoryError ? <p className="text-sm text-destructive">{editCategoryError}</p> : null}
               </>
             ) : null}
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="מחיר מכירה">
                 <CurrencyInput value={editPrice} onChange={(e) => setEditPrice(e.target.value)} />
               </Field>
@@ -1397,65 +1361,22 @@ export default function PriceListClient({
               />
               <span>מוצר פעיל</span>
             </label>
-            {editError ? <p className="text-sm text-destructive">{editError}</p> : null}
-            <DialogFooter>
-              <Button type="button" variant="secondary" onClick={() => setEditOpen(false)} disabled={editLoading}>
-                ביטול
-              </Button>
-              <Button type="submit" disabled={editLoading}>
-                {editLoading ? "שומר..." : "שמירת שינויים"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      </FormDialog>
 
-      <Dialog
+      <ConfirmDialog
         open={deleteConfirmOpen}
         onOpenChange={(open) => {
-          if (!open && deleteLoadingId) return;
           setDeleteConfirmOpen(open);
+          if (!open) setPendingDelete(null);
         }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>אישור מחיקה</DialogTitle>
-            <DialogDescription>
-              האם למחוק את המוצר {pendingDelete ? `"${pendingDelete.name}"` : ""}? פעולה זו אינה הפיכה.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={Boolean(deleteLoadingId)}
-              onClick={() => {
-                setDeleteConfirmOpen(false);
-                setPendingDelete(null);
-              }}
-            >
-              ביטול
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={!pendingDelete || deleteLoadingId === pendingDelete.id}
-              onClick={() => void confirmDeleteProduct()}
-            >
-              {pendingDelete && deleteLoadingId === pendingDelete.id ? "מוחק..." : "מחיקה"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        destructive
+        title="אישור מחיקה"
+        description={`האם למחוק את המוצר ${pendingDelete ? `"${pendingDelete.name}"` : ""}? פעולה זו אינה הפיכה.`}
+        confirmLabel="מחיקה"
+        loading={Boolean(pendingDelete && deleteLoadingId === pendingDelete.id)}
+        onConfirm={() => void confirmDeleteProduct()}
+      />
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <label className="text-sm font-medium">{label}</label>
-      {children}
-    </div>
-  );
-}

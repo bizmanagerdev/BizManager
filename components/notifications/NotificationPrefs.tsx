@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { NOTIF_BUCKETS } from "@/lib/notifications/categories";
 import {
   DEFAULT_PREFS,
@@ -102,8 +103,7 @@ export default function NotificationPrefs() {
       {prefs.delivery !== "all" ? (
         <section className="space-y-1">
           <div className="text-xs font-semibold text-muted-foreground">שעת הסיכום היומי</div>
-          <select
-            className="h-9 rounded-lg border border-border bg-background px-2 text-sm"
+          <NativeSelect dense
             value={String(prefs.summary_hour)}
             onChange={(e) => setPrefs((p) => ({ ...p, summary_hour: Number(e.target.value) }))}
           >
@@ -112,7 +112,7 @@ export default function NotificationPrefs() {
                 {String(h).padStart(2, "0")}:00
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </section>
       ) : null}
 

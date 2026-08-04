@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, Receipt, Paperclip, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -16,13 +17,9 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { CustomerPicker, type PickedCustomer } from "@/components/customers/CustomerPicker";
 import { toHebrewError } from "@/lib/error-messages";
 import { offlineUpload } from "@/lib/offline-upload";
-import {
-  Dialog,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
+import { FormDialog } from "@/components/ui/form-dialog";
+import { ViewDialog } from "@/components/ui/view-dialog";
+import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { getBusinessDomainLabel } from "@/lib/expenses";
 import { DomainSelect } from "@/components/financial/DomainSelect";
@@ -52,9 +49,7 @@ import RepaymentPlanPicker, {
 } from "./RepaymentPlanPicker";
 import {
   Field,
-  METHOD_OPTIONS,
-  SELECT_CLASS,
-  StatBox,
+  METHOD_OPTIONS,  StatBox,
   formatDate,
   formatIls,
   todayIso,
@@ -245,12 +240,17 @@ function LoanFormDialog({
       : `נתת הלוואה — בחר/י למי (לווה). הצד שלנו (${BUSINESS_OWNER_NAME}) הוא המלווה.`;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <AdaptiveDialog size="form2xl">
-        <DialogHeader>
-          <DialogTitle>{loan ? "עריכת הלוואה" : "הלוואה חדשה"}</DialogTitle>
-          <DialogDescription>{counterpartyHint}</DialogDescription>
-        </DialogHeader>
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={loan ? "עריכת הלוואה" : "הלוואה חדשה"}
+      description={counterpartyHint}
+      size="form2xl"
+      onSubmit={submit}
+      submitLabel={loan ? "שמירה" : "הוספה"}
+      busyLabel="שומר..."
+      busy={pending}
+    >
 
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-2">
@@ -297,8 +297,7 @@ function LoanFormDialog({
               />
             </Field>
             <Field label="אופן ההלוואה">
-              <select
-                className={SELECT_CLASS}
+              <NativeSelect
                 value={form.loan_method}
                 onChange={(e) => {
                   const m = e.target.value;
@@ -314,7 +313,7 @@ function LoanFormDialog({
                     {m.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </Field>
             <AccountSelect
               required
@@ -329,8 +328,7 @@ function LoanFormDialog({
               }}
             />
             <Field label="אופן ההחזרה">
-              <select
-                className={SELECT_CLASS}
+              <NativeSelect
                 value={form.repayment_method}
                 onChange={(e) => set("repayment_method", e.target.value)}
               >
@@ -339,7 +337,7 @@ function LoanFormDialog({
                     {m.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </Field>
             <Field label="תחום">
               <DomainSelect
@@ -380,17 +378,8 @@ function LoanFormDialog({
             />
           </Field>
 
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={pending}>
-              ביטול
-            </Button>
-            <Button type="button" onClick={submit} disabled={pending}>
-              {pending ? "שומר..." : loan ? "שמירה" : "הוספה"}
-            </Button>
-          </div>
         </div>
-      </AdaptiveDialog>
-    </Dialog>
+    </FormDialog>
   );
 }
 
@@ -481,16 +470,16 @@ function RepaymentsDialog({
   }
 
   return (
-    <Dialog open={Boolean(loan)} onOpenChange={onOpenChange}>
-      <AdaptiveDialog size="formLg">
-        <DialogHeader>
-          <DialogTitle>החזרים ותוכנית תשלומים</DialogTitle>
-          <DialogDescription>
-            {loan
-              ? `${loan.direction === "taken" ? "החזר שלי למלווה" : "החזר מהלווה"} · יתרה לתשלום: ${formatIls(loan.outstanding)}`
-              : ""}
-          </DialogDescription>
-        </DialogHeader>
+    <ViewDialog
+      open={Boolean(loan)}
+      onOpenChange={onOpenChange}
+      title="החזרים ותוכנית תשלומים"
+      description={
+        loan
+          ? `${loan.direction === "taken" ? "החזר שלי למלווה" : "החזר מהלווה"} · יתרה לתשלום: ${formatIls(loan.outstanding)}`
+          : undefined
+      }
+    >
 
         {loan ? (
           <div className="space-y-4">
@@ -585,8 +574,7 @@ function RepaymentsDialog({
                     <CurrencyInput value={interest} onChange={(e) => setInterest(e.target.value)} />
                   </Field>
                   <Field label="אופן">
-                    <select
-                      className={SELECT_CLASS}
+                    <NativeSelect
                       value={method}
                       onChange={(e) => {
                         const m = e.target.value;
@@ -599,7 +587,7 @@ function RepaymentsDialog({
                           {m.label}
                         </option>
                       ))}
-                    </select>
+                    </NativeSelect>
                   </Field>
                   <AccountSelect
                     required
@@ -626,8 +614,7 @@ function RepaymentsDialog({
             </div>
           </div>
         ) : null}
-      </AdaptiveDialog>
-    </Dialog>
+    </ViewDialog>
   );
 }
 
@@ -749,12 +736,12 @@ function LoanDocumentsDialog({
     : "";
 
   return (
-    <Dialog open={Boolean(loan)} onOpenChange={onOpenChange}>
-      <AdaptiveDialog size="formLg">
-        <DialogHeader>
-          <DialogTitle>מסמכים</DialogTitle>
-          <DialogDescription>{counterparty}</DialogDescription>
-        </DialogHeader>
+    <ViewDialog
+      open={Boolean(loan)}
+      onOpenChange={onOpenChange}
+      title="מסמכים"
+      description={counterparty}
+    >
 
         <div className="space-y-3">
           <FileUploadActions
@@ -817,8 +804,7 @@ function LoanDocumentsDialog({
             )}
           </div>
         </div>
-      </AdaptiveDialog>
-    </Dialog>
+    </ViewDialog>
   );
 }
 

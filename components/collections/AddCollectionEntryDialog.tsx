@@ -4,17 +4,11 @@ import { toHebrewError } from "@/lib/error-messages";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { COMMUNICATION_CHANNELS } from "@/lib/communications";
 import { AssigneeSelect } from "@/components/collections/AssigneeSelect";
 import { useAssignableUsers } from "@/hooks/useAssignableUsers";
@@ -184,19 +178,21 @@ export default function AddCollectionEntryDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        dir="rtl"
-        className="max-h-[90svh] w-[calc(100vw-1rem)] max-w-lg overflow-y-auto p-4 text-right sm:p-6"
-      >
-        <DialogHeader>
-          <DialogTitle>{mode === "reminder" ? "הוספת תזכורת" : "תיעוד שיחה"}</DialogTitle>
-          <DialogDescription>
-            {mode === "reminder"
-              ? "קביעת תזכורת מעקב, עם או בלי שיוך ללקוח."
-              : "תיעוד פנייה/שיחה מול לקוח, עם אפשרות לתזכורת המשך."}
-          </DialogDescription>
-        </DialogHeader>
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={mode === "reminder" ? "הוספת תזכורת" : "תיעוד שיחה"}
+      description={
+        mode === "reminder"
+          ? "קביעת תזכורת מעקב, עם או בלי שיוך ללקוח."
+          : "תיעוד פנייה/שיחה מול לקוח, עם אפשרות לתזכורת המשך."
+      }
+      onSubmit={() => void submit()}
+      submitLabel={mode === "reminder" ? "הוספת תזכורת" : "שמירה"}
+      busyLabel="שומר..."
+      busy={submitting}
+      error={error || undefined}
+    >
 
         <div className="space-y-3">
           {/* Customer picker */}
@@ -273,26 +269,24 @@ export default function AddCollectionEntryDialog({
             </>
           ) : (
             <>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <select
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <NativeSelect
                   value={channel}
                   onChange={(e) => setChannel(e.target.value)}
-                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
                 >
                   {COMMUNICATION_CHANNELS.map((c) => (
                     <option key={c.value} value={c.value}>
                       {c.label}
                     </option>
                   ))}
-                </select>
-                <select
+                </NativeSelect>
+                <NativeSelect
                   value={direction}
                   onChange={(e) => setDirection(e.target.value)}
-                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
                 >
                   <option value="outgoing">שיחה יוצאת</option>
                   <option value="incoming">שיחה נכנסת</option>
-                </select>
+                </NativeSelect>
               </div>
               <Textarea
                 rows={2}
@@ -310,7 +304,7 @@ export default function AddCollectionEntryDialog({
               </label>
               {withFollowUp ? (
                 <>
-                  <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <DateTimeInput value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} />
                     <Input
                       value={followUpContent}
@@ -327,23 +321,7 @@ export default function AddCollectionEntryDialog({
             </>
           )}
 
-          {error ? <div className="text-sm text-destructive">{error}</div> : null}
         </div>
-
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => onOpenChange(false)}
-            disabled={submitting}
-          >
-            ביטול
-          </Button>
-          <Button type="button" onClick={() => void submit()} disabled={submitting}>
-            {submitting ? "שומר..." : mode === "reminder" ? "הוספת תזכורת" : "שמירה"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </FormDialog>
   );
 }

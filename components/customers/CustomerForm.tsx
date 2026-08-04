@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Field } from "@/components/ui/field";
 import { toHebrewError } from "@/lib/error-messages";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -486,16 +488,15 @@ export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExi
         </Field>
 
         <Field label={isEdit ? "עיר" : "עיר *"}>
-          <select
+          <NativeSelect
             value={city}
             onChange={(e) => setCity(e.target.value)}
-            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
           >
             <option value="">בחר עיר...</option>
             {CITY_OPTIONS.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
-          </select>
+          </NativeSelect>
         </Field>
 
         {city === "אחר" ? (
@@ -625,14 +626,5 @@ export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExi
         </Button>
       </div>
     </form>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <label className="text-sm font-medium">{label}</label>
-      {children}
-    </div>
   );
 }

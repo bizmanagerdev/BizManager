@@ -8,14 +8,7 @@ import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { DateInput } from "@/components/ui/date-input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { ACCOUNT_KINDS, getAccountKindLabel, type Account } from "@/lib/accounts";
 import { toHebrewError } from "@/lib/error-messages";
 
@@ -189,23 +182,18 @@ export default function AccountsCard({ initialAccounts }: { initialAccounts: Acc
       </CardContent>
 
       {/* Create / edit dialog */}
-      <Dialog open={dialogOpen} onOpenChange={(next) => !saving && setDialogOpen(next)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{form.id ? "עריכת חשבון" : "חשבון חדש"}</DialogTitle>
-            <DialogDescription>
-              יתרת הפתיחה היא הסכום האמיתי בחשבון בתאריך הפתיחה. תנועות לפני תאריך זה נחשבות כבר
-              ככלולות בה.
-            </DialogDescription>
-          </DialogHeader>
-
-          <form
-            className="space-y-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void save();
-            }}
-          >
+      <FormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        title={form.id ? "עריכת חשבון" : "חשבון חדש"}
+        description="יתרת הפתיחה היא הסכום האמיתי בחשבון בתאריך הפתיחה. תנועות לפני תאריך זה נחשבות כבר ככלולות בה."
+        size="formMd"
+        onSubmit={() => void save()}
+        submitLabel="שמירה"
+        busyLabel="שומר..."
+        busy={saving}
+        submitDisabled={invalid}
+      >
             <div className="space-y-1">
               <label className="text-sm font-medium">שם החשבון</label>
               <Input
@@ -270,18 +258,7 @@ export default function AccountsCard({ initialAccounts }: { initialAccounts: Acc
                 חשבון פעיל
               </label>
             )}
-
-            <DialogFooter className="mt-2">
-              <Button type="button" variant="secondary" disabled={saving} onClick={() => setDialogOpen(false)}>
-                ביטול
-              </Button>
-              <Button type="submit" disabled={invalid || saving}>
-                {saving ? "שומר..." : "שמירה"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      </FormDialog>
 
       <ConfirmDialog
         open={Boolean(deleteTarget)}

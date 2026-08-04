@@ -3,6 +3,7 @@
 import { Fragment, useMemo, useState } from "react";
 import { ChevronDown, ChevronLeft } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import type { CardCostsReport } from "@/lib/financial/cardCosts";
 
 const currencyFormatter = new Intl.NumberFormat("he-IL", {
@@ -49,9 +50,9 @@ export default function CardCostsPanel({ report }: { report: CardCostsReport }) 
 
   if (cards.length === 0 || months.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
+      <EmptyState>
         אין חיובי אשראי להצגה. נתונים יופיעו אחרי שמירת פירוט עם הוצאות.
-      </div>
+      </EmptyState>
     );
   }
 

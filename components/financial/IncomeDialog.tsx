@@ -8,8 +8,9 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { toHebrewError } from "@/lib/error-messages";
-import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
-import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AdaptiveGrid } from "@/components/layout/page-layout";
+import { FormDialog } from "@/components/ui/form-dialog";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -47,9 +48,6 @@ export type IncomeProjectOption = {
 
 /** An order / property the income can be linked to. */
 export type IncomeEntityOption = { id: string; name: string; subtitle?: string };
-
-const fieldClass =
-  "h-11 w-full rounded-xl border border-input bg-background/80 px-4 py-2 text-sm shadow-sm outline-none transition-all focus:border-destructive/40 focus:ring-2 focus:ring-ring";
 
 export function IncomeDialog({
   open,
@@ -204,21 +202,21 @@ export function IncomeDialog({
   }
 
   return (
-    <Dialog
+    <FormDialog
       open={open}
       onOpenChange={(next) => {
-        if (!next && submitting) return;
         onOpenChange(next);
         if (!next) resetForm();
       }}
+      title={HEBREW.incomeNew}
+      description={HEBREW.incomeDialogDescription}
+      size="formXl"
+      onSubmit={() => void createIncome()}
+      submitLabel={HEBREW.saveIncome}
+      busyLabel={HEBREW.saving}
+      busy={submitting}
+      error={error || undefined}
     >
-      <AdaptiveDialog size="formXl">
-        <DialogHeader>
-          <DialogTitle>{HEBREW.incomeNew}</DialogTitle>
-          <DialogDescription>{HEBREW.incomeDialogDescription}</DialogDescription>
-        </DialogHeader>
-
-        <fieldset disabled={submitting} className="contents">
           <div className="grid gap-4">
             <label className="space-y-2 text-sm">
               <span>{HEBREW.domain} *</span>
@@ -294,7 +292,7 @@ export function IncomeDialog({
             {businessDomain === "sales" ? (
               <label className="space-y-2 text-sm">
                 <span>הזמנה</span>
-                <select className={fieldClass} value={orderId} onChange={(e) => setOrderId(e.target.value)}>
+                <NativeSelect value={orderId} onChange={(e) => setOrderId(e.target.value)}>
                   <option value="">ללא הזמנה</option>
                   {orders.map((order) => (
                     <option key={order.id} value={order.id}>
@@ -302,14 +300,14 @@ export function IncomeDialog({
                       {order.subtitle ? ` | ${order.subtitle}` : ""}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </label>
             ) : null}
 
             {businessDomain === "property_management" ? (
               <label className="space-y-2 text-sm">
                 <span>נכס *</span>
-                <select className={fieldClass} value={propertyId} onChange={(e) => setPropertyId(e.target.value)}>
+                <NativeSelect value={propertyId} onChange={(e) => setPropertyId(e.target.value)}>
                   <option value="">בחרו נכס</option>
                   {properties.map((property) => (
                     <option key={property.id} value={property.id}>
@@ -317,7 +315,7 @@ export function IncomeDialog({
                       {property.subtitle ? ` | ${property.subtitle}` : ""}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </label>
             ) : null}
 
@@ -337,8 +335,7 @@ export function IncomeDialog({
 
                   <label className="space-y-2 text-sm">
                     <span>{HEBREW.paymentMethod} *</span>
-                    <select
-                      className={fieldClass}
+                    <NativeSelect
                       value={method}
                       onChange={(e) => {
                         const m = e.target.value;
@@ -352,7 +349,7 @@ export function IncomeDialog({
                       <option value="check">{HEBREW.check}</option>
                       <option value="credit_card">{HEBREW.creditCard}</option>
                       <option value="other">{HEBREW.other}</option>
-                    </select>
+                    </NativeSelect>
                     {method === "check" ? (
                       <span className="block text-xs text-muted-foreground">
                         {"צ'ק יירשם כממתין לפירעון עד תאריך הפירעון."}
@@ -478,20 +475,7 @@ export function IncomeDialog({
               </>
             ) : null}
           </div>
-        </fieldset>
-
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-        <div className="mt-4 flex justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={submitting}>
-            {HEBREW.cancel}
-          </Button>
-          <Button type="button" onClick={() => void createIncome()} disabled={submitting}>
-            {submitting ? HEBREW.saving : HEBREW.saveIncome}
-          </Button>
-        </div>
-      </AdaptiveDialog>
-    </Dialog>
+    </FormDialog>
   );
 }
 

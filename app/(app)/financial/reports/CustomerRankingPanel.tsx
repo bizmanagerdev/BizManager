@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { formatShortDate } from "@/lib/date";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
@@ -146,9 +147,9 @@ export default function CustomerRankingPanel({ report }: { report: CustomerRanki
         </CardHeader>
         <CardContent>
           {top.length === 0 ? (
-            <div className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
+            <EmptyState>
               אין נתוני מכירות להצגה.
-            </div>
+            </EmptyState>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-right text-sm">
@@ -185,9 +186,9 @@ export default function CustomerRankingPanel({ report }: { report: CustomerRanki
         </CardHeader>
         <CardContent>
           {inactive.length === 0 ? (
-            <div className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
+            <EmptyState>
               אין לקוחות רדומים לתקופה שנבחרה — כל הכבוד!
-            </div>
+            </EmptyState>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-right text-sm">

@@ -3,14 +3,7 @@
 import { useEffect, useState } from "react";
 import { Download, Share } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { ViewDialog } from "@/components/ui/view-dialog";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -46,6 +39,7 @@ export default function PwaInstallButton() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(isStandaloneMode);
   const [isIos] = useState(isIosDevice);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   useEffect(() => {
     function handleBeforeInstallPrompt(event: Event) {
@@ -109,26 +103,31 @@ export default function PwaInstallButton() {
   if (!isIos) return null;
 
   return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button variant="secondary" size="sm" className="gap-2 rounded-xl" type="button">
-          <Download className="h-4 w-4" />
-          <span className="hidden sm:inline">התקנת האפליקציה</span>
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-sm rounded-3xl">
-        <DialogHeader>
-          <DialogTitle>התקנת BizH</DialogTitle>
-          <DialogDescription>
-            באייפון ובאייפד, ספארי מתקין אפליקציות מתפריט השיתוף במקום להציג חלון קופץ.
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <Button
+        variant="secondary"
+        size="sm"
+        className="gap-2 rounded-xl"
+        type="button"
+        onClick={() => setHelpOpen(true)}
+      >
+        <Download className="h-4 w-4" />
+        <span className="hidden sm:inline">התקנת האפליקציה</span>
+      </Button>
+
+      <ViewDialog
+        open={helpOpen}
+        onOpenChange={setHelpOpen}
+        title="התקנת BizH"
+        description="באייפון ובאייפד, ספארי מתקין אפליקציות מתפריט השיתוף במקום להציג חלון קופץ."
+        size="formSm"
+      >
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>1. הקישו על כפתור השיתוף <Share className="mx-1 inline h-4 w-4 align-text-bottom" /> בספארי.</p>
           <p>2. בחרו באפשרות <strong>הוספה למסך הבית</strong>.</p>
           <p>3. הקישו על <strong>הוספה</strong> כדי להוסיף את BizH למסך הבית.</p>
         </div>
-      </DialogContent>
-    </Dialog>
+      </ViewDialog>
+    </>
   );
 }

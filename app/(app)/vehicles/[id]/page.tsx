@@ -130,7 +130,7 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
           ) : null}
         </div>
 
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <ExpiryBadge label="טסט" date={vehicle.testDueDate} />
           <ExpiryBadge label="ביטוח" date={vehicle.insuranceDueDate} />
           <ExpiryBadge label="רישוי" date={vehicle.licenseDueDate} />

@@ -2,11 +2,12 @@
 
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { buildInstallmentSchedule, type LoanRepayment } from "@/lib/loans";
-import { Field, SELECT_CLASS, formatIls } from "./shared";
+import { Field, formatIls } from "./shared";
 
 // ════════════════════════════════════════════════════════════════════════════
 // "איך מחזירים?" — the repayment structure of a loan: one payment on a date, or
@@ -192,7 +193,7 @@ export default function RepaymentPlanPicker({
         </Field>
       ) : (
         <div className="space-y-3">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Field label="כמה תשלומים">
               <Input
                 inputMode="numeric"
@@ -208,8 +209,7 @@ export default function RepaymentPlanPicker({
               />
             </Field>
             <Field label="כל כמה זמן">
-              <select
-                className={SELECT_CLASS}
+              <NativeSelect
                 value={state.interval}
                 onChange={(e) => setParam("interval", e.target.value)}
               >
@@ -218,7 +218,7 @@ export default function RepaymentPlanPicker({
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </Field>
           </div>
 

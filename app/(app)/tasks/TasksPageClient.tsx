@@ -26,6 +26,7 @@ import { toast } from "sonner";
 import { offlineFetch } from "@/lib/offline-queue";
 import { BOARD_STATUSES, type TaskBoardItem } from "@/app/(app)/tasks/loadTasks";
 import { AddressLink } from "@/components/ui/address-link";
+import { NativeSelect } from "@/components/ui/native-select";
 import { WazeIcon } from "@/components/ui/waze-icon";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -687,8 +688,7 @@ export default function TasksPageClient(props: Props) {
           ) : null}
           <div className="w-[120px] space-y-1">
             <div className="text-[11px] text-muted-foreground">עדיפות</div>
-            <select
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            <NativeSelect dense
               value={urlPriority}
               onChange={(e) => pushFilters({ q: urlQ, priority: e.target.value, domain: urlDomain, linkedId: urlLinkedId, scope: urlScope })}
             >
@@ -698,7 +698,7 @@ export default function TasksPageClient(props: Props) {
                   {getTaskPriorityLabel(priority)}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
           <div className="w-[160px] space-y-1">
             <div className="text-[11px] text-muted-foreground">דומיין</div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 
 /** Elevator state as the forms hold it: "" = unspecified, "yes"/"no" = known. */
 export type Elevator = "" | "yes" | "no";
@@ -27,8 +28,6 @@ export function boolToElevator(value: boolean | null | undefined): Elevator {
   if (value === false) return "no";
   return "";
 }
-
-const selectClass = "h-10 w-full rounded-md border border-input bg-background px-3 text-sm";
 
 /** Address + floor + elevator inputs for a single move endpoint. Rendered twice
  *  (מוצא / יעד) by both the create wizard and the details edit dialog. */
@@ -65,8 +64,7 @@ export function MovingEndpointFields({
         </label>
         <label className="block space-y-1">
           <span className="text-xs text-muted-foreground">מעלית</span>
-          <select
-            className={selectClass}
+          <NativeSelect 
             value={value.hasElevator}
             disabled={disabled}
             onChange={(e) => onChange({ ...value, hasElevator: e.target.value as Elevator })}
@@ -74,7 +72,7 @@ export function MovingEndpointFields({
             <option value="">לא צוין</option>
             <option value="yes">יש מעלית</option>
             <option value="no">אין מעלית</option>
-          </select>
+          </NativeSelect>
         </label>
       </div>
     </div>

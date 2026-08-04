@@ -5,6 +5,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { DateInput } from "@/components/ui/date-input";
@@ -17,14 +20,7 @@ import { DomainSelect } from "@/components/financial/DomainSelect";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { AdaptiveGrid } from "@/components/layout/page-layout";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -124,6 +120,8 @@ export function ProjectTasksTab({
   const [creating, setCreating] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
+  // Deleting asks through the styled ConfirmDialog, never window.confirm.
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; subject: string } | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [savingStatus, setSavingStatus] = useState(false);
@@ -418,10 +416,8 @@ export function ProjectTasksTab({
     }
   }
 
-  async function deleteTask(id: string, subject: string) {
-    const ok = window.confirm(`למחוק את המשימה "${subject}"?`);
-    if (!ok) return;
-
+  async function deleteTask(id: string) {
+    setPendingDelete(null);
     setDeletingTaskId(id);
     emitProgressActivityStart();
     try {
@@ -474,7 +470,7 @@ export function ProjectTasksTab({
             </div>
           </div>
 
-          <div className="mb-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
             <div className="space-y-1 xl:col-span-2">
               <div className="text-xs text-muted-foreground">חיפוש</div>
               <Input
@@ -485,8 +481,7 @@ export function ProjectTasksTab({
             </div>
             <div className="space-y-1">
               <div className="text-xs text-muted-foreground">סטטוס</div>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              <NativeSelect
                 value={filterTaskStatus}
                 onChange={(e) => setFilterTaskStatus(e.target.value as TaskStatus | "")}
               >
@@ -496,12 +491,11 @@ export function ProjectTasksTab({
                     {taskStatusLabel(s)}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
             <div className="space-y-1">
               <div className="text-xs text-muted-foreground">עדיפות</div>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              <NativeSelect
                 value={filterTaskPriority}
                 onChange={(e) => setFilterTaskPriority(e.target.value as TaskPriority | "")}
               >
@@ -511,12 +505,11 @@ export function ProjectTasksTab({
                     {taskPriorityLabel(p)}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
             <div className="space-y-1">
               <div className="text-xs text-muted-foreground">משויך</div>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              <NativeSelect
                 value={filterAssigneeId}
                 onChange={(e) => setFilterAssigneeId(e.target.value)}
               >
@@ -528,7 +521,7 @@ export function ProjectTasksTab({
                       {u.full_name ?? u.email}
                     </option>
                   ))}
-              </select>
+              </NativeSelect>
             </div>
           </div>
 
@@ -622,7 +615,7 @@ export function ProjectTasksTab({
                             size="sm"
                             className="h-10"
                             disabled={!taskId || deletingTaskId === taskId}
-                            onClick={() => void deleteTask(taskId, title)}
+                            onClick={() => setPendingDelete({ id: taskId, subject: title })}
                           >
                             {deletingTaskId === taskId ? "מוחק..." : "מחיקה"}
                           </Button>
@@ -754,7 +747,7 @@ export function ProjectTasksTab({
                                 variant="destructive"
                                 size="sm"
                                 disabled={!taskId || deletingTaskId === taskId}
-                                onClick={() => void deleteTask(taskId, title)}
+                                onClick={() => setPendingDelete({ id: taskId, subject: title })}
                               >
                                 {deletingTaskId === taskId ? "מוחק..." : "מחיקה"}
                               </Button>
@@ -770,81 +763,41 @@ export function ProjectTasksTab({
           )}
         </CardContent>
       </Card>
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={(open) => {
+          setConfirmOpen(open);
+          if (!open) setPendingStatus(null);
+        }}
+        title="אישור שינוי סטטוס"
+        description={
+          pendingStatus
+            ? `לשנות את הסטטוס של “${pendingStatus.subject}” מ־${taskStatusLabel(pendingStatus.current)} ל־${taskStatusLabel(pendingStatus.next)}?`
+            : undefined
+        }
+        confirmLabel="אישור"
+        loading={savingStatus}
+        onConfirm={() => void confirmStatusChange()}
+      />
 
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AdaptiveDialog size="formMd">
-          <DialogHeader>
-            <DialogTitle>אישור שינוי סטטוס</DialogTitle>
-            <DialogDescription>
-              {pendingStatus
-                ? `לשנות את הסטטוס של “${pendingStatus.subject}” מ־${taskStatusLabel(
-                    pendingStatus.current
-                  )} ל־${taskStatusLabel(pendingStatus.next)}?`
-                : " "}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="mt-4">
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={savingStatus}
-              onClick={() => {
-                setConfirmOpen(false);
-                setPendingStatus(null);
-              }}
-            >
-              ביטול
-            </Button>
-            <Button
-              type="button"
-              disabled={savingStatus}
-              onClick={() => void confirmStatusChange()}
-            >
-              {savingStatus ? "מעדכן..." : "אישור"}
-            </Button>
-          </DialogFooter>
-        </AdaptiveDialog>
-      </Dialog>
-
-      <Dialog
+      <ConfirmDialog
         open={confirmPriorityOpen}
-        onOpenChange={setConfirmPriorityOpen}
-      >
-        <AdaptiveDialog size="formMd">
-          <DialogHeader>
-            <DialogTitle>אישור שינוי עדיפות</DialogTitle>
-            <DialogDescription>
-              {pendingPriority
-                ? `לשנות את העדיפות של “${pendingPriority.subject}” מ־${taskPriorityLabel(
-                    pendingPriority.current
-                  )} ל־${taskPriorityLabel(pendingPriority.next)}?`
-                : " "}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="mt-4">
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={savingPriority}
-              onClick={() => {
-                setConfirmPriorityOpen(false);
-                setPendingPriority(null);
-              }}
-            >
-              ביטול
-            </Button>
-            <Button
-              type="button"
-              disabled={savingPriority}
-              onClick={() => void confirmPriorityChange()}
-            >
-              {savingPriority ? "מעדכן..." : "אישור"}
-            </Button>
-          </DialogFooter>
-        </AdaptiveDialog>
-      </Dialog>
+        onOpenChange={(open) => {
+          setConfirmPriorityOpen(open);
+          if (!open) setPendingPriority(null);
+        }}
+        title="אישור שינוי עדיפות"
+        description={
+          pendingPriority
+            ? `לשנות את העדיפות של “${pendingPriority.subject}” מ־${taskPriorityLabel(pendingPriority.current)} ל־${taskPriorityLabel(pendingPriority.next)}?`
+            : undefined
+        }
+        confirmLabel="אישור"
+        loading={savingPriority}
+        onConfirm={() => void confirmPriorityChange()}
+      />
 
-      <Dialog
+      <FormDialog
         open={createOpen}
         onOpenChange={(open) => {
           setCreateOpen(open);
@@ -853,26 +806,25 @@ export function ProjectTasksTab({
             setPropertyTargetId("");
           }
         }}
+        title="הוספת משימה"
+        description={
+          projectLinkRequired
+            ? "משימה תתווסף לפרויקט ותופיע ברשימה."
+            : propertyLinkRequired
+              ? "הזינו את מזהה הנכס שאליו המשימה קשורה."
+              : "משימה שוטפת ללא קישור ישיר לפרויקט או נכס."
+        }
+        onSubmit={() => void createTask()}
+        submitLabel="יצירה"
+        busyLabel="יוצר..."
+        busy={creating}
+        submitDisabled={!canSubmit}
+        footerStart={
+          !canSubmit && !creating ? (
+            <span className="text-xs text-destructive">{createTaskValidationMessage}</span>
+          ) : null
+        }
       >
-        <AdaptiveDialog size="formLg">
-          <DialogHeader>
-            <DialogTitle>הוספת משימה</DialogTitle>
-            <DialogDescription>
-              {projectLinkRequired
-                ? "משימה תתווסף לפרויקט ותופיע ברשימה."
-                : propertyLinkRequired
-                  ? "הזינו את מזהה הנכס שאליו המשימה קשורה."
-                  : "משימה שוטפת ללא קישור ישיר לפרויקט או נכס."}
-            </DialogDescription>
-          </DialogHeader>
-
-          <form
-            className="mt-4 space-y-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void createTask();
-            }}
-          >
             <div className="space-y-1">
               <div className="text-sm font-medium">כותרת *</div>
               <Input
@@ -918,11 +870,7 @@ export function ProjectTasksTab({
                   שגיאה בטעינת משתמשים: {assignableUsersError}
                 </div>
               ) : (
-                <select
-                  className={
-                    "h-10 w-full rounded-md border border-input bg-background px-3 text-sm " +
-                    (assignedUserError ? "border-destructive" : "")
-                  }
+                <NativeSelect className={assignedUserError ? "border-destructive" : undefined}
                   value={assignedUserId}
                   onChange={(e) => setAssignedUserId(e.target.value)}
                 >
@@ -934,7 +882,7 @@ export function ProjectTasksTab({
                         {u.full_name ?? u.email}
                       </option>
                     ))}
-                </select>
+                </NativeSelect>
               )}
               {!assignableUsersError && assignedUserError ? (
                 <div className="text-xs text-destructive">שדה חובה</div>
@@ -957,8 +905,7 @@ export function ProjectTasksTab({
               </div>
               <div className="space-y-1">
                 <div className="text-sm font-medium">עדיפות *</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                <NativeSelect
                   value={effectivePriority}
                   onChange={(e) => setPriority(e.target.value)}
                 >
@@ -967,12 +914,11 @@ export function ProjectTasksTab({
                       {taskPriorityLabel(p)}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
               <div className="space-y-1">
                 <div className="text-sm font-medium">סטטוס *</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                <NativeSelect
                   value={effectiveStatus}
                   onChange={(e) => setStatus(e.target.value)}
                 >
@@ -981,7 +927,7 @@ export function ProjectTasksTab({
                       {taskStatusLabel(s)}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
             </AdaptiveGrid>
 
@@ -1042,29 +988,7 @@ export function ProjectTasksTab({
                 </div>
               ) : null}
             </div>
-
-            <DialogFooter className="mt-6">
-              {!canSubmit && !creating ? (
-                <div className="me-auto text-xs text-destructive">
-                  {createTaskValidationMessage}
-                </div>
-              ) : (
-                <div className="me-auto" />
-              )}
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => setCreateOpen(false)}
-              >
-                ביטול
-              </Button>
-              <Button type="submit" disabled={creating || !canSubmit}>
-                {creating ? "יוצר..." : "יצירה"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </AdaptiveDialog>
-      </Dialog>
+      </FormDialog>
 
       <TaskUpsertDialog
         open={editOpen}
@@ -1082,6 +1006,21 @@ export function ProjectTasksTab({
         fixedTarget={{ type: "project", id: projectId }}
         defaultProjectType={projectType}
         onSaved={onChange}
+      />
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(next) => {
+          if (!next) setPendingDelete(null);
+        }}
+        destructive
+        title="מחיקת משימה"
+        description={pendingDelete ? `המשימה "${pendingDelete.subject}" תימחק.` : undefined}
+        confirmLabel="מחיקה"
+        loading={deletingTaskId !== null}
+        onConfirm={() => {
+          if (pendingDelete) void deleteTask(pendingDelete.id);
+        }}
       />
     </>
   );

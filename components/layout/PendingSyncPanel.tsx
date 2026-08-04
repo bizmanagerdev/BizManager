@@ -21,13 +21,7 @@ import {
   retryFailedUpload,
   type UploadEntry,
 } from "@/lib/offline-upload";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ViewDialog } from "@/components/ui/view-dialog";
 
 function formatTime(ts?: number) {
   if (!ts) return "";
@@ -111,14 +105,13 @@ export default function PendingSyncPanel({
   const failedCount = snap.failedWrites.length + snap.failedUploads.length;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85svh] max-w-md overflow-y-auto" dir="rtl">
-        <DialogHeader>
-          <DialogTitle>פעולות שממתינות לשליחה</DialogTitle>
-          <DialogDescription>
-            הפעולות נשמרו במכשיר ויישלחו אוטומטית כשהחיבור יחזור.
-          </DialogDescription>
-        </DialogHeader>
+    <ViewDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="פעולות שממתינות לשליחה"
+      description="הפעולות נשמרו במכשיר ויישלחו אוטומטית כשהחיבור יחזור."
+      size="formMd"
+    >
 
         {pendingCount === 0 && failedCount === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">אין פעולות ממתינות — הכול מסונכרן.</p>
@@ -174,8 +167,7 @@ export default function PendingSyncPanel({
             ))}
           </div>
         ) : null}
-      </DialogContent>
-    </Dialog>
+    </ViewDialog>
   );
 }
 

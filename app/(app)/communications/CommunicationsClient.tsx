@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Ellipsis, Mail, MessageCircle, MessageSquare, Pencil, Phone, Users, type LucideIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import AddCollectionEntryDialog from "@/components/collections/AddCollectionEntryDialog";
@@ -88,20 +89,20 @@ export default function CommunicationsClient({ logs }: { logs: CommunicationLogW
           <Phone className="me-1 h-4 w-4 text-success" />
           תיעוד שיחה
         </Button>
-        <select value={topic} onChange={(e) => setTopic(e.target.value)} className="h-10 rounded-md border border-input bg-background px-3 text-sm">
+        <NativeSelect value={topic} onChange={(e) => setTopic(e.target.value)}>
           {TOPICS.map((t) => (
             <option key={t.value} value={t.value}>
               {t.label}
             </option>
           ))}
-        </select>
-        <select value={channel} onChange={(e) => setChannel(e.target.value)} className="h-10 rounded-md border border-input bg-background px-3 text-sm">
+        </NativeSelect>
+        <NativeSelect value={channel} onChange={(e) => setChannel(e.target.value)}>
           {CHANNELS.map((c) => (
             <option key={c.value} value={c.value}>
               {c.label}
             </option>
           ))}
-        </select>
+        </NativeSelect>
         <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="חיפוש לפי שם, טלפון או תוכן…" className="h-10 max-w-xs flex-1" />
         <div className="text-sm text-muted-foreground">{filtered.length} פניות</div>
       </div>

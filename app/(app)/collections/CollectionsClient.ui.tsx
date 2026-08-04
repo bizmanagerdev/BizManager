@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { ChevronDown, MessageCircle, Phone, type LucideIcon } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { Badge } from "@/components/ui/badge";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DateInput } from "@/components/ui/date-input";
@@ -761,32 +762,29 @@ export function DebtorsTable({
               placeholder="חיפוש לפי שם או טלפון..."
               className="h-9 w-full sm:w-56"
             />
-            <select
+            <NativeSelect dense
               value={filter}
               onChange={(e) => setFilter(e.target.value as FilterKey)}
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
             >
               {tabs.map((tab) => (
                 <option key={tab.key} value={tab.key}>
                   הצג: {tab.label}
                 </option>
               ))}
-            </select>
-            <select
+            </NativeSelect>
+            <NativeSelect dense
               value={sort}
               onChange={(e) => setSort(e.target.value as SortKey)}
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
             >
               <option value="amount">מיון: סכום</option>
               <option value="oldest">מיון: ותק החוב</option>
               <option value="due">מיון: תאריך פירעון</option>
               <option value="name">מיון: שם</option>
-            </select>
+            </NativeSelect>
             {domainOptions.length > 1 ? (
-              <select
+              <NativeSelect dense
                 value={domain}
                 onChange={(e) => setDomain(e.target.value)}
-                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="all">כל התחומים</option>
                 {domainOptions.map((d) => (
@@ -794,7 +792,7 @@ export function DebtorsTable({
                     {d.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             ) : null}
           </div>
 

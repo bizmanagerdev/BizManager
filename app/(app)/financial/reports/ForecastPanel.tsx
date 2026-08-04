@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import ForecastChart from "@/components/charts/ForecastChart";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
 import type { ForecastChangePoint } from "@/lib/financial";
 
@@ -62,15 +63,15 @@ export default function ForecastPanel({
 
   if (changes.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
+      <EmptyState>
         אין תנועות צפויות או ממתינות להצגת תחזית.
-      </div>
+      </EmptyState>
     );
   }
 
   return (
     <div className="space-y-4 text-right" dir="rtl">
-      <section className="grid gap-3 sm:grid-cols-3">
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="text-right">יתרה נוכחית (בסיס)</CardDescription>

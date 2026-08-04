@@ -9,18 +9,13 @@ import { Bell, FileText, Pencil, Phone, Printer, Share2, Trash2 } from "lucide-r
 import { HeaderActionsMenu } from "@/components/layout/HeaderActionsMenu";
 import { useSetHeaderAction } from "@/components/layout/page-title-context";
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
-import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
+import { NativeSelect } from "@/components/ui/native-select";
+import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { offlineFetch } from "@/lib/offline-queue";
 import { offlineUpload } from "@/lib/offline-upload";
 import { Button } from "@/components/ui/button";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -455,29 +450,25 @@ export default function ProjectDetailsActions({
         </div>
       )}
 
-      <Dialog
+      <FormDialog
         open={editOpen}
         onOpenChange={(open) => {
-          if (!open && !editSubmitting) {
+          if (!open) {
             setAttachmentFiles([]);
             setDocumentActionError(projectDocumentsError);
           }
           setEditOpen(open);
         }}
+        title="עריכת פרויקט"
+        description="עדכון פרטי הפרויקט מתוך מסך הפרטים."
+        size="form2xl"
+        onSubmit={() => void saveProjectEdit()}
+        submitLabel="שמירת שינויים"
+        busyLabel="שומר..."
+        busy={editSubmitting}
+        submitDisabled={deletingDocumentId !== null}
+        error={documentActionError || editError || undefined}
       >
-        <AdaptiveDialog size="form2xl">
-          <DialogHeader>
-            <DialogTitle>עריכת פרויקט</DialogTitle>
-            <DialogDescription>עדכון פרטי הפרויקט מתוך מסך הפרטים.</DialogDescription>
-          </DialogHeader>
-
-          <form
-            className="grid gap-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void saveProjectEdit();
-            }}
-          >
             <AdaptiveGrid variant="formTwo">
               <div className="space-y-1">
                 <label className="text-sm font-medium">שם פרויקט *</label>
@@ -504,31 +495,29 @@ export default function ProjectDetailsActions({
             <AdaptiveGrid variant="formTwo">
               <div className="space-y-1">
                 <label className="text-sm font-medium">סוג פרויקט *</label>
-                <select
+                <NativeSelect
                   value={editProjectType}
                   onChange={(event) => setEditProjectType(event.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 >
                   {defaultProjectTypeOptions.map((value) => (
                     <option key={value} value={value}>
                       {projectTypeLabel(value)}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium">סטטוס *</label>
-                <select
+                <NativeSelect
                   value={editStatus}
                   onChange={(event) => setEditStatus(event.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 >
                   {defaultStatusOptions.map((value) => (
                     <option key={value} value={value}>
                       {statusLabel(value)}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
             </AdaptiveGrid>
 
@@ -578,10 +567,9 @@ export default function ProjectDetailsActions({
 
             <div className="space-y-1">
               <label className="text-sm font-medium">מנהל פרויקט</label>
-              <select
+              <NativeSelect
                 value={editProjectManagerId}
                 onChange={(event) => setEditProjectManagerId(event.target.value)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="">ללא שיוך</option>
                 {managerOptions.map((manager) => (
@@ -589,7 +577,7 @@ export default function ProjectDetailsActions({
                     {manager.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
 
             <label className="flex items-center gap-2 text-sm">
@@ -712,20 +700,7 @@ export default function ProjectDetailsActions({
               ) : null}
             </div>
 
-            {documentActionError ? <p className="text-sm text-destructive">{documentActionError}</p> : null}
-            {editError ? <p className="text-sm text-destructive">{editError}</p> : null}
-
-            <DialogFooter>
-              <Button type="button" variant="secondary" onClick={() => setEditOpen(false)} disabled={editSubmitting}>
-                ביטול
-              </Button>
-              <Button type="submit" disabled={editSubmitting || deletingDocumentId !== null}>
-                {editSubmitting ? "שומר..." : "שמירת שינויים"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </AdaptiveDialog>
-      </Dialog>
+      </FormDialog>
     </>
   );
 }

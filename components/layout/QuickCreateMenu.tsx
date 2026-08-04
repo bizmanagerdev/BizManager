@@ -22,8 +22,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { HoverPanel, HoverPanelContent, HoverPanelTrigger, useHoverPanel } from "@/components/ui/hover-panel";
-import { AdaptiveDialog } from "@/components/layout/page-layout";
-import { Dialog, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ViewDialog } from "@/components/ui/view-dialog";
 import { TOPBAR_ICON_BUTTON, TOPBAR_ICON_STROKE } from "@/components/layout/topbar-icon";
 import { QUICK_TILE_CLASS_SM, QuickTileContent } from "@/components/ui/quick-tile";
 import {
@@ -228,22 +227,20 @@ export function QuickCreateMenu({
       {/* Never hand a half-loaded picker to the user (project/customer lists come
           from the same fetch) — hold the action behind a short loading dialog
           until the data is in, then open the real form. */}
-      <Dialog
+      <ViewDialog
         open={action !== null && data === null}
         onOpenChange={() => {
           setAction(null);
           setQuickDate(undefined);
         }}
+        title="טוען..."
+        description="מכין את הרשימות לטופס."
+        size="formSm"
       >
-        <AdaptiveDialog size="formSm">
-          <DialogHeader>
-            <DialogTitle>טוען...</DialogTitle>
-          </DialogHeader>
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        </AdaptiveDialog>
-      </Dialog>
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      </ViewDialog>
 
       {dialogsMounted ? (
         <QuickCreateDialogs

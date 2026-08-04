@@ -6,17 +6,11 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import {
   ORDER_PAYMENT_METHOD_OPTIONS,
   derivePaymentStatus,
@@ -189,27 +183,33 @@ function EditPaymentDialog({
   }
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-h-[90svh] w-[calc(100vw-1rem)] max-w-lg overflow-y-auto p-4 sm:p-6">
-        <DialogHeader>
-          <DialogTitle>עריכת תשלום</DialogTitle>
-          <DialogDescription>עדכון פרטי תשלום קיים</DialogDescription>
-        </DialogHeader>
+    <FormDialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title="עריכת תשלום"
+      description="עדכון פרטי תשלום קיים"
+      onSubmit={() => void handleSubmit()}
+      submitLabel="שמירת שינויים"
+      busyLabel="שומר..."
+      busy={submitting}
+      error={error || undefined}
+    >
 
         <div className="grid gap-3">
           <div className="space-y-1">
             <label className="text-sm font-medium">סוג פעולה</label>
-            <select
+            <NativeSelect
               value={entryType}
               onChange={(e) => setEntryType(e.target.value === "refund" ? "refund" : "payment")}
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
             >
               <option value="payment">תשלום</option>
               <option value="refund">החזר</option>
-            </select>
+            </NativeSelect>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <label className="text-sm font-medium">סכום *</label>
               <CurrencyInput
@@ -229,14 +229,13 @@ function EditPaymentDialog({
 
           <div className="space-y-1">
             <label className="text-sm font-medium">אמצעי תשלום *</label>
-            <select
+            <NativeSelect
               value={paymentMethod}
               onChange={(e) => {
                 const m = e.target.value;
                 setPaymentMethod(m);
                 setAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
               }}
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
             >
               <option value="">בחר אמצעי תשלום...</option>
               {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
@@ -244,7 +243,7 @@ function EditPaymentDialog({
                   {option.label}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
 
           <AccountSelect
@@ -280,7 +279,7 @@ function EditPaymentDialog({
             />
           ) : null}
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <label className="text-sm font-medium">מספר אסמכתא</label>
               <Input
@@ -314,19 +313,8 @@ function EditPaymentDialog({
             </div>
           </div>
 
-          {error ? <div className="text-sm text-destructive">{error}</div> : null}
         </div>
-
-        <DialogFooter>
-          <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
-            ביטול
-          </Button>
-          <Button type="button" onClick={() => void handleSubmit()} disabled={submitting}>
-            {submitting ? "שומר..." : "שמירת שינויים"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </FormDialog>
   );
 }
 

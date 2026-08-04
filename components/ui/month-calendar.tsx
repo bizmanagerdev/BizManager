@@ -262,7 +262,7 @@ export default function MonthCalendar({
     <div className="space-y-4">
       {/* Desktop: [toolbar + grid] (main) + selected-day panel (aside). The
           toolbar lives INSIDE the main column so the aside rises to the top. */}
-      <div className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="min-w-0 space-y-3">
           {/* Toolbar / month nav */}
           {toolbar ? (

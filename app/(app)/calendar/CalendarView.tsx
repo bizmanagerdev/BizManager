@@ -33,6 +33,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/ui/empty-state";
 
 // ── Event-kind metadata ───────────────────────────────────────────────────────
 // Single source of truth for label / plural / color per kind, so the summary
@@ -354,7 +355,7 @@ export default function CalendarView({
     // Cancel the app shell's bottom padding on this page so the calendar can fill
     // to the bottom nav without the page itself ever scrolling.
     <div className="-mb-24 space-y-3 md:mb-0">
-      <div className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
         {/* Mobile: a fixed-height flex column (chrome above + bottom nav reserved)
             so the calendar flex-child fills exactly — no bottom gap, no page
             scroll. Desktop: normal flow beside the side panel. */}
@@ -932,9 +933,9 @@ function DayDetail({
           ))}
         </div>
       ) : (
-        <div className="rounded-xl border border-dashed py-6 text-center text-sm text-muted-foreground">
+        <EmptyState>
           {entries.length ? "אין פריטים מסוג זה" : "אין פריטים ביום זה"}
-        </div>
+        </EmptyState>
       )}
 
       {/* Add to this day */}

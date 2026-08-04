@@ -42,14 +42,14 @@ const widthVariants = {
   autoFromSmall: "w-full sm:w-auto",
 } as const;
 
-const dialogVariants = {
-  newOrder: "max-h-[92svh] w-[calc(100vw-1rem)] max-w-5xl overflow-y-auto p-4 sm:p-6",
-  formSm: "max-h-[90vh] overflow-y-auto sm:max-w-sm",
-  formMd: "max-h-[90vh] overflow-y-auto sm:max-w-md",
-  formLg: "max-h-[90vh] overflow-y-auto sm:max-w-lg",
-  formXl: "max-h-[90svh] overflow-y-auto sm:max-w-xl",
-  form2xl: "max-h-[90vh] overflow-y-auto sm:max-w-2xl",
-  details4xl: "max-h-[90vh] overflow-y-auto sm:max-w-4xl",
+export const dialogVariants = {
+  newOrder: "max-h-[92svh] w-[calc(100%-1rem)] max-w-5xl overflow-y-auto p-4 sm:p-6",
+  formSm: "max-h-[90vh] w-[calc(100%-1rem)] overflow-y-auto sm:max-w-sm",
+  formMd: "max-h-[90vh] w-[calc(100%-1rem)] overflow-y-auto sm:max-w-md",
+  formLg: "max-h-[90vh] w-[calc(100%-1rem)] overflow-y-auto sm:max-w-lg",
+  formXl: "max-h-[90svh] w-[calc(100%-1rem)] overflow-y-auto sm:max-w-xl",
+  form2xl: "max-h-[90vh] w-[calc(100%-1rem)] overflow-y-auto sm:max-w-2xl",
+  details4xl: "max-h-[90vh] w-[calc(100%-1rem)] overflow-y-auto sm:max-w-4xl",
 } as const;
 
 const cellVariants = {

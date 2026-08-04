@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { CheckCircle2, Circle, ListChecks } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { formatShortDate } from "@/lib/date";
@@ -185,9 +186,9 @@ export default function MyTasksPanel({ tasks: initialTasks }: { tasks: Dashboard
             );
           })
         ) : (
-          <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+          <EmptyState dense>
             אין משימות בתצוגה זו.
-          </div>
+          </EmptyState>
         )}
       </CardContent>
     </Card>

@@ -1,11 +1,11 @@
-import { Fragment, type ReactNode } from "react";
-import { Check } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { PAYMENT_TERMS_OPTIONS } from "@/lib/paymentTerms";
+import { omitUnknownPlace } from "@/lib/ui/cities";
 
-// Pure helpers, option constants, and the two presentational pieces of the
-// order wizard (stepper + summary row), lifted out of NewOrderClient so the
-// component file holds wizard state + orchestration only. No component state here.
+// Pure helpers and option constants, lifted out of NewOrderClient so the
+// component file holds wizard state + orchestration only. No component state
+// here. The stepper and summary row it used to own now live in
+// components/ui/step-wizard.tsx and components/ui/summary.tsx, shared with the
+// customer and project wizards.
 
 export type Step = 1 | 2 | 3 | 4;
 
@@ -92,8 +92,8 @@ export function mapCustomerSearchResult(row: Record<string, unknown>): CustomerO
     phone: typeof row.phone === "string" ? row.phone : null,
     whatsapp: typeof row.whatsapp === "string" ? row.whatsapp : null,
     email: typeof row.email === "string" ? row.email : null,
-    address: typeof row.address === "string" ? row.address : null,
-    city: typeof row.address === "string" ? extractCityFromAddress(row.address) : null,
+    address: typeof row.address === "string" ? omitUnknownPlace(row.address) : null,
+    city: typeof row.address === "string" ? omitUnknownPlace(extractCityFromAddress(row.address)) : null,
     requiresPrepayment: row.requires_prepayment === true,
     contacts,
   };
@@ -115,83 +115,10 @@ export const WIZARD_STEPS: { n: Step; label: string }[] = [
   { n: 1, label: "לקוח" },
   { n: 2, label: "מוצרים" },
   { n: 3, label: "תשלום ופרטים" },
-  { n: 4, label: "סקירה" },
+  { n: 4, label: "סיכום" },
 ];
-
-export const STEP_HEADINGS: Record<Step, { title: string; subtitle: string }> = {
-  1: { title: "למי ההזמנה?", subtitle: "חיפוש ברשימת הלקוחות הקיימים או הוספת לקוח חדש." },
-  2: { title: "בניית ההזמנה", subtitle: "הוספת מוצרים, עדכון כמות, מחיר והנחות בעגלה." },
-  3: { title: "תשלום ופרטים", subtitle: "חשבונית, תאריך, אופן התשלום והתשלומים בפועל." },
-  4: { title: "סקירה וסיכום", subtitle: "בדיקת הסכומים והפרטים לפני יצירת ההזמנה." },
-};
 
 export function termsLabel(value: string) {
   return PAYMENT_TERMS_OPTIONS.find((option) => option.value === value)?.label ?? value;
 }
 
-/** Top progress indicator: numbered steps with labels, connected by a track. RTL-aware. */
-export function WizardStepper({
-  current,
-  canClick,
-  onStepClick,
-}: {
-  current: Step;
-  canClick: (n: Step) => boolean;
-  onStepClick: (n: Step) => void;
-}) {
-  return (
-    <div className="flex items-start">
-      {WIZARD_STEPS.map((s, i) => {
-        const done = s.n < current;
-        const active = s.n === current;
-        const clickable = canClick(s.n);
-        return (
-          <Fragment key={s.n}>
-            <div className="flex shrink-0 flex-col items-center gap-1">
-              <button
-                type="button"
-                aria-current={active ? "step" : undefined}
-                disabled={!clickable}
-                onClick={() => clickable && onStepClick(s.n)}
-                className={cn(
-                  "flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-semibold transition-colors",
-                  active && "border-primary text-primary",
-                  done && "border-primary bg-primary text-primary-foreground",
-                  !active && !done && "border-border text-muted-foreground",
-                  clickable && !active ? "cursor-pointer hover:border-primary/60" : "cursor-default"
-                )}
-              >
-                {done ? <Check className="h-3.5 w-3.5" /> : s.n}
-              </button>
-              <div
-                className={cn(
-                  "w-14 text-center text-[10px] font-medium leading-tight",
-                  active || done ? "text-foreground" : "text-muted-foreground"
-                )}
-              >
-                {s.label}
-              </div>
-            </div>
-            {i < WIZARD_STEPS.length - 1 ? (
-              <div
-                className={cn(
-                  "mx-1 mt-[14px] h-0.5 flex-1 rounded-full sm:mx-2",
-                  done ? "bg-primary" : "bg-border"
-                )}
-              />
-            ) : null}
-          </Fragment>
-        );
-      })}
-    </div>
-  );
-}
-
-export function SummaryRow({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-4 py-1.5 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-end font-medium text-foreground">{value}</span>
-    </div>
-  );
-}

@@ -4,14 +4,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
@@ -116,27 +109,27 @@ export default function MorningQuoteDialog({
       <Button type="button" size={triggerSize} variant={triggerVariant} onClick={() => setOpen(true)}>
         {triggerLabel}
       </Button>
-      <Dialog
+      <FormDialog
         open={open}
         onOpenChange={(nextOpen) => {
           setOpen(nextOpen);
           if (!nextOpen) resetForm();
         }}
+        title="הצעת מחיר חדשה"
+        description="הצעה ללקוח ללא קישור להזמנה. השורות יישלחו ל-Morning כפי שהזנת."
+        size="form2xl"
+        onSubmit={() => void submit()}
+        submitLabel="יצירת הצעת מחיר"
+        busyLabel="יוצר..."
+        busy={submitting}
       >
-        <DialogContent className="max-h-[92svh] w-[calc(100vw-1rem)] max-w-2xl overflow-y-auto p-4 sm:p-6">
-          <DialogHeader>
-            <DialogTitle>הצעת מחיר חדשה</DialogTitle>
-            <DialogDescription>
-              הצעה ללקוח ללא קישור להזמנה. השורות יישלחו ל-Morning כפי שהזנת.
-            </DialogDescription>
-          </DialogHeader>
 
           <div className="space-y-3">
             <div className="space-y-2">
               {lines.map((line, index) => (
                 <div
                   key={index}
-                  className="grid gap-2 rounded-xl border border-border/60 bg-background/70 p-3 sm:grid-cols-[1fr_100px_140px_auto]"
+                  className="grid grid-cols-1 gap-2 rounded-xl border border-border/60 bg-background/70 p-3 sm:grid-cols-[1fr_100px_140px_auto]"
                 >
                   <Input
                     placeholder="תיאור השורה"
@@ -183,17 +176,7 @@ export default function MorningQuoteDialog({
               />
             </div>
           </div>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={submitting}>
-              ביטול
-            </Button>
-            <Button type="button" onClick={() => void submit()} disabled={submitting}>
-              {submitting ? "יוצר..." : "יצירת הצעת מחיר"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </FormDialog>
     </>
   );
 }

@@ -12,6 +12,7 @@ import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 import PageAlertBar from "@/components/reminders/PageAlertBar";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { SwipeActions } from "@/components/ui/swipe-actions";
+import { NativeSelect } from "@/components/ui/native-select";
 import { loadMoreProjects } from "@/app/(app)/projects/actions";
 import type { ProjectsFilters } from "@/app/(app)/projects/loadProjects";
 import { CheckCircle2, FileText, FolderKanban, MessageCircle, Pencil, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
@@ -29,13 +30,13 @@ import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -692,10 +693,9 @@ export default function ProjectsClient({
 
           <div className="min-w-0">
             <label className="text-sm text-muted-foreground">סטטוס</label>
-            <select
+            <NativeSelect
               value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className="mt-1 h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+              onChange={(e) => setStatus(e.target.value)} className="mt-1"
             >
               <option value="all">הכל</option>
               {statusOptions.map((s) => (
@@ -703,21 +703,20 @@ export default function ProjectsClient({
                   {statusLabel(s)}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
 
           <div className="min-w-0">
             <label className="text-sm text-muted-foreground">מיון לפי</label>
-            <select
+            <NativeSelect
               value={sort}
-              onChange={(e) => setSort(e.target.value as SortMode)}
-              className="mt-1 h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+              onChange={(e) => setSort(e.target.value as SortMode)} className="mt-1"
             >
               <option value="recent">אחרונים</option>
               <option value="start_date">תאריך התחלה - ישן לחדש</option>
               <option value="start_date_desc">תאריך התחלה - חדש לישן</option>
               {canSeeMoney ? <option value="profit_desc">רווח (גבוה לנמוך)</option> : null}
-            </select>
+            </NativeSelect>
           </div>
 
           <div className="grid grid-cols-2 gap-2">
@@ -758,10 +757,9 @@ export default function ProjectsClient({
 
           <div className="min-w-0">
             <label className="text-sm text-muted-foreground">סטטוס</label>
-            <select
+            <NativeSelect
               value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className="mt-1 h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+              onChange={(e) => setStatus(e.target.value)} className="mt-1"
             >
               <option value="all">הכל</option>
               {statusOptions.map((s) => (
@@ -769,21 +767,20 @@ export default function ProjectsClient({
                   {statusLabel(s)}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
 
           <div className="min-w-0">
             <label className="text-sm text-muted-foreground">מיון לפי</label>
-            <select
+            <NativeSelect
               value={sort}
-              onChange={(e) => setSort(e.target.value as SortMode)}
-              className="mt-1 h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+              onChange={(e) => setSort(e.target.value as SortMode)} className="mt-1"
             >
               <option value="recent">אחרונים</option>
               <option value="start_date">תאריך התחלה - ישן לחדש</option>
               <option value="start_date_desc">תאריך התחלה - חדש לישן</option>
               {canSeeMoney ? <option value="profit_desc">רווח (גבוה לנמוך)</option> : null}
-            </select>
+            </NativeSelect>
           </div>
 
         </AdaptiveGrid>
@@ -1190,27 +1187,30 @@ export default function ProjectsClient({
         </div>
       ) : null}
 
-      <Dialog
+      <FormDialog
         open={approveQuoteOpen}
         onOpenChange={(open) => {
           setApproveQuoteOpen(open);
-          if (!open && !approveQuoteSubmitting) {
+          if (!open) {
             setApproveQuoteError(null);
             setApproveQuoteId("");
             setApproveQuoteName("");
             setApproveQuotePrice("");
           }
         }}
+        title="אישור הצעת מחיר"
+        description={
+          approveQuoteName
+            ? `הזינו את המחיר המוסכם עבור ${approveQuoteName} לפני ההעברה למתוכנן.`
+            : "הזינו את המחיר המוסכם לפני ההעברה למתוכנן."
+        }
+        size="formSm"
+        onSubmit={() => void approveQuote()}
+        submitLabel="אישור הצעה"
+        busyLabel="שומר..."
+        busy={approveQuoteSubmitting}
+        error={approveQuoteError || undefined}
       >
-        <AdaptiveDialog size="formSm">
-          <DialogHeader>
-            <DialogTitle>אישור הצעת מחיר</DialogTitle>
-            <DialogDescription>
-              {approveQuoteName
-                ? `הזינו את המחיר המוסכם עבור ${approveQuoteName} לפני ההעברה למתוכנן.`
-                : "הזינו את המחיר המוסכם לפני ההעברה למתוכנן."}
-            </DialogDescription>
-          </DialogHeader>
 
           <div className="space-y-2">
             <label className="text-sm font-medium">מחיר מוסכם *</label>
@@ -1219,30 +1219,8 @@ export default function ProjectsClient({
               onChange={(e) => setApproveQuotePrice(e.target.value)}
               placeholder="לדוגמה: 2300"
             />
-            {approveQuoteError ? <p className="text-sm text-destructive">{approveQuoteError}</p> : null}
           </div>
-
-          <DialogFooter className="mt-4 border-t pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              className="border-border bg-background text-muted-foreground hover:border-border hover:bg-muted/80 hover:text-foreground"
-              onClick={() => setApproveQuoteOpen(false)}
-              disabled={approveQuoteSubmitting}
-            >
-              ביטול
-            </Button>
-            <Button
-              type="button"
-              variant="default"
-              onClick={() => void approveQuote()}
-              disabled={approveQuoteSubmitting}
-            >
-              {approveQuoteSubmitting ? "שומר..." : "אישור הצעה"}
-            </Button>
-          </DialogFooter>
-        </AdaptiveDialog>
-      </Dialog>
+      </FormDialog>
 
       <Dialog
         open={createOpen}

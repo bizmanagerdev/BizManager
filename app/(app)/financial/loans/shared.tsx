@@ -1,12 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
 
 // Small presentational helpers shared by the loans page and the installment-plan
 // section, so both render money, dates and form fields identically.
-
-export const SELECT_CLASS =
-  "h-11 w-full rounded-xl border border-input bg-background px-3 text-sm text-right";
 
 export const METHOD_OPTIONS = [
   { value: "", label: "—" },
@@ -62,11 +58,6 @@ export function StatBox({
   );
 }
 
-export function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <label className="text-sm font-medium">{label}</label>
-      {children}
-    </div>
-  );
-}
+// Re-exported so the loans screens keep importing their form bits from one
+// place, while the markup itself is the app-wide shared Field.
+export { Field } from "@/components/ui/field";

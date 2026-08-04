@@ -4,18 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { DateInput } from "@/components/ui/date-input";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
@@ -192,22 +186,17 @@ export default function TaxesClient({ data }: { data: TaxToPay }) {
       </Card>
 
       {/* Pay-tax dialog */}
-      <Dialog open={open} onOpenChange={(next) => !saving && setOpen(next)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>רישום תשלום מס</DialogTitle>
-            <DialogDescription>
-              נרשם כהוצאה בקטגוריית ״{EXPENSE_TAX_CATEGORY}״ ומקטין את הסכום לתשלום.
-            </DialogDescription>
-          </DialogHeader>
-
-          <form
-            className="space-y-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void payTax();
-            }}
-          >
+      <FormDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="רישום תשלום מס"
+        description={`נרשם כהוצאה בקטגוריית ״${EXPENSE_TAX_CATEGORY}״ ומקטין את הסכום לתשלום.`}
+        size="formMd"
+        onSubmit={() => void payTax()}
+        submitLabel="רישום תשלום"
+        busyLabel="שומר..."
+        busy={saving}
+      >
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-sm font-medium">סכום</label>
@@ -221,8 +210,7 @@ export default function TaxesClient({ data }: { data: TaxToPay }) {
 
             <div className="space-y-1">
               <label className="text-sm font-medium">אמצעי תשלום</label>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              <NativeSelect
                 value={method}
                 onChange={(e) => {
                   const m = e.target.value;
@@ -235,7 +223,7 @@ export default function TaxesClient({ data }: { data: TaxToPay }) {
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
 
             <AccountSelect
@@ -252,18 +240,7 @@ export default function TaxesClient({ data }: { data: TaxToPay }) {
               <label className="text-sm font-medium">הערות</label>
               <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
             </div>
-
-            <DialogFooter className="mt-2">
-              <Button type="button" variant="secondary" disabled={saving} onClick={() => setOpen(false)}>
-                ביטול
-              </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? "שומר..." : "רישום תשלום"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      </FormDialog>
     </div>
   );
 }

@@ -2,26 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
-import { AdaptiveDialog } from "@/components/layout/page-layout";
-import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { type ExpenseBusinessDomain } from "@/lib/expenses";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { toHebrewError } from "@/lib/error-messages";
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
-import { cn } from "@/lib/utils";
 
 type SourceOption = { id: string; label: string };
 
@@ -110,8 +101,7 @@ function SideFields({
       {side.businessDomain === "sales" ? (
         <div className="space-y-1">
           <div className="text-sm font-medium">הזמנה *</div>
-          <select
-            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+          <NativeSelect
             value={side.orderId}
             onChange={(e) => setSide({ ...side, orderId: e.target.value })}
           >
@@ -121,15 +111,14 @@ function SideFields({
                 {o.label}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
       ) : null}
 
       {side.businessDomain === "property_management" ? (
         <div className="space-y-1">
           <div className="text-sm font-medium">נכס *</div>
-          <select
-            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+          <NativeSelect
             value={side.propertyId}
             onChange={(e) => setSide({ ...side, propertyId: e.target.value })}
           >
@@ -139,7 +128,7 @@ function SideFields({
                 {p.label}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
       ) : null}
     </div>
@@ -283,19 +272,17 @@ export function TransferDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!saving) onOpenChange(o); }}>
-      <AdaptiveDialog size="formLg">
-        <DialogHeader>
-          <DialogTitle>העברה / שיוך כפול</DialogTitle>
-          <DialogDescription>
-            רישום אירוע אחד כהוצאה לצד אחד וכהכנסה לצד אחר (למשל תשלום על הזמנה שהוא גם הוצאה לבית).
-          </DialogDescription>
-        </DialogHeader>
-
-        <form
-          className="mt-4 space-y-4"
-          onSubmit={(e) => { e.preventDefault(); void handleSubmit(); }}
-        >
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="העברה / שיוך כפול"
+      description="רישום אירוע אחד כהוצאה לצד אחד וכהכנסה לצד אחר (למשל תשלום על הזמנה שהוא גם הוצאה לבית)."
+      onSubmit={() => void handleSubmit()}
+      submitLabel="שמירה"
+      busyLabel="שומר..."
+      busy={saving}
+      error={errorMessage || undefined}
+    >
           {/* Expense side */}
           <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3">
             <div className="mb-2 text-sm font-semibold text-destructive">צד הוצאה</div>
@@ -329,7 +316,7 @@ export function TransferDialog({
           </div>
 
           {/* Shared amount + date */}
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <div className="text-sm font-medium">סכום מלא *</div>
               <CurrencyInput
@@ -365,7 +352,7 @@ export function TransferDialog({
           </label>
 
           {splitAmounts ? (
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <div className="text-sm font-medium">סכום הוצאה *</div>
                 <CurrencyInput
@@ -390,11 +377,10 @@ export function TransferDialog({
           ) : null}
 
           {/* Payment method + optional due date */}
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <div className="text-sm font-medium">אמצעי תשלום</div>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              <NativeSelect
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
               >
@@ -403,7 +389,7 @@ export function TransferDialog({
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
             {paymentMethod === "check" ? (
               <div className="space-y-1">
@@ -423,34 +409,6 @@ export function TransferDialog({
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
 
-          {errorMessage ? (
-            <div
-              role="alert"
-              className={cn(
-                "mt-2 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive"
-              )}
-            >
-              {errorMessage}
-            </div>
-          ) : null}
-
-          <DialogFooter className="mt-6">
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={saving}>
-              ביטול
-            </Button>
-            <Button type="submit" disabled={saving}>
-              {saving ? (
-                <>
-                  <Loader2 className="ml-2 h-4 w-4 animate-spin" />
-                  שומר...
-                </>
-              ) : (
-                "שמירה"
-              )}
-            </Button>
-          </DialogFooter>
-        </form>
-      </AdaptiveDialog>
-    </Dialog>
+    </FormDialog>
   );
 }

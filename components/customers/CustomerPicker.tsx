@@ -5,8 +5,7 @@ import { Check, Search, UserPlus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AdaptiveDialog } from "@/components/layout/page-layout";
+import { ViewDialog } from "@/components/ui/view-dialog";
 import { CustomerForm } from "@/components/customers/CustomerForm";
 import {
   invalidateCustomerSearchIndex,
@@ -150,11 +149,15 @@ export function CustomerPicker({
         </div>
       ) : null}
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <AdaptiveDialog size="form2xl">
-          <DialogHeader>
-            <DialogTitle>לקוח חדש</DialogTitle>
-          </DialogHeader>
+      {/* A ViewDialog, not a FormDialog: CustomerForm brings its own save/cancel
+          buttons, so the chrome must not add a second primary action. */}
+      <ViewDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        title="לקוח חדש"
+        description="יצירת לקוח חדש בלי לצאת מהמסך."
+        size="form2xl"
+      >
           <CustomerForm
             mode="create"
             onCancel={() => setCreateOpen(false)}
@@ -170,8 +173,7 @@ export function CustomerPicker({
               setCreateOpen(false);
             }}
           />
-        </AdaptiveDialog>
-      </Dialog>
+      </ViewDialog>
     </div>
   );
 }

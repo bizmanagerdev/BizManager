@@ -11,15 +11,8 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { AdaptiveDialog } from "@/components/layout/page-layout";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { FormDialog } from "@/components/ui/form-dialog";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
@@ -32,9 +25,6 @@ import { offlineUpload } from "@/lib/offline-upload";
 import { toHebrewError } from "@/lib/error-messages";
 
 export type UploadTargetOption = { id: string; label: string };
-
-const fieldClass =
-  "h-11 w-full rounded-xl border border-input bg-background/80 px-4 py-2 text-sm shadow-sm outline-none transition-all focus:border-destructive/40 focus:ring-2 focus:ring-ring";
 
 function normalizeDomain(value: string | undefined) {
   return value && (EXPENSE_BUSINESS_DOMAINS as readonly string[]).includes(value)
@@ -155,22 +145,26 @@ export function UploadDocumentDialog({
   }
 
   return (
-    <Dialog
+    <FormDialog
       open={open}
       onOpenChange={(next) => {
-        if (!next && uploading) return;
         onOpenChange(next);
         if (!next) reset();
       }}
+      title="העלאת קבצים"
+      description="בחירת קבצים להוספה לארכיון המסמכים המרכזי."
+      size="formMd"
+      onSubmit={() => void startUpload()}
+      submitLabel="העלאה"
+      busyLabel="מעלה..."
+      busy={uploading}
+      submitDisabled={
+        files.length === 0 ||
+        (needsProject && !projectId.trim()) ||
+        (needsProperty && !propertyId.trim())
+      }
     >
-      <AdaptiveDialog size="formMd">
-        <DialogHeader>
-          <DialogTitle>העלאת קבצים</DialogTitle>
-          <DialogDescription>בחירת קבצים להוספה לארכיון המסמכים המרכזי.</DialogDescription>
-        </DialogHeader>
-
-        <fieldset disabled={uploading} className="contents">
-          <div className="mt-4 space-y-4">
+          <div className="space-y-4">
             <div className="space-y-1">
               <div className="text-sm font-medium">תחום</div>
               <DomainSelect
@@ -222,8 +216,7 @@ export function UploadDocumentDialog({
 
             <div className="space-y-1">
               <div className="text-sm font-medium">קטגוריה</div>
-              <select
-                className={fieldClass}
+              <NativeSelect
                 aria-label="קטגוריית מסמך"
                 value={category}
                 onChange={(event) => setCategory(event.target.value)}
@@ -234,7 +227,7 @@ export function UploadDocumentDialog({
                     {option}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
 
             {businessDomain === "general_business" ? <TagPicker value={tagIds} onChange={setTagIds} /> : null}
@@ -272,27 +265,7 @@ export function UploadDocumentDialog({
               )}
             </div>
           </div>
-        </fieldset>
-
-        <DialogFooter className="mt-6">
-          <Button type="button" variant="secondary" disabled={uploading} onClick={() => onOpenChange(false)}>
-            ביטול
-          </Button>
-          <Button
-            type="button"
-            disabled={
-              uploading ||
-              files.length === 0 ||
-              (needsProject && !projectId.trim()) ||
-              (needsProperty && !propertyId.trim())
-            }
-            onClick={() => void startUpload()}
-          >
-            {uploading ? "מעלה..." : "העלאה"}
-          </Button>
-        </DialogFooter>
-      </AdaptiveDialog>
-    </Dialog>
+    </FormDialog>
   );
 }
 

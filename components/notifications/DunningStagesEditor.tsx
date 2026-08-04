@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 
 type Stage = { day_offset: number; label: string; severity: string; enabled: boolean };
@@ -85,13 +86,13 @@ export default function DunningStagesEditor() {
               />
             </label>
             <Input value={s.label} onChange={(e) => update(i, { label: e.target.value })} placeholder="שם השלב" className={`${inputCls} min-w-0 flex-1`} />
-            <select value={s.severity} onChange={(e) => update(i, { severity: e.target.value })} className={inputCls}>
+            <NativeSelect value={s.severity} onChange={(e) => update(i, { severity: e.target.value })}>
               {SEVERITY_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
             <label className="flex items-center gap-1 text-xs text-muted-foreground">
               <input type="checkbox" checked={s.enabled} onChange={(e) => update(i, { enabled: e.target.checked })} />
               פעיל

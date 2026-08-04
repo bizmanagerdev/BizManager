@@ -14,8 +14,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { MapPin, Navigation } from "lucide-react";
-import { AdaptiveDialog } from "@/components/layout/page-layout";
-import { Dialog, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -134,23 +133,18 @@ export function DeliveryLocationDialog({
   }
 
   return (
-    <Dialog
+    <FormDialog
       open={open}
-      onOpenChange={(next) => {
-        if (!next && saving) return;
-        onOpenChange(next);
-      }}
+      onOpenChange={onOpenChange}
+      title={customerName}
+      description="הוראות הגעה ונקודת הורדה שנשמרות ללקוח."
+      size="formMd"
+      onSubmit={() => void save()}
+      submitLabel="שמירה"
+      busyLabel="שומר..."
+      busy={saving}
+      error={error ?? undefined}
     >
-      <AdaptiveDialog
-        size="formMd"
-        aria-describedby={undefined}
-        onOpenAutoFocus={(event) => event.preventDefault()}
-      >
-        <DialogHeader className="mb-4 text-right">
-          <DialogTitle>{customerName}</DialogTitle>
-        </DialogHeader>
-
-        <fieldset disabled={saving} className="contents">
           <div className="space-y-4 text-right">
             <label className="block space-y-2 text-sm">
               <span className="font-medium">הוראות הגעה</span>
@@ -227,37 +221,8 @@ export function DeliveryLocationDialog({
               </div>
             </div>
 
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
           </div>
-        </fieldset>
-
-        {/* One row even on a phone: DialogFooter stacks below `sm` by default, which
-            these two short labels don't need. */}
-        <DialogFooter className="mt-4 flex-row justify-end">
-          {/* Primary text and border, nothing inside — `secondary` gave it the same
-              sky blue fill as the save button, so the two read as equal choices. */}
-          <Button
-            type="button"
-            variant="outline"
-            className="border-primary/40 bg-transparent text-primary shadow-none hover:border-primary/60 hover:bg-primary/5 hover:text-primary"
-            onClick={() => onOpenChange(false)}
-            disabled={saving}
-          >
-            ביטול
-          </Button>
-          {/* Navy fill, not the default sky blue — this is the dialog's one
-              committing action and should sit a step above everything else. */}
-          <Button
-            type="button"
-            className="bg-primary text-primary-foreground shadow-md shadow-primary/20 hover:bg-primary/90"
-            onClick={() => void save()}
-            disabled={saving}
-          >
-            {saving ? "שומר..." : "שמירה"}
-          </Button>
-        </DialogFooter>
-      </AdaptiveDialog>
-    </Dialog>
+    </FormDialog>
   );
 }
 

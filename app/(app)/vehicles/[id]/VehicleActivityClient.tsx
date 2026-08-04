@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { FileText, ListTodo, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { DateInput } from "@/components/ui/date-input";
@@ -13,8 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Dialog, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AdaptiveDialog } from "@/components/layout/page-layout";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { ExpenseDialog, type EditingExpenseData } from "@/components/expenses/ExpenseDialog";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
@@ -262,7 +262,7 @@ export default function VehicleActivityClient({
 
   return (
     <>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Expenses */}
         <Card>
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
@@ -434,11 +434,17 @@ export default function VehicleActivityClient({
       />
 
       {/* Income dialog (add) */}
-      <Dialog open={incomeOpen} onOpenChange={(o) => !incBusy && setIncomeOpen(o)}>
-        <AdaptiveDialog size="formMd">
-          <DialogHeader>
-            <DialogTitle>הוספת הכנסה לרכב: {vehicleName}</DialogTitle>
-          </DialogHeader>
+      <FormDialog
+        open={incomeOpen}
+        onOpenChange={setIncomeOpen}
+        title={`הוספת הכנסה לרכב: ${vehicleName}`}
+        description="ההכנסה נרשמת ומתויגת לרכב הזה."
+        size="formMd"
+        onSubmit={() => void submitIncome()}
+        submitLabel="הוספה"
+        busyLabel="שומר..."
+        busy={incBusy}
+      >
           <div className="mt-4 space-y-4">
             <div className="space-y-1">
               <div className="text-sm font-medium">סכום *</div>
@@ -450,8 +456,7 @@ export default function VehicleActivityClient({
             </div>
             <div className="space-y-1">
               <div className="text-sm font-medium">אמצעי תשלום</div>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              <NativeSelect
                 value={incMethod}
                 onChange={(e) => {
                   const m = e.target.value;
@@ -462,7 +467,7 @@ export default function VehicleActivityClient({
                 {SIMPLE_METHODS.map((m) => (
                   <option key={m.value} value={m.value}>{m.label}</option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
             <AccountSelect
               required
@@ -478,19 +483,19 @@ export default function VehicleActivityClient({
               <Textarea value={incNotes} onChange={(e) => setIncNotes(e.target.value)} />
             </div>
           </div>
-          <DialogFooter className="mt-6">
-            <Button variant="secondary" onClick={() => setIncomeOpen(false)} disabled={incBusy}>ביטול</Button>
-            <Button onClick={() => void submitIncome()} disabled={incBusy}>{incBusy ? "שומר..." : "הוספה"}</Button>
-          </DialogFooter>
-        </AdaptiveDialog>
-      </Dialog>
+      </FormDialog>
 
       {/* Document upload dialog (add) */}
-      <Dialog open={docOpen} onOpenChange={(o) => !docBusy && setDocOpen(o)}>
-        <AdaptiveDialog size="formLg">
-          <DialogHeader>
-            <DialogTitle>העלאת מסמך לרכב: {vehicleName}</DialogTitle>
-          </DialogHeader>
+      <FormDialog
+        open={docOpen}
+        onOpenChange={setDocOpen}
+        title={`העלאת מסמך לרכב: ${vehicleName}`}
+        description="הקובץ נשמר בארכיון המסמכים ומתויג לרכב הזה."
+        onSubmit={() => void submitDoc()}
+        submitLabel="העלאה"
+        busyLabel="מעלה..."
+        busy={docBusy}
+      >
           <div className="mt-4 space-y-4">
             <FileUploadActions
               files={docFiles}
@@ -504,8 +509,7 @@ export default function VehicleActivityClient({
             />
             <div className="space-y-1">
               <div className="text-sm font-medium">קטגוריה</div>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              <NativeSelect
                 value={docCategory}
                 onChange={(e) => setDocCategory(e.target.value)}
                 disabled={docBusy}
@@ -514,19 +518,14 @@ export default function VehicleActivityClient({
                 {DOCUMENT_CATEGORIES.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
             <div className="space-y-1">
               <div className="text-sm font-medium">שנת המסמך (לחיפוש לפי שנה)</div>
               <Input inputMode="numeric" value={docYear} onChange={(e) => setDocYear(e.target.value)} />
             </div>
           </div>
-          <DialogFooter className="mt-6">
-            <Button variant="secondary" onClick={() => setDocOpen(false)} disabled={docBusy}>ביטול</Button>
-            <Button onClick={() => void submitDoc()} disabled={docBusy}>{docBusy ? "מעלה..." : "העלאה"}</Button>
-          </DialogFooter>
-        </AdaptiveDialog>
-      </Dialog>
+      </FormDialog>
 
       <ConfirmDialog
         open={Boolean(del)}

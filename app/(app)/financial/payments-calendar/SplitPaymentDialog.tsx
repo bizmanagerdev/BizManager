@@ -2,16 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { AdaptiveDialog } from "@/components/layout/page-layout";
-import { Button } from "@/components/ui/button";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { toHebrewError } from "@/lib/error-messages";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import type { PaymentCalendarItem } from "@/lib/payables";
@@ -90,34 +81,18 @@ export function SplitPaymentDialog({ open, onOpenChange, sourceItem, onSaved }: 
   }
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!saving) onOpenChange(o); }}>
-      <AdaptiveDialog size="formLg">
-        <DialogHeader>
-          <DialogTitle>פיצול לתשלומים</DialogTitle>
-          <DialogDescription>
-            {sourceItem ? `${sourceItem.label} — סכום מקורי ${fmtIls(total)}` : ""}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="mt-4 space-y-3">
-          <InstallmentFields total={total} startDate={startDate} rows={rows} onChange={setRows} />
-
-          {error ? (
-            <div role="alert" className="rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
-              {error}
-            </div>
-          ) : null}
-        </div>
-
-        <DialogFooter className="mt-6">
-          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={saving}>
-            ביטול
-          </Button>
-          <Button type="button" onClick={() => void submit()} disabled={saving}>
-            {saving ? (<><Loader2 className="ml-2 h-4 w-4 animate-spin" />שומר...</>) : "פצל לתשלומים"}
-          </Button>
-        </DialogFooter>
-      </AdaptiveDialog>
-    </Dialog>
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="פיצול לתשלומים"
+      description={sourceItem ? `${sourceItem.label} — סכום מקורי ${fmtIls(total)}` : undefined}
+      onSubmit={() => void submit()}
+      submitLabel="פצל לתשלומים"
+      busyLabel="שומר..."
+      busy={saving}
+      error={error || undefined}
+    >
+      <InstallmentFields total={total} startDate={startDate} rows={rows} onChange={setRows} />
+    </FormDialog>
   );
 }

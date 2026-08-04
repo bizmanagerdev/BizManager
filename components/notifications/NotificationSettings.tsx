@@ -3,13 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Pencil, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Field } from "@/components/ui/field";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import type { AlertMode, AlertRow, AlertSchedule } from "@/lib/notifications/types";
 import { BUILTIN_ALERT_TYPES } from "@/lib/notifications/types";
 import AlertMetricsPanel from "@/components/notifications/AlertMetricsPanel";
@@ -412,11 +409,17 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
       </details>
 
       {/* Add / Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-h-[90dvh] overflow-y-auto" dir="rtl">
-          <DialogHeader>
-            <DialogTitle>{editingMode === "live" ? form.title : editingId ? "עריכת התראה" : "הוספת התראה"}</DialogTitle>
-          </DialogHeader>
+      <FormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        title={editingMode === "live" ? form.title : editingId ? "עריכת התראה" : "הוספת התראה"}
+        description="מתי לשלוח, למי, ובאיזה ערוץ."
+        onSubmit={() => void saveForm()}
+        submitLabel="שמור"
+        busyLabel="שומר..."
+        busy={saving}
+        submitDisabled={!form.title.trim()}
+      >
 
           <div className="space-y-4 py-1">
             {/* An automatic rule writes its own title/text/link per finding, so the
@@ -428,7 +431,7 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
               </p>
             ) : (
               <>
-                <Field label="כותרת">
+                <Field size="xs" label="כותרת">
                   <input
                     value={form.title}
                     onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
@@ -437,7 +440,7 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
                   />
                 </Field>
 
-                <Field label="תוכן">
+                <Field size="xs" label="תוכן">
                   <input
                     value={form.body}
                     onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
@@ -446,7 +449,7 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
                   />
                 </Field>
 
-                <Field label="קישור — עמוד שייפתח">
+                <Field size="xs" label="קישור — עמוד שייפתח">
                   <UrlPicker value={form.url} onChange={(url) => setForm((f) => ({ ...f, url }))} />
                 </Field>
               </>
@@ -455,22 +458,22 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
             {editingMode === "scheduled" ? (
               <>
                 <div className="grid grid-cols-2 gap-3">
-                  <Field label="שעת שליחה">
-                    <select value={form.send_hour_israel} onChange={(e) => setForm((f) => ({ ...f, send_hour_israel: Number(e.target.value) }))} className={inputCls}>
+                  <Field size="xs" label="שעת שליחה">
+                    <NativeSelect value={form.send_hour_israel} onChange={(e) => setForm((f) => ({ ...f, send_hour_israel: Number(e.target.value) }))}>
                       {HOURS.map((h) => (
                         <option key={h} value={h}>{fmtHour(h)}</option>
                       ))}
-                    </select>
+                    </NativeSelect>
                   </Field>
-                  <Field label="תדירות">
-                    <select value={form.schedule} onChange={(e) => setForm((f) => ({ ...f, schedule: e.target.value as AlertSchedule }))} className={inputCls}>
+                  <Field size="xs" label="תדירות">
+                    <NativeSelect value={form.schedule} onChange={(e) => setForm((f) => ({ ...f, schedule: e.target.value as AlertSchedule }))}>
                       {SCHEDULE_OPTIONS.map((s) => (
                         <option key={s.value} value={s.value}>{s.label}</option>
                       ))}
-                    </select>
+                    </NativeSelect>
                   </Field>
                 </div>
-                <Field label="למי לשלוח">
+                <Field size="xs" label="למי לשלוח">
                   <RecipientsDropdown users={users} selected={form.recipient_user_ids} onChange={(ids) => setForm((f) => ({ ...f, recipient_user_ids: ids }))} />
                 </Field>
               </>
@@ -478,37 +481,36 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
               <>
                 {editingMode === "night" ? (
                   <div className="grid grid-cols-2 gap-3">
-                    <Field label="משעה">
-                      <select value={form.send_hour_israel} onChange={(e) => setForm((f) => ({ ...f, send_hour_israel: Number(e.target.value) }))} className={inputCls}>
+                    <Field size="xs" label="משעה">
+                      <NativeSelect value={form.send_hour_israel} onChange={(e) => setForm((f) => ({ ...f, send_hour_israel: Number(e.target.value) }))}>
                         {HOURS.map((h) => (
                           <option key={h} value={h}>{fmtHour(h)}</option>
                         ))}
-                      </select>
+                      </NativeSelect>
                     </Field>
-                    <Field label="עד שעה">
-                      <select value={form.send_hour_end_israel} onChange={(e) => setForm((f) => ({ ...f, send_hour_end_israel: Number(e.target.value) }))} className={inputCls}>
+                    <Field size="xs" label="עד שעה">
+                      <NativeSelect value={form.send_hour_end_israel} onChange={(e) => setForm((f) => ({ ...f, send_hour_end_israel: Number(e.target.value) }))}>
                         {HOURS.map((h) => (
                           <option key={h} value={h}>{fmtHour(h)}</option>
                         ))}
-                      </select>
+                      </NativeSelect>
                     </Field>
                   </div>
                 ) : null}
-                <Field label="למי זה שייך (לפי תפקיד)">
-                  <select
+                <Field size="xs" label="למי זה שייך (לפי תפקיד)">
+                  <NativeSelect
                     value={form.audience_role}
                     onChange={(e) => setForm((f) => ({ ...f, audience_role: e.target.value }))}
-                    disabled={editingMode === "live" && form.recipient_user_ids.length > 0}
-                    className={`${inputCls} disabled:opacity-50`}
+                    disabled={editingMode === "live" && form.recipient_user_ids.length > 0} 
                   >
                     {AUDIENCE_OPTIONS.map((o) => (
                       <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </Field>
                 {editingMode === "live" ? (
                   <>
-                    <Field label="או לאנשים מסוימים (גובר על התפקיד)">
+                    <Field size="xs" label="או לאנשים מסוימים (גובר על התפקיד)">
                       <RecipientsDropdown
                         users={users}
                         selected={form.recipient_user_ids}
@@ -527,60 +529,24 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
             )}
           </div>
 
-          <DialogFooter>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setDialogOpen(false)}
-            >
-              ביטול
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => void saveForm()}
-              disabled={saving || !form.title.trim()}
-            >
-              {saving ? "שומר..." : "שמור"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
+      </FormDialog>
       {/* Delete Confirm Dialog */}
-      <Dialog
+      <ConfirmDialog
         open={!!confirmDelete}
         onOpenChange={(o) => {
           if (!o) setConfirmDelete(null);
         }}
+        destructive
+        title="מחיקת התראה"
+        description="פעולה זו לא ניתנת לביטול."
+        confirmLabel="מחק"
+        loading={!!deleting}
+        onConfirm={() => confirmDelete && void deleteAlert(confirmDelete.id)}
       >
-        <DialogContent dir="rtl">
-          <DialogHeader>
-            <DialogTitle>מחיקת התראה</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            האם למחוק את ההתראה{" "}
-            <strong className="text-foreground">{confirmDelete?.title}</strong>?{" "}
-            פעולה זו לא ניתנת לביטול.
-          </p>
-          <DialogFooter>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setConfirmDelete(null)}
-            >
-              ביטול
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => confirmDelete && void deleteAlert(confirmDelete.id)}
-              disabled={!!deleting}
-            >
-              {deleting ? "מוחק..." : "מחק"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        <p className="text-sm text-muted-foreground">
+          האם למחוק את ההתראה <strong className="text-foreground">{confirmDelete?.title}</strong>?
+        </p>
+      </ConfirmDialog>
     </div>
   );
 }
@@ -816,17 +782,4 @@ function UrlPicker({ value, onChange }: { value: string; onChange: (url: string)
 const inputCls =
   "w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary";
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1">
-      <label className="text-xs font-medium text-muted-foreground">{label}</label>
-      {children}
-    </div>
-  );
-}
+

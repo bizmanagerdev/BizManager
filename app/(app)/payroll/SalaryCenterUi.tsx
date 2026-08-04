@@ -27,9 +27,6 @@ export const PAYSLIP_ITEM_TYPES = [
   { value: "manual_adjustment", label: "התאמה ידנית" },
 ] as const;
 
-export const selectClassName =
-  "h-11 w-full rounded-xl border border-input bg-background/80 px-4 py-2 text-right text-sm shadow-sm";
-
 // ── Pure formatters / label maps ────────────────────────────────────────────
 
 export function getPayslipItemTypeLabel(value: string | null | undefined) {

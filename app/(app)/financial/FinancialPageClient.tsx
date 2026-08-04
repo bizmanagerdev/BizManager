@@ -5,21 +5,17 @@ import Link from "next/link";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { BarChart3, Calculator, CalendarClock, CheckCircle2, Clock, Coins, History, LineChart, Loader2, Pencil, Scale, ScrollText, Search, SlidersHorizontal, TimerReset, Trash2, Users } from "lucide-react";
-import { AdaptiveDialog } from "@/components/layout/page-layout";
+import { BarChart3, Calculator, CalendarClock, CheckCircle2, Clock, Coins, History, LineChart, Pencil, Scale, ScrollText, Search, SlidersHorizontal, TimerReset, Trash2, Users } from "lucide-react";
 import { TagPicker } from "@/components/tags/TagPicker";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DateInput } from "@/components/ui/date-input";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -791,14 +787,13 @@ export default function FinancialPageClient({
   // Month picker — always visible in the filter-button row (outside the
   // collapsible filters panel) so switching month is one tap.
   const periodControls = (
-    <select
+    <NativeSelect dense
       aria-label="בחר חודש"
       value={from && to && monthRange(from.slice(0, 7))?.from === from && monthRange(from.slice(0, 7))?.to === to ? from.slice(0, 7) : ""}
       onChange={(event) => {
         const range = event.target.value ? monthRange(event.target.value) : null;
         applyRange(range?.from ?? "", range?.to ?? "");
-      }}
-      className="h-9 w-36 rounded-lg border border-input bg-background px-2 text-right text-sm shadow-sm"
+      }} className="w-36"
     >
       <option value="">כל התקופה</option>
       {recentMonthKeys(data.todayIso).map((key) => (
@@ -806,7 +801,7 @@ export default function FinancialPageClient({
           {key.slice(5)}/{key.slice(2, 4)}
         </option>
       ))}
-    </select>
+    </NativeSelect>
   );
 
   const advancedFilterButton = (
@@ -912,7 +907,7 @@ export default function FinancialPageClient({
   // so the two read as one connected area (not two floating cards).
   const advancedFilterFields = (
       <div className="space-y-2">
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {/* Free-text search filters the ledger — not the reports — so flow only. */}
           {view === "flow" ? (
           <label className="space-y-1 text-sm text-right sm:col-span-2">
@@ -1103,7 +1098,7 @@ export default function FinancialPageClient({
           <h3 className="text-base font-semibold">עכשיו — מה כבר קרה בפועל</h3>
           <p className="text-xs text-muted-foreground">כסף שכבר נכנס או יצא בפועל.</p>
         </div>
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <SummaryCard
             title="כניסות בפועל"
             value={formatCurrency(summaries.actual.inflow)}
@@ -1131,7 +1126,7 @@ export default function FinancialPageClient({
           <h3 className="text-base font-semibold">צפוי — מה צפוי קדימה</h3>
           <p className="text-xs text-muted-foreground">כסף שעדיין לא זז — צפוי להיכנס או לצאת בהמשך.</p>
         </div>
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <SummaryCard
             title="הכנסות מתוכננות"
             value={formatCurrency(data.plannedReceivablesSummary.inflow)}
@@ -1161,7 +1156,7 @@ export default function FinancialPageClient({
             מה שיש מול מה שחייבים. פירוט מלא בלשונית ״מאזן״.
           </p>
         </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           <SummaryCard
             title="חובות לקוחות פתוחים"
             value={formatCurrency(data.openReceivablesSummary.inflow)}
@@ -1231,9 +1226,9 @@ export default function FinancialPageClient({
             earnedRevenue ? (
               <EarnedRevenuePanel report={earnedRevenue} selectedDomains={selectedReportDomains} />
             ) : (
-              <div className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
+              <EmptyState>
                 אין נתוני הכנסה להצגה.
-              </div>
+              </EmptyState>
             )
           ) : (
             <MonthlyTrendPanel points={data.monthlyTrend} />
@@ -1243,9 +1238,9 @@ export default function FinancialPageClient({
           {productMargin ? (
             <ProductMarginPanel report={productMargin} />
           ) : (
-            <div className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
+            <EmptyState>
               אין נתוני מכירות להצגה.
-            </div>
+            </EmptyState>
           )}
         </TabsContent>
         <TabsContent value="forecast" className="space-y-4">
@@ -1255,9 +1250,9 @@ export default function FinancialPageClient({
           {customerRanking ? (
             <CustomerRankingPanel report={customerRanking} />
           ) : (
-            <div className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
+            <EmptyState>
               אין נתוני לקוחות להצגה.
-            </div>
+            </EmptyState>
           )}
         </TabsContent>
       </Tabs>
@@ -1330,9 +1325,9 @@ export default function FinancialPageClient({
             ) : null}
           </div>
           {displayHistory.length === 0 ? (
-            <div className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+            <EmptyState>
               לא נמצאו תנועות עבר בהתאם לסינון.
-            </div>
+            </EmptyState>
           ) : (
             <>
               <div dir="rtl" className="grid gap-3 md:hidden">
@@ -1511,9 +1506,9 @@ export default function FinancialPageClient({
           </CardHeader>
           <CardContent className="space-y-3">
             {upcomingEntries.length === 0 ? (
-              <div className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+              <EmptyState>
                 אין כרגע תנועות עתידיות או ממתינות בהתאם לסינון.
-              </div>
+              </EmptyState>
             ) : (
               <div ref={upcomingReveal.scrollRef} className="max-h-[70vh] overflow-auto">
                 <table className="w-full text-right text-sm">
@@ -1726,19 +1721,18 @@ export default function FinancialPageClient({
                 className="h-9 pr-9"
               />
             </div>
-            <select
+            <NativeSelect dense
               value={ledgerMonth}
               onChange={(e) => {
                 setLedgerVisible(60);
                 setLedgerMonth(e.target.value);
               }}
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
             >
               <option value="">כל החודשים</option>
               {ledgerMonths.map((m) => (
                 <option key={m} value={m}>{`${m.slice(5)}/${m.slice(0, 4)}`}</option>
               ))}
-            </select>
+            </NativeSelect>
             {ledgerSearch || ledgerMonth ? (
               <Button
                 type="button"
@@ -1758,9 +1752,9 @@ export default function FinancialPageClient({
             </Button>
           </div>
           {filteredEntries.length === 0 ? (
-            <div className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+            <EmptyState>
               לא נמצאו תנועות עבור הסינון שנבחר.
-            </div>
+            </EmptyState>
           ) : (
             <>
               <div dir="rtl" className="grid gap-3 md:hidden">
@@ -2075,30 +2069,22 @@ export default function FinancialPageClient({
         }}
       />
 
-      <Dialog
+      <FormDialog
         open={incomeCreateOpen}
         onOpenChange={(open) => {
-          if (!open && !isCreatingIncome) {
-            setIncomeCreateOpen(false);
+          setIncomeCreateOpen(open);
+          if (!open) {
             clearDraft("income-create");
             setIncomeCreateForm(createIncomeFormState());
-            return;
           }
-          if (open) setIncomeCreateOpen(true);
         }}
+        title="הוספת הכנסה"
+        description="יצירת תקבול חדש ישירות מעמוד הפיננסי."
+        onSubmit={() => void createIncome()}
+        submitLabel="שמירה"
+        busyLabel="שומר..."
+        busy={isCreatingIncome}
       >
-        <AdaptiveDialog size="formLg">
-          <DialogHeader>
-            <DialogTitle>הוספת הכנסה</DialogTitle>
-            <DialogDescription>יצירת תקבול חדש ישירות מעמוד הפיננסי.</DialogDescription>
-          </DialogHeader>
-          <form
-            className="mt-4 space-y-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void createIncome();
-            }}
-          >
             <div className="space-y-1">
               <div className="text-sm font-medium">תחום עסקי *</div>
               <DomainSelect
@@ -2133,8 +2119,7 @@ export default function FinancialPageClient({
             {incomeCreateForm.businessDomain === "sales" ? (
               <div className="space-y-1">
                 <div className="text-sm font-medium">הזמנה</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                <NativeSelect
                   value={incomeCreateForm.orderId}
                   onChange={(event) =>
                     setIncomeCreateForm((current) => ({ ...current, orderId: event.target.value }))
@@ -2146,15 +2131,14 @@ export default function FinancialPageClient({
                       {order.label}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
             ) : null}
 
             {incomeCreateForm.businessDomain === "property_management" ? (
               <div className="space-y-1">
                 <div className="text-sm font-medium">נכס *</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                <NativeSelect
                   value={incomeCreateForm.propertyId}
                   onChange={(event) =>
                     setIncomeCreateForm((current) => ({ ...current, propertyId: event.target.value }))
@@ -2166,13 +2150,13 @@ export default function FinancialPageClient({
                       {property.label}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
             ) : null}
 
             {incomeCreateForm.businessDomain ? (
               <>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <div className="text-sm font-medium">סכום *</div>
                 <CurrencyInput
@@ -2196,11 +2180,10 @@ export default function FinancialPageClient({
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <div className="text-sm font-medium">אמצעי תשלום</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                <NativeSelect
                   value={incomeCreateForm.paymentMethod}
                   onChange={(event) =>
                     setIncomeCreateForm((current) => {
@@ -2218,7 +2201,7 @@ export default function FinancialPageClient({
                   <option value="check">צ׳ק</option>
                   <option value="credit_card">כרטיס אשראי</option>
                   <option value="other">אחר</option>
-                </select>
+                </NativeSelect>
               </div>
               <AccountSelect
                 required
@@ -2304,33 +2287,7 @@ export default function FinancialPageClient({
               </>
             ) : null}
 
-            <DialogFooter className="mt-6">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => {
-                  setIncomeCreateOpen(false);
-                  clearDraft("income-create");
-                  setIncomeCreateForm(createIncomeFormState());
-                }}
-                disabled={isCreatingIncome}
-              >
-                ביטול
-              </Button>
-              <Button type="submit" disabled={isCreatingIncome}>
-                {isCreatingIncome ? (
-                  <>
-                    <Loader2 className="ml-2 h-4 w-4 animate-spin" />
-                    שומר...
-                  </>
-                ) : (
-                  "שמירה"
-                )}
-              </Button>
-            </DialogFooter>
-          </form>
-        </AdaptiveDialog>
-      </Dialog>
+      </FormDialog>
 
       <ExpenseDialog
         open={Boolean(activeEditingExpense)}
@@ -2364,18 +2321,18 @@ export default function FinancialPageClient({
         }}
       />
 
-      <Dialog
+      <ConfirmDialog
         open={Boolean(deletingExpense)}
         onOpenChange={(open) => {
-          if (!open && !isDeletingExpense) setDeletingExpense(null);
+          if (!open) setDeletingExpense(null);
         }}
+        destructive
+        title="מחיקת חיוב"
+        description="הפעולה תמחק את ההוצאה מהתזרים ומהקישור שלה למקור, אם קיים."
+        confirmLabel="מחיקה"
+        loading={isDeletingExpense}
+        onConfirm={() => void confirmExpenseDelete()}
       >
-        <AdaptiveDialog size="formMd">
-          <DialogHeader>
-            <DialogTitle>מחיקת חיוב</DialogTitle>
-            <DialogDescription>הפעולה תמחק את ההוצאה מהתזרים ומהקישור שלה למקור, אם קיים.</DialogDescription>
-          </DialogHeader>
-
           {deletingExpense ? (
             <div className="mt-4 space-y-3">
               <div className="rounded-xl border bg-muted/20 px-3 py-3 text-sm">
@@ -2385,51 +2342,23 @@ export default function FinancialPageClient({
                   -{formatCurrency(deletingExpense.amount)}
                 </div>
               </div>
-
-              <DialogFooter className="mt-6">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => setDeletingExpense(null)}
-                  disabled={isDeletingExpense}
-                >
-                  ביטול
-                </Button>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  onClick={() => void confirmExpenseDelete()}
-                  disabled={isDeletingExpense}
-                >
-                  {isDeletingExpense ? (
-                    <>
-                      <Loader2 className="ml-2 h-4 w-4 animate-spin" />
-                      מוחק...
-                    </>
-                  ) : (
-                    "מחיקה"
-                  )}
-                </Button>
-              </DialogFooter>
             </div>
           ) : null}
-        </AdaptiveDialog>
-      </Dialog>
+      </ConfirmDialog>
 
-      <Dialog
+      <FormDialog
         open={Boolean(markPaidExpense)}
         onOpenChange={(open) => {
-          if (!open && !isMarkingPaid) setMarkPaidExpense(null);
+          if (!open) setMarkPaidExpense(null);
         }}
+        title="סימון כשולם"
+        description="אישור שההוצאה אכן שולמה. היא תעבור לתזרים בפועל בתאריך התשלום."
+        size="formMd"
+        onSubmit={() => void confirmMarkPaid()}
+        submitLabel="אישור תשלום"
+        busyLabel="מסמן..."
+        busy={isMarkingPaid}
       >
-        <AdaptiveDialog size="formMd">
-          <DialogHeader>
-            <DialogTitle>סימון כשולם</DialogTitle>
-            <DialogDescription>
-              אישור שההוצאה אכן שולמה. היא תעבור לתזרים בפועל בתאריך התשלום.
-            </DialogDescription>
-          </DialogHeader>
-
           {markPaidExpense ? (
             <div className="mt-4 space-y-3" dir="rtl">
               <div className="rounded-xl border bg-muted/20 px-3 py-3 text-sm">
@@ -2440,11 +2369,10 @@ export default function FinancialPageClient({
                 </div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="space-y-1">
                   <div className="text-sm font-medium">אמצעי תשלום</div>
-                  <select
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  <NativeSelect
                     value={markPaidMethod}
                     onChange={(event) => {
                       const m = event.target.value;
@@ -2458,7 +2386,7 @@ export default function FinancialPageClient({
                         {option.label}
                       </option>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </div>
                 <div className="space-y-1">
                   <div className="text-sm font-medium">תאריך תשלום</div>
@@ -2475,31 +2403,10 @@ export default function FinancialPageClient({
                 />
               </div>
 
-              <DialogFooter className="mt-6">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => setMarkPaidExpense(null)}
-                  disabled={isMarkingPaid}
-                >
-                  ביטול
-                </Button>
-                <Button type="button" onClick={() => void confirmMarkPaid()} disabled={isMarkingPaid}>
-                  {isMarkingPaid ? (
-                    <>
-                      <Loader2 className="ml-2 h-4 w-4 animate-spin" />
-                      מסמן...
-                    </>
-                  ) : (
-                    "אישור תשלום"
-                  )}
-                </Button>
-              </DialogFooter>
             </div>
           ) : null}
-        </AdaptiveDialog>
-      </Dialog>
-      </div>
+      </FormDialog>
+            </div>
       </div>
         </>
       ) : null}

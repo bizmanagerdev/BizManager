@@ -4,19 +4,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { Loader2, Plus, Check, Split, ExternalLink, Calendar as CalendarIcon, List as ListIcon, BellPlus, AlertTriangle, ChevronDown, ChevronLeft, Trash2 } from "lucide-react";
+import { Plus, Check, Split, ExternalLink, Calendar as CalendarIcon, List as ListIcon, BellPlus, AlertTriangle, ChevronDown, ChevronLeft, Trash2 } from "lucide-react";
 import ReminderFormDialog from "@/components/reminders/ReminderFormDialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { AdaptiveDialog } from "@/components/layout/page-layout";
+import { FormDialog } from "@/components/ui/form-dialog";
+import { ViewDialog } from "@/components/ui/view-dialog";
 import { DateInput } from "@/components/ui/date-input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import AccountSelect from "@/components/financial/AccountSelect";
@@ -321,17 +316,16 @@ export default function PaymentsCalendar({ items, todayIso, projects, properties
   const recurringOnlyToggle = toggle(recurringOnly, () => setRecurringOnly((v) => !v), "רק קבועות");
   const accountFilterControl =
     accounts.length > 0 ? (
-      <select
+      <NativeSelect dense
         value={accountFilter}
         onChange={(e) => setAccountFilter(e.target.value)}
-        aria-label="סינון לפי חשבון"
-        className="h-9 rounded-lg border bg-background px-2 text-sm text-foreground"
+        aria-label="סינון לפי חשבון" className="text-foreground"
       >
         <option value="">כל החשבונות</option>
         {accounts.map((a) => (
           <option key={a.id} value={a.id}>{a.name}</option>
         ))}
-      </select>
+      </NativeSelect>
     ) : null;
 
   // Compact toolbar: month nav (right) · toggles (middle) · total pill (far left).
@@ -424,12 +418,13 @@ export function CashNeedsDialog({
   const quickRanges: Array<[string, number]> = [["היום", 0], ["יומיים", 2], ["שבוע", 7], ["חודש", 30]];
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <AdaptiveDialog size="formMd">
-        <DialogHeader>
-          <DialogTitle>כמה כסף צריך?</DialogTitle>
-          <DialogDescription>סכום כל התשלומים לתשלום בטווח שנבחר.</DialogDescription>
-        </DialogHeader>
+    <ViewDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="כמה כסף צריך?"
+      description="סכום כל התשלומים לתשלום בטווח שנבחר."
+      size="formMd"
+    >
         <div className="mt-4 space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
@@ -467,15 +462,14 @@ export function CashNeedsDialog({
               רק הוצאות קבועות
             </button>
             {accounts.length > 0 ? (
-              <select
+              <NativeSelect dense
                 value={accountFilter}
                 onChange={(e) => setAccountFilter(e.target.value)}
-                aria-label="סינון לפי חשבון"
-                className="h-9 rounded-lg border bg-background px-2 text-sm text-foreground"
+                aria-label="סינון לפי חשבון" className="text-foreground"
               >
                 <option value="">כל החשבונות</option>
                 {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
+              </NativeSelect>
             ) : null}
           </div>
 
@@ -507,11 +501,7 @@ export function CashNeedsDialog({
             <div className="rounded-lg border p-4 text-center text-sm text-muted-foreground">אין תשלומים בטווח שנבחר.</div>
           )}
         </div>
-        <DialogFooter className="mt-4">
-          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>סגור</Button>
-        </DialogFooter>
-      </AdaptiveDialog>
-    </Dialog>
+    </ViewDialog>
   );
 }
 
@@ -1186,14 +1176,20 @@ function MarkPaidDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o && !saving) onClose(); }}>
-      <AdaptiveDialog size="formMd">
-        <DialogHeader>
-          <DialogTitle>סימון תשלום כשולם</DialogTitle>
-          <DialogDescription>
-            {item ? `${item.label} — ${isVariable ? "סכום משתנה" : fmtIls(item.amount)}` : ""}
-          </DialogDescription>
-        </DialogHeader>
+    <FormDialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+      title="סימון תשלום כשולם"
+      description={item ? `${item.label} — ${isVariable ? "סכום משתנה" : fmtIls(item.amount)}` : undefined}
+      size="formMd"
+      onSubmit={() => void submit()}
+      submitLabel="סמן כשולם"
+      busyLabel="שומר..."
+      busy={saving}
+      error={error || undefined}
+    >
         <div className="mt-4 space-y-3">
           {isVariable ? (
             <div className="space-y-1">
@@ -1207,8 +1203,7 @@ function MarkPaidDialog({
           </div>
           <div className="space-y-1">
             <div className="text-sm font-medium">אמצעי תשלום</div>
-            <select
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            <NativeSelect
               value={method}
               onChange={(e) => setMethod(e.target.value)}
             >
@@ -1216,7 +1211,7 @@ function MarkPaidDialog({
               {PAYMENT_METHOD_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
           <AccountSelect
             required
@@ -1224,21 +1219,7 @@ function MarkPaidDialog({
             onChange={setAccountId}
             onLoaded={setAccountsList}
           />
-          {error ? (
-            <div role="alert" className="rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
-              {error}
-            </div>
-          ) : null}
         </div>
-        <DialogFooter className="mt-6">
-          <Button type="button" variant="secondary" onClick={onClose} disabled={saving}>
-            ביטול
-          </Button>
-          <Button type="button" onClick={() => void submit()} disabled={saving}>
-            {saving ? (<><Loader2 className="ml-2 h-4 w-4 animate-spin" />שומר...</>) : "סמן כשולם"}
-          </Button>
-        </DialogFooter>
-      </AdaptiveDialog>
-    </Dialog>
+    </FormDialog>
   );
 }

@@ -3,21 +3,18 @@ import { toHebrewError } from "@/lib/error-messages";
 
 import type { AuditRecordInfo } from "@/lib/audit";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { NativeSelect } from "@/components/ui/native-select";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
+import { ViewDialog } from "@/components/ui/view-dialog";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { StatActionCard, collectionStatusTextClass } from "@/components/ui/stat-action-card";
-import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { AdaptiveGrid } from "@/components/layout/page-layout";
 import {
   HandCoins,
   Upload,
@@ -1540,7 +1537,7 @@ export default function ProjectTabsClient({
           content (route + load + note) can use the room, and past ~26rem of its
           own width its container query puts the load beside the route. */}
       <div
-        className={`mb-3 grid gap-3 ${
+        className={`mb-3 grid grid-cols-1 gap-3 ${
           detailsCard
             ? "lg:grid-cols-3 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)]"
             : "lg:grid-cols-3"
@@ -1630,14 +1627,13 @@ export default function ProjectTabsClient({
 
 
 
-      <Dialog open={morningBillingOpen} onOpenChange={setMorningBillingOpen}>
-        <AdaptiveDialog size="details4xl">
-          <DialogHeader>
-            <DialogTitle>מסמכי Morning</DialogTitle>
-            <DialogDescription>
-              הנפקת חשבונית לפרויקט, קבלות לתשלומים, ומעקב אחרי המסמכים שהופקו.
-            </DialogDescription>
-          </DialogHeader>
+      <ViewDialog
+        open={morningBillingOpen}
+        onOpenChange={setMorningBillingOpen}
+        title="מסמכי Morning"
+        description="הנפקת חשבונית לפרויקט, קבלות לתשלומים, ומעקב אחרי המסמכים שהופקו."
+        size="details4xl"
+      >
 
           <div className="space-y-4">
             {morningDocumentsError ? (
@@ -1704,15 +1700,9 @@ export default function ProjectTabsClient({
             </Card>
           </div>
 
-          <DialogFooter className="mt-4">
-            <Button type="button" variant="secondary" onClick={() => setMorningBillingOpen(false)}>
-              סגירה
-            </Button>
-          </DialogFooter>
-        </AdaptiveDialog>
-      </Dialog>
+      </ViewDialog>
 
-      <Dialog
+      <FormDialog
         open={uploadDocsOpen}
         onOpenChange={(open) => {
           setUploadDocsOpen(open);
@@ -1723,19 +1713,23 @@ export default function ProjectTabsClient({
             setUploadDocsCategoryMode("existing");
           }
         }}
+        title="העלאת מסמכים"
+        description="בחר קטגוריה (אופציונלי) וקבצים להעלאה."
+        size="formMd"
+        onSubmit={() => void startUploadDocs()}
+        submitLabel="העלאה"
+        busyLabel="מעלה..."
+        busy={docsUploading}
+        submitDisabled={
+          uploadDocsFiles.length === 0 ||
+          (uploadDocsCategoryMode === "new" && !uploadDocsNewCategory.trim())
+        }
       >
-        <AdaptiveDialog size="formMd">
-          <DialogHeader>
-            <DialogTitle>העלאת מסמכים</DialogTitle>
-            <DialogDescription>בחר קטגוריה (אופציונלי) וקבצים להעלאה.</DialogDescription>
-          </DialogHeader>
-
           <div className="space-y-4">
             <div className="space-y-1">
               <div className="text-sm font-medium">קטגוריה (אופציונלי)</div>
               <AdaptiveGrid variant="formTwo" className="gap-2">
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                <NativeSelect
                   value={uploadDocsCategoryMode === "new" ? "__new__" : uploadDocsCategory}
                   onChange={(e) => {
                     const v = e.target.value;
@@ -1756,7 +1750,7 @@ export default function ProjectTabsClient({
                     </option>
                   ))}
                   <option value="__new__">קטגוריה חדשה...</option>
-                </select>
+                </NativeSelect>
 
                 {uploadDocsCategoryMode === "new" ? (
                   <Input
@@ -1807,44 +1801,9 @@ export default function ProjectTabsClient({
             </div>
           </div>
 
-          <DialogFooter className="mt-4">
-            {!docsUploading &&
-            (uploadDocsFiles.length === 0 ||
-              (uploadDocsCategoryMode === "new" && !uploadDocsNewCategory.trim())) ? (
-              <div className="me-auto text-xs text-destructive">
-                לא ניתן להעלות:{" "}
-                {uploadDocsFiles.length === 0 ? "קבצים" : ""}
-                {uploadDocsFiles.length === 0 &&
-                uploadDocsCategoryMode === "new" &&
-                !uploadDocsNewCategory.trim()
-                  ? ", "
-                  : ""}
-                {uploadDocsCategoryMode === "new" && !uploadDocsNewCategory.trim()
-                  ? "שם קטגוריה"
-                  : ""}
-              </div>
-            ) : (
-              <div className="me-auto" />
-            )}
-            <Button type="button" variant="secondary" disabled={docsUploading} onClick={() => setUploadDocsOpen(false)}>
-              ביטול
-            </Button>
-            <Button
-              type="button"
-              disabled={
-                docsUploading ||
-                uploadDocsFiles.length === 0 ||
-                (uploadDocsCategoryMode === "new" && !uploadDocsNewCategory.trim())
-              }
-              onClick={() => void startUploadDocs()}
-            >
-              {docsUploading ? "מעלה..." : "העלאה"}
-            </Button>
-          </DialogFooter>
-        </AdaptiveDialog>
-      </Dialog>
+      </FormDialog>
 
-      <Dialog
+      <FormDialog
         open={editTagOpen}
         onOpenChange={(open) => {
           setEditTagOpen(open);
@@ -1853,13 +1812,15 @@ export default function ProjectTabsClient({
             setEditTagValue("");
           }
         }}
+        title="ערוך קטגוריה"
+        description="עדכון קטגוריה למסמך (documents.document_type)."
+        size="formMd"
+        onSubmit={() => void saveEditTag()}
+        submitLabel="שמירה"
+        busyLabel="שומר..."
+        busy={editTagSaving}
+        submitDisabled={!editTagValue.trim()}
       >
-        <AdaptiveDialog size="formMd">
-          <DialogHeader>
-            <DialogTitle>ערוך קטגוריה</DialogTitle>
-            <DialogDescription>עדכון קטגוריה למסמך (documents.document_type).</DialogDescription>
-          </DialogHeader>
-
           <div className="space-y-2">
             <div className="text-sm font-medium">קטגוריה</div>
             <Input
@@ -1869,18 +1830,9 @@ export default function ProjectTabsClient({
             />
           </div>
 
-          <DialogFooter className="mt-4">
-            <Button type="button" variant="secondary" onClick={() => setEditTagOpen(false)}>
-              ביטול
-            </Button>
-            <Button type="button" disabled={editTagSaving || !editTagValue.trim()} onClick={() => void saveEditTag()}>
-              {editTagSaving ? "שומר..." : "שמירה"}
-            </Button>
-          </DialogFooter>
-        </AdaptiveDialog>
-      </Dialog>
+      </FormDialog>
 
-      <Dialog
+      <ConfirmDialog
         open={deleteDocOpen}
         onOpenChange={(open) => {
           setDeleteDocOpen(open);
@@ -1889,95 +1841,51 @@ export default function ProjectTabsClient({
             setDeleteDocName("");
           }
         }}
+        destructive
+        title="מחיקת מסמך"
+        description="פעולה זו תמחק את הרשומה ואת הקובץ מ־Storage (אם יש הרשאה)."
+        confirmLabel="מחיקה"
+        loading={deleteDocDeleting}
+        onConfirm={() => void confirmDeleteDocument()}
       >
-        <AdaptiveDialog size="formMd">
-          <DialogHeader>
-            <DialogTitle>מחיקת מסמך</DialogTitle>
-            <DialogDescription>
-              פעולה זו תמחק את הרשומה ואת הקובץ מ־Storage (אם יש הרשאה).
-            </DialogDescription>
-          </DialogHeader>
+        <p className="text-sm">
+          למחוק את: <span className="font-medium">{deleteDocName || "מסמך"}</span> ?
+        </p>
+      </ConfirmDialog>
 
-          <div className="text-sm">
-            למחוק את: <span className="font-medium">{deleteDocName || "מסמך"}</span> ?
-          </div>
-
-          <DialogFooter className="mt-4">
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={deleteDocDeleting}
-              onClick={() => setDeleteDocOpen(false)}
-            >
-              ביטול
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={deleteDocDeleting || !deleteDocId}
-              onClick={() => void confirmDeleteDocument()}
-            >
-              {deleteDocDeleting ? "מוחק..." : "מחיקה"}
-            </Button>
-          </DialogFooter>
-        </AdaptiveDialog>
-      </Dialog>
-
-      <Dialog
+      <ConfirmDialog
         open={Boolean(pendingDeletion)}
         onOpenChange={(open) => {
-          if (!open && !pendingDeletionDetails?.busy) {
-            setPendingDeletion(null);
-          }
+          if (!open) setPendingDeletion(null);
         }}
+        destructive
+        title={pendingDeletionDetails?.title ?? "אישור מחיקה"}
+        description={pendingDeletionDetails?.description ?? "הפעולה תתבצע רק לאחר אישור."}
+        confirmLabel="מחיקה"
+        loading={Boolean(pendingDeletionDetails?.busy)}
+        onConfirm={() => void confirmPendingDeletion()}
       >
-        <AdaptiveDialog size="formMd">
-          <DialogHeader>
-            <DialogTitle>{pendingDeletionDetails?.title ?? "אישור מחיקה"}</DialogTitle>
-            <DialogDescription>
-              {pendingDeletionDetails?.description ?? "הפעולה תתבצע רק לאחר אישור."}
-            </DialogDescription>
-          </DialogHeader>
+        <p className="text-sm">
+          למחוק את <span className="font-medium">{pendingDeletionDetails?.label ?? "הרשומה"}</span>?
+        </p>
+      </ConfirmDialog>
 
-          <div className="text-sm">
-            למחוק את <span className="font-medium">{pendingDeletionDetails?.label ?? "הרשומה"}</span>?
-          </div>
-
-          <DialogFooter className="mt-4">
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={pendingDeletionDetails?.busy}
-              onClick={() => setPendingDeletion(null)}
-            >
-              ביטול
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={!pendingDeletion || pendingDeletionDetails?.busy}
-              onClick={() => void confirmPendingDeletion()}
-            >
-              {pendingDeletionDetails?.busy ? "מוחק..." : "מחיקה"}
-            </Button>
-          </DialogFooter>
-        </AdaptiveDialog>
-      </Dialog>
-
-      <Dialog
+      <FormDialog
         open={updateBasePriceOpen}
         onOpenChange={(open) => {
           setUpdateBasePriceOpen(open);
           if (!open) setUpdateBasePriceValue("");
         }}
+        title="עדכון מחיר בסיס"
+        description="מחיר בפועל מחושב ממחיר הבסיס בתוספת החיובים שמסומנים ללקוח."
+        size="formMd"
+        onSubmit={() => void updateBasePrice(updateBasePriceNumber)}
+        submitLabel="שמירה"
+        busyLabel="שומר..."
+        busy={updateBasePriceSaving}
+        submitDisabled={!canSaveBasePrice}
+        error={updateBasePriceError || undefined}
       >
-        <AdaptiveDialog size="formMd">
-          <DialogHeader>
-            <DialogTitle>עדכון מחיר בסיס</DialogTitle>
-            <DialogDescription>
-              מחיר בפועל מחושב ממחיר הבסיס בתוספת החיובים שמסומנים ללקוח.
-            </DialogDescription>
-          </DialogHeader>
 
           <div className="space-y-2">
             <div className="text-sm font-medium">מחיר בסיס *</div>
@@ -1993,9 +1901,6 @@ export default function ProjectTabsClient({
                   : ""
               }
             />
-            {updateBasePriceError ? (
-              <div className="text-xs text-destructive">{updateBasePriceError}</div>
-            ) : null}
             {updateBasePriceValue.trim() !== "" && Number.isFinite(updateBasePriceNumber) ? (
               <div className="text-xs text-muted-foreground">
                 המחיר בפועל שיוצג לאחר השמירה:{" "}
@@ -2003,33 +1908,7 @@ export default function ProjectTabsClient({
               </div>
             ) : null}
           </div>
-
-          <DialogFooter className="mt-4">
-            {!canSaveBasePrice && !updateBasePriceSaving ? (
-              <div className="me-auto text-xs text-destructive">
-                לא ניתן לשמור: מחיר בסיס
-              </div>
-            ) : (
-              <div className="me-auto" />
-            )}
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setUpdateBasePriceOpen(false)}
-              disabled={updateBasePriceSaving}
-            >
-              ביטול
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void updateBasePrice(updateBasePriceNumber)}
-              disabled={updateBasePriceSaving || !canSaveBasePrice}
-            >
-              {updateBasePriceSaving ? "שומר..." : "שמירה"}
-            </Button>
-          </DialogFooter>
-        </AdaptiveDialog>
-      </Dialog>
+      </FormDialog>
 
       <ExpenseDialog
         open={addExpenseOpen}

@@ -8,14 +8,7 @@ import { toast } from "sonner";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Button } from "@/components/ui/button";
 import { offlineFetch } from "@/lib/offline-queue";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 export default function DeleteCustomerButton({
   customerId,
@@ -95,37 +88,17 @@ export default function DeleteCustomerButton({
         </Button>
       )}
 
-      <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="text-right">
-          <DialogHeader className="text-right">
-            <DialogTitle>מחיקת לקוח</DialogTitle>
-            <DialogDescription>
-              האם למחוק את הלקוח &quot;{customerName}&quot;? הפעולה אינה הפיכה.
-            </DialogDescription>
-          </DialogHeader>
-
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => handleOpenChange(false)}
-              disabled={loading}
-            >
-              ביטול
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => void onConfirm()}
-              disabled={loading}
-            >
-              {loading ? "מוחק..." : "מחיקה"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={handleOpenChange}
+        destructive
+        title="מחיקת לקוח"
+        description={`האם למחוק את הלקוח "${customerName}"? הפעולה אינה הפיכה.`}
+        confirmLabel="מחיקה"
+        loading={loading}
+        error={error || undefined}
+        onConfirm={() => void onConfirm()}
+      />
     </>
   );
 }

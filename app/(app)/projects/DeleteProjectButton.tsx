@@ -6,14 +6,7 @@ import { useRouter } from "next/navigation";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Button } from "@/components/ui/button";
 import { offlineFetch } from "@/lib/offline-queue";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 export default function DeleteProjectButton({
   projectId,
@@ -99,13 +92,6 @@ export default function DeleteProjectButton({
 
   return (
     <div className="space-y-1">
-      <Dialog
-        open={open}
-        onOpenChange={(next) => {
-          if (!next && loading) return;
-          setOpen(next);
-        }}
-      >
         {hideTrigger ? null : (
           <Button
             type="button"
@@ -124,23 +110,16 @@ export default function DeleteProjectButton({
             {loading ? "מוחק..." : children ?? "מחיקת פרויקט"}
           </Button>
         )}
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>מחיקת פרויקט</DialogTitle>
-            <DialogDescription>
-              {`למחוק את ${label}? הפעולה אינה הפיכה.`}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={loading}>
-              ביטול
-            </Button>
-            <Button type="button" variant="destructive" onClick={() => void onDelete()} disabled={loading}>
-              {loading ? "מוחק..." : "מחק פרויקט"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        destructive
+        title="מחיקת פרויקט"
+        description={`למחוק את ${label}? הפעולה אינה הפיכה.`}
+        confirmLabel="מחק פרויקט"
+        loading={loading}
+        onConfirm={() => void onDelete()}
+      />
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   );

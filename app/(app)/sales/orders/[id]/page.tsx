@@ -593,7 +593,7 @@ export default async function SalesOrderPage({
 
         {order ? (
           <section className="space-y-3">
-            <div className="grid gap-3 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
               <StatActionCard
                 icon={<Truck className="h-5 w-5" />}
                 label="סטטוס הזמנה"
@@ -751,7 +751,7 @@ export default async function SalesOrderPage({
               />
             </div>
 
-            <div className="grid gap-3 lg:grid-cols-3 lg:items-start">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 lg:items-start">
               <div className="space-y-3 lg:order-2">
             <div className="hidden lg:block">
               <CustomerContactCard

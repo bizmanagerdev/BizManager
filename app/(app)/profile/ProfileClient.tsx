@@ -6,10 +6,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ViewDialog } from "@/components/ui/view-dialog";
+import { EmptyState } from "@/components/ui/empty-state";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Card, CardContent } from "@/components/ui/card";
 import NotificationPrefs from "@/components/notifications/NotificationPrefs";
 import PushSubscribeButton from "@/components/notifications/PushSubscribeButton";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -216,6 +219,8 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
 
   const splitPartIdRef = useRef(0);
   const [isPending, startTransition] = useTransition();
+  // Deleting asks through the styled ConfirmDialog, never window.confirm.
+  const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState<string | null>(null);
   const [sessionNote, setSessionNote] = useState("");
   const [sessionDomain, setSessionDomain] = useState<ExpenseBusinessDomain>("general_business");
   const [actionError, setActionError] = useState("");
@@ -589,10 +594,10 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
     return (
       <label className="space-y-1 text-right">
         <span className="block text-xs text-muted-foreground">{label}</span>
-        <select className={`rounded-md border border-input bg-background px-3 text-right text-sm ${compact ? "h-9 w-44" : "h-10 w-full"}`} value={value} onChange={(event) => onChange(event.target.value)}>
+        <NativeSelect dense={compact} className={compact ? "w-44" : undefined} value={value} onChange={(event) => onChange(event.target.value)}>
           <option value="">בחירה</option>
           {options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-        </select>
+        </NativeSelect>
       </label>
     );
   }
@@ -630,7 +635,7 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
           </div>
         </div>
         {showSessionTimingForProfile ? (
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <label className="space-y-1"><span className="block text-xs text-muted-foreground">שעת התחלה</span><DateTimeInput value={sessionEditClockIn} onChange={(event) => setSessionEditClockIn(event.target.value)} /></label>
             <label className="space-y-1"><span className="block text-xs text-muted-foreground">סה״כ שעות</span><Input inputMode="decimal" className="text-right" value={editedDurationHours} onChange={(event) => {
               const nextValue = event.target.value;
@@ -655,7 +660,7 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
             setSessionEditClockOut(`${next}T10:00`);
           }} /></label>
         )}
-        <div className="grid gap-3 md:grid-cols-[220px_220px_minmax(0,1fr)]">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-[220px_220px_minmax(0,1fr)]">
           <label className="space-y-1"><span className="block text-xs text-muted-foreground">תחום</span><DomainSelect domains={WORK_SESSION_BUSINESS_DOMAINS} value={sessionEditDomain} onChange={(value) => setEditorDomain(value as ExpenseBusinessDomain)} className="text-right" /></label>
           {sessionEditDomain === "logistics_projects" ? linkField("פרויקט", sessionEditProjectId, setSessionEditProjectId, projectOptions) : sessionEditDomain === "property_management" ? linkField("נכס", sessionEditPropertyId, setSessionEditPropertyId, propertyOptions) : <div className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">אין צורך בבחירה נוספת.</div>}
           <label className="space-y-1"><span className="block text-xs text-muted-foreground">הערות</span><textarea className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-right text-sm outline-none" value={sessionEditNotes} onChange={(event) => setSessionEditNotes(event.target.value)} /></label>
@@ -1021,7 +1026,7 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
       {/* No section heading — the active tab already names it. */}
       {activeTab === "sessions" && canTrackSessions ? (
         <section className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <SummaryCard title="סטטוס נוכחי" value={openSession ? "במשמרת" : "לא במשמרת"} hint={openSession ? `נכנסת ב-${formatDateTime(openSession.clock_in)}` : "אין משמרת פתוחה כרגע"} />
             <SummaryCard title="שעות החודש" value={selectedMonthSummary ? formatMinutes(selectedMonthSummary.totalMinutes) : "0:00"} hint={selectedMonthSummary ? selectedMonthSummary.label : "אין שעות מדווחות"} />
           </div>
@@ -1032,7 +1037,7 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
                 <Button size="lg" className="min-w-40" disabled={Boolean(openSession) || isPending} onClick={() => void postSessionAction("/api/profile/session/start")}>פתיחת משמרת</Button>
                 <Button size="lg" className="min-w-40" disabled={!openSession || isPending} onClick={() => void postSessionAction("/api/profile/session/end")}>סיום משמרת</Button>
               </div>
-              {openSession ? <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_220px]">
+              {openSession ? <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_220px_220px]">
                 <Input value={sessionNote} onChange={(event) => setSessionNote(event.target.value)} placeholder="הערות למשמרת" />
                 <DomainSelect domains={WORK_SESSION_BUSINESS_DOMAINS} value={sessionDomain} onChange={(value) => setSessionDomain(value as ExpenseBusinessDomain)} />
                 <div className="rounded-xl border bg-muted/30 px-3 py-2 text-sm">{`זמן פתיחה: ${formatDateTime(openSession.clock_in)}`}</div>
@@ -1045,17 +1050,17 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
             <CardContent className="space-y-4 py-5 text-right">
               <div className="flex flex-row-reverse flex-wrap items-center justify-between gap-2">
                 <Button type="button" variant="outline" onClick={openManualEditor}>הוספת משמרת ידנית</Button>
-                <select className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)}>
+                <NativeSelect value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)}>
                   {monthlySummaries.map((summary) => <option key={summary.key} value={summary.key}>{summary.label}</option>)}
-                </select>
+                </NativeSelect>
               </div>
-              {selectedMonthSummary ? <div className="grid gap-3 md:grid-cols-3">
+              {selectedMonthSummary ? <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                 <StatCard label='סה"כ שעות' value={formatMinutes(selectedMonthSummary.totalMinutes)} />
                 <StatCard label="כמות משמרות" value={`${selectedMonthSummary.sessionCount}`} />
                 <StatCard label="משמרות פתוחות" value={`${selectedMonthSummary.openSessionCount}`} />
               </div> : <div className="text-sm text-muted-foreground">עדיין אין נתוני שעות.</div>}
               <div className="space-y-3 text-right">
-                {selectedMonthSessions.length === 0 ? <div className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">אין עדיין משמרות בחודש הזה.</div> : selectedMonthSessions.map((session) => <div key={session.id} className="rounded-2xl border p-4 text-sm text-right">
+                {selectedMonthSessions.length === 0 ? <EmptyState dense>אין עדיין משמרות בחודש הזה.</EmptyState> : selectedMonthSessions.map((session) => <div key={session.id} className="rounded-2xl border p-4 text-sm text-right">
                   <div className="flex flex-row-reverse flex-wrap items-center justify-between gap-2">
                     {showSessionTimingForProfile ? (
                       <div className="text-base font-semibold">{formatMinutes(sessionWorkedMinutes(session))}</div>
@@ -1078,10 +1083,7 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
                       size="sm"
                       variant="destructive"
                       disabled={isPending}
-                      onClick={() => {
-                        if (!confirm("למחוק את המשמרת הזו?")) return;
-                        void deleteSession(session.id);
-                      }}
+                      onClick={() => setPendingDeleteSessionId(session.id)}
                     >
                       <Trash2 className="h-4 w-4" />
                       מחיקה
@@ -1096,7 +1098,7 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
 
       {activeTab === "salary" && showSalarySection ? (
         <section className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <SummaryCard title="שכר נוכחי" value={currentAgreement ? currentAgreement.salary_type === "hourly" ? `${formatCurrency(currentAgreement.hourly_rate)} לשעה` : formatCurrency(currentAgreement.monthly_salary) : "-"} hint={currentAgreement ? `סוג שכר: ${getSalaryTypeLabel(currentAgreement.salary_type)}` : "אין משכורת פעילה"} />
             <SummaryCard title="תלוש אחרון" value={latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"} hint={latestPeriod ? `${latestPeriod.period_month} • ${getPayrollStatusLabel(latestPeriod.status)}` : "אין תלושים זמינים"} />
           </div>
@@ -1203,35 +1205,45 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
         </section>
       ) : null}
 
-      <Dialog
+      <ViewDialog
         open={manualEditorOpen}
         onOpenChange={(open) => {
-          if (!open && isPending) return;
           if (!open) closeEditor();
         }}
+        title="הוספת משמרת ידנית"
+        description="דיווח משמרת שלא נרשמה בשעון."
+        size="details4xl"
       >
-        <DialogContent className="max-w-4xl" dir="rtl">
-          <DialogHeader className="text-right">
-            <DialogTitle>הוספת משמרת ידנית</DialogTitle>
-          </DialogHeader>
-          {renderEditor(null)}
-        </DialogContent>
-      </Dialog>
+        {renderEditor(null)}
+      </ViewDialog>
 
-      <Dialog
+      <ViewDialog
         open={Boolean(editorSession)}
         onOpenChange={(open) => {
-          if (!open && isPending) return;
           if (!open) closeEditor();
         }}
+        title="עריכת משמרת"
+        description="עדכון שעות, פרויקט והערות למשמרת שדיווחת."
+        size="details4xl"
       >
-        <DialogContent className="max-w-5xl" dir="rtl">
-          <DialogHeader className="text-right">
-            <DialogTitle>עריכת משמרת</DialogTitle>
-          </DialogHeader>
-          {editorSession ? renderEditor(editorSession) : null}
-        </DialogContent>
-      </Dialog>
+        {editorSession ? renderEditor(editorSession) : null}
+      </ViewDialog>
+
+      <ConfirmDialog
+        open={pendingDeleteSessionId !== null}
+        onOpenChange={(next) => {
+          if (!next) setPendingDeleteSessionId(null);
+        }}
+        destructive
+        title="מחיקת משמרת"
+        description="המשמרת תימחק מהדיווח שלך."
+        confirmLabel="מחיקה"
+        loading={isPending}
+        onConfirm={() => {
+          if (pendingDeleteSessionId) void deleteSession(pendingDeleteSessionId);
+          setPendingDeleteSessionId(null);
+        }}
+      />
     </div>
   );
 }

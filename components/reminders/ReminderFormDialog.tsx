@@ -2,17 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DateTimeInput } from "@/components/ui/date-input";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { AssigneeSelect } from "@/components/collections/AssigneeSelect";
 import { useAssignableUsers } from "@/hooks/useAssignableUsers";
 import { toHebrewError } from "@/lib/error-messages";
@@ -142,14 +134,18 @@ export default function ReminderFormDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent dir="rtl" className="w-[calc(100vw-1rem)] max-w-md p-4 text-right sm:p-6">
-        <DialogHeader>
-          <DialogTitle>{mode === "edit" ? "עריכת תזכורת" : "תזכורת חדשה"}</DialogTitle>
-          <DialogDescription className={mode === "edit" ? undefined : "sr-only"}>
-            {mode === "edit" ? "עדכון מועד, פרטים או אחראי." : "תזכורת חדשה"}
-          </DialogDescription>
-        </DialogHeader>
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={mode === "edit" ? "עריכת תזכורת" : "תזכורת חדשה"}
+      description={mode === "edit" ? "עדכון מועד, פרטים או אחראי." : undefined}
+      size="formMd"
+      onSubmit={() => void submit()}
+      submitLabel={mode === "edit" ? "שמירה" : "הוספת תזכורת"}
+      busyLabel="שומר..."
+      busy={submitting}
+      error={error || undefined}
+    >
 
         <div className="space-y-3">
           <div className="space-y-1">
@@ -164,18 +160,7 @@ export default function ReminderFormDialog({
             <label className="text-sm font-medium">אחראי</label>
             <AssigneeSelect value={assignee} onChange={setAssignee} includeMeDefault />
           </div>
-          {error ? <div className="text-sm text-destructive">{error}</div> : null}
         </div>
-
-        <DialogFooter>
-          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={submitting}>
-            ביטול
-          </Button>
-          <Button type="button" onClick={() => void submit()} disabled={submitting}>
-            {submitting ? "שומר..." : mode === "edit" ? "שמירה" : "הוספת תזכורת"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </FormDialog>
   );
 }
