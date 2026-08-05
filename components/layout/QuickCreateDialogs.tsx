@@ -22,9 +22,11 @@ import { HEBREW } from "@/app/(app)/dashboard/DashboardActions.constants";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { UploadDocumentDialog } from "@/components/documents/UploadDocumentDialog";
+import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
 import { TaskUpsertDialog } from "@/components/tasks/TaskUpsertDialog";
 import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
 import { IncomeDialog } from "@/components/financial/IncomeDialog";
+import { AccountTransferDialog } from "@/components/financial/AccountTransferDialog";
 import { CollectPaymentDialog } from "@/components/collections/CollectPaymentDialog";
 import ReminderFormDialog from "@/components/reminders/ReminderFormDialog";
 import type { QuickCreateAction, QuickCreateData } from "@/components/layout/quick-create-types";
@@ -213,6 +215,27 @@ export default function QuickCreateDialogs({
           if (!open) onClose();
         }}
         onSaved={() => router.refresh()}
+      />
+
+      {/* Moving money between our own accounts (cash withdrawal / bank→bank) —
+          not an income and not an expense, so it never reaches the P&L. */}
+      <AccountTransferDialog
+        open={action === "transfer"}
+        onOpenChange={(open) => {
+          if (!open) onClose();
+        }}
+        onSaved={() => router.refresh()}
+      />
+
+      <CreateCustomerDialog
+        open={action === "customer"}
+        onOpenChange={(open) => {
+          if (!open) onClose();
+        }}
+        onCreated={() => {
+          router.refresh();
+          toast.success("הלקוח נשמר.");
+        }}
       />
 
       {/* Standalone reminder: no entity links, so it's a plain "remind me at" —

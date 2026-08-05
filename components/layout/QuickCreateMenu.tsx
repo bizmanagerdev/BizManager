@@ -10,8 +10,9 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowDownCircle,
+  ArrowLeftRight,
   ArrowUpCircle,
-  BellPlus,
+  Bell,
   FolderKanban,
   HandCoins,
   ListTodo,
@@ -19,6 +20,7 @@ import {
   Plus,
   ShoppingCart,
   Upload,
+  User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { HoverPanel, HoverPanelContent, HoverPanelTrigger, useHoverPanel } from "@/components/ui/hover-panel";
@@ -38,16 +40,26 @@ const QuickCreateDialogs = dynamic(() => import("@/components/layout/QuickCreate
 type MenuItem = { action: QuickCreateAction; label: string; icon: typeof ListTodo };
 
 // Laid out two per row, in this exact order (user-specified):
-//   משימה  תזכורת   /   הכנסה  הוצאה   /   הזמנה  פרויקט   /   קליטת תשלום  מסמך
-// No "לקוח" tile: a customer is virtually always created in the flow of an order
-// or a project, so the order/project wizards are the right doors for it.
+//   משימה  תזכורת   /   הכנסה  הוצאה   /   הזמנה  פרויקט   /
+//   העברה בין חשבונות  לקוח   /   קליטת תשלום  מסמך
+// The count is kept EVEN so the grid never ends on a half row — the two newest
+// tiles (transfer + customer) sit together in the second-to-last row, at the
+// user's direction. לקוח was deliberately absent at first (a customer is nearly
+// always created inside an order/project wizard); the user asked for it anyway.
+// Glyphs here carry NO "+" badge (User, not UserPlus; Bell, not BellPlus): the
+// whole grid already lives behind the + button, so every tile repeating it is
+// noise. The user's call.
 const MENU_ITEMS: MenuItem[] = [
   { action: "task", label: "משימה", icon: ListTodo },
-  { action: "reminder", label: "תזכורת", icon: BellPlus },
+  { action: "reminder", label: "תזכורת", icon: Bell },
   { action: "income", label: "הכנסה", icon: ArrowDownCircle },
   { action: "expense", label: "הוצאה", icon: ArrowUpCircle },
   { action: "order", label: "הזמנה", icon: ShoppingCart },
   { action: "project", label: "פרויקט", icon: FolderKanban },
+  // Not "העברה" on its own — that already means a bank-transfer payment method
+  // elsewhere in the app; this one moves money between OUR accounts.
+  { action: "transfer", label: "העברה בין חשבונות", icon: ArrowLeftRight },
+  { action: "customer", label: "לקוח", icon: User },
   { action: "collect", label: "קליטת תשלום", icon: HandCoins },
   { action: "document", label: "מסמך", icon: Upload },
 ];
@@ -59,9 +71,9 @@ const TILE_TONE: Partial<Record<QuickCreateAction, "income" | "expense">> = {
   collect: "income",
 };
 
-// Reading the ledger is admin/office-only — the API would 403 a worker, so don't
-// offer them the tile.
-const ADMIN_OR_OFFICE_ACTIONS = new Set<QuickCreateAction>(["collect"]);
+// Reading the ledger / moving money between accounts is admin/office-only — the
+// API would 403 a worker, so don't offer them the tile.
+const ADMIN_OR_OFFICE_ACTIONS = new Set<QuickCreateAction>(["collect", "transfer"]);
 
 // Module-scope cache: the top bar remounts on some navigations, and the picker
 // data (customers / products / projects…) is the same for the whole session, so

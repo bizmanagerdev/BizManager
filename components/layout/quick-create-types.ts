@@ -13,6 +13,8 @@ export const QUICK_CREATE_ACTIONS = [
   "order",
   "project",
   "collect",
+  "transfer",
+  "customer",
   "reminder",
   "document",
 ] as const;

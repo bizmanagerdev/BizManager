@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   ArrowDownCircle,
+  ArrowLeftRight,
   ArrowUpCircle,
   Banknote,
   Clock3,
@@ -41,6 +42,7 @@ import {
 } from "./DashboardActions.forms";
 import { WeekOverviewDialog, WorkerPaymentDialog } from "./DashboardActions.dialogs";
 import { IncomeDialog } from "@/components/financial/IncomeDialog";
+import { AccountTransferDialog } from "@/components/financial/AccountTransferDialog";
 import { type Account } from "@/lib/accounts";
 import type { CalendarEntry } from "@/lib/projectSchedule";
 import { Button } from "@/components/ui/button";
@@ -121,6 +123,7 @@ export default function DashboardActions({
   const [taskOpen, setTaskOpen] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [incomeOpen, setIncomeOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
   const [manualSessionOpen, setManualSessionOpen] = useState(false);
   const [availableUsers, setAvailableUsers] = useState(users);
   // The dropdown data may stream in AFTER the buttons first render (so the
@@ -197,6 +200,9 @@ export default function DashboardActions({
   const weeklyBuckets = weekView.days;
   const weeklyEntryCount = weekView.totalCount;
   const canManageWorkerSessions = currentUserRole === "admin" || currentUserRole === "office";
+  // Same gate as the accounts table's RLS: only admin/office move money between
+  // our own accounts.
+  const canTransferFunds = currentUserRole === "admin" || currentUserRole === "office";
   // Workers that can be paid from the dashboard. Admin can pay anyone payroll-tracked;
   // office may only pay workers below them (matches the protected endpoint's scoping).
   const payableWorkers = useMemo(() => {
@@ -479,6 +485,19 @@ export default function DashboardActions({
           <QuickTileContent icon={ArrowDownCircle} label={HEBREW.incomeNew} tone="income" />
         </Button>
 
+        {canTransferFunds ? (
+          <Button
+            type="button"
+            variant="outline"
+            className={QUICK_TILE_CLASS}
+            onClick={() => setTransferOpen(true)}
+          >
+            {/* No tone: a transfer is neither money in nor money out of the
+                business, so the glyph stays white like every non-money tile. */}
+            <QuickTileContent icon={ArrowLeftRight} label={HEBREW.transferBetweenAccounts} />
+          </Button>
+        ) : null}
+
         <Button
           type="button"
           variant="outline"
@@ -714,6 +733,12 @@ export default function DashboardActions({
         projects={projects}
         orders={orders}
         properties={properties}
+        onSaved={() => router.refresh()}
+      />
+
+      <AccountTransferDialog
+        open={transferOpen}
+        onOpenChange={setTransferOpen}
         onSaved={() => router.refresh()}
       />
     </>

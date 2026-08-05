@@ -98,6 +98,20 @@ export type AccountLedgerEntry = {
   amount: number;
   posted: boolean; // false = still expected (uncleared check / unpaid expense)
   runningBalance: number | null; // posted-only running balance; null for pending rows
+  /** Set only on העברה בין חשבונות rows — the whole transfer this leg belongs
+   *  to, so the register can edit or delete it (both legs move together)
+   *  without a second round trip for the other side's id. */
+  transfer?: AccountTransferRef;
+};
+
+/** A transfer as the register needs it to prefill the edit form. */
+export type AccountTransferRef = {
+  id: string;
+  fromAccountId: string;
+  toAccountId: string;
+  amount: number;
+  date: string; // YYYY-MM-DD
+  notes: string | null;
 };
 
 export type AccountWithLedger = AccountBalance & { ledger: AccountLedgerEntry[] };
@@ -166,6 +180,7 @@ type RawLedgerEntry = {
   type: "in" | "out";
   amount: number;
   posted: boolean;
+  transfer?: AccountTransferRef;
 };
 
 /**
@@ -197,8 +212,14 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     return data;
   };
 
-  const [paymentRows, expenseRows, workerPaymentRows, loanRows, loanRepaymentRows] =
-    await Promise.all([
+  const [
+    paymentRows,
+    expenseRows,
+    workerPaymentRows,
+    loanRows,
+    loanRepaymentRows,
+    transferRows,
+  ] = await Promise.all([
       scan("payments", (from, to) =>
         supabase
           .from("payments")
@@ -240,6 +261,15 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
           .select("id,account_id,loan_id,repayment_date,amount")
           .not("account_id", "is", null)
           .gte("repayment_date", earliestOpening)
+          .range(from, to)
+      ),
+      // העברה בין חשבונות: one row = two legs (OUT of from, IN to to). Never
+      // touches the P&L — it only moves money between our own containers.
+      scan("account_transfers", (from, to) =>
+        supabase
+          .from("account_transfers")
+          .select("id,from_account_id,to_account_id,amount,transfer_date,notes")
+          .gte("transfer_date", earliestOpening)
           .range(from, to)
       ),
     ]);
@@ -595,6 +625,58 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       amount,
       posted: true,
     });
+  }
+
+  // ── Transfers between our own accounts: OUT of one, IN to the other ─────────
+  // Each leg is bucketed independently against ITS account's opening_date, so a
+  // transfer into an account that opened later still shows on the older side.
+  for (const row of transferRows) {
+    const id = str(row.id) ?? "";
+    const date = str(row.transfer_date);
+    const amount = Math.abs(num(row.amount));
+    if (!date || !amount) continue;
+    const from = byId.get(str(row.from_account_id) ?? "");
+    const to = byId.get(str(row.to_account_id) ?? "");
+    const note = str(row.notes)?.trim() || null;
+    const ref: AccountTransferRef = {
+      id,
+      fromAccountId: str(row.from_account_id) ?? "",
+      toAccountId: str(row.to_account_id) ?? "",
+      amount,
+      date,
+      notes: note,
+    };
+
+    if (from && date >= from.openingDate) {
+      const b = buckets.get(from.id)!;
+      b.postedOut += amount;
+      b.rows.push({
+        id: `t:${id}:out`,
+        date,
+        label: to ? `העברה ל${to.name}` : "העברה לחשבון אחר",
+        sublabel: note,
+        href: null,
+        type: "out",
+        amount,
+        posted: true,
+        transfer: ref,
+      });
+    }
+    if (to && date >= to.openingDate) {
+      const b = buckets.get(to.id)!;
+      b.postedIn += amount;
+      b.rows.push({
+        id: `t:${id}:in`,
+        date,
+        label: from ? `העברה מ${from.name}` : "העברה מחשבון אחר",
+        sublabel: note,
+        href: null,
+        type: "in",
+        amount,
+        posted: true,
+        transfer: ref,
+      });
+    }
   }
 
   return buckets;

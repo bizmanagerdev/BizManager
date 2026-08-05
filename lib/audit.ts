@@ -125,6 +125,7 @@ export function entityLabel(tableName: string) {
     case "loans": return "הלוואה";
     case "loan_repayments": return "החזר הלוואה";
     case "accounts": return "חשבון";
+    case "account_transfers": return "העברה בין חשבונות";
     case "entity_tags": return "תיוג";
     case "card_statements": return "דף אשראי";
     case "expense_installments": return "תשלום הוצאה";
@@ -203,7 +204,10 @@ export function buildDetails(tableName: string, newData: AuditLogValue): string 
 
   switch (tableName) {
     case "payments":
-    case "worker_payments": {
+    case "worker_payments":
+    // account_transfers only stores account IDs, so the feed shows the amount
+    // and the note; which accounts is visible in the register itself.
+    case "account_transfers": {
       const amt = money(d.amount);
       if (amt) parts.push(amt);
       const note = str(d.notes);
@@ -528,6 +532,8 @@ export function buildHref(
     case "payments": return buildFocusHref("/financial", `payment:${recordId}`);
     case "recurring_expense_templates":
     case "accounts": return "/financial";
+    // A transfer only exists inside the accounts register.
+    case "account_transfers": return "/financial/bank";
     // An installment shows up in the calendar under its parent expense's entry id.
     case "expense_installments": {
       const e = fk("expense_id");
@@ -1304,6 +1310,8 @@ export const TRIGGER_AUDITED_TABLES = new Set([
   // so the /api/financial/accounts route's create/update/delete logAuditEvent
   // calls would otherwise double-log.
   "accounts",
+  // trg_audit_account_transfers (migration 20260805000000_account_transfers.sql).
+  "account_transfers",
 ]);
 
 // Plain row-CRUD actions the DB trigger already records. Distinct semantic

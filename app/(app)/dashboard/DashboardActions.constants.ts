@@ -83,6 +83,9 @@ export const HEBREW = {
   expenseSaved: "ההוצאה נשמרה",
   incomeNew: "הכנסה חדשה",
   transferNew: "העברה / שיוך כפול",
+  // Moving money between our own accounts (cash withdrawal / bank→bank). Not
+  // "העברה" on its own — that already reads as the bank-transfer payment method.
+  transferBetweenAccounts: "העברה בין חשבונות",
   incomeQuickRegister: "רישום הכנסה",
   incomeDialogDescription:
     "רישום הכנסה חדשה לתזרים, עם אפשרות לקשר לפרויקט, הזמנה או נכס.",

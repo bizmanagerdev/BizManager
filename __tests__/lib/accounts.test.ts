@@ -214,6 +214,83 @@ describe("loadAccountBalances — worker payments & loans", () => {
   });
 });
 
+describe("loadAccountBalances — transfers between our own accounts", () => {
+  const twoAccounts = [
+    account({ id: "bank", name: "עו״ש", opening_balance: 1000 }),
+    account({ id: "cash", name: "קופה", kind: "cash", opening_balance: 0 }),
+  ];
+
+  it("moves money out of the source and into the destination, leaving total liquidity unchanged", async () => {
+    const tables = {
+      accounts: twoAccounts,
+      account_transfers: [
+        { id: "t1", from_account_id: "bank", to_account_id: "cash", amount: 400, transfer_date: "2024-02-01", notes: null },
+      ],
+    };
+    const balances = await loadAccountBalances(makeSupabase(tables));
+    const bank = balances.find((b) => b.id === "bank")!;
+    const cash = balances.find((b) => b.id === "cash")!;
+
+    expect(bank.postedOut).toBe(400);
+    expect(bank.currentBalance).toBe(600);
+    expect(cash.postedIn).toBe(400);
+    expect(cash.currentBalance).toBe(400);
+    // The whole point: a transfer never creates or destroys money.
+    expect(bank.currentBalance + cash.currentBalance).toBe(1000);
+  });
+
+  it("posts each leg only against its own account's opening date", async () => {
+    const balances = await loadAccountBalances(
+      makeSupabase({
+        accounts: [
+          account({ id: "bank", opening_balance: 1000, opening_date: "2024-01-01" }),
+          // Opened later — the transfer predates it, so it's already inside its opening figure.
+          account({ id: "cash", kind: "cash", opening_balance: 400, opening_date: "2024-06-01" }),
+        ],
+        account_transfers: [
+          { id: "t1", from_account_id: "bank", to_account_id: "cash", amount: 400, transfer_date: "2024-02-01", notes: null },
+        ],
+      })
+    );
+    expect(balances.find((b) => b.id === "bank")!.postedOut).toBe(400);
+    expect(balances.find((b) => b.id === "cash")!.postedIn).toBe(0);
+  });
+
+  it("labels each leg with the other account and carries the transfer for edit/delete", async () => {
+    const overview = await loadAccountsOverview(
+      makeSupabase({
+        accounts: twoAccounts,
+        account_transfers: [
+          { id: "t1", from_account_id: "bank", to_account_id: "cash", amount: 400, transfer_date: "2024-02-01", notes: "משיכה לקופה" },
+        ],
+      })
+    );
+    const out = overview.find((a) => a.id === "bank")!.ledger[0];
+    const inRow = overview.find((a) => a.id === "cash")!.ledger[0];
+
+    expect(out.type).toBe("out");
+    expect(out.label).toBe("העברה לקופה");
+    expect(out.sublabel).toBe("משיכה לקופה");
+    expect(out.runningBalance).toBe(600);
+
+    expect(inRow.type).toBe("in");
+    expect(inRow.label).toBe("העברה מעו״ש");
+
+    // Both legs carry the whole transfer, so the register can prefill the edit
+    // form from either side without a second fetch.
+    for (const leg of [out, inRow]) {
+      expect(leg.transfer).toEqual({
+        id: "t1",
+        fromAccountId: "bank",
+        toAccountId: "cash",
+        amount: 400,
+        date: "2024-02-01",
+        notes: "משיכה לקופה",
+      });
+    }
+  });
+});
+
 describe("loadAccountsOverview — running balance & register", () => {
   it("rolls the running balance chronologically and lists newest-first", async () => {
     const [overview] = await loadAccountsOverview(
