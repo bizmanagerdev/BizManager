@@ -3,6 +3,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { syncEntityTags, parseTagIds } from "@/lib/tags";
+import { CUSTOMER_CORE_SELECT, isMissingLinkColumn, type QueryError } from "@/lib/customers/workerLink";
 
 type CreateCustomerPayload = {
   name?: string;
@@ -15,6 +16,8 @@ type CreateCustomerPayload = {
   address?: string | null;
   notes?: string | null;
   requires_prepayment?: boolean;
+  /** The users row that is the same person as this customer (worker who buys from us). */
+  linked_user_id?: string | null;
   tag_ids?: unknown;
 };
 
@@ -43,6 +46,10 @@ export async function POST(req: Request) {
         : null;
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
     const requiresPrepayment = body.requires_prepayment === true;
+    const linkedUserId =
+      typeof body.linked_user_id === "string" && body.linked_user_id.trim()
+        ? body.linked_user_id.trim()
+        : null;
 
     if (!name) {
       return NextResponse.json({ error: "שם לקוח הוא שדה חובה." }, { status: 400 });
@@ -52,25 +59,43 @@ export async function POST(req: Request) {
     }
     const fullAddress = address ? `${city} | ${address}` : city;
 
-    const { data, error } = await supabase
+    const baseRow = {
+      name,
+      name_for_invoice: nameForInvoice ?? name,
+      registration_number: registrationNumber,
+      phone,
+      whatsapp,
+      city,
+      email: email || null,
+      address: fullAddress || null,
+      active: true,
+      notes,
+      requires_prepayment: requiresPrepayment,
+    };
+
+    // The worker link is best-effort: on a database that is still missing the
+    // column, creating the customer must not fail — only the link is dropped.
+    // (Cast because the select string is built at runtime, so supabase-js can't
+    // parse it into a row type.)
+    type InsertResult = { data: Record<string, unknown> | null; error: QueryError };
+    let { data, error } = (await supabase
       .from("customers")
-      .insert({
-        name,
-        name_for_invoice: nameForInvoice ?? name,
-        registration_number: registrationNumber,
-        phone,
-        whatsapp,
-        city,
-        email: email || null,
-        address: fullAddress || null,
-        active: true,
-        notes,
-        requires_prepayment: requiresPrepayment,
-      })
-      .select("id,name,name_for_invoice,registration_number,phone,whatsapp,email,address,active,notes,requires_prepayment")
-      .maybeSingle();
+      .insert(linkedUserId ? { ...baseRow, linked_user_id: linkedUserId } : baseRow)
+      .select(linkedUserId ? `${CUSTOMER_CORE_SELECT},linked_user_id` : CUSTOMER_CORE_SELECT)
+      .maybeSingle()) as unknown as InsertResult;
+
+    if (error && linkedUserId && isMissingLinkColumn(error)) {
+      ({ data, error } = (await supabase
+        .from("customers")
+        .insert(baseRow)
+        .select(CUSTOMER_CORE_SELECT)
+        .maybeSingle()) as unknown as InsertResult);
+    }
 
     if (error) {
+      if (linkedUserId && error.code === "23505") {
+        return NextResponse.json({ error: "העובד שנבחר כבר מקושר ללקוח אחר." }, { status: 400 });
+      }
       return NextResponse.json({ error: `יצירת לקוח נכשלה: ${error.message}` }, { status: 400 });
     }
     if (!data || typeof data.id !== "string") {

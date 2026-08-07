@@ -2,6 +2,12 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { syncEntityTags, parseTagIds } from "@/lib/tags";
+import {
+  CUSTOMER_CORE_SELECT,
+  isMissingLinkColumn,
+  withLinkColumn,
+  type QueryError,
+} from "@/lib/customers/workerLink";
 
 type UpdateCustomerPayload = {
   id?: string;
@@ -16,6 +22,8 @@ type UpdateCustomerPayload = {
   notes?: string | null;
   active?: boolean;
   requires_prepayment?: boolean;
+  /** The users row that is the same person as this customer. `null` unlinks. */
+  linked_user_id?: string | null;
   tag_ids?: unknown;
 };
 
@@ -63,9 +71,13 @@ export async function POST(req: Request) {
     if ("notes" in body) patch.notes = trimOrNull(body.notes);
     if ("active" in body) patch.active = body.active === true;
     if ("requires_prepayment" in body) patch.requires_prepayment = body.requires_prepayment === true;
+    // Tracked apart from `patch` so a database that predates the migration can
+    // still save every other field instead of rejecting the whole edit.
+    const hasLinkUpdate = "linked_user_id" in body;
+    const linkedUserId = trimOrNull(body.linked_user_id);
 
     const hasTagUpdate = "tag_ids" in body;
-    if (Object.keys(patch).length === 0 && !hasTagUpdate) {
+    if (Object.keys(patch).length === 0 && !hasTagUpdate && !hasLinkUpdate) {
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });
     }
 
@@ -73,21 +85,42 @@ export async function POST(req: Request) {
     if (!access.ok) return access.response;
     const { supabase, user } = access.value;
 
-    const SELECT =
-      "id,name,name_for_invoice,registration_number,phone,whatsapp,email,address,active,notes,requires_prepayment";
+    const SELECT = CUSTOMER_CORE_SELECT;
+    const SELECT_WITH_LINK = `${CUSTOMER_CORE_SELECT},linked_user_id`;
 
     let data:
       | { id: string; [key: string]: unknown }
       | null = null;
 
-    if (Object.keys(patch).length > 0) {
-      const { data: updated, error } = await supabase
+    if (Object.keys(patch).length > 0 || hasLinkUpdate) {
+      const fullPatch = hasLinkUpdate ? { ...patch, linked_user_id: linkedUserId } : patch;
+      // Cast: the select string is chosen at runtime, so supabase-js can't parse
+      // it into a row type.
+      type UpdateResult = { data: Record<string, unknown> | null; error: QueryError };
+      let { data: updated, error } = (await supabase
         .from("customers")
-        .update(patch)
+        .update(fullPatch)
         .eq("id", id)
-        .select(SELECT)
-        .maybeSingle();
+        .select(hasLinkUpdate ? SELECT_WITH_LINK : SELECT)
+        .maybeSingle()) as unknown as UpdateResult;
+
+      if (error && hasLinkUpdate && isMissingLinkColumn(error)) {
+        if (Object.keys(patch).length === 0) {
+          // Link-only edit against a pre-migration database: nothing to write.
+          return NextResponse.json({ error: "קישור עובד ללקוח דורש הרצת מיגרציה במסד הנתונים." }, { status: 400 });
+        }
+        ({ data: updated, error } = (await supabase
+          .from("customers")
+          .update(patch)
+          .eq("id", id)
+          .select(SELECT)
+          .maybeSingle()) as unknown as UpdateResult);
+      }
+
       if (error) {
+        if (hasLinkUpdate && error.code === "23505") {
+          return NextResponse.json({ error: "העובד שנבחר כבר מקושר ללקוח אחר." }, { status: 400 });
+        }
         return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
       }
       if (!updated || typeof updated.id !== "string") {
@@ -96,7 +129,9 @@ export async function POST(req: Request) {
       data = updated as { id: string; [key: string]: unknown };
     } else {
       // Tag-only edit: nothing changed on the customer row itself; read it back.
-      const { data: current } = await supabase.from("customers").select(SELECT).eq("id", id).maybeSingle();
+      const { data: current } = await withLinkColumn(SELECT, (select) =>
+        supabase.from("customers").select(select).eq("id", id).maybeSingle()
+      );
       data = (current as { id: string; [key: string]: unknown } | null) ?? null;
       if (!data) {
         return NextResponse.json({ error: "Customer was not updated" }, { status: 400 });

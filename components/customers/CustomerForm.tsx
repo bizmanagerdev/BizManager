@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { CITY_OPTIONS } from "@/lib/ui/cities";
 import { invalidateCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import { TagPicker, fetchExistingTagIds } from "@/components/tags/TagPicker";
+import { WorkerLinkField } from "@/components/customers/WorkerLinkField";
 import { Tag } from "lucide-react";
 
 export type CustomerRecord = {
@@ -25,6 +26,8 @@ export type CustomerRecord = {
   active: boolean;
   notes: string | null;
   requires_prepayment: boolean;
+  /** Set when this customer is the same person as a worker (users row). */
+  linked_user_id?: string | null;
 };
 
 export type CustomerFormResult = {
@@ -45,6 +48,7 @@ export type CustomerFormInitial = {
   notes?: string | null;
   active?: boolean;
   requires_prepayment?: boolean;
+  linked_user_id?: string | null;
 };
 
 type Row = Record<string, unknown>;
@@ -148,6 +152,11 @@ export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExi
   const [requiresPrepayment, setRequiresPrepayment] = useState(initial?.requires_prepayment ?? false);
   const [tagIds, setTagIds] = useState<string[]>([]);
   const [contacts, setContacts] = useState<ContactDraft[]>([]);
+  const [linkedUserId, setLinkedUserId] = useState(initial?.linked_user_id ?? "");
+  // Edit mode leaves `linked_user_id` out of the payload until the canonical
+  // value has been read back — an omitted key leaves the column alone, so a
+  // failed lookup can't silently unlink a worker.
+  const [linkLoaded, setLinkLoaded] = useState(mode === "create" || initial?.linked_user_id !== undefined);
 
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -192,6 +201,8 @@ export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExi
             setNotes(c.notes ?? "");
             setActive(c.active !== false);
             setRequiresPrepayment(c.requires_prepayment === true);
+            setLinkedUserId(c.linked_user_id ?? "");
+            setLinkLoaded(true);
           }
         }
         if (contactsRes.ok) {
@@ -338,6 +349,7 @@ export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExi
             notes: notes.trim() || null,
             active,
             requires_prepayment: requiresPrepayment,
+            ...(linkLoaded ? { linked_user_id: linkedUserId || null } : {}),
             tag_ids: tagIds,
           }),
         });
@@ -360,6 +372,7 @@ export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExi
             address: street || null,
             notes: notes.trim() || null,
             requires_prepayment: requiresPrepayment,
+            linked_user_id: linkedUserId || null,
             tag_ids: tagIds,
           }),
         });
@@ -474,6 +487,13 @@ export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExi
             <Input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} />
           </Field>
         </AdaptiveGrid>
+
+        <WorkerLinkField
+          value={linkedUserId}
+          onChange={setLinkedUserId}
+          phones={[phone, whatsapp]}
+          disabled={!linkLoaded}
+        />
 
         <Field label="אימייל">
           <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />

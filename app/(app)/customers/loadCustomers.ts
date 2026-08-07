@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { splitPaymentAmounts } from "@/lib/orders/paymentStatus";
 import { applyProjectVatToBase } from "@/lib/projects/vat";
+import { withLinkColumn } from "@/lib/customers/workerLink";
 
 type Row = Record<string, unknown>;
 
@@ -72,12 +73,10 @@ async function enrichCustomerOverviewRows(
     { data: contactRows, error: contactsError },
   ] = customerIds.length
     ? await Promise.all([
-        supabase
-          .from("customers")
-          .select(
-            "id,whatsapp,morning_client_id,morning_synced_at,morning_match_status,morning_last_sync_error,requires_prepayment"
-          )
-          .in("id", customerIds),
+        withLinkColumn<Row[]>(
+          "id,whatsapp,morning_client_id,morning_synced_at,morning_match_status,morning_last_sync_error,requires_prepayment",
+          (select) => supabase.from("customers").select(select).in("id", customerIds)
+        ),
         supabase
           .from("morning_documents")
           .select(
@@ -279,6 +278,7 @@ async function enrichCustomerOverviewRows(
       morning_last_sync_error:
         typeof customer?.morning_last_sync_error === "string" ? customer.morning_last_sync_error : null,
       requires_prepayment: customer?.requires_prepayment === true,
+      linked_user_id: typeof customer?.linked_user_id === "string" ? customer.linked_user_id : null,
       morning_documents: morningDocumentsByCustomerId.get(id) ?? [],
       contacts: contactsByCustomerId.get(id) ?? [],
     };

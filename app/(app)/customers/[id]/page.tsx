@@ -21,6 +21,12 @@ import {
 import { splitPaymentAmounts, paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { applyProjectVatToBase } from "@/lib/projects/vat";
 import { getCustomerReceivables } from "@/lib/collections";
+import { withLinkColumn } from "@/lib/customers/workerLink";
+import {
+  buildCounterpartyBalance,
+  getCustomerLoanPositions,
+  hasAnyPosition,
+} from "@/lib/customers/counterpartyBalance";
 import { paymentTermsLabel } from "@/lib/paymentTerms";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import type { MorningLocalDocument } from "@/lib/morning/types";
@@ -172,13 +178,10 @@ export default async function CustomerDetailsPage({
     { data: projectRows, error: projectsError },
     receivables,
   ] = await Promise.all([
-    supabase
-      .from("customers")
-      .select(
-        "id,name,name_for_invoice,registration_number,email,phone,whatsapp,address,delivery_instructions,delivery_lat,delivery_lng,notes,active,requires_prepayment,morning_client_id,morning_synced_at,morning_match_status,morning_last_sync_error"
-      )
-      .eq("id", id)
-      .maybeSingle(),
+    withLinkColumn<Row>(
+      "id,name,name_for_invoice,registration_number,email,phone,whatsapp,address,delivery_instructions,delivery_lat,delivery_lng,notes,active,requires_prepayment,morning_client_id,morning_synced_at,morning_match_status,morning_last_sync_error",
+      (select) => supabase.from("customers").select(select).eq("id", id).maybeSingle()
+    ),
     supabase
       .from("contacts")
       .select("id,customer_id,full_name,role,phone,email,whatsapp,is_primary,active,notes")
@@ -458,6 +461,47 @@ export default async function CustomerDetailsPage({
   const canManageCollections = profile.role === "admin" || profile.role === "office";
   const paymentPromises = canManageCollections ? await getCustomerPromises(supabase, id) : [];
 
+  // מאזן מול העסק — everything this person owes us and we owe them, gathered
+  // from the three places it lives (orders/projects, loans, payroll). Loans are
+  // fetched for ANY customer: a lender doesn't have to be a worker. The payroll
+  // half only applies when the customer is linked to a users row, and stays
+  // behind the same admin/office gate as the page's other management sections.
+  const linkedUserId = s(customer as Row, "linked_user_id");
+  const [loanPositions, workerSide] = await Promise.all([
+    canManageCollections
+      ? getCustomerLoanPositions(supabase, id).catch(() => ({ owedToUs: 0, owedByUs: 0, loans: [] }))
+      : Promise.resolve({ owedToUs: 0, owedByUs: 0, loans: [] }),
+    linkedUserId && canManageCollections
+      ? Promise.all([
+          supabase.from("users").select("id,full_name,email").eq("id", linkedUserId).maybeSingle(),
+          supabase
+            .from("worker_balance_summary_view")
+            .select("user_id,owed_amount")
+            .eq("user_id", linkedUserId)
+            .maybeSingle(),
+        ])
+      : Promise.resolve(null),
+  ]);
+
+  const workerRow = workerSide?.[0]?.data ?? null;
+  const linkedWorker = workerRow
+    ? {
+        id: linkedUserId,
+        name: s(workerRow as Row, "full_name") || s(workerRow as Row, "email") || "עובד",
+      }
+    : null;
+
+  const counterparty = buildCounterpartyBalance({
+    salesOwedToUs: openBalance,
+    loansOwedToUs: loanPositions.owedToUs,
+    loansOwedByUs: loanPositions.owedByUs,
+    // Salary is reported beside the net, never inside it — it accrues daily and
+    // clears on payday, so netting it would make the figure mean something
+    // different depending on where in the month you look.
+    payrollOwed: linkedWorker ? n((workerSide?.[1]?.data as Row | null)?.owed_amount) : null,
+  });
+  const showCounterpartyCard = canManageCollections && hasAnyPosition(counterparty);
+
   const editButtonCustomer = {
     id,
     name: customerName,
@@ -470,6 +514,7 @@ export default async function CustomerDetailsPage({
     notes: notes || null,
     active: customer?.active !== false,
     requires_prepayment: requiresPrepayment,
+    linked_user_id: linkedUserId || null,
     contacts: (contacts ?? []) as Row[],
   };
 
@@ -605,8 +650,11 @@ export default async function CustomerDetailsPage({
                 </>
               ) : null}
             </p>
-            {requiresPrepayment || customer?.active === false ? (
+            {requiresPrepayment || customer?.active === false || linkedWorker ? (
               <div className="flex flex-wrap gap-1.5 pt-0.5">
+                {linkedWorker ? (
+                  <Badge className={getStatusColorClasses("info")}>עובד בעסק</Badge>
+                ) : null}
                 {requiresPrepayment ? (
                   <Badge className={getStatusColorClasses("danger")}>תשלום מראש</Badge>
                 ) : null}
@@ -685,6 +733,111 @@ export default async function CustomerDetailsPage({
                 </Button>
               ) : null}
             </div>
+          </section>
+        ) : null}
+
+        {/* מאזן מול העסק — the two directions of one relationship, gathered from
+            orders, loans and payroll. Nothing is netted in the books; this is a
+            reading. Salary sits below the net on purpose (see the lib). */}
+        {showCounterpartyCard ? (
+          <section className="rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <UserRound className="h-4 w-4 text-primary" />
+                <h2 className="text-sm font-semibold">מאזן מול העסק</h2>
+                {linkedWorker ? (
+                  <span className="text-xs text-muted-foreground">לקוח שהוא גם עובד</span>
+                ) : null}
+              </div>
+              {linkedWorker ? (
+                <Button asChild size="sm" variant="secondary">
+                  <Link href={`/payroll/workers/${encodeURIComponent(linkedWorker.id)}`}>
+                    כרטיס עובד — {linkedWorker.name}
+                  </Link>
+                </Button>
+              ) : null}
+            </div>
+
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {/* Each side lists what it's made of — a bare total invites the
+                  "where does that come from" question this card exists to answer. */}
+              <div className="rounded-2xl border border-border/60 bg-background/70 p-3">
+                <div className="text-xs text-muted-foreground">חייב לנו</div>
+                <div className="text-xl font-bold text-destructive">
+                  {formatCurrency(counterparty.totalOwedToUs)}
+                </div>
+                <div className="mt-1.5 space-y-0.5 text-xs text-muted-foreground">
+                  {counterparty.salesOwedToUs > 0.009 ? (
+                    <div className="flex justify-between gap-2">
+                      <span>הזמנות ופרויקטים</span>
+                      <span className="font-medium text-foreground">
+                        {formatCurrency(counterparty.salesOwedToUs)}
+                      </span>
+                    </div>
+                  ) : null}
+                  {counterparty.loansOwedToUs > 0.009 ? (
+                    <div className="flex justify-between gap-2">
+                      <span>הלוואה שנתתי לו</span>
+                      <span className="font-medium text-foreground">
+                        {formatCurrency(counterparty.loansOwedToUs)}
+                      </span>
+                    </div>
+                  ) : null}
+                  {counterparty.totalOwedToUs <= 0.009 ? <div>אין חוב פתוח</div> : null}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-border/60 bg-background/70 p-3">
+                <div className="text-xs text-muted-foreground">אני חייב לו</div>
+                <div className="text-xl font-bold text-success-soft-foreground">
+                  {formatCurrency(counterparty.totalOwedByUs)}
+                </div>
+                <div className="mt-1.5 space-y-0.5 text-xs text-muted-foreground">
+                  {counterparty.loansOwedByUs > 0.009 ? (
+                    <div className="flex justify-between gap-2">
+                      <span>הלוואה שלקחתי ממנו</span>
+                      <span className="font-medium text-foreground">
+                        {formatCurrency(counterparty.loansOwedByUs)}
+                      </span>
+                    </div>
+                  ) : (
+                    <div>אין הלוואה פתוחה</div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-border/60 pt-3">
+              <div className="flex items-baseline gap-2">
+                <span className="text-xs text-muted-foreground">
+                  {counterparty.net >= 0 ? "נטו — חייב לנו" : "נטו — אני חייב לו"}
+                </span>
+                <span
+                  className={`text-xl font-bold ${
+                    counterparty.net >= 0 ? "text-destructive" : "text-success-soft-foreground"
+                  }`}
+                >
+                  {formatCurrency(Math.abs(counterparty.net))}
+                </span>
+              </div>
+
+              {/* Outside the net on purpose: salary accrues daily and clears on
+                  payday, so folding it in would make the net swing with the
+                  payroll cycle while nothing about the loan or orders changed. */}
+              {counterparty.payrollOwed !== null && counterparty.payrollOwed > 0.009 ? (
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xs text-muted-foreground">שכר פתוח (מחוץ לנטו)</span>
+                  <span className="text-base font-semibold">
+                    {formatCurrency(counterparty.payrollOwed)}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+
+            <p className="mt-2 text-xs text-muted-foreground">
+              כל סכום נספר בדוחות במקומו — חוב לקוח בגבייה, הלוואה כחוב ולא כרווח, שכר בשכר עבודה. קיזוז
+              ביניהם נרשם ידנית בשני הצדדים.
+            </p>
           </section>
         ) : null}
 
@@ -1091,6 +1244,18 @@ export default async function CustomerDetailsPage({
                     <span className="text-muted-foreground">-</span>
                   </div>
                 )}
+
+                {/* Present even when both balances are zero — the identity link
+                    matters on its own, not only when there's money involved. */}
+                {linkedWorker ? (
+                  <Link
+                    href={`/payroll/workers/${encodeURIComponent(linkedWorker.id)}`}
+                    className="flex items-center gap-1.5 py-0.5 hover:text-primary"
+                  >
+                    <UserRound className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="font-medium">עובד בעסק: {linkedWorker.name}</span>
+                  </Link>
+                ) : null}
               </div>
 
               <CustomerDeliveryDetails

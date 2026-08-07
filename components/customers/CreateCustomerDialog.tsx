@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { SummaryRow, SummarySection } from "@/components/ui/summary";
 import { StepWizardDialog } from "@/components/ui/step-wizard";
 import { Textarea } from "@/components/ui/textarea";
+import { WorkerLinkField } from "@/components/customers/WorkerLinkField";
 import { offlineFetch } from "@/lib/offline-queue";
 
 export type CreatedCustomer = {
@@ -103,6 +104,8 @@ export function CreateCustomerDialog({
   const [address, setAddress] = useState("");
   const [notes, setNotes] = useState("");
   const [requiresPrepayment, setRequiresPrepayment] = useState(false);
+  const [linkedUserId, setLinkedUserId] = useState("");
+  const [linkedUserName, setLinkedUserName] = useState("");
   const [contacts, setContacts] = useState<ContactDraft[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -207,6 +210,8 @@ export function CreateCustomerDialog({
     setAddress("");
     setNotes("");
     setRequiresPrepayment(false);
+    setLinkedUserId("");
+    setLinkedUserName("");
     setContacts([]);
     setError(null);
     setSimilar([]);
@@ -355,6 +360,7 @@ export function CreateCustomerDialog({
           address: address.trim() || null,
           notes: notes.trim() || null,
           requires_prepayment: requiresPrepayment,
+          linked_user_id: linkedUserId || null,
         },
         "לקוח חדש",
         { idempotent: true }
@@ -594,6 +600,19 @@ export function CreateCustomerDialog({
                     <Input value={cityOther} onChange={(e) => setCityOther(e.target.value)} />
                   </Field>
                 ) : null}
+
+                {/* Sits on the phone step on purpose: this is where the "that
+                    number belongs to a worker" catch has to happen, before a
+                    second row for the same person exists. */}
+                <WorkerLinkField
+                  value={linkedUserId}
+                  onChange={(next, worker) => {
+                    setLinkedUserId(next);
+                    setLinkedUserName(worker?.label ?? "");
+                  }}
+                  phones={[phone, whatsapp]}
+                  disabled={submitting}
+                />
               </div>
             ) : null}
 
@@ -752,6 +771,9 @@ export function CreateCustomerDialog({
                   <SummaryRow label="וואטסאפ" value={whatsapp.trim()} />
                   <SummaryRow label="אימייל" value={email.trim()} />
                   <SummaryRow label="עיר" value={finalCity} />
+                  {linkedUserId ? (
+                    <SummaryRow label="עובד בעסק" value={linkedUserName || "מקושר"} />
+                  ) : null}
                 </SummarySection>
 
                 <SummarySection icon={<CreditCard className="h-4 w-4" />} title="חיוב וכתובת" onEdit={() => goToStep(2)} editDisabled={submitting}>

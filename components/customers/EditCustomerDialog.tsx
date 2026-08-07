@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import {
+import {
   AdaptiveGrid,
 } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { CITY_OPTIONS } from "@/lib/ui/cities";
 import { TagPicker, fetchExistingTagIds } from "@/components/tags/TagPicker";
+import { WorkerLinkField } from "@/components/customers/WorkerLinkField";
 import { Tag } from "lucide-react";
 
 function splitAddressIntoCityAndStreet(address: string | null): { city: string; street: string } {
@@ -47,6 +48,8 @@ export type EditCustomerInput = {
   notes: string | null;
   active: boolean;
   requires_prepayment: boolean;
+  /** The users row that is the same person as this customer (worker who buys from us). */
+  linked_user_id?: string | null;
   contacts?: Row[];
 };
 
@@ -130,6 +133,12 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
   const [notes, setNotes] = useState("");
   const [active, setActive] = useState(true);
   const [requiresPrepayment, setRequiresPrepayment] = useState(false);
+  const [linkedUserId, setLinkedUserId] = useState("");
+  // Callers that build EditCustomerInput from a list row don't carry the worker
+  // link. Until it is known, `linked_user_id` is left OUT of the update payload
+  // entirely — the route only touches the column when the key is present, so a
+  // save that races the lookup can never silently unlink someone.
+  const [linkLoaded, setLinkLoaded] = useState(false);
   const [tagIds, setTagIds] = useState<string[]>([]);
 
   const [contactsLoading, setContactsLoading] = useState(false);
@@ -159,11 +168,24 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
     setNotes(customer.notes ?? "");
     setActive(customer.active);
     setRequiresPrepayment(customer.requires_prepayment);
+    setLinkedUserId(customer.linked_user_id ?? "");
+    setLinkLoaded(customer.linked_user_id !== undefined);
     setContacts((customer.contacts ?? []).map(contactRowToDraft));
     setTagIds([]);
 
     if (!customer.id) return;
     void fetchExistingTagIds("customer", customer.id).then(setTagIds);
+    // Authoritative worker link, whatever the caller happened to pass.
+    void fetch(`/api/customers/${encodeURIComponent(customer.id)}`)
+      .then(async (res) => {
+        if (!res.ok) return;
+        const json = (await res.json().catch(() => ({}))) as { customer?: Row };
+        if (!json.customer) return;
+        const linked = json.customer.linked_user_id;
+        setLinkedUserId(typeof linked === "string" ? linked : "");
+        setLinkLoaded(true);
+      })
+      .catch(() => { /* ignore — the link stays out of the payload */ });
     setContactsLoading(true);
     void fetch(`/api/customer-contacts/list?customer_id=${encodeURIComponent(customer.id)}`)
       .then(async (res) => {
@@ -241,6 +263,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
           notes: notes.trim() || null,
           active,
           requires_prepayment: requiresPrepayment,
+          ...(linkLoaded ? { linked_user_id: linkedUserId || null } : {}),
           tag_ids: tagIds,
         }),
       });
@@ -382,6 +405,15 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
               />
               <span>לקוח פעיל</span>
             </label>
+
+            {/* Disabled until the current link is known, so a pick made mid-flight
+                can't be overwritten by the lookup landing a moment later. */}
+            <WorkerLinkField
+              value={linkedUserId}
+              onChange={setLinkedUserId}
+              phones={[phone, whatsapp]}
+              disabled={loading || !linkLoaded}
+            />
 
             <TagPicker
               value={tagIds}

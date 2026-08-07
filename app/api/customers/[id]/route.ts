@@ -1,6 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { CUSTOMER_CORE_SELECT, withLinkColumn } from "@/lib/customers/workerLink";
 
 export async function GET(_req: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
@@ -12,11 +13,9 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
   if (!access.ok) return access.response;
   const { supabase } = access.value;
 
-  const { data, error } = await supabase
-    .from("customers")
-    .select("id,name,name_for_invoice,registration_number,phone,whatsapp,email,address,active,notes,requires_prepayment")
-    .eq("id", id)
-    .maybeSingle();
+  const { data, error } = await withLinkColumn(CUSTOMER_CORE_SELECT, (select) =>
+    supabase.from("customers").select(select).eq("id", id).maybeSingle()
+  );
 
   if (error) {
     return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });

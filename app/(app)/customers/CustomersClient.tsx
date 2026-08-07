@@ -72,7 +72,7 @@ const dateText = (v: string) => {
 const morningClientUrl = (morningClientId: string) =>
   `https://app.greeninvoice.co.il/incomes/clients/${encodeURIComponent(morningClientId)}/documents`;
 
-function customerFlagBadgeClass(tone: "success" | "danger" | "neutral") {
+function customerFlagBadgeClass(tone: "success" | "danger" | "neutral" | "info") {
   return getStatusColorClasses(tone);
 }
 
@@ -249,6 +249,7 @@ export default function CustomersClient({
       notes: s(row, "notes") || null,
       active: row.active !== false,
       requires_prepayment: row.requires_prepayment === true,
+      linked_user_id: typeof row.linked_user_id === "string" ? row.linked_user_id : null,
       contacts: contactsOf(row),
     });
     setEditOpen(true);
@@ -272,6 +273,9 @@ export default function CustomersClient({
               notes: s(u, "notes"),
               active: u.active !== false,
               requires_prepayment: u.requires_prepayment === true,
+              // Only present when the edit actually touched the link — otherwise
+              // keep the row's value instead of dropping the עובד badge.
+              linked_user_id: "linked_user_id" in u ? u.linked_user_id : row.linked_user_id,
               contacts: savedContacts,
             }
       )
@@ -605,6 +609,9 @@ export default function CustomersClient({
                     {projectsCount > 0 ? (
                       <Badge variant="outline" className="px-1.5 py-0 text-[10px]">{projectsCount} פרויקטים</Badge>
                     ) : null}
+                    {row.linked_user_id ? (
+                      <Badge className={`${customerFlagBadgeClass("info")} px-1.5 py-0 text-[10px]`}>עובד</Badge>
+                    ) : null}
                     {row.requires_prepayment === true ? (
                       <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>תשלום מראש</Badge>
                     ) : null}
@@ -728,6 +735,9 @@ export default function CustomersClient({
                   </td>
                   <td className="px-2 py-1.5">
                     <div className="flex flex-wrap gap-1">
+                      {row.linked_user_id ? (
+                        <Badge className={`${customerFlagBadgeClass("info")} px-1.5 py-0 text-[10px]`}>עובד</Badge>
+                      ) : null}
                       {row.requires_prepayment === true ? (
                         <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>תשלום מראש</Badge>
                       ) : null}
