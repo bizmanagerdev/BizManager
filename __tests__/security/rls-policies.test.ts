@@ -14,6 +14,8 @@ import { join } from "path";
 //   2. A migration that ENABLEs row level security on a table must also define at
 //      least one policy for it in the same migration — otherwise the table is RLS-
 //      enabled with no policy and locks everyone out.
+//   3. The same identity rule in TypeScript: code that resolves the CURRENT caller
+//      out of the users table must filter on auth_user_id, not the app PK.
 
 const ROOT = process.cwd();
 const MIGRATIONS_DIR = join(ROOT, "supabase", "migrations");
@@ -117,6 +119,62 @@ describe("RLS guardrail — no RLS-enabled-without-policy in migrations", () => 
       }
     }
     expect(violations).toEqual([]);
+  });
+});
+
+describe("identity guardrail — app code resolving the current caller", () => {
+  // A file that asks Supabase who is signed in AND reads public.users is resolving
+  // "who am I". That lookup must filter on auth_user_id: users.id is an independent
+  // app PK, so matching it against the auth uid only works for accounts that
+  // self-provisioned with id = auth_user_id, and silently bounces anyone created
+  // via admin_upsert_user_profile. Looking OTHER users up by `id` is correct and is
+  // not what this checks — the pairing with an auth call is what makes it a
+  // self-lookup.
+  const SOURCE_DIRS = ["app", "components", "lib", "hooks"];
+
+  function sourceFiles(dir: string): string[] {
+    const abs = join(ROOT, dir);
+    if (!existsSync(abs)) return [];
+    const out: string[] = [];
+    const walk = (d: string) => {
+      for (const entry of readdirSync(d, { withFileTypes: true })) {
+        if (entry.name === "node_modules") continue;
+        const p = join(d, entry.name);
+        if (entry.isDirectory()) walk(p);
+        else if (/\.tsx?$/.test(entry.name)) out.push(p);
+      }
+    };
+    walk(abs);
+    return out;
+  }
+
+  it("every self-lookup on public.users filters by auth_user_id", () => {
+    const offenders: string[] = [];
+    for (const dir of SOURCE_DIRS) {
+      for (const file of sourceFiles(dir)) {
+        const text = readFileSync(file, "utf8");
+        const readsUsers = text.includes('from("users")');
+        const knowsCaller = /auth\.getUser\(\)|auth\.getSession\(\)/.test(text);
+        if (!readsUsers || !knowsCaller) continue;
+        if (!text.includes('.eq("auth_user_id"')) {
+          offenders.push(file.slice(ROOT.length + 1).replace(/\\/g, "/"));
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("finds the self-lookups it is meant to guard (the scan actually matches)", () => {
+    // Without this, a refactor that renamed the Supabase calls would make the
+    // check above pass by finding nothing at all.
+    let found = 0;
+    for (const dir of SOURCE_DIRS) {
+      for (const file of sourceFiles(dir)) {
+        const text = readFileSync(file, "utf8");
+        if (text.includes('from("users")') && /auth\.getUser\(\)|auth\.getSession\(\)/.test(text)) found++;
+      }
+    }
+    expect(found).toBeGreaterThanOrEqual(5);
   });
 });
 

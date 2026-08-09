@@ -5,6 +5,12 @@ import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { toHebrewError } from "@/lib/error-messages";
 
+// NOTE: currently unused — nothing imports this component. Route protection is
+// enforced server-side by lib/auth/requireProfile.ts and requireRouteAccess.ts,
+// which is stronger: a client-side guard can only redirect after the page has
+// already been sent. Kept (and kept correct) rather than deleted so that if it
+// is ever picked up it does not reintroduce the identity bug below.
+
 export type UserRole = "admin" | "office" | "worker" | "worker_no_access";
 
 export type UserProfile = {
@@ -50,12 +56,18 @@ export default function AuthGuard({ children, allowedRoles }: Props) {
         return;
       }
 
+      // users.id is an independent app PK; the auth link is users.auth_user_id
+      // (see supabase/migrations/20260629000000_fix_legacy_auth_uid_identity.sql).
+      // Matching the PK against the auth uid works ONLY for accounts that
+      // self-provisioned with id = auth_user_id — a staff member created via
+      // admin_upsert_user_profile would find no row here and be bounced to
+      // /no-access. `profile.id` is therefore the app PK, same as requireProfile.
       const { data, error: profileError } = await supabase
         .from("users")
         .select(
           "id,email,full_name,phone,role,active,system_access"
         )
-        .eq("id", user.id)
+        .eq("auth_user_id", user.id)
         .maybeSingle();
 
       if (cancelled) return;
