@@ -116,6 +116,9 @@ export function QuickCreateMenu({
   // A due date carried in from an external trigger (the calendar's "add to this
   // day"); cleared when the dialog closes so it never leaks into the + menu.
   const [quickDate, setQuickDate] = useState<string | undefined>(undefined);
+  // Likewise an account (the חשבונות page's per-account + / −), so the money
+  // lands on the account the user was looking at without picking it again.
+  const [quickAccountId, setQuickAccountId] = useState<string | undefined>(undefined);
   // Once mounted, keep the dialog host mounted — remounting it would reset any
   // in-progress wizard draft state the user might reopen to.
   const [dialogsMounted, setDialogsMounted] = useState(false);
@@ -147,13 +150,16 @@ export function QuickCreateMenu({
   useEffect(() => {
     if (variant !== "topbar") return;
     function onQuickCreate(event: Event) {
-      const detail = (event as CustomEvent<{ action?: QuickCreateAction; dueDate?: string }>).detail;
+      const detail = (
+        event as CustomEvent<{ action?: QuickCreateAction; dueDate?: string; accountId?: string }>
+      ).detail;
       if (!detail?.action) return;
       // Fall back to a task if the caller asked for something this role can't create.
       const action =
         ADMIN_OR_OFFICE_ACTIONS.has(detail.action) && !privileged ? "task" : detail.action;
       prefetch();
       setQuickDate(detail.dueDate);
+      setQuickAccountId(detail.accountId);
       setAction(action);
     }
     window.addEventListener("bizh:quick-create", onQuickCreate);
@@ -244,6 +250,7 @@ export function QuickCreateMenu({
         onOpenChange={() => {
           setAction(null);
           setQuickDate(undefined);
+          setQuickAccountId(undefined);
         }}
         title="טוען..."
         description="מכין את הרשימות לטופס."
@@ -260,9 +267,11 @@ export function QuickCreateMenu({
           onClose={() => {
             setAction(null);
             setQuickDate(undefined);
+            setQuickAccountId(undefined);
           }}
           data={data ?? EMPTY_QUICK_CREATE_DATA}
           quickCreateDate={quickDate}
+          quickCreateAccountId={quickAccountId}
         />
       ) : null}
     </>

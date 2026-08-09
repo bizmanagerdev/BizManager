@@ -2,6 +2,10 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
+import {
+  ensureRecurringExpensesForDate,
+  invalidateRecurringExpensesEnsureCache,
+} from "@/lib/recurring-expenses";
 
 type Frequency = "monthly" | "yearly";
 
@@ -32,6 +36,15 @@ type Payload = {
   start_date?: string | null;
   end_date?: string | null;
   is_active?: boolean | null;
+  /**
+   * What a CHANGED amount does to the rows this template already generated.
+   * The generator copies the amount into each expense row and never revisits it,
+   * so without this an edit only ever affects occurrences generated from now on.
+   *   "none"   — leave every existing row alone (old behaviour)
+   *   "unpaid" — re-price rows that haven't been paid yet (nothing moved yet)
+   *   "all"    — re-price the whole history from start_date, paid rows included
+   */
+  amount_propagation?: "none" | "unpaid" | "all" | null;
 };
 
 function normalizeId(value: unknown) {
@@ -180,8 +193,19 @@ export async function POST(req: Request) {
     };
 
     let templateId = id;
+    // The amount BEFORE this save — needed both to know whether it actually
+    // changed and to spot rows that were fully paid at the old figure.
+    let previousAmount: number | null = null;
 
     if (templateId) {
+      const { data: existing } = await supabase
+        .from("recurring_expense_templates")
+        .select("amount")
+        .eq("id", templateId)
+        .maybeSingle<{ amount: number | string | null }>();
+      const parsed = existing ? Number(existing.amount) : NaN;
+      previousAmount = Number.isFinite(parsed) ? parsed : null;
+
       const { error } = await supabase
         .from("recurring_expense_templates")
         .update(payload)
@@ -206,7 +230,78 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Failed to save recurring expense template" }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true, id: templateId });
+    // ── Push a changed amount onto the rows this template already generated ──
+    // Each generated expense holds a SNAPSHOT of the amount, so the template edit
+    // alone would only reach occurrences created from here on.
+    const propagation =
+      body.amount_propagation === "all"
+        ? "all"
+        : body.amount_propagation === "unpaid"
+          ? "unpaid"
+          : "none";
+    let repricedCount = 0;
+    const amountChanged =
+      previousAmount !== null && Number.isFinite(effectiveAmount) && previousAmount !== effectiveAmount;
+
+    if (id && propagation !== "none" && amountChanged && !isVariableAmount) {
+      if (propagation === "unpaid") {
+        // Nothing has moved on these yet, so re-pricing them rewrites no history.
+        const { data, error } = await supabase
+          .from("expenses")
+          .update({ amount: effectiveAmount, updated_at: new Date().toISOString() })
+          .eq("recurring_expense_template_id", id)
+          .in("payment_status", ["not_paid", "pending"])
+          .select("id");
+        if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
+        repricedCount = (data ?? []).length;
+      } else {
+        // "It was always this amount" — rewrite the history from the start date.
+        const from = startDate ?? "1900-01-01";
+        const { data, error } = await supabase
+          .from("expenses")
+          .update({ amount: effectiveAmount, updated_at: new Date().toISOString() })
+          .eq("recurring_expense_template_id", id)
+          .gte("expense_date", from)
+          .select("id");
+        if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
+        repricedCount = (data ?? []).length;
+
+        // A row that was fully paid at the OLD figure stays fully paid at the new
+        // one — otherwise it would silently turn into a part-paid row. Rows paid a
+        // different amount (a real partial payment) keep what actually moved.
+        await supabase
+          .from("expenses")
+          .update({ paid_amount: effectiveAmount, updated_at: new Date().toISOString() })
+          .eq("recurring_expense_template_id", id)
+          .gte("expense_date", from)
+          .eq("paid_amount", previousAmount as number);
+      }
+    }
+
+    // ── Materialize this template's occurrences NOW ─────────────────────────
+    // The daily generator is memoized per date per server instance, so a template
+    // saved after today's run would produce nothing until tomorrow: its periods
+    // would show in the calendar only as FORECASTS (always rendered unpaid, even
+    // for a standing order) and be absent from the ledger and the bank comparison.
+    // Saving is exactly the moment to run it.
+    let generatedCount = 0;
+    try {
+      invalidateRecurringExpensesEnsureCache();
+      const generated = await ensureRecurringExpensesForDate(supabase);
+      generatedCount += generated.createdCount;
+      // Also fill any PAST period the daily generator won't touch (it only
+      // back-fills standing orders; a manual template gets the current period
+      // only). No-op when migration 20260809000000 isn't deployed yet.
+      const { data: backfilled, error: backfillError } = await supabase.rpc(
+        "backfill_recurring_expense",
+        { p_template_id: templateId }
+      );
+      if (!backfillError) generatedCount += Number(backfilled) || 0;
+    } catch {
+      // Generating is a convenience on top of the save — never fail the save for it.
+    }
+
+    return NextResponse.json({ ok: true, id: templateId, repricedCount, generatedCount });
   } catch (err: unknown) {
     const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });

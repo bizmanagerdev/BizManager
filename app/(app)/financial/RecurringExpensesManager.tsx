@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Repeat, Pencil, Trash2, BellPlus, Check } from "lucide-react";
+import { Repeat, Pencil, Trash2, BellPlus, Check, CalendarPlus, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { toHebrewError } from "@/lib/error-messages";
@@ -49,6 +49,12 @@ export type RecurringExpenseTemplateItem = {
   start_date: string | null;
   end_date: string | null;
   is_active: boolean;
+};
+
+/** What /api/recurring-expenses/backfill reports as missing, per template. */
+type BackfillPreview = {
+  templates: Array<{ id: string; name: string; autoPaid: boolean; months: string[]; count: number }>;
+  total: number;
 };
 
 type Props = {
@@ -167,6 +173,66 @@ export default function RecurringExpensesManager(props: Props) {
   const [remindTemplate, setRemindTemplate] = useState<RecurringExpenseTemplateItem | null>(null);
   const [accountFilter, setAccountFilter] = useState("");
 
+  // ── "השלמת חיובים חסרים" ──────────────────────────────────────────────────
+  // The daily generator only runs for TODAY, and for a manual (non-standing-order)
+  // template it materializes only the current period — so months between the
+  // start date and the first run never exist. This previews what's missing and
+  // then creates it. `id: null` = every active template.
+  const [backfillTarget, setBackfillTarget] = useState<{ id: string | null; label: string } | null>(null);
+  const [backfillPreview, setBackfillPreview] = useState<BackfillPreview | null>(null);
+  const [backfillLoading, setBackfillLoading] = useState(false);
+  const [backfillRunning, setBackfillRunning] = useState(false);
+  const [backfillError, setBackfillError] = useState<string | undefined>(undefined);
+
+  async function openBackfill(target: { id: string | null; label: string }) {
+    setBackfillTarget(target);
+    setBackfillPreview(null);
+    setBackfillError(undefined);
+    setBackfillLoading(true);
+    try {
+      const res = await fetch(
+        `/api/recurring-expenses/backfill${target.id ? `?id=${encodeURIComponent(target.id)}` : ""}`,
+        { cache: "no-store" }
+      );
+      const json = (await res.json().catch(() => ({}))) as BackfillPreview & { error?: string };
+      if (!res.ok) {
+        setBackfillError(toHebrewError(json.error, "בדיקת החיובים החסרים נכשלה."));
+        return;
+      }
+      setBackfillPreview({ templates: json.templates ?? [], total: json.total ?? 0 });
+    } catch (error: unknown) {
+      setBackfillError(toHebrewError(error, "בדיקת החיובים החסרים נכשלה."));
+    } finally {
+      setBackfillLoading(false);
+    }
+  }
+
+  async function runBackfill() {
+    if (!backfillTarget) return;
+    setBackfillRunning(true);
+    setBackfillError(undefined);
+    try {
+      const res = await fetch("/api/recurring-expenses/backfill", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: backfillTarget.id }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string; created?: number };
+      if (!res.ok) {
+        setBackfillError(toHebrewError(json.error, "השלמת החיובים החסרים נכשלה."));
+        return;
+      }
+      setBackfillTarget(null);
+      router.refresh();
+      const created = Number(json.created) || 0;
+      toast.success(created > 0 ? `נוצרו ${created} חיובים חסרים` : "לא נמצאו חיובים חסרים");
+    } catch (error: unknown) {
+      setBackfillError(toHebrewError(error, "השלמת החיובים החסרים נכשלה."));
+    } finally {
+      setBackfillRunning(false);
+    }
+  }
+
   // Bank-account scope for the list + summary.
   const filteredTemplates = useMemo(
     () => (accountFilter ? props.templates.filter((t) => t.account_id === accountFilter) : props.templates),
@@ -245,7 +311,21 @@ export default function RecurringExpensesManager(props: Props) {
         </div>
       ) : null}
 
-      {/* Bank-account filter */}
+      {/* Bank-account filter + the catch-up action for every template at once */}
+      {!props.missingSchema && props.templates.length > 0 ? (
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => void openBackfill({ id: null, label: "כל ההוצאות הקבועות" })}
+          >
+            <CalendarPlus className="h-4 w-4" />
+            השלמת חיובים חסרים
+          </Button>
+        </div>
+      ) : null}
+
       {!props.missingSchema && props.templates.length > 0 && props.accounts.length > 0 ? (
         <div className="flex items-center justify-end gap-2">
           <span className="text-xs text-muted-foreground">חשבון:</span>
@@ -333,6 +413,16 @@ export default function RecurringExpensesManager(props: Props) {
                     <div className="flex justify-end gap-1.5">
                       <Button type="button" size="icon-sm" variant="secondary" onClick={() => setRemindTemplate(template)} title="תזכורת" aria-label="תזכורת">
                         <BellPlus className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="secondary"
+                        onClick={() => void openBackfill({ id: template.id, label: template.template_name })}
+                        title="השלמת חיובים חסרים"
+                        aria-label="השלמת חיובים חסרים"
+                      >
+                        <CalendarPlus className="h-4 w-4" />
                       </Button>
                       <Button type="button" size="icon-sm" variant="secondary" onClick={() => openEdit(template)} title="עריכה" aria-label="עריכה">
                         <Pencil className="h-4 w-4" />
@@ -429,6 +519,16 @@ export default function RecurringExpensesManager(props: Props) {
                           <Button type="button" size="icon-sm" variant="secondary" onClick={() => setRemindTemplate(template)} title="תזכורת" aria-label="תזכורת">
                             <BellPlus className="h-4 w-4" />
                           </Button>
+                          <Button
+                            type="button"
+                            size="icon-sm"
+                            variant="secondary"
+                            onClick={() => void openBackfill({ id: template.id, label: template.template_name })}
+                            title="השלמת חיובים חסרים"
+                            aria-label="השלמת חיובים חסרים"
+                          >
+                            <CalendarPlus className="h-4 w-4" />
+                          </Button>
                           <Button type="button" size="icon-sm" variant="secondary" onClick={() => openEdit(template)} title="עריכה" aria-label="עריכה">
                             <Pencil className="h-4 w-4" />
                           </Button>
@@ -470,6 +570,62 @@ export default function RecurringExpensesManager(props: Props) {
         loading={deleting}
         onConfirm={() => void remove()}
       />
+
+      {/* Preview first, then create — a catch-up that silently invents rows in
+          closed months would be indistinguishable from a bug. */}
+      <ConfirmDialog
+        open={Boolean(backfillTarget)}
+        onOpenChange={(next) => {
+          if (!next) {
+            setBackfillTarget(null);
+            setBackfillPreview(null);
+            setBackfillError(undefined);
+          }
+        }}
+        title="השלמת חיובים חסרים"
+        description={
+          backfillLoading
+            ? undefined
+            : backfillPreview && backfillPreview.total > 0
+              ? "אלה החיובים שהיו אמורים להיווצר ולא נוצרו. חיוב של הוראת קבע ייווצר כשולם; חיוב רגיל ייווצר כממתין לאישור תשלום."
+              : undefined
+        }
+        confirmLabel={
+          backfillPreview && backfillPreview.total > 0 ? `יצירת ${backfillPreview.total} חיובים` : "סגירה"
+        }
+        loading={backfillRunning}
+        error={backfillError}
+        onConfirm={() => {
+          if (backfillPreview && backfillPreview.total > 0) void runBackfill();
+          else setBackfillTarget(null);
+        }}
+      >
+        {backfillLoading ? (
+          <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>בודק אילו חיובים חסרים...</span>
+          </div>
+        ) : backfillPreview && backfillPreview.total === 0 ? (
+          <div className="py-2 text-sm text-muted-foreground">
+            לא נמצאו חיובים חסרים ב{backfillTarget?.label ?? ""}. הכול כבר נוצר.
+          </div>
+        ) : backfillPreview ? (
+          <div className="max-h-64 space-y-3 overflow-y-auto">
+            {backfillPreview.templates.map((row) => (
+              <div key={row.id} className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                  <span>{row.name}</span>
+                  <Badge variant="outline">{row.count} חיובים</Badge>
+                  {row.autoPaid ? <Badge variant="outline">הוראת קבע</Badge> : null}
+                </div>
+                <div dir="ltr" className="text-xs text-muted-foreground">
+                  {row.months.join(" · ")}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </ConfirmDialog>
 
       <ReminderFormDialog
         mode="create"

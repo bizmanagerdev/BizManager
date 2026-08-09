@@ -5,7 +5,7 @@
 // AND the top-bar quick-create (+) menu render the exact same form. Owns all of
 // its own state: mount it anywhere, hand it `open` + the link-target lists.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { toHebrewError } from "@/lib/error-messages";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
@@ -55,6 +55,7 @@ export function IncomeDialog({
   projects,
   orders,
   properties,
+  defaultAccountId,
   onSaved,
 }: {
   open: boolean;
@@ -62,6 +63,8 @@ export function IncomeDialog({
   projects: IncomeProjectOption[];
   orders: IncomeEntityOption[];
   properties: IncomeEntityOption[];
+  /** Pre-select the account the money lands in (opened from that account's page). */
+  defaultAccountId?: string;
   onSaved?: () => void;
 }) {
   const [accountsList, setAccountsList] = useState<Account[]>([]);
@@ -85,6 +88,12 @@ export function IncomeDialog({
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
   const [existingAttachments] = useState<FinancialAttachment[]>([]);
   const [tagIds, setTagIds] = useState<string[]>([]);
+
+  // Opened from a specific account (the חשבונות page's +) — start on it. Applied
+  // per open, since the dialog stays mounted between uses.
+  useEffect(() => {
+    if (open && defaultAccountId) setAccountId(defaultAccountId);
+  }, [open, defaultAccountId]);
 
   const projectById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
   const filteredProjects = useMemo(() => {

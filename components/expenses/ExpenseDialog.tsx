@@ -245,6 +245,9 @@ type Props = {
 
   // Default category for a NEW expense (e.g. "רכבים" from a car's page).
   defaultCategory?: string;
+  // Pre-select the account the money leaves from (opened from that account's
+  // page on /financial/bank). Only applies to a NEW expense.
+  defaultAccountId?: string;
   // Pre-select tags (e.g. a vehicle) for a NEW expense.
   presetTagIds?: string[];
   // When set, the expense is locked to this tag (e.g. opened from a car's page):
@@ -363,6 +366,7 @@ export function ExpenseDialog({
   showAttachments = false,
   defaultDate,
   defaultCategory,
+  defaultAccountId,
   presetTagIds,
   presetTagLabel,
   users,
@@ -418,6 +422,18 @@ export function ExpenseDialog({
   // Recurring template extras (parity with the old bespoke template form).
   const [templateName, setTemplateName] = useState(""); // optional; defaults to description/category
   const [recurActive, setRecurActive] = useState(true); // is_active (template edit)
+  // Editing a template's amount: what happens to the rows it ALREADY generated.
+  // Default "unpaid" — a bill that hasn't been paid yet should follow the new
+  // price; one that was already paid recorded real money and is left alone.
+  const [amountPropagation, setAmountPropagation] = useState<"unpaid" | "none" | "all">("unpaid");
+  // The amount box now holds something other than what the template was saved
+  // with — the only case where the propagation choice below means anything.
+  const templateAmountChanged = (() => {
+    if (!isEditingTemplate) return false;
+    const next = Number(amount);
+    const prev = Number(editingRecurringTemplate?.amount);
+    return Number.isFinite(next) && Number.isFinite(prev) && next !== prev;
+  })();
   const [projectNotesTemplate, setProjectNotesTemplate] = useState(""); // project domain only
   const [recurVariable, setRecurVariable] = useState(false); // amount known only at pay time (taxes)
   const [recurAutoPaid, setRecurAutoPaid] = useState(false); // bank standing order (הוראת קבע) → auto-marked paid
@@ -690,7 +706,7 @@ export function ExpenseDialog({
       setPaymentStatus("paid");
       setPaidAmount("");
       setPaymentMethod("");
-      setAccountId("");
+      setAccountId(defaultAccountId ?? "");
       setCategory(defaultCategory ?? "");
       setCategoryOther("");
       setDescription("");
@@ -718,6 +734,7 @@ export function ExpenseDialog({
     setRecurVariable(false);
     setRecurAutoPaid(false);
     setRecurReminderDays("");
+    setAmountPropagation("unpaid");
     // Recurring override: template edit forces recurring on + hydrates its schedule;
     // a NEW expense opened with defaultRecurring starts on the recurring path.
     if (editingRecurringTemplate) {
@@ -1084,16 +1101,36 @@ export function ExpenseDialog({
           start_date: startDate,
           end_date: recurEndDate || null,
           is_active: isEditingTemplate ? recurActive : true,
+          // Only meaningful when the amount actually changed on an existing template.
+          amount_propagation: templateAmountChanged ? amountPropagation : "none",
         }),
       });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        repricedCount?: number;
+        generatedCount?: number;
+      };
       if (!res.ok) {
         const msg = toHebrewError(json.error, "שמירת ההוצאה הקבועה נכשלה.");
         setErrorMessage(msg);
         toast.error("שגיאה בשמירת הוצאה קבועה", { description: msg });
         return;
       }
-      toast.success(isEditingTemplate ? "ההוצאה הקבועה עודכנה" : "ההוצאה הקבועה נשמרה ותיווצר בכל תקופה");
+      const repriced = Number(json.repricedCount) || 0;
+      // Say what happened to the existing rows either way — "0 updated" is the
+      // answer to "I changed the amount and nothing moved".
+      const repriceNote =
+        !templateAmountChanged || amountPropagation === "none"
+          ? undefined
+          : repriced > 0
+            ? `${repriced} חיובים קיימים עודכנו לסכום החדש.`
+            : "לא נמצאו חיובים קיימים לעדכון — הסכום החדש יחול על חיובים חדשים בלבד.";
+      const generated = Number(json.generatedCount) || 0;
+      toast.success(isEditingTemplate ? "ההוצאה הקבועה עודכנה" : "ההוצאה הקבועה נשמרה ותיווצר בכל תקופה", {
+        description: [generated > 0 ? `נוצרו ${generated} חיובים.` : null, repriceNote]
+          .filter(Boolean)
+          .join(" ") || undefined,
+      });
       const savedResult = onSaved({ expenseId: "", sourceType: "expense", expense: {}, projectExpense: null, attachments: [] });
       if (savedResult instanceof Promise) await savedResult;
       onOpenChange(false);
@@ -2973,6 +3010,52 @@ export function ExpenseDialog({
                       <input type="checkbox" checked={recurActive} onChange={(e) => setRecurActive(e.target.checked)} />
                       <span>פעיל</span>
                     </label>
+                  ) : null}
+
+                  {/* The amount changed on an existing template. Each already-
+                      generated row holds its own copy of the old amount, so the
+                      user has to say how far back the new price reaches. */}
+                  {templateAmountChanged ? (
+                    <div className="space-y-2 rounded-xl border border-amber-300 bg-amber-50/60 p-3">
+                      <div className="text-sm font-medium">
+                        שינית את הסכום — על אילו חיובים להחיל אותו?
+                      </div>
+                      {[
+                        {
+                          value: "unpaid" as const,
+                          label: "חיובים שטרם שולמו",
+                          // In a standing order the generator marks every row it
+                          // creates as paid, so this option has nothing to match.
+                          hint: recurAutoPaid
+                            ? "בהוראת קבע כל חיוב נוצר כשולם, ולכן האפשרות הזו לא תשנה חיובים קיימים."
+                            : "החיובים הבאים, וגם כאלה שכבר נוצרו אבל עדיין לא שולמו. חיובים ששולמו לא ישתנו.",
+                        },
+                        {
+                          value: "none" as const,
+                          label: "רק חיובים חדשים",
+                          hint: "כל מה שכבר נוצר נשאר בסכום הישן.",
+                        },
+                        {
+                          value: "all" as const,
+                          label: "גם חיובים ששולמו, מתאריך ההתחלה",
+                          hint: "לשימוש כשהסכום היה שגוי מלכתחילה. משנה גם חודשים סגורים — ואז ייתכן שלא יתאים לדף הבנק.",
+                        },
+                      ].map((option) => (
+                        <label key={option.value} className="flex items-start gap-2 text-sm">
+                          <input
+                            type="radio"
+                            name="amount-propagation"
+                            className="mt-1"
+                            checked={amountPropagation === option.value}
+                            onChange={() => setAmountPropagation(option.value)}
+                          />
+                          <span>
+                            <span className="font-medium">{option.label}</span>
+                            <span className="block text-xs text-muted-foreground">{option.hint}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
                   ) : null}
                   <p className="text-xs text-muted-foreground">
                     {(() => {

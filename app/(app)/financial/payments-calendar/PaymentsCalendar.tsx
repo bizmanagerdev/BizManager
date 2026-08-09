@@ -615,7 +615,12 @@ function PaymentItemCard({
   const stage = itemStageKey(item);
   const isForecast = Boolean(item.recurringTemplateId) && !item.expenseId;
   // Auto-paid (הוראת קבע) needs no approval → no mark-paid button.
-  const canMarkPaid = (Boolean(item.expenseId) || isForecast) && !item.autoPaid;
+  // A forecast is a period that has no expense row yet, so it always needs a way
+  // to be recorded — INCLUDING a standing order. "Auto-paid" only means the
+  // generator stamps it paid when it creates it; until then there is nothing in
+  // the ledger, nothing to reconcile against the bank, and no other way in.
+  // Rows that already exist and are paid are filtered by the stage check below.
+  const canMarkPaid = Boolean(item.expenseId) || isForecast;
   const canSplit = Boolean(item.expenseId);
   const canDelete = Boolean(item.expenseId);
   // Drop the source label from the meta when a type badge (הוראת קבע / קבועה) already
@@ -791,7 +796,12 @@ function PaymentsMonthList({
                 const stage = itemStageKey(item);
                 const isForecast = Boolean(item.recurringTemplateId) && !item.expenseId;
                 // Auto-paid (הוראת קבע) needs no approval → no mark-paid button.
-  const canMarkPaid = (Boolean(item.expenseId) || isForecast) && !item.autoPaid;
+  // A forecast is a period that has no expense row yet, so it always needs a way
+  // to be recorded — INCLUDING a standing order. "Auto-paid" only means the
+  // generator stamps it paid when it creates it; until then there is nothing in
+  // the ledger, nothing to reconcile against the bank, and no other way in.
+  // Rows that already exist and are paid are filtered by the stage check below.
+  const canMarkPaid = Boolean(item.expenseId) || isForecast;
                 const canSplit = Boolean(item.expenseId);
                 const canDelete = Boolean(item.expenseId);
                 const day = toDateOnly(item.date) ?? new Date(item.date);

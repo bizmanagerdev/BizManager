@@ -61,6 +61,18 @@ async function runEnsureRecurringExpensesForDate(
   return { ok: true, createdCount, skippedMissingSchema: false };
 }
 
+/**
+ * Forget today's "already generated" memo. Call this after a template is created
+ * or edited: the generator runs at most ONCE per day per server instance, so a
+ * template saved after today's run would otherwise materialize nothing until
+ * tomorrow — its occurrences would sit in the calendar as forecasts (which are
+ * always shown as unpaid, even for a standing order) and be missing from the
+ * ledger entirely.
+ */
+export function invalidateRecurringExpensesEnsureCache() {
+  getEnsureRecurringExpensesCache().clear();
+}
+
 export function ensureRecurringExpensesForDate(
   supabase: SupabaseClient,
   options?: { today?: Date }

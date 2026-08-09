@@ -36,6 +36,7 @@ export default function QuickCreateDialogs({
   onClose,
   data,
   quickCreateDate,
+  quickCreateAccountId,
 }: {
   action: QuickCreateAction | null;
   onClose: () => void;
@@ -43,6 +44,8 @@ export default function QuickCreateDialogs({
   /** Pre-fill the date on a new task / reminder / project (e.g. a calendar day),
    *  as `YYYY-MM-DD`. */
   quickCreateDate?: string;
+  /** Pre-fill the account on a new income / expense (the חשבונות page's + / −). */
+  quickCreateAccountId?: string;
 }) {
   const router = useRouter();
   // While a wizard is mid-submit its dialog must not be dismissable — closing it
@@ -114,6 +117,7 @@ export default function QuickCreateDialogs({
           if (!open) onClose();
         }}
         showAttachments
+        defaultAccountId={quickCreateAccountId}
         currentUserId={data.currentUserId ?? undefined}
         currentUserRole={data.role ?? undefined}
         users={data.users}
@@ -135,6 +139,7 @@ export default function QuickCreateDialogs({
         projects={data.projects}
         orders={data.orders}
         properties={data.properties}
+        defaultAccountId={quickCreateAccountId}
         onSaved={() => router.refresh()}
       />
 
