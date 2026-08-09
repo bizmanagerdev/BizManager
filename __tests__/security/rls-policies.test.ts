@@ -48,12 +48,32 @@ const LEGACY_BUG_BASELINE = new Set([
   "audit_logging_toggle.sql",
 ]);
 
+// Migrations are an append-only history: once applied they are not rewritten, so
+// a file that introduced the bug keeps the pattern forever. These two are already
+// SUPERSEDED — 20260809010000_session_fns_auth_user_id_identity.sql re-creates both
+// functions matching on auth_user_id only. Listed here so the guard still fails on
+// any NEW occurrence. Anything added below needs a superseding migration first.
+const MIGRATION_BUG_SUPERSEDED = new Set([
+  "20260724100000_session_heartbeat_identity_fix.sql",
+  "20260726110000_session_end.sql",
+]);
+
+/** The migration that must exist for the entries above to count as fixed. */
+const SUPERSEDING_MIGRATION = "20260809010000_session_fns_auth_user_id_identity.sql";
+
 describe("RLS guardrail — users-table identity column", () => {
   it("no migration gates on the users PK instead of auth_user_id", () => {
     const offenders = sqlFiles(MIGRATIONS_DIR)
       .filter((f) => USERS_PK_BUG.test(normalize(f.text)))
-      .map((f) => f.name);
+      .map((f) => f.name)
+      .filter((name) => !MIGRATION_BUG_SUPERSEDED.has(name));
     expect(offenders).toEqual([]);
+  });
+
+  it("the migration that supersedes the known-buggy ones is still present", () => {
+    // Without it, the exemptions above would be hiding a live bug.
+    const present = sqlFiles(MIGRATIONS_DIR).map((f) => f.name);
+    expect(present).toContain(SUPERSEDING_MIGRATION);
   });
 
   it("no NEW legacy file introduces the users-PK bug beyond the known baseline", () => {
