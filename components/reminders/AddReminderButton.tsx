@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bell } from "lucide-react";
+import { NotificationIcon } from "@/components/ui/icons";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -125,7 +125,7 @@ export default function AddReminderButton({
         aria-label={`תזכורת ל${cfg.noun}`}
         onClick={() => setOpen(true)}
       >
-        <Bell className="h-4 w-4 text-warning" />
+        <NotificationIcon className="h-4 w-4 text-warning" />
         {iconOnly ? null : <span className="ms-1">תזכורת</span>}
       </Button>
 

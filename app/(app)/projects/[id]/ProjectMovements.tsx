@@ -11,7 +11,7 @@
 // stays one line.
 
 import { useState } from "react";
-import { ChevronDown, MoreHorizontal, Paperclip, Pencil, Trash2, Loader2 } from "lucide-react";
+import { AttachIcon, ChevronDownIcon, DeleteIcon, EditIcon, MoreIcon, SpinnerIcon } from "@/components/ui/icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -79,7 +79,7 @@ function Attachments({ attachments }: { attachments: FinancialAttachment[] }) {
           title={attachment.file_name ?? "קובץ"}
           className="inline-flex items-center gap-1 rounded-md border border-border/60 px-1.5 py-0.5 text-[0.6875rem] text-secondary hover:bg-accent"
         >
-          <Paperclip className="h-3 w-3" />
+          <AttachIcon className="h-3 w-3" />
           {withUrl.length > 1 ? `קובץ ${index + 1}` : "קובץ"}
         </a>
       ))}
@@ -101,16 +101,16 @@ function RowActions({ movement }: { movement: Movement }) {
           aria-label="פעולות"
         >
           {movement.busy ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <SpinnerIcon className="h-4 w-4 animate-spin" />
           ) : (
-            <MoreHorizontal className="h-4 w-4" />
+            <MoreIcon className="h-4 w-4" />
           )}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-36">
         {movement.onEdit ? (
           <DropdownMenuItem onClick={movement.onEdit}>
-            <Pencil className="me-2 h-4 w-4" />
+            <EditIcon className="me-2 h-4 w-4" />
             עריכה
           </DropdownMenuItem>
         ) : null}
@@ -119,7 +119,7 @@ function RowActions({ movement }: { movement: Movement }) {
             onClick={movement.onDelete}
             className="text-destructive focus:text-destructive"
           >
-            <Trash2 className="me-2 h-4 w-4" />
+            <DeleteIcon className="me-2 h-4 w-4" />
             מחיקה
           </DropdownMenuItem>
         ) : null}
@@ -250,7 +250,7 @@ export default function ProjectMovements({ movements }: { movements: Movement[] 
                           aria-label={open ? "סגירת פרטים" : "פתיחת פרטים"}
                           className="text-muted-foreground"
                         >
-                          <ChevronDown
+                          <ChevronDownIcon
                             className={cn("h-4 w-4 transition-transform", open && "rotate-180")}
                           />
                         </button>
@@ -327,7 +327,7 @@ export default function ProjectMovements({ movements }: { movements: Movement[] 
                               {
                                 key: "edit",
                                 label: "עריכה",
-                                icon: <Pencil className="h-4 w-4" />,
+                                icon: <EditIcon className="h-4 w-4" />,
                                 onSelect: movement.onEdit,
                                 className: "bg-secondary text-secondary-foreground",
                               },
@@ -338,7 +338,7 @@ export default function ProjectMovements({ movements }: { movements: Movement[] 
                               {
                                 key: "delete",
                                 label: "מחיקה",
-                                icon: <Trash2 className="h-4 w-4" />,
+                                icon: <DeleteIcon className="h-4 w-4" />,
                                 onSelect: movement.onDelete,
                                 className: "bg-destructive text-destructive-foreground",
                               },
@@ -357,7 +357,7 @@ export default function ProjectMovements({ movements }: { movements: Movement[] 
                 className="flex w-full items-start gap-2 text-start disabled:cursor-default"
               >
                 {expandable ? (
-                  <ChevronDown
+                  <ChevronDownIcon
                     className={cn(
                       "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
                       open && "rotate-180"

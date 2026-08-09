@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, Mic, Square } from "lucide-react";
+import { MicIcon, SpinnerIcon, StopIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import { useAudioTranscription } from "@/hooks/useAudioTranscription";
@@ -53,7 +53,7 @@ export function DictateButton({
       title={recording ? "עצירת הקלטה" : busy ? "ממיר הקלטה לטקסט" : title}
       className={cn(recording && "animate-pulse", className)}
     >
-      {busy ? <Loader2 className="animate-spin" /> : recording ? <Square /> : <Mic />}
+      {busy ? <SpinnerIcon className="animate-spin" /> : recording ? <StopIcon /> : <MicIcon />}
     </Button>
   );
 }

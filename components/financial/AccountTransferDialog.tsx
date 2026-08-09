@@ -19,7 +19,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { SpinnerIcon } from "@/components/ui/icons";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -229,7 +229,7 @@ export function AccountTransferDialog({
     >
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin" />
+          <SpinnerIcon className="h-5 w-5 animate-spin" />
           <span>טוען חשבונות...</span>
         </div>
       ) : notEnoughAccounts ? (

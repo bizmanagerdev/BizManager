@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { Car, Check, Plus, X } from "lucide-react";
+import { AddIcon, CheckIcon, CloseIcon, VehicleIcon } from "@/components/ui/icons";
 import { Badge } from "@/components/ui/badge";
 
 export type TagOption = { id: string; kind: string; name: string; color?: string | null };
@@ -66,7 +66,7 @@ export function TagPicker({
   onChange,
   kind = "vehicle",
   label = "רכבים מקושרים",
-  icon = <Car className="h-3.5 w-3.5" />,
+  icon = <VehicleIcon className="h-3.5 w-3.5" />,
   emptyText = 'אין רכבים עדיין — הוסיפו רכב במסך "רכבים" כדי לקשר אליו.',
   addLabel = "קישור לרכב",
   allowCreate = false,
@@ -139,7 +139,7 @@ export function TagPicker({
                 className="text-muted-foreground hover:text-destructive"
                 aria-label="הסרה"
               >
-                <X className="h-3 w-3" />
+                <CloseIcon className="h-3 w-3" />
               </button>
             </span>
           ))}
@@ -151,7 +151,7 @@ export function TagPicker({
       ) : (
         <details className="rounded-md border bg-background">
           <summary className="cursor-pointer list-none px-3 py-2 text-sm text-muted-foreground">
-            <Plus className="ms-0 me-1 inline h-3.5 w-3.5" />
+            <AddIcon className="ms-0 me-1 inline h-3.5 w-3.5" />
             {addLabel}
           </summary>
           <div className="max-h-40 overflow-auto border-t p-1">
@@ -172,7 +172,7 @@ export function TagPicker({
                         checked ? "border-primary bg-primary text-primary-foreground" : "border-input"
                       }`}
                     >
-                      {checked ? <Check className="h-3 w-3" /> : null}
+                      {checked ? <CheckIcon className="h-3 w-3" /> : null}
                     </span>
                     {tag.name}
                     {kind ? null : <Badge variant="neutral">{tag.kind}</Badge>}
@@ -201,7 +201,7 @@ export function TagPicker({
                 disabled={creating || !newName.trim()}
                 className="inline-flex h-8 items-center gap-1 rounded-md bg-secondary px-2 text-xs font-medium text-secondary-foreground disabled:opacity-50"
               >
-                <Plus className="h-3.5 w-3.5" />
+                <AddIcon className="h-3.5 w-3.5" />
                 {creating ? "מוסיף..." : "הוספה"}
               </button>
             </div>

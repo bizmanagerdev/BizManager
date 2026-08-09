@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { Loader2, Share2 } from "lucide-react";
+import { ShareIcon, SpinnerIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { toHebrewError } from "@/lib/error-messages";
@@ -155,7 +155,7 @@ export default function ProjectWorkerExportActions({
           onClick={() => void sharePdf()}
           disabled={sharing}
         >
-          {sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
+          {sharing ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : <ShareIcon className="h-4 w-4" />}
           <span>שיתוף PDF</span>
         </Button>
         <Button type="button" size="sm" onClick={() => void openPrintDialog()} disabled={sharing}>

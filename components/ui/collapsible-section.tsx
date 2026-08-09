@@ -9,7 +9,7 @@
 // per screen size. `defaultOpen` decides what greets you.
 
 import { useEffect, useId, useState, type ReactNode } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDownIcon } from "@/components/ui/icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -106,7 +106,7 @@ export function CollapsibleSection({
           aria-label={open ? "כיווץ" : "הרחבה"}
           className="shrink-0"
         >
-          <ChevronDown
+          <ChevronDownIcon
             className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")}
           />
         </button>

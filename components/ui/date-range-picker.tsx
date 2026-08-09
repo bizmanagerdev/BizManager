@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
-import { CalendarDays, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 import { isoLocal, toDateOnly, isSameDay } from "@/components/ui/month-calendar";
 
@@ -94,7 +94,7 @@ export function DateRangePicker({
       <div className="mb-1 flex h-7 items-center justify-between">
         {idx === 0 ? (
           <button type="button" onClick={() => setLeftMonth((m) => addMonths(m, -1))} className="rounded-md p-1 hover:bg-muted" aria-label="חודש קודם">
-            <ChevronRight className="h-4 w-4" />
+            <ChevronRightIcon className="h-4 w-4" />
           </button>
         ) : (
           <span className="w-6" />
@@ -102,7 +102,7 @@ export function DateRangePicker({
         <span className="text-sm font-medium">{monthLabel(mDate)}</span>
         {idx === months.length - 1 ? (
           <button type="button" onClick={() => setLeftMonth((m) => addMonths(m, 1))} className="rounded-md p-1 hover:bg-muted" aria-label="חודש הבא">
-            <ChevronLeft className="h-4 w-4" />
+            <ChevronLeftIcon className="h-4 w-4" />
           </button>
         ) : (
           <span className="w-6" />
@@ -161,10 +161,10 @@ export function DateRangePicker({
             className
           )}
         >
-          <CalendarDays className="h-4 w-4 text-muted-foreground" />
+          <CalendarIcon className="h-4 w-4 text-muted-foreground" />
           <span className="tabular-nums" dir="ltr">{label}</span>
           {hasRange ? (
-            <X
+            <CloseIcon
               className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground"
               onClick={(e) => {
                 e.stopPropagation();

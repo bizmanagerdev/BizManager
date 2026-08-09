@@ -3,7 +3,7 @@ import { toHebrewError } from "@/lib/error-messages";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Eye, EyeOff, Trash2 } from "lucide-react";
+import { DeleteIcon, HideIcon, ShowIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -42,6 +42,7 @@ import {
   type SalaryAgreementRow,
   type WorkSessionRow,
 } from "@/lib/payroll";
+import { EditButton } from "@/components/ui/icon-button";
 
 type Props = {
   profile: UserProfile;
@@ -774,9 +775,7 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
               <div className="min-w-0 text-base font-semibold">{detailsName || "—"}</div>
             </div>
             {!editingDetails ? (
-              <Button variant="secondary" size="sm" onClick={() => setEditingDetails(true)}>
-                עריכה
-              </Button>
+              <EditButton onClick={() => setEditingDetails(true)} label="עריכת פרטים" />
             ) : null}
           </div>
 
@@ -873,7 +872,7 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
                     aria-label={showPasswords ? "הסתר סיסמה" : "הצג סיסמה"}
                     tabIndex={-1}
                   >
-                    {showPasswords ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    {showPasswords ? <HideIcon className="h-4 w-4" /> : <ShowIcon className="h-4 w-4" />}
                   </button>
                 </div>
               </div>
@@ -1085,7 +1084,7 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
                       disabled={isPending}
                       onClick={() => setPendingDeleteSessionId(session.id)}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <DeleteIcon className="h-4 w-4" />
                       מחיקה
                     </Button>
                   </div>

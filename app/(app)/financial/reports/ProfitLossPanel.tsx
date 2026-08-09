@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Download, Printer } from "lucide-react";
+import { DownloadIcon, PrintIcon } from "@/components/ui/icons";
 import DomainBarChart from "@/components/charts/DomainBarChart";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -225,11 +225,11 @@ export default function ProfitLossPanel({
         </span>
         <div className="flex items-center gap-2">
           <Button type="button" variant="outline" size="sm" onClick={exportCsv}>
-            <Download className="ml-1 h-4 w-4" />
+            <DownloadIcon className="ml-1 h-4 w-4" />
             ייצוא CSV
           </Button>
           <Button type="button" size="sm" onClick={() => window.print()}>
-            <Printer className="ml-1 h-4 w-4" />
+            <PrintIcon className="ml-1 h-4 w-4" />
             הדפסה / PDF
           </Button>
         </div>

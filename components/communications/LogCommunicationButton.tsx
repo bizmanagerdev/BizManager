@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Phone } from "lucide-react";
+import { PhoneIcon } from "@/components/ui/icons";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -170,7 +170,7 @@ export default function LogCommunicationButton({
           aria-label="תיעוד שיחה"
           onClick={() => setOpen(true)}
         >
-          <Phone className="h-4 w-4 text-success" />
+          <PhoneIcon className="h-4 w-4 text-success" />
           {iconOnly ? null : <span className="ms-1">תיעוד שיחה</span>}
         </Button>
       )}

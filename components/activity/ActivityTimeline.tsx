@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Bell, Phone } from "lucide-react";
+import { NotificationIcon, PhoneIcon } from "@/components/ui/icons";
 import { toHebrewError } from "@/lib/error-messages";
 import { Badge } from "@/components/ui/badge";
 import { directionBadgeVariant, directionLabel } from "@/lib/communications";
@@ -66,7 +66,7 @@ export default function ActivityTimeline({
   return (
     <ol className="space-y-2">
       {items.map((e) => {
-        const Icon = e.kind === "reminder" ? Bell : Phone;
+        const Icon = e.kind === "reminder" ? NotificationIcon : PhoneIcon;
         return (
           <li key={`${e.kind}-${e.id}`} className="flex items-start gap-3 rounded-xl border border-border/60 p-3">
             <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />

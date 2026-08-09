@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { toHebrewError } from "@/lib/error-messages";
 import { Card, CardContent } from "@/components/ui/card";
@@ -274,9 +275,7 @@ export default function RecurringTasksClient(props: Props) {
                           {getBusinessDomainLabel(template.business_domain)} • {linkedLabel}
                         </div>
                       </div>
-                      <Button type="button" variant="outline" size="sm" onClick={() => openEdit(template)}>
-                        עריכה
-                      </Button>
+                      <EditButton onClick={() => openEdit(template)} />
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusBadge value={template.default_priority} type="priority" />
@@ -368,12 +367,8 @@ export default function RecurringTasksClient(props: Props) {
                       <td className="px-3 py-2">{template.is_active ? "כן" : "לא"}</td>
                       <td className="px-3 py-2 whitespace-nowrap">
                         <div className="flex gap-2">
-                          <Button type="button" variant="outline" size="sm" onClick={() => openEdit(template)}>
-                            עריכה
-                          </Button>
-                          <Button type="button" variant="destructive" size="sm" onClick={() => setPendingDeleteId(template.id)}>
-                            מחיקה
-                          </Button>
+                          <EditButton onClick={() => openEdit(template)} />
+                          <DeleteButton onClick={() => setPendingDeleteId(template.id)} />
                         </div>
                       </td>
                     </tr>

@@ -2,7 +2,7 @@ import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { getRecentCommunications } from "@/lib/communications";
 import { PageStack } from "@/components/layout/page-layout";
-import { MessageCircle } from "lucide-react";
+import { ChatIcon } from "@/components/ui/icons";
 import CommunicationsClient from "@/app/(app)/communications/CommunicationsClient";
 
 export const revalidate = 30;
@@ -27,7 +27,7 @@ export default async function CommunicationsPage() {
       <PageStack>
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <MessageCircle className="h-6 w-6" />
+            <ChatIcon className="h-6 w-6" />
             תיעוד פניות
           </h1>
           <p className="text-sm text-muted-foreground">כל השיחות, ההודעות והפגישות מכל חלקי המערכת — מסוננות לפי נושא.</p>

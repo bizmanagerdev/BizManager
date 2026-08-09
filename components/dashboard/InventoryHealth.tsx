@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { PackageX, PackageMinus, Boxes, type LucideIcon } from "lucide-react";
+import { InventoryIcon, StockDownIcon, StockOutIcon } from "@/components/ui/icons";
+import type { IconComponent } from "@/components/ui/icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { InventoryHealth as InventoryHealthData, InventoryItem } from "@/lib/dashboard/inventory-health";
@@ -21,28 +22,28 @@ export default function InventoryHealth({ data }: { data: InventoryHealthData })
     value: number;
     label: string;
     detail: string;
-    icon: LucideIcon;
+    icon: IconComponent;
     color: string;
   }[] = [
     {
       value: data.lowStockCount,
       label: "מוצרים במלאי נמוך",
       detail: itemsPreview(data.lowStock, "המלאי תקין"),
-      icon: PackageMinus,
+      icon: StockDownIcon,
       color: "text-warning",
     },
     {
       value: data.outOfStockCount,
       label: "אזלו מהמלאי",
       detail: itemsPreview(data.outOfStock, "אין חוסרים"),
-      icon: PackageX,
+      icon: StockOutIcon,
       color: "text-destructive",
     },
     {
       value: data.reservedProducts,
       label: "מוצרים שמורים",
       detail: "הוקצו להזמנות פתוחות",
-      icon: Boxes,
+      icon: InventoryIcon,
       color: "text-secondary",
     },
   ];
@@ -52,7 +53,7 @@ export default function InventoryHealth({ data }: { data: InventoryHealthData })
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <Boxes className="h-5 w-5 text-muted-foreground" />
+            <InventoryIcon className="h-5 w-5 text-muted-foreground" />
             <CardTitle className="text-lg">בריאות המלאי</CardTitle>
           </div>
           <Link href="/inventory" className="text-sm text-secondary hover:underline">

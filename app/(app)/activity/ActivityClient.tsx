@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Fragment, useEffect, useRef, useState, useTransition } from "react";
-import { ChevronDown, SlidersHorizontal } from "lucide-react";
+import { ChevronDownIcon, FilterIcon } from "@/components/ui/icons";
 import { Badge } from "@/components/ui/badge";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
@@ -603,7 +603,7 @@ export default function ActivityClient({
             }
             onClick={() => setMobileFiltersOpen((current) => !current)}
           >
-            <SlidersHorizontal className="h-4 w-4" />
+            <FilterIcon className="h-4 w-4" />
             <span className="text-xs">סינון</span>
             {activeFilterCount > 0 && (
               <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-secondary px-1 text-[10px] font-semibold text-secondary-foreground">
@@ -796,7 +796,7 @@ export default function ActivityClient({
                             onClick={() => toggleExpanded(node.id)}
                             className="inline-flex items-center gap-1 text-sm font-medium text-foreground hover:text-secondary"
                           >
-                            <ChevronDown
+                            <ChevronDownIcon
                               className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
                             />
                             {`${node.rows.length} עדכוני מערכת`}
@@ -869,7 +869,7 @@ export default function ActivityClient({
                               }}
                               className="ms-2 inline-flex items-center gap-0.5 align-middle text-xs text-muted-foreground hover:text-foreground"
                             >
-                              <ChevronDown
+                              <ChevronDownIcon
                                 className={`h-3 w-3 transition-transform ${isExpanded ? "rotate-180" : ""}`}
                               />
                               {isExpanded ? "הסתר" : `+${children.length}`}
@@ -942,7 +942,7 @@ export default function ActivityClient({
                         onClick={() => toggleExpanded(node.id)}
                         className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                       >
-                        <ChevronDown
+                        <ChevronDownIcon
                           className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
                         />
                         {isExpanded ? "הסתר" : `הצג ${node.rows.length} עדכונים`}
@@ -973,7 +973,7 @@ export default function ActivityClient({
                         onClick={() => toggleExpanded(header.id)}
                         className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                       >
-                        <ChevronDown
+                        <ChevronDownIcon
                           className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
                         />
                         {isExpanded ? "הסתר שינויים" : `ועוד ${children.length} שינויים נלווים`}

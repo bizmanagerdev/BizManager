@@ -3,7 +3,6 @@ import AppShell from "@/components/layout/AppShell";
 import MorningCustomerCard from "@/components/morning/MorningCustomerCard";
 import { AddressLink } from "@/components/ui/address-link";
 import { ContactLink } from "@/components/ui/contact-link";
-import { WazeIcon } from "@/components/ui/waze-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CustomerDeliveryDetails } from "./CustomerDeliveryDetails";
@@ -30,22 +29,7 @@ import {
 import { paymentTermsLabel } from "@/lib/paymentTerms";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import type { MorningLocalDocument } from "@/lib/morning/types";
-import {
-  AlertTriangle,
-  ChevronLeft,
-  Clock,
-  FileText,
-  FolderKanban,
-  HandCoins,
-  History,
-  Mail,
-  MessageCircle,
-  PencilLine,
-  Phone,
-  PhoneCall,
-  ShoppingCart,
-  UserRound,
-} from "lucide-react";
+import { ChatIcon, ChevronLeftIcon, ClockIcon, DocumentIcon, HistoryIcon, MailIcon, NoteIcon, OrderIcon, PaymentIcon, PhoneCallIcon, PhoneIcon, ProjectIcon, UserIcon, WarningIcon, WazeIcon } from "@/components/ui/icons";
 import { getEntityAuditTrail } from "@/lib/audit";
 import EntityActivityTimeline from "@/app/(app)/activity/EntityActivityTimeline";
 import { notFound } from "next/navigation";
@@ -624,7 +608,7 @@ export default async function CustomerDetailsPage({
               <Link href={returnCustomersHref} className="hover:text-foreground hover:underline">
                 לקוחות
               </Link>
-              <ChevronLeft className="h-3.5 w-3.5" />
+              <ChevronLeftIcon className="h-3.5 w-3.5" />
               <h1 className="truncate text-lg font-bold text-foreground">{customerName}</h1>
             </nav>
             <p className="text-xs text-muted-foreground">
@@ -674,7 +658,7 @@ export default async function CustomerDetailsPage({
           <section className="grid grid-cols-1 overflow-hidden rounded-3xl border border-destructive/20 shadow-sm lg:grid-cols-[minmax(180px,1fr)_2fr_minmax(180px,1fr)]">
             <div className="space-y-1 bg-destructive-soft/60 p-4">
               <div className="flex items-center gap-1.5 text-sm font-semibold text-destructive">
-                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <WarningIcon className="h-4 w-4 shrink-0" />
                 חוב פתוח
               </div>
               <div className="text-2xl font-bold text-destructive">{formatCurrency(openBalance)}</div>
@@ -717,7 +701,7 @@ export default async function CustomerDetailsPage({
             <div className="flex flex-col items-start justify-center gap-2 bg-destructive-soft/60 p-4">
               {maxDaysLate > 0 ? (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-destructive px-3 py-1 text-xs font-semibold text-destructive-foreground">
-                  <Clock className="h-3.5 w-3.5" />
+                  <ClockIcon className="h-3.5 w-3.5" />
                   {maxDaysLate} ימים באיחור
                 </span>
               ) : null}
@@ -727,7 +711,7 @@ export default async function CustomerDetailsPage({
               {canManageCollections ? (
                 <Button asChild size="sm">
                   <a href="#collection-tracking">
-                    <PhoneCall className="h-4 w-4" />
+                    <PhoneCallIcon className="h-4 w-4" />
                     פעולות גבייה
                   </a>
                 </Button>
@@ -743,7 +727,7 @@ export default async function CustomerDetailsPage({
           <section className="rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <UserRound className="h-4 w-4 text-primary" />
+                <UserIcon className="h-4 w-4 text-primary" />
                 <h2 className="text-sm font-semibold">מאזן מול העסק</h2>
                 {linkedWorker ? (
                   <span className="text-xs text-muted-foreground">לקוח שהוא גם עובד</span>
@@ -846,7 +830,7 @@ export default async function CustomerDetailsPage({
           <div className="space-y-3 lg:col-span-2">
             {orders.length === 0 ? (
               <EmptySectionRow
-                icon={<ShoppingCart className="h-4 w-4" />}
+                icon={<OrderIcon className="h-4 w-4" />}
                 title="הזמנות"
                 hint="אין הזמנות ללקוח זה"
                 action={
@@ -857,7 +841,7 @@ export default async function CustomerDetailsPage({
               />
             ) : (
               <SectionCard
-                icon={<ShoppingCart className="h-4 w-4" />}
+                icon={<OrderIcon className="h-4 w-4" />}
                 title="הזמנות"
                 aside={
                   <div className="flex items-center gap-2">
@@ -927,7 +911,7 @@ export default async function CustomerDetailsPage({
 
             {projectInfos.length === 0 ? (
               <EmptySectionRow
-                icon={<FolderKanban className="h-4 w-4" />}
+                icon={<ProjectIcon className="h-4 w-4" />}
                 title="פרויקטים"
                 hint="אין פרויקטים ללקוח זה"
                 action={
@@ -938,7 +922,7 @@ export default async function CustomerDetailsPage({
               />
             ) : (
               <SectionCard
-                icon={<FolderKanban className="h-4 w-4" />}
+                icon={<ProjectIcon className="h-4 w-4" />}
                 title="פרויקטים"
                 aside={
                   <div className="flex items-center gap-2">
@@ -1006,7 +990,7 @@ export default async function CustomerDetailsPage({
             {canManageCollections ? (
               <SectionCard
                 id="collection-tracking"
-                icon={<PhoneCall className="h-4 w-4" />}
+                icon={<PhoneCallIcon className="h-4 w-4" />}
                 title="שיחות ותזכורות"
               >
                 <CustomerCollectionSection
@@ -1020,7 +1004,7 @@ export default async function CustomerDetailsPage({
             {canManageCollections ? (
               <SectionCard
                 id="payment-promises"
-                icon={<HandCoins className="h-4 w-4" />}
+                icon={<PaymentIcon className="h-4 w-4" />}
                 title="הבטחות תשלום"
               >
                 <PaymentPromises customerId={id} promises={paymentPromises} />
@@ -1029,13 +1013,13 @@ export default async function CustomerDetailsPage({
 
             {allPayments.length === 0 ? (
               <EmptySectionRow
-                icon={<HandCoins className="h-4 w-4" />}
+                icon={<PaymentIcon className="h-4 w-4" />}
                 title="תשלומים"
                 hint="אין תשלומים ללקוח זה"
               />
             ) : (
               <SectionCard
-                icon={<HandCoins className="h-4 w-4" />}
+                icon={<PaymentIcon className="h-4 w-4" />}
                 title="תשלומים אחרונים"
                 aside={<CountPill>{allPayments.length} תשלומים</CountPill>}
               >
@@ -1121,7 +1105,7 @@ export default async function CustomerDetailsPage({
 
             {profile.role === "admin" ? (
               <SectionCard
-                icon={<History className="h-4 w-4" />}
+                icon={<HistoryIcon className="h-4 w-4" />}
                 title="היסטוריית פעילות"
                 aside={
                   customerActivity.length > 0 ? (
@@ -1139,15 +1123,11 @@ export default async function CustomerDetailsPage({
             <div className="space-y-2 rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <UserRound className="h-4 w-4 text-primary" />
+                  <UserIcon className="h-4 w-4 text-primary" />
                   <h2 className="text-sm font-semibold">פרטי לקוח</h2>
                 </div>
                 <div className="flex shrink-0 gap-1.5">
-                  <EditCustomerButton
-                    iconOnly
-                    customer={editButtonCustomer}
-                    className="h-8 w-8 rounded-full border-border/60 bg-background"
-                  />
+                  <EditCustomerButton customer={editButtonCustomer} />
                   <DeleteCustomerButton
                     customerId={id}
                     customerName={customerName}
@@ -1187,12 +1167,12 @@ export default async function CustomerDetailsPage({
                     value={customerPhone}
                     className="flex items-center gap-1.5 py-0.5 hover:text-primary"
                   >
-                    <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <PhoneIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span dir="ltr" className="font-medium">{customerPhone}</span>
                   </ContactLink>
                 ) : (
                   <div className="flex items-center gap-1.5 py-0.5">
-                    <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <PhoneIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span className="text-muted-foreground">-</span>
                   </div>
                 )}
@@ -1205,12 +1185,12 @@ export default async function CustomerDetailsPage({
                     className="flex items-center gap-1.5 py-0.5 hover:text-primary"
                     title="פתיחת וואטסאפ"
                   >
-                    <MessageCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <ChatIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span dir="ltr" className="font-medium">{customerWhatsapp}</span>
                   </a>
                 ) : (
                   <div className="flex items-center gap-1.5 py-0.5">
-                    <MessageCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <ChatIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span className="text-muted-foreground">-</span>
                   </div>
                 )}
@@ -1221,12 +1201,12 @@ export default async function CustomerDetailsPage({
                     value={customerEmail}
                     className="flex items-center gap-1.5 py-0.5 hover:text-primary"
                   >
-                    <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <MailIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span dir="ltr" className="truncate font-medium">{customerEmail}</span>
                   </ContactLink>
                 ) : (
                   <div className="flex items-center gap-1.5 py-0.5">
-                    <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <MailIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span className="text-muted-foreground">-</span>
                   </div>
                 )}
@@ -1252,7 +1232,7 @@ export default async function CustomerDetailsPage({
                     href={`/payroll/workers/${encodeURIComponent(linkedWorker.id)}`}
                     className="flex items-center gap-1.5 py-0.5 hover:text-primary"
                   >
-                    <UserRound className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <UserIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span className="font-medium">עובד בעסק: {linkedWorker.name}</span>
                   </Link>
                 ) : null}
@@ -1268,14 +1248,14 @@ export default async function CustomerDetailsPage({
 
             {activeContacts.length === 0 && inactiveContacts.length === 0 ? (
               <EmptySectionRow
-                icon={<UserRound className="h-4 w-4" />}
+                icon={<UserIcon className="h-4 w-4" />}
                 title="אנשי קשר"
                 hint="אין אנשי קשר ללקוח זה"
                 action={<AddContactButton customerId={id} customerName={customerName} />}
               />
             ) : (
               <SectionCard
-                icon={<UserRound className="h-4 w-4" />}
+                icon={<UserIcon className="h-4 w-4" />}
                 title="אנשי קשר"
                 aside={
                   <div className="flex items-center gap-2">
@@ -1335,14 +1315,14 @@ export default async function CustomerDetailsPage({
 
             {customerDocuments.length === 0 ? (
               <EmptySectionRow
-                icon={<FileText className="h-4 w-4" />}
+                icon={<DocumentIcon className="h-4 w-4" />}
                 title="מסמכים"
                 hint="אין מסמכים ללקוח זה"
                 action={<AddCustomerDocumentButton customerId={id} customerName={customerName} />}
               />
             ) : (
               <SectionCard
-                icon={<FileText className="h-4 w-4" />}
+                icon={<DocumentIcon className="h-4 w-4" />}
                 title="מסמכים"
                 aside={
                   <div className="flex items-center gap-2">
@@ -1403,7 +1383,7 @@ export default async function CustomerDetailsPage({
               </SectionCard>
             )}
 
-            <SectionCard icon={<PencilLine className="h-4 w-4" />} title="הערות">
+            <SectionCard icon={<NoteIcon className="h-4 w-4" />} title="הערות">
               <CustomerNotesEditor customerId={id} initialNotes={notes || null} />
             </SectionCard>
 

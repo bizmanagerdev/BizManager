@@ -15,7 +15,7 @@ import { SwipeActions } from "@/components/ui/swipe-actions";
 import { NativeSelect } from "@/components/ui/native-select";
 import { loadMoreProjects } from "@/app/(app)/projects/actions";
 import type { ProjectsFilters } from "@/app/(app)/projects/loadProjects";
-import { CheckCircle2, FileText, FolderKanban, MessageCircle, Pencil, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { AddIcon, ChatIcon, DeleteIcon, DocumentIcon, EditIcon, FilterIcon, ProjectIcon, SearchIcon, SuccessIcon } from "@/components/ui/icons";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { paymentStatusClasses, collectionStatusClasses, collectionStatusLabel } from "@/lib/orders/paymentStatus";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
@@ -45,6 +45,7 @@ import AddReminderButton from "@/components/reminders/AddReminderButton";
 import LogCommunicationButton from "@/components/communications/LogCommunicationButton";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import NewProjectClient, { type ProjectCustomerOption, type InitialProject } from "@/app/(app)/projects/NewProjectClient";
+import { EditButton } from "@/components/ui/icon-button";
 
 type ProjectRow = Record<string, unknown>;
 type Option = { id: string; label: string; phone?: string | null; whatsapp?: string | null; email?: string | null; name_for_invoice?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> };
@@ -602,9 +603,9 @@ export default function ProjectsClient({
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <div className="hidden md:block">
           <TabsList variant="underline" className="justify-center">
-            <TabsTrigger value="quotes"><FileText className="h-4 w-4" />הצעות ({quoteCount})</TabsTrigger>
-            <TabsTrigger value="projects"><FolderKanban className="h-4 w-4" />פרויקטים ({projectCount})</TabsTrigger>
-            <TabsTrigger value="closed"><CheckCircle2 className="h-4 w-4" />סגורים ({closedCount})</TabsTrigger>
+            <TabsTrigger value="quotes"><DocumentIcon className="h-4 w-4" />הצעות ({quoteCount})</TabsTrigger>
+            <TabsTrigger value="projects"><ProjectIcon className="h-4 w-4" />פרויקטים ({projectCount})</TabsTrigger>
+            <TabsTrigger value="closed"><SuccessIcon className="h-4 w-4" />סגורים ({closedCount})</TabsTrigger>
           </TabsList>
         </div>
 
@@ -623,11 +624,11 @@ export default function ProjectsClient({
             className="h-10 shrink-0 gap-1 rounded-xl px-2.5"
             onClick={() => openCreateDialog(activeTab)}
           >
-            <Plus className="h-4 w-4" />
+            <AddIcon className="h-4 w-4" />
             <span className="text-xs">{activeTab === "quotes" ? "הצעה" : "פרויקט"}</span>
           </Button>
           <div className="relative w-full min-w-0 max-w-[13rem]">
-            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
+            <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -648,7 +649,7 @@ export default function ProjectsClient({
             }
             onClick={() => setMobileFiltersOpen((current) => !current)}
           >
-            <SlidersHorizontal className="h-4 w-4" />
+            <FilterIcon className="h-4 w-4" />
           </Button>
           </div>
         </PageHeaderToolbar>
@@ -658,13 +659,13 @@ export default function ProjectsClient({
             — without adding a third navy row to an already heavy header. */}
         <TabsList variant="underline" className="justify-start md:hidden">
           <TabsTrigger value="quotes" className="!text-sm">
-            <FileText className="h-4 w-4" />הצעות ({quoteCount})
+            <DocumentIcon className="h-4 w-4" />הצעות ({quoteCount})
           </TabsTrigger>
           <TabsTrigger value="projects" className="!text-sm">
-            <FolderKanban className="h-4 w-4" />פרויקטים ({projectCount})
+            <ProjectIcon className="h-4 w-4" />פרויקטים ({projectCount})
           </TabsTrigger>
           <TabsTrigger value="closed" className="!text-sm">
-            <CheckCircle2 className="h-4 w-4" />סגורים ({closedCount})
+            <SuccessIcon className="h-4 w-4" />סגורים ({closedCount})
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -745,7 +746,7 @@ export default function ProjectsClient({
               {offline ? <StaleDataBadge savedAt={savedAt} /> : null}
             </div>
             <div className="relative mt-1">
-              <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <SearchIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -928,7 +929,7 @@ export default function ProjectsClient({
                               prefetch
                               onClick={() => emitNavigationStart()}
                             >
-                              <MessageCircle className="h-4 w-4" />
+                              <ChatIcon className="h-4 w-4" />
                             </Link>
                           </Button>
                           <Button
@@ -945,7 +946,7 @@ export default function ProjectsClient({
                               prefetch
                               onClick={() => emitNavigationStart()}
                             >
-                              <FileText className="h-4 w-4" />
+                              <DocumentIcon className="h-4 w-4" />
                             </Link>
                           </Button>
                         </div>
@@ -969,17 +970,7 @@ export default function ProjectsClient({
                           className="h-9 w-9 rounded-xl p-0"
                           iconOnly
                         />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          className="h-9 w-9 rounded-xl"
-                          onClick={() => openEditProject(row)}
-                          aria-label={currentStatus === "quote" ? "עריכת הצעת מחיר" : "עריכת פרויקט"}
-                          title={currentStatus === "quote" ? "עריכת הצעת מחיר" : "עריכת פרויקט"}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
+                        <EditButton onClick={() => openEditProject(row)} label={currentStatus === "quote" ? "עריכת הצעת מחיר" : "עריכת פרויקט"} />
                         <DeleteProjectButton
                           projectId={id}
                           projectName={projectDisplayName(row)}
@@ -988,7 +979,7 @@ export default function ProjectsClient({
                           ariaLabel={currentStatus === "quote" ? "מחיקת הצעת מחיר" : "מחיקת פרויקט"}
                           onDeleted={() => removeProject(id)}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <DeleteIcon className="h-4 w-4" />
                         </DeleteProjectButton>
                       </div>
                     </td>
@@ -1033,14 +1024,14 @@ export default function ProjectsClient({
               ? {
                   key: "approve",
                   label: "אישור",
-                  icon: <CheckCircle2 className="h-5 w-5" />,
+                  icon: <SuccessIcon className="h-5 w-5" />,
                   className: "bg-secondary",
                   onSelect: () => openApproveQuote(row),
                 }
               : {
                   key: "sheet",
                   label: "דף עבודה",
-                  icon: <FileText className="h-5 w-5" />,
+                  icon: <DocumentIcon className="h-5 w-5" />,
                   className: "bg-secondary",
                   onSelect: () => {
                     emitNavigationStart();
@@ -1050,7 +1041,7 @@ export default function ProjectsClient({
             {
               key: "edit",
               label: "עריכה",
-              icon: <Pencil className="h-5 w-5" />,
+              icon: <EditIcon className="h-5 w-5" />,
               className: "bg-secondary-2",
               onSelect: () => openEditProject(row),
             },

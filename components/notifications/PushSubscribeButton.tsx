@@ -9,6 +9,7 @@ import {
   disableNativePush,
   nativePermissionStatus,
 } from "@/lib/native-push";
+import { ShareIcon } from "@/components/ui/icons";
 
 type Status = "loading" | "unsupported" | "denied" | "subscribed" | "unsubscribed";
 
@@ -52,7 +53,7 @@ function IOSInstallWarning() {
       <p className="font-semibold">כדי לקבל התראות באייפון צריך להתקין את האפליקציה למסך הבית</p>
       <p className="mt-1 leading-relaxed">
         באייפון, התראות עובדות רק כשהאתר מותקן כאפליקציה. פתחו את BizManager בדפדפן Safari, לחצו על
-        כפתור השיתוף <span className="font-semibold">⬆️</span> ← בחרו{" "}
+        כפתור השיתוף <ShareIcon className="inline h-3.5 w-3.5 align-text-bottom" /> ← בחרו{" "}
         <span className="font-semibold">״הוסף למסך הבית״</span>, ואז פתחו את האפליקציה מסמל שנוצר —
         ורק אז הפעילו התראות.
       </p>

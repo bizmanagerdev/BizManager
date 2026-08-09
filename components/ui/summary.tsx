@@ -4,8 +4,8 @@
 // and customer wizards so a summary reads the same wherever it appears.
 
 import type { ReactNode } from "react";
-import { Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { EditButton } from "@/components/ui/icon-button";
 
 /** Titled card holding a divided list of SummaryRows. */
 export function SummarySection({
@@ -33,16 +33,7 @@ export function SummarySection({
         {icon ? <span className="text-muted-foreground">{icon}</span> : null}
         <span className="min-w-0 flex-1">{title}</span>
         {onEdit ? (
-          <button
-            type="button"
-            onClick={onEdit}
-            disabled={editDisabled}
-            aria-label={editLabel ?? `עריכת ${title}`}
-            title={editLabel ?? `עריכת ${title}`}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </button>
+          <EditButton onClick={onEdit} disabled={editDisabled} label={editLabel ?? `עריכת ${title}`} />
         ) : null}
       </div>
       <div className="divide-y rounded-xl border">{children}</div>

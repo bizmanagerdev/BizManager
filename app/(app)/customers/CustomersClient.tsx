@@ -22,15 +22,15 @@ import StaleDataBadge from "@/components/layout/StaleDataBadge";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
-import { ChevronLeft, FolderKanban, Pencil, Plus, Search, ShoppingCart, SlidersHorizontal, X } from "lucide-react";
+import { AddIcon, ChevronLeftIcon, CloseIcon, EditIcon, FilterIcon, OrderIcon, ProjectIcon, SearchIcon, WazeIcon } from "@/components/ui/icons";
 import { Card } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
 import { SwipeActions } from "@/components/ui/swipe-actions";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 import { AddressLink } from "@/components/ui/address-link";
-import { WazeIcon } from "@/components/ui/waze-icon";
 import { Button } from "@/components/ui/button";
+import { EditButton } from "@/components/ui/icon-button";
 import { Field } from "@/components/ui/field";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { Input } from "@/components/ui/input";
@@ -427,13 +427,13 @@ export default function CustomersClient({
             className="h-10 shrink-0 gap-1 rounded-xl px-2.5"
             onClick={() => setCreateOpen(true)}
           >
-            <Plus className="h-4 w-4" />
+            <AddIcon className="h-4 w-4" />
             <span className="text-xs">לקוח</span>
           </Button>
           {/* Icon + a short "חיפוש..." — what it searches over is discoverable by
               using it, and spelling out every field ate the whole bar. */}
           <div className="relative w-full min-w-0 max-w-[13rem]">
-            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
+            <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -453,7 +453,7 @@ export default function CustomersClient({
             }
             onClick={() => setFiltersOpen((x) => !x)}
           >
-            <SlidersHorizontal className="h-4 w-4" />
+            <FilterIcon className="h-4 w-4" />
           </Button>
         </div>
         {indexStale ? (
@@ -517,7 +517,7 @@ export default function CustomersClient({
                 className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground"
                 onClick={() => setFiltersOpen(false)}
               >
-                <X className="h-4 w-4" />
+                <CloseIcon className="h-4 w-4" />
               </button>
             </div>
             <div className="grid grid-cols-2 gap-3">{filterFields}</div>
@@ -574,21 +574,21 @@ export default function CustomersClient({
                 {
                   key: "project",
                   label: "פרויקט",
-                  icon: <FolderKanban className="h-5 w-5" />,
+                  icon: <ProjectIcon className="h-5 w-5" />,
                   className: "bg-secondary",
                   onSelect: () => router.push(`/projects?create=1&customer_id=${encodeURIComponent(id)}`),
                 },
                 {
                   key: "order",
                   label: "הזמנה",
-                  icon: <ShoppingCart className="h-5 w-5" />,
+                  icon: <OrderIcon className="h-5 w-5" />,
                   className: "bg-secondary-3",
                   onSelect: () => router.push(`/sales/orders/new?customer_id=${encodeURIComponent(id)}`),
                 },
                 {
                   key: "edit",
                   label: "עריכה",
-                  icon: <Pencil className="h-5 w-5" />,
+                  icon: <EditIcon className="h-5 w-5" />,
                   className: "bg-secondary-2",
                   onSelect: () => openEdit(row),
                 },
@@ -629,7 +629,7 @@ export default function CustomersClient({
                   </div>
                   <div className="text-[10px] text-muted-foreground">{openBalance > 0 ? "יתרה" : "אין יתרה"}</div>
                 </div>
-                <ChevronLeft className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <ChevronLeftIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
               </button>
             </SwipeActions>
           );
@@ -1020,10 +1020,12 @@ function CustomerDetailsDialog({
                     valueClassName="whitespace-pre-wrap"
                   />
                 </div>
-                <div className="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-2">
-                  <Button type="button" size="sm" variant="outline" onClick={() => onEdit(row)}>
-                    עריכת לקוח
-                  </Button>
+                {/* Edit is the pencil, as everywhere else — so it sits beside the
+                    navigation buttons rather than posing as one of them. */}
+                <div className="flex justify-end pt-1">
+                  <EditButton onClick={() => onEdit(row)} label="עריכת לקוח" />
+                </div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <Button
                     type="button"
                     variant="outline"

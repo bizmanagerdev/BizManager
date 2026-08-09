@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
-import { AlertTriangle, Banknote, CalendarCheck, Coins, Hammer, LockKeyhole, Pencil, Plus, Printer, Receipt, SlidersHorizontal, Trash2, Users, Wallet } from "lucide-react";
+import { AddIcon, CalendarCheckIcon, CashIcon, CoinsIcon, DeleteIcon, FilterIcon, LaborIcon, LockIcon, PrintIcon, ReceiptIcon, UsersIcon, WalletIcon, WarningIcon } from "@/components/ui/icons";
 import SalaryProtected from "@/components/payroll/SalaryProtected";
 import SessionEditorDialog from "./SessionEditorDialog";
 import { Badge } from "@/components/ui/badge";
@@ -67,6 +67,7 @@ import {
   type WorkerPaymentRow,
 } from "@/lib/payroll-center";
 import { toHebrewError } from "@/lib/error-messages";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import type {
   Props,
   SessionFormState,
@@ -188,9 +189,6 @@ const DEFAULT_WORKER_PRINT_FILTERS: WorkerPrintFilters = {
   month: "",
   year: "",
 };
-
-const SOLID_EDIT_BUTTON_CLASS =
-  "border-primary bg-primary text-primary-foreground hover:border-primary hover:bg-primary/90 hover:text-primary-foreground";
 
 export default function SalaryCenterClient({
   viewerRole,
@@ -2194,19 +2192,19 @@ export default function SalaryCenterClient({
         <div className="flex flex-wrap justify-center gap-2">
           {canCreateUsers ? (
             <Button variant="outline" onClick={() => setCreateUserOpen(true)}>
-              <Plus className="ms-2 h-4 w-4" />
+              <AddIcon className="ms-2 h-4 w-4" />
               {"הוספת משתמש"}
             </Button>
           ) : null}
           {canManageAttendance ? (
             <Button onClick={() => openCreateSession()}>
-              <Plus className="h-4 w-4" />
+              <AddIcon className="h-4 w-4" />
               {"הוספת משמרת"}
             </Button>
           ) : null}
           {false ? (
             <Button variant="outline" onClick={() => lockSalaryData()}>
-              <LockKeyhole className="h-4 w-4" />
+              <LockIcon className="h-4 w-4" />
               {"נעילת נתוני שכר"}
             </Button>
           ) : null}
@@ -2226,11 +2224,11 @@ export default function SalaryCenterClient({
 
       <Tabs value={activeTab} onValueChange={setActiveTab} dir="rtl">
         <TabsList variant="underline" className="sm:justify-center">
-          <TabsTrigger value="employees"><Users className="h-4 w-4" />עובדים</TabsTrigger>
-          <TabsTrigger value="labor"><Hammer className="h-4 w-4" />פועלים</TabsTrigger>
-          <TabsTrigger value="attendance"><CalendarCheck className="h-4 w-4" />נוכחות</TabsTrigger>
-          {canManageSalary ? <TabsTrigger value="agreements"><Wallet className="h-4 w-4" />משכורות</TabsTrigger> : null}
-          {canManageSalary ? <TabsTrigger value="payslips"><Receipt className="h-4 w-4" />תקופות ותלושים</TabsTrigger> : null}
+          <TabsTrigger value="employees"><UsersIcon className="h-4 w-4" />עובדים</TabsTrigger>
+          <TabsTrigger value="labor"><LaborIcon className="h-4 w-4" />פועלים</TabsTrigger>
+          <TabsTrigger value="attendance"><CalendarCheckIcon className="h-4 w-4" />נוכחות</TabsTrigger>
+          {canManageSalary ? <TabsTrigger value="agreements"><WalletIcon className="h-4 w-4" />משכורות</TabsTrigger> : null}
+          {canManageSalary ? <TabsTrigger value="payslips"><ReceiptIcon className="h-4 w-4" />תקופות ותלושים</TabsTrigger> : null}
         </TabsList>
 
         <TabsContent value="employees" className="space-y-3">
@@ -2730,7 +2728,7 @@ export default function SalaryCenterClient({
               size="sm"
               onClick={() => setAttendanceFiltersOpen((value) => !value)}
             >
-              <SlidersHorizontal className="ms-2 h-4 w-4" />
+              <FilterIcon className="ms-2 h-4 w-4" />
               {attendanceFiltersOpen ? "הסתרת סינון" : "סינון"}
               {(() => {
                 const activeCount = Object.values(attendanceFilters).filter(Boolean).length;
@@ -2906,16 +2904,7 @@ export default function SalaryCenterClient({
                         </div>
                         {canManageAttendance ? (
                           <div className="mt-3 flex flex-wrap justify-end gap-2">
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              onClick={() => openEditSession(session)}
-                              aria-label="עריכה"
-                              className={SOLID_EDIT_BUTTON_CLASS}
-                              disabled={session.locked || isPending}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
+                            <EditButton onClick={() => openEditSession(session)} disabled={session.locked || isPending} label="עריכה" />
                             {!session.clock_out ? (
                               <Button
                                 variant="ghost"
@@ -2933,7 +2922,7 @@ export default function SalaryCenterClient({
                               aria-label="מחיקה"
                               disabled={session.locked || isPending}
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <DeleteIcon className="h-4 w-4" />
                             </Button>
                           </div>
                         ) : null}
@@ -2982,16 +2971,7 @@ export default function SalaryCenterClient({
                             <td className="px-3 py-3">
                               {canManageAttendance ? (
                                 <div className="flex flex-wrap justify-end gap-2">
-                                  <Button
-                                    variant="outline"
-                                    size="icon"
-                                    onClick={() => openEditSession(session)}
-                                    aria-label="עריכה"
-                                    className={SOLID_EDIT_BUTTON_CLASS}
-                                    disabled={session.locked || isPending}
-                                  >
-                                    <Pencil className="h-4 w-4" />
-                                  </Button>
+                                  <EditButton onClick={() => openEditSession(session)} disabled={session.locked || isPending} label="עריכה" />
                                   {!session.clock_out ? (
                                     <Button
                                       variant="ghost"
@@ -3009,7 +2989,7 @@ export default function SalaryCenterClient({
                                     aria-label="מחיקה"
                                     disabled={session.locked || isPending}
                                   >
-                                    <Trash2 className="h-4 w-4" />
+                                    <DeleteIcon className="h-4 w-4" />
                                   </Button>
                                 </div>
                               ) : (
@@ -3085,7 +3065,7 @@ export default function SalaryCenterClient({
               <CardContent className="space-y-4 py-4">
                 <div className="flex justify-end">
                   <Button onClick={() => openNewAgreementDialog()} disabled={isPending}>
-                    <Plus className="ms-2 h-4 w-4" />
+                    <AddIcon className="ms-2 h-4 w-4" />
                     {"הוספת משכורת"}
                   </Button>
                 </div>
@@ -3120,22 +3100,14 @@ export default function SalaryCenterClient({
                                   {current?.id === agreement.id ? <Tag>{"נוכחי"}</Tag> : null}
                                 </div>
                                 <div className="mt-2 flex justify-end gap-2">
-                                  <Button
-                                    variant="outline"
-                                    size="icon"
-                                    onClick={() => openEditAgreementDialog(agreement)}
-                                    aria-label="עריכה"
-                                    className={SOLID_EDIT_BUTTON_CLASS}
-                                  >
-                                    <Pencil className="h-4 w-4" />
-                                  </Button>
+                                  <EditButton onClick={() => openEditAgreementDialog(agreement)} label="עריכה" />
                                   <Button
                                     variant="destructive"
                                     size="icon"
                                     onClick={() => deleteAgreement(agreement)}
                                     aria-label="מחיקה"
                                   >
-                                    <Trash2 className="h-4 w-4" />
+                                    <DeleteIcon className="h-4 w-4" />
                                   </Button>
                                 </div>
                               </div>
@@ -3180,22 +3152,14 @@ export default function SalaryCenterClient({
                             >
                               <td className="px-3 py-3">
                                 <div className="flex flex-wrap justify-end gap-2">
-                                  <Button
-                                    variant="outline"
-                                    size="icon"
-                                    onClick={() => openEditAgreementDialog(agreement)}
-                                    aria-label="עריכה"
-                                    className={SOLID_EDIT_BUTTON_CLASS}
-                                  >
-                                    <Pencil className="h-4 w-4" />
-                                  </Button>
+                                  <EditButton onClick={() => openEditAgreementDialog(agreement)} label="עריכה" />
                                   <Button
                                     variant="destructive"
                                     size="icon"
                                     onClick={() => deleteAgreement(agreement)}
                                     aria-label="מחיקה"
                                   >
-                                    <Trash2 className="h-4 w-4" />
+                                    <DeleteIcon className="h-4 w-4" />
                                   </Button>
                                 </div>
                               </td>
@@ -3363,7 +3327,7 @@ export default function SalaryCenterClient({
                                       disabled={isPending}
                                       className="text-muted-foreground hover:text-destructive transition-colors"
                                     >
-                                      <Trash2 className="h-3.5 w-3.5" />
+                                      <DeleteIcon className="h-3.5 w-3.5" />
                                     </button>
                                   )}
                                   <span className={isNegative || isException ? "text-destructive font-medium" : "font-medium"}>
@@ -3371,7 +3335,7 @@ export default function SalaryCenterClient({
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-1.5 text-right">
-                                  {isException && <AlertTriangle className="h-3.5 w-3.5 text-warning-soft-foreground shrink-0" />}
+                                  {isException && <WarningIcon className="h-3.5 w-3.5 text-warning-soft-foreground shrink-0" />}
                                   <span className="text-muted-foreground">{item.notes || getPayslipItemTypeLabel(item.item_type)}</span>
                                   <Badge variant="outline" className="text-xs px-1.5 py-0">{getPayslipItemTypeLabel(item.item_type)}</Badge>
                                 </div>
@@ -3702,15 +3666,15 @@ export default function SalaryCenterClient({
                   dir="rtl"
                 >
                   <TabsList variant="underline" className="sm:justify-center">
-                    {canManageSalary ? <TabsTrigger value="finances"><Coins className="h-4 w-4" />כספים</TabsTrigger> : null}
+                    {canManageSalary ? <TabsTrigger value="finances"><CoinsIcon className="h-4 w-4" />כספים</TabsTrigger> : null}
                     {/* Monthly (global) workers are paid a fixed salary and don't track attendance. */}
                     {selectedWorkerType !== "monthly_payslip" ? (
-                      <TabsTrigger value="attendance"><CalendarCheck className="h-4 w-4" />נוכחות</TabsTrigger>
+                      <TabsTrigger value="attendance"><CalendarCheckIcon className="h-4 w-4" />נוכחות</TabsTrigger>
                     ) : null}
                     {canSelectedWorkerHaveAgreement && canManageSalary ? (
-                      <TabsTrigger value="salary"><Banknote className="h-4 w-4" />שכר</TabsTrigger>
+                      <TabsTrigger value="salary"><CashIcon className="h-4 w-4" />שכר</TabsTrigger>
                     ) : null}
-                    <TabsTrigger value="print"><Printer className="h-4 w-4" />הדפסה</TabsTrigger>
+                    <TabsTrigger value="print"><PrintIcon className="h-4 w-4" />הדפסה</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="finances" className="space-y-5">
@@ -3746,12 +3710,8 @@ export default function SalaryCenterClient({
                                   {[payment.payment_method, payment.reference_number].filter(Boolean).join(" • ") || "ללא פירוט"}
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <Button variant="outline" size="sm" onClick={() => openEditWorkerPaymentDialog(payment)}>
-                                    {"ערוך"}
-                                  </Button>
-                                  <Button variant="destructive" size="sm" onClick={() => deleteWorkerPayment(payment)}>
-                                    {"מחק"}
-                                  </Button>
+                                  <EditButton onClick={() => openEditWorkerPaymentDialog(payment)} label="עריכת תשלום" />
+                                  <DeleteButton onClick={() => deleteWorkerPayment(payment)} label="מחיקת תשלום" />
                                 </div>
                               </div>
                               {payment.notes ? <div className="mt-1 text-xs text-muted-foreground">{payment.notes}</div> : null}
@@ -3856,12 +3816,8 @@ export default function SalaryCenterClient({
                           ) : null}
                           {!session.locked ? (
                             <div className="mt-1 flex flex-wrap justify-end gap-2">
-                              <Button variant="outline" size="sm" onClick={() => openEditSession(session)}>
-                                {"עריכה"}
-                              </Button>
-                              <Button variant="ghost" size="sm" onClick={() => deleteSession(session.id)}>
-                                {"מחיקה"}
-                              </Button>
+                              <EditButton onClick={() => openEditSession(session)} label="עריכת משמרת" />
+                              <DeleteButton onClick={() => deleteSession(session.id)} label="מחיקת משמרת" />
                             </div>
                           ) : null}
                               </>
@@ -3895,7 +3851,7 @@ export default function SalaryCenterClient({
                             }
                             disabled={isPending}
                           >
-                            <Plus className="ms-2 h-4 w-4" />
+                            <AddIcon className="ms-2 h-4 w-4" />
                             {"הוספת משכורת חדשה"}
                           </Button>
                           <Button variant="outline" onClick={() => setOverrideDialogOpen(true)} disabled={isPending}>
@@ -3965,22 +3921,14 @@ export default function SalaryCenterClient({
                                           </td>
                                           <td className="px-3 py-2">
                                             <div className="flex gap-2">
-                                              <Button
-                                                variant="outline"
-                                                size="icon"
-                                                onClick={() => openEditAgreementDialog(agreement)}
-                                                aria-label="עריכה"
-                                                className={SOLID_EDIT_BUTTON_CLASS}
-                                              >
-                                                <Pencil className="h-4 w-4" />
-                                              </Button>
+                                              <EditButton onClick={() => openEditAgreementDialog(agreement)} label="עריכה" />
                                               <Button
                                                 variant="destructive"
                                                 size="icon"
                                                 onClick={() => deleteAgreement(agreement)}
                                                 aria-label="מחיקה"
                                               >
-                                                <Trash2 className="h-4 w-4" />
+                                                <DeleteIcon className="h-4 w-4" />
                                               </Button>
                                             </div>
                                           </td>
@@ -4861,22 +4809,8 @@ export default function SalaryCenterClient({
                               ) : null}
                               {payment ? (
                                 <div className="mt-3 flex flex-wrap justify-end gap-2">
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => openEditWorkerPaymentDialog(payment)}
-                                  >
-                                    {"ערוך"}
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="destructive"
-                                    size="sm"
-                                    onClick={() => deleteWorkerPayment(payment)}
-                                  >
-                                    {"מחק"}
-                                  </Button>
+                                  <EditButton onClick={() => openEditWorkerPaymentDialog(payment)} label="עריכת תשלום" />
+                                  <DeleteButton onClick={() => deleteWorkerPayment(payment)} label="מחיקת תשלום" />
                                 </div>
                               ) : null}
                             </div>

@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
-import { Banknote, Check, ChevronDown, Eye, MapPin, Phone } from "lucide-react";
-import { WazeIcon } from "@/components/ui/waze-icon";
+import { CashIcon, CheckIcon, ChevronDownIcon, LocationIcon, PhoneIcon, ShowIcon, WazeIcon } from "@/components/ui/icons";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
@@ -271,7 +270,7 @@ export default function SalesDeliveriesQueue({
                       >
                         <td colSpan={6} className="px-4 py-2">
                           <div className="flex items-center gap-2">
-                            <ChevronDown
+                            <ChevronDownIcon
                               className={`h-4 w-4 shrink-0 transition-transform ${collapsed ? "-rotate-90" : ""}`}
                             />
                             <span className="text-sm font-bold text-foreground">{region}</span>
@@ -385,7 +384,7 @@ export default function SalesDeliveriesQueue({
                                   </span>
                                   {delivery.collectOnDelivery ? (
                                     <span className="inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-semibold text-warning-soft-foreground">
-                                      <Banknote className="h-3.5 w-3.5 shrink-0" />
+                                      <CashIcon className="h-3.5 w-3.5 shrink-0" />
                                       גבייה במסירה
                                     </span>
                                   ) : null}
@@ -408,7 +407,7 @@ export default function SalesDeliveriesQueue({
                                   onClick={() => emitNavigationStart()}
                                 >
                                   <Link href={`/sales/orders/${delivery.id}`}>
-                                    <Eye className="h-4 w-4" />
+                                    <ShowIcon className="h-4 w-4" />
                                   </Link>
                                 </Button>
                                 <OrderConfirmDialog
@@ -418,7 +417,7 @@ export default function SalesDeliveriesQueue({
                                   buttonClassName="gap-1.5"
                                   buttonLabel={
                                     <>
-                                      <Check className="h-4 w-4" />
+                                      <CheckIcon className="h-4 w-4" />
                                       סמן כסופק
                                     </>
                                   }
@@ -456,7 +455,7 @@ export default function SalesDeliveriesQueue({
                 <div key={city} className="space-y-2">
                   <div className="flex items-center justify-between gap-2 px-1">
                     <h3 className="flex min-w-0 items-center gap-1.5 text-base font-bold">
-                      <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <LocationIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
                       <span className="truncate">{city}</span>
                     </h3>
                     <span className="shrink-0 text-xs text-muted-foreground">
@@ -528,7 +527,7 @@ export default function SalesDeliveriesQueue({
                                     }
                                     className="mt-1 flex w-full items-start gap-1 text-right text-xs text-muted-foreground hover:text-foreground"
                                   >
-                                    <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                    <LocationIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                                     <span className="min-w-0">
                                       {group.deliveryInstructions ?? (
                                         <span className="text-secondary">הוספת הוראות הגעה</span>
@@ -552,7 +551,7 @@ export default function SalesDeliveriesQueue({
                                         one column of tap targets instead of zig-zagging
                                         across the card. */}
                                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-success text-success-foreground">
-                                      <Phone className="h-4 w-4" />
+                                      <PhoneIcon className="h-4 w-4" />
                                     </span>
                                     <span className="min-w-0 flex-1">
                                       <span className="block truncate text-sm font-semibold">
@@ -604,7 +603,7 @@ export default function SalesDeliveriesQueue({
                                     {/* The one thing the driver must not miss. */}
                                     {delivery.collectOnDelivery ? (
                                       <span className="inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-semibold text-warning-soft-foreground">
-                                        <Banknote className="h-3.5 w-3.5 shrink-0" />
+                                        <CashIcon className="h-3.5 w-3.5 shrink-0" />
                                         גבייה במסירה
                                       </span>
                                     ) : null}
@@ -681,7 +680,7 @@ export default function SalesDeliveriesQueue({
                                       onClick={() => emitNavigationStart()}
                                     >
                                       <Link href={`/sales/orders/${delivery.id}`}>
-                                        <Eye className="h-4 w-4" />
+                                        <ShowIcon className="h-4 w-4" />
                                       </Link>
                                     </Button>
                                     <OrderConfirmDialog
@@ -691,7 +690,7 @@ export default function SalesDeliveriesQueue({
                                       buttonClassName="ms-auto gap-1.5"
                                       buttonLabel={
                                         <>
-                                          <Check className="h-4 w-4" />
+                                          <CheckIcon className="h-4 w-4" />
                                           סמן כסופק
                                         </>
                                       }

@@ -18,7 +18,7 @@
 
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { Loader2, Minus, Plus } from "lucide-react";
+import { AddIcon, RemoveIcon, SpinnerIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -208,9 +208,9 @@ export default function QuickEntryRow({
               title="Shift+Enter"
             >
               {busy === "income" ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <SpinnerIcon className="h-4 w-4 animate-spin" />
               ) : (
-                <Plus className="h-4 w-4" />
+                <AddIcon className="h-4 w-4" />
               )}
               הכנסה
             </Button>
@@ -223,9 +223,9 @@ export default function QuickEntryRow({
               title="Enter"
             >
               {busy === "expense" ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <SpinnerIcon className="h-4 w-4 animate-spin" />
               ) : (
-                <Minus className="h-4 w-4" />
+                <RemoveIcon className="h-4 w-4" />
               )}
               הוצאה
             </Button>

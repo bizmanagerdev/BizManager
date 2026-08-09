@@ -4,7 +4,7 @@ import { toast } from "sonner";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, Trash2 } from "lucide-react";
+import { DeleteIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { DateInput } from "@/components/ui/date-input";
@@ -26,6 +26,7 @@ import { offlineFetch } from "@/lib/offline-queue";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import type { MorningLocalDocument } from "@/lib/morning/types";
+import { EditButton } from "@/components/ui/icon-button";
 
 export type PaymentItem = {
   id: string;
@@ -470,15 +471,7 @@ export function OrderPaymentActionsClient({
                         {isCollecting ? "מסמן..." : "סמן כנגבה"}
                       </Button>
                     ) : null}
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => setEditingPayment(payment)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
+                    <EditButton onClick={() => setEditingPayment(payment)} label="עריכה" />
                     {isDeleting ? (
                       <div className="flex items-center gap-1">
                         <Button
@@ -513,7 +506,7 @@ export function OrderPaymentActionsClient({
                         className="h-8 w-8 text-destructive hover:text-destructive"
                         onClick={() => setDeletingId(payment.id)}
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <DeleteIcon className="h-4 w-4" />
                       </Button>
                     )}
                   </div>

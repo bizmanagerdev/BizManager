@@ -49,6 +49,7 @@ import {
   type TaskPriority,
 } from "@/components/tasks/TaskUpsertDialog";
 import type { AssignableUser } from "./ProjectTabsClient";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 
 // Helpers duplicated from ProjectTabsClient so this module is self-contained.
 function getString(row: Record<string, unknown> | null, key: string) {
@@ -595,30 +596,20 @@ export function ProjectTasksTab({
                             <span className="text-foreground">{assignee ?? "—"}</span>
                           </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-10"
+                        <div className="flex justify-end gap-2">
+                          <EditButton
                             disabled={!taskId || deletingTaskId === taskId}
                             onClick={() => {
                               setEditId(taskId);
                               setEditOpen(true);
                             }}
-                          >
-                            עריכה
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            size="sm"
-                            className="h-10"
+                            label="עריכת משימה"
+                          />
+                          <DeleteButton
                             disabled={!taskId || deletingTaskId === taskId}
                             onClick={() => setPendingDelete({ id: taskId, subject: title })}
-                          >
-                            {deletingTaskId === taskId ? "מוחק..." : "מחיקה"}
-                          </Button>
+                            label="מחיקת משימה"
+                          />
                         </div>
                       </CardContent>
                     </Card>
@@ -730,27 +721,19 @@ export function ProjectTasksTab({
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
                             <div className="flex gap-2">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
+                              <EditButton
                                 disabled={!taskId || deletingTaskId === taskId}
                                 onClick={() => {
                                   setEditId(taskId);
                                   setEditOpen(true);
                                 }}
-                              >
-                                עריכה
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="destructive"
-                                size="sm"
+                                label="עריכת משימה"
+                              />
+                              <DeleteButton
                                 disabled={!taskId || deletingTaskId === taskId}
                                 onClick={() => setPendingDelete({ id: taskId, subject: title })}
-                              >
-                                {deletingTaskId === taskId ? "מוחק..." : "מחיקה"}
-                              </Button>
+                                label="מחיקת משימה"
+                              />
                             </div>
                           </td>
                         </tr>

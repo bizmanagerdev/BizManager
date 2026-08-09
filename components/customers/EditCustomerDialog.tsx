@@ -15,7 +15,7 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import { CITY_OPTIONS } from "@/lib/ui/cities";
 import { TagPicker, fetchExistingTagIds } from "@/components/tags/TagPicker";
 import { WorkerLinkField } from "@/components/customers/WorkerLinkField";
-import { Tag } from "lucide-react";
+import { TagIcon } from "@/components/ui/icons";
 
 function splitAddressIntoCityAndStreet(address: string | null): { city: string; street: string } {
   if (!address) return { city: "", street: "" };
@@ -421,7 +421,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
               kind="general"
               createKind="general"
               allowCreate
-              icon={<Tag className="h-3.5 w-3.5" />}
+              icon={<TagIcon className="h-3.5 w-3.5" />}
               label="תגיות / סיווג לקוח"
               addLabel="הוספת תגית"
               emptyText="אין תגיות עדיין."

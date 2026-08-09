@@ -1,6 +1,6 @@
 "use client";
 
-import { Printer, Share2 } from "lucide-react";
+import { PrintIcon, ShareIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { whatsappHref } from "@/lib/whatsapp";
 
@@ -187,7 +187,7 @@ export default function ProjectShareActions({ project }: { project: ProjectShare
       {waHref ? (
         <Button asChild size="sm" variant="outline" className="h-9">
           <a href={waHref} target="_blank" rel="noreferrer" title="שיתוף ללקוח בוואטסאפ">
-            <Share2 className="h-4 w-4" />
+            <ShareIcon className="h-4 w-4" />
             <span>שיתוף</span>
           </a>
         </Button>
@@ -200,7 +200,7 @@ export default function ProjectShareActions({ project }: { project: ProjectShare
         onClick={handlePrint}
         title="הדפסה / PDF"
       >
-        <Printer className="h-4 w-4" />
+        <PrintIcon className="h-4 w-4" />
         <span>הדפסה</span>
       </Button>
     </>

@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { invalidateCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
-import { CreditCard, Plus, Sparkles, User, Users } from "lucide-react";
+import { AddIcon, AiIcon, CardIcon, UserIcon, UsersIcon } from "@/components/ui/icons";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -656,7 +656,7 @@ export function CreateCustomerDialog({
             {step === 3 ? (
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-sm font-medium">
-                  <Users className="h-4 w-4 text-muted-foreground" />
+                  <UsersIcon className="h-4 w-4 text-muted-foreground" />
                   אנשי קשר
                 </div>
 
@@ -749,7 +749,7 @@ export function CreateCustomerDialog({
 
                 <div className="flex justify-end">
                   <Button type="button" variant="secondary" size="sm" onClick={addContact}>
-                    <Plus className="h-4 w-4" />
+                    <AddIcon className="h-4 w-4" />
                     הוספת איש קשר
                   </Button>
                 </div>
@@ -759,13 +759,13 @@ export function CreateCustomerDialog({
             {step === 4 ? (
               <div className="space-y-3">
                 <div className="flex items-center gap-2 rounded-md border border-secondary/35 bg-secondary/10 px-3 py-2.5 text-sm text-foreground">
-                  <Sparkles className="h-4 w-4 shrink-0 text-secondary" />
+                  <AiIcon className="h-4 w-4 shrink-0 text-secondary" />
                   <span>
                     בדקו שהכל תקין ולחצו <span className="font-semibold">יצירת לקוח</span>.
                   </span>
                 </div>
 
-                <SummarySection icon={<User className="h-4 w-4" />} title="פרטי הלקוח" onEdit={() => goToStep(1)} editDisabled={submitting}>
+                <SummarySection icon={<UserIcon className="h-4 w-4" />} title="פרטי הלקוח" onEdit={() => goToStep(1)} editDisabled={submitting}>
                   <SummaryRow label="שם לקוח" value={name.trim()} />
                   <SummaryRow label="טלפון" value={phone.trim()} />
                   <SummaryRow label="וואטסאפ" value={whatsapp.trim()} />
@@ -776,7 +776,7 @@ export function CreateCustomerDialog({
                   ) : null}
                 </SummarySection>
 
-                <SummarySection icon={<CreditCard className="h-4 w-4" />} title="חיוב וכתובת" onEdit={() => goToStep(2)} editDisabled={submitting}>
+                <SummarySection icon={<CardIcon className="h-4 w-4" />} title="חיוב וכתובת" onEdit={() => goToStep(2)} editDisabled={submitting}>
                   <SummaryRow label="שם לחשבונית" value={nameForInvoice.trim()} />
                   <SummaryRow label="ח.פ / ת.ז" value={regNumber.trim()} />
                   <SummaryRow label="כתובת" value={address.trim()} />
@@ -787,7 +787,7 @@ export function CreateCustomerDialog({
                   {notes.trim() ? <SummaryRow label="הערות" value={notes.trim()} /> : null}
                 </SummarySection>
 
-                <SummarySection icon={<Users className="h-4 w-4" />} title="אנשי קשר" onEdit={() => goToStep(3)} editDisabled={submitting}>
+                <SummarySection icon={<UsersIcon className="h-4 w-4" />} title="אנשי קשר" onEdit={() => goToStep(3)} editDisabled={submitting}>
                   {visibleContactsCount === 0 ? (
                     <div className="px-3 py-2.5 text-sm text-muted-foreground">לא נוספו אנשי קשר.</div>
                   ) : (

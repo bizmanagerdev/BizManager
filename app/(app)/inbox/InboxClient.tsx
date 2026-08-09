@@ -3,23 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  Banknote,
-  Bell,
-  Car,
-  Check,
-  CheckSquare,
-  ChevronLeft,
-  Clock,
-  Coins,
-  FolderKanban,
-  Package,
-  Pencil,
-  Plus,
-  Receipt,
-  Settings2,
-  Wallet,
-} from "lucide-react";
+import { AddIcon, CashIcon, CheckIcon, CheckboxCheckedIcon, ChevronLeftIcon, ClockIcon, CoinsIcon, NotificationIcon, ProductIcon, ProjectIcon, ReceiptIcon, SettingsIcon, SuccessIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { toHebrewError } from "@/lib/error-messages";
 import { refreshAlerts } from "@/lib/ui/alerts-store";
@@ -29,6 +13,7 @@ import ReminderFormDialog, { type ReminderFormValue } from "@/components/reminde
 import { cn } from "@/lib/utils";
 import { NOTIF_BUCKETS } from "@/lib/notifications/categories";
 import { inboxBucket, inboxOrigin, type InboxView, type WorklistItem, type WorklistSeverity } from "@/lib/reminders/worklist";
+import { EditButton } from "@/components/ui/icon-button";
 
 // Severity paints the icon tile; the rule picks the glyph. So colour answers
 // "how bad is it" at a glance and the icon answers "what kind of thing is it".
@@ -38,30 +23,30 @@ const TILE: Record<WorklistSeverity, string> = {
   info: "bg-primary/10 text-primary",
 };
 
-const RULE_ICON: Record<string, typeof Bell> = {
-  collection_overdue: Clock,
-  payment_due_today: Coins,
-  promise_broken: Clock,
-  check_deposit_due: Banknote,
-  recurring_expense_confirm: Receipt,
-  task_overdue: CheckSquare,
-  task_due_soon: CheckSquare,
-  nightly_review: CheckSquare,
-  project_deadline: FolderKanban,
-  project_starting: FolderKanban,
-  stale_quote: FolderKanban,
-  project_closed_unbilled: FolderKanban,
-  wage_overdue: Wallet,
-  session_unallocated: Wallet,
-  low_stock: Package,
-  unprocessed_items: Package,
-  vehicle_expiry: Car,
+const RULE_ICON: Record<string, typeof NotificationIcon> = {
+  collection_overdue: ClockIcon,
+  payment_due_today: CoinsIcon,
+  promise_broken: ClockIcon,
+  check_deposit_due: CashIcon,
+  recurring_expense_confirm: ReceiptIcon,
+  task_overdue: CheckboxCheckedIcon,
+  task_due_soon: CheckboxCheckedIcon,
+  nightly_review: CheckboxCheckedIcon,
+  project_deadline: ProjectIcon,
+  project_starting: ProjectIcon,
+  stale_quote: ProjectIcon,
+  project_closed_unbilled: ProjectIcon,
+  wage_overdue: WalletIcon,
+  session_unallocated: WalletIcon,
+  low_stock: ProductIcon,
+  unprocessed_items: ProductIcon,
+  vehicle_expiry: VehicleIcon,
 };
 
 function iconFor(item: WorklistItem) {
-  if (item.source === "manual") return Bell;
+  if (item.source === "manual") return NotificationIcon;
   const rule = (item.dedupeKey ?? "").split(":")[0];
-  return RULE_ICON[rule] ?? Bell;
+  return RULE_ICON[rule] ?? NotificationIcon;
 }
 
 // The verb that matches the destination, so the link says what it does.
@@ -257,7 +242,7 @@ export default function InboxClient({
 
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
             <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <Clock className="h-3 w-3 shrink-0" />
+              <ClockIcon className="h-3 w-3 shrink-0" />
               {timeAgo(item.remindAt)}
               {item.customerName ? <span>· {item.customerName}</span> : null}
               {item.assignedToName && muted ? <span>· {item.assignedToName}</span> : null}
@@ -292,19 +277,9 @@ export default function InboxClient({
               ) : (
                 <>
                   {mine ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                      title="עריכה"
-                      aria-label="עריכת תזכורת"
-                      onClick={() =>
+                    <EditButton onClick={() =>
                         setEditing({ id: item.id, remindAt: item.remindAt, content: item.content, assignedTo: item.assignedTo })
-                      }
-                      disabled={busy === item.id}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
+                      } disabled={busy === item.id} label="עריכת תזכורת" />
                   ) : null}
                   <Button
                     variant="ghost"
@@ -315,7 +290,7 @@ export default function InboxClient({
                     onClick={() => act(item.id, "done")}
                     disabled={busy === item.id}
                   >
-                    <Check className="h-4 w-4" />
+                    <CheckIcon className="h-4 w-4" />
                   </Button>
                   <Button
                     variant="ghost"
@@ -326,7 +301,7 @@ export default function InboxClient({
                     onClick={() => setSnoozeOpen(item.id)}
                     disabled={busy === item.id}
                   >
-                    <Clock className="h-4 w-4" />
+                    <ClockIcon className="h-4 w-4" />
                   </Button>
                 </>
               )}
@@ -351,7 +326,7 @@ export default function InboxClient({
         <div className="flex flex-wrap items-center gap-1.5">
           {inbox.counts.new > 0 ? (
             <Button variant="ghost" size="sm" className="text-primary hover:bg-primary/10" onClick={markAllSeen} disabled={marking}>
-              <Check className="me-1 h-4 w-4" />
+              <CheckIcon className="me-1 h-4 w-4" />
               סמן הכול כנקרא
             </Button>
           ) : null}
@@ -359,7 +334,7 @@ export default function InboxClient({
               the rest are quiet so the header doesn't read as a row of pills. */}
           <Button asChild variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
             <Link href="/profile#notifications">
-              <Settings2 className="me-1 h-4 w-4" />
+              <SettingsIcon className="me-1 h-4 w-4" />
               העדפות
             </Link>
           </Button>
@@ -375,7 +350,7 @@ export default function InboxClient({
             </Button>
           ) : null}
           <Button size="sm" onClick={() => setAddOpen(true)}>
-            <Plus className="me-1 h-4 w-4" />
+            <AddIcon className="me-1 h-4 w-4" />
             תזכורת
           </Button>
           {!hasPush ? <PushSubscribeButton /> : null}
@@ -413,7 +388,7 @@ export default function InboxClient({
 
       {visible.length === 0 && visibleSummaries.length === 0 ? (
         <div className="flex items-center gap-3 rounded-2xl border border-success/40 bg-success-soft px-5 py-4">
-          <div className="text-2xl">✓</div>
+          <SuccessIcon className="h-7 w-7 shrink-0 text-success" />
           <div>
             <div className="font-semibold text-success-soft-foreground">הכול נקי</div>
             <div className="text-sm text-muted-foreground">אין מה לטפל כרגע.</div>
@@ -440,7 +415,7 @@ export default function InboxClient({
               className="flex items-center justify-between gap-3 rounded-2xl border border-border/60 bg-card px-3 py-3 transition-colors hover:bg-muted/40"
             >
               <span className="text-sm font-medium">{s.title}</span>
-              <ChevronLeft className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <ChevronLeftIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
             </Link>
           ))}
         </section>
@@ -462,7 +437,7 @@ export default function InboxClient({
             onClick={() => setShowSnoozed((v) => !v)}
             className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
           >
-            <Clock className="h-3.5 w-3.5" />
+            <ClockIcon className="h-3.5 w-3.5" />
             נדחו לזמן מאוחר ({visibleSnoozed.length})
           </button>
           {showSnoozed

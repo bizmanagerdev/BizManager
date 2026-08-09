@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Sparkles, X } from "lucide-react";
+import { AiIcon, CloseIcon } from "@/components/ui/icons";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -120,11 +120,11 @@ export default function MissedDigestBar({ initialItems }: { initialItems: AuditF
       <CardContent className="p-3">
         <div className="mb-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm font-semibold">
-            <Sparkles className="h-4 w-4 text-primary" />
+            <AiIcon className="h-4 w-4 text-primary" />
             מה קרה מאז שהיית כאן ({total})
           </div>
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={dismiss} aria-label="סימון כנקרא" title="סימון כנקרא">
-            <X className="h-4 w-4" />
+            <CloseIcon className="h-4 w-4" />
           </Button>
         </div>
 

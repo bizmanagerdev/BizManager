@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { MessageCircle } from "lucide-react";
+import { ChatIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { DateTimeInput } from "@/components/ui/date-input";
@@ -186,7 +186,7 @@ export default function BulkActions({
                       rel="noreferrer"
                       className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-input px-2 text-xs hover:bg-muted"
                     >
-                      <MessageCircle className="h-4 w-4 text-success" /> שלח
+                      <ChatIcon className="h-4 w-4 text-success" /> שלח
                     </a>
                   ) : (
                     <span className="shrink-0 text-xs text-muted-foreground">אין מספר</span>

@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Users, LogIn, AlarmClock, CalendarClock, type LucideIcon } from "lucide-react";
+import { AlarmIcon, LoginIcon, ScheduleIcon, UsersIcon } from "@/components/ui/icons";
+import type { IconComponent } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { WorkforceOverview as WorkforceOverviewData } from "@/lib/dashboard/workforce";
@@ -17,23 +18,23 @@ export default function WorkforceOverview({ data }: { data: WorkforceOverviewDat
     return null;
   }
 
-  const cards: { label: string; value: number; icon: LucideIcon; urgent?: boolean; note?: string }[] = [
-    { label: "עובדים פעילים היום", value: data.activeToday, icon: Users },
-    { label: "במשמרת כעת", value: data.clockedInNow, icon: LogIn, note: "פתוחות כרגע" },
+  const cards: { label: string; value: number; icon: IconComponent; urgent?: boolean; note?: string }[] = [
+    { label: "עובדים פעילים היום", value: data.activeToday, icon: UsersIcon },
+    { label: "במשמרת כעת", value: data.clockedInNow, icon: LoginIcon, note: "פתוחות כרגע" },
     {
       label: "החתמות יציאה חסרות",
       value: data.missingClockOuts,
-      icon: AlarmClock,
+      icon: AlarmIcon,
       urgent: data.missingClockOuts > 0,
     },
-    { label: "משמרות היום", value: data.sessionsToday, icon: CalendarClock },
+    { label: "משמרות היום", value: data.sessionsToday, icon: ScheduleIcon },
   ];
 
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Users className="h-5 w-5 text-muted-foreground" />
+          <UsersIcon className="h-5 w-5 text-muted-foreground" />
           <h2 className="text-lg font-semibold">מבט על כוח האדם</h2>
         </div>
         <Link href="/payroll" className="text-sm text-secondary hover:underline">

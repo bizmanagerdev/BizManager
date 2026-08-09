@@ -12,7 +12,7 @@ import { CITY_OPTIONS } from "@/lib/ui/cities";
 import { invalidateCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import { TagPicker, fetchExistingTagIds } from "@/components/tags/TagPicker";
 import { WorkerLinkField } from "@/components/customers/WorkerLinkField";
-import { Tag } from "lucide-react";
+import { TagIcon } from "@/components/ui/icons";
 
 export type CustomerRecord = {
   id: string;
@@ -549,7 +549,7 @@ export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExi
           kind="general"
           createKind="general"
           allowCreate
-          icon={<Tag className="h-3.5 w-3.5" />}
+          icon={<TagIcon className="h-3.5 w-3.5" />}
           label="תגיות / סיווג לקוח"
           addLabel="הוספת תגית"
           emptyText="אין תגיות עדיין."

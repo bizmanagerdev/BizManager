@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Ellipsis, Mail, MessageCircle, MessageSquare, Pencil, Phone, Users, type LucideIcon } from "lucide-react";
+import { ChatIcon, CommentIcon, MailIcon, MoreIcon, PhoneIcon, UsersIcon } from "@/components/ui/icons";
+import type { IconComponent } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
@@ -12,6 +13,7 @@ import AddCollectionEntryDialog from "@/components/collections/AddCollectionEntr
 import EditCommunicationDialog, { type EditableCommunication } from "@/components/communications/EditCommunicationDialog";
 import { channelLabel, directionLabel, type CommunicationLogWithCustomer } from "@/lib/communications";
 import { formatShortDateTime } from "@/lib/date";
+import { EditButton } from "@/components/ui/icon-button";
 
 const TOPICS = [
   { value: "all", label: "כל הנושאים" },
@@ -39,12 +41,12 @@ const TOPIC_LABEL: Record<string, string> = {
 };
 
 // The channel IS the icon — a phone for a call, a bubble for WhatsApp, etc.
-const CHANNEL_ICON: Record<string, LucideIcon> = {
-  phone: Phone,
-  whatsapp: MessageCircle,
-  email: Mail,
-  sms: MessageSquare,
-  meeting: Users,
+const CHANNEL_ICON: Record<string, IconComponent> = {
+  phone: PhoneIcon,
+  whatsapp: ChatIcon,
+  email: MailIcon,
+  sms: CommentIcon,
+  meeting: UsersIcon,
 };
 
 // Whole-row colour by direction: incoming = blue, outgoing = green, missed = red.
@@ -86,7 +88,7 @@ export default function CommunicationsClient({ logs }: { logs: CommunicationLogW
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" variant="outline" onClick={() => setAddCallOpen(true)}>
-          <Phone className="me-1 h-4 w-4 text-success" />
+          <PhoneIcon className="me-1 h-4 w-4 text-success" />
           תיעוד שיחה
         </Button>
         <NativeSelect value={topic} onChange={(e) => setTopic(e.target.value)}>
@@ -135,7 +137,7 @@ export default function CommunicationsClient({ logs }: { logs: CommunicationLogW
             </div>
 
             {filtered.map((l) => {
-              const Icon = CHANNEL_ICON[l.channel] ?? Ellipsis;
+              const Icon = CHANNEL_ICON[l.channel] ?? MoreIcon;
               return (
                 <div
                   key={l.id}
@@ -159,17 +161,9 @@ export default function CommunicationsClient({ logs }: { logs: CommunicationLogW
                     {formatShortDateTime(l.created_at, "-")}
                     {l.created_by_name ? ` · ${l.created_by_name}` : ""}
                   </div>
-                  <button
-                    type="button"
-                    aria-label="עריכה"
-                    title="עריכה"
-                    className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground"
-                    onClick={() =>
+                  <EditButton onClick={() =>
                       setEditing({ id: l.id, channel: l.channel, direction: l.direction, category: l.category, content: l.content })
-                    }
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
+                    } label="עריכה" />
                 </div>
               );
             })}

@@ -6,7 +6,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Bell, Copy, Pencil, Phone, Printer, Share2, Trash2 } from "lucide-react";
+import { CopyIcon, DeleteIcon, EditIcon, NotificationIcon, PhoneIcon, PrintIcon, ShareIcon } from "@/components/ui/icons";
 import { HeaderActionsMenu } from "@/components/layout/HeaderActionsMenu";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
@@ -46,35 +46,35 @@ export default function OrderHeaderMenu({
       <HeaderActionsMenu>
         <DropdownMenuItem asChild className="gap-2">
           <Link href={`/sales/orders/new?duplicate=${orderId}`}>
-            <Copy className="h-4 w-4" />
+            <CopyIcon className="h-4 w-4" />
             <span>שכפול</span>
           </Link>
         </DropdownMenuItem>
         {shareHref ? (
           <DropdownMenuItem asChild className="gap-2">
             <a href={shareHref} target="_blank" rel="noreferrer">
-              <Share2 className="h-4 w-4" />
+              <ShareIcon className="h-4 w-4" />
               <span>שיתוף</span>
             </a>
           </DropdownMenuItem>
         ) : null}
         <DropdownMenuItem className="gap-2" onSelect={() => printOrderSheet(share)}>
-          <Printer className="h-4 w-4" />
+          <PrintIcon className="h-4 w-4" />
           <span>הדפסה</span>
         </DropdownMenuItem>
         <DropdownMenuItem className="gap-2" onSelect={() => setEditOpen(true)}>
-          <Pencil className="h-4 w-4" />
+          <EditIcon className="h-4 w-4" />
           <span>עריכה</span>
         </DropdownMenuItem>
         {canManage ? (
           <>
             <DropdownMenuItem className="gap-2" onSelect={() => setLogOpen(true)}>
-              <Phone className="h-4 w-4" />
+              <PhoneIcon className="h-4 w-4" />
               <span>תיעוד שיחה</span>
             </DropdownMenuItem>
             <DropdownMenuItem asChild className="gap-2">
               <a href={`#${remindersSectionId}`}>
-                <Bell className="h-4 w-4" />
+                <NotificationIcon className="h-4 w-4" />
                 <span>תזכורת</span>
               </a>
             </DropdownMenuItem>
@@ -85,7 +85,7 @@ export default function OrderHeaderMenu({
           className="gap-2 text-destructive focus:text-destructive"
           onSelect={() => setDeleteOpen(true)}
         >
-          <Trash2 className="h-4 w-4" />
+          <DeleteIcon className="h-4 w-4" />
           <span>מחיקת הזמנה</span>
         </DropdownMenuItem>
       </HeaderActionsMenu>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, X } from "lucide-react";
+import { CloseIcon, WarningIcon } from "@/components/ui/icons";
 import { useAlertsVersion } from "@/lib/ui/alerts-refresh";
 
 type PageAlert = { id: string; title: string; href: string; severity: "danger" | "warning" | "info" };
@@ -77,7 +77,7 @@ export default function PageAlertBar({ keys }: { keys: string[] }) {
           key={a.id}
           className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 text-[13px] sm:text-sm ${TONE[a.severity] ?? TONE.warning}`}
         >
-          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <WarningIcon className="h-4 w-4 shrink-0" />
           {/* One line, always: the banner is a nudge, and a wrapped two-line strip
               pushes the page content down. The full text is on the target page (and
               in the tooltip), so clipping the tail costs nothing. */}
@@ -90,7 +90,7 @@ export default function PageAlertBar({ keys }: { keys: string[] }) {
             className="shrink-0 rounded-md p-0.5 opacity-60 transition-opacity hover:opacity-100"
             aria-label="סגור התראה"
           >
-            <X className="h-4 w-4" />
+            <CloseIcon className="h-4 w-4" />
           </button>
         </div>
       ))}

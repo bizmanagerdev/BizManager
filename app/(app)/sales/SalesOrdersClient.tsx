@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { Bell, Check, ChevronDown, MessageSquare, Pencil, Plus, Search } from "lucide-react";
+import { AddIcon, CheckIcon, ChevronDownIcon, CommentIcon, EditIcon, NotificationIcon, SearchIcon } from "@/components/ui/icons";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { useOfflineRows } from "@/hooks/useOfflineRows";
 import StaleDataBadge from "@/components/layout/StaleDataBadge";
@@ -139,7 +139,7 @@ function OrderCommentPreview({
     <div className={`space-y-1 ${className ?? ""}`}>
       {comments.map((comment, index) => (
         <div key={`comment-${index}`} className="flex items-start gap-1 text-xs text-muted-foreground">
-          <MessageSquare className="mt-0.5 h-3 w-3 shrink-0 opacity-70" />
+          <CommentIcon className="mt-0.5 h-3 w-3 shrink-0 opacity-70" />
           <span className="line-clamp-2 min-w-0">
             {comment.author_name ? <span className="font-medium">{comment.author_name}: </span> : null}
             <span className="text-muted-foreground/90">{comment.body}</span>
@@ -559,12 +559,12 @@ export default function SalesOrdersClient({
         <div className="mx-auto flex w-full max-w-md items-center justify-center gap-2">
           <Button asChild type="button" className="h-10 shrink-0 gap-1 rounded-xl px-3">
             <Link href="/sales/orders/new" onClick={() => emitNavigationStart()}>
-              <Plus className="h-4 w-4" />
+              <AddIcon className="h-4 w-4" />
               הזמנה
             </Link>
           </Button>
           <div className="relative w-full min-w-0 max-w-[13rem]">
-            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
+            <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -582,7 +582,7 @@ export default function SalesOrdersClient({
           </div>
         ) : null}
         <div className="relative">
-          <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <SearchIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -647,7 +647,7 @@ export default function SalesOrdersClient({
                                 ({INVOICE_FILTER_OPTIONS.find((o) => o.value === invoiceFilter)?.label})
                               </span>
                             ) : null}
-                            <ChevronDown className="h-3.5 w-3.5" />
+                            <ChevronDownIcon className="h-3.5 w-3.5" />
                           </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="start">
@@ -677,7 +677,7 @@ export default function SalesOrdersClient({
                                 ({PAYMENT_FILTER_OPTIONS.find((o) => o.value === paymentFilter)?.label})
                               </span>
                             ) : null}
-                            <ChevronDown className="h-3.5 w-3.5" />
+                            <ChevronDownIcon className="h-3.5 w-3.5" />
                           </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="start">
@@ -803,7 +803,7 @@ export default function SalesOrdersClient({
                                 setReminderTarget({ id: row.id, customerId: row.customerId, label: row.customerName })
                               }
                             >
-                              <Bell className="h-4 w-4 text-warning" />
+                              <NotificationIcon className="h-4 w-4 text-warning" />
                             </Button>
                           ) : null}
                           {canRemind ? (
@@ -855,7 +855,7 @@ export default function SalesOrdersClient({
                             buttonVariant="default"
                             buttonLabel={
                               <>
-                                <Check className="h-5 w-5" />
+                                <CheckIcon className="h-5 w-5" />
                                 אספקה
                               </>
                             }
@@ -883,7 +883,7 @@ export default function SalesOrdersClient({
                 {
                   key: "edit",
                   label: "עריכה",
-                  icon: <Pencil className="h-5 w-5" />,
+                  icon: <EditIcon className="h-5 w-5" />,
                   className: "bg-secondary-2",
                   onSelect: () => {
                     emitNavigationStart();

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search } from "lucide-react";
+import { SearchIcon } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ViewDialog } from "@/components/ui/view-dialog";
@@ -265,7 +265,7 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
       {!mobileOnly ? (
         <div ref={desktopRef} className={cn("relative hidden flex-1 lg:flex", className)}>
           <div className="relative w-full">
-            <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
+            <SearchIcon className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -314,7 +314,7 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
           type="button"
           onClick={() => setMobileOpen(true)}
         >
-          <Search className="h-4 w-4 shrink-0" />
+          <SearchIcon className="h-4 w-4 shrink-0" />
           <span className="truncate">חיפוש...</span>
         </Button>
       ) : null}
@@ -329,7 +329,7 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
           bodyClassName="p-0 sm:p-0"
           headerBelow={
             <div className="relative">
-              <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <SearchIcon className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 ref={mobileInputRef}
                 value={query}

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { PackagePlus, Pencil, Trash2 } from "lucide-react";
+import { AddProductIcon, DeleteIcon } from "@/components/ui/icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import type { InventoryItem, ProductsFilters } from "@/app/(app)/sales/loadProdu
 import { FormDialog } from "@/components/ui/form-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
+import { EditButton } from "@/components/ui/icon-button";
 
 type Row = Record<string, unknown>;
 
@@ -596,7 +597,7 @@ export default function SalesInventoryClient({
                               aria-label="עדכון מלאי"
                               onClick={() => openAdjustmentDialog(item.productId)}
                             >
-                              <PackagePlus className="h-4 w-4" />
+                              <AddProductIcon className="h-4 w-4" />
                             </Button>
                           </td>
                         </tr>
@@ -633,7 +634,7 @@ export default function SalesInventoryClient({
                           aria-label="עדכון מלאי"
                           onClick={() => openAdjustmentDialog(item.productId)}
                         >
-                          <PackagePlus className="h-4 w-4" />
+                          <AddProductIcon className="h-4 w-4" />
                         </Button>
                       </div>
 
@@ -896,17 +897,7 @@ export default function SalesInventoryClient({
                               <td className="px-3 py-2">
                                 {isManual ? (
                                   <div className="-my-1.5 flex items-center gap-1.5">
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="secondary"
-                                      className="h-7 w-7 p-0"
-                                      title="עריכת תנועה"
-                                      aria-label="עריכת תנועה"
-                                      onClick={() => openEditDialog(row)}
-                                    >
-                                      <Pencil className="h-3.5 w-3.5" />
-                                    </Button>
+                                    <EditButton onClick={() => openEditDialog(row)} label="עריכת תנועה" />
                                     <Button
                                       type="button"
                                       size="sm"
@@ -916,7 +907,7 @@ export default function SalesInventoryClient({
                                       aria-label="מחיקת תנועה"
                                       onClick={() => setDeleteRow(row)}
                                     >
-                                      <Trash2 className="h-3.5 w-3.5" />
+                                      <DeleteIcon className="h-3.5 w-3.5" />
                                     </Button>
                                   </div>
                                 ) : null}
@@ -958,17 +949,7 @@ export default function SalesInventoryClient({
                               </div>
                               {isManual ? (
                                 <>
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="secondary"
-                                    className="h-8 w-8 shrink-0 p-0"
-                                    title="עריכת תנועה"
-                                    aria-label="עריכת תנועה"
-                                    onClick={() => openEditDialog(row)}
-                                  >
-                                    <Pencil className="h-4 w-4" />
-                                  </Button>
+                                  <EditButton onClick={() => openEditDialog(row)} label="עריכת תנועה" />
                                   <Button
                                     type="button"
                                     size="sm"
@@ -978,7 +959,7 @@ export default function SalesInventoryClient({
                                     aria-label="מחיקת תנועה"
                                     onClick={() => setDeleteRow(row)}
                                   >
-                                    <Trash2 className="h-4 w-4" />
+                                    <DeleteIcon className="h-4 w-4" />
                                   </Button>
                                 </>
                               ) : null}

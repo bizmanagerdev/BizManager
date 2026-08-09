@@ -5,7 +5,7 @@
 // "add" trigger up to the header (its own full-width button is hidden).
 
 import { useState } from "react";
-import { Bell, Plus } from "lucide-react";
+import { AddIcon, NotificationIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { SectionCard } from "@/components/ui/section-card";
 import EntityReminders from "@/components/reminders/EntityReminders";
@@ -26,7 +26,7 @@ export default function OrderRemindersSection({
   return (
     <SectionCard
       id={id}
-      icon={<Bell className="h-4 w-4" />}
+      icon={<NotificationIcon className="h-4 w-4" />}
       title="תזכורות"
       aside={
         canManage ? (
@@ -38,7 +38,7 @@ export default function OrderRemindersSection({
             title="הוספת תזכורת"
             onClick={() => setAddOpen(true)}
           >
-            <Plus className="h-4 w-4" />
+            <AddIcon className="h-4 w-4" />
           </Button>
         ) : null
       }

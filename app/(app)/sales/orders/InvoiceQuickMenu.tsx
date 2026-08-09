@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown } from "lucide-react";
+import { ChevronDownIcon } from "@/components/ui/icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -95,7 +95,7 @@ export default function InvoiceQuickMenu({
               className={`inline-flex items-center gap-1 whitespace-nowrap text-lg font-bold leading-snug ${invoiceTextClass(state)} disabled:opacity-50`}
             >
               <span>{badge.label}</span>
-              <ChevronDown className="h-4 w-4 shrink-0" />
+              <ChevronDownIcon className="h-4 w-4 shrink-0" />
             </button>
           ) : (
             <button
@@ -104,7 +104,7 @@ export default function InvoiceQuickMenu({
               className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-2 py-0.5 text-xs font-medium ${badge.className} disabled:opacity-50`}
             >
               <span>{badge.label}</span>
-              <ChevronDown className="h-3 w-3 shrink-0" />
+              <ChevronDownIcon className="h-3 w-3 shrink-0" />
             </button>
           )}
         </DropdownMenuTrigger>

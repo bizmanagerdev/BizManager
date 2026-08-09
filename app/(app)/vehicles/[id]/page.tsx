@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowRight, Car, ListTodo, TrendingDown, TrendingUp } from "lucide-react";
+import { ArrowRightIcon, TaskIcon, TrendDownIcon, TrendUpIcon, VehicleIcon } from "@/components/ui/icons";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { Badge } from "@/components/ui/badge";
@@ -113,13 +113,13 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
           href="/vehicles"
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"
         >
-          <ArrowRight className="h-4 w-4" />
+          <ArrowRightIcon className="h-4 w-4" />
           חזרה לרכבים
         </Link>
 
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <Car className="h-6 w-6" />
+            <VehicleIcon className="h-6 w-6" />
             {vehicle.name}
           </h1>
           <p className="text-sm text-muted-foreground">
@@ -141,19 +141,19 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
             label="הוצאות ששולמו"
             value={formatCurrency(activity.rollup.paidExpenseAmount)}
             tone="expense"
-            icon={<TrendingDown className="h-3.5 w-3.5" />}
+            icon={<TrendDownIcon className="h-3.5 w-3.5" />}
           />
           <StatCard
             label="הכנסות"
             value={formatCurrency(activity.rollup.totalIncomeAmount)}
             tone="income"
-            icon={<TrendingUp className="h-3.5 w-3.5" />}
+            icon={<TrendUpIcon className="h-3.5 w-3.5" />}
           />
           <StatCard label="נטו" value={formatCurrency(net)} tone={net >= 0 ? "income" : "expense"} />
           <StatCard
             label="משימות פתוחות"
             value={`${activity.rollup.openTaskCount}/${activity.rollup.taskCount}`}
-            icon={<ListTodo className="h-3.5 w-3.5" />}
+            icon={<TaskIcon className="h-3.5 w-3.5" />}
           />
         </div>
 

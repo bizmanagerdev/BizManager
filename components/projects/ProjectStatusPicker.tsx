@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Loader2 } from "lucide-react";
+import { ChevronDownIcon, SpinnerIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import {
   DropdownMenu,
@@ -76,9 +76,9 @@ export function ProjectStatusPicker({
       >
         {label}
         {saving ? (
-          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          <SpinnerIcon className="h-4 w-4 animate-spin text-muted-foreground" />
         ) : (
-          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          <ChevronDownIcon className="h-4 w-4 text-muted-foreground" />
         )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">

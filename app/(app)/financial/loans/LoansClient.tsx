@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Receipt, Paperclip, Undo2 } from "lucide-react";
+import { AddIcon, AttachIcon, DeleteIcon, ReceiptIcon, UndoIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Card, CardContent } from "@/components/ui/card";
@@ -54,6 +54,7 @@ import {
   formatIls,
   todayIso,
 } from "./shared";
+import { EditButton } from "@/components/ui/icon-button";
 
 // The business owner — auto-filled on "our" side of every loan.
 const BUSINESS_OWNER_NAME = "יעקב הלר";
@@ -531,7 +532,7 @@ function RepaymentsDialog({
                           aria-label="החזר לתשלום מתוכנן"
                           title="סומן בטעות? החזר אותו לתוכנית כתשלום מתוכנן"
                         >
-                          <Undo2 className="h-4 w-4" />
+                          <UndoIcon className="h-4 w-4" />
                         </Button>
                         <Button
                           type="button"
@@ -541,7 +542,7 @@ function RepaymentsDialog({
                           disabled={pending}
                           aria-label="מחק החזר"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <DeleteIcon className="h-4 w-4" />
                         </Button>
                       </div>
                     </div>
@@ -797,7 +798,7 @@ function LoanDocumentsDialog({
                     disabled={busy}
                     aria-label="מחק מסמך"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <DeleteIcon className="h-4 w-4" />
                   </Button>
                 </div>
               ))
@@ -871,7 +872,7 @@ export default function LoansClient({ loans, summary }: { loans: Loan[]; summary
     <div className="space-y-4 text-right" dir="rtl">
       <div className="flex flex-wrap items-center justify-end gap-3">
         <Button type="button" onClick={openCreate}>
-          <Plus className="h-4 w-4" />
+          <AddIcon className="h-4 w-4" />
           הלוואה חדשה
         </Button>
       </div>
@@ -994,20 +995,17 @@ export default function LoansClient({ loans, summary }: { loans: Loan[]; summary
 
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
                     <Button type="button" variant="secondary" size="sm" onClick={() => setRepayLoan(loan)}>
-                      <Receipt className="h-4 w-4" />
+                      <ReceiptIcon className="h-4 w-4" />
                       החזרים
                       {loan.paidRepayments.length || loan.plannedInstallments.length
                         ? ` (${loan.paidRepayments.length}/${loan.paidRepayments.length + loan.plannedInstallments.length})`
                         : ""}
                     </Button>
                     <Button type="button" variant="secondary" size="sm" onClick={() => setDocsLoan(loan)}>
-                      <Paperclip className="h-4 w-4" />
+                      <AttachIcon className="h-4 w-4" />
                       מסמכים
                     </Button>
-                    <Button type="button" variant="secondary" size="sm" onClick={() => openEdit(loan)}>
-                      <Pencil className="h-4 w-4" />
-                      עריכה
-                    </Button>
+                    <EditButton onClick={() => openEdit(loan)} label="עריכה" />
                     <Button
                       type="button"
                       variant="destructive-outline"
@@ -1015,7 +1013,7 @@ export default function LoansClient({ loans, summary }: { loans: Loan[]; summary
                       onClick={() => setDeleteTarget(loan)}
                       aria-label="מחק הלוואה"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <DeleteIcon className="h-4 w-4" />
                     </Button>
                   </div>
                 </CardContent>

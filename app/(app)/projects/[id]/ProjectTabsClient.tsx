@@ -15,16 +15,7 @@ import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { StatActionCard, collectionStatusTextClass } from "@/components/ui/stat-action-card";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
-import {
-  HandCoins,
-  Upload,
-  BarChart3,
-  FileText,
-  ListChecks,
-  Pencil,
-  Plus,
-  Trash2,
-} from "lucide-react";
+import { AddIcon, ChartIcon, ChecklistIcon, DeleteIcon, DocumentIcon, PaymentIcon, UploadIcon } from "@/components/ui/icons";
 import { ClientOnly } from "@/components/ClientOnly";
 import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -61,6 +52,7 @@ import BilledCustomerPrintButton from "./BilledCustomerPrintButton";
 import ProjectMovements, { type Movement } from "./ProjectMovements";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 import dynamic from "next/dynamic";
+import { EditButton } from "@/components/ui/icon-button";
 import {
   customerPaymentStatusLabel,
   deriveCustomerPaymentStatus,
@@ -1129,7 +1121,7 @@ export default function ProjectTabsClient({
   const financialSummarySection = (
     <section className="rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
       <div className="flex items-center gap-2 text-sm font-semibold">
-        <BarChart3 className="h-4 w-4 text-primary" />
+        <ChartIcon className="h-4 w-4 text-primary" />
         סיכום כספי
       </div>
 
@@ -1224,7 +1216,7 @@ export default function ProjectTabsClient({
 
   const collectionBand = (
     <StatActionCard
-      icon={<HandCoins className="h-5 w-5" />}
+      icon={<PaymentIcon className="h-5 w-5" />}
       label="תשלום"
       value={
         overview.no_charge === true
@@ -1493,7 +1485,7 @@ export default function ProjectTabsClient({
                     setAddExpenseOpen(true);
                   }}
                 >
-                  <Plus className="h-4 w-4" />
+                  <AddIcon className="h-4 w-4" />
                   הוצאה
                 </Button>
                 <Button
@@ -1506,7 +1498,7 @@ export default function ProjectTabsClient({
                     setAddIncomeOpen(true);
                   }}
                 >
-                  <Plus className="h-4 w-4" />
+                  <AddIcon className="h-4 w-4" />
                   הכנסה
                 </Button>
                 {billableCustomerItems.length > 0 ? (
@@ -1604,7 +1596,7 @@ export default function ProjectTabsClient({
         <CollapsibleSection
           defaultOpen={totalTasks > 0}
           title="משימות"
-          icon={<ListChecks className="h-4 w-4 text-primary" />}
+          icon={<ChecklistIcon className="h-4 w-4 text-primary" />}
           summary={
             totalTasks > 0 ? (
               <span className="text-muted-foreground">
@@ -2040,7 +2032,7 @@ export default function ProjectTabsClient({
         <CollapsibleSection
           defaultOpen={projectDocuments.length > 0}
           title="מסמכים"
-          icon={<FileText className="h-4 w-4 text-primary" />}
+          icon={<DocumentIcon className="h-4 w-4 text-primary" />}
           summary={
             <span className="text-muted-foreground">{projectDocuments.length} קבצים</span>
           }
@@ -2075,7 +2067,7 @@ export default function ProjectTabsClient({
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={d.url} alt={name} className="h-20 w-full object-cover" />
                       ) : (
-                        <FileText className="h-6 w-6 text-muted-foreground" />
+                        <DocumentIcon className="h-6 w-6 text-muted-foreground" />
                       )}
                       {extension ? (
                         <span className="absolute bottom-1 start-1 rounded bg-foreground/70 px-1 text-[0.625rem] uppercase text-white">
@@ -2094,17 +2086,7 @@ export default function ProjectTabsClient({
                         </span>
                       ) : null}
                       <div className="flex gap-1 pt-1">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-7 w-7 p-0"
-                          title="עריכת קטגוריה"
-                          aria-label="עריכת קטגוריה"
-                          onClick={() => openEditTag(d.document_id)}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
+                        <EditButton onClick={() => openEditTag(d.document_id)} label="עריכת קטגוריה" />
                         <Button
                           type="button"
                           variant="destructive"
@@ -2114,7 +2096,7 @@ export default function ProjectTabsClient({
                           aria-label="מחיקת קובץ"
                           onClick={() => openDeleteDocument(d.document_id)}
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <DeleteIcon className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </div>
@@ -2132,7 +2114,7 @@ export default function ProjectTabsClient({
             disabled={docsUploading}
             onClick={() => setUploadDocsOpen(true)}
           >
-            <Upload className="h-4 w-4" />
+            <UploadIcon className="h-4 w-4" />
             {docsUploading ? "מעלה..." : "העלאת קובץ או תמונה"}
           </Button>
         </CollapsibleSection>

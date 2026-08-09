@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight } from "lucide-react";
+import { ArrowRightIcon } from "@/components/ui/icons";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
@@ -24,7 +24,7 @@ export function BackButton() {
       aria-label="חזרה"
       title="חזרה"
     >
-      <ArrowRight className="transition-transform group-hover:translate-x-0.5" strokeWidth={TOPBAR_ICON_STROKE} />
+      <ArrowRightIcon className="transition-transform group-hover:translate-x-0.5" strokeWidth={TOPBAR_ICON_STROKE} />
     </Button>
   );
 }

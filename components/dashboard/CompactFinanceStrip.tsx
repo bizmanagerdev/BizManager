@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Wallet, CalendarClock, HandCoins, type LucideIcon } from "lucide-react";
+import { PaymentIcon, ScheduleIcon, WalletIcon } from "@/components/ui/icons";
+import type { IconComponent } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -9,7 +10,7 @@ type FinanceStat = {
   label: string;
   value: number;
   href: string;
-  icon: LucideIcon;
+  icon: IconComponent;
   urgent?: boolean;
 };
 
@@ -28,12 +29,12 @@ export default function CompactFinanceStrip({
   payrollOwed: number | null;
 }) {
   const stats: FinanceStat[] = [
-    { label: "גבייה פתוחה", value: openCollections, href: "/collections", icon: Wallet },
+    { label: "גבייה פתוחה", value: openCollections, href: "/collections", icon: WalletIcon },
     {
       label: "לפירעון היום",
       value: dueToday,
       href: "/collections",
-      icon: CalendarClock,
+      icon: ScheduleIcon,
       urgent: dueToday > 0,
     },
   ];
@@ -42,7 +43,7 @@ export default function CompactFinanceStrip({
       label: "שכר לתשלום",
       value: payrollOwed,
       href: "/payroll",
-      icon: HandCoins,
+      icon: PaymentIcon,
       urgent: payrollOwed > 0,
     });
   }

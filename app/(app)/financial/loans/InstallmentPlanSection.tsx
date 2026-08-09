@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, Pencil, Trash2 } from "lucide-react";
+import { AddIcon, CheckIcon, DeleteIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,7 @@ import RepaymentPlanPicker, {
   type RepaymentPlanState,
 } from "./RepaymentPlanPicker";
 import { Field, METHOD_OPTIONS, formatDate, formatIls, todayIso } from "./shared";
+import { EditButton } from "@/components/ui/icon-button";
 
 // ════════════════════════════════════════════════════════════════════════════
 // The repayment schedule of one loan, inside the החזרים dialog: the list of
@@ -114,12 +115,16 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
             </span>
           ) : null}
         </div>
-        {!editing ? (
+        {/* Changing an existing plan is an edit — the pencil, like everywhere.
+            Creating the first one is a create, so it keeps its label. */}
+        {editing ? null : planned.length > 0 ? (
+          <EditButton onClick={openEditor} disabled={pending} label="שינוי התשלומים" />
+        ) : (
           <Button type="button" variant="secondary" size="sm" onClick={openEditor} disabled={pending}>
-            <Pencil className="h-4 w-4" />
-            {planned.length > 0 ? "שינוי התשלומים" : "קביעת תשלומים"}
+            <AddIcon className="h-4 w-4" />
+            קביעת תשלומים
           </Button>
-        ) : null}
+        )}
       </div>
 
       {planned.length === 0 && !editing ? (
@@ -203,19 +208,10 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
                     onClick={() => setPayTarget(installment)}
                     disabled={pending}
                   >
-                    <Check className="h-4 w-4" />
+                    <CheckIcon className="h-4 w-4" />
                     שולם
                   </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="icon-sm"
-                    onClick={() => setEditTarget(installment)}
-                    disabled={pending}
-                    aria-label="ערוך תשלום"
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
+                  <EditButton onClick={() => setEditTarget(installment)} disabled={pending} label="ערוך תשלום" />
                   <Button
                     type="button"
                     variant="destructive-outline"
@@ -224,7 +220,7 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
                     disabled={pending}
                     aria-label="מחק תשלום"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <DeleteIcon className="h-4 w-4" />
                   </Button>
                 </div>
               </div>

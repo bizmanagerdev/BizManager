@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Paperclip } from "lucide-react";
+import { AttachIcon, PhoneIcon } from "@/components/ui/icons";
 import { NavLink } from "@/components/NavLink";
 import { Badge } from "@/components/ui/badge";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -276,7 +276,7 @@ function PhotoCell({ c }: { c: CheckRow }) {
       title="צפייה בצילום הצ׳ק"
       className="inline-flex items-center gap-1 text-primary hover:underline"
     >
-      <Paperclip className="h-3.5 w-3.5" />
+      <AttachIcon className="h-3.5 w-3.5" />
       {c.photo_count > 1 ? c.photo_count : "צילום"}
     </a>
   );
@@ -329,7 +329,7 @@ function CheckRowDesktop({
         )}
         {c.customer_phone ? (
           <a href={`tel:${c.customer_phone}`} className="block text-xs text-muted-foreground hover:underline">
-            ☎ {c.customer_phone}
+            <PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}{c.customer_phone}
           </a>
         ) : null}
       </td>
@@ -377,7 +377,7 @@ function CheckCard({
             <span className="font-semibold">{c.customer_name}</span>
           )}
           {c.customer_phone ? (
-            <div className="text-xs text-muted-foreground">☎ {c.customer_phone}</div>
+            <div className="text-xs text-muted-foreground"><PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}{c.customer_phone}</div>
           ) : null}
         </div>
         <div className="shrink-0 text-lg font-semibold">{formatCurrency(c.amount)}</div>

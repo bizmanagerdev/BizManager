@@ -5,7 +5,7 @@
 // board lives on /tasks — this is the "what's left on this project" view.
 
 import { useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { AddIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { offlineFetch } from "@/lib/offline-queue";
@@ -203,7 +203,7 @@ export default function ProjectTasksMini({
         className="w-full border-dashed"
         onClick={() => setCreateOpen(true)}
       >
-        <Plus className="h-4 w-4" />
+        <AddIcon className="h-4 w-4" />
         משימה חדשה
       </Button>
 

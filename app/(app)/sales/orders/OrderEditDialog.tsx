@@ -3,7 +3,7 @@ import { toHebrewError } from "@/lib/error-messages";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import { EditButton } from "@/components/ui/icon-button";
 import {
   Dialog,
   DialogContent,
@@ -51,8 +51,7 @@ type EditPayload = {
 
 export default function OrderEditDialog({
   orderId,
-  buttonLabel = "עריכה",
-  buttonClassName,
+  triggerLabel = "עריכה",
   title = "עריכת הזמנה",
   description = "עדכון לקוח, פריטים ותשלומים בלי לעזוב את רשימת ההזמנות.",
   initialStatusOverride,
@@ -62,8 +61,8 @@ export default function OrderEditDialog({
   onOpenChange,
 }: {
   orderId: string;
-  buttonLabel?: React.ReactNode;
-  buttonClassName?: string;
+  /** Tooltip on the pencil — says WHAT is edited. Never renders as text. */
+  triggerLabel?: string;
   title?: string;
   description?: string;
   initialStatusOverride?: string;
@@ -119,29 +118,13 @@ export default function OrderEditDialog({
 
   if (shouldUseConfirmDialog) {
     return (
-      <OrderConfirmDialog
-        orderId={orderId}
-        buttonLabel={buttonLabel}
-        title={title}
-        description={description}
-      />
+      <OrderConfirmDialog orderId={orderId} title={title} description={description} />
     );
   }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      {hideTrigger ? null : (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className={buttonClassName ?? "w-full sm:w-auto"}
-          title={typeof title === "string" ? title : undefined}
-          onClick={() => setOpen(true)}
-        >
-          {buttonLabel}
-        </Button>
-      )}
+      {hideTrigger ? null : <EditButton onClick={() => setOpen(true)} label={triggerLabel} />}
       {/* Once the wizard is up it owns the frame: pinned step bar (with its own
           close button, hence hideClose), scrolling middle, pinned action bar.
           While loading there's no wizard yet, so the dialog keeps its own X. */}

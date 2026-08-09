@@ -1,4 +1,4 @@
-import { CalendarDays } from "lucide-react";
+import { CalendarIcon } from "@/components/ui/icons";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 
@@ -42,7 +42,7 @@ export default function ProjectMobileHeader({
             className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
             title="התחלה – סיום"
           >
-            <CalendarDays className="h-3.9 w-3.5" aria-hidden />
+            <CalendarIcon className="h-3.9 w-3.5" aria-hidden />
             <span dir="ltr">{dateRangeText}</span>
           </span>
         ) : null}

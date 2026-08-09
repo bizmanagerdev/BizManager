@@ -12,10 +12,10 @@
 // saved, so the block updates instantly without re-running the page's queries.
 
 import { useState } from "react";
-import { MapPin, Navigation, Pencil } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { LocationIcon, WazeIcon } from "@/components/ui/icons";
 import { DeliveryLocationDialog } from "@/components/orders/DeliveryLocationDialog";
 import { wazeLinkForPin, type DeliveryPin } from "@/lib/delivery-location";
+import { EditButton } from "@/components/ui/icon-button";
 
 export function CustomerDeliveryDetails({
   customerId,
@@ -36,16 +36,7 @@ export function CustomerDeliveryDetails({
     <div className="mt-3 space-y-1.5 rounded-xl border border-border/70 bg-background/70 p-2.5 text-xs">
       <div className="flex items-center justify-between gap-2">
         <span className="font-medium">הוראות הגעה</span>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          className="h-7 gap-1 px-2 text-xs"
-          onClick={() => setOpen(true)}
-        >
-          <Pencil className="h-3 w-3" />
-          עריכה
-        </Button>
+        <EditButton onClick={() => setOpen(true)} label="עריכה" />
       </div>
 
       <p className={instructions ? "whitespace-pre-wrap" : "text-muted-foreground"}>
@@ -54,7 +45,7 @@ export function CustomerDeliveryDetails({
 
       {pin ? (
         <div className="flex items-center gap-1.5">
-          <MapPin className="h-3.5 w-3.5 shrink-0 text-success" />
+          <LocationIcon className="h-3.5 w-3.5 shrink-0 text-success" />
           <span className="font-medium">נשמרה נקודת מסירה</span>
           <a
             href={wazeLinkForPin(pin)}
@@ -62,7 +53,7 @@ export function CustomerDeliveryDetails({
             rel="noreferrer"
             className="inline-flex items-center gap-1 text-secondary hover:underline"
           >
-            <Navigation className="h-3 w-3" />
+            <WazeIcon className="h-3 w-3" />
             ניווט
           </a>
         </div>

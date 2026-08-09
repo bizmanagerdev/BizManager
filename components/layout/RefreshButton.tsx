@@ -1,6 +1,6 @@
 "use client";
 
-import { RotateCw } from "lucide-react";
+import { RefreshIcon } from "@/components/ui/icons";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
@@ -37,7 +37,7 @@ export function RefreshButton() {
       aria-label="רענון"
       title="רענון"
     >
-      <RotateCw
+      <RefreshIcon
         className={spinning || isPending ? "animate-spin" : "transition-transform group-hover:rotate-90"}
         strokeWidth={TOPBAR_ICON_STROKE}
       />

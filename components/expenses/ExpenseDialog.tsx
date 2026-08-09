@@ -2,25 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { toast } from "sonner";
-import {
-  Car,
-  Loader2,
-  Wallet,
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  Delete,
-  CalendarDays,
-  Split,
-  Upload,
-  Paperclip,
-  LayoutList,
-  Rows3,
-  Landmark,
-  CreditCard,
-  Banknote,
-  Repeat,
-} from "lucide-react";
+import { ArrowLeftIcon, ArrowRightIcon, AttachIcon, BackspaceIcon, BankIcon, CalendarIcon, CardIcon, CashIcon, CheckIcon, ListIcon, RecurringIcon, SpinnerIcon, SplitIcon, UploadIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -321,9 +303,9 @@ function formatIls(value: number | null) {
 // Matching glyph per account kind (bank / cash / card) — used in the express
 // account picker so each account reads at a glance.
 function accountKindIcon(kind: string | null | undefined) {
-  if (kind === "bank") return <Landmark className="h-4 w-4" />;
-  if (kind === "card") return <CreditCard className="h-4 w-4" />;
-  return <Banknote className="h-4 w-4" />;
+  if (kind === "bank") return <BankIcon className="h-4 w-4" />;
+  if (kind === "card") return <CardIcon className="h-4 w-4" />;
+  return <CashIcon className="h-4 w-4" />;
 }
 
 function isImageAttachment(attachment: Pick<FinancialAttachment, "file_name" | "document_type">) {
@@ -1565,14 +1547,14 @@ export function ExpenseDialog({
         ))}
         <button type="button" onClick={() => tap(".")} className={keyCls}>.</button>
         <button type="button" onClick={() => tap("0")} className={keyCls}>0</button>
-        <button type="button" onClick={() => tap("del")} className={keyCls} aria-label="מחק"><Delete className="h-5 w-5" /></button>
+        <button type="button" onClick={() => tap("del")} className={keyCls} aria-label="מחק"><BackspaceIcon className="h-5 w-5" /></button>
         <button
           type="button"
           onClick={() => expressGo(1)}
           disabled={confirmDisabled}
           className="col-span-3 flex h-11 items-center justify-center gap-2 rounded-xl bg-primary text-base font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
         >
-          <ArrowLeft className="h-5 w-5" />המשך
+          <ArrowLeftIcon className="h-5 w-5" />המשך
         </button>
       </div>
     );
@@ -1598,7 +1580,7 @@ export function ExpenseDialog({
     return (
       <div className="mt-6 flex items-center justify-center gap-3">
         <Button type="button" onClick={onClick ?? (() => expressGo(1))} disabled={disabled}>
-          <ArrowLeft className="ml-1 h-4 w-4" />{label}
+          <ArrowLeftIcon className="ml-1 h-4 w-4" />{label}
         </Button>
         {skip ? (
           <button type="button" onClick={skip} className="mr-auto text-sm font-semibold text-muted-foreground hover:text-foreground">
@@ -1619,7 +1601,7 @@ export function ExpenseDialog({
       case "amount":
         return (
           <>
-            {expEyebrow(<Wallet className="h-4 w-4" />, "סכום")}
+            {expEyebrow(<WalletIcon className="h-4 w-4" />, "סכום")}
             {expTitle("כמה עלתה ההוצאה?", "אפשר להשאיר 0 ולקבוע אחר כך")}
             {expAmountHero(amount)}
             {/* Allow proceeding at 0 — a recurring bill whose amount changes each
@@ -1631,7 +1613,7 @@ export function ExpenseDialog({
       case "domain":
         return (
           <>
-            {expEyebrow(<LayoutList className="h-4 w-4" />, "סיווג")}
+            {expEyebrow(<ListIcon className="h-4 w-4" />, "סיווג")}
             {expTitle("לאיזה תחום שייכת ההוצאה?", "בחירה תעביר אותך אוטומטית לשלב הבא")}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {EXPENSE_BUSINESS_DOMAINS.map((d, i) => {
@@ -1663,7 +1645,7 @@ export function ExpenseDialog({
           const list = recurringProjects.filter((p) => p.label.toLowerCase().includes(q));
           return (
             <>
-              {expEyebrow(<LayoutList className="h-4 w-4" />, "פרויקט")}
+              {expEyebrow(<ListIcon className="h-4 w-4" />, "פרויקט")}
               {expTitle("לאיזה פרויקט לשייך?")}
               {searchBox("חיפוש פרויקט...")}
               <div className="grid gap-2">
@@ -1678,7 +1660,7 @@ export function ExpenseDialog({
           const list = recurringOrders.filter((o) => o.label.toLowerCase().includes(q));
           return (
             <>
-              {expEyebrow(<LayoutList className="h-4 w-4" />, "הזמנה")}
+              {expEyebrow(<ListIcon className="h-4 w-4" />, "הזמנה")}
               {expTitle("לאיזו הזמנה לשייך?", "אפשר גם בלי הזמנה")}
               {searchBox("חיפוש הזמנה...")}
               <div className="grid gap-2">
@@ -1693,7 +1675,7 @@ export function ExpenseDialog({
         const list = recurringProperties.filter((p) => p.label.toLowerCase().includes(q));
         return (
           <>
-            {expEyebrow(<LayoutList className="h-4 w-4" />, "נכס")}
+            {expEyebrow(<ListIcon className="h-4 w-4" />, "נכס")}
             {expTitle("לאיזה נכס לשייך?")}
             {searchBox("חיפוש נכס...")}
             <div className="grid gap-2">
@@ -1740,7 +1722,7 @@ export function ExpenseDialog({
       case "tags":
         return (
           <>
-            {expEyebrow(<Car className="h-4 w-4" />, "רכב")}
+            {expEyebrow(<VehicleIcon className="h-4 w-4" />, "רכב")}
             {expTitle("לשייך לרכב?", "אפשר לדלג")}
             <TagPicker value={tagIds} onChange={setTagIds} />
           </>
@@ -1748,7 +1730,7 @@ export function ExpenseDialog({
       case "date":
         return (
           <>
-            {expEyebrow(<CalendarDays className="h-4 w-4" />, isRecurring ? "תאריך התחלה" : "תאריך")}
+            {expEyebrow(<CalendarIcon className="h-4 w-4" />, isRecurring ? "תאריך התחלה" : "תאריך")}
             {expTitle(isRecurring ? "ממתי מתחיל?" : "מתי בוצעה ההוצאה?", isRecurring ? "התאריך שממנו נספרים החיובים (וקובע את יום החיוב)" : undefined)}
             <DateInput value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} />
             <div className="mt-3 flex flex-wrap justify-center gap-2">
@@ -1768,13 +1750,13 @@ export function ExpenseDialog({
       case "recurrence":
         return (
           <>
-            {expEyebrow(<Repeat className="h-4 w-4" />, "תדירות")}
+            {expEyebrow(<RecurringIcon className="h-4 w-4" />, "תדירות")}
             {expTitle("הוצאה חד-פעמית או חוזרת?", "חוזרת = תיווצר אוטומטית בכל תקופה")}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {expCard({ badge: 1, icon: <Wallet className="h-4 w-4" />, title: "חד-פעמי", sub: "הוצאה אחת בתאריך שנבחר", selected: !isRecurring, onClick: () => { setIsRecurring(false); expressAdvance(); } })}
+              {expCard({ badge: 1, icon: <WalletIcon className="h-4 w-4" />, title: "חד-פעמי", sub: "הוצאה אחת בתאריך שנבחר", selected: !isRecurring, onClick: () => { setIsRecurring(false); expressAdvance(); } })}
               {expCard({
                 badge: 2,
-                icon: <Repeat className="h-4 w-4" />,
+                icon: <RecurringIcon className="h-4 w-4" />,
                 title: "חוזר",
                 sub: "כל חודש או כל שנה",
                 selected: isRecurring,
@@ -1792,7 +1774,7 @@ export function ExpenseDialog({
         const currentKey = recurrenceKeyOf(recurFrequency, recurInterval);
         return (
           <>
-            {expEyebrow(<Repeat className="h-4 w-4" />, "כל כמה זמן")}
+            {expEyebrow(<RecurringIcon className="h-4 w-4" />, "כל כמה זמן")}
             {expTitle("כל כמה זמן חוזרת ההוצאה?")}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {RECURRENCE_CHOICES.map((c, i) =>
@@ -1818,7 +1800,7 @@ export function ExpenseDialog({
       case "recurmonth":
         return (
           <>
-            {expEyebrow(<CalendarDays className="h-4 w-4" />, "חודש")}
+            {expEyebrow(<CalendarIcon className="h-4 w-4" />, "חודש")}
             {expTitle("באיזה חודש?")}
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {MONTH_OPTIONS.map((m, i) =>
@@ -1831,7 +1813,7 @@ export function ExpenseDialog({
         const derivedName = finalCategory || description.trim() || "הוצאה קבועה";
         return (
           <>
-            {expEyebrow(<Paperclip className="h-4 w-4" />, "שם תבנית")}
+            {expEyebrow(<AttachIcon className="h-4 w-4" />, "שם תבנית")}
             {expTitle("איך לקרוא להוצאה הקבועה?", "השם שיופיע ברשימת ההוצאות הקבועות")}
             <Input value={templateName} onChange={(e) => setTemplateName(e.target.value)} placeholder={derivedName} autoFocus />
             <div className="mt-1.5 text-center text-xs text-muted-foreground">
@@ -1844,7 +1826,7 @@ export function ExpenseDialog({
       case "recurvariable":
         return (
           <>
-            {expEyebrow(<Wallet className="h-4 w-4" />, "סכום")}
+            {expEyebrow(<WalletIcon className="h-4 w-4" />, "סכום")}
             {expTitle("הסכום קבוע או משתנה?", "משתנה = ייקבע בעת התשלום, כמו מס")}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {expCard({ badge: 1, title: "סכום קבוע", sub: Number(amount) > 0 ? ils(Number(amount)) : undefined, selected: !recurVariable, onClick: () => { setRecurVariable(false); expressAdvance(); } })}
@@ -1867,7 +1849,7 @@ export function ExpenseDialog({
       case "recurpay":
         return (
           <>
-            {expEyebrow(<Wallet className="h-4 w-4" />, "תשלום")}
+            {expEyebrow(<WalletIcon className="h-4 w-4" />, "תשלום")}
             {expTitle("איך משלמים?", "הוראת קבע = ייחשב כשולם אוטומטית ביום החיוב")}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {expCard({ badge: 1, title: "אישור ידני", sub: "יופיע ביומן לאישור תשלום", selected: !recurAutoPaid, onClick: () => { setRecurAutoPaid(false); expressAdvance(); } })}
@@ -1878,7 +1860,7 @@ export function ExpenseDialog({
       case "recurrange":
         return (
           <>
-            {expEyebrow(<CalendarDays className="h-4 w-4" />, "טווח")}
+            {expEyebrow(<CalendarIcon className="h-4 w-4" />, "טווח")}
             {expTitle("עד מתי?", "אפשר לדלג — ימשיך ללא הגבלה")}
             <div className="space-y-1">
               <div className="text-sm font-medium">תאריך סיום (לא חובה)</div>
@@ -1901,7 +1883,7 @@ export function ExpenseDialog({
       case "status":
         return (
           <>
-            {expEyebrow(<Wallet className="h-4 w-4" />, "סטטוס תשלום")}
+            {expEyebrow(<WalletIcon className="h-4 w-4" />, "סטטוס תשלום")}
             {expTitle("מה סטטוס התשלום?", `סכום ${ils(Number(amount) || 0)}`)}
             <div className="grid gap-2">
               {expCard({ badge: 1, title: "לא שולם", sub: "ההוצאה עדיין ממתינה לתשלום", tone: "unpaid", selected: paymentStatus === "not_paid", onClick: () => { setPaymentStatus("not_paid"); expressAdvance(); } })}
@@ -1913,7 +1895,7 @@ export function ExpenseDialog({
       case "paidamt":
         return (
           <>
-            {expEyebrow(<Wallet className="h-4 w-4" />, "תשלום חלקי")}
+            {expEyebrow(<WalletIcon className="h-4 w-4" />, "תשלום חלקי")}
             {expTitle("כמה שולם עד כה?", `מתוך ${ils(Number(amount) || 0)}`)}
             {expAmountHero(paidAmount)}
             {expKeypad(setPaidAmount)}
@@ -1922,7 +1904,7 @@ export function ExpenseDialog({
       case "method":
         return (
           <>
-            {expEyebrow(<Wallet className="h-4 w-4" />, "אמצעי תשלום")}
+            {expEyebrow(<WalletIcon className="h-4 w-4" />, "אמצעי תשלום")}
             {expTitle("איך שילמת?", "לא חובה — אפשר לדלג")}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {PAYMENT_METHOD_OPTIONS.map((m, i) =>
@@ -1945,7 +1927,7 @@ export function ExpenseDialog({
       case "account":
         return (
           <>
-            {expEyebrow(<Wallet className="h-4 w-4" />, "חשבון")}
+            {expEyebrow(<WalletIcon className="h-4 w-4" />, "חשבון")}
             {expTitle("מאיזה חשבון?")}
             {accountsList.length === 0 ? (
               <>
@@ -1971,13 +1953,13 @@ export function ExpenseDialog({
       case "installments":
         return (
           <>
-            {expEyebrow(<Split className="h-4 w-4" />, "אופן חיוב")}
+            {expEyebrow(<SplitIcon className="h-4 w-4" />, "אופן חיוב")}
             {expTitle("תשלום אחד או פריסה?")}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {expCard({ badge: 1, icon: <Wallet className="h-4 w-4" />, title: "תשלום אחד", selected: !installmentsMode, onClick: () => { setInstallmentsMode(false); expressAdvance(); } })}
+              {expCard({ badge: 1, icon: <WalletIcon className="h-4 w-4" />, title: "תשלום אחד", selected: !installmentsMode, onClick: () => { setInstallmentsMode(false); expressAdvance(); } })}
               {expCard({
                 badge: 2,
-                icon: <Split className="h-4 w-4" />,
+                icon: <SplitIcon className="h-4 w-4" />,
                 title: "פריסה לתשלומים",
                 selected: installmentsMode,
                 onClick: () => {
@@ -1993,7 +1975,7 @@ export function ExpenseDialog({
       case "instcount":
         return (
           <>
-            {expEyebrow(<Split className="h-4 w-4" />, "פריסה")}
+            {expEyebrow(<SplitIcon className="h-4 w-4" />, "פריסה")}
             {expTitle("לכמה תשלומים לפרוס?")}
             <InstallmentFields
               total={Number(amount) || 0}
@@ -2006,7 +1988,7 @@ export function ExpenseDialog({
       case "billing":
         return (
           <>
-            {expEyebrow(<LayoutList className="h-4 w-4" />, "חיוב לקוח")}
+            {expEyebrow(<ListIcon className="h-4 w-4" />, "חיוב לקוח")}
             {expTitle("שיוך לפרויקט")}
             <div className="grid gap-2">
               {expCard({ badge: 1, title: "לחיוב לקוח", sub: "ההוצאה תתווסף לחיוב הלקוח", selected: billedToCustomer, onClick: () => { setBilledToCustomer(true); setIncludedInBasePrice(false); expressAdvance(); } })}
@@ -2021,7 +2003,7 @@ export function ExpenseDialog({
         const sugg = isRecurring ? [] : [finalCategory || "הוצאה שוטפת", "תשלום לספק", "רכישה חד-פעמית"].filter(Boolean);
         return (
           <>
-            {expEyebrow(<Paperclip className="h-4 w-4" />, "תיאור")}
+            {expEyebrow(<AttachIcon className="h-4 w-4" />, "תיאור")}
             {expTitle(isRecurring ? "פירוט נוסף?" : "על מה ההוצאה?", isRecurring ? "לא חובה — השם כבר מזהה את התבנית" : "בחרו הצעה או כתבו חופשי")}
             <div className="mb-3 flex flex-wrap justify-center gap-2">
               {sugg.map((c) => (
@@ -2043,7 +2025,7 @@ export function ExpenseDialog({
       case "notes":
         return (
           <>
-            {expEyebrow(<Paperclip className="h-4 w-4" />, "הערות")}
+            {expEyebrow(<AttachIcon className="h-4 w-4" />, "הערות")}
             {expTitle("הערות פנימיות?", "לא חובה")}
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
             {expContinue(undefined, "המשך", () => expressGo(1))}
@@ -2052,7 +2034,7 @@ export function ExpenseDialog({
       case "files":
         return (
           <>
-            {expEyebrow(<Upload className="h-4 w-4" />, "קבצים מצורפים")}
+            {expEyebrow(<UploadIcon className="h-4 w-4" />, "קבצים מצורפים")}
             {expTitle("לצרף חשבונית או קבלה?", "לא חובה")}
             <div className="flex items-center gap-2">
               <FileUploadActions
@@ -2072,7 +2054,7 @@ export function ExpenseDialog({
       case "worker":
         return (
           <>
-            {expEyebrow(<Wallet className="h-4 w-4" />, "עובד")}
+            {expEyebrow(<WalletIcon className="h-4 w-4" />, "עובד")}
             {expTitle("מי העובד?")}
             <Input
               value={workerSearch}
@@ -2119,7 +2101,7 @@ export function ExpenseDialog({
       case "wtiming":
         return (
           <>
-            {expEyebrow(<CalendarDays className="h-4 w-4" />, "שעות עבודה")}
+            {expEyebrow(<CalendarIcon className="h-4 w-4" />, "שעות עבודה")}
             {expTitle("מתי עבד/ה?")}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div className="space-y-1">
@@ -2161,7 +2143,7 @@ export function ExpenseDialog({
       case "wdate":
         return (
           <>
-            {expEyebrow(<CalendarDays className="h-4 w-4" />, "תאריך")}
+            {expEyebrow(<CalendarIcon className="h-4 w-4" />, "תאריך")}
             {expTitle("מתי עבד/ה?")}
             <DateInput
               value={sessionDateOnly}
@@ -2177,7 +2159,7 @@ export function ExpenseDialog({
       case "wlabor":
         return (
           <>
-            {expEyebrow(<Wallet className="h-4 w-4" />, "עלות עבודה")}
+            {expEyebrow(<WalletIcon className="h-4 w-4" />, "עלות עבודה")}
             {expTitle(sessionPriceRequired ? "כמה מגיע לעובד?" : "עלות עבודה")}
             <CurrencyInput value={laborCost} onChange={(e) => setLaborCost(e.target.value)} />
             <div className="mt-1.5 text-xs text-muted-foreground">
@@ -2191,7 +2173,7 @@ export function ExpenseDialog({
       case "wbilling":
         return (
           <>
-            {expEyebrow(<LayoutList className="h-4 w-4" />, "חיוב לקוח")}
+            {expEyebrow(<ListIcon className="h-4 w-4" />, "חיוב לקוח")}
             {expTitle("לחייב את הלקוח?", "אפשר לדלג")}
             <label className="flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm">
               <input
@@ -2212,7 +2194,7 @@ export function ExpenseDialog({
       case "wpayment":
         return (
           <>
-            {expEyebrow(<Wallet className="h-4 w-4" />, "תשלום לעובד")}
+            {expEyebrow(<WalletIcon className="h-4 w-4" />, "תשלום לעובד")}
             {expTitle("שולם לעובד?")}
             {isEditingSession && existingWorkerPaidAmount > 0 ? (
               <div className="mb-2 text-xs text-muted-foreground">שולם עד עכשיו: {formatIls(existingWorkerPaidAmount)} — תשלום חדש נרשם כתוספת בלבד.</div>
@@ -2246,7 +2228,7 @@ export function ExpenseDialog({
       case "wmethod":
         return (
           <>
-            {expEyebrow(<Wallet className="h-4 w-4" />, "אמצעי תשלום")}
+            {expEyebrow(<WalletIcon className="h-4 w-4" />, "אמצעי תשלום")}
             {expTitle("איך שולם לעובד?", "לא חובה — אפשר לדלג")}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {PAYMENT_METHOD_OPTIONS.map((m, i) =>
@@ -2269,7 +2251,7 @@ export function ExpenseDialog({
       case "waccount":
         return (
           <>
-            {expEyebrow(<Wallet className="h-4 w-4" />, "חשבון")}
+            {expEyebrow(<WalletIcon className="h-4 w-4" />, "חשבון")}
             {expTitle("מאיזה חשבון שולם לעובד?")}
             {accountsList.length === 0 ? (
               <>
@@ -2363,7 +2345,7 @@ export function ExpenseDialog({
               ];
         return (
           <>
-            {expEyebrow(<Check className="h-4 w-4" />, "סיכום")}
+            {expEyebrow(<CheckIcon className="h-4 w-4" />, "סיכום")}
             {expTitle("הכול מוכן?", "אפשר לחזור אחורה לתקן")}
             <div className="divide-y rounded-xl border">
               {rows.map(([k, v]) => (
@@ -2375,7 +2357,7 @@ export function ExpenseDialog({
             </div>
             <div className="mt-6">
               <Button type="button" onClick={() => void handleSubmit()} disabled={saving} className="w-full">
-                {saving ? (<><Loader2 className="ml-2 h-4 w-4 animate-spin" />שומר...</>) : (<><Check className="ml-2 h-4 w-4" />{isWorkerPayment ? "שמור משמרת" : isRecurring ? "שמור הוצאה קבועה" : "שמור הוצאה"}</>)}
+                {saving ? (<><SpinnerIcon className="ml-2 h-4 w-4 animate-spin" />שומר...</>) : (<><CheckIcon className="ml-2 h-4 w-4" />{isWorkerPayment ? "שמור משמרת" : isRecurring ? "שמור הוצאה קבועה" : "שמור הוצאה"}</>)}
               </Button>
             </div>
           </>
@@ -2397,7 +2379,7 @@ export function ExpenseDialog({
             step, and the express flow keeps the screen as bare as possible. */}
         {presetTagLabel ? (
           <div className="mt-2 flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-1.5 text-xs">
-            <Car className="h-3.5 w-3.5 text-muted-foreground" />
+            <VehicleIcon className="h-3.5 w-3.5 text-muted-foreground" />
             <span>משויך לרכב: <span className="font-medium text-foreground">{presetTagLabel}</span></span>
           </div>
         ) : null}
@@ -2425,13 +2407,13 @@ export function ExpenseDialog({
             onClick={() => expressGo(-1)}
             disabled={expIndex === 0}
           >
-            <ArrowRight className="h-4 w-4" />
+            <ArrowRightIcon className="h-4 w-4" />
             חזרה
           </Button>
           {expIndex < expressSteps.length - 1 ? (
             <Button type="button" onClick={() => expressGo(1)}>
               המשך
-              <ArrowLeft className="h-4 w-4" />
+              <ArrowLeftIcon className="h-4 w-4" />
             </Button>
           ) : null}
         </div>
@@ -2474,7 +2456,7 @@ export function ExpenseDialog({
                     activeMode === "form" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <Rows3 className="h-3.5 w-3.5" />מסך מלא
+                  <ListIcon className="h-3.5 w-3.5" />מסך מלא
                 </button>
                 <button
                   type="button"
@@ -2484,7 +2466,7 @@ export function ExpenseDialog({
                     activeMode === "express" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <LayoutList className="h-3.5 w-3.5" />שלב אחר שלב
+                  <ListIcon className="h-3.5 w-3.5" />שלב אחר שלב
                 </button>
               </div>
             ) : null}
@@ -2501,7 +2483,7 @@ export function ExpenseDialog({
           {!isWorkerPayment ? (
             <div className={cn("rounded-xl border p-3 transition-colors", (Number(amount) || 0) > 0 ? "border-success/50 bg-success/5" : "bg-muted/20")}>
               <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
-                <Wallet className="h-3.5 w-3.5" />
+                <WalletIcon className="h-3.5 w-3.5" />
                 {isRecurring && recurVariable ? (
                   <span>סכום משוער (בערך)</span>
                 ) : (
@@ -2619,7 +2601,7 @@ export function ExpenseDialog({
               category or when the expense already carries a car tag. */}
           {presetTagLabel ? (
             <div className="flex items-center gap-2 rounded-xl border bg-muted/30 px-3 py-2 text-sm">
-              <Car className="h-4 w-4 text-muted-foreground" />
+              <VehicleIcon className="h-4 w-4 text-muted-foreground" />
               <span>
                 ההוצאה משויכת לרכב: <span className="font-medium text-foreground">{presetTagLabel}</span>
               </span>
@@ -2872,7 +2854,7 @@ export function ExpenseDialog({
                             : "border-input bg-background text-muted-foreground hover:bg-muted/40"
                         )}
                       >
-                        {opt.key ? <Repeat className="h-4 w-4" /> : <Wallet className="h-4 w-4" />}
+                        {opt.key ? <RecurringIcon className="h-4 w-4" /> : <WalletIcon className="h-4 w-4" />}
                         {opt.label}
                       </button>
                     ))}
@@ -3085,7 +3067,7 @@ export function ExpenseDialog({
                   )}
                 >
                   <span className={cn("flex h-8 w-8 flex-none items-center justify-center rounded-lg transition-colors", installmentsMode ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>
-                    <Split className="h-4 w-4" />
+                    <SplitIcon className="h-4 w-4" />
                   </span>
                   <span className="flex-1">
                     <span className="block font-semibold">פריסה לתשלומים</span>
@@ -3348,7 +3330,7 @@ export function ExpenseDialog({
             <Button type="submit" disabled={saving}>
               {saving ? (
                 <>
-                  <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                  <SpinnerIcon className="ml-2 h-4 w-4 animate-spin" />
                   שומר...
                 </>
               ) : (

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeftIcon, SuccessIcon } from "@/components/ui/icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -50,7 +50,7 @@ export default function TodayCard({ inbox }: { inbox: InboxView }) {
       <CardContent className="space-y-1.5">
         {total === 0 ? (
           <div className="flex items-center gap-2 rounded-lg border border-success/40 bg-success-soft px-3 py-3 text-sm">
-            <span className="text-base">✓</span>
+            <SuccessIcon className="h-4 w-4 shrink-0 text-success" />
             <span className="text-success-soft-foreground">אין מה לטפל היום.</span>
           </div>
         ) : null}
@@ -74,7 +74,7 @@ export default function TodayCard({ inbox }: { inbox: InboxView }) {
                   {item.customerName ? <span>· {item.customerName}</span> : null}
                 </span>
               </span>
-              <ChevronLeft className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <ChevronLeftIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
             </Link>
           );
         })}
@@ -89,7 +89,7 @@ export default function TodayCard({ inbox }: { inbox: InboxView }) {
               <span className={cn("h-2 w-2 shrink-0 rounded-full", DOT[s.severity] ?? DOT.info)} />
               <span className="text-sm font-medium">{s.title}</span>
             </span>
-            <ChevronLeft className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <ChevronLeftIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
           </Link>
         ))}
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import * as Popover from "@radix-ui/react-popover";
-import { Check, ChevronDown, Search } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, SearchIcon } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 
@@ -131,7 +131,7 @@ export function SearchableSelect({
             {selected?.icon ? <span className="shrink-0 text-muted-foreground">{selected.icon}</span> : null}
             <span className="min-w-0 truncate">{triggerLabel}</span>
           </span>
-          <ChevronDown className="h-6 w-6 shrink-0 text-muted-foreground" />
+          <ChevronDownIcon className="h-6 w-6 shrink-0 text-muted-foreground" />
         </button>
       </Popover.Trigger>
 
@@ -167,7 +167,7 @@ export function SearchableSelect({
                 placeholder={searchPlaceholder}
                 className="pe-9"
               />
-              <Search className="pointer-events-none absolute end-5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <SearchIcon className="pointer-events-none absolute end-5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             </div>
           ) : null}
 
@@ -182,7 +182,7 @@ export function SearchableSelect({
                 )}
               >
                 {value === "" ? (
-                  <Check className="h-4 w-4 shrink-0 text-primary" />
+                  <CheckIcon className="h-4 w-4 shrink-0 text-primary" />
                 ) : (
                   <span className="w-4 shrink-0" />
                 )}
@@ -204,7 +204,7 @@ export function SearchableSelect({
                   )}
                 >
                   {value === option.value ? (
-                    <Check className="h-4 w-4 shrink-0 text-primary" />
+                    <CheckIcon className="h-4 w-4 shrink-0 text-primary" />
                   ) : (
                     <span className="w-4 shrink-0" />
                   )}

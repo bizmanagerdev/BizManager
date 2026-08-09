@@ -8,7 +8,7 @@
 // only the trigger + shell so both detail pages open the same-looking menu.
 
 import type { ReactNode } from "react";
-import { MoreVertical } from "lucide-react";
+import { MoreIcon } from "@/components/ui/icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,7 +25,7 @@ export function HeaderActionsMenu({ children }: { children: ReactNode }) {
           title="פעולות"
           className="flex h-8 w-8 items-center justify-center rounded-md text-sidebar-foreground transition-colors hover:bg-white/10 lg:hidden"
         >
-          <MoreVertical className="h-5 w-5" />
+          <MoreIcon className="h-5 w-5" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent

@@ -1,6 +1,6 @@
 "use client";
 
-import { WifiOff } from "lucide-react";
+import { OfflineIcon } from "@/components/ui/icons";
 
 function formatSavedAt(savedAt: number | null): string {
   if (!savedAt) return "";
@@ -28,7 +28,7 @@ export default function StaleDataBadge({ savedAt, className }: { savedAt: number
       dir="rtl"
       className={`inline-flex items-center gap-1 rounded-full border border-warning/40 bg-warning-soft/60 px-2 py-0.5 text-xs text-warning-soft-foreground ${className ?? ""}`}
     >
-      <WifiOff className="h-3 w-3" />
+      <OfflineIcon className="h-3 w-3" />
       <span>לא מקוון{when ? ` · ${when}` : ""}</span>
     </span>
   );

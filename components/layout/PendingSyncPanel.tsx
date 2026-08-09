@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CloudUpload, FileText, RotateCcw, Trash2, X } from "lucide-react";
+import { CloseIcon, DeleteIcon, DocumentIcon, RefreshIcon, SyncIcon, WarningIcon } from "@/components/ui/icons";
 import {
   CONNECTION_EVENTS,
   getFailed,
@@ -137,7 +137,7 @@ export default function PendingSyncPanel({
         {failedCount > 0 ? (
           <div className="space-y-2">
             <h4 className="flex items-center gap-1.5 text-sm font-semibold text-destructive">
-              <AlertTriangle className="h-4 w-4" /> נכשל ({failedCount})
+              <WarningIcon className="h-4 w-4" /> נכשל ({failedCount})
             </h4>
             {snap.failedUploads.map((entry) => (
               <Row
@@ -192,9 +192,9 @@ function Row({
         {thumb ? (
           <img src={thumb} alt={label} className="h-full w-full object-cover" />
         ) : failed ? (
-          <FileText className="h-5 w-5 text-muted-foreground" />
+          <DocumentIcon className="h-5 w-5 text-muted-foreground" />
         ) : (
-          <CloudUpload className="h-5 w-5 text-muted-foreground" />
+          <SyncIcon className="h-5 w-5 text-muted-foreground" />
         )}
       </div>
       <div className="min-w-0 flex-1">
@@ -209,7 +209,7 @@ function Row({
             aria-label="נסה שוב"
             className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary hover:bg-primary/15"
           >
-            <RotateCcw className="h-4 w-4" />
+            <RefreshIcon className="h-4 w-4" />
           </button>
           <button
             type="button"
@@ -217,11 +217,11 @@ function Row({
             aria-label="הסר"
             className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted/60"
           >
-            <Trash2 className="h-4 w-4" />
+            <DeleteIcon className="h-4 w-4" />
           </button>
         </div>
       ) : (
-        <X className="h-3.5 w-3.5 shrink-0 text-transparent" />
+        <CloseIcon className="h-3.5 w-3.5 shrink-0 text-transparent" />
       )}
     </div>
   );

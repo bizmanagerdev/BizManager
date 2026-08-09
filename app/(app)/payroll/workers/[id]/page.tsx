@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { UserRound } from "lucide-react";
+import { UserIcon } from "@/components/ui/icons";
 import AppShell from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -78,7 +78,7 @@ export default async function WorkerDetailPage({
             <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
               <div className="min-w-0 space-y-0.5">
                 <div className="flex items-center gap-2 text-sm font-semibold">
-                  <UserRound className="h-4 w-4 text-primary" />
+                  <UserIcon className="h-4 w-4 text-primary" />
                   העובד הזה הוא גם לקוח: {linkedCustomer.name}
                 </div>
                 <div className="text-xs text-muted-foreground">

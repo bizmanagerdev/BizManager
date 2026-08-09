@@ -13,7 +13,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { MapPin, Navigation } from "lucide-react";
+import { LocationIcon, WazeIcon } from "@/components/ui/icons";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -170,7 +170,7 @@ export function DeliveryLocationDialog({
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 text-xs text-secondary hover:underline"
                   >
-                    <Navigation className="h-3.5 w-3.5" />
+                    <WazeIcon className="h-3.5 w-3.5" />
                     בדקו בוויז
                   </a>
                 ) : null}
@@ -198,7 +198,7 @@ export function DeliveryLocationDialog({
                 onClick={captureCurrentLocation}
                 disabled={locating}
               >
-                <MapPin className="h-4 w-4" />
+                <LocationIcon className="h-4 w-4" />
                 {locating ? "מאתר..." : "אני עומד כאן — שמור מיקום"}
               </Button>
 

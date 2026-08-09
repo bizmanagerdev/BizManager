@@ -62,6 +62,24 @@ The financial layer is being consolidated toward **one source of truth** (`lib/f
 - All user-facing text is **Hebrew**; map server errors via `toHebrewError`. Never surface raw English.
 - Use the shared UI primitives (`components/ui/*`) — `CurrencyInput`, `SearchableSelect`, `ConfirmDialog`, etc.
 
+## Icons — one palette, no exceptions
+
+All icons come from **`components/ui/icons.ts`**, imported by meaning:
+
+```ts
+import { EditIcon, DeleteIcon, WazeIcon } from "@/components/ui/icons";
+```
+
+- **Never import `lucide-react` directly.** ESLint fails the build if you do; the palette is the only door.
+- One meaning = one glyph. Before adding an entry, check the palette — it carries a
+  deliberate reserve for features not built yet, so the icon you need is usually there.
+- Every glyph is a lucide outline icon (24×24, 2px stroke) so they read as one set.
+  The single exception is a **brand mark**: `WazeIcon` is the real Waze logo, kept
+  because navigation in this app *is* Waze — never swap it for a generic arrow or compass.
+- **Edit is a pencil with no text, everywhere.** Use `EditButton` from
+  `components/ui/icon-button.tsx`; its `label` sets the tooltip and `aria-label`, never
+  visible text. `DeleteButton` is its counterpart, and `IconButton` covers the rest.
+
 ## Where things live
 
 | Area | Path |

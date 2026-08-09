@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, Package } from "lucide-react";
+import { ChevronDownIcon, ProductIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -27,7 +27,7 @@ export function ItemsToMoveList({
     <div>
       <div className="flex items-center justify-between gap-2">
         <span className="flex items-center gap-2 text-sm font-semibold">
-          <Package className="h-4 w-4 text-primary" />
+          <ProductIcon className="h-4 w-4 text-primary" />
           פריטים להעברה
         </span>
         <span className="flex items-center gap-1.5">
@@ -43,7 +43,7 @@ export function ItemsToMoveList({
               onClick={() => setOpen((prev) => !prev)}
             >
               {open ? "הצג פחות" : `הצג עוד ${hiddenCount}`}
-              <ChevronDown
+              <ChevronDownIcon
                 className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`}
               />
             </Button>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Pencil, X } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, ChevronUpIcon, CloseIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Field } from "@/components/ui/field";
@@ -11,6 +11,7 @@ import type { AlertMode, AlertRow, AlertSchedule } from "@/lib/notifications/typ
 import { BUILTIN_ALERT_TYPES } from "@/lib/notifications/types";
 import AlertMetricsPanel from "@/components/notifications/AlertMetricsPanel";
 import { notifyAlertsChanged } from "@/lib/ui/alerts-refresh";
+import { EditButton } from "@/components/ui/icon-button";
 
 // This screen answers ONE question for an admin: which automatic alerts exist,
 // and who gets them. That's the "live" rules list — everything else (scheduled
@@ -304,9 +305,7 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
           </div>
         </div>
 
-        <Button variant="ghost" size="sm" className="h-7 w-7 shrink-0 p-0" title="עריכה" aria-label="עריכת התראה" onClick={() => openEdit(alert)}>
-          <Pencil className="h-3.5 w-3.5" />
-        </Button>
+        <EditButton onClick={() => openEdit(alert)} label="עריכת התראה" />
 
         {/* System rules (rule_key) aren't deletable — only toggled/edited. */}
         {!alert.rule_key ? (
@@ -319,7 +318,7 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
             disabled={deleting === alert.id}
             onClick={() => setConfirmDelete(alert)}
           >
-            <X className="h-3.5 w-3.5" />
+            <CloseIcon className="h-3.5 w-3.5" />
           </Button>
         ) : null}
       </div>
@@ -597,7 +596,7 @@ function RecipientsDropdown({
         className={`${inputCls} flex items-center justify-between`}
       >
         <span>{label}</span>
-        <span className="text-muted-foreground text-[10px]">{open ? "▲" : "▼"}</span>
+        {open ? <ChevronUpIcon className="h-3 w-3 text-muted-foreground" /> : <ChevronDownIcon className="h-3 w-3 text-muted-foreground" />}
       </button>
 
       {open && (
@@ -648,7 +647,7 @@ function DropdownRow({
           checked ? "border-primary bg-primary text-white" : "border-border"
         }`}
       >
-        {checked && "✓"}
+        {checked ? <CheckIcon className="h-3 w-3" /> : null}
       </span>
       {label}
     </button>

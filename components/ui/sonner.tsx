@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2 } from "lucide-react";
+import { SpinnerIcon } from "@/components/ui/icons";
 import { Toaster as Sonner } from "sonner";
 
 type ToasterProps = React.ComponentProps<typeof Sonner>;
@@ -48,7 +48,7 @@ export function Toaster(props: ToasterProps) {
       duration={5000}
       className="toaster group"
       icons={{
-        loading: <Loader2 className="size-5 animate-spin text-white" />,
+        loading: <SpinnerIcon className="size-5 animate-spin text-white" />,
       }}
       toastOptions={{
         unstyled: true,

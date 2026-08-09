@@ -6,11 +6,13 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, MessageCircle, Phone, type LucideIcon } from "lucide-react";
+import { ChatIcon, ChevronDownIcon, PhoneIcon, ReminderIcon, WarningIcon } from "@/components/ui/icons";
+import type { IconComponent } from "@/components/ui/icons";
 import { NavLink } from "@/components/NavLink";
 import { Badge } from "@/components/ui/badge";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
+import { EditButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { DateInput } from "@/components/ui/date-input";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
@@ -52,7 +54,7 @@ import {
 function LastContactSignal({ lastContactAt, overdue }: { lastContactAt: string | null; overdue: boolean }) {
   if (!lastContactAt) {
     if (!overdue) return <span className="text-muted-foreground/40">—</span>;
-    return <span className="text-[11px] font-medium text-warning-strong">⚠ טרם נוצר קשר</span>;
+    return <span className="text-[11px] font-medium text-warning-strong"><WarningIcon className="inline h-3 w-3 align-text-bottom" /> טרם נוצר קשר</span>;
   }
   const days = daysSince(lastContactAt);
   const label = days === 0 ? "היום" : formatDate(lastContactAt);
@@ -71,7 +73,7 @@ export function ViewTab({
 }: {
   active: boolean;
   onClick: () => void;
-  icon: LucideIcon;
+  icon: IconComponent;
   children: ReactNode;
 }) {
   return (
@@ -136,7 +138,7 @@ export function TodayOverview({
                     )}
                     {r.customer_phone ? (
                       <a href={`tel:${r.customer_phone}`} className="text-muted-foreground hover:underline">
-                        ☎ {r.customer_phone}
+                        <PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}{r.customer_phone}
                       </a>
                     ) : null}
                     <span className="text-muted-foreground">{r.task_subject ? "משימה" : actionTypeLabel(r.action_type)}</span>
@@ -207,7 +209,7 @@ function DueTodaySection({
                 )}
                 {p.customer_phone ? (
                   <a href={`tel:${p.customer_phone}`} className="text-muted-foreground hover:underline">
-                    ☎ {p.customer_phone}
+                    <PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}{p.customer_phone}
                   </a>
                 ) : null}
                 {href ? (
@@ -307,7 +309,7 @@ function CustomerActions({
           title="התקשרות"
           className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input hover:bg-muted"
         >
-          <Phone className="h-4 w-4" />
+          <PhoneIcon className="h-4 w-4" />
         </a>
       ) : null}
       {wa ? (
@@ -318,7 +320,7 @@ function CustomerActions({
           title="שליחת תזכורת בוואטסאפ"
           className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input hover:bg-muted"
         >
-          <MessageCircle className="h-4 w-4 text-success" />
+          <ChatIcon className="h-4 w-4 text-success" />
         </a>
       ) : null}
       {group.customer_id ? (
@@ -439,7 +441,7 @@ function CustomerCard({
         <button type="button" onClick={onToggle} className="flex w-full items-start justify-between gap-2 text-right">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <ChevronDown
+              <ChevronDownIcon
                 className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
               />
               <span className="font-semibold">{group.customer_name}</span>
@@ -449,7 +451,7 @@ function CustomerCard({
               ) : null}
             </div>
             {group.customer_phone ? (
-              <div className="mt-1 text-sm text-muted-foreground">☎ {group.customer_phone}</div>
+              <div className="mt-1 text-sm text-muted-foreground"><PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}{group.customer_phone}</div>
             ) : null}
             {group.oldest_days_late > 0 ? (
               <div className="text-xs text-destructive">{group.oldest_days_late} ימים באיחור</div>
@@ -473,7 +475,7 @@ function CustomerCard({
             title="מעבר לתזכורת"
             className="ms-auto text-xs text-primary hover:underline"
           >
-            🔔 תזכורת {formatDate(group.next_reminder_at)}
+            <ReminderIcon className="inline h-3 w-3 align-text-bottom" />{" "}תזכורת {formatDate(group.next_reminder_at)}
           </button>
         ) : null}
       </div>
@@ -511,7 +513,7 @@ function ExpectedReceiptRow({ receipt }: { receipt: ExpectedReceipt }) {
         )}
         {receipt.customerPhone ? (
           <a href={`tel:${receipt.customerPhone}`} className="text-muted-foreground hover:underline">
-            ☎ {receipt.customerPhone}
+            <PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}{receipt.customerPhone}
           </a>
         ) : null}
         {receipt.checkNumber ? (
@@ -803,7 +805,7 @@ export function DebtorsTable({
       {filtered.length === 0 ? (
         <div className="rounded-2xl border border-border/70 bg-background/70 px-4 py-10 text-center text-sm text-muted-foreground">
           {filter === "all" && !search.trim() && domain === "all"
-            ? "אין חובות פתוחים — הכל נגבה! 🎉"
+            ? "אין חובות פתוחים — הכל נגבה!"
             : "אין פריטים שתואמים לסינון."}
         </div>
       ) : (
@@ -931,7 +933,7 @@ function FragmentRow({
                 onClick={onToggle}
                 className="flex items-center gap-1 text-right font-medium hover:underline"
               >
-                <ChevronDown
+                <ChevronDownIcon
                   className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
                 />
                 <span>{group.customer_name}</span>
@@ -977,7 +979,7 @@ function FragmentRow({
               title="מעבר לתזכורת"
               className="text-xs text-primary hover:underline"
             >
-              🔔 {formatDate(group.next_reminder_at)}
+              <ReminderIcon className="inline h-3 w-3 align-text-bottom" />{" "}{formatDate(group.next_reminder_at)}
             </button>
           ) : (
             <span className="text-muted-foreground/40">—</span>
@@ -1103,7 +1105,7 @@ function ReminderGroup({
               <div className="mt-1 flex flex-wrap items-center gap-x-3 text-muted-foreground">
                 {r.customer_phone ? (
                   <a href={`tel:${r.customer_phone}`} className="hover:underline">
-                    ☎ {r.customer_phone}
+                    <PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}{r.customer_phone}
                   </a>
                 ) : null}
                 {r.assigned_to_name ? <span>אחראי: {r.assigned_to_name}</span> : null}
@@ -1120,15 +1122,7 @@ function ReminderGroup({
               >
                 בוצע
               </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-8 text-xs"
-                onClick={() => onEdit(r)}
-              >
-                ערוך
-              </Button>
+              <EditButton onClick={() => onEdit(r)} label="עריכת תזכורת" />
               <Button
                 type="button"
                 size="sm"

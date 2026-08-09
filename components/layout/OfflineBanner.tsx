@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, CloudUpload, Loader2, WifiOff } from "lucide-react";
+import { OfflineIcon, SpinnerIcon, SyncIcon, WarningIcon } from "@/components/ui/icons";
 import { useOfflineStatus } from "@/hooks/useOfflineStatus";
 import PendingSyncPanel from "@/components/layout/PendingSyncPanel";
 import { cn } from "@/lib/utils";
@@ -34,9 +34,9 @@ export default function OfflineBanner() {
         >
           <div className="flex items-center gap-2">
             {isOnline ? (
-              <CloudUpload className="h-4 w-4 shrink-0" />
+              <SyncIcon className="h-4 w-4 shrink-0" />
             ) : (
-              <WifiOff className="h-4 w-4 shrink-0" />
+              <OfflineIcon className="h-4 w-4 shrink-0" />
             )}
             <span>
               {!isOnline && queueLength === 0 &&
@@ -61,7 +61,7 @@ export default function OfflineBanner() {
                 disabled={isProcessing}
                 className="flex items-center gap-1.5 rounded bg-warning px-2 py-1 text-xs text-warning-foreground hover:opacity-90 disabled:opacity-60"
               >
-                {isProcessing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {isProcessing && <SpinnerIcon className="h-3.5 w-3.5 animate-spin" />}
                 {isProcessing ? "שולח..." : "שלח עכשיו"}
               </button>
             )}
@@ -73,7 +73,7 @@ export default function OfflineBanner() {
       {failedLength > 0 && (
         <div className="flex items-center justify-between gap-3 bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <WarningIcon className="h-4 w-4 shrink-0" />
             <span>{`${failedLength} פעולות לא נשמרו בשרת — יש לנסות שוב`}</span>
           </div>
           <div className="flex items-center gap-1.5">

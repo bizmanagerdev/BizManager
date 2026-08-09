@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
-import { ChevronDown, ChevronLeft } from "lucide-react";
+import { ChevronDownIcon, ChevronLeftIcon } from "@/components/ui/icons";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { CardCostsReport } from "@/lib/financial/cardCosts";
@@ -95,9 +95,9 @@ export default function CardCostsPanel({ report }: { report: CardCostsReport }) 
                       <td dir="ltr" className="px-3 py-2.5 text-right font-medium tabular-nums">
                         <span className="inline-flex items-center gap-1">
                           {isOpen ? (
-                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                            <ChevronDownIcon className="h-4 w-4 text-muted-foreground" />
                           ) : (
-                            <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+                            <ChevronLeftIcon className="h-4 w-4 text-muted-foreground" />
                           )}
                           {formatMonthLabel(row.month)}
                         </span>

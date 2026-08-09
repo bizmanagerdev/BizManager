@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
+import { CloseIcon } from "@/components/ui/icons";
 
 type Stage = { day_offset: number; label: string; severity: string; enabled: boolean };
 
@@ -98,7 +99,7 @@ export default function DunningStagesEditor() {
               פעיל
             </label>
             <button type="button" onClick={() => remove(i)} className="rounded-lg border border-destructive/30 px-2 py-1 text-xs text-destructive hover:bg-destructive-soft" title="הסרה">
-              ✕
+              <CloseIcon className="h-3.5 w-3.5" />
             </button>
           </div>
         ))}

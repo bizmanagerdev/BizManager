@@ -1,33 +1,22 @@
 import Link from "next/link";
-import {
-  Activity,
-  ShoppingCart,
-  ReceiptText,
-  FolderKanban,
-  ListChecks,
-  Bell,
-  LogIn,
-  Users,
-  Package,
-  FileText,
-  type LucideIcon,
-} from "lucide-react";
+import { ActivityIcon, ChecklistIcon, DocumentIcon, LoginIcon, NotificationIcon, OrderIcon, ProductIcon, ProjectIcon, ReceiptIcon, UsersIcon } from "@/components/ui/icons";
+import type { IconComponent } from "@/components/ui/icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import type { AuditFeedItem } from "@/lib/audit";
 
-const ENTITY_ICON: Record<string, LucideIcon> = {
-  orders: ShoppingCart,
-  expenses: ReceiptText,
-  payments: ReceiptText,
-  projects: FolderKanban,
-  tasks: ListChecks,
-  reminders: Bell,
-  attendance_sessions: LogIn,
-  customers: Users,
-  products: Package,
-  documents: FileText,
-  auth: LogIn,
+const ENTITY_ICON: Record<string, IconComponent> = {
+  orders: OrderIcon,
+  expenses: ReceiptIcon,
+  payments: ReceiptIcon,
+  projects: ProjectIcon,
+  tasks: ChecklistIcon,
+  reminders: NotificationIcon,
+  attendance_sessions: LoginIcon,
+  customers: UsersIcon,
+  products: ProductIcon,
+  documents: DocumentIcon,
+  auth: LoginIcon,
 };
 
 function timeAgo(value: string | null): string {
@@ -52,7 +41,7 @@ export default function RecentActivityFeed({ items }: { items: AuditFeedItem[] }
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <Activity className="h-5 w-5 text-muted-foreground" />
+            <ActivityIcon className="h-5 w-5 text-muted-foreground" />
             <CardTitle className="text-lg">פעילות אחרונה</CardTitle>
           </div>
           <Link href="/activity" className="text-sm text-secondary hover:underline">
@@ -62,7 +51,7 @@ export default function RecentActivityFeed({ items }: { items: AuditFeedItem[] }
       </CardHeader>
       <CardContent className="space-y-1">
         {items.map((item) => {
-          const Icon = ENTITY_ICON[item.tableName] ?? Activity;
+          const Icon = ENTITY_ICON[item.tableName] ?? ActivityIcon;
           return (
             <div
               key={item.id}

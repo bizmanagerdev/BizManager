@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Bell, BellOff, BellRing, Clock, Pencil, Plus } from "lucide-react";
+import { AddIcon, ClockIcon, NotificationIcon, NotificationOffIcon, ReminderIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import ReminderFormDialog, { type ReminderFormValue } from "@/components/reminders/ReminderFormDialog";
 import { toHebrewError } from "@/lib/error-messages";
+import { EditButton } from "@/components/ui/icon-button";
 
 // Shows ALL open reminders attached to one entity (order / project / customer /
 // task…) with inline add / edit / done / cancel. Drop it on any details page:
@@ -119,7 +120,7 @@ export default function EntityReminders({
       {canManage && !hideAddButton ? (
         <div className="flex justify-end">
           <Button size="sm" variant="secondary" onClick={() => setAddOpen(true)}>
-            <Plus className="me-1 h-4 w-4" /> הוסף תזכורת
+            <AddIcon className="me-1 h-4 w-4" /> הוסף תזכורת
           </Button>
         </div>
       ) : null}
@@ -130,7 +131,7 @@ export default function EntityReminders({
         <ul className="space-y-2">
           {items.map((r) => {
             const isSilent = r.behavior === "silent";
-            const NotifyIcon = isSilent ? BellOff : r.notifiedAt ? BellRing : Bell;
+            const NotifyIcon = isSilent ? NotificationOffIcon : r.notifiedAt ? ReminderIcon : NotificationIcon;
             const notifyText = isSilent ? "ללא התראה" : r.notifiedAt ? "התראה נשלחה" : "התראה מתוזמנת";
             return (
               <li
@@ -139,7 +140,7 @@ export default function EntityReminders({
               >
                 <div className="min-w-0 space-y-0.5">
                   <div className="flex items-center gap-1.5 text-sm font-medium">
-                    <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <ClockIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span>{fmt(r.remindAt)}</span>
                   </div>
                   {r.content ? <div className="text-sm text-muted-foreground">{r.content}</div> : null}
@@ -154,19 +155,9 @@ export default function EntityReminders({
 
                 {canManage ? (
                   <div className="flex items-center gap-1.5">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="h-8 w-8 p-0"
-                      title="עריכה"
-                      aria-label="עריכת תזכורת"
-                      onClick={() =>
+                    <EditButton onClick={() =>
                         setEditing({ id: r.id, remindAt: r.remindAt, content: r.content, assignedTo: r.assignedTo })
-                      }
-                      disabled={busy === r.id}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
+                      } disabled={busy === r.id} label="עריכת תזכורת" />
                     <Button size="sm" onClick={() => act(r.id, "done")} disabled={busy === r.id}>
                       בוצע
                     </Button>

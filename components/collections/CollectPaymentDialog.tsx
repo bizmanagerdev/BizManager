@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { SpinnerIcon } from "@/components/ui/icons";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -293,7 +293,7 @@ export function CollectPaymentDialog({
               <span className="font-medium">לקוח *</span>
               {debtors === null ? (
                 <div className="flex h-11 items-center gap-2 rounded-xl border border-input px-4 text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <SpinnerIcon className="h-4 w-4 animate-spin" />
                   <span>טוען חייבים...</span>
                 </div>
               ) : debtors.length === 0 ? (
@@ -317,7 +317,7 @@ export function CollectPaymentDialog({
                 <span className="font-medium">על מה התשלום *</span>
                 {receivablesLoading ? (
                   <div className="flex items-center gap-2 rounded-xl border p-3 text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <SpinnerIcon className="h-4 w-4 animate-spin" />
                     <span>טוען חובות...</span>
                   </div>
                 ) : payableReceivables.length === 0 ? (

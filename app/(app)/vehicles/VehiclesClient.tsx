@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Car, Pencil, Plus, Trash2, FileText, ListTodo } from "lucide-react";
+import { AddIcon, DeleteIcon, DocumentIcon, TaskIcon, VehicleIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,6 +18,7 @@ import { formatCurrency } from "@/lib/payroll";
 import { expiryStatus, type VehicleWithRollup } from "@/lib/vehicles";
 import AddReminderButton from "@/components/reminders/AddReminderButton";
 import { createVehicle, updateVehicle, deleteVehicle, type VehicleInput } from "./actions";
+import { EditButton } from "@/components/ui/icon-button";
 
 const EMPTY_FORM: VehicleInput = {
   name: "",
@@ -124,7 +125,7 @@ export default function VehiclesClient({ vehicles }: { vehicles: VehicleWithRoll
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <Car className="h-6 w-6" />
+            <VehicleIcon className="h-6 w-6" />
             רכבים
           </h1>
           <p className="text-sm text-muted-foreground">
@@ -132,7 +133,7 @@ export default function VehiclesClient({ vehicles }: { vehicles: VehicleWithRoll
           </p>
         </div>
         <Button onClick={openCreate}>
-          <Plus className="me-1 h-4 w-4" />
+          <AddIcon className="me-1 h-4 w-4" />
           הוספת רכב
         </Button>
       </div>
@@ -162,16 +163,14 @@ export default function VehiclesClient({ vehicles }: { vehicles: VehicleWithRoll
                     </Link>
                     <div className="flex shrink-0 gap-1">
                       <AddReminderButton entityType="vehicle" entityId={v.tagId} label={v.name} className="h-9 w-9 p-0" iconOnly />
-                      <Button variant="secondary" size="icon" onClick={() => openEdit(v)} aria-label="עריכה">
-                        <Pencil className="h-4 w-4" />
-                      </Button>
+                      <EditButton onClick={() => openEdit(v)} label="עריכה" />
                       <Button
                         variant="secondary"
                         size="icon"
                         onClick={() => setDeleteTarget(v)}
                         aria-label="מחיקה"
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <DeleteIcon className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>
@@ -205,11 +204,11 @@ export default function VehiclesClient({ vehicles }: { vehicles: VehicleWithRoll
 
                   <div className="flex items-center gap-3 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
-                      <ListTodo className="h-3.5 w-3.5" />
+                      <TaskIcon className="h-3.5 w-3.5" />
                       {v.rollup.openTaskCount}/{v.rollup.taskCount} משימות
                     </span>
                     <span className="flex items-center gap-1">
-                      <FileText className="h-3.5 w-3.5" />
+                      <DocumentIcon className="h-3.5 w-3.5" />
                       {v.rollup.documentCount} מסמכים
                     </span>
                   </div>

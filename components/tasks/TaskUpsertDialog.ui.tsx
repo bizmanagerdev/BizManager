@@ -6,19 +6,10 @@
 // TaskUpsertDialog.helpers.ts; the orchestrator is TaskUpsertDialog.tsx.)
 
 import Image from "next/image";
-import {
-  Bell,
-  Check,
-  Clock,
-  MapPin,
-  MessageSquare,
-  Paperclip,
-  Plus,
-  Trash2,
-  X,
-} from "lucide-react";
+import { AddIcon, AttachIcon, CheckIcon, ClockIcon, CloseIcon, CommentIcon, DeleteIcon, LocationIcon, NotificationIcon } from "@/components/ui/icons";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
+import { EditButton } from "@/components/ui/icon-button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
@@ -76,7 +67,7 @@ export function ActionChip({
   active,
   onClick,
 }: {
-  icon: typeof Bell;
+  icon: typeof NotificationIcon;
   label: string;
   active: boolean;
   onClick: () => void;
@@ -233,7 +224,7 @@ export function TaskDatesSection({
         </div>
         <div className="space-y-1">
           <div className="flex items-center gap-1 text-sm font-medium">
-            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+            <ClockIcon className="h-3.5 w-3.5 text-muted-foreground" />
             שעה
           </div>
           <Input type="time" value={dueTime} onChange={(e) => onDueTimeChange(e.target.value)} dir="ltr" />
@@ -312,7 +303,7 @@ export function TaskPeopleSection({
                   className="text-muted-foreground hover:text-destructive"
                   aria-label={`הסר ${member.label}`}
                 >
-                  <X className="h-3 w-3" />
+                  <CloseIcon className="h-3 w-3" />
                 </button>
               </span>
             ))}
@@ -320,7 +311,7 @@ export function TaskPeopleSection({
         ) : null}
         <details className="rounded-md border bg-background">
           <summary className="cursor-pointer list-none px-3 py-2 text-sm text-muted-foreground">
-            <Plus className="ms-0 me-1 inline h-3.5 w-3.5" />
+            <AddIcon className="ms-0 me-1 inline h-3.5 w-3.5" />
             הוספת חברים
           </summary>
           <div className="max-h-40 overflow-auto border-t p-1">
@@ -341,7 +332,7 @@ export function TaskPeopleSection({
                         checked ? "border-primary bg-primary text-primary-foreground" : "border-input"
                       }`}
                     >
-                      {checked ? <Check className="h-3 w-3" /> : null}
+                      {checked ? <CheckIcon className="h-3 w-3" /> : null}
                     </span>
                     <InitialsAvatar name={user.label} color={user.color} colorKey={user.id} colorIndex={colorIndexById.get(user.id)} size="sm" />
                     {user.label}
@@ -376,7 +367,7 @@ export function TaskLocationSection({
       <AdaptiveGrid variant="formTwo">
         <div className="space-y-1">
           <div className="flex items-center gap-1 text-sm font-medium">
-            <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+            <LocationIcon className="h-3.5 w-3.5 text-muted-foreground" />
             עיר
           </div>
           <NativeSelect
@@ -437,7 +428,7 @@ export function TaskPendingFilesSection({
     <div className="space-y-3 rounded-md border bg-muted/20 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-sm font-medium">
-          <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
+          <AttachIcon className="h-3.5 w-3.5 text-muted-foreground" />
           קבצים ותמונות
         </div>
         <FileUploadActions
@@ -471,7 +462,7 @@ export function TaskPendingFilesSection({
                 aria-label={`הסרת ${file.name}`}
                 onClick={() => onRemove(index)}
               >
-                <Trash2 className="h-3.5 w-3.5" />
+                <DeleteIcon className="h-3.5 w-3.5" />
               </Button>
             </div>
           ))}
@@ -497,7 +488,7 @@ export function TaskAttachmentsSection({
     <div className="space-y-3 rounded-md border bg-muted/20 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-sm font-medium">
-          <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
+          <AttachIcon className="h-3.5 w-3.5 text-muted-foreground" />
           קבצים ותמונות
         </div>
         <FileUploadActions
@@ -564,7 +555,7 @@ export function TaskAttachmentsSection({
                 aria-label="מחיקת קובץ"
                 className="shrink-0 text-muted-foreground transition-colors hover:text-destructive"
               >
-                <Trash2 className="h-4 w-4" />
+                <DeleteIcon className="h-4 w-4" />
               </button>
             </div>
           ))}
@@ -639,7 +630,7 @@ export function TaskRemindersStagingSection({
   return (
     <div className="space-y-3 rounded-md border bg-muted/20 p-3">
       <div className="flex items-center gap-1.5 text-sm font-medium">
-        <Bell className="h-3.5 w-3.5 text-muted-foreground" />
+        <NotificationIcon className="h-3.5 w-3.5 text-muted-foreground" />
         תזכורות
       </div>
       {pendingReminders.length > 0 ? (
@@ -661,7 +652,7 @@ export function TaskRemindersStagingSection({
                 aria-label="הסרת תזכורת"
                 className="shrink-0 text-muted-foreground transition-colors hover:text-destructive"
               >
-                <Trash2 className="h-4 w-4" />
+                <DeleteIcon className="h-4 w-4" />
               </button>
             </div>
           ))}
@@ -735,7 +726,7 @@ export function TaskCardSidebar({
       {/* Reminders */}
       <section className="space-y-2">
         <div className="flex items-center gap-1.5 text-sm font-semibold">
-          <Bell className="h-4 w-4 text-muted-foreground" />
+          <NotificationIcon className="h-4 w-4 text-muted-foreground" />
           תזכורות
         </div>
         {reminders.filter((r) => r.status === "pending").length === 0 ? (
@@ -758,9 +749,7 @@ export function TaskCardSidebar({
                     ) : null}
                   </div>
                   <div className="flex shrink-0 gap-1">
-                    <Button type="button" size="sm" variant="secondary" onClick={() => onEditReminder(reminder)}>
-                      ערוך
-                    </Button>
+                    <EditButton onClick={() => onEditReminder(reminder)} label="עריכת תזכורת" />
                     <Button type="button" size="sm" variant="secondary" onClick={() => onSetReminderStatus(reminder.id, "done")}>
                       בוצע
                     </Button>
@@ -797,7 +786,7 @@ export function TaskCardSidebar({
       {/* Comments */}
       <section className="space-y-2">
         <div className="flex items-center gap-1.5 text-sm font-semibold">
-          <MessageSquare className="h-4 w-4 text-muted-foreground" />
+          <CommentIcon className="h-4 w-4 text-muted-foreground" />
           תגובות
         </div>
         {comments.length === 0 && legacyNotes.length === 0 ? (

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Truck } from "lucide-react";
+import { DeliveryIcon } from "@/components/ui/icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getOrderStatusColor, getOrderStatusLabel } from "@/lib/ui/status-colors";
@@ -29,7 +29,7 @@ export default function UpcomingDeliveries({ deliveries }: { deliveries: Deliver
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <Truck className="h-5 w-5 text-muted-foreground" />
+            <DeliveryIcon className="h-5 w-5 text-muted-foreground" />
             <CardTitle className="text-lg">משלוחים קרובים</CardTitle>
           </div>
           <Link href="/sales?tab=deliveries" className="text-sm text-secondary hover:underline">

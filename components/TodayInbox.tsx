@@ -5,7 +5,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Bell, ListTodo, Wallet } from "lucide-react";
+import { NotificationIcon, PhoneIcon, TaskIcon, WalletIcon } from "@/components/ui/icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -91,7 +91,7 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
             >
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                 <Badge variant="warning" className="gap-1 text-[10px]">
-                  <ListTodo className="h-3 w-3" /> משימה
+                  <TaskIcon className="h-3 w-3" /> משימה
                 </Badge>
                 <Link href={`/tasks/${task.id}`} className="font-medium hover:underline">
                   {task.subject}
@@ -139,7 +139,7 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
             >
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                 <Badge variant="info" className="gap-1 text-[10px]">
-                  <Bell className="h-3 w-3" /> תזכורת
+                  <NotificationIcon className="h-3 w-3" /> תזכורת
                 </Badge>
                 {r.task_subject ? (
                   <Link href={`/tasks/${r.task_id}`} className="font-medium hover:underline">
@@ -154,7 +154,7 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
                 )}
                 {r.customer_phone ? (
                   <a href={`tel:${r.customer_phone}`} className="text-muted-foreground hover:underline">
-                    ☎ {r.customer_phone}
+                    <PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}{r.customer_phone}
                   </a>
                 ) : null}
                 <span className="text-muted-foreground">{r.task_subject ? "משימה" : actionTypeLabel(r.action_type)}</span>
@@ -194,7 +194,7 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
           >
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
               <Badge variant="success" className="gap-1 text-[10px]">
-                <Wallet className="h-3 w-3" /> לגבייה
+                <WalletIcon className="h-3 w-3" /> לגבייה
               </Badge>
               {p.customer_id ? (
                 <Link href={`/customers/${p.customer_id}`} className="font-medium hover:underline">
@@ -205,7 +205,7 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
               )}
               {p.customer_phone ? (
                 <a href={`tel:${p.customer_phone}`} className="text-muted-foreground hover:underline">
-                  ☎ {p.customer_phone}
+                  <PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}{p.customer_phone}
                 </a>
               ) : null}
               <span className="font-semibold">{formatCurrency(p.amount)}</span>

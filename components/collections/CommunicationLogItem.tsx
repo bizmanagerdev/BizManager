@@ -3,16 +3,7 @@ import { toHebrewError } from "@/lib/error-messages";
 
 import { useState } from "react";
 import { toast } from "sonner";
-import {
-  Mail,
-  MessageCircle,
-  MessageSquareText,
-  Pencil,
-  PhoneIncoming,
-  PhoneOutgoing,
-  Trash2,
-  Users,
-} from "lucide-react";
+import { ChatIcon, CommentIcon, DeleteIcon, MailIcon, PhoneIcon, PhoneInIcon, PhoneOutIcon, UsersIcon } from "@/components/ui/icons";
 import { NavLink } from "@/components/NavLink";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -24,6 +15,7 @@ import {
   type CommunicationLog,
 } from "@/lib/communications";
 import { offlineFetch } from "@/lib/offline-queue";
+import { EditButton } from "@/components/ui/icon-button";
 
 type LogItem = CommunicationLog & {
   customer_name?: string | null;
@@ -34,18 +26,18 @@ type LogItem = CommunicationLog & {
 function ChannelIcon({ channel, direction }: { channel: string; direction: string }) {
   switch (channel) {
     case "whatsapp":
-      return <MessageCircle className="h-4 w-4" />;
+      return <ChatIcon className="h-4 w-4" />;
     case "email":
-      return <Mail className="h-4 w-4" />;
+      return <MailIcon className="h-4 w-4" />;
     case "sms":
-      return <MessageSquareText className="h-4 w-4" />;
+      return <CommentIcon className="h-4 w-4" />;
     case "meeting":
-      return <Users className="h-4 w-4" />;
+      return <UsersIcon className="h-4 w-4" />;
     default:
       return direction === "incoming" ? (
-        <PhoneIncoming className="h-4 w-4" />
+        <PhoneInIcon className="h-4 w-4" />
       ) : (
-        <PhoneOutgoing className="h-4 w-4" />
+        <PhoneOutIcon className="h-4 w-4" />
       );
   }
 }
@@ -210,7 +202,7 @@ export default function CommunicationLogItem({
                 )}
                 {log.customer_phone ? (
                   <a href={`tel:${log.customer_phone}`} className="text-xs text-muted-foreground hover:underline">
-                    ☎ <span dir="ltr">{log.customer_phone}</span>
+                    <PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}<span dir="ltr">{log.customer_phone}</span>
                   </a>
                 ) : null}
               </div>
@@ -257,16 +249,7 @@ export default function CommunicationLogItem({
             </>
           ) : (
             <>
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8 rounded-full border border-border/60 bg-background"
-                title="עריכה"
-                onClick={() => setEditing(true)}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
+              <EditButton onClick={() => setEditing(true)} label="עריכה" />
               <Button
                 type="button"
                 size="icon"
@@ -275,7 +258,7 @@ export default function CommunicationLogItem({
                 title="מחיקה"
                 onClick={() => setConfirmDelete(true)}
               >
-                <Trash2 className="h-3.5 w-3.5" />
+                <DeleteIcon className="h-3.5 w-3.5" />
               </Button>
             </>
           )}

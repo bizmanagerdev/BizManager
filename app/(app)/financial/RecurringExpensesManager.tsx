@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Repeat, Pencil, Trash2, BellPlus, Check, CalendarPlus, Loader2 } from "lucide-react";
+import { AddDateIcon, AddReminderIcon, CheckIcon, DeleteIcon, RecurringIcon, SpinnerIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { toHebrewError } from "@/lib/error-messages";
@@ -14,6 +14,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
 import ReminderFormDialog from "@/components/reminders/ReminderFormDialog";
 import type { Account } from "@/lib/accounts";
+import { EditButton } from "@/components/ui/icon-button";
 
 type Option = {
   id: string;
@@ -320,7 +321,7 @@ export default function RecurringExpensesManager(props: Props) {
             variant="secondary"
             onClick={() => void openBackfill({ id: null, label: "כל ההוצאות הקבועות" })}
           >
-            <CalendarPlus className="h-4 w-4" />
+            <AddDateIcon className="h-4 w-4" />
             השלמת חיובים חסרים
           </Button>
         </div>
@@ -381,7 +382,7 @@ export default function RecurringExpensesManager(props: Props) {
                     </div>
                     <div className="space-y-1">
                       <div className="flex items-center gap-1.5">
-                        <Repeat className="h-3.5 w-3.5 shrink-0 text-primary" />
+                        <RecurringIcon className="h-3.5 w-3.5 shrink-0 text-primary" />
                         <span className="font-semibold">{template.template_name}</span>
                       </div>
                       {secondaryLines(template).map((line, i) => (
@@ -412,7 +413,7 @@ export default function RecurringExpensesManager(props: Props) {
                     </div>
                     <div className="flex justify-end gap-1.5">
                       <Button type="button" size="icon-sm" variant="secondary" onClick={() => setRemindTemplate(template)} title="תזכורת" aria-label="תזכורת">
-                        <BellPlus className="h-4 w-4" />
+                        <AddReminderIcon className="h-4 w-4" />
                       </Button>
                       <Button
                         type="button"
@@ -422,13 +423,11 @@ export default function RecurringExpensesManager(props: Props) {
                         title="השלמת חיובים חסרים"
                         aria-label="השלמת חיובים חסרים"
                       >
-                        <CalendarPlus className="h-4 w-4" />
+                        <AddDateIcon className="h-4 w-4" />
                       </Button>
-                      <Button type="button" size="icon-sm" variant="secondary" onClick={() => openEdit(template)} title="עריכה" aria-label="עריכה">
-                        <Pencil className="h-4 w-4" />
-                      </Button>
+                      <EditButton onClick={() => openEdit(template)} label="עריכה" />
                       <Button type="button" size="icon-sm" variant="destructive" onClick={() => setConfirmDeleteId(template.id)} title="מחיקה" aria-label="מחיקה">
-                        <Trash2 className="h-4 w-4" />
+                        <DeleteIcon className="h-4 w-4" />
                       </Button>
                     </div>
                   </CardContent>
@@ -471,7 +470,7 @@ export default function RecurringExpensesManager(props: Props) {
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-1.5">
-                          <Repeat className="h-3.5 w-3.5 shrink-0 text-primary" />
+                          <RecurringIcon className="h-3.5 w-3.5 shrink-0 text-primary" />
                           <span className="font-semibold">{template.template_name}</span>
                         </div>
                         {secondaryLines(template).map((line, i) => (
@@ -496,7 +495,7 @@ export default function RecurringExpensesManager(props: Props) {
                       <td className="whitespace-nowrap px-3 py-2">
                         {template.auto_paid ? (
                           <span className="inline-flex items-center gap-1 text-primary">
-                            <Check className="h-4 w-4" />הוראת קבע
+                            <CheckIcon className="h-4 w-4" />הוראת קבע
                           </span>
                         ) : (
                           <span className="text-muted-foreground">—</span>
@@ -505,7 +504,7 @@ export default function RecurringExpensesManager(props: Props) {
                       <td className="whitespace-nowrap px-3 py-2">
                         {template.reminder_work_days_before ? (
                           <span className="inline-flex items-center gap-1 text-primary">
-                            <BellPlus className="h-4 w-4" />{template.reminder_work_days_before} ימי עבודה לפני
+                            <AddReminderIcon className="h-4 w-4" />{template.reminder_work_days_before} ימי עבודה לפני
                           </span>
                         ) : (
                           <span className="text-muted-foreground">—</span>
@@ -517,7 +516,7 @@ export default function RecurringExpensesManager(props: Props) {
                       <td className="whitespace-nowrap px-3 py-2">
                         <div className="flex items-center gap-1">
                           <Button type="button" size="icon-sm" variant="secondary" onClick={() => setRemindTemplate(template)} title="תזכורת" aria-label="תזכורת">
-                            <BellPlus className="h-4 w-4" />
+                            <AddReminderIcon className="h-4 w-4" />
                           </Button>
                           <Button
                             type="button"
@@ -527,13 +526,11 @@ export default function RecurringExpensesManager(props: Props) {
                             title="השלמת חיובים חסרים"
                             aria-label="השלמת חיובים חסרים"
                           >
-                            <CalendarPlus className="h-4 w-4" />
+                            <AddDateIcon className="h-4 w-4" />
                           </Button>
-                          <Button type="button" size="icon-sm" variant="secondary" onClick={() => openEdit(template)} title="עריכה" aria-label="עריכה">
-                            <Pencil className="h-4 w-4" />
-                          </Button>
+                          <EditButton onClick={() => openEdit(template)} label="עריכה" />
                           <Button type="button" size="icon-sm" variant="destructive" onClick={() => setConfirmDeleteId(template.id)} title="מחיקה" aria-label="מחיקה">
-                            <Trash2 className="h-4 w-4" />
+                            <DeleteIcon className="h-4 w-4" />
                           </Button>
                         </div>
                       </td>
@@ -602,7 +599,7 @@ export default function RecurringExpensesManager(props: Props) {
       >
         {backfillLoading ? (
           <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <SpinnerIcon className="h-4 w-4 animate-spin" />
             <span>בודק אילו חיובים חסרים...</span>
           </div>
         ) : backfillPreview && backfillPreview.total === 0 ? (

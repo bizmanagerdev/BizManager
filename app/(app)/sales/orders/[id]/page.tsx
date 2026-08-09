@@ -2,19 +2,7 @@ import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { StatActionCard, collectionStatusTextClass } from "@/components/ui/stat-action-card";
-import {
-  ChevronLeft,
-  Copy,
-  FileText,
-  HandCoins,
-  History,
-  MessageSquareText,
-  PencilLine,
-  ReceiptText,
-  ShoppingCart,
-  Trash2,
-  Truck,
-} from "lucide-react";
+import { ChevronLeftIcon, CommentIcon, CopyIcon, DeleteIcon, DeliveryIcon, DocumentIcon, HistoryIcon, OrderIcon, PaymentIcon, ReceiptIcon } from "@/components/ui/icons";
 import EntityActivityTimeline from "@/app/(app)/activity/EntityActivityTimeline";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
 import { getOrderStatusLabel } from "@/lib/ui/status-colors";
@@ -503,21 +491,12 @@ export default async function SalesOrderPage({
     <>
       <Button asChild size="sm" variant="outline" className="h-9">
         <Link href={`/sales/orders/new?duplicate=${id}`} title="שכפול הזמנה">
-          <Copy className="h-4 w-4" />
+          <CopyIcon className="h-4 w-4" />
           <span>שכפול</span>
         </Link>
       </Button>
       <OrderShareActions order={orderShareData} />
-      <OrderEditDialog
-        orderId={id}
-        buttonLabel={
-          <>
-            <PencilLine className="h-4 w-4" />
-            <span>עריכה</span>
-          </>
-        }
-        buttonClassName="h-9"
-      />
+      <OrderEditDialog orderId={id} />
       {canLogCommunication ? (
         <LogCommunicationButton
           entityType="order"
@@ -546,7 +525,7 @@ export default async function SalesOrderPage({
               <Link href="/sales" className="hover:text-foreground hover:underline">
                 מכירות
               </Link>
-              <ChevronLeft className="h-3.5 w-3.5 shrink-0" />
+              <ChevronLeftIcon className="h-3.5 w-3.5 shrink-0" />
               <h1 className="min-w-0 truncate text-lg font-bold text-foreground">
                 {customerId ? (
                   <Link href={`/customers/${customerId}`} className="hover:underline">
@@ -567,7 +546,7 @@ export default async function SalesOrderPage({
                   variant="ghost"
                   className="h-9 border border-destructive/40 hover:bg-destructive/10"
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <DeleteIcon className="h-4 w-4" />
                   <span>מחיקה</span>
                 </DeleteOrderButton>
               </div>
@@ -595,7 +574,7 @@ export default async function SalesOrderPage({
           <section className="space-y-3">
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
               <StatActionCard
-                icon={<Truck className="h-5 w-5" />}
+                icon={<DeliveryIcon className="h-5 w-5" />}
                 label="סטטוס הזמנה"
                 value={getOrderStatusLabel(getString(order as Row, "status") ?? "")}
                 valueClassName={
@@ -648,7 +627,7 @@ export default async function SalesOrderPage({
               </div>
 
               <StatActionCard
-                icon={<HandCoins className="h-5 w-5" />}
+                icon={<PaymentIcon className="h-5 w-5" />}
                 label="תשלום"
                 value={
                   needsPricingAction
@@ -719,7 +698,7 @@ export default async function SalesOrderPage({
                 }
                 action={
                   needsPricingAction ? (
-                    <OrderEditDialog orderId={id} buttonLabel="עריכת מחירים" />
+                    <OrderEditDialog orderId={id} triggerLabel="עריכת מחירים" />
                   ) : needsPaymentAction ? (
                     <OrderPaymentDialog
                       orderId={id}
@@ -732,7 +711,7 @@ export default async function SalesOrderPage({
               />
 
               <StatActionCard
-                icon={<FileText className="h-5 w-5" />}
+                icon={<DocumentIcon className="h-5 w-5" />}
                 label="חשבונית"
                 value={
                   <InvoiceQuickMenu
@@ -774,7 +753,7 @@ export default async function SalesOrderPage({
             deliveryImagesResolved.length > 0 ||
             (!needsDeliveryAction && !orderIsCancelled) ? (
             <SectionCard
-              icon={<Truck className="h-4 w-4" />}
+              icon={<DeliveryIcon className="h-4 w-4" />}
               title="אספקה"
               aside={
                 deliveryImagesResolved.length > 0 ? (
@@ -834,7 +813,7 @@ export default async function SalesOrderPage({
 
           <div className="space-y-3 lg:order-1 lg:col-span-2">
             <SectionCard
-              icon={<ShoppingCart className="h-4 w-4" />}
+              icon={<OrderIcon className="h-4 w-4" />}
               title="פריטים"
               aside={
                 <span className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-xs text-muted-foreground">
@@ -890,7 +869,7 @@ export default async function SalesOrderPage({
                               ) : null}
                               {lineNotes ? (
                                 <div className="mt-0.5 flex items-start gap-1 text-xs text-primary">
-                                  <MessageSquareText className="mt-0.5 h-3 w-3 shrink-0" />
+                                  <CommentIcon className="mt-0.5 h-3 w-3 shrink-0" />
                                   <span>{lineNotes}</span>
                                 </div>
                               ) : null}
@@ -936,7 +915,7 @@ export default async function SalesOrderPage({
             ) : null}
 
             <SectionCard
-              icon={<HandCoins className="h-4 w-4" />}
+              icon={<PaymentIcon className="h-4 w-4" />}
               title="תשלומים"
               aside={
                 canManagePayments && !needsPaymentAction && !needsPricingAction ? (
@@ -958,7 +937,7 @@ export default async function SalesOrderPage({
             </SectionCard>
 
             <SectionCard
-              icon={<ReceiptText className="h-4 w-4" />}
+              icon={<ReceiptIcon className="h-4 w-4" />}
               title="מסמכים"
               aside={
                 orderLevelMorningDocuments.length > 0 ? (
@@ -981,13 +960,13 @@ export default async function SalesOrderPage({
               )}
             </SectionCard>
 
-            <SectionCard icon={<PencilLine className="h-4 w-4" />} title="הערות ותגובות">
+            <SectionCard icon={<CommentIcon className="h-4 w-4" />} title="הערות ותגובות">
               <OrderCommentsThread orderId={id} initialNotes={orderNotes} authorColors={commentAuthorColors} />
             </SectionCard>
 
             {profile.role === "admin" ? (
               <SectionCard
-                icon={<History className="h-4 w-4" />}
+                icon={<HistoryIcon className="h-4 w-4" />}
                 title="היסטוריית פעילות"
                 aside={
                   orderActivity.length > 0 ? (

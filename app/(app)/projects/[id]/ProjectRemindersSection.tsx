@@ -5,7 +5,7 @@
 // only lifts the "add" trigger up to the header (its own button is hidden).
 
 import { useCallback, useState } from "react";
-import { Bell, Plus } from "lucide-react";
+import { AddIcon, NotificationIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import EntityReminders from "@/components/reminders/EntityReminders";
@@ -33,7 +33,7 @@ export default function ProjectRemindersSection({
       openWhenEmptyKnown={count === null ? undefined : count > 0}
       summary={count && count > 0 ? <span className="text-muted-foreground">{count}</span> : null}
       title="תזכורות"
-      icon={<Bell className="h-4 w-4 text-primary" />}
+      icon={<NotificationIcon className="h-4 w-4 text-primary" />}
       contentClassName="space-y-3"
       action={
         canManage ? (
@@ -46,7 +46,7 @@ export default function ProjectRemindersSection({
             title="הוספת תזכורת"
             onClick={() => setAddOpen(true)}
           >
-            <Plus className="h-4 w-4" />
+            <AddIcon className="h-4 w-4" />
           </Button>
         ) : null
       }

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, StickyNote, Trash2 } from "lucide-react";
+import { DeleteIcon, NoteIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,6 +10,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import { toHebrewError } from "@/lib/error-messages";
 import { parseOrderComments, type OrderComment } from "@/lib/orders/comments";
+import { EditButton } from "@/components/ui/icon-button";
 
 /**
  * Attributed comment thread on the order page: post several timestamped comments
@@ -146,7 +147,7 @@ export default function OrderCommentsThread({
                   className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border bg-muted text-muted-foreground"
                   aria-hidden
                 >
-                  <StickyNote className="h-3.5 w-3.5" />
+                  <NoteIcon className="h-3.5 w-3.5" />
                 </span>
               )}
               <div className="min-w-0 flex-1 rounded-md border bg-muted/20 px-3 py-2">
@@ -159,17 +160,7 @@ export default function OrderCommentsThread({
                   </div>
                   {editingIndex === index ? null : (
                     <div className="flex shrink-0 items-center gap-1">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-7 w-7 p-0"
-                        title="עריכת תגובה"
-                        aria-label="עריכת תגובה"
-                        onClick={() => startEdit(index)}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
+                      <EditButton onClick={() => startEdit(index)} label="עריכת תגובה" />
                       <Button
                         type="button"
                         size="sm"
@@ -179,7 +170,7 @@ export default function OrderCommentsThread({
                         aria-label="מחיקת תגובה"
                         onClick={() => setPendingDelete(index)}
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <DeleteIcon className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   )}

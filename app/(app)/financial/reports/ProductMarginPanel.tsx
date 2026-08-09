@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
-import { AlertTriangle, ChevronDown } from "lucide-react";
+import { ChevronDownIcon, WarningIcon } from "@/components/ui/icons";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
@@ -43,7 +43,7 @@ function formatDayMonth(date: string | null) {
 }
 
 function Chevron({ open }: { open: boolean }) {
-  return <ChevronDown className={cn("h-4 w-4 shrink-0 transition-transform", open ? "" : "-rotate-90")} />;
+  return <ChevronDownIcon className={cn("h-4 w-4 shrink-0 transition-transform", open ? "" : "-rotate-90")} />;
 }
 
 /**
@@ -94,7 +94,7 @@ export default function ProductMarginPanel({ report }: { report: ProductMarginRe
     <div className="space-y-4 text-right" dir="rtl">
       {productsMissingCost.length > 0 ? (
         <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/15 px-3 py-2 text-sm text-warning-strong">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+          <WarningIcon className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
           <div>
             <span className="font-medium">
               {productsMissingCost.length} מוצרים ללא מחיר קנייה — הרווח שלהם מוצג מנופח.
@@ -178,7 +178,7 @@ export default function ProductMarginPanel({ report }: { report: ProductMarginRe
                                 <td className="px-3 py-2 pr-9">
                                   {p.name}
                                   {p.missingCost ? (
-                                    <span className="mr-1 text-xs text-warning-strong" title="אין מחיר קנייה למוצר זה">⚠</span>
+                                    <span className="mr-1 text-xs text-warning-strong" title="אין מחיר קנייה למוצר זה"><WarningIcon className="inline h-3 w-3" /></span>
                                   ) : null}
                                 </td>
                                 <td dir="ltr" className="px-3 py-2 text-right tabular-nums">{formatQty(p.quantity)}</td>
@@ -259,7 +259,7 @@ export default function ProductMarginPanel({ report }: { report: ProductMarginRe
                                 <td className="px-3 py-2">
                                   <span className="min-w-0">{o.customer}</span>
                                   {o.missingCost ? (
-                                    <span className="mr-1 text-xs text-warning-strong" title="חסר מחיר קנייה למוצר בהזמנה זו">⚠</span>
+                                    <span className="mr-1 text-xs text-warning-strong" title="חסר מחיר קנייה למוצר בהזמנה זו"><WarningIcon className="inline h-3 w-3" /></span>
                                   ) : null}
                                 </td>
                                 <td className="px-3 py-2">

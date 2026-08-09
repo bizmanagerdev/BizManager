@@ -4,18 +4,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import {
-  ArrowDownCircle,
-  ArrowLeftRight,
-  ArrowUpCircle,
-  Banknote,
-  Clock3,
-  FolderKanban,
-  ListTodo,
-  PlayCircle,
-  ShoppingCart,
-  UserPlus,
-} from "lucide-react";
+import { AddUserIcon, CashIcon, ClockIcon, ExpenseIcon, IncomeIcon, OrderIcon, PlayIcon, ProjectIcon, TaskIcon, TransferIcon } from "@/components/ui/icons";
 import SessionEditorDialog from "@/app/(app)/payroll/SessionEditorDialog";
 import type { SessionFormState } from "@/app/(app)/payroll/SalaryCenter.types";
 import type { SalaryCenterProjectOption, SalaryCenterUserRow } from "@/lib/payroll-center";
@@ -431,7 +420,7 @@ export default function DashboardActions({
           className={QUICK_TILE_CLASS}
           onClick={() => setWeekOverviewOpen(true)}
         >
-          <QuickTileContent icon={FolderKanban} label={HEBREW.thisWeek} />
+          <QuickTileContent icon={ProjectIcon} label={HEBREW.thisWeek} />
         </Button>
 
         <Button
@@ -443,7 +432,7 @@ export default function DashboardActions({
             router.push("/sales?tab=deliveries");
           }}
         >
-          <QuickTileContent icon={ShoppingCart} label={HEBREW.ordersByCity} />
+          <QuickTileContent icon={OrderIcon} label={HEBREW.ordersByCity} />
         </Button>
 
         <Button
@@ -452,7 +441,7 @@ export default function DashboardActions({
           className={QUICK_TILE_CLASS}
           onClick={() => setProjectOpen(true)}
         >
-          <QuickTileContent icon={FolderKanban} label={HEBREW.projectNew} />
+          <QuickTileContent icon={ProjectIcon} label={HEBREW.projectNew} />
         </Button>
 
         <Button
@@ -464,7 +453,7 @@ export default function DashboardActions({
             setOrderOpen(true);
           }}
         >
-          <QuickTileContent icon={ShoppingCart} label={HEBREW.orderNew} />
+          <QuickTileContent icon={OrderIcon} label={HEBREW.orderNew} />
         </Button>
 
         <Button
@@ -473,7 +462,7 @@ export default function DashboardActions({
           className={QUICK_TILE_CLASS}
           onClick={() => setExpenseOpen(true)}
         >
-          <QuickTileContent icon={ArrowUpCircle} label={HEBREW.expenseNew} tone="expense" />
+          <QuickTileContent icon={ExpenseIcon} label={HEBREW.expenseNew} tone="expense" />
         </Button>
 
         <Button
@@ -482,7 +471,7 @@ export default function DashboardActions({
           className={QUICK_TILE_CLASS}
           onClick={() => setIncomeOpen(true)}
         >
-          <QuickTileContent icon={ArrowDownCircle} label={HEBREW.incomeNew} tone="income" />
+          <QuickTileContent icon={IncomeIcon} label={HEBREW.incomeNew} tone="income" />
         </Button>
 
         {canTransferFunds ? (
@@ -494,7 +483,7 @@ export default function DashboardActions({
           >
             {/* No tone: a transfer is neither money in nor money out of the
                 business, so the glyph stays white like every non-money tile. */}
-            <QuickTileContent icon={ArrowLeftRight} label={HEBREW.transferBetweenAccounts} />
+            <QuickTileContent icon={TransferIcon} label={HEBREW.transferBetweenAccounts} />
           </Button>
         ) : null}
 
@@ -504,7 +493,7 @@ export default function DashboardActions({
           className={QUICK_TILE_CLASS}
           onClick={() => setCreateCustomerOpen(true)}
         >
-          <QuickTileContent icon={UserPlus} label="לקוח חדש" />
+          <QuickTileContent icon={AddUserIcon} label="לקוח חדש" />
         </Button>
 
         <Button
@@ -513,7 +502,7 @@ export default function DashboardActions({
           className={QUICK_TILE_CLASS}
           onClick={() => setTaskOpen(true)}
         >
-          <QuickTileContent icon={ListTodo} label={HEBREW.taskNew} />
+          <QuickTileContent icon={TaskIcon} label={HEBREW.taskNew} />
         </Button>
 
         {canStartOwnSession ? (
@@ -524,7 +513,7 @@ export default function DashboardActions({
             onClick={() => void startOwnSession()}
             disabled={Boolean(currentOpenSession) || selfSessionSubmitting}
           >
-            <QuickTileContent icon={PlayCircle} label={HEBREW.selfSessionStart} />
+            <QuickTileContent icon={PlayIcon} label={HEBREW.selfSessionStart} />
           </Button>
         ) : null}
 
@@ -535,7 +524,7 @@ export default function DashboardActions({
             className={QUICK_TILE_CLASS}
             onClick={() => setManualSessionOpen(true)}
           >
-            <QuickTileContent icon={Clock3} label={HEBREW.manualSessionNew} />
+            <QuickTileContent icon={ClockIcon} label={HEBREW.manualSessionNew} />
           </Button>
         ) : null}
 
@@ -549,7 +538,7 @@ export default function DashboardActions({
               setWorkerPaymentOpen(true);
             }}
           >
-            <QuickTileContent icon={Banknote} label="תשלום לעובד" />
+            <QuickTileContent icon={CashIcon} label="תשלום לעובד" />
           </Button>
         ) : null}
       </AdaptiveGrid>

@@ -6,22 +6,7 @@ import { offlineUpload } from "@/lib/offline-upload";
 import { toHebrewError } from "@/lib/error-messages";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import {
-  AlignLeft,
-  Bell,
-  Briefcase,
-  CheckCircle2,
-  Circle,
-  Clock,
-  Loader2,
-  Lock,
-  MapPin,
-  Paperclip,
-  Tag,
-  Trash2,
-  Unlock,
-  Users,
-} from "lucide-react";
+import { AttachIcon, BusinessIcon, ClockIcon, DeleteIcon, LocationIcon, LockIcon, NotificationIcon, SpinnerIcon, SuccessIcon, TagIcon, TextIcon, UncheckedIcon, UnlockIcon, UsersIcon } from "@/components/ui/icons";
 import {
   emitProgressActivityEnd,
   emitProgressActivityStart,
@@ -967,9 +952,9 @@ export function TaskUpsertDialog(props: Props) {
                 className="shrink-0 text-muted-foreground transition-colors hover:text-success disabled:opacity-40"
               >
                 {status === "done" ? (
-                  <CheckCircle2 className="h-5 w-5 text-success" />
+                  <SuccessIcon className="h-5 w-5 text-success" />
                 ) : (
-                  <Circle className="h-5 w-5" />
+                  <UncheckedIcon className="h-5 w-5" />
                 )}
               </button>
             ) : null}
@@ -1021,7 +1006,7 @@ export function TaskUpsertDialog(props: Props) {
                 }
                 className="shrink-0"
               >
-                {isPrivate ? <Lock className="ms-1 h-3.5 w-3.5" /> : <Unlock className="ms-1 h-3.5 w-3.5" />}
+                {isPrivate ? <LockIcon className="ms-1 h-3.5 w-3.5" /> : <UnlockIcon className="ms-1 h-3.5 w-3.5" />}
                 {isPrivate ? "פרטי" : "הפוך לפרטי"}
               </Button>
             ) : isPrivate ? (
@@ -1030,7 +1015,7 @@ export function TaskUpsertDialog(props: Props) {
                 className="inline-flex shrink-0 items-center gap-1 rounded-md border border-primary/40 bg-primary/10 px-2.5 py-1.5 text-sm text-primary"
                 title="משימה פרטית"
               >
-                <Lock className="h-3.5 w-3.5" />
+                <LockIcon className="h-3.5 w-3.5" />
                 פרטי
               </span>
             ) : null}
@@ -1043,7 +1028,7 @@ export function TaskUpsertDialog(props: Props) {
                 onClick={() => setConfirmDeleteOpen(true)}
                 className="shrink-0 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-40"
               >
-                <Trash2 className="h-5 w-5" />
+                <DeleteIcon className="h-5 w-5" />
               </button>
             ) : null}
           </div>
@@ -1052,7 +1037,7 @@ export function TaskUpsertDialog(props: Props) {
 
         {loading ? (
           <div className="mt-6 flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin" />
+            <SpinnerIcon className="h-5 w-5 animate-spin" />
             טוען נתוני משימה...
           </div>
         ) : (
@@ -1081,20 +1066,20 @@ export function TaskUpsertDialog(props: Props) {
 
           {/* Action buttons — toggle each detail editor (one open at a time). */}
           <div className="flex flex-wrap gap-1.5">
-            <ActionChip icon={AlignLeft} label="תיאור" active={isOpen("description")} onClick={() => toggleSection("description")} />
-            <ActionChip icon={Briefcase} label="תחום" active={isOpen("domain")} onClick={() => toggleSection("domain")} />
-            <ActionChip icon={Clock} label="תאריך" active={isOpen("dates")} onClick={() => toggleSection("dates")} />
-            <ActionChip icon={Users} label="אחראי וחברים" active={isOpen("people")} onClick={() => toggleSection("people")} />
-            <ActionChip icon={Tag} label="עדיפות וסטטוס" active={isOpen("labels")} onClick={() => toggleSection("labels")} />
-            <ActionChip icon={MapPin} label="מיקום" active={isOpen("location")} onClick={() => toggleSection("location")} />
+            <ActionChip icon={TextIcon} label="תיאור" active={isOpen("description")} onClick={() => toggleSection("description")} />
+            <ActionChip icon={BusinessIcon} label="תחום" active={isOpen("domain")} onClick={() => toggleSection("domain")} />
+            <ActionChip icon={ClockIcon} label="תאריך" active={isOpen("dates")} onClick={() => toggleSection("dates")} />
+            <ActionChip icon={UsersIcon} label="אחראי וחברים" active={isOpen("people")} onClick={() => toggleSection("people")} />
+            <ActionChip icon={TagIcon} label="עדיפות וסטטוס" active={isOpen("labels")} onClick={() => toggleSection("labels")} />
+            <ActionChip icon={LocationIcon} label="מיקום" active={isOpen("location")} onClick={() => toggleSection("location")} />
             {/* Reminders during creation — once the task exists they live in the
                 right-hand card column with immediate add/done/cancel. */}
             {!isEditing ? (
-              <ActionChip icon={Bell} label="תזכורות" active={isOpen("reminders")} onClick={() => toggleSection("reminders")} />
+              <ActionChip icon={NotificationIcon} label="תזכורות" active={isOpen("reminders")} onClick={() => toggleSection("reminders")} />
             ) : null}
             {/* Uploading needs a task id, but CHOOSING files doesn't — on a new
                 task they're staged and uploaded right after it's created. */}
-            <ActionChip icon={Paperclip} label="קבצים ותמונות" active={isOpen("files")} onClick={() => toggleSection("files")} />
+            <ActionChip icon={AttachIcon} label="קבצים ותמונות" active={isOpen("files")} onClick={() => toggleSection("files")} />
           </div>
 
           {isOpen("description") ? (

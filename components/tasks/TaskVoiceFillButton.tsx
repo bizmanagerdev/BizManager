@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Square, Wand2 } from "lucide-react";
+import { AiIcon, SpinnerIcon, StopIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useAudioTranscription } from "@/hooks/useAudioTranscription";
@@ -80,7 +80,7 @@ export function TaskVoiceFillButton({ users, domains, onParsed, disabled = false
       title="הקלטת כל פרטי המשימה ומילוי הכרטיס אוטומטית"
       className={cn(recording && "animate-pulse", className)}
     >
-      {busy ? <Loader2 className="animate-spin" /> : recording ? <Square /> : <Wand2 />}
+      {busy ? <SpinnerIcon className="animate-spin" /> : recording ? <StopIcon /> : <AiIcon />}
       {recording ? "עצירה ומילוי" : busy ? "ממלא..." : "מילוי בדיבור"}
     </Button>
   );

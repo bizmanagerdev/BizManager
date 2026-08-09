@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Download, Share } from "lucide-react";
+import { DownloadIcon, ShareIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { ViewDialog } from "@/components/ui/view-dialog";
 
@@ -94,7 +94,7 @@ export default function PwaInstallButton() {
         type="button"
         onClick={() => void handleInstall()}
       >
-        <Download className="h-4 w-4" />
+        <DownloadIcon className="h-4 w-4" />
         <span className="hidden sm:inline">התקנת האפליקציה</span>
       </Button>
     );
@@ -111,7 +111,7 @@ export default function PwaInstallButton() {
         type="button"
         onClick={() => setHelpOpen(true)}
       >
-        <Download className="h-4 w-4" />
+        <DownloadIcon className="h-4 w-4" />
         <span className="hidden sm:inline">התקנת האפליקציה</span>
       </Button>
 
@@ -123,7 +123,7 @@ export default function PwaInstallButton() {
         size="formSm"
       >
         <div className="space-y-3 text-sm text-muted-foreground">
-          <p>1. הקישו על כפתור השיתוף <Share className="mx-1 inline h-4 w-4 align-text-bottom" /> בספארי.</p>
+          <p>1. הקישו על כפתור השיתוף <ShareIcon className="mx-1 inline h-4 w-4 align-text-bottom" /> בספארי.</p>
           <p>2. בחרו באפשרות <strong>הוספה למסך הבית</strong>.</p>
           <p>3. הקישו על <strong>הוספה</strong> כדי להוסיף את BizH למסך הבית.</p>
         </div>

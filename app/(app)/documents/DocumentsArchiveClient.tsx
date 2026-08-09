@@ -4,18 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useDeferredValue, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import {
-  ExternalLink,
-  FileText,
-  FolderOpen,
-  ImageIcon,
-  Layers,
-  Package,
-  Upload,
-  Search,
-  Tag,
-  Trash2,
-} from "lucide-react";
+import { DeleteIcon, DocumentIcon, ExternalLinkIcon, FolderIcon, ImageIcon, LayersIcon, ProductIcon, SearchIcon, TagIcon, UploadIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Badge } from "@/components/ui/badge";
@@ -170,9 +159,9 @@ function fileKindIcon(value: string) {
     case "image":
       return ImageIcon;
     case "archive":
-      return Package;
+      return ProductIcon;
     default:
-      return FileText;
+      return DocumentIcon;
   }
 }
 
@@ -573,7 +562,7 @@ export default function DocumentsArchiveClient({
                 variant="default"
                 onClick={() => setUploadDialogOpen(true)}
               >
-                <Upload className="h-4 w-4" />
+                <UploadIcon className="h-4 w-4" />
                 העלאת קבצים
               </Button>
               <Badge variant="outline">{filteredDocuments.length} מוצגים</Badge>
@@ -587,7 +576,7 @@ export default function DocumentsArchiveClient({
             <div className="space-y-1">
               <div className="text-sm font-medium">חיפוש</div>
               <div className="relative">
-                <Search className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <SearchIcon className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   className="pe-10"
                   placeholder="חיפוש לפי שם קובץ, קטגוריה, לקוח, פרויקט או נכס..."
@@ -746,7 +735,7 @@ export default function DocumentsArchiveClient({
       {groupedDocuments.length === 0 ? (
         <Card>
           <CardContent className="flex min-h-40 flex-col items-center justify-center gap-3 pt-6 text-center">
-            <FolderOpen className="h-8 w-8 text-muted-foreground" />
+            <FolderIcon className="h-8 w-8 text-muted-foreground" />
             <div className="space-y-1">
               <div className="font-medium">לא נמצאו מסמכים לסינון שבחרת</div>
               <div className="text-sm text-muted-foreground">
@@ -857,7 +846,7 @@ export default function DocumentsArchiveClient({
                       {doc.url ? (
                         <Button asChild variant="outline" size="icon" aria-label="פתיחה" title="פתיחה">
                           <a href={doc.url} target="_blank" rel="noreferrer">
-                            <ExternalLink className="h-4 w-4" />
+                            <ExternalLinkIcon className="h-4 w-4" />
                           </a>
                         </Button>
                       ) : null}
@@ -871,7 +860,7 @@ export default function DocumentsArchiveClient({
                           setEditTagValue(doc.document_type ?? "");
                         }}
                       >
-                        <Tag className="h-4 w-4" />
+                        <TagIcon className="h-4 w-4" />
                       </Button>
                       <Button
                         variant="outline"
@@ -883,7 +872,7 @@ export default function DocumentsArchiveClient({
                           setEditDomainValue(doc.business_domains[0] ?? "general_business");
                         }}
                       >
-                        <Layers className="h-4 w-4" />
+                        <LayersIcon className="h-4 w-4" />
                       </Button>
                       <Button
                         variant="outline"
@@ -892,7 +881,7 @@ export default function DocumentsArchiveClient({
                         title="מחיקה"
                         onClick={() => setDeleteDialogDoc(doc)}
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <DeleteIcon className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>
@@ -924,7 +913,7 @@ export default function DocumentsArchiveClient({
             <div className="flex justify-end">
               <Button asChild>
                 <a href={activePreviewDoc.url} target="_blank" rel="noreferrer">
-                  <ExternalLink className="h-4 w-4" />
+                  <ExternalLinkIcon className="h-4 w-4" />
                   פתיחה בכרטיסייה חדשה
                 </a>
               </Button>
@@ -951,7 +940,7 @@ export default function DocumentsArchiveClient({
                   />
                 ) : (
                   <div className="flex flex-col items-center gap-2 px-4 py-10 text-center text-sm text-muted-foreground">
-                    <FileText className="h-8 w-8" />
+                    <DocumentIcon className="h-8 w-8" />
                     <span>אין תצוגה מקדימה לסוג הקובץ הזה — אפשר לפתוח אותו בכרטיסייה חדשה.</span>
                   </div>
                 )}

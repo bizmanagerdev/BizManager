@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Delete, MapPin } from "lucide-react";
+import { BackspaceIcon, LocationIcon } from "@/components/ui/icons";
 import * as Sentry from "@sentry/nextjs";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -739,7 +739,7 @@ export default function OrderConfirmDialog({
                 0
               </button>
               <button type="button" className={padClass} aria-label="מחיקה" onClick={backspace}>
-                <Delete className="h-4 w-4" />
+                <BackspaceIcon className="h-4 w-4" />
               </button>
             </div>
           </div>
@@ -956,7 +956,7 @@ export default function OrderConfirmDialog({
                 onClick={captureArrivalPin}
                 disabled={capturingPin}
               >
-                <MapPin className="h-4 w-4" />
+                <LocationIcon className="h-4 w-4" />
                 {capturingPin ? "מאתר..." : "שמור את המיקום שאני נמצא בו"}
               </Button>
               <span className="text-xs text-muted-foreground">

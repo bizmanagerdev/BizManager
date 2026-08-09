@@ -3,7 +3,7 @@ import { toHebrewError } from "@/lib/error-messages";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Trash2 } from "lucide-react";
+import { DeleteIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Button } from "@/components/ui/button";
@@ -80,7 +80,7 @@ export default function DeleteCustomerButton({
           aria-label="מחיקת לקוח"
           title="מחיקת לקוח"
         >
-          <Trash2 className="h-4 w-4" />
+          <DeleteIcon className="h-4 w-4" />
         </Button>
       ) : (
         <Button type="button" variant="destructive" size="sm" className={className} onClick={openConfirm}>

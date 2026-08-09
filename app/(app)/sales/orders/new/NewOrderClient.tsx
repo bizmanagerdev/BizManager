@@ -3,21 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  Check,
-  CreditCard,
-  FileText,
-  Minus,
-  Pencil,
-  Plus,
-  Search,
-  ShoppingCart,
-  Sparkles,
-  Trash2,
-  User,
-  UserPlus,
-  X,
-} from "lucide-react";
+import { AddIcon, AddUserIcon, AiIcon, CardIcon, CheckIcon, CloseIcon, DeleteIcon, DocumentIcon, EditIcon, OrderIcon, RemoveIcon, SearchIcon, UserIcon, WazeIcon } from "@/components/ui/icons";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { cn } from "@/lib/utils";
 import { toHebrewError } from "@/lib/error-messages";
@@ -64,7 +50,6 @@ import {
   toPositiveInt,
 } from "./NewOrderClient.ui";
 import { AddressLink } from "@/components/ui/address-link";
-import { WazeIcon } from "@/components/ui/waze-icon";
 
 type Row = Record<string, unknown>;
 
@@ -966,7 +951,7 @@ export default function NewOrderClient({
             <div className="space-y-3">
               <div className="space-y-1">
                 <h3 className="flex items-center gap-2 text-base font-semibold">
-                  <UserPlus className="h-5 w-5 text-primary" /> לקוח חדש
+                  <AddUserIcon className="h-5 w-5 text-primary" /> לקוח חדש
                 </h3>
                 <p className="text-xs text-muted-foreground">בסיום הלקוח ייבחר אוטומטית להזמנה.</p>
               </div>
@@ -998,10 +983,10 @@ export default function NewOrderClient({
                         aria-label="ניקוי חיפוש"
                         className="absolute end-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                       >
-                        <X className="h-4 w-4" />
+                        <CloseIcon className="h-4 w-4" />
                       </button>
                     ) : (
-                      <Search className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <SearchIcon className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     )}
                     <Input
                       value={customerQuery}
@@ -1052,7 +1037,7 @@ export default function NewOrderClient({
                               isSelected ? "border-primary bg-primary text-primary-foreground" : "border-border"
                             )}
                           >
-                            {isSelected ? <Check className="h-3 w-3" /> : null}
+                            {isSelected ? <CheckIcon className="h-3 w-3" /> : null}
                           </span>
                           <span className="min-w-0 flex-1">
                             <span className="flex flex-wrap items-baseline gap-x-2">
@@ -1092,7 +1077,7 @@ export default function NewOrderClient({
                           onClick={() => setCustomerTab("new")}
                           disabled={actionLocked}
                         >
-                          <UserPlus className="h-4 w-4" /> הוספת לקוח חדש
+                          <AddUserIcon className="h-4 w-4" /> הוספת לקוח חדש
                         </Button>
                       </div>
                     ) : null}
@@ -1133,7 +1118,7 @@ export default function NewOrderClient({
                             aria-label={editingCustomer ? "סגירת העריכה" : "עריכת פרטי הלקוח"}
                             title={editingCustomer ? "סגירת העריכה" : "עריכת פרטי הלקוח"}
                           >
-                            {editingCustomer ? <X className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+                            {editingCustomer ? <CloseIcon className="h-4 w-4" /> : <EditIcon className="h-4 w-4" />}
                           </Button>
                         </div>
                       </div>
@@ -1189,7 +1174,7 @@ export default function NewOrderClient({
                   ) : (
                     <div className="flex h-full min-h-[16rem] flex-col items-center justify-center gap-2 text-center">
                       <span className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                        <User className="h-6 w-6" />
+                        <UserIcon className="h-6 w-6" />
                       </span>
                       <p className="text-sm font-medium text-foreground">בחרו לקוח מהרשימה</p>
                       <p className="text-sm text-muted-foreground">פרטי הלקוח יוצגו כאן וניתן יהיה לערוך אותם.</p>
@@ -1210,7 +1195,7 @@ export default function NewOrderClient({
               phone: the search box and every product card are that much wider. */}
           <div className="space-y-3">
               <div className="relative">
-                <Search className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <SearchIcon className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={productQuery}
                   onChange={(e) => setProductQuery(e.target.value)}
@@ -1266,7 +1251,7 @@ export default function NewOrderClient({
                                 selected ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary"
                               )}
                             >
-                              <Plus className="h-3.5 w-3.5" />
+                              <AddIcon className="h-3.5 w-3.5" />
                             </span>
                           </div>
                         </div>
@@ -1294,7 +1279,7 @@ export default function NewOrderClient({
                 disabled={actionLocked}
                 className="w-full sm:w-auto"
               >
-                <Plus className="me-1 h-3.5 w-3.5" /> שורה חופשית
+                <AddIcon className="me-1 h-3.5 w-3.5" /> שורה חופשית
               </Button>
             </div>
 
@@ -1308,7 +1293,7 @@ export default function NewOrderClient({
             >
             <div className="flex flex-row items-center justify-between gap-2 lg:shrink-0">
               <h3 className="flex items-center gap-2 text-base font-semibold">
-                <ShoppingCart className="h-5 w-5 text-primary" /> פריטי הזמנה
+                <OrderIcon className="h-5 w-5 text-primary" /> פריטי הזמנה
               </h3>
               <Badge variant="info">{totalUnits}</Badge>
             </div>
@@ -1362,7 +1347,7 @@ export default function NewOrderClient({
                               disabled={actionLocked || line.quantity_ordered <= 1}
                               aria-label={`הפחתת כמות של ${line.product_name}`}
                             >
-                              <Minus className="h-3.5 w-3.5" />
+                              <RemoveIcon className="h-3.5 w-3.5" />
                             </button>
                             <span className="min-w-8 text-center text-sm font-semibold">{line.quantity_ordered}</span>
                             <button
@@ -1372,7 +1357,7 @@ export default function NewOrderClient({
                               disabled={actionLocked}
                               aria-label={`הגדלת כמות של ${line.product_name}`}
                             >
-                              <Plus className="h-3.5 w-3.5" />
+                              <AddIcon className="h-3.5 w-3.5" />
                             </button>
                           </div>
                           <button
@@ -1382,7 +1367,7 @@ export default function NewOrderClient({
                             disabled={actionLocked}
                             aria-label={`הסרת ${line.product_name}`}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <DeleteIcon className="h-4 w-4" />
                           </button>
                         </div>
 
@@ -1647,7 +1632,7 @@ export default function NewOrderClient({
                   <p className="mt-0.5 text-xs text-muted-foreground">אפשר לפצל לכמה תשלומים ובכמה אמצעים שונים.</p>
                 </div>
                 <Button type="button" variant="secondary" size="sm" onClick={addPaymentDraft} disabled={actionLocked}>
-                  <Plus className="h-4 w-4" /> תשלום
+                  <AddIcon className="h-4 w-4" /> תשלום
                 </Button>
               </div>
 
@@ -1829,7 +1814,7 @@ export default function NewOrderClient({
       {step === 4 ? (
         <div className="space-y-4">
           <div className="flex items-center gap-2 rounded-md border border-secondary/35 bg-secondary/10 px-3 py-2.5 text-sm text-foreground">
-            <Sparkles className="h-4 w-4 shrink-0 text-secondary" />
+            <AiIcon className="h-4 w-4 shrink-0 text-secondary" />
             <span>
               בדקו שהכל תקין ולחצו <span className="font-semibold">{isEditMode ? "שמירת שינויים" : "יצירת הזמנה"}</span>.
             </span>
@@ -1838,7 +1823,7 @@ export default function NewOrderClient({
           <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0">
             {/* Customer */}
             <SummarySection
-              icon={<User className="h-4 w-4" />}
+              icon={<UserIcon className="h-4 w-4" />}
               title="לקוח"
               onEdit={() => goToStep(1)}
               editDisabled={actionLocked}
@@ -1875,7 +1860,7 @@ export default function NewOrderClient({
 
             {/* Items */}
             <SummarySection
-              icon={<ShoppingCart className="h-4 w-4" />}
+              icon={<OrderIcon className="h-4 w-4" />}
               title={`פריטים (${lines.length})`}
               onEdit={() => goToStep(2)}
               editDisabled={actionLocked}
@@ -1911,7 +1896,7 @@ export default function NewOrderClient({
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <span className="text-muted-foreground">
-                  <FileText className="h-4 w-4" />
+                  <DocumentIcon className="h-4 w-4" />
                 </span>
                 פרטי הזמנה
               </div>
@@ -1951,7 +1936,7 @@ export default function NewOrderClient({
 
             {/* Payment summary — read-only; edit jumps back to the payment step */}
             <SummarySection
-              icon={<CreditCard className="h-4 w-4" />}
+              icon={<CardIcon className="h-4 w-4" />}
               title="תשלום"
               onEdit={() => goToStep(3)}
               editDisabled={actionLocked}

@@ -1,7 +1,7 @@
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { PageStack } from "@/components/layout/page-layout";
-import { Bell } from "lucide-react";
+import { NotificationIcon } from "@/components/ui/icons";
 import NotificationsClient from "@/app/(app)/notifications/NotificationsClient";
 import type { NotificationItem } from "@/lib/ui/notifications-store";
 
@@ -24,7 +24,7 @@ export default async function NotificationsPage() {
       <PageStack>
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <Bell className="h-6 w-6" />
+            <NotificationIcon className="h-6 w-6" />
             התראות
           </h1>
           <p className="text-sm text-muted-foreground">כל ההתראות שקיבלת — נקראו ושלא נקראו.</p>

@@ -17,7 +17,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Eye, EyeOff, GripVertical, RotateCcw, SlidersHorizontal } from "lucide-react";
+import { DragIcon, FilterIcon, HideIcon, RefreshIcon, ShowIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -70,7 +70,7 @@ function SortableWidgetRow({
         {...attributes}
         {...listeners}
       >
-        <GripVertical className="h-5 w-5" />
+        <DragIcon className="h-5 w-5" />
       </button>
 
       <span className={cn("flex-1 text-sm font-medium", hidden && "text-muted-foreground")}>{widget.label}</span>
@@ -81,7 +81,7 @@ function SortableWidgetRow({
         variant={hidden ? "outline" : "secondary"}
         onClick={() => onToggle(widget.id)}
       >
-        {hidden ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        {hidden ? <HideIcon className="h-4 w-4" /> : <ShowIcon className="h-4 w-4" />}
         {hidden ? "מוסתר" : "מוצג"}
       </Button>
     </div>
@@ -172,7 +172,7 @@ export default function DashboardCustomizer({
         {/* Icon-only on phones so the greeting beside it keeps the full width;
             the label comes back once there's room for it. */}
         <Button variant="outline" size="sm" aria-label="התאמת לוח" className="px-2.5 sm:px-3">
-          <SlidersHorizontal className="h-4 w-4" />
+          <FilterIcon className="h-4 w-4" />
           <span className="hidden sm:inline">התאמת לוח</span>
         </Button>
       </SheetTrigger>
@@ -194,7 +194,7 @@ export default function DashboardCustomizer({
 
         <div className="mt-4 flex items-center justify-between gap-2 border-t border-border/60 pt-4">
           <Button type="button" variant="outline" size="sm" onClick={handleReset} disabled={saving}>
-            <RotateCcw className="h-4 w-4" />
+            <RefreshIcon className="h-4 w-4" />
             ברירת מחדל
           </Button>
           <Button type="button" onClick={handleSave} disabled={saving}>

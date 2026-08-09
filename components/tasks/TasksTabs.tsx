@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ListTodo, Repeat, type LucideIcon } from "lucide-react";
+import { RecurringIcon, TaskIcon } from "@/components/ui/icons";
+import type { IconComponent } from "@/components/ui/icons";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 
 // Top-level navigation for the Tasks section: the board and the recurring-task
 // templates. Recurring tasks used to live under Settings; it's a Tasks tab now.
-const TASK_TABS: Array<{ href: string; label: string; icon: LucideIcon }> = [
-  { href: "/tasks", label: "לוח משימות", icon: ListTodo },
-  { href: "/tasks/recurring", label: "משימות קבועות", icon: Repeat },
+const TASK_TABS: Array<{ href: string; label: string; icon: IconComponent }> = [
+  { href: "/tasks", label: "לוח משימות", icon: TaskIcon },
+  { href: "/tasks/recurring", label: "משימות קבועות", icon: RecurringIcon },
 ];
 
 // Mirrors the "underline" TabsTrigger styling from components/ui/tabs.tsx so the

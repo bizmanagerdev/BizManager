@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { MoreHorizontal } from "lucide-react";
+import { MoreIcon } from "@/components/ui/icons";
 import { NavLink } from "@/components/NavLink";
 import { ClientOnly } from "@/components/ClientOnly";
 import { QuickCreateMenu } from "@/components/layout/QuickCreateMenu";
@@ -69,7 +69,7 @@ export function BottomNav({ items, moreItems = [], viewerRole }: Props) {
                   type="button"
                   className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-sm py-1 text-sidebar-foreground/70 transition-all duration-200"
                 >
-                  <MoreHorizontal className="h-[22px] w-[22px] shrink-0" />
+                  <MoreIcon className="h-[22px] w-[22px] shrink-0" />
                   <span className="w-full truncate text-center text-[11px] font-medium leading-none">עוד</span>
                 </button>
               }
@@ -80,7 +80,7 @@ export function BottomNav({ items, moreItems = [], viewerRole }: Props) {
                   type="button"
                   className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-sm py-1 text-sidebar-foreground/70 transition-all duration-200 hover:bg-white/10 hover:text-white"
                 >
-                  <MoreHorizontal className="h-[22px] w-[22px] shrink-0" />
+                  <MoreIcon className="h-[22px] w-[22px] shrink-0" />
                   <span className="w-full truncate text-center text-[11px] font-medium leading-none">עוד</span>
                 </button>
               </SheetTrigger>

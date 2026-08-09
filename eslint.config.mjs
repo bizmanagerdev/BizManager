@@ -17,7 +17,27 @@ const eslintConfig = defineConfig([
           caughtErrorsIgnorePattern: "^_",
         },
       ],
+      // The icon palette (components/ui/icons.ts) is the ONLY place allowed to
+      // touch lucide directly. Everything else imports icons by meaning, so a
+      // glyph can be swapped app-wide from one line. See the palette's header.
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "lucide-react",
+              message:
+                'ייבא אייקונים מלוח האייקונים: import { EditIcon } from "@/components/ui/icons"',
+            },
+          ],
+        },
+      ],
     },
+  },
+  {
+    // The palette itself is the one door to lucide.
+    files: ["components/ui/icons.ts"],
+    rules: { "no-restricted-imports": "off" },
   },
   {
     files: ["app/**/sales/orders/[[]id[]]/page.tsx"],

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { BarChart3, Calculator, CalendarClock, CheckCircle2, Clock, Coins, History, LineChart, Pencil, Scale, ScrollText, Search, SlidersHorizontal, TimerReset, Trash2, Users } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, BalanceIcon, CalculatorIcon, ChartIcon, ClockIcon, CoinsIcon, DeleteIcon, FilterIcon, HistoryIcon, LedgerIcon, RefreshIcon, ScheduleIcon, SearchIcon, SuccessIcon, TrendChartIcon, UsersIcon } from "@/components/ui/icons";
 import { TagPicker } from "@/components/tags/TagPicker";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Badge } from "@/components/ui/badge";
@@ -66,6 +66,7 @@ import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-qu
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
+import { EditButton } from "@/components/ui/icon-button";
 
 const useIsomorphicLayoutEffect =
   typeof window !== "undefined" ? useLayoutEffect : useEffect;
@@ -391,8 +392,14 @@ export default function FinancialPageClient({
         : { key, dir: key === "domain" ? "asc" : "desc" }
     );
   };
+  // The active sort column shows its direction with the palette arrow, never a
+  // ▲/▼ text glyph.
   const sortArrow = (key: "date" | "amount" | "domain") =>
-    ledgerSort.key === key ? (ledgerSort.dir === "asc" ? " ▲" : " ▼") : "";
+    ledgerSort.key !== key ? null : ledgerSort.dir === "asc" ? (
+      <ArrowUpIcon className="ms-1 h-3 w-3" />
+    ) : (
+      <ArrowDownIcon className="ms-1 h-3 w-3" />
+    );
 
   function exportLedgerCsv() {
     const csvCell = (v: unknown) => {
@@ -807,7 +814,7 @@ export default function FinancialPageClient({
   const advancedFilterButton = (
     <>
       <Button type="button" variant="outline" onClick={() => setFiltersOpen((value) => !value)}>
-        <SlidersHorizontal className="ml-2 h-4 w-4" />
+        <FilterIcon className="ml-2 h-4 w-4" />
         סינון מתקדם
         {activeFilterCount > 0 ? (
           <Badge variant="secondary" className="ms-2">{activeFilterCount}</Badge>
@@ -815,7 +822,7 @@ export default function FinancialPageClient({
       </Button>
       {activeFilterCount > 0 ? (
         <Button type="button" variant="ghost" onClick={resetFilters}>
-          <TimerReset className="ml-1 h-4 w-4" />
+          <RefreshIcon className="ml-1 h-4 w-4" />
           איפוס סינון
         </Button>
       ) : null}
@@ -882,7 +889,7 @@ export default function FinancialPageClient({
       </label>
       {activeFilterCount > 0 ? (
         <Button type="button" variant="ghost" size="sm" onClick={resetFilters} className="ms-auto h-9">
-          <TimerReset className="ml-1 h-4 w-4" />
+          <RefreshIcon className="ml-1 h-4 w-4" />
           איפוס
         </Button>
       ) : null}
@@ -913,7 +920,7 @@ export default function FinancialPageClient({
           <label className="space-y-1 text-sm text-right sm:col-span-2">
             <span className="font-medium">חיפוש</span>
             <div className="relative">
-              <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <SearchIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={query}
                 onChange={(event) => {
@@ -1055,7 +1062,7 @@ export default function FinancialPageClient({
           {/* Section 1 — controls (drive every tab). Reset pinned to the far end. */}
           <div className="flex flex-wrap items-center gap-2 bg-muted/50 px-3 py-2.5">
             <span className="flex shrink-0 items-center gap-1.5 text-sm font-semibold">
-              <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
+              <FilterIcon className="h-4 w-4 text-muted-foreground" />
               מסננים גלובליים
             </span>
             <span className="mx-1 hidden h-5 w-px self-center bg-border sm:block" />
@@ -1082,13 +1089,13 @@ export default function FinancialPageClient({
         {/* Tabs — separated from the filter band with clear breathing room. */}
         <div className="min-w-0 pt-2">
           <TabsList variant="underline">
-            <TabsTrigger value="overview"><Calculator className="h-4 w-4 shrink-0" />סקירה</TabsTrigger>
-            <TabsTrigger value="pl"><BarChart3 className="h-4 w-4 shrink-0" />לפי תחום</TabsTrigger>
-            <TabsTrigger value="monthly"><LineChart className="h-4 w-4 shrink-0" />חודשי</TabsTrigger>
-            <TabsTrigger value="margin"><Coins className="h-4 w-4 shrink-0" />מכירות</TabsTrigger>
-            <TabsTrigger value="balance"><Scale className="h-4 w-4 shrink-0" />מאזן</TabsTrigger>
-            <TabsTrigger value="forecast"><CalendarClock className="h-4 w-4 shrink-0" />תחזית</TabsTrigger>
-            <TabsTrigger value="customers"><Users className="h-4 w-4 shrink-0" />לקוחות</TabsTrigger>
+            <TabsTrigger value="overview"><CalculatorIcon className="h-4 w-4 shrink-0" />סקירה</TabsTrigger>
+            <TabsTrigger value="pl"><ChartIcon className="h-4 w-4 shrink-0" />לפי תחום</TabsTrigger>
+            <TabsTrigger value="monthly"><TrendChartIcon className="h-4 w-4 shrink-0" />חודשי</TabsTrigger>
+            <TabsTrigger value="margin"><CoinsIcon className="h-4 w-4 shrink-0" />מכירות</TabsTrigger>
+            <TabsTrigger value="balance"><BalanceIcon className="h-4 w-4 shrink-0" />מאזן</TabsTrigger>
+            <TabsTrigger value="forecast"><ScheduleIcon className="h-4 w-4 shrink-0" />תחזית</TabsTrigger>
+            <TabsTrigger value="customers"><UsersIcon className="h-4 w-4 shrink-0" />לקוחות</TabsTrigger>
           </TabsList>
         </div>
         <TabsContent value="balance" className="space-y-6">
@@ -1266,10 +1273,10 @@ export default function FinancialPageClient({
         <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
           <div className="min-w-0 flex-1">
             <TabsList variant="underline">
-              <TabsTrigger value="history"><History className="h-4 w-4 shrink-0" />היסטוריה</TabsTrigger>
-              <TabsTrigger value="ledger"><ScrollText className="h-4 w-4 shrink-0" />יומן מלא</TabsTrigger>
+              <TabsTrigger value="history"><HistoryIcon className="h-4 w-4 shrink-0" />היסטוריה</TabsTrigger>
+              <TabsTrigger value="ledger"><LedgerIcon className="h-4 w-4 shrink-0" />יומן מלא</TabsTrigger>
               <TabsTrigger value="upcoming">
-                <Clock className="h-4 w-4 shrink-0" />
+                <ClockIcon className="h-4 w-4 shrink-0" />
                 תזרים עתידי
                 {upcomingCount > 0 ? (
                   <span className="ms-2 inline-flex items-center rounded-full bg-foreground/10 px-1.5 text-[11px] font-semibold leading-5">
@@ -1299,7 +1306,7 @@ export default function FinancialPageClient({
         <CardContent>
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <div className="relative min-w-[12rem] flex-1">
-              <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <SearchIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={historySearch}
                 onChange={(e) => {
@@ -1377,12 +1384,9 @@ export default function FinancialPageClient({
                       </div>
                       {canManageExpenses && editableExpense ? (
                         <div className="flex justify-end gap-2 pt-1">
-                          <Button type="button" variant="outline" size="sm" onClick={(event) => { event.stopPropagation(); openExpenseEditor(editableExpense); }}>
-                            <Pencil className="ml-1 h-4 w-4" />
-                            עריכה
-                          </Button>
+                          <EditButton onClick={(event) => { event.stopPropagation(); openExpenseEditor(editableExpense); }} label="עריכה" />
                           <Button type="button" variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={(event) => { event.stopPropagation(); setDeletingExpense(editableExpense); }}>
-                            <Trash2 className="ml-1 h-4 w-4" />
+                            <DeleteIcon className="ml-1 h-4 w-4" />
                             מחיקה
                           </Button>
                         </div>
@@ -1467,12 +1471,9 @@ export default function FinancialPageClient({
                           <td className="px-3 py-2 align-top">
                             {editableExpense ? (
                               <div className="flex items-center justify-end gap-1">
-                                <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={(event) => { event.stopPropagation(); openExpenseEditor(editableExpense); }}>
-                                  <Pencil className="h-4 w-4" />
-                                  <span className="sr-only">עריכת חיוב</span>
-                                </Button>
+                                <EditButton onClick={(event) => { event.stopPropagation(); openExpenseEditor(editableExpense); }} label="עריכה" />
                                 <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={(event) => { event.stopPropagation(); setDeletingExpense(editableExpense); }}>
-                                  <Trash2 className="h-4 w-4" />
+                                  <DeleteIcon className="h-4 w-4" />
                                   <span className="sr-only">מחיקת חיוב</span>
                                 </Button>
                               </div>
@@ -1648,23 +1649,14 @@ export default function FinancialPageClient({
                                       openMarkPaid(editableExpense);
                                     }}
                                   >
-                                    <CheckCircle2 className="h-4 w-4" />
+                                    <SuccessIcon className="h-4 w-4" />
                                     <span className="sr-only">סמן כשולם</span>
                                   </Button>
                                 ) : null}
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={(event) => {
+                                <EditButton onClick={(event) => {
                                     event.stopPropagation();
                                     openExpenseEditor(editableExpense);
-                                  }}
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                  <span className="sr-only">עריכת חיוב</span>
-                                </Button>
+                                  }} label="עריכה" />
                                 <Button
                                   type="button"
                                   variant="ghost"
@@ -1675,7 +1667,7 @@ export default function FinancialPageClient({
                                     setDeletingExpense(editableExpense);
                                   }}
                                 >
-                                  <Trash2 className="h-4 w-4" />
+                                  <DeleteIcon className="h-4 w-4" />
                                   <span className="sr-only">מחיקת חיוב</span>
                                 </Button>
                               </div>
@@ -1710,7 +1702,7 @@ export default function FinancialPageClient({
         <CardContent>
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <div className="relative min-w-[12rem] flex-1">
-              <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <SearchIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={ledgerSearch}
                 onChange={(e) => {
@@ -1837,18 +1829,10 @@ export default function FinancialPageClient({
                       </div>
                       {canManageExpenses && editableExpense ? (
                         <div className="flex justify-end gap-2 pt-1">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={(event) => {
+                          <EditButton onClick={(event) => {
                               event.stopPropagation();
                               openExpenseEditor(editableExpense);
-                            }}
-                          >
-                            <Pencil className="ml-1 h-4 w-4" />
-                            עריכה
-                          </Button>
+                            }} label="עריכה" />
                           <Button
                             type="button"
                             variant="outline"
@@ -1859,7 +1843,7 @@ export default function FinancialPageClient({
                               setDeletingExpense(editableExpense);
                             }}
                           >
-                            <Trash2 className="ml-1 h-4 w-4" />
+                            <DeleteIcon className="ml-1 h-4 w-4" />
                             מחיקה
                           </Button>
                         </div>
@@ -1998,23 +1982,14 @@ export default function FinancialPageClient({
                                       openMarkPaid(editableExpense);
                                     }}
                                   >
-                                    <CheckCircle2 className="h-4 w-4" />
+                                    <SuccessIcon className="h-4 w-4" />
                                     <span className="sr-only">סמן כשולם</span>
                                   </Button>
                                 ) : null}
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={(event) => {
+                                <EditButton onClick={(event) => {
                                     event.stopPropagation();
                                     openExpenseEditor(editableExpense);
-                                  }}
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                  <span className="sr-only">עריכת חיוב</span>
-                                </Button>
+                                  }} label="עריכה" />
                                 <Button
                                   type="button"
                                   variant="ghost"
@@ -2025,7 +2000,7 @@ export default function FinancialPageClient({
                                     setDeletingExpense(editableExpense);
                                   }}
                                 >
-                                  <Trash2 className="h-4 w-4" />
+                                  <DeleteIcon className="h-4 w-4" />
                                   <span className="sr-only">מחיקת חיוב</span>
                                 </Button>
                               </div>

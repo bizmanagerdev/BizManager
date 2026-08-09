@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Smartphone, Tablet, Monitor } from "lucide-react";
+import { DesktopIcon, MobileIcon, TabletIcon } from "@/components/ui/icons";
 import type { DeviceIcon } from "@/lib/notifications/devices";
 
 export type ConnectedDevice = {
@@ -26,9 +26,9 @@ type Props = {
 
 function Icon({ icon }: { icon: DeviceIcon }) {
   const cls = "h-4 w-4 text-muted-foreground";
-  if (icon === "phone") return <Smartphone className={cls} />;
-  if (icon === "tablet") return <Tablet className={cls} />;
-  return <Monitor className={cls} />;
+  if (icon === "phone") return <MobileIcon className={cls} />;
+  if (icon === "tablet") return <TabletIcon className={cls} />;
+  return <DesktopIcon className={cls} />;
 }
 
 function formatDate(iso: string | null): string {

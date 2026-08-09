@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { FileText, ListTodo, Pencil, Plus, Trash2 } from "lucide-react";
+import { AddIcon, DeleteIcon, DocumentIcon, TaskIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,7 @@ import { formatCurrency } from "@/lib/payroll";
 import { taskStatusLabel, type VehicleActivity, type VehicleExpense } from "@/lib/vehicles";
 import { toHebrewError } from "@/lib/error-messages";
 import { offlineUpload } from "@/lib/offline-upload";
+import { EditButton } from "@/components/ui/icon-button";
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -268,7 +269,7 @@ export default function VehicleActivityClient({
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
             <CardTitle className="text-base">הוצאות ({activity.expenses.length})</CardTitle>
             <Button size="sm" onClick={openAddExpense}>
-              <Plus className="me-1 h-4 w-4" />
+              <AddIcon className="me-1 h-4 w-4" />
               הוצאה
             </Button>
           </CardHeader>
@@ -286,11 +287,9 @@ export default function VehicleActivityClient({
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <span className="font-semibold text-destructive">{formatCurrency(e.amount)}</span>
-                    <Button variant="secondary" size="icon" className={iconBtn} onClick={() => openEditExpense(e)} aria-label="עריכה">
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
+                    <EditButton onClick={() => openEditExpense(e)} label="עריכה" />
                     <Button variant="secondary" size="icon" className={iconBtn} onClick={() => setDel({ kind: "expense", id: e.id, label: e.category || "הוצאה" })} aria-label="מחיקה">
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <DeleteIcon className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>
@@ -304,7 +303,7 @@ export default function VehicleActivityClient({
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
             <CardTitle className="text-base">הכנסות ({activity.payments.length})</CardTitle>
             <Button size="sm" onClick={openAddIncome}>
-              <Plus className="me-1 h-4 w-4" />
+              <AddIcon className="me-1 h-4 w-4" />
               הכנסה
             </Button>
           </CardHeader>
@@ -322,7 +321,7 @@ export default function VehicleActivityClient({
                     <span className="font-semibold text-emerald-600">{formatCurrency(p.amount)}</span>
                     {p.projectId ? null : (
                       <Button variant="secondary" size="icon" className={iconBtn} onClick={() => setDel({ kind: "payment", id: p.id, label: "הכנסה" })} aria-label="מחיקה">
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <DeleteIcon className="h-3.5 w-3.5" />
                       </Button>
                     )}
                   </div>
@@ -336,11 +335,11 @@ export default function VehicleActivityClient({
         <Card>
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
             <CardTitle className="flex items-center gap-1 text-base">
-              <ListTodo className="h-4 w-4" />
+              <TaskIcon className="h-4 w-4" />
               משימות ({activity.tasks.length})
             </CardTitle>
             <Button size="sm" onClick={openAddTask}>
-              <Plus className="me-1 h-4 w-4" />
+              <AddIcon className="me-1 h-4 w-4" />
               משימה
             </Button>
           </CardHeader>
@@ -356,11 +355,9 @@ export default function VehicleActivityClient({
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <Badge variant="outline">{taskStatusLabel(t.status)}</Badge>
-                    <Button variant="secondary" size="icon" className={iconBtn} onClick={() => openEditTask(t.id)} aria-label="עריכה">
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
+                    <EditButton onClick={() => openEditTask(t.id)} label="עריכה" />
                     <Button variant="secondary" size="icon" className={iconBtn} onClick={() => setDel({ kind: "task", id: t.id, label: t.subject || "משימה" })} aria-label="מחיקה">
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <DeleteIcon className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>
@@ -373,11 +370,11 @@ export default function VehicleActivityClient({
         <Card>
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
             <CardTitle className="flex items-center gap-1 text-base">
-              <FileText className="h-4 w-4" />
+              <DocumentIcon className="h-4 w-4" />
               מסמכים ({activity.documents.length})
             </CardTitle>
             <Button size="sm" onClick={openAddDoc}>
-              <Plus className="me-1 h-4 w-4" />
+              <AddIcon className="me-1 h-4 w-4" />
               מסמך
             </Button>
           </CardHeader>
@@ -396,7 +393,7 @@ export default function VehicleActivityClient({
                   <div className="flex shrink-0 items-center gap-1">
                     {d.refYear ? <Badge variant="neutral">{d.refYear}</Badge> : null}
                     <Button variant="secondary" size="icon" className={iconBtn} onClick={() => setDel({ kind: "document", id: d.id, label: d.title || "מסמך" })} aria-label="מחיקה">
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <DeleteIcon className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>

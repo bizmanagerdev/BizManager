@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { CalendarDays } from "lucide-react";
+import { CalendarIcon } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 
@@ -176,7 +176,7 @@ export const DateInput = React.forwardRef<HTMLInputElement, DateInputProps>(
           onClick={() => openNativePicker(pickerRef)}
           className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors focus:outline-none"
         >
-          <CalendarDays className="h-4 w-4" />
+          <CalendarIcon className="h-4 w-4" />
         </button>
         {/* Hidden native date picker — triggered by the calendar icon */}
         <input
@@ -257,7 +257,7 @@ export const DateTimeInput = React.forwardRef<HTMLInputElement, DateTimeInputPro
           onClick={() => openNativePicker(pickerRef)}
           className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors focus:outline-none"
         >
-          <CalendarDays className="h-4 w-4" />
+          <CalendarIcon className="h-4 w-4" />
         </button>
         <input
           ref={pickerRef}

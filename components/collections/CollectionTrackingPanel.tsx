@@ -3,7 +3,7 @@ import { toHebrewError } from "@/lib/error-messages";
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { BellRing, Check, Pencil, X } from "lucide-react";
+import { CheckIcon, CloseIcon, PhoneIcon, ReminderIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -25,6 +25,7 @@ import {
   type Reminder,
 } from "@/lib/communications";
 import { offlineFetch } from "@/lib/offline-queue";
+import { EditButton } from "@/components/ui/icon-button";
 
 // A call/reminder here can be about anything (delivery, an order, a question) —
 // not only collection — so the user tags it with a topic.
@@ -445,7 +446,7 @@ export default function CollectionTrackingPanel({
             <>
               {" · "}
               <a href={`tel:${customerPhone}`} className="hover:underline">
-                ☎ {customerPhone}
+                <PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}{customerPhone}
               </a>
             </>
           ) : null}
@@ -565,7 +566,7 @@ export default function CollectionTrackingPanel({
                           : "bg-warning-soft text-warning-soft-foreground"
                       }`}
                     >
-                      <BellRing className="h-4 w-4" />
+                      <ReminderIcon className="h-4 w-4" />
                     </span>
                     <div className="min-w-0">
                       <div className="font-semibold">{r.content || actionTypeLabel(r.action_type)}</div>
@@ -585,20 +586,10 @@ export default function CollectionTrackingPanel({
                       title="סימון כבוצע"
                       onClick={() => void updateReminder(r.id, "done")}
                     >
-                      <Check className="h-3.5 w-3.5" />
+                      <CheckIcon className="h-3.5 w-3.5" />
                       בוצע
                     </Button>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8 rounded-full border border-border/60 bg-background"
-                      title="עריכת תזכורת"
-                      aria-label="עריכת תזכורת"
-                      onClick={() => setEditingReminder(r)}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
+                    <EditButton onClick={() => setEditingReminder(r)} label="עריכת תזכורת" />
                     <Button
                       type="button"
                       size="icon"
@@ -608,7 +599,7 @@ export default function CollectionTrackingPanel({
                       aria-label="ביטול תזכורת"
                       onClick={() => void updateReminder(r.id, "cancelled")}
                     >
-                      <X className="h-3.5 w-3.5" />
+                      <CloseIcon className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>

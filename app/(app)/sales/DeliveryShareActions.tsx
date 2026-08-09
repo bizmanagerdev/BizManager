@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { Loader2, Phone, Share2 } from "lucide-react";
+import { CashIcon, DeliveryIcon, LocationIcon, NoteIcon, PhoneIcon, ProductIcon, SavedLocationIcon, ShareIcon, SpinnerIcon, WarningIcon, WazeIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
-import { WazeIcon } from "@/components/ui/waze-icon";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { toHebrewError } from "@/lib/error-messages";
@@ -227,9 +226,9 @@ export default function DeliveryShareActions({
         disabled={renderingImage}
       >
         {renderingImage ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
+          <SpinnerIcon className="h-4 w-4 animate-spin" />
         ) : (
-          <Share2 className="h-4 w-4" />
+          <ShareIcon className="h-4 w-4" />
         )}
         <span>{label}</span>
       </Button>
@@ -277,7 +276,7 @@ export default function DeliveryShareActions({
               marginBottom: "22px",
             }}
           >
-            <span style={{ fontSize: "72px", lineHeight: 1.2, flexShrink: 0 }}>🚚</span>
+            <DeliveryIcon size={72} color={SLIP_TEXT} strokeWidth={1.75} style={{ flexShrink: 0 }} />
             {/* A long customer name wraps here rather than colliding with the phone
                 row below it — flex:1 + minWidth:0 keeps it inside its own column. */}
             <span style={{ ...slipValueStyle, fontSize: "60px", fontWeight: 700, lineHeight: 1.2 }}>
@@ -288,7 +287,7 @@ export default function DeliveryShareActions({
           {delivery.customerPhone ? (
             <div style={slipRowStyle}>
               <span style={slipIconStyle}>
-                <Phone size={58} color="#000000" fill="#000000" strokeWidth={1.5} />
+                <PhoneIcon size={58} color="#000000" fill="#000000" strokeWidth={1.5} />
               </span>
               {/* dir=ltr keeps the digits in dialling order; textAlign right pulls
                   the number back to the start edge so it lines up with every other
@@ -313,7 +312,9 @@ export default function DeliveryShareActions({
               leaving "around the corner, blue gate" behind in the app defeats it. */}
           {delivery.deliveryInstructions ? (
             <div style={slipRowStyle}>
-              <span style={slipIconStyle}>📍</span>
+              <span style={slipIconStyle}>
+                <LocationIcon size={58} color={SLIP_TEXT} strokeWidth={1.75} />
+              </span>
               <span style={slipValueStyle}>{delivery.deliveryInstructions}</span>
             </div>
           ) : null}
@@ -323,7 +324,9 @@ export default function DeliveryShareActions({
               spot is still legible on the picture alone, e.g. if it's forwarded. */}
           {slipPin ? (
             <div style={slipRowStyle}>
-              <span style={slipIconStyle}>🎯</span>
+              <span style={slipIconStyle}>
+                <SavedLocationIcon size={58} color={SLIP_TEXT} strokeWidth={1.75} />
+              </span>
               <span
                 dir="ltr"
                 style={{ ...slipValueStyle, unicodeBidi: "embed", fontSize: "42px", color: SLIP_LABEL }}
@@ -334,7 +337,9 @@ export default function DeliveryShareActions({
           ) : null}
 
           <div style={slipRowStyle}>
-            <span style={slipIconStyle}>💰</span>
+            <span style={slipIconStyle}>
+              <CashIcon size={58} color={SLIP_TEXT} strokeWidth={1.75} />
+            </span>
             <span style={slipValueStyle}>
               <span style={{ fontWeight: 700 }}>{formatCurrency(delivery.totalAmount)}</span>
               <span style={{ color: SLIP_LABEL }}> · {paymentStatusLabel(delivery.paymentStatus)}</span>
@@ -357,7 +362,7 @@ export default function DeliveryShareActions({
                 fontSize: "54px",
               }}
             >
-              <span style={{ fontSize: "62px", lineHeight: 1 }}>⚠️</span>
+              <WarningIcon size={62} color="#92400e" strokeWidth={2} style={{ flexShrink: 0 }} />
               <span>גבייה ע&quot;י הנהג</span>
             </div>
           ) : null}
@@ -365,7 +370,9 @@ export default function DeliveryShareActions({
           {delivery.items.length > 0 ? (
             <div style={{ marginTop: "18px" }}>
               <div style={{ ...slipRowStyle, marginBottom: "12px", color: SLIP_LABEL }}>
-                <span style={slipIconStyle}>📦</span>
+                <span style={slipIconStyle}>
+                  <ProductIcon size={58} color={SLIP_LABEL} strokeWidth={1.75} />
+                </span>
                 <span>מוצרים:</span>
               </div>
               {delivery.items.map((item, index) => (
@@ -398,7 +405,9 @@ export default function DeliveryShareActions({
                 color: SLIP_LABEL,
               }}
             >
-              <span style={slipIconStyle}>📝</span>
+              <span style={slipIconStyle}>
+                <NoteIcon size={58} color={SLIP_LABEL} strokeWidth={1.75} />
+              </span>
               <span style={slipValueStyle}>{delivery.notes}</span>
             </div>
           ) : null}

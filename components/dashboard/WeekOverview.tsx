@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { ChevronLeft, CalendarDays } from "lucide-react";
+import { CalendarIcon, ChevronLeftIcon } from "@/components/ui/icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
@@ -46,7 +46,7 @@ export default function WeekOverview({ entries }: { entries: CalendarEntry[] }) 
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-center gap-2">
-          <CalendarDays className="h-5 w-5 text-muted-foreground" />
+          <CalendarIcon className="h-5 w-5 text-muted-foreground" />
           <CardTitle className="text-lg">מבט על היום</CardTitle>
         </div>
         <div className="text-sm text-muted-foreground">{todayLabel}</div>
@@ -77,7 +77,7 @@ export default function WeekOverview({ entries }: { entries: CalendarEntry[] }) 
                   <span className="truncate text-muted-foreground">— {entry.subtitle}</span>
                 ) : null}
               </span>
-              <ChevronLeft className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <ChevronLeftIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
             </Link>
           ))
         ) : (

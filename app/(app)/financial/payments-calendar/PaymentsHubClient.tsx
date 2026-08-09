@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CalendarDays, Repeat, Plus, RotateCw, Calculator } from "lucide-react";
+import { AddIcon, CalculatorIcon, CalendarIcon, RecurringIcon, RefreshIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toHebrewError } from "@/lib/error-messages";
@@ -29,8 +29,8 @@ type Props = {
 };
 
 const TABS = [
-  { key: "calendar", label: "תשלומים", icon: CalendarDays },
-  { key: "recurring", label: "הוצאות קבועות", icon: Repeat },
+  { key: "calendar", label: "תשלומים", icon: CalendarIcon },
+  { key: "recurring", label: "הוצאות קבועות", icon: RecurringIcon },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -91,22 +91,22 @@ export default function PaymentsHubClient({
           {activeTab === "calendar" ? (
             <>
               <Button type="button" size="sm" variant="secondary" onClick={() => setCashOpen(true)}>
-                <Calculator className="ml-1 h-4 w-4" />
+                <CalculatorIcon className="ml-1 h-4 w-4" />
                 כמה צריך?
               </Button>
               <Button type="button" size="sm" onClick={() => setAddOpen(true)}>
-                <Plus className="ml-1 h-4 w-4" />
+                <AddIcon className="ml-1 h-4 w-4" />
                 הוסף תשלום
               </Button>
             </>
           ) : (
             <>
               <Button type="button" size="sm" onClick={() => setNewTemplateOpen(true)} disabled={expenseMissingSchema}>
-                <Plus className="ml-1 h-4 w-4" />
+                <AddIcon className="ml-1 h-4 w-4" />
                 הוצאה קבועה חדשה
               </Button>
               <Button type="button" size="sm" variant="outline" onClick={() => void generateCycle()} disabled={generating || expenseMissingSchema}>
-                <RotateCw className={`ml-1 h-4 w-4 ${generating ? "animate-spin" : ""}`} />
+                <RefreshIcon className={`ml-1 h-4 w-4 ${generating ? "animate-spin" : ""}`} />
                 {generating ? "מייצר..." : "צור מחזור נוכחי"}
               </Button>
             </>

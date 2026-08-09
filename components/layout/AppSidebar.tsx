@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname, useSearchParams } from "next/navigation";
-import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon } from "@/components/ui/icons";
 import { NavLink } from "@/components/NavLink";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -203,7 +203,7 @@ function NavGroup({
         <item.icon className="h-4 w-4 shrink-0" />
         <span className={cn("flex-1 text-right", collapsed ? "hidden" : "inline")}>{item.title}</span>
         {rollup && !expanded ? <NavCountBadge badge={rollup} collapsed={collapsed} /> : null}
-        <ChevronDown
+        <ChevronDownIcon
           className={cn(
             "h-4 w-4 shrink-0 transition-transform",
             expanded ? "" : "-rotate-90",
@@ -369,7 +369,7 @@ export function AppSidebar({ items }: Props) {
             collapsed ? "justify-center px-0" : "justify-end px-2.5"
           )}
         >
-          {collapsed ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          {collapsed ? <ChevronLeftIcon className="h-4 w-4" /> : <ChevronRightIcon className="h-4 w-4" />}
         </Button>
       </div>
 

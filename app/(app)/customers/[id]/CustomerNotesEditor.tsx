@@ -3,11 +3,11 @@ import { toHebrewError } from "@/lib/error-messages";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { PencilLine } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { offlineFetch } from "@/lib/offline-queue";
+import { EditButton } from "@/components/ui/icon-button";
 
 /** Customer comments with inline editing (the הערות section on the customer page). */
 export default function CustomerNotesEditor({
@@ -85,17 +85,7 @@ export default function CustomerNotesEditor({
       ) : (
         <p className="text-sm text-muted-foreground">אין הערות ללקוח זה.</p>
       )}
-      <Button
-        type="button"
-        size="icon"
-        variant="ghost"
-        className="h-8 w-8 shrink-0 rounded-full border border-border/60 bg-background"
-        title="עריכת הערות"
-        aria-label="עריכת הערות"
-        onClick={() => setEditing(true)}
-      >
-        <PencilLine className="h-4 w-4" />
-      </Button>
+      <EditButton onClick={() => setEditing(true)} label="עריכת הערות" />
     </div>
   );
 }

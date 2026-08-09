@@ -5,7 +5,7 @@ import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-qu
 import { toHebrewError } from "@/lib/error-messages";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronDown, GripVertical, Trash2 } from "lucide-react";
+import { ChevronDownIcon, DeleteIcon, DragIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -887,7 +887,7 @@ export default function PayrollAdminClient({
                       aria-label="גרירת עובד לשינוי סדר"
                       title="גרירת עובד לשינוי סדר"
                     >
-                      <GripVertical className="h-4 w-4" />
+                      <DragIcon className="h-4 w-4" />
                     </button>
                     <div className="min-w-0 flex-1">
                     <div className="text-lg font-semibold">{user.full_name ?? user.email ?? "עובד"}</div>
@@ -909,7 +909,7 @@ export default function PayrollAdminClient({
                       </Button>
                     ) : null}
                     <div className="flex items-center text-muted-foreground">
-                      <ChevronDown
+                      <ChevronDownIcon
                         className={`h-5 w-5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
                       />
                     </div>
@@ -999,7 +999,7 @@ export default function PayrollAdminClient({
                               aria-label="מחיקת משמרת"
                               title="מחיקת משמרת"
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <DeleteIcon className="h-4 w-4" />
                             </Button>
                             <div className="flex flex-wrap items-start justify-between gap-2">
                               <div>

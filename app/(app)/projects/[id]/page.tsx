@@ -9,7 +9,7 @@ import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import ProjectMobileHeader from "@/app/(app)/projects/[id]/ProjectMobileHeader";
 import ProjectRemindersSection from "@/app/(app)/projects/[id]/ProjectRemindersSection";
 import type { ProjectShareData } from "@/app/(app)/projects/[id]/ProjectShareActions";
-import { ArrowLeft, ChevronLeft, ClipboardList, History, Home, MapPin, StickyNote, Truck } from "lucide-react";
+import { ArrowLeftIcon, ChevronLeftIcon, ClipboardIcon, DeliveryIcon, HistoryIcon, HomeIcon, LocationIcon, NoteIcon } from "@/components/ui/icons";
 import { AddressLink } from "@/components/ui/address-link";
 import { StatActionCard } from "@/components/ui/stat-action-card";
 import { ProjectStatusPicker } from "@/components/projects/ProjectStatusPicker";
@@ -992,18 +992,18 @@ export default async function ProjectPage({
       {moveOrigin ? (
         <AddressLink address={moveOrigin} className="flex min-w-0 items-center gap-2">
           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-secondary/10 text-secondary">
-            <Home className="h-3.5 w-3.5" />
+            <HomeIcon className="h-3.5 w-3.5" />
           </span>
           <span className="min-w-0">{moveOrigin}</span>
         </AddressLink>
       ) : null}
       {moveOrigin && moveDestination ? (
-        <ArrowLeft className="h-4 w-4 shrink-0 text-muted-foreground/60" aria-hidden />
+        <ArrowLeftIcon className="h-4 w-4 shrink-0 text-muted-foreground/60" aria-hidden />
       ) : null}
       {moveDestination ? (
         <AddressLink address={moveDestination} className="flex min-w-0 items-center gap-2">
           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-success-soft text-success-soft-foreground">
-            <MapPin className="h-3.5 w-3.5" />
+            <LocationIcon className="h-3.5 w-3.5" />
           </span>
           <span className="min-w-0">{moveDestination}</span>
         </AddressLink>
@@ -1025,7 +1025,7 @@ export default async function ProjectPage({
   const taskPercent = taskTotal > 0 ? Math.round((taskDone / taskTotal) * 100) : null;
   const projectStatusCard = (
     <StatActionCard
-      icon={<ClipboardList className="h-5 w-5" />}
+      icon={<ClipboardIcon className="h-5 w-5" />}
       label="סטטוס הפרויקט"
       value={
         <ProjectStatusPicker
@@ -1073,7 +1073,7 @@ export default async function ProjectPage({
   const detailsSideCard =
     hasRoute || hasItems || projectNotes ? (
       <StatActionCard
-        icon={notesOnlyCard ? <StickyNote className="h-5 w-5" /> : <Truck className="h-5 w-5" />}
+        icon={notesOnlyCard ? <NoteIcon className="h-5 w-5" /> : <DeliveryIcon className="h-5 w-5" />}
         label={notesOnlyCard ? "הערות" : projectType === "moving" ? "הובלה" : "פרטי העבודה"}
         // Desktop: the route is the headline (one line, from → to). Phone: no
         // headline at all — the label already says "הובלה" and the route sits
@@ -1113,7 +1113,7 @@ export default async function ProjectPage({
               {moveOrigin ? (
                 <AddressLink address={moveOrigin} className="flex items-start gap-2 text-sm">
                   <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-secondary/10 text-secondary">
-                    <Home className="h-3.5 w-3.5" />
+                    <HomeIcon className="h-3.5 w-3.5" />
                   </span>
                   <span className="min-w-0">
                     <span className="block text-[0.6875rem] text-muted-foreground">מוצא</span>
@@ -1124,7 +1124,7 @@ export default async function ProjectPage({
               {moveDestination ? (
                 <AddressLink address={moveDestination} className="flex items-start gap-2 text-sm">
                   <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-success-soft text-success-soft-foreground">
-                    <MapPin className="h-3.5 w-3.5" />
+                    <LocationIcon className="h-3.5 w-3.5" />
                   </span>
                   <span className="min-w-0">
                     <span className="block text-[0.6875rem] text-muted-foreground">יעד</span>
@@ -1216,7 +1216,7 @@ export default async function ProjectPage({
                 <Link href="/projects" className="hover:text-foreground hover:underline">
                   פרויקטים
                 </Link>
-                <ChevronLeft className="h-3.5 w-3.5 shrink-0" />
+                <ChevronLeftIcon className="h-3.5 w-3.5 shrink-0" />
                 {overviewCustomerId ? (
                   <Link
                     href={`/customers/${overviewCustomerId}`}
@@ -1308,7 +1308,7 @@ export default async function ProjectPage({
                 <CollapsibleSection
                   defaultOpen
                   title="היסטוריית פעילות"
-                  icon={<History className="h-4 w-4 text-primary" />}
+                  icon={<HistoryIcon className="h-4 w-4 text-primary" />}
                   summary={
                     projectActivity.length > 0 ? (
                       <span className="text-muted-foreground">{projectActivity.length} רשומות</span>

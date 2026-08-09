@@ -1,17 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { Boxes, CheckCircle2, ShoppingCart, Tags, Truck, type LucideIcon } from "lucide-react";
+import { DeliveryIcon, InventoryIcon, OrderIcon, SuccessIcon, TagIcon } from "@/components/ui/icons";
+import type { IconComponent } from "@/components/ui/icons";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 
 type SalesTab = "orders" | "closed" | "inventory" | "price-list" | "deliveries";
 
-const tabs: Array<{ id: SalesTab; label: string; shortLabel?: string; icon: LucideIcon }> = [
-  { id: "orders", label: "הזמנות", icon: ShoppingCart },
-  { id: "closed", label: "הזמנות סגורות", shortLabel: "סגורות", icon: CheckCircle2 },
-  { id: "inventory", label: "מלאי", icon: Boxes },
-  { id: "price-list", label: "מחירון", icon: Tags },
-  { id: "deliveries", label: "משלוחים", icon: Truck },
+const tabs: Array<{ id: SalesTab; label: string; shortLabel?: string; icon: IconComponent }> = [
+  { id: "orders", label: "הזמנות", icon: OrderIcon },
+  { id: "closed", label: "הזמנות סגורות", shortLabel: "סגורות", icon: SuccessIcon },
+  { id: "inventory", label: "מלאי", icon: InventoryIcon },
+  { id: "price-list", label: "מחירון", icon: TagIcon },
+  { id: "deliveries", label: "משלוחים", icon: DeliveryIcon },
 ];
 
 type SalesTabsSearchParams = {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Share2 } from "lucide-react";
+import { ShareIcon, SpinnerIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { toHebrewError } from "@/lib/error-messages";
@@ -198,7 +198,7 @@ export default function BilledCustomerPrintButton({ data }: { data: BilledPrintD
       disabled={building}
       title="שיתוף לחיוב לקוח (PDF)"
     >
-      {building ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
+      {building ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : <ShareIcon className="h-4 w-4" />}
       לחיוב לקוח
     </Button>
   );

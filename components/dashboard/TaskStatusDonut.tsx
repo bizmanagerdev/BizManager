@@ -2,7 +2,7 @@
 
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart3 } from "lucide-react";
+import { ChartIcon } from "@/components/ui/icons";
 import type { TaskStatusCounts } from "@/lib/dashboard/tasks-overview";
 
 const numberFormatter = new Intl.NumberFormat("he-IL");
@@ -25,7 +25,7 @@ export default function TaskStatusDonut({ counts }: { counts: TaskStatusCounts }
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-center gap-2">
-          <BarChart3 className="h-5 w-5 text-muted-foreground" />
+          <ChartIcon className="h-5 w-5 text-muted-foreground" />
           <CardTitle className="text-lg">סטטוס משימות</CardTitle>
         </div>
       </CardHeader>

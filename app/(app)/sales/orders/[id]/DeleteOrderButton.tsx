@@ -3,7 +3,7 @@ import { toHebrewError } from "@/lib/error-messages";
 
 import { type ReactNode, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Trash2 } from "lucide-react";
+import { DeleteIcon } from "@/components/ui/icons";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -88,7 +88,7 @@ export default function DeleteOrderButton({
           onClick={() => setConfirmOpen(true)}
           disabled={loading}
         >
-          {loading ? "מוחק..." : children ?? (iconOnly ? <Trash2 className="h-4 w-4" /> : "מחיקת הזמנה")}
+          {loading ? "מוחק..." : children ?? (iconOnly ? <DeleteIcon className="h-4 w-4" /> : "מחיקת הזמנה")}
         </Button>
       )}
       {error ? <p className="text-xs text-destructive">{error}</p> : null}

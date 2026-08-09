@@ -11,7 +11,7 @@
 // on is a prop here, never a re-implementation in the wizard.
 
 import { Fragment, type ReactNode, type Ref } from "react";
-import { Check, ChevronLeft, ChevronRight } from "lucide-react";
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -76,7 +76,7 @@ export function WizardStepper<TStep extends number>({
                   clickable && !active ? "cursor-pointer hover:border-primary/60" : "cursor-default"
                 )}
               >
-                {done ? <Check className="h-3.5 w-3.5" /> : s.n}
+                {done ? <CheckIcon className="h-3.5 w-3.5" /> : s.n}
               </button>
               <div
                 className={cn(
@@ -279,7 +279,7 @@ export function StepWizard<TStep extends number>({
             disabled={backDisabled}
             className="me-auto min-w-0"
           >
-            <ChevronRight className="h-4 w-4" />
+            <ChevronRightIcon className="h-4 w-4" />
             {backLabel}
           </Button>
         ) : (
@@ -300,9 +300,9 @@ export function StepWizard<TStep extends number>({
           disabled={nextDisabled}
           className="min-w-0 shrink-0"
         >
-          {isLastStep ? <Check className="h-4 w-4" /> : null}
+          {isLastStep ? <CheckIcon className="h-4 w-4" /> : null}
           {resolvedNextLabel}
-          {isLastStep ? null : <ChevronLeft className="h-4 w-4" />}
+          {isLastStep ? null : <ChevronLeftIcon className="h-4 w-4" />}
         </Button>
       </div>
     </>

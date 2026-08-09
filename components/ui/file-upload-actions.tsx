@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { Camera, FileText, RefreshCcw, Upload, X } from "lucide-react";
+import { CameraIcon, CloseIcon, DocumentIcon, RefreshIcon, UploadIcon } from "@/components/ui/icons";
 import {
   useCallback,
   useEffect,
@@ -255,7 +255,7 @@ export function FileUploadActions({
           disabled={disabled}
           onClick={() => fileInputRef.current?.click()}
         >
-          <Upload className="h-4 w-4" />
+          <UploadIcon className="h-4 w-4" />
           {chooseLabel}
         </Button>
         {allowCamera ? (
@@ -266,7 +266,7 @@ export function FileUploadActions({
             disabled={disabled}
             onClick={() => setCameraOpen(true)}
           >
-            <Camera className="h-4 w-4" />
+            <CameraIcon className="h-4 w-4" />
             {takePhotoLabel}
           </Button>
         ) : null}
@@ -287,7 +287,7 @@ export function FileUploadActions({
                   />
                 ) : (
                   <div className="flex h-full w-full flex-col items-center justify-center gap-1 px-1 text-center text-muted-foreground">
-                    <FileText className="h-7 w-7" />
+                    <DocumentIcon className="h-7 w-7" />
                     <span className="text-[10px]">קובץ</span>
                   </div>
                 )}
@@ -298,7 +298,7 @@ export function FileUploadActions({
                     aria-label="הסר קובץ"
                     className="absolute left-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-foreground/70 text-background transition hover:bg-foreground"
                   >
-                    <X className="h-3 w-3" />
+                    <CloseIcon className="h-3 w-3" />
                   </button>
                 ) : null}
               </div>
@@ -345,7 +345,7 @@ export function FileUploadActions({
               onClick={() => setCameraSession((value) => value + 1)}
               disabled={startingCamera}
             >
-              <RefreshCcw className="h-4 w-4" />
+              <RefreshIcon className="h-4 w-4" />
               פתח מחדש
             </Button>
             <Button
@@ -353,7 +353,7 @@ export function FileUploadActions({
               onClick={handleCapture}
               disabled={!cameraReady || startingCamera || Boolean(cameraError)}
             >
-              <Camera className="h-4 w-4" />
+              <CameraIcon className="h-4 w-4" />
               שמור תמונה
             </Button>
           </DialogFooter>

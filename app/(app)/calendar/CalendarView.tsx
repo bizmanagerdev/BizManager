@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Plus, MoreVertical, CalendarDays, Search } from "lucide-react";
+import { AddIcon, CalendarIcon, MoreIcon, SearchIcon } from "@/components/ui/icons";
 import type { CalendarEntry, CalendarEntryKind } from "@/lib/projectSchedule";
 import {
   hebrewDayLabel,
@@ -373,7 +373,7 @@ export default function CalendarView({
                 onClick={scrollToToday}
                 className="flex shrink-0 items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-[11px] font-semibold text-secondary-foreground transition-colors hover:bg-secondary/90"
               >
-                <CalendarDays className="h-3.5 w-3.5" />
+                <CalendarIcon className="h-3.5 w-3.5" />
                 היום
               </button>
             </div>
@@ -474,7 +474,7 @@ export default function CalendarView({
             <div className="space-y-2">
               <ContextButton onClick={contextSeeDetails}>ראה פרטים</ContextButton>
               <ContextButton onClick={() => setCtxMode("add")}>
-                <Plus className="h-4 w-4" />
+                <AddIcon className="h-4 w-4" />
                 הוסף אירוע
               </ContextButton>
             </div>
@@ -510,7 +510,7 @@ export default function CalendarView({
             <SheetTitle>חיפוש</SheetTitle>
           </SheetHeader>
           <div className="relative">
-            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               autoFocus
               value={query}
@@ -585,12 +585,12 @@ function HeaderMenu({
           aria-label="אפשרויות"
           className="flex h-8 w-8 items-center justify-center rounded-md text-sidebar-foreground transition-colors hover:bg-white/10"
         >
-          <MoreVertical className="h-5 w-5" />
+          <MoreIcon className="h-5 w-5" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="text-right">
         <DropdownMenuItem onSelect={onSearch} className="gap-2">
-          <Search className="h-4 w-4" />
+          <SearchIcon className="h-4 w-4" />
           חיפוש
         </DropdownMenuItem>
         {canToggleScope ? (
@@ -944,7 +944,7 @@ function DayDetail({
         onClick={addToDay}
         className="flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-secondary/40 py-2.5 text-sm font-medium text-secondary transition-colors hover:bg-secondary/5"
       >
-        <Plus className="h-4 w-4" />
+        <AddIcon className="h-4 w-4" />
         {addLabel}
       </button>
     </div>

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FolderKanban } from "lucide-react";
+import { ProjectIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { ProjectStatusKey } from "@/lib/dashboard/projects-overview";
@@ -25,7 +25,7 @@ export default function ProjectStatusCards({
     <section className="space-y-3">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <FolderKanban className="h-5 w-5 text-muted-foreground" />
+          <ProjectIcon className="h-5 w-5 text-muted-foreground" />
           <h2 className="text-lg font-semibold">סטטוס פרויקטים</h2>
         </div>
         <Link href="/projects" className="text-sm text-secondary hover:underline">

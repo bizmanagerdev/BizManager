@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Field } from "@/components/ui/field";
@@ -17,6 +16,8 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import { getBusinessDomainLabel, isExpenseBusinessDomain } from "@/lib/expenses";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { findDuplicate, norm, shiftIso, type ExistingExpense } from "@/lib/financial/cardImport";
+import { EditButton } from "@/components/ui/icon-button";
+import { CheckIcon } from "@/components/ui/icons";
 
 type Option = { id: string; name: string };
 
@@ -1002,7 +1003,7 @@ export default function StatementDetailClient({
                             title={`נרשמה הכנסה: ${formatCurrency(row.incomeAmount)}`}
                             className="inline-block rounded bg-info-soft px-1.5 py-0.5 text-xs font-medium text-info-soft-foreground"
                           >
-                            הכנסה ✓
+                            הכנסה <CheckIcon className="inline h-3 w-3 align-text-bottom" />
                           </span>
                         ) : row.amount > 0 ? (
                           <button
@@ -1022,14 +1023,7 @@ export default function StatementDetailClient({
                         {mode === "deleted" ? (
                           <span className="text-xs text-muted-foreground">—</span>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => startEdit(row)}
-                            title="עריכה"
-                            className="rounded p-1 hover:bg-muted"
-                          >
-                            <Pencil className="inline h-4 w-4 text-muted-foreground" aria-label="עריכה" />
-                          </button>
+                          <EditButton onClick={() => startEdit(row)} label="עריכה" />
                         )}
                       </td>
                     </tr>

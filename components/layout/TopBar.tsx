@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Bell, Clock, LogOut, User, Wallet } from "lucide-react";
+import { ClockIcon, LogoutIcon, NotificationIcon, UserIcon, WalletIcon } from "@/components/ui/icons";
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import { getAvatarColorCache, setAvatarColorCache, subscribeAvatarColor } from "@/lib/ui/avatar-color";
 import { BackButton } from "@/components/layout/BackButton";
@@ -23,7 +23,7 @@ import { cn } from "@/lib/utils";
 // The top-bar glyph for the inbox. Most-looked-at icon in the app, so it lives
 // in one named place: swap this line + the lucide import to change it
 // everywhere. (Tried Inbox / Mailbox / ListChecks — back to the bell.)
-const InboxIcon = Bell;
+const InboxIcon = NotificationIcon;
 
 // The signed-in user's email + whether they punch shifts — for the user menu.
 // Fetched once per page load and cached at module scope (TopBar remounts on every
@@ -36,18 +36,18 @@ let meInFlight: Promise<void> | null = null;
 const USER_MENU_LINKS: {
   href: string;
   label: string;
-  icon: typeof User;
+  icon: typeof UserIcon;
   gate?: (me: Me | null) => boolean;
 }[] = [
-  { href: "/profile", label: "הפרופיל שלי", icon: User },
-  { href: "/profile?tab=notifications", label: "הגדרות התראות", icon: Bell },
+  { href: "/profile", label: "הפרופיל שלי", icon: UserIcon },
+  { href: "/profile?tab=notifications", label: "הגדרות התראות", icon: NotificationIcon },
   {
     href: "/profile?tab=sessions",
     label: "נוכחות ומשמרות",
-    icon: Clock,
+    icon: ClockIcon,
     gate: (me) => me?.canTrackSessions === true,
   },
-  { href: "/profile?tab=salary", label: "שכר ותלושים", icon: Wallet, gate: (me) => me?.canViewSalary === true },
+  { href: "/profile?tab=salary", label: "שכר ותלושים", icon: WalletIcon, gate: (me) => me?.canViewSalary === true },
 ];
 
 type Props = {
@@ -357,7 +357,7 @@ export function TopBar({
               <InitialsAvatar name={userName} colorKey={userName} color={avatarColor} size="md" />
             ) : (
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
-                <User className="h-4 w-4" fill="currentColor" strokeWidth={2.2} />
+                <UserIcon className="h-4 w-4" fill="currentColor" strokeWidth={2.2} />
               </div>
             )}
           </Button>
@@ -395,7 +395,7 @@ export function TopBar({
               type="submit"
               className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10"
             >
-              <LogOut className="me-2 h-4 w-4" />
+              <LogoutIcon className="me-2 h-4 w-4" />
               התנתקות
             </button>
           </form>

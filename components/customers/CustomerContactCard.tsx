@@ -1,10 +1,9 @@
 import * as React from "react";
 import Link from "next/link";
-import { UserRound } from "lucide-react";
+import { UserIcon, WazeIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { ContactLink } from "@/components/ui/contact-link";
 import { AddressLink } from "@/components/ui/address-link";
-import { WazeIcon } from "@/components/ui/waze-icon";
 import { StatActionCard } from "@/components/ui/stat-action-card";
 
 // The "who is this for" card, shared by every entity that belongs to a customer
@@ -120,7 +119,7 @@ export function CustomerContactCard({
 
   return (
     <StatActionCard
-      icon={<UserRound className="h-5 w-5" />}
+      icon={<UserIcon className="h-5 w-5" />}
       label="לקוח"
       value={name}
       subtitles={[subtitle || null]}

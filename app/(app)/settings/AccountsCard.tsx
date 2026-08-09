@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -164,12 +165,8 @@ export default function AccountsCard({ initialAccounts }: { initialAccounts: Acc
                   </div>
                 </div>
                 <div className="flex shrink-0 gap-2">
-                  <Button type="button" variant="secondary" size="sm" onClick={() => openEdit(account)}>
-                    עריכה
-                  </Button>
-                  <Button type="button" variant="destructive" size="sm" onClick={() => setDeleteTarget(account)}>
-                    מחיקה
-                  </Button>
+                  <EditButton onClick={() => openEdit(account)} />
+                  <DeleteButton onClick={() => setDeleteTarget(account)} />
                 </div>
               </li>
             ))}

@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { AddIcon, DeleteIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { DateInput } from "@/components/ui/date-input";
@@ -126,7 +126,7 @@ export function InstallmentFields({ total, startDate, rows, onChange }: Props) {
                 className="pb-2 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-30"
                 aria-label="הסרת תשלום"
               >
-                <Trash2 className="h-4 w-4" />
+                <DeleteIcon className="h-4 w-4" />
               </button>
             </div>
             <label className="mt-1 flex w-fit cursor-pointer items-center gap-1.5 ps-8 text-xs font-medium">
@@ -138,7 +138,7 @@ export function InstallmentFields({ total, startDate, rows, onChange }: Props) {
       </div>
 
       <Button type="button" size="sm" variant="secondary" onClick={addRow}>
-        <Plus className="ml-1 h-4 w-4" />
+        <AddIcon className="ml-1 h-4 w-4" />
         הוסף תשלום
       </Button>
     </div>

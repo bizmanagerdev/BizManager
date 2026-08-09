@@ -1,7 +1,7 @@
 "use client";
 
 import { type ComponentType } from "react";
-import { Boxes, Building2, FolderKanban, HandHeart, Home, ShoppingCart, Wallet } from "lucide-react";
+import { BuildingIcon, CharityIcon, HomeIcon, InventoryIcon, OrderIcon, ProjectIcon, WalletIcon } from "@/components/ui/icons";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   EXPENSE_BUSINESS_DOMAINS,
@@ -13,13 +13,13 @@ import {
 // (פרויקטים→FolderKanban, מכירות→ShoppingCart, ניהול נכסים→Building2) and a
 // sensible glyph for the domains without a dedicated nav section.
 const DOMAIN_ICONS: Record<ExpenseBusinessDomain, ComponentType<{ className?: string }>> = {
-  home: Home,
-  charity: HandHeart,
-  general_business: Wallet,
-  logistics_projects: FolderKanban,
-  sales: ShoppingCart,
-  property_management: Building2,
-  spaceit: Boxes,
+  home: HomeIcon,
+  charity: CharityIcon,
+  general_business: WalletIcon,
+  logistics_projects: ProjectIcon,
+  sales: OrderIcon,
+  property_management: BuildingIcon,
+  spaceit: InventoryIcon,
 };
 
 export function getBusinessDomainIcon(domain: string | null | undefined): ComponentType<{ className?: string }> | null {

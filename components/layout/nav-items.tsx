@@ -30,31 +30,7 @@ function writeCachedRole(role: string) {
     // storage full or private mode
   }
 }
-import {
-  Activity,
-  ArrowLeftRight,
-  Banknote,
-  Building2,
-  CalendarClock,
-  CalendarDays,
-  Car,
-  Coins,
-  CreditCard,
-  FileBarChart,
-  FolderKanban,
-  FolderOpen,
-  HandCoins,
-  Home,
-  Landmark,
-  LayoutDashboard,
-  ListTodo,
-  MessageCircle,
-  Receipt,
-  Settings,
-  ShoppingCart,
-  Users,
-  Wallet,
-} from "lucide-react";
+import { ActivityIcon, BankIcon, BuildingIcon, CalendarIcon, CardIcon, CashIcon, ChatIcon, CoinsIcon, DashboardIcon, FolderIcon, HomeIcon, OrderIcon, PaymentIcon, ProjectIcon, ReceiptIcon, ReportIcon, ScheduleIcon, SettingsIcon, TaskIcon, TransferIcon, UsersIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
 
 export type SidebarNavItem = {
   title: string;
@@ -64,73 +40,73 @@ export type SidebarNavItem = {
 };
 
 const SIDEBAR_ITEMS: SidebarNavItem[] = [
-  { title: "דשבורד", url: "/dashboard", icon: LayoutDashboard },
-  { title: "יומן", url: "/calendar", icon: CalendarDays },
-  { title: "פרויקטים", url: "/projects", icon: FolderKanban },
-  { title: "משימות", url: "/tasks", icon: ListTodo },
-  { title: "מכירות", url: "/sales", icon: ShoppingCart },
-  { title: "לקוחות", url: "/customers", icon: Users },
-  { title: "תיעוד פניות", url: "/communications", icon: MessageCircle },
+  { title: "דשבורד", url: "/dashboard", icon: DashboardIcon },
+  { title: "יומן", url: "/calendar", icon: CalendarIcon },
+  { title: "פרויקטים", url: "/projects", icon: ProjectIcon },
+  { title: "משימות", url: "/tasks", icon: TaskIcon },
+  { title: "מכירות", url: "/sales", icon: OrderIcon },
+  { title: "לקוחות", url: "/customers", icon: UsersIcon },
+  { title: "תיעוד פניות", url: "/communications", icon: ChatIcon },
   {
     title: "נכסים",
     url: "/properties",
-    icon: Building2,
+    icon: BuildingIcon,
     children: [
-      { title: "דירות", url: "/properties", icon: Home },
-      { title: "רכבים", url: "/vehicles", icon: Car },
+      { title: "דירות", url: "/properties", icon: HomeIcon },
+      { title: "רכבים", url: "/vehicles", icon: VehicleIcon },
     ],
   },
   {
     title: "פיננסי",
     url: "/financial",
-    icon: Landmark,
+    icon: BankIcon,
     children: [
-      { title: "תזרים", url: "/financial", icon: Landmark },
-      { title: "גבייה", url: "/collections", icon: Coins },
-      { title: "תשלומים", url: "/financial/payments-calendar", icon: CalendarClock },
-      { title: "דוחות", url: "/financial/reports", icon: FileBarChart },
-      { title: "חשבונות", url: "/financial/bank", icon: ArrowLeftRight },
-      { title: "מע״מ ומסים", url: "/financial/taxes", icon: Receipt },
-      { title: "צ׳קים", url: "/checks", icon: Banknote },
-      { title: "הלוואות", url: "/financial/loans", icon: HandCoins },
-      { title: "כ. אשראי", url: "/financial/statements", icon: CreditCard },
+      { title: "תזרים", url: "/financial", icon: BankIcon },
+      { title: "גבייה", url: "/collections", icon: CoinsIcon },
+      { title: "תשלומים", url: "/financial/payments-calendar", icon: ScheduleIcon },
+      { title: "דוחות", url: "/financial/reports", icon: ReportIcon },
+      { title: "חשבונות", url: "/financial/bank", icon: TransferIcon },
+      { title: "מע״מ ומסים", url: "/financial/taxes", icon: ReceiptIcon },
+      { title: "צ׳קים", url: "/checks", icon: CashIcon },
+      { title: "הלוואות", url: "/financial/loans", icon: PaymentIcon },
+      { title: "כ. אשראי", url: "/financial/statements", icon: CardIcon },
     ],
   },
-  { title: "עובדים", url: "/payroll", icon: Wallet },
-  { title: "מסמכים", url: "/documents", icon: FolderOpen },
-  { title: "פעילות", url: "/activity", icon: Activity },
-  { title: "הגדרות ניהול", url: "/settings", icon: Settings },
+  { title: "עובדים", url: "/payroll", icon: WalletIcon },
+  { title: "מסמכים", url: "/documents", icon: FolderIcon },
+  { title: "פעילות", url: "/activity", icon: ActivityIcon },
+  { title: "הגדרות ניהול", url: "/settings", icon: SettingsIcon },
 ];
 
 // Three tabs + עוד, with the centre "+" taking the middle slot — so the bar
 // reads דשבורד · פרויקטים · [+] · מכירות · עוד. Five thumb targets, no more:
 // everything else lives behind עוד.
 const BOTTOM_NAV_ITEMS: SidebarNavItem[] = [
-  { title: "דשבורד", url: "/dashboard", icon: LayoutDashboard },
-  { title: "פרויקטים", url: "/projects", icon: FolderKanban },
-  { title: "מכירות", url: "/sales", icon: ShoppingCart },
+  { title: "דשבורד", url: "/dashboard", icon: DashboardIcon },
+  { title: "פרויקטים", url: "/projects", icon: ProjectIcon },
+  { title: "מכירות", url: "/sales", icon: OrderIcon },
 ];
 
 const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
-  { title: "לקוחות", url: "/customers", icon: Users },
-  { title: "יומן", url: "/calendar", icon: CalendarDays },
-  { title: "משימות", url: "/tasks", icon: ListTodo },
-  { title: "גבייה", url: "/collections", icon: Coins },
-  { title: "תיעוד פניות", url: "/communications", icon: MessageCircle },
-  { title: "דירות", url: "/properties", icon: Home },
-  { title: "רכבים", url: "/vehicles", icon: Car },
-  { title: "פיננסי", url: "/financial", icon: Landmark },
-  { title: "תשלומים", url: "/financial/payments-calendar", icon: CalendarClock },
-  { title: "דוחות", url: "/financial/reports", icon: FileBarChart },
-  { title: "חשבונות", url: "/financial/bank", icon: ArrowLeftRight },
-  { title: "מע״מ ומסים", url: "/financial/taxes", icon: Receipt },
-  { title: "צ׳קים", url: "/checks", icon: Banknote },
-  { title: "הלוואות", url: "/financial/loans", icon: HandCoins },
-  { title: "כ. אשראי", url: "/financial/statements", icon: CreditCard },
-  { title: "עובדים", url: "/payroll", icon: Wallet },
-  { title: "מסמכים", url: "/documents", icon: FolderOpen },
-  { title: "פעילות", url: "/activity", icon: Activity },
-  { title: "הגדרות ניהול", url: "/settings", icon: Settings },
+  { title: "לקוחות", url: "/customers", icon: UsersIcon },
+  { title: "יומן", url: "/calendar", icon: CalendarIcon },
+  { title: "משימות", url: "/tasks", icon: TaskIcon },
+  { title: "גבייה", url: "/collections", icon: CoinsIcon },
+  { title: "תיעוד פניות", url: "/communications", icon: ChatIcon },
+  { title: "דירות", url: "/properties", icon: HomeIcon },
+  { title: "רכבים", url: "/vehicles", icon: VehicleIcon },
+  { title: "פיננסי", url: "/financial", icon: BankIcon },
+  { title: "תשלומים", url: "/financial/payments-calendar", icon: ScheduleIcon },
+  { title: "דוחות", url: "/financial/reports", icon: ReportIcon },
+  { title: "חשבונות", url: "/financial/bank", icon: TransferIcon },
+  { title: "מע״מ ומסים", url: "/financial/taxes", icon: ReceiptIcon },
+  { title: "צ׳קים", url: "/checks", icon: CashIcon },
+  { title: "הלוואות", url: "/financial/loans", icon: PaymentIcon },
+  { title: "כ. אשראי", url: "/financial/statements", icon: CardIcon },
+  { title: "עובדים", url: "/payroll", icon: WalletIcon },
+  { title: "מסמכים", url: "/documents", icon: FolderIcon },
+  { title: "פעילות", url: "/activity", icon: ActivityIcon },
+  { title: "הגדרות ניהול", url: "/settings", icon: SettingsIcon },
 ];
 
 const ADMIN_ONLY_URLS = new Set(["/activity", "/financial", "/settings", "/financial/loans", "/financial/reports", "/financial/bank"]);

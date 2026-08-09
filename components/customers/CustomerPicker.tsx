@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { Check, Search, UserPlus, X } from "lucide-react";
+import { AddUserIcon, CheckIcon, CloseIcon, SearchIcon } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -85,10 +85,10 @@ export function CustomerPicker({
             aria-label="ניקוי"
             className="absolute end-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
-            <X className="h-4 w-4" />
+            <CloseIcon className="h-4 w-4" />
           </button>
         ) : (
-          <Search className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <SearchIcon className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         )}
       </div>
 
@@ -114,7 +114,7 @@ export function CustomerPicker({
                   )}
                 >
                   {value?.id === customer.id ? (
-                    <Check className="h-4 w-4 shrink-0 text-primary" />
+                    <CheckIcon className="h-4 w-4 shrink-0 text-primary" />
                   ) : (
                     <span className="w-4 shrink-0" />
                   )}
@@ -141,7 +141,7 @@ export function CustomerPicker({
                   setCreateOpen(true);
                 }}
               >
-                <UserPlus className="h-4 w-4" />
+                <AddUserIcon className="h-4 w-4" />
                 לקוח חדש
               </Button>
             </div>

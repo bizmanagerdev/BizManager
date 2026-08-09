@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { AddIcon, DeleteIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
@@ -249,13 +249,13 @@ export default function RepaymentPlanPicker({
                     onClick={() => removeRow(index)}
                     aria-label="הסר תשלום"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <DeleteIcon className="h-4 w-4" />
                   </Button>
                 </div>
               ))}
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <Button type="button" variant="secondary" size="sm" onClick={addRow}>
-                  <Plus className="h-4 w-4" />
+                  <AddIcon className="h-4 w-4" />
                   הוסף תשלום
                 </Button>
                 <span className="flex items-center gap-2 text-sm">

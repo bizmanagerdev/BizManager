@@ -6,7 +6,7 @@
 // from an edit dialog again.
 
 import type { ReactNode, Ref } from "react";
-import { X } from "lucide-react";
+import { CloseIcon } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
 /** The className every dialog passes to AdaptiveDialog: a fixed-height column
@@ -62,7 +62,7 @@ export function DialogChromeHeader({
               aria-label={closeLabel}
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
             >
-              <X className="h-5 w-5" />
+              <CloseIcon className="h-5 w-5" />
             </button>
           </>
         ) : null}

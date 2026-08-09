@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDownIcon } from "@/components/ui/icons";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
@@ -219,7 +219,7 @@ export default function BottomLinePanel({
           className="flex w-full items-center justify-between gap-3 rounded-md py-1.5 text-right transition-colors hover:bg-muted/60"
         >
           <span className="flex items-center gap-1.5 text-sm">
-            <ChevronDown className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform", isOpen ? "" : "-rotate-90")} />
+            <ChevronDownIcon className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform", isOpen ? "" : "-rotate-90")} />
             {label}
           </span>
           <span dir="ltr" className={cn("tabular-nums text-sm font-medium", netClass(value))}>{signed(value)}</span>

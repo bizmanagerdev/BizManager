@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Bell } from "lucide-react";
+import { NotificationIcon } from "@/components/ui/icons";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import OrderReminderDialog from "@/components/orders/OrderReminderDialog";
@@ -35,7 +35,7 @@ export default function OrderReminderButton({
         aria-label="תזכורת להזמנה"
         onClick={() => setOpen(true)}
       >
-        <Bell className="h-4 w-4 text-warning" />
+        <NotificationIcon className="h-4 w-4 text-warning" />
         {iconOnly ? null : <span className="ms-1">תזכורת</span>}
       </Button>
       <OrderReminderDialog

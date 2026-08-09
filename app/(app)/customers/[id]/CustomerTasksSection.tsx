@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, ListTodo, Lock, Plus } from "lucide-react";
+import { AddIcon, LockIcon, NotificationIcon, TaskIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { formatShortDate } from "@/lib/date";
@@ -59,7 +59,7 @@ export default function CustomerTasksSection({
       className={SOFT_ADD_BUTTON_CLASSES}
       onClick={() => setCreateOpen(true)}
     >
-      <Plus className="h-3.5 w-3.5" /> משימה
+      <AddIcon className="h-3.5 w-3.5" /> משימה
     </Button>
   );
 
@@ -98,7 +98,7 @@ export default function CustomerTasksSection({
       <>
         <div className="flex items-center justify-between gap-3 rounded-2xl border border-border/60 bg-card/50 px-4 py-2.5">
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
-            <ListTodo className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <TaskIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
             <span className="font-semibold">משימות</span>
             <span className="text-xs text-muted-foreground">אין משימות ללקוח זה עדיין</span>
           </div>
@@ -113,7 +113,7 @@ export default function CustomerTasksSection({
     <section className="space-y-3 rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-semibold">
-          <ListTodo className="h-4 w-4 text-primary" />
+          <TaskIcon className="h-4 w-4 text-primary" />
           משימות
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
             {tasks.length}
@@ -138,8 +138,8 @@ export default function CustomerTasksSection({
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="truncate font-medium">{task.subject}</span>
-                    {task.is_private ? <Lock className="h-3 w-3 text-muted-foreground" /> : null}
-                    {task.has_open_reminder ? <Bell className="h-3 w-3 text-warning-strong" /> : null}
+                    {task.is_private ? <LockIcon className="h-3 w-3 text-muted-foreground" /> : null}
+                    {task.has_open_reminder ? <NotificationIcon className="h-3 w-3 text-warning-strong" /> : null}
                     {task.status ? <StatusBadge value={task.status} type="task" /> : null}
                   </div>
                   {task.assigned_user_name ? (

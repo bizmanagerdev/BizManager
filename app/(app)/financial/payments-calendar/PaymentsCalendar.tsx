@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { Plus, Check, Split, ExternalLink, Calendar as CalendarIcon, List as ListIcon, BellPlus, AlertTriangle, ChevronDown, ChevronLeft, Trash2 } from "lucide-react";
+import { AddIcon, AddReminderIcon, CalendarIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, DeleteIcon, ExternalLinkIcon, ListIcon, SplitIcon, WarningIcon } from "@/components/ui/icons";
 import ReminderFormDialog from "@/components/reminders/ReminderFormDialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -559,9 +559,9 @@ function DuePaymentsBanner({
         className={`flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold ${tone.head}`}
         aria-expanded={open}
       >
-        <AlertTriangle className="h-4 w-4 shrink-0" />
+        <WarningIcon className="h-4 w-4 shrink-0" />
         <span className="flex-1 text-right">תשלומים לתשלום: {due.length}</span>
-        <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+        <ChevronDownIcon className={`h-4 w-4 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open ? (
         <ul className="max-h-72 divide-y overflow-y-auto border-t">
@@ -583,7 +583,7 @@ function DuePaymentsBanner({
                     {day.getDate()}/{day.getMonth() + 1}
                   </span>
                   <span className="shrink-0 text-sm font-semibold tabular-nums">{amountText}</span>
-                  <ChevronLeft className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <ChevronLeftIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
                 </button>
               </li>
             );
@@ -659,25 +659,25 @@ function PaymentItemCard({
           <div className="flex shrink-0 items-center gap-1">
             {canMarkPaid && item.stage !== "posted" ? (
               <Button type="button" size="icon-sm" variant="secondary" onClick={onMarkPaid} title="סמן כשולם" aria-label="סמן כשולם">
-                <Check className="h-4 w-4" />
+                <CheckIcon className="h-4 w-4" />
               </Button>
             ) : null}
             {canSplit && item.stage !== "posted" ? (
               <Button type="button" size="icon-sm" variant="secondary" onClick={onSplit} title="פיצול לתשלומים" aria-label="פיצול לתשלומים">
-                <Split className="h-4 w-4" />
+                <SplitIcon className="h-4 w-4" />
               </Button>
             ) : null}
             {item.sourceHref ? (
               <Button asChild type="button" size="icon-sm" variant="secondary" title="למקור" aria-label="למקור">
-                <Link href={item.sourceHref}><ExternalLink className="h-4 w-4" /></Link>
+                <Link href={item.sourceHref}><ExternalLinkIcon className="h-4 w-4" /></Link>
               </Button>
             ) : null}
             <Button type="button" size="icon-sm" variant="secondary" onClick={onRemind} title="תזכורת" aria-label="תזכורת">
-              <BellPlus className="h-4 w-4" />
+              <AddReminderIcon className="h-4 w-4" />
             </Button>
             {canDelete ? (
               <Button type="button" size="icon-sm" variant="destructive" onClick={onDelete} title="מחיקה" aria-label="מחיקה">
-                <Trash2 className="h-4 w-4" />
+                <DeleteIcon className="h-4 w-4" />
               </Button>
             ) : null}
           </div>
@@ -709,31 +709,31 @@ function PaymentItemCard({
       <div className="mt-2 flex flex-wrap gap-2">
         {canMarkPaid && item.stage !== "posted" ? (
           <Button type="button" size="sm" variant="secondary" onClick={onMarkPaid}>
-            <Check className="ml-1 h-3.5 w-3.5" />
+            <CheckIcon className="ml-1 h-3.5 w-3.5" />
             סמן כשולם
           </Button>
         ) : null}
         {canSplit && item.stage !== "posted" ? (
           <Button type="button" size="sm" variant="secondary" onClick={onSplit}>
-            <Split className="ml-1 h-3.5 w-3.5" />
+            <SplitIcon className="ml-1 h-3.5 w-3.5" />
             פיצול לתשלומים
           </Button>
         ) : null}
         {item.sourceHref ? (
           <Button asChild type="button" size="sm" variant="secondary">
             <Link href={item.sourceHref}>
-              <ExternalLink className="ml-1 h-3.5 w-3.5" />
+              <ExternalLinkIcon className="ml-1 h-3.5 w-3.5" />
               למקור
             </Link>
           </Button>
         ) : null}
         <Button type="button" size="sm" variant="secondary" onClick={onRemind}>
-          <BellPlus className="ml-1 h-3.5 w-3.5" />
+          <AddReminderIcon className="ml-1 h-3.5 w-3.5" />
           תזכורת
         </Button>
         {canDelete ? (
           <Button type="button" size="sm" variant="destructive" onClick={onDelete}>
-            <Trash2 className="ml-1 h-3.5 w-3.5" />
+            <DeleteIcon className="ml-1 h-3.5 w-3.5" />
             מחיקה
           </Button>
         ) : null}
@@ -837,25 +837,25 @@ function PaymentsMonthList({
                       <div className="flex items-center gap-1">
                         {canMarkPaid && item.stage !== "posted" ? (
                           <Button type="button" size="icon-sm" variant="secondary" onClick={() => setMarkItem(item)} title="סמן כשולם" aria-label="סמן כשולם">
-                            <Check className="h-4 w-4" />
+                            <CheckIcon className="h-4 w-4" />
                           </Button>
                         ) : null}
                         {canSplit && item.stage !== "posted" ? (
                           <Button type="button" size="icon-sm" variant="secondary" onClick={() => { setSplitItem(item); setSplitOpen(true); }} title="פיצול לתשלומים" aria-label="פיצול לתשלומים">
-                            <Split className="h-4 w-4" />
+                            <SplitIcon className="h-4 w-4" />
                           </Button>
                         ) : null}
                         {item.sourceHref ? (
                           <Button asChild type="button" size="icon-sm" variant="secondary" title="למקור" aria-label="למקור">
-                            <Link href={item.sourceHref}><ExternalLink className="h-4 w-4" /></Link>
+                            <Link href={item.sourceHref}><ExternalLinkIcon className="h-4 w-4" /></Link>
                           </Button>
                         ) : null}
                         <Button type="button" size="icon-sm" variant="secondary" onClick={() => setRemindItem(item)} title="תזכורת" aria-label="תזכורת">
-                          <BellPlus className="h-4 w-4" />
+                          <AddReminderIcon className="h-4 w-4" />
                         </Button>
                         {canDelete ? (
                           <Button type="button" size="icon-sm" variant="destructive" onClick={() => setDeleteItem(item)} title="מחיקה" aria-label="מחיקה">
-                            <Trash2 className="h-4 w-4" />
+                            <DeleteIcon className="h-4 w-4" />
                           </Button>
                         ) : null}
                       </div>
@@ -1015,7 +1015,7 @@ function PaymentsDayPanel({
       {/* Add — pinned to the bottom, full width */}
       <div className="mt-3">
         <Button type="button" className="w-full" onClick={() => setAddOpen(true)}>
-          <Plus className="ml-1 h-4 w-4" />
+          <AddIcon className="ml-1 h-4 w-4" />
           הוסף תשלום ליום זה
         </Button>
         <div className="mt-2 text-center text-xs text-muted-foreground">

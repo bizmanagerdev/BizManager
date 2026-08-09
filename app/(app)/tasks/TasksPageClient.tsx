@@ -21,13 +21,12 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Bell, Building2, CheckCircle2, Circle, Clock, FolderKanban, GripVertical, Lock, MessageSquare, Paperclip, Plus, UserRound } from "lucide-react";
+import { AddIcon, AttachIcon, BuildingIcon, ClockIcon, CommentIcon, DragIcon, LockIcon, NotificationIcon, ProjectIcon, SuccessIcon, UncheckedIcon, UserIcon, WazeIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { offlineFetch } from "@/lib/offline-queue";
 import { BOARD_STATUSES, type TaskBoardItem } from "@/app/(app)/tasks/loadTasks";
 import { AddressLink } from "@/components/ui/address-link";
 import { NativeSelect } from "@/components/ui/native-select";
-import { WazeIcon } from "@/components/ui/waze-icon";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
@@ -137,7 +136,7 @@ function TaskCard({
           }}
           className="mt-0.5 shrink-0 text-muted-foreground transition-colors hover:text-success"
         >
-          {isDone ? <CheckCircle2 className="h-4 w-4 text-success" /> : <Circle className="h-4 w-4" />}
+          {isDone ? <SuccessIcon className="h-4 w-4 text-success" /> : <UncheckedIcon className="h-4 w-4" />}
         </button>
         <div className={`min-w-0 flex-1 font-medium leading-snug ${isDone ? "text-muted-foreground line-through" : ""}`}>
           {task.subject}
@@ -150,19 +149,19 @@ function TaskCard({
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
           {task.project_name ? (
             <span className="inline-flex max-w-full items-center gap-1 rounded-md border bg-muted/30 px-1.5 py-0.5 text-muted-foreground">
-              <FolderKanban className="h-3 w-3 shrink-0" />
+              <ProjectIcon className="h-3 w-3 shrink-0" />
               <span className="truncate">{task.project_name}</span>
             </span>
           ) : null}
           {task.property_name ? (
             <span className="inline-flex max-w-full items-center gap-1 rounded-md border bg-muted/30 px-1.5 py-0.5 text-muted-foreground">
-              <Building2 className="h-3 w-3 shrink-0" />
+              <BuildingIcon className="h-3 w-3 shrink-0" />
               <span className="truncate">{task.property_name}</span>
             </span>
           ) : null}
           {task.customer_name ? (
             <span className="inline-flex max-w-full items-center gap-1 rounded-md border bg-muted/30 px-1.5 py-0.5 text-muted-foreground">
-              <UserRound className="h-3 w-3 shrink-0" />
+              <UserIcon className="h-3 w-3 shrink-0" />
               <span className="truncate">
                 {task.customer_name}
                 {task.customer_phone ? <span dir="ltr"> · {task.customer_phone}</span> : null}
@@ -183,7 +182,7 @@ function TaskCard({
                   : ""
               }
             >
-              {dueChipClass ? <Clock className="h-3 w-3" /> : null}
+              {dueChipClass ? <ClockIcon className="h-3 w-3" /> : null}
               {formatShortDate(task.due_date)}
               {task.due_time ? ` ${task.due_time}` : ""}
             </span>
@@ -198,22 +197,22 @@ function TaskCard({
         <div className="flex shrink-0 items-center gap-2">
           {task.is_private ? (
             <span title="משימה פרטית — רק את/ה רואה אותה">
-              <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+              <LockIcon className="h-3.5 w-3.5 text-muted-foreground" />
             </span>
           ) : null}
-          {task.has_open_reminder ? <Bell className="h-3.5 w-3.5 text-warning-strong" /> : null}
+          {task.has_open_reminder ? <NotificationIcon className="h-3.5 w-3.5 text-warning-strong" /> : null}
           {task.attachment_count > 0 ? (
             <span
               className="inline-flex items-center gap-0.5 text-xs text-muted-foreground"
               title={task.attachment_count === 1 ? "קובץ אחד מצורף" : `${task.attachment_count} קבצים מצורפים`}
             >
-              <Paperclip className="h-3.5 w-3.5" />
+              <AttachIcon className="h-3.5 w-3.5" />
               {task.attachment_count}
             </span>
           ) : null}
           {task.comment_count > 0 ? (
             <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground">
-              <MessageSquare className="h-3.5 w-3.5" />
+              <CommentIcon className="h-3.5 w-3.5" />
               {task.comment_count}
             </span>
           ) : null}
@@ -345,7 +344,7 @@ function BoardColumn({
             aria-label="גרירת רשימה"
             className="cursor-grab touch-none text-muted-foreground hover:text-foreground active:cursor-grabbing"
           >
-            <GripVertical className="h-4 w-4" />
+            <DragIcon className="h-4 w-4" />
           </button>
           {getTaskStatusLabel(status)}
           <span className="rounded-full bg-background px-1.5 text-xs font-normal text-muted-foreground">
@@ -359,7 +358,7 @@ function BoardColumn({
           aria-label="הוספת כרטיס"
           className="rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
         >
-          <Plus className="h-4 w-4" />
+          <AddIcon className="h-4 w-4" />
         </button>
       </div>
 
@@ -385,7 +384,7 @@ function BoardColumn({
             onClick={() => setAdding("bottom")}
             className="flex w-full items-center gap-1 rounded-lg px-2 py-1.5 text-start text-sm text-muted-foreground transition-colors hover:bg-background"
           >
-            <Plus className="h-4 w-4" />
+            <AddIcon className="h-4 w-4" />
             הוספת כרטיס
           </button>
         )}
@@ -742,7 +741,7 @@ export default function TasksPageClient(props: Props) {
               setCreateOpen(true);
             }}
           >
-            <Plus className="ms-1 h-4 w-4" />
+            <AddIcon className="ms-1 h-4 w-4" />
             משימה
           </Button>
         </CardContent>

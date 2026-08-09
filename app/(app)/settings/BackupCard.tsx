@@ -3,7 +3,7 @@ import { toHebrewError } from "@/lib/error-messages";
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Download } from "lucide-react";
+import { DownloadIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -59,7 +59,7 @@ export default function BackupCard() {
           מומלץ להוריד גיבוי באופן קבוע ולשמור עותק מחוץ למערכת.
         </p>
         <Button onClick={handleDownload} disabled={loading}>
-          <Download />
+          <DownloadIcon />
           {loading ? "מכין גיבוי..." : "הורד גיבוי מלא (Excel)"}
         </Button>
       </CardContent>

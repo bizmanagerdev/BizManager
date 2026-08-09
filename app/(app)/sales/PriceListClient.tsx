@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { loadMorePriceList } from "@/app/(app)/sales/actions";
 import type { ProductsFilters } from "@/app/(app)/sales/loadProducts";
-import { Loader2, Pencil, Plus, Search, Send, SlidersHorizontal, Trash2 } from "lucide-react";
+import { AddIcon, DeleteIcon, FilterIcon, SearchIcon, SendIcon, SpinnerIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Field } from "@/components/ui/field";
@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
+import { EditButton } from "@/components/ui/icon-button";
 
 type CategoryOption = {
   id: string;
@@ -819,11 +820,11 @@ export default function PriceListClient({
             className="h-10 shrink-0 gap-1 rounded-xl px-2.5"
             onClick={openCreateDialog}
           >
-            <Plus className="h-4 w-4" />
+            <AddIcon className="h-4 w-4" />
             <span className="text-xs">מוצר</span>
           </Button>
           <div className="relative w-full min-w-0 max-w-[13rem]">
-            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
+            <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -844,7 +845,7 @@ export default function PriceListClient({
             }
             onClick={() => setFiltersOpen((x) => !x)}
           >
-            <SlidersHorizontal className="h-4 w-4" />
+            <FilterIcon className="h-4 w-4" />
             {categoryFilter ? (
               <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-secondary ring-2 ring-sidebar" />
             ) : null}
@@ -857,7 +858,7 @@ export default function PriceListClient({
       <div className="hidden md:flex md:flex-col md:gap-2 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="relative sm:max-w-sm">
-            <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <SearchIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -879,7 +880,7 @@ export default function PriceListClient({
         </div>
         <div className="grid grid-cols-2 gap-2 lg:flex lg:items-center">
           <Button type="button" variant="outline" className="h-11 lg:h-10" onClick={() => void sharePriceList()} disabled={shareLoading}>
-            {shareLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            {shareLoading ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : <SendIcon className="h-4 w-4" />}
             <span>שליחת מחירון</span>
           </Button>
           <Button type="button" className="h-11 lg:h-10" onClick={openCreateDialog}>
@@ -910,7 +911,7 @@ export default function PriceListClient({
             onClick={() => void sharePriceList()}
             disabled={shareLoading}
           >
-            {shareLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            {shareLoading ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : <SendIcon className="h-4 w-4" />}
             <span>שליחת מחירון</span>
           </Button>
         </div>
@@ -1063,17 +1064,7 @@ export default function PriceListClient({
                     <td className="px-3 py-2">{product.active === false ? "לא פעיל" : "פעיל"}</td>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-8 w-8 p-0"
-                          title="עריכה"
-                          aria-label="עריכה"
-                          onClick={() => openEdit(product)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
+                        <EditButton onClick={() => openEdit(product)} label="עריכה" />
                         <Button
                           type="button"
                           size="sm"
@@ -1085,9 +1076,9 @@ export default function PriceListClient({
                           onClick={() => openDeleteDialog(product)}
                         >
                           {deleteLoadingId === product.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
+                            <SpinnerIcon className="h-4 w-4 animate-spin" />
                           ) : (
-                            <Trash2 className="h-4 w-4" />
+                            <DeleteIcon className="h-4 w-4" />
                           )}
                         </Button>
                       </div>
@@ -1138,17 +1129,7 @@ export default function PriceListClient({
                 </div>
 
                 <div className="mt-2 flex justify-end gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-9 w-9 rounded-lg p-0"
-                    title="עריכה"
-                    aria-label="עריכה"
-                    onClick={() => openEdit(product)}
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
+                  <EditButton onClick={() => openEdit(product)} label="עריכה" />
                   <Button
                     type="button"
                     size="sm"
@@ -1160,9 +1141,9 @@ export default function PriceListClient({
                     onClick={() => openDeleteDialog(product)}
                   >
                     {deleteLoadingId === product.id ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <SpinnerIcon className="h-4 w-4 animate-spin" />
                     ) : (
-                      <Trash2 className="h-4 w-4" />
+                      <DeleteIcon className="h-4 w-4" />
                     )}
                   </Button>
                 </div>

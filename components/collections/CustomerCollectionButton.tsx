@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Phone } from "lucide-react";
+import { PhoneIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { ViewDialog } from "@/components/ui/view-dialog";
 import CollectionTrackingPanel from "@/components/collections/CollectionTrackingPanel";
@@ -52,7 +52,7 @@ export default function CustomerCollectionButton({
         className={iconOnly ? "h-8 w-8" : undefined}
         onClick={() => setOpen(true)}
       >
-        <Phone className={iconOnly ? "h-4 w-4" : "me-1 h-4 w-4"} />
+        <PhoneIcon className={iconOnly ? "h-4 w-4" : "me-1 h-4 w-4"} />
         {iconOnly ? null : label}
       </Button>
 

@@ -4,7 +4,7 @@ import { Fragment, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeftRight, ChevronDown, Pencil, Trash2 } from "lucide-react";
+import { ChevronDownIcon, DeleteIcon, TransferIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -20,6 +20,7 @@ import {
   type AccountTransferRef,
   type AccountWithLedger,
 } from "@/lib/accounts";
+import { EditButton } from "@/components/ui/icon-button";
 
 function formatIls(amount: number) {
   return new Intl.NumberFormat("he-IL", {
@@ -248,7 +249,7 @@ export default function BankClient({
                 setTransferOpen(true);
               }}
             >
-              <ArrowLeftRight className="h-4 w-4" />
+              <TransferIcon className="h-4 w-4" />
               העברה בין חשבונות
             </Button>
             <Button asChild variant="secondary" size="sm">
@@ -320,7 +321,7 @@ export default function BankClient({
                     aria-expanded={open}
                     className="flex w-full items-center gap-2 bg-muted/30 px-3 py-2 text-right text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted/60"
                   >
-                    <ChevronDown
+                    <ChevronDownIcon
                       className={cn("h-4 w-4 shrink-0 transition-transform", open && "rotate-180")}
                     />
                     <span dir="ltr" className="tabular-nums">
@@ -403,18 +404,10 @@ export default function BankClient({
                         {inner}
                         {transfer ? (
                           <div className="flex shrink-0 items-center gap-0.5">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-sm"
-                              aria-label="עריכת העברה"
-                              onClick={() => {
+                            <EditButton onClick={() => {
                                 setTransferToEdit(transfer);
                                 setTransferOpen(true);
-                              }}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
+                              }} label="עריכת העברה" />
                             <Button
                               type="button"
                               variant="ghost"
@@ -427,7 +420,7 @@ export default function BankClient({
                                 })
                               }
                             >
-                              <Trash2 className="h-4 w-4 text-destructive" />
+                              <DeleteIcon className="h-4 w-4 text-destructive" />
                             </Button>
                           </div>
                         ) : null}

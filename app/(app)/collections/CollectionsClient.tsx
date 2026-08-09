@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Bell, Coins, Phone } from "lucide-react";
+import { CoinsIcon, NotificationIcon, PhoneIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { offlineFetch } from "@/lib/offline-queue";
 import { formatCurrency } from "@/lib/payroll";
@@ -67,18 +67,18 @@ export default function CollectionsClient({ customers, totals, dueToday }: Props
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <Coins className="h-6 w-6" />
+            <CoinsIcon className="h-6 w-6" />
             גבייה
           </h1>
           <p className="text-sm text-muted-foreground">חייבים, התיישנות חוב ותשלומים לגבייה. שיחות ותזכורות בכרטיס הלקוח.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button type="button" size="sm" variant="outline" onClick={() => setAddCallOpen(true)}>
-            <Phone className="me-1 h-4 w-4 text-success" />
+            <PhoneIcon className="me-1 h-4 w-4 text-success" />
             תיעוד שיחה
           </Button>
           <Button type="button" size="sm" variant="outline" onClick={() => setAddReminderOpen(true)}>
-            <Bell className="me-1 h-4 w-4 text-warning" />
+            <NotificationIcon className="me-1 h-4 w-4 text-warning" />
             הוספת תזכורת
           </Button>
         </div>

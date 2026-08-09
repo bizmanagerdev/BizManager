@@ -8,20 +8,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ArrowDownCircle,
-  ArrowLeftRight,
-  ArrowUpCircle,
-  Bell,
-  FolderKanban,
-  HandCoins,
-  ListTodo,
-  Loader2,
-  Plus,
-  ShoppingCart,
-  Upload,
-  User,
-} from "lucide-react";
+import { AddIcon, ExpenseIcon, IncomeIcon, NotificationIcon, OrderIcon, PaymentIcon, ProjectIcon, SpinnerIcon, TaskIcon, TransferIcon, UploadIcon, UserIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { HoverPanel, HoverPanelContent, HoverPanelTrigger, useHoverPanel } from "@/components/ui/hover-panel";
 import { ViewDialog } from "@/components/ui/view-dialog";
@@ -37,7 +24,7 @@ import {
 // JS. Nobody pays for it until the + menu is first opened.
 const QuickCreateDialogs = dynamic(() => import("@/components/layout/QuickCreateDialogs"), { ssr: false });
 
-type MenuItem = { action: QuickCreateAction; label: string; icon: typeof ListTodo };
+type MenuItem = { action: QuickCreateAction; label: string; icon: typeof TaskIcon };
 
 // Laid out two per row, in this exact order (user-specified):
 //   משימה  תזכורת   /   הכנסה  הוצאה   /   הזמנה  פרויקט   /
@@ -50,18 +37,18 @@ type MenuItem = { action: QuickCreateAction; label: string; icon: typeof ListTod
 // whole grid already lives behind the + button, so every tile repeating it is
 // noise. The user's call.
 const MENU_ITEMS: MenuItem[] = [
-  { action: "task", label: "משימה", icon: ListTodo },
-  { action: "reminder", label: "תזכורת", icon: Bell },
-  { action: "income", label: "הכנסה", icon: ArrowDownCircle },
-  { action: "expense", label: "הוצאה", icon: ArrowUpCircle },
-  { action: "order", label: "הזמנה", icon: ShoppingCart },
-  { action: "project", label: "פרויקט", icon: FolderKanban },
+  { action: "task", label: "משימה", icon: TaskIcon },
+  { action: "reminder", label: "תזכורת", icon: NotificationIcon },
+  { action: "income", label: "הכנסה", icon: IncomeIcon },
+  { action: "expense", label: "הוצאה", icon: ExpenseIcon },
+  { action: "order", label: "הזמנה", icon: OrderIcon },
+  { action: "project", label: "פרויקט", icon: ProjectIcon },
   // Not "העברה" on its own — that already means a bank-transfer payment method
   // elsewhere in the app; this one moves money between OUR accounts.
-  { action: "transfer", label: "העברה בין חשבונות", icon: ArrowLeftRight },
-  { action: "customer", label: "לקוח", icon: User },
-  { action: "collect", label: "קליטת תשלום", icon: HandCoins },
-  { action: "document", label: "מסמך", icon: Upload },
+  { action: "transfer", label: "העברה בין חשבונות", icon: TransferIcon },
+  { action: "customer", label: "לקוח", icon: UserIcon },
+  { action: "collect", label: "קליטת תשלום", icon: PaymentIcon },
+  { action: "document", label: "מסמך", icon: UploadIcon },
 ];
 
 // The only colored glyphs — money in / money out. Everything else stays white.
@@ -222,7 +209,7 @@ export function QuickCreateMenu({
                   },
                 })}
           >
-            <Plus strokeWidth={TOPBAR_ICON_STROKE} />
+            <AddIcon strokeWidth={TOPBAR_ICON_STROKE} />
           </Button>
         </HoverPanelTrigger>
         <HoverPanelContent
@@ -257,7 +244,7 @@ export function QuickCreateMenu({
         size="formSm"
       >
         <div className="flex items-center justify-center py-8">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <SpinnerIcon className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
       </ViewDialog>
 

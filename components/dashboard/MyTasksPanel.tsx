@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CheckCircle2, Circle, ListChecks } from "lucide-react";
+import { ChecklistIcon, SuccessIcon, UncheckedIcon } from "@/components/ui/icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
@@ -117,7 +117,7 @@ export default function MyTasksPanel({ tasks: initialTasks }: { tasks: Dashboard
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <ListChecks className="h-5 w-5 text-muted-foreground" />
+            <ChecklistIcon className="h-5 w-5 text-muted-foreground" />
             <CardTitle className="text-lg">המשימות שלי</CardTitle>
           </div>
           <div className="flex flex-wrap gap-1 rounded-xl bg-muted/50 p-1">
@@ -157,9 +157,9 @@ export default function MyTasksPanel({ tasks: initialTasks }: { tasks: Dashboard
                     aria-label="סמן כבוצע"
                   >
                     {busyId === task.id ? (
-                      <CheckCircle2 className="h-5 w-5 text-success" />
+                      <SuccessIcon className="h-5 w-5 text-success" />
                     ) : (
-                      <Circle className="h-5 w-5" />
+                      <UncheckedIcon className="h-5 w-5" />
                     )}
                   </button>
                   <div className="min-w-0">
