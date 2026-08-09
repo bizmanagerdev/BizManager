@@ -6,8 +6,8 @@
  * a pre-recorded clip (`recording`) or a number his system reads aloud (`number`). If any detail
  * of his format differs, this is the only file that changes.
  *
- * The recording set is EXACTLY the clips the user recorded — no singular/dual grammar variants, so
- * durations read as "<n> שעות" / "<n> דקות" (plural clips only).
+ * The recording set is EXACTLY the clips the user recorded — no singular/dual grammar variants.
+ * Durations always use the fixed "<hours> שעות ו-<minutes> דקות" shape the provider requires.
  */
 
 export type PlayItem = { recording: string } | { number: number };
@@ -60,20 +60,17 @@ export function timeSegments(hour: number, minute: number): PlayItem[] {
   return parts;
 }
 
-/** Spoken duration using plural clips only: "6 שעות ו-20 דקות", "20 דקות", "1 שעות". */
+/**
+ * Spoken duration — ALWAYS the same fixed shape the provider requires:
+ * "<hours> שעות ו-<minutes> דקות", even for a sub-hour shift ("0 שעות ו-20 דקות").
+ * Uniform structure lets their system map the response the same way every time.
+ */
 export function durationSegments(totalMinutes: number): PlayItem[] {
   const safe = Math.max(0, Math.round(totalMinutes));
   const hours = Math.floor(safe / 60);
   const minutes = safe % 60;
-  const parts: PlayItem[] = [];
 
-  if (hours > 0) parts.push(num(hours), clip(RECORDINGS.hoursWord));
-  if (hours > 0 && minutes > 0) parts.push(clip(RECORDINGS.andWord));
-  if (minutes > 0) parts.push(num(minutes), clip(RECORDINGS.minutesWord));
-  // A whole-hour shift already said the hours; a sub-minute shift says "0 דקות".
-  if (hours === 0 && minutes === 0) parts.push(num(0), clip(RECORDINGS.minutesWord));
-
-  return parts;
+  return [num(hours), clip(RECORDINGS.hoursWord), clip(RECORDINGS.andWord), num(minutes), clip(RECORDINGS.minutesWord)];
 }
 
 function respond(action: string, play: PlayItem[], opts?: { ok?: boolean; hangup?: boolean }): VoiceResponse {

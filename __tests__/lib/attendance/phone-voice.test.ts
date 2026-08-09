@@ -11,31 +11,33 @@ describe("timeSegments", () => {
   });
 });
 
-describe("durationSegments — plural clips only", () => {
-  it("reads one hour with the plural clip (no singular recorded)", () => {
-    expect(durationSegments(60)).toEqual([{ number: 1 }, { recording: RECORDINGS.hoursWord }]);
+describe("durationSegments — always the fixed hours+minutes shape", () => {
+  const shape = (hours: number, minutes: number) => [
+    { number: hours },
+    { recording: RECORDINGS.hoursWord },
+    { recording: RECORDINGS.andWord },
+    { number: minutes },
+    { recording: RECORDINGS.minutesWord },
+  ];
+
+  it("reads one whole hour as '1 שעות ו-0 דקות'", () => {
+    expect(durationSegments(60)).toEqual(shape(1, 0));
   });
 
-  it("reads two hours", () => {
-    expect(durationSegments(120)).toEqual([{ number: 2 }, { recording: RECORDINGS.hoursWord }]);
+  it("reads two whole hours", () => {
+    expect(durationSegments(120)).toEqual(shape(2, 0));
   });
 
-  it("reads plural hours and minutes with a connector (6h 20m)", () => {
-    expect(durationSegments(380)).toEqual([
-      { number: 6 },
-      { recording: RECORDINGS.hoursWord },
-      { recording: RECORDINGS.andWord },
-      { number: 20 },
-      { recording: RECORDINGS.minutesWord },
-    ]);
+  it("reads hours and minutes (6h 20m)", () => {
+    expect(durationSegments(380)).toEqual(shape(6, 20));
   });
 
-  it("reads minutes only when under an hour", () => {
-    expect(durationSegments(20)).toEqual([{ number: 20 }, { recording: RECORDINGS.minutesWord }]);
+  it("keeps the hours slot (0) for a sub-hour shift", () => {
+    expect(durationSegments(20)).toEqual(shape(0, 20));
   });
 
-  it("says '0 minutes' for a sub-minute shift", () => {
-    expect(durationSegments(0)).toEqual([{ number: 0 }, { recording: RECORDINGS.minutesWord }]);
+  it("reads '0 שעות ו-0 דקות' for a sub-minute shift", () => {
+    expect(durationSegments(0)).toEqual(shape(0, 0));
   });
 });
 
