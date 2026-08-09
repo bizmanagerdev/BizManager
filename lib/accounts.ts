@@ -97,6 +97,12 @@ export type AccountLedgerEntry = {
   type: "in" | "out";
   amount: number;
   posted: boolean; // false = still expected (uncleared check / unpaid expense)
+  /**
+   * When the paperwork happened, if that's NOT the day the money moved — a
+   * check handed over on 24/05 against a 29/07 פירעון has date=29/07 and
+   * recordedDate=24/05. Null when the two are the same day.
+   */
+  recordedDate: string | null;
   runningBalance: number | null; // posted-only running balance; null for pending rows
   /** Set only on העברה בין חשבונות rows — the whole transfer this leg belongs
    *  to, so the register can edit or delete it (both legs move together)
@@ -174,6 +180,7 @@ export async function loadAccounts(
 type RawLedgerEntry = {
   id: string;
   date: string;
+  recordedDate?: string | null;
   label: string;
   sublabel: string | null;
   href: string | null;
@@ -225,7 +232,9 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
           .from("payments")
           .select("id,account_id,payment_date,due_date,amount_total,payment_status,notes,project_id,order_id")
           .not("account_id", "is", null)
-          .gte("payment_date", earliestOpening)
+          // Either date may be the one inside the window: a check handed over
+          // in May and cashed in July is May-dated but July money.
+          .or(`payment_date.gte.${earliestOpening},due_date.gte.${earliestOpening}`)
           .range(from, to)
       ),
       scan("expenses", (from, to) =>
@@ -457,7 +466,11 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     const account = byId.get(str(row.account_id) ?? "");
     if (!account) continue;
     const b = buckets.get(account.id)!;
-    const date = str(row.payment_date);
+    const recordedDate = str(row.payment_date);
+    const dueDate = str(row.due_date);
+    // The day the money actually moves through the account. A post-dated check
+    // sits in a drawer until its פירעון date; that is when the bank credits it.
+    const date = dueDate && recordedDate && dueDate !== recordedDate ? dueDate : recordedDate;
     if (!date || date < account.openingDate) continue; // before go-live → in opening
     const signed = num(row.amount_total);
     const amount = Math.abs(signed);
@@ -477,6 +490,8 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     b.rows.push({
       id: `p:${str(row.id) ?? ""}`,
       date,
+      // Kept only to explain a row whose two dates differ ("נרשם 24/05").
+      recordedDate: recordedDate && recordedDate !== date ? recordedDate : null,
       label: str(row.notes)?.trim() || (isRefund ? "החזר ללקוח" : "תקבול"),
       sublabel: composeSublabel({ customerId: paymentCustomerId(row), projectId: str(row.project_id) }),
       href: str(row.order_id)
@@ -719,9 +734,10 @@ export async function loadAccountsOverview(supabase: SupabaseClient): Promise<Ac
     );
     let running = a.openingBalance;
     const withRunning: AccountLedgerEntry[] = chronological.map((row) => {
-      if (!row.posted) return { ...row, runningBalance: null };
+      const recordedDate = row.recordedDate ?? null;
+      if (!row.posted) return { ...row, recordedDate, runningBalance: null };
       running += row.type === "in" ? row.amount : -row.amount;
-      return { ...row, runningBalance: running };
+      return { ...row, recordedDate, runningBalance: running };
     });
     return {
       ...a,

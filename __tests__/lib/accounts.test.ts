@@ -64,7 +64,7 @@ type Tables = Record<string, Record<string, unknown>[]>;
 function makeSupabase(tables: Tables) {
   const builder = (rows: Record<string, unknown>[]) => {
     const self: Record<string, unknown> = {};
-    for (const m of ["select", "eq", "not", "gte", "in", "order", "range"]) {
+    for (const m of ["select", "eq", "not", "gte", "in", "or", "order", "range"]) {
       self[m] = () => self;
     }
     self.then = (onF: (v: { data: unknown; error: null }) => unknown, onR?: (e: unknown) => unknown) =>
@@ -139,6 +139,48 @@ describe("loadAccountBalances — currentBalance = opening + postedIn − posted
     });
     expect(b.postedIn).toBe(0);
     expect(b.currentBalance).toBe(1000);
+  });
+
+  it("counts a check taken before go-live but cashed after it", async () => {
+    // The check was in a drawer on go-live day, so it is NOT part of the
+    // opening balance — the bank only credits it on its פירעון date.
+    const b = await balance({
+      accounts: [account({ opening_date: "2024-06-01", opening_balance: 1000 })],
+      payments: [
+        {
+          id: "p1",
+          account_id: "acc1",
+          payment_date: "2024-05-03",
+          due_date: "2024-07-29",
+          amount_total: 4254,
+          payment_status: "collected",
+        },
+      ],
+    });
+    expect(b.postedIn).toBe(4254);
+    expect(b.currentBalance).toBe(5254);
+  });
+
+  it("dates a post-dated check by its פירעון day, keeping the day it was written", async () => {
+    const [acc] = await loadAccountsOverview(
+      makeSupabase({
+        accounts: [account({ opening_date: "2024-01-01" })],
+        payments: [
+          {
+            id: "p1",
+            account_id: "acc1",
+            payment_date: "2024-05-03",
+            due_date: "2024-07-29",
+            amount_total: 4254,
+            payment_status: "collected",
+          },
+        ],
+      })
+    );
+    expect(acc.ledger[0]).toMatchObject({
+      date: "2024-07-29",
+      recordedDate: "2024-05-03",
+    });
   });
 });
 

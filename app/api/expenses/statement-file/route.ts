@@ -14,10 +14,14 @@ function safeExtensionFromFilename(name: string) {
   return (parts.pop() ?? "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 10);
 }
 
-// Stores a credit-card statement file (Excel/CSV/PDF) and a documents row, returning the
+// Stores a statement file (Excel/CSV/PDF) and a documents row, returning the
 // document id so the import can attach it to the persisted statement. Mirrors
 // app/api/financial-attachments/upload but without an entity link (the statement is
 // created afterwards by the import route).
+//
+// Serves both importers — the credit-card one (default) and the bank עובר ושב
+// one — which differ only in the documents row's type. Pass type=bank_statement
+// for the latter so the documents screen can tell them apart.
 export async function POST(req: Request) {
   try {
     const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
@@ -46,9 +50,15 @@ export async function POST(req: Request) {
     });
     if (uploadError) return NextResponse.json({ error: toHebrewError(uploadError.message) }, { status: 400 });
 
+    const requestedType = form.get("type");
+    const documentType =
+      typeof requestedType === "string" && requestedType.trim() === "bank_statement"
+        ? "bank_statement"
+        : "card_statement";
+
     const { error: docError } = await supabase.from("documents").insert({
       id: documentId,
-      document_type: "card_statement",
+      document_type: documentType,
       title: displayName,
       file_name: displayName,
       storage_key: storagePath,

@@ -140,10 +140,13 @@ export function SearchableSelect({
           align="start"
           sideOffset={4}
           collisionPadding={8}
-          // Keep the menu the width of the trigger and bounded to the space the
-          // Popover has on screen, so it scrolls internally instead of overflowing.
+          // At LEAST as wide as the trigger, but free to grow to whatever the
+          // longest option needs — a narrow trigger used to clip every label to
+          // "נ...". Bounded by the space on screen, so it scrolls internally
+          // instead of overflowing.
           style={{
-            width: "var(--radix-popover-trigger-width)",
+            minWidth: "var(--radix-popover-trigger-width)",
+            maxWidth: "min(28rem, var(--radix-popover-content-available-width))",
             maxHeight: "var(--radix-popover-content-available-height)",
           }}
           // Focus the search box (if shown) on open instead of the content shell.
@@ -207,9 +210,9 @@ export function SearchableSelect({
                   )}
                   {option.icon ? <span className="shrink-0 text-muted-foreground">{option.icon}</span> : null}
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">{option.label}</span>
+                    <span className="block font-medium break-words">{option.label}</span>
                     {option.hint ? (
-                      <span className="block truncate text-xs text-muted-foreground">{option.hint}</span>
+                      <span className="block text-xs break-words text-muted-foreground">{option.hint}</span>
                     ) : null}
                   </span>
                 </button>

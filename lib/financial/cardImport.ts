@@ -23,7 +23,14 @@ export type DuplicateInput = {
 };
 
 // Remembered assignment for a merchant, keyed by normalized merchant name (norm()).
-export type MerchantAssignment = { businessDomain: string; projectId: string; propertyId: string };
+// category is only filled by the bank-statement screen (card imports set the card
+// label as the category), so it stays optional for existing callers.
+export type MerchantAssignment = {
+  businessDomain: string;
+  projectId: string;
+  propertyId: string;
+  category?: string;
+};
 export type MerchantMemory = Record<string, MerchantAssignment>;
 
 // A normalized statement transaction — the shared shape produced by every parsing path

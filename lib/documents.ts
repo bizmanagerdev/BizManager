@@ -41,6 +41,7 @@ const SYSTEM_DOCUMENT_TYPE_LABELS: Record<string, string> = {
   payment_attachment: "אסמכתת תשלום",
   task_attachment: "צרופת משימה",
   card_statement: "דף חיוב אשראי",
+  bank_statement: "דף עובר ושב",
   loan_document: "מסמך הלוואה",
   general_document: "מסמך כללי",
 };
