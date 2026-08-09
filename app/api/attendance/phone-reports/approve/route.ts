@@ -9,26 +9,44 @@ import {
   payrollWorkerTypeAllowsSessions,
   payrollWorkerTypeGeneratesPayslips,
 } from "@/lib/payroll-worker-type";
-import { getActiveSalaryAgreementForDate, minutesBetween, type SalaryAgreementRow, WORK_SESSIONS_TABLE } from "@/lib/payroll";
+import { addMinutes, getActiveSalaryAgreementForDate, minutesBetween, type SalaryAgreementRow, WORK_SESSIONS_TABLE } from "@/lib/payroll";
 import { PHONE_ATTENDANCE_TABLE } from "@/lib/attendance/phone-reports";
 
 /**
- * Approve a pending phone-attendance report → create the real attendance_sessions row.
+ * Approve a pending phone-attendance report → create the real attendance_sessions row(s).
  *
- * The admin supplies the business_domain (and project/property where the domain needs one) and may
- * correct the clock times. We flip the report to `approved` FIRST (guarded on pending_review) so two
- * admins can't both approve it into two sessions; if session creation then fails we revert.
+ * The admin classifies the shift to one or more business domains. With a single part the whole
+ * shift becomes one session; with several parts the shift's time range is sliced into contiguous
+ * sessions (each with its own domain / project / property / customer-billing), same idea as the
+ * session-split flow. We claim the report FIRST (guarded on pending_review) so two admins can't
+ * both approve it; if session creation then fails we revert and delete anything inserted.
  */
 
-type ApprovePayload = {
-  report_id?: string;
+type PartPayload = {
   business_domain?: string | null;
   project_id?: string | null;
   property_id?: string | null;
-  clock_in?: string | null;
-  clock_out?: string | null;
-  notes?: string | null;
+  minutes?: number | string | null;
+  is_billable_to_customer?: boolean | null;
+  bill_to_customer_amount?: number | string | null;
 };
+
+type ApprovePayload = { report_id?: string; parts?: PartPayload[] };
+
+type NormalizedPart = {
+  minutes: number;
+  domain: string;
+  projectId: string | null;
+  propertyId: string | null;
+  billable: boolean;
+  billAmount: number | null;
+};
+
+function toNonNegative(value: unknown) {
+  if (value == null) return null;
+  const parsed = typeof value === "number" ? value : Number(String(value).trim());
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
 
 export async function POST(req: Request) {
   try {
@@ -38,19 +56,10 @@ export async function POST(req: Request) {
 
     const body = (await req.json().catch(() => ({}))) as ApprovePayload;
     const reportId = typeof body.report_id === "string" ? body.report_id.trim() : "";
-    const businessDomain = isExpenseBusinessDomain(body.business_domain) ? body.business_domain : null;
-    const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
-    const propertyId = typeof body.property_id === "string" ? body.property_id.trim() : "";
-    const notes = typeof body.notes === "string" ? body.notes.trim() : "";
+    const rawParts = Array.isArray(body.parts) ? body.parts : [];
 
     if (!reportId) return NextResponse.json({ error: "חסר מזהה דיווח." }, { status: 400 });
-    if (!businessDomain) return NextResponse.json({ error: "יש לבחור תחום עסקי." }, { status: 400 });
-    if (businessDomain === "logistics_projects" && !projectId) {
-      return NextResponse.json({ error: "יש לבחור פרויקט." }, { status: 400 });
-    }
-    if (businessDomain === "property_management" && !propertyId) {
-      return NextResponse.json({ error: "יש לבחור נכס." }, { status: 400 });
-    }
+    if (rawParts.length < 1) return NextResponse.json({ error: "יש לבחור לפחות תחום אחד." }, { status: 400 });
 
     const { data: report, error: reportError } = await supabase
       .from(PHONE_ATTENDANCE_TABLE)
@@ -60,18 +69,17 @@ export async function POST(req: Request) {
 
     if (reportError) return NextResponse.json({ error: toHebrewError(reportError.message) }, { status: 400 });
     if (!report?.id) return NextResponse.json({ error: "הדיווח לא נמצא." }, { status: 404 });
-    if (report.status !== "pending_review") {
-      return NextResponse.json({ error: "הדיווח כבר טופל." }, { status: 409 });
+    if (report.status !== "pending_review") return NextResponse.json({ error: "הדיווח כבר טופל." }, { status: 409 });
+
+    const clockIn = report.clock_in as string;
+    const clockOut = report.clock_out as string;
+    const totalMinutes = minutesBetween(clockIn, clockOut);
+    if (totalMinutes <= 0) return NextResponse.json({ error: "טווח הזמן של הדיווח אינו תקין." }, { status: 400 });
+    if (rawParts.length > totalMinutes) {
+      return NextResponse.json({ error: "לא ניתן לפצל ליותר חלקים ממספר הדקות במשמרת." }, { status: 400 });
     }
 
-    // Admin may correct the times; default to what the phone recorded.
-    const clockIn = (typeof body.clock_in === "string" && body.clock_in.trim() ? body.clock_in.trim() : report.clock_in) as string;
-    const clockOut = (typeof body.clock_out === "string" && body.clock_out.trim() ? body.clock_out.trim() : report.clock_out) as string;
-    if (!clockIn || !clockOut || new Date(clockOut) <= new Date(clockIn)) {
-      return NextResponse.json({ error: "שעת הסיום חייבת להיות אחרי שעת ההתחלה." }, { status: 400 });
-    }
-
-    // Validate the worker still exists, is active, and logs sessions.
+    // Worker must still exist, be active, and log sessions.
     const { data: worker, error: workerError } = await supabase
       .from("users")
       .select("id,active,payroll_worker_type,pay_tracking_mode")
@@ -80,80 +88,115 @@ export async function POST(req: Request) {
     if (workerError) return NextResponse.json({ error: toHebrewError(workerError.message) }, { status: 400 });
     if (!worker?.id) return NextResponse.json({ error: "העובד לא נמצא." }, { status: 404 });
     if (worker.active === false) return NextResponse.json({ error: "העובד אינו פעיל." }, { status: 400 });
-
     const workerType = normalizePayrollWorkerType(worker.payroll_worker_type, worker.pay_tracking_mode);
     if (!payrollWorkerTypeAllowsSessions(workerType)) {
       return NextResponse.json({ error: "סוג העובד הזה לא מתעד משמרות." }, { status: 409 });
     }
 
-    if (businessDomain === "logistics_projects") {
-      const { data: project } = await supabase.from("projects").select("id").eq("id", projectId).maybeSingle();
-      if (!project) return NextResponse.json({ error: "הפרויקט שנבחר לא נמצא." }, { status: 404 });
+    // ---- Normalize + validate the parts, allocating time (last part = the remainder). ----
+    const parts: NormalizedPart[] = [];
+    let consumed = 0;
+    for (let index = 0; index < rawParts.length; index += 1) {
+      const raw = rawParts[index];
+      const isLast = index === rawParts.length - 1;
+      const domain = isExpenseBusinessDomain(raw.business_domain) ? raw.business_domain : null;
+      const projectId = typeof raw.project_id === "string" && raw.project_id.trim() ? raw.project_id.trim() : null;
+      const propertyId = typeof raw.property_id === "string" && raw.property_id.trim() ? raw.property_id.trim() : null;
+      const billable = domain === "logistics_projects" && raw.is_billable_to_customer === true;
+      const billAmount = billable ? toNonNegative(raw.bill_to_customer_amount) : null;
+
+      if (!domain) return NextResponse.json({ error: `יש לבחור תחום עסקי בחלק ${index + 1}.` }, { status: 400 });
+      if (domain === "logistics_projects" && !projectId) return NextResponse.json({ error: `יש לבחור פרויקט בחלק ${index + 1}.` }, { status: 400 });
+      if (domain === "property_management" && !propertyId) return NextResponse.json({ error: `יש לבחור נכס בחלק ${index + 1}.` }, { status: 400 });
+      if (billable && (billAmount === null || billAmount <= 0)) return NextResponse.json({ error: `יש להזין סכום חיוב ללקוח תקין בחלק ${index + 1}.` }, { status: 400 });
+
+      let minutes: number;
+      if (rawParts.length === 1) {
+        minutes = totalMinutes;
+      } else if (isLast) {
+        minutes = totalMinutes - consumed;
+      } else {
+        minutes = Math.round(Number(toNonNegative(raw.minutes)));
+        if (!Number.isFinite(minutes) || minutes <= 0) return NextResponse.json({ error: `משך לא תקין בחלק ${index + 1}.` }, { status: 400 });
+        if (consumed + minutes >= totalMinutes) return NextResponse.json({ error: "סכום החלקים גדול או שווה למשך המשמרת — לא נשאר זמן לחלק האחרון." }, { status: 400 });
+      }
+      consumed += minutes;
+      parts.push({
+        minutes,
+        domain,
+        projectId: domain === "logistics_projects" ? projectId : null,
+        propertyId: domain === "property_management" ? propertyId : null,
+        billable,
+        billAmount: billable ? billAmount : null,
+      });
     }
-    if (businessDomain === "property_management") {
-      const { data: property } = await supabase.from("properties").select("id").eq("id", propertyId).maybeSingle();
-      if (!property) return NextResponse.json({ error: "הנכס שנבחר לא נמצא." }, { status: 404 });
+    if (consumed !== totalMinutes) return NextResponse.json({ error: "סכום החלקים חייב להיות שווה למשך המשמרת." }, { status: 400 });
+
+    // Validate referenced projects/properties exist (before claiming the report).
+    const projectIds = Array.from(new Set(parts.map((p) => p.projectId).filter(Boolean))) as string[];
+    const propertyIds = Array.from(new Set(parts.map((p) => p.propertyId).filter(Boolean))) as string[];
+    if (projectIds.length) {
+      const { data: found } = await supabase.from("projects").select("id").in("id", projectIds);
+      if ((found?.length ?? 0) !== projectIds.length) return NextResponse.json({ error: "אחד הפרויקטים שנבחרו לא נמצא." }, { status: 404 });
+    }
+    if (propertyIds.length) {
+      const { data: found } = await supabase.from("properties").select("id").in("id", propertyIds);
+      if ((found?.length ?? 0) !== propertyIds.length) return NextResponse.json({ error: "אחד הנכסים שנבחרו לא נמצא." }, { status: 404 });
     }
 
-    // Claim the report first so a concurrent approval can't create a second session.
+    // Claim first — guards against a concurrent second approval creating duplicate sessions.
+    const now = new Date().toISOString();
     const { data: claimed, error: claimError } = await supabase
       .from(PHONE_ATTENDANCE_TABLE)
-      .update({ status: "approved", reviewed_by: profile.id, reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .update({ status: "approved", reviewed_by: profile.id, reviewed_at: now, updated_at: now })
       .eq("id", reportId)
       .eq("status", "pending_review")
       .select("id")
       .maybeSingle();
-
     if (claimError) return NextResponse.json({ error: toHebrewError(claimError.message) }, { status: 400 });
     if (!claimed?.id) return NextResponse.json({ error: "הדיווח כבר טופל." }, { status: 409 });
 
     const revertClaim = async () => {
-      await supabase
-        .from(PHONE_ATTENDANCE_TABLE)
-        .update({ status: "pending_review", reviewed_by: null, reviewed_at: null })
-        .eq("id", reportId);
+      await supabase.from(PHONE_ATTENDANCE_TABLE).update({ status: "pending_review", reviewed_by: null, reviewed_at: null }).eq("id", reportId);
     };
 
-    const workedMinutes = minutesBetween(clockIn, clockOut);
-    const sessionNotes = ["דיווח טלפוני", notes].filter(Boolean).join(" — ");
-
-    const { data: session, error: insertError } = await supabase
-      .from(WORK_SESSIONS_TABLE)
-      .insert({
+    // Slice the shift into contiguous sessions.
+    let cursor = clockIn;
+    const rows = parts.map((part) => {
+      const end = addMinutes(cursor, part.minutes);
+      const range = {
         user_id: report.user_id,
-        clock_in: clockIn,
-        clock_out: clockOut,
-        worked_minutes: workedMinutes,
-        labor_cost: null, // recalculated from the worker's agreement below
-        is_billable_to_customer: false,
-        bill_to_customer_amount: null,
-        billing_status: "not_billable",
-        notes: sessionNotes,
-        business_domain: businessDomain,
-        project_id: businessDomain === "logistics_projects" ? projectId : null,
-        property_id: businessDomain === "property_management" ? propertyId : null,
-      })
-      .select("id")
-      .maybeSingle();
+        clock_in: cursor,
+        clock_out: (end ?? new Date(clockOut)).toISOString(),
+        worked_minutes: part.minutes,
+        labor_cost: null as number | null, // recalculated from the agreement below
+        is_billable_to_customer: part.billable,
+        bill_to_customer_amount: part.billAmount,
+        billing_status: part.billable ? "billable" : "not_billable",
+        notes: "דיווח טלפוני",
+        business_domain: part.domain,
+        project_id: part.projectId,
+        property_id: part.propertyId,
+      };
+      cursor = range.clock_out;
+      return range;
+    });
 
-    if (insertError || !session?.id) {
+    const { data: inserted, error: insertError } = await supabase.from(WORK_SESSIONS_TABLE).insert(rows).select("id");
+    if (insertError || !inserted?.length) {
       await revertClaim();
       return NextResponse.json({ error: toHebrewError(insertError?.message ?? "יצירת המשמרת נכשלה.") }, { status: 400 });
     }
+    const sessionIds = inserted.map((row) => row.id as string);
 
-    // Link the report to the session it produced.
-    await supabase
-      .from(PHONE_ATTENDANCE_TABLE)
-      .update({ attendance_session_id: session.id, clock_in: clockIn, clock_out: clockOut })
-      .eq("id", reportId);
+    await supabase.from(PHONE_ATTENDANCE_TABLE).update({ attendance_session_id: sessionIds[0] }).eq("id", reportId);
 
-    // Price the session from the worker's salary agreement (mirrors sessions/create).
+    // Price the sessions from the worker's salary agreement (mirrors sessions/create).
     const { data: agreements } = await supabase
       .from("salary_agreements")
       .select("id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours")
       .eq("user_id", report.user_id)
       .order("valid_from", { ascending: false });
-
     const activeAgreement = getActiveSalaryAgreementForDate((agreements ?? []) as SalaryAgreementRow[], new Date(clockIn));
     if (activeAgreement) {
       await recalculateUserSessionCostsFromRules(supabase, report.user_id, {
@@ -164,7 +207,6 @@ export async function POST(req: Request) {
       await regenerateEditablePayslipsForUsers(supabase, [report.user_id]);
     }
 
-    // attendance_sessions is DB-trigger-audited; phone_attendance_reports is not, so log its update.
     await logAuditEvent({
       supabase,
       tableName: PHONE_ATTENDANCE_TABLE,
@@ -174,7 +216,7 @@ export async function POST(req: Request) {
       userRole: profile.role,
     });
 
-    return NextResponse.json({ ok: true, session_id: session.id });
+    return NextResponse.json({ ok: true, session_ids: sessionIds });
   } catch (error: unknown) {
     return NextResponse.json({ error: toHebrewError(error, "שגיאה לא צפויה באישור הדיווח.") }, { status: 500 });
   }

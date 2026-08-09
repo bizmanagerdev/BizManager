@@ -6,7 +6,7 @@ import SalaryCenterClient from "@/app/(app)/payroll/SalaryCenterClient";
 import PhoneAttendanceQueue from "@/app/(app)/payroll/PhoneAttendanceQueue";
 import { requireProfile, type UserRole } from "@/lib/auth/requireProfile";
 import { loadPayrollPageData } from "@/lib/payroll-page-loader";
-import { loadPendingPhoneReports } from "@/lib/attendance/phone-reports";
+import { loadPhoneQueueData } from "@/lib/attendance/phone-reports";
 
 export default async function PayrollPage({
   searchParams,
@@ -24,14 +24,15 @@ export default async function PayrollPage({
   }
 
   const { users, sessions, projectOptions, propertyOptions, periods, loadError } = await loadPayrollPageData(supabase);
-  const phoneReports = await loadPendingPhoneReports(supabase);
+  const phoneQueue = await loadPhoneQueueData(supabase);
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4 text-right" dir="rtl">
         <PageAlertBar keys={["wage_overdue", "session_unallocated"]} />
         <PhoneAttendanceQueue
-          reports={phoneReports}
+          pending={phoneQueue.pending}
+          open={phoneQueue.open}
           projectOptions={projectOptions}
           propertyOptions={propertyOptions}
         />
