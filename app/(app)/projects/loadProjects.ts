@@ -19,6 +19,27 @@ export type ProjectsFilters = {
 export const PROJECTS_PAGE_SIZE = 50;
 const CLOSED_STATUSES = ["quote", "completed"];
 
+// project_type is a Postgres ENUM (project_type_enum), so it has no ILIKE
+// operator — filtering it with `ilike` raises
+// "operator does not exist: project_type_enum ~~* unknown" and the whole search
+// fails. Match the typed text against the type's Hebrew label (and its raw
+// value) here instead, then filter with `in.(…)` on the resolved values.
+const PROJECT_TYPE_LABELS: Record<string, string> = {
+  logistics: "לוגיסטיקה",
+  moving: "הובלה",
+  construction: "שיפוצים",
+  home: "בית",
+  other: "אחר",
+};
+
+function projectTypesMatching(rawQuery: string) {
+  const needle = rawQuery.trim().toLowerCase();
+  if (!needle) return [];
+  return Object.entries(PROJECT_TYPE_LABELS)
+    .filter(([value, label]) => label.includes(needle) || value.includes(needle))
+    .map(([value]) => value);
+}
+
 function toNumber(value: unknown) {
   if (typeof value === "number") return value;
   if (typeof value === "string") {
@@ -77,7 +98,11 @@ export async function loadProjectsPage(
       findProjectIdsMatchingContent(supabase, searchQuery, 300),
     ]);
     const taskProjectIds = taskProjects.ids;
-    const conditions = [`name.ilike.%${escaped}%`, `customer_name.ilike.%${escaped}%`, `project_type.ilike.%${escaped}%`];
+    const conditions = [`name.ilike.%${escaped}%`, `customer_name.ilike.%${escaped}%`];
+    const matchingTypes = projectTypesMatching(escaped);
+    if (matchingTypes.length > 0) {
+      conditions.push(`project_type.in.(${matchingTypes.join(",")})`);
+    }
     if (customerIds.length > 0) {
       conditions.push(`customer_id.in.(${customerIds.join(",")})`);
     }
