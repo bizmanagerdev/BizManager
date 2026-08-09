@@ -14,7 +14,7 @@ import { DomainSelect } from "@/components/financial/DomainSelect";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { WORK_SESSION_BUSINESS_DOMAINS } from "@/lib/expenses";
-import { formatMinutes, minutesBetween } from "@/lib/payroll";
+import { formatCurrency, formatMinutes, minutesBetween } from "@/lib/payroll";
 import { formatShortDateTime } from "@/lib/date";
 import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
@@ -152,6 +152,13 @@ function ReportCard({
   const remainderMinutes = totalMinutes - nonLastMinutes.reduce((a, b) => a + b, 0);
   const overAllocated = split && remainderMinutes <= 0;
 
+  const partMinutesAt = (index: number) => (split ? (index === parts.length - 1 ? remainderMinutes : nonLastMinutes[index]) : totalMinutes);
+  // The worker's pay for a part, prorated from the whole-shift cost by its share of the minutes.
+  const partCostAt = (index: number): number | null => {
+    if (report.labor_cost == null || totalMinutes <= 0) return null;
+    return Math.round((report.labor_cost * Math.max(0, partMinutesAt(index))) / totalMinutes);
+  };
+
   function updatePart(index: number, patch: Partial<PartDraft>) {
     setError("");
     setParts((current) => current.map((p, i) => (i === index ? { ...p, ...patch } : p)));
@@ -236,10 +243,17 @@ function ReportCard({
           <span className="font-semibold">{report.worker_name ?? "עובד לא ידוע"}</span>
           {report.worker_phone ? <span className="mr-2 text-sm text-muted-foreground">{report.worker_phone}</span> : null}
         </div>
-        <span className="inline-flex items-center gap-1 rounded-full bg-secondary/10 px-2 py-0.5 text-sm font-medium text-secondary">
-          <Clock className="h-3.5 w-3.5" />
-          {formatMinutes(totalMinutes)} שעות
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1 rounded-full bg-secondary/10 px-2 py-0.5 text-sm font-medium text-secondary">
+            <Clock className="h-3.5 w-3.5" />
+            {formatMinutes(totalMinutes)} שעות
+          </span>
+          {report.labor_cost != null ? (
+            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-sm font-semibold text-foreground">
+              {formatCurrency(report.labor_cost)}
+            </span>
+          ) : null}
+        </div>
       </div>
       <div className="mt-0.5 text-sm text-muted-foreground">
         <span className="font-medium text-foreground">{weekday}</span> · {formatShortDateTime(report.clock_in)} — {formatShortDateTime(report.clock_out)}
@@ -253,7 +267,10 @@ function ReportCard({
             <div key={part.id} className={cn("space-y-2", split && "rounded-md border border-border/70 bg-muted/30 p-2")}>
               {split ? (
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-muted-foreground">חלק {index + 1}</span>
+                  <span className="text-xs font-medium text-muted-foreground">
+                    חלק {index + 1}
+                    {partCostAt(index) != null ? <span className="mr-2 font-semibold text-foreground">{formatCurrency(partCostAt(index)!)}</span> : null}
+                  </span>
                   <div className="flex items-center gap-1.5">
                     {isLast ? (
                       <span className={cn("text-sm", overAllocated ? "font-medium text-destructive" : "text-muted-foreground")}>
@@ -318,7 +335,12 @@ function ReportCard({
                 <div className="flex flex-wrap items-center gap-2">
                   <NativeSelect
                     value={part.billable ? "yes" : "no"}
-                    onChange={(e) => updatePart(index, { billable: e.target.value === "yes", billAmount: "" })}
+                    onChange={(e) => {
+                      // Default the billed amount to what the shift part costs (labor) — editable.
+                      const billable = e.target.value === "yes";
+                      const cost = partCostAt(index);
+                      updatePart(index, { billable, billAmount: billable && cost != null ? String(cost) : "" });
+                    }}
                     aria-label="חיוב ללקוח"
                     className="h-9 w-36"
                   >

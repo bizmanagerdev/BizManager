@@ -24,7 +24,8 @@ export default async function PayrollPage({
   }
 
   const { users, sessions, projectOptions, propertyOptions, periods, loadError } = await loadPayrollPageData(supabase);
-  const phoneQueue = await loadPhoneQueueData(supabase);
+  // Cost/pay is salary data — only compute it for admins (office manages hours, not salary).
+  const phoneQueue = await loadPhoneQueueData(supabase, { includeCost: profile.role === "admin" });
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>

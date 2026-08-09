@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { calculateSessionLaborCost, getActiveSalaryAgreementForDate, type SalaryAgreementRow } from "@/lib/payroll";
 
 /**
  * Phone-attendance reports for the payroll queue.
@@ -24,6 +25,9 @@ type BasePhoneReport = {
 export type PendingPhoneReport = BasePhoneReport & {
   clock_out: string;
   worked_minutes: number | null;
+  // The worker's pay for this shift, from their salary agreement. Only populated for viewers who
+  // may see salary (opts.includeCost) — null otherwise, which also hides it in the UI.
+  labor_cost: number | null;
 };
 
 /** Clocked in, still open (no clock-out yet). */
@@ -34,7 +38,10 @@ export type PhoneQueueData = {
   open: OpenPhoneReport[];
 };
 
-export async function loadPhoneQueueData(supabase: SupabaseClient): Promise<PhoneQueueData> {
+export async function loadPhoneQueueData(
+  supabase: SupabaseClient,
+  opts?: { includeCost?: boolean }
+): Promise<PhoneQueueData> {
   const { data: reports, error } = await supabase
     .from(PHONE_ATTENDANCE_TABLE)
     .select("id,user_id,clock_in,clock_out,worked_minutes,status,created_at")
@@ -56,6 +63,27 @@ export async function loadPhoneQueueData(supabase: SupabaseClient): Promise<Phon
     }
   }
 
+  // Salary agreements → per-shift cost. Only fetched when the viewer may see salary.
+  const agreementsByUser = new Map<string, SalaryAgreementRow[]>();
+  if (opts?.includeCost && userIds.length) {
+    const { data: agreements } = await supabase
+      .from("salary_agreements")
+      .select("id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id")
+      .in("user_id", userIds)
+      .order("valid_from", { ascending: false });
+    for (const agreement of (agreements ?? []) as SalaryAgreementRow[]) {
+      const list = agreementsByUser.get(agreement.user_id) ?? [];
+      list.push(agreement);
+      agreementsByUser.set(agreement.user_id, list);
+    }
+  }
+
+  const costFor = (userId: string, clockIn: string, minutes: number | null): number | null => {
+    const list = agreementsByUser.get(userId);
+    if (!list?.length || !minutes || minutes <= 0) return null;
+    return calculateSessionLaborCost(getActiveSalaryAgreementForDate(list, new Date(clockIn)), minutes);
+  };
+
   const base = (row: (typeof reports)[number]): BasePhoneReport => ({
     id: row.id as string,
     user_id: row.user_id as string,
@@ -69,7 +97,13 @@ export async function loadPhoneQueueData(supabase: SupabaseClient): Promise<Phon
   const open: OpenPhoneReport[] = [];
   for (const row of reports) {
     if (row.status === "pending_review" && row.clock_out) {
-      pending.push({ ...base(row), clock_out: row.clock_out as string, worked_minutes: (row.worked_minutes as number) ?? null });
+      const workedMinutes = (row.worked_minutes as number) ?? null;
+      pending.push({
+        ...base(row),
+        clock_out: row.clock_out as string,
+        worked_minutes: workedMinutes,
+        labor_cost: costFor(row.user_id as string, row.clock_in as string, workedMinutes),
+      });
     } else if (row.status === "open") {
       open.push(base(row));
     }
