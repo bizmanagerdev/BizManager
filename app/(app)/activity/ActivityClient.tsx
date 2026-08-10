@@ -26,24 +26,20 @@ import {
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import OnlineUsersCard from "./OnlineUsersCard";
 
-// Mail-client style stamp: today shows only the clock, older rows prefix the
-// date. Never relative ("לפני X") — the user wants the actual hour.
+// The row stamp — always the whole date: day, month, year and the hour, on every
+// row including today's. Abbreviating (clock-only for today, no year for this
+// year) reads as a cut-off date on a phone, where there's no table header or
+// hover tooltip to say which day you're looking at. Never relative ("לפני X") —
+// the user wants the actual hour. Zero-padded so the column lines up under
+// tabular-nums, and rendered inside dir="ltr" by every caller so RTL bidi doesn't
+// reorder the date and the clock into "21:54 09.08.26".
 function formatActivityTime(isoString: string | null) {
   if (!isoString) return "";
   const date = new Date(isoString);
   if (Number.isNaN(date.getTime())) return "";
-  const clock = date.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
-  const now = new Date();
-  const isSameDay =
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate();
-  if (isSameDay) return clock;
-  const day = `${date.getDate()}.${date.getMonth() + 1}`;
-  const datePart = date.getFullYear() === now.getFullYear()
-    ? day
-    : `${day}.${String(date.getFullYear()).slice(-2)}`;
-  return `${datePart} ${clock}`;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const day = `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${String(date.getFullYear()).slice(-2)}`;
+  return `${day} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function formatFullDate(isoString: string | null) {
@@ -195,6 +191,7 @@ function ActivityRow({ item }: { item: AuditFeedItem }) {
           {item.actionLabel}
         </span>
         <time
+          dir="ltr"
           className="shrink-0 text-xs text-muted-foreground whitespace-nowrap tabular-nums"
           title={formatFullDate(item.createdAt)}
         >
@@ -250,7 +247,7 @@ function ActivityChildRow({ item }: { item: AuditFeedItem }) {
           className="min-w-0 flex-1 text-xs leading-snug text-muted-foreground"
         />
       </div>
-      <time className="shrink-0 text-[10px] text-muted-foreground whitespace-nowrap tabular-nums">
+      <time dir="ltr" className="shrink-0 text-[10px] text-muted-foreground whitespace-nowrap tabular-nums">
         {formatActivityTime(item.createdAt)}
       </time>
     </div>
@@ -323,7 +320,7 @@ function ActivityTableChildRow({ item }: { item: AuditFeedItem }) {
           inner
         )}
       </td>
-      <td className="whitespace-nowrap px-3 py-1 text-right align-top text-[10px] tabular-nums text-muted-foreground">
+      <td dir="ltr" className="whitespace-nowrap px-3 py-1 text-right align-top text-[10px] tabular-nums text-muted-foreground">
         {formatActivityTime(item.createdAt)}
       </td>
     </tr>
@@ -759,7 +756,8 @@ export default function ActivityClient({
               <col />
               <col />
               <col />
-              <col className="w-[7rem]" />
+              {/* Wide enough for the full "09.08.26 21:54" stamp at text-xs. */}
+              <col className="w-[8.5rem]" />
             </colgroup>
             {/* Sticky under the 60px top bar (z-20 keeps it below the bar's z-30).
                 The wrapper can't clip with overflow-hidden or the header wouldn't
@@ -814,6 +812,7 @@ export default function ActivityClient({
                         <td className="px-3 py-2" />
                         <td className="px-3 py-2" />
                         <td
+                          dir="ltr"
                           className="whitespace-nowrap px-3 py-2 text-right align-middle text-xs tabular-nums text-muted-foreground"
                           title={formatFullDate(node.latest)}
                         >
@@ -892,6 +891,7 @@ export default function ActivityClient({
                         <ChangeStack item={header} side="after" />
                       </td>
                       <td
+                        dir="ltr"
                         className="whitespace-nowrap px-3 py-2 text-right align-middle text-xs tabular-nums text-muted-foreground"
                         title={formatFullDate(header.createdAt)}
                       >

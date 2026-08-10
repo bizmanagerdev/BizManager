@@ -18,9 +18,8 @@ export const QUICK_TILE_CLASS =
 /** Compact variant for the top-bar + menu, where the grid sits in a popover.
  *  The height is FIXED, not `aspect-square`: aspect-ratio is only a preferred
  *  size, so a label that wraps to a third line (העברה בין חשבונות) used to grow
- *  its tile and the grid came out ragged. Fixed h/w = every tile identical, and
- *  the label gets its own flexible box below the glyph so the glyphs line up
- *  across a row no matter how many lines the label takes. */
+ *  its tile and the grid came out ragged. Fixed h/w = every tile identical; the
+ *  glyph + label block just centres in whatever room that leaves. */
 export const QUICK_TILE_CLASS_SM =
   "h-[5.5rem] w-[5.5rem] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-2xl border-transparent !bg-secondary p-2 text-center text-[0.7rem] leading-tight !text-secondary-foreground shadow-md shadow-secondary/30 !whitespace-normal focus:!bg-secondary/90 hover:!bg-secondary/90";
 
@@ -49,12 +48,12 @@ export function QuickTileContent({
         className={cn(sm ? "!h-7 !w-7 shrink-0" : "!h-9 !w-9", tone && TONE_CLASS[tone])}
         strokeWidth={tone ? 2.4 : 2.2}
       />
-      {/* sm tiles are a fixed square, so the label takes whatever height is left
-          and centres itself in it — one-line and two-line labels then sit under
-          glyphs at the same height instead of shifting them up and down. */}
-      <span className={cn("font-semibold", sm && "flex w-full flex-1 items-center justify-center")}>
-        {label}
-      </span>
+      {/* The label sits right under the glyph on the tile's own `gap` — nothing
+          reserves space for a second line. A flex-1 label box was tried so that
+          glyphs would line up across a row regardless of label length, and it
+          read as a hole between the glyph and its label. The fixed tile size is
+          what keeps the tiles equal; this only has to stay tight. */}
+      <span className="font-semibold">{label}</span>
     </>
   );
 }
