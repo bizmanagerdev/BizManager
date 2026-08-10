@@ -129,3 +129,32 @@ export function buildPastShift(fields: PastShiftFields, now: Date): PastShiftRes
 
   return { ok: true, clockIn: start, clockOut: end, workedMinutes };
 }
+
+export type PastInstantResult = { ok: true; at: Date } | { ok: false; reason: "invalid" | "future" | "range" };
+
+/**
+ * Parse a SINGLE keypad date+time — for a LATE entry-only or exit-only report (the worker forgot
+ * one end). Same year inference + not-in-future / not-too-old guards as a full past shift.
+ */
+export function buildPastInstant(
+  dateField: string | null | undefined,
+  timeField: string | null | undefined,
+  now: Date
+): PastInstantResult {
+  const d = parseDateField(dateField);
+  const t = parseTimeField(timeField);
+  if (!d || !t) return { ok: false, reason: "invalid" };
+
+  let year = now.getFullYear();
+  if (d.day > daysInMonth(year, d.month)) return { ok: false, reason: "invalid" };
+
+  let at = israelWallClockToUtc(year, d.month, d.day, t.hour, t.minute);
+  // A date more than a day in the future belongs to last year (Dec reported in Jan).
+  if (at.getTime() - now.getTime() > 24 * 60 * 60000) {
+    year -= 1;
+    at = israelWallClockToUtc(year, d.month, d.day, t.hour, t.minute);
+  }
+  if (at.getTime() > now.getTime() + FUTURE_TOLERANCE_MS) return { ok: false, reason: "future" };
+  if (at.getTime() < now.getTime() - MAX_PAST_DAYS * 24 * 60 * 60000) return { ok: false, reason: "range" };
+  return { ok: true, at };
+}

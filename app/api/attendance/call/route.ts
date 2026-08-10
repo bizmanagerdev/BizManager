@@ -4,7 +4,7 @@ import { normalizePhone } from "@/lib/search/customerMatch";
 import { callerMatchesStored } from "@/lib/attendance/phone-match";
 import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions } from "@/lib/payroll-worker-type";
 import { voice, type VoiceResponse } from "@/lib/attendance/phone-voice";
-import { buildPastShift } from "@/lib/attendance/phone-datetime";
+import { buildPastShift, buildPastInstant } from "@/lib/attendance/phone-datetime";
 
 /**
  * Phone clock-in / clock-out for workers with "kosher" phones (no app, no SMS).
@@ -124,9 +124,10 @@ async function handle(req: Request) {
     endDate: pick(params, ["end_date", "end_day_month", "ed"]),
     endTime: pick(params, ["end_time", "end_hour_minute", "et"]),
   };
-  const hasPastShiftFields = Boolean(
-    pastShiftFields.startDate && pastShiftFields.startTime && pastShiftFields.endDate && pastShiftFields.endTime
-  );
+  // The worker may report only a late entry, only a late exit, or both — we infer from which
+  // date+time pair the provider collected.
+  const hasStart = Boolean(pastShiftFields.startDate && pastShiftFields.startTime);
+  const hasEnd = Boolean(pastShiftFields.endDate && pastShiftFields.endTime);
   const callerPhone = normalizePhone(rawCaller);
 
   if (!callerPhone) return speak(voice.notRecognized());
@@ -176,32 +177,83 @@ async function handle(req: Request) {
 
   const now = new Date();
 
-  // ---- Press 3: report a forgotten/past shift (worker keyed in start/end date+time) ----
-  // The provider collects the four fields and posts them here in one call. The result goes straight
-  // to pending_review — an admin classifies + approves it like any other phone report.
-  if (hasPastShiftFields || digit === "3") {
-    if (!hasPastShiftFields) return speak(voice.invalidChoice()); // pressed 3 but no data arrived
+  // ---- Press 3: late/forgotten report — a whole past shift, OR just a late entry / late exit ----
+  // The provider's sub-menu lets the worker pick entry-only, exit-only, or both, and posts whichever
+  // date+time fields it collected. Everything goes to pending_review for the boss to classify.
+  if (digit === "3") {
+    // Both ends → a completed past shift.
+    if (hasStart && hasEnd) {
+      const built = buildPastShift(pastShiftFields, now);
+      if (!built.ok) return speak(voice.invalidDatetime());
 
-    const built = buildPastShift(pastShiftFields, now);
-    if (!built.ok) return speak(voice.invalidDatetime());
-
-    const { error: pastInsertError } = await admin.from(TABLE).insert({
-      user_id: worker.id,
-      clock_in: built.clockIn.toISOString(),
-      clock_out: built.clockOut.toISOString(),
-      worked_minutes: built.workedMinutes,
-      status: "pending_review",
-      source: "phone_past",
-      provider_call_id: providerCallId,
-      notes: "דיווח טלפוני — משמרת קודמת",
-    });
-
-    if (pastInsertError) {
-      console.error("[attendance/call] past-shift insert failed", pastInsertError.message);
-      return speak(voice.systemError());
+      const { error: insertError } = await admin.from(TABLE).insert({
+        user_id: worker.id,
+        clock_in: built.clockIn.toISOString(),
+        clock_out: built.clockOut.toISOString(),
+        worked_minutes: built.workedMinutes,
+        status: "pending_review",
+        source: "phone_past",
+        provider_call_id: providerCallId,
+        notes: "דיווח טלפוני — משמרת קודמת",
+      });
+      if (insertError) {
+        console.error("[attendance/call] past-shift insert failed", insertError.message);
+        return speak(voice.systemError());
+      }
+      return speak(voice.pastShiftSaved(built.workedMinutes));
     }
 
-    return speak(voice.pastShiftSaved(built.workedMinutes));
+    // Late ENTRY only → open a back-dated shift (unless one is already open).
+    if (hasStart) {
+      if (openReport) {
+        const t = israelParts(new Date(openReport.clock_in));
+        return speak(voice.alreadyOpen(t.hour, t.minute));
+      }
+      const built = buildPastInstant(pastShiftFields.startDate, pastShiftFields.startTime, now);
+      if (!built.ok) return speak(voice.invalidDatetime());
+
+      const { error: insertError } = await admin.from(TABLE).insert({
+        user_id: worker.id,
+        clock_in: built.at.toISOString(),
+        status: "open",
+        source: "phone_past",
+        provider_call_id: providerCallId,
+        notes: "דיווח טלפוני — כניסה מאוחרת",
+      });
+      if (insertError) {
+        // Most likely the one-open-per-worker index (a shift opened between our read and write).
+        console.error("[attendance/call] late-entry insert failed", insertError.message);
+        const t = israelParts(built.at);
+        return speak(voice.alreadyOpen(t.hour, t.minute));
+      }
+      const t = israelParts(built.at);
+      return speak(voice.clockInSuccess(t.hour, t.minute));
+    }
+
+    // Late EXIT only → close the currently-open shift at the given past time.
+    if (hasEnd) {
+      if (!openReport) return speak(voice.noOpenShift());
+      const built = buildPastInstant(pastShiftFields.endDate, pastShiftFields.endTime, now);
+      if (!built.ok) return speak(voice.invalidDatetime());
+
+      const worked = minutesBetween(openReport.clock_in, built.at);
+      if (worked <= 0) return speak(voice.invalidDatetime()); // exit before the entry time
+
+      const { error: updateError } = await admin
+        .from(TABLE)
+        .update({ clock_out: built.at.toISOString(), worked_minutes: worked, status: "pending_review", updated_at: new Date().toISOString() })
+        .eq("id", openReport.id)
+        .eq("status", "open");
+      if (updateError) {
+        console.error("[attendance/call] late-exit update failed", updateError.message);
+        return speak(voice.systemError());
+      }
+      const t = israelParts(built.at);
+      return speak(voice.clockOutSuccess(t.hour, t.minute, worked));
+    }
+
+    // Pressed 3 but nothing was collected.
+    return speak(voice.invalidDatetime());
   }
 
   // ---- Press 1: clock in ----

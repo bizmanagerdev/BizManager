@@ -4,6 +4,7 @@ import {
   parseTimeField,
   israelWallClockToUtc,
   buildPastShift,
+  buildPastInstant,
 } from "@/lib/attendance/phone-datetime";
 
 describe("parseDateField / parseTimeField", () => {
@@ -74,5 +75,30 @@ describe("buildPastShift", () => {
   it("rejects an end-before-start typo", () => {
     const result = buildPastShift({ startDate: "0407", startTime: "0800", endDate: "0407", endTime: "0700" }, now);
     expect(result.ok).toBe(false);
+  });
+});
+
+describe("buildPastInstant — a single late entry / exit time", () => {
+  const now = new Date("2026-07-04T14:00:00Z"); // 17:00 IDT
+
+  it("parses a past instant (08:30 IDT → 05:30Z)", () => {
+    const result = buildPastInstant("0407", "0830", now);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.at.toISOString()).toBe("2026-07-04T05:30:00.000Z");
+  });
+
+  it("rejects a time in the future", () => {
+    const result = buildPastInstant("0407", "2000", now); // 20:00 IDT, later today
+    expect(result).toEqual({ ok: false, reason: "future" });
+  });
+
+  it("rejects a time too far in the past", () => {
+    const result = buildPastInstant("0101", "0800", now);
+    expect(result).toEqual({ ok: false, reason: "range" });
+  });
+
+  it("rejects unparseable input", () => {
+    expect(buildPastInstant("9999", "0800", now)).toEqual({ ok: false, reason: "invalid" });
+    expect(buildPastInstant("0407", "2570", now)).toEqual({ ok: false, reason: "invalid" });
   });
 });
