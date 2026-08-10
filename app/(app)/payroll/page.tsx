@@ -7,6 +7,7 @@ import PhoneAttendanceQueue from "@/app/(app)/payroll/PhoneAttendanceQueue";
 import { requireProfile, type UserRole } from "@/lib/auth/requireProfile";
 import { loadPayrollPageData } from "@/lib/payroll-page-loader";
 import { loadPhoneQueueData } from "@/lib/attendance/phone-reports";
+import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions } from "@/lib/payroll-worker-type";
 
 export default async function PayrollPage({
   searchParams,
@@ -27,6 +28,16 @@ export default async function PayrollPage({
   // Cost/pay is salary data — only compute it for admins (office manages hours, not salary).
   const phoneQueue = await loadPhoneQueueData(supabase, { includeCost: profile.role === "admin" });
 
+  // Workers eligible for manual phone-attendance entry (active, session-logging types).
+  const attendanceWorkers = users
+    .filter(
+      (u) =>
+        u.active !== false &&
+        (u.role === "worker" || u.role === "worker_no_access") &&
+        payrollWorkerTypeAllowsSessions(normalizePayrollWorkerType(u.payroll_worker_type, u.pay_tracking_mode))
+    )
+    .map((u) => ({ id: u.id, name: u.full_name, phone: u.phone }));
+
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4 text-right" dir="rtl">
@@ -34,6 +45,7 @@ export default async function PayrollPage({
         <PhoneAttendanceQueue
           pending={phoneQueue.pending}
           open={phoneQueue.open}
+          workers={attendanceWorkers}
           projectOptions={projectOptions}
           propertyOptions={propertyOptions}
         />

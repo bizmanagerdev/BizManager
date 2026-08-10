@@ -13,6 +13,7 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { DateTimeInput } from "@/components/ui/date-input";
 import { WORK_SESSION_BUSINESS_DOMAINS } from "@/lib/expenses";
 import { formatCurrency, formatMinutes, minutesBetween } from "@/lib/payroll";
 import { formatShortDateTime } from "@/lib/date";
@@ -21,9 +22,12 @@ import { cn } from "@/lib/utils";
 import type { OpenPhoneReport, PendingPhoneReport } from "@/lib/attendance/phone-reports";
 import type { SalaryCenterProjectOption } from "@/lib/payroll-center";
 
+export type AttendanceWorker = { id: string; name: string | null; phone: string | null };
+
 type Props = {
   pending: PendingPhoneReport[];
   open: OpenPhoneReport[];
+  workers: AttendanceWorker[];
   projectOptions: SalaryCenterProjectOption[];
   propertyOptions: SalaryCenterProjectOption[];
 };
@@ -33,36 +37,58 @@ function hebrewWeekday(iso: string) {
   return new Intl.DateTimeFormat("he-IL", { weekday: "long", timeZone: "Asia/Jerusalem" }).format(new Date(iso));
 }
 
+/** Current local time as a datetime-local value ("YYYY-MM-DDTHH:mm") for DateTimeInput defaults. */
+function nowLocal() {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 /**
  * Slim top bar for phone attendance. Collapsed by default so it never takes over the page — click to
  * expand into two groups: workers currently clocked in (open), and clocked-out reports waiting for an
  * admin to classify + approve them into real sessions.
  */
-export default function PhoneAttendanceQueue({ pending, open, projectOptions, propertyOptions }: Props) {
+export default function PhoneAttendanceQueue({ pending, open, workers, projectOptions, propertyOptions }: Props) {
   const [expanded, setExpanded] = useState(false);
-  if (pending.length === 0 && open.length === 0) return null;
+  const [manualOpen, setManualOpen] = useState(false);
 
   return (
     <div className="overflow-hidden rounded-lg border border-secondary/30 bg-secondary/5">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start"
-      >
-        <span className="flex items-center gap-2 text-sm font-medium text-secondary">
-          {pending.length > 0 ? (
-            <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-secondary px-1.5 text-xs font-semibold text-secondary-foreground">
-              {pending.length}
-            </span>
-          ) : null}
-          נוכחות טלפונית
-          {open.length > 0 ? <Badge variant="success">{open.length} נוכחים כעת</Badge> : null}
-        </span>
-        <ChevronDownIcon className={cn("h-4 w-4 text-secondary transition-transform", expanded && "rotate-180")} />
-      </button>
+      <div className="flex items-center">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex flex-1 items-center justify-between gap-2 px-3 py-2 text-start"
+        >
+          <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-secondary">
+            {pending.length > 0 ? (
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-secondary px-1.5 text-xs font-semibold text-secondary-foreground">
+                {pending.length}
+              </span>
+            ) : null}
+            נוכחות עובדים
+            {open.length > 0 ? <Badge variant="success">{open.length} נוכחים כעת</Badge> : null}
+          </span>
+          <ChevronDownIcon className={cn("h-4 w-4 text-secondary transition-transform", expanded && "rotate-180")} />
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setExpanded(true);
+            setManualOpen(true);
+          }}
+          aria-label="הוספת משמרת ידנית"
+          className="border-r border-secondary/20 px-3 py-2 text-secondary"
+        >
+          <AddIcon className="h-5 w-5" />
+        </button>
+      </div>
 
       {expanded ? (
         <div className="space-y-4 border-t border-secondary/20 bg-background p-3">
+          {manualOpen ? <ManualEntryForm workers={workers} onDone={() => setManualOpen(false)} /> : null}
+
           {open.length > 0 ? (
             <section className="space-y-2">
               <h3 className="text-xs font-semibold text-muted-foreground">נוכחים כעת</h3>
@@ -83,28 +109,165 @@ export default function PhoneAttendanceQueue({ pending, open, projectOptions, pr
               </div>
             </section>
           ) : null}
+
+          {pending.length === 0 && open.length === 0 && !manualOpen ? (
+            <p className="text-sm text-muted-foreground">אין דיווחי נוכחות. אפשר להוסיף משמרת ידנית עם +.</p>
+          ) : null}
         </div>
       ) : null}
     </div>
   );
 }
 
-/** A worker currently clocked in (open shift) — read-only until they clock out. */
-function OpenRow({ report }: { report: OpenPhoneReport }) {
-  const elapsed = minutesBetween(report.clock_in, new Date());
+/** Manually open a shift for a worker, or record a whole completed shift into the pending queue. */
+function ManualEntryForm({ workers, onDone }: { workers: AttendanceWorker[]; onDone: () => void }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [workerId, setWorkerId] = useState("");
+  const [startLocal, setStartLocal] = useState(() => nowLocal());
+  const [endLocal, setEndLocal] = useState("");
+  const [error, setError] = useState("");
+
+  const workerOptions = useMemo(
+    () => workers.map((w) => ({ value: w.id, label: w.name ?? "עובד", hint: w.phone ?? undefined })),
+    [workers]
+  );
+
+  function submit() {
+    setError("");
+    if (!workerId) return setError("יש לבחור עובד.");
+    const clockIn = new Date(startLocal);
+    if (!startLocal || Number.isNaN(clockIn.getTime())) return setError("שעת כניסה אינה תקינה.");
+    let clockOutIso: string | null = null;
+    if (endLocal) {
+      const clockOut = new Date(endLocal);
+      if (Number.isNaN(clockOut.getTime())) return setError("שעת יציאה אינה תקינה.");
+      if (clockOut <= clockIn) return setError("שעת היציאה חייבת להיות אחרי הכניסה.");
+      clockOutIso = clockOut.toISOString();
+    }
+
+    startTransition(async () => {
+      try {
+        const response = await fetch("/api/attendance/phone-reports/manual", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ user_id: workerId, clock_in: clockIn.toISOString(), clock_out: clockOutIso }),
+        });
+        const json = (await response.json().catch(() => ({}))) as { error?: string };
+        if (!response.ok) return setError(toHebrewError(json.error, "ההוספה נכשלה."));
+        toast.success(clockOutIso ? "המשמרת נוספה וממתינה לאישור." : "נפתחה משמרת לעובד.");
+        onDone();
+        router.refresh();
+      } catch (err: unknown) {
+        setError(toHebrewError(err, "ההוספה נכשלה."));
+      }
+    });
+  }
+
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card p-3">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="success">נוכח</Badge>
-          <span className="font-semibold">{report.worker_name ?? "עובד לא ידוע"}</span>
-          {report.worker_phone ? <span className="text-sm text-muted-foreground">{report.worker_phone}</span> : null}
-        </div>
-        <div className="mt-0.5 text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">{hebrewWeekday(report.clock_in)}</span> · נכנס {formatShortDateTime(report.clock_in)}
+    <div className="space-y-2 rounded-lg border border-secondary/30 bg-secondary/5 p-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">הוספת משמרת ידנית</h3>
+        <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={onDone} aria-label="סגירה">
+          <CloseIcon className="h-4 w-4" />
+        </Button>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <SearchableSelect options={workerOptions} value={workerId} onChange={setWorkerId} placeholder="בחירת עובד" ariaLabel="עובד" />
+        <div className="grid grid-cols-2 gap-2">
+          <label className="space-y-1">
+            <span className="text-xs text-muted-foreground">כניסה</span>
+            <DateTimeInput value={startLocal} onChange={(e) => setStartLocal(e.target.value)} />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs text-muted-foreground">יציאה (לא חובה)</span>
+            <DateTimeInput value={endLocal} onChange={(e) => setEndLocal(e.target.value)} />
+          </label>
         </div>
       </div>
-      <span className="whitespace-nowrap text-sm font-medium text-muted-foreground">כבר {formatMinutes(elapsed)} ש׳</span>
+      <p className="text-xs text-muted-foreground">
+        השאירו את שדה היציאה ריק כדי לפתוח משמרת פעילה. מלאו את שתיהן כדי לרשום משמרת שהסתיימה — היא תמתין לשיוך תחום ואישור.
+      </p>
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      <div className="flex justify-end">
+        <Button type="button" onClick={submit} disabled={isPending}>
+          {isPending ? "..." : "הוספה"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** A worker currently clocked in (open shift). Admin can close it now / at a set time → pending. */
+function OpenRow({ report }: { report: OpenPhoneReport }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [closing, setClosing] = useState(false);
+  const [closeLocal, setCloseLocal] = useState(() => nowLocal());
+  const [error, setError] = useState("");
+  const elapsed = minutesBetween(report.clock_in, new Date());
+
+  function closeShift() {
+    setError("");
+    const clockOut = new Date(closeLocal);
+    if (!closeLocal || Number.isNaN(clockOut.getTime())) return setError("שעת יציאה אינה תקינה.");
+    if (clockOut <= new Date(report.clock_in)) return setError("שעת היציאה חייבת להיות אחרי הכניסה.");
+
+    startTransition(async () => {
+      try {
+        const response = await fetch("/api/attendance/phone-reports/close", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ report_id: report.id, clock_out: clockOut.toISOString() }),
+        });
+        const json = (await response.json().catch(() => ({}))) as { error?: string };
+        if (!response.ok) return setError(toHebrewError(json.error, "סגירת המשמרת נכשלה."));
+        toast.success("המשמרת נסגרה וממתינה לאישור.");
+        router.refresh();
+      } catch (err: unknown) {
+        setError(toHebrewError(err, "סגירת המשמרת נכשלה."));
+      }
+    });
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="success">נוכח</Badge>
+            <span className="font-semibold">{report.worker_name ?? "עובד לא ידוע"}</span>
+            {report.worker_phone ? <span className="text-sm text-muted-foreground">{report.worker_phone}</span> : null}
+          </div>
+          <div className="mt-0.5 text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{hebrewWeekday(report.clock_in)}</span> · נכנס {formatShortDateTime(report.clock_in)}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="whitespace-nowrap text-sm font-medium text-muted-foreground">כבר {formatMinutes(elapsed)} ש׳</span>
+          {!closing ? (
+            <Button type="button" variant="secondary" size="sm" onClick={() => { setCloseLocal(nowLocal()); setClosing(true); }}>
+              סגירת משמרת
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      {closing ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
+          <span className="text-sm text-muted-foreground">שעת יציאה:</span>
+          <div className="w-44">
+            <DateTimeInput value={closeLocal} onChange={(e) => setCloseLocal(e.target.value)} />
+          </div>
+          <Button type="button" size="sm" onClick={closeShift} disabled={isPending}>
+            {isPending ? "..." : "סגור"}
+          </Button>
+          <Button type="button" variant="secondary" size="sm" onClick={() => setClosing(false)} disabled={isPending}>
+            ביטול
+          </Button>
+          {error ? <span className="text-sm text-destructive">{error}</span> : null}
+        </div>
+      ) : null}
     </div>
   );
 }
