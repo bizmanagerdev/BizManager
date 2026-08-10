@@ -15,9 +15,14 @@ import { cn } from "@/lib/utils";
 export const QUICK_TILE_CLASS =
   "h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-secondary !text-secondary-foreground shadow-md shadow-secondary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-secondary/90";
 
-/** Compact variant for the top-bar + menu, where the grid sits in a popover. */
+/** Compact variant for the top-bar + menu, where the grid sits in a popover.
+ *  The height is FIXED, not `aspect-square`: aspect-ratio is only a preferred
+ *  size, so a label that wraps to a third line (העברה בין חשבונות) used to grow
+ *  its tile and the grid came out ragged. Fixed h/w = every tile identical, and
+ *  the label gets its own flexible box below the glyph so the glyphs line up
+ *  across a row no matter how many lines the label takes. */
 export const QUICK_TILE_CLASS_SM =
-  "h-auto aspect-square w-[4.5rem] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-2xl border-transparent !bg-secondary p-1.5 text-center text-[0.7rem] leading-tight !text-secondary-foreground shadow-md shadow-secondary/30 !whitespace-normal focus:!bg-secondary/90 hover:!bg-secondary/90";
+  "h-[5.5rem] w-[5.5rem] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-2xl border-transparent !bg-secondary p-2 text-center text-[0.7rem] leading-tight !text-secondary-foreground shadow-md shadow-secondary/30 !whitespace-normal focus:!bg-secondary/90 hover:!bg-secondary/90";
 
 /** The only two colored glyphs. Everything else inherits the tile's white text. */
 const TONE_CLASS = {
@@ -41,10 +46,15 @@ export function QuickTileContent({
   return (
     <>
       <Icon
-        className={cn(sm ? "!h-7 !w-7" : "!h-9 !w-9", tone && TONE_CLASS[tone])}
+        className={cn(sm ? "!h-7 !w-7 shrink-0" : "!h-9 !w-9", tone && TONE_CLASS[tone])}
         strokeWidth={tone ? 2.4 : 2.2}
       />
-      <span className="font-semibold">{label}</span>
+      {/* sm tiles are a fixed square, so the label takes whatever height is left
+          and centres itself in it — one-line and two-line labels then sit under
+          glyphs at the same height instead of shifting them up and down. */}
+      <span className={cn("font-semibold", sm && "flex w-full flex-1 items-center justify-center")}>
+        {label}
+      </span>
     </>
   );
 }

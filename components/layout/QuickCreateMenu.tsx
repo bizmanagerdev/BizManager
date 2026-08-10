@@ -8,7 +8,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AddIcon, ExpenseIcon, IncomeIcon, NotificationIcon, OrderIcon, PaymentIcon, ProjectIcon, SpinnerIcon, TaskIcon, TransferIcon, UploadIcon, UserIcon } from "@/components/ui/icons";
+import { AddIcon, ExpenseIcon, IncomeIcon, NotificationIcon, OrderIcon, PaymentIcon, ProjectIcon, SpinnerIcon, TaskIcon, TransferIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { HoverPanel, HoverPanelContent, HoverPanelTrigger, useHoverPanel } from "@/components/ui/hover-panel";
 import { ViewDialog } from "@/components/ui/view-dialog";
@@ -28,14 +28,17 @@ type MenuItem = { action: QuickCreateAction; label: string; icon: typeof TaskIco
 
 // Laid out two per row, in this exact order (user-specified):
 //   משימה  תזכורת   /   הכנסה  הוצאה   /   הזמנה  פרויקט   /
-//   העברה בין חשבונות  לקוח   /   קליטת תשלום  מסמך
-// The count is kept EVEN so the grid never ends on a half row — the two newest
-// tiles (transfer + customer) sit together in the second-to-last row, at the
-// user's direction. לקוח was deliberately absent at first (a customer is nearly
-// always created inside an order/project wizard); the user asked for it anyway.
-// Glyphs here carry NO "+" badge (User, not UserPlus; Bell, not BellPlus): the
-// whole grid already lives behind the + button, so every tile repeating it is
-// noise. The user's call.
+//   העברה בין חשבונות  קליטת תשלום
+// The count is kept EVEN so the grid never ends on a half row. Eight tiles, and
+// the two admin/office-only ones share the last row — so a worker sees exactly
+// three full rows once they're filtered out.
+// לקוח and מסמך were tiles for a few days (2026-08-05) and the user removed them
+// again (2026-08-10): a customer is nearly always created inside an order or
+// project wizard, and a document is uploaded from the record it belongs to. Both
+// ACTIONS still exist (QuickCreateDialogs handles them, and the `bizh:quick-create`
+// event can still ask for them) — they just don't get a tile here.
+// Glyphs here carry NO "+" badge (Bell, not BellPlus): the whole grid already
+// lives behind the + button, so every tile repeating it is noise. The user's call.
 const MENU_ITEMS: MenuItem[] = [
   { action: "task", label: "משימה", icon: TaskIcon },
   { action: "reminder", label: "תזכורת", icon: NotificationIcon },
@@ -46,9 +49,7 @@ const MENU_ITEMS: MenuItem[] = [
   // Not "העברה" on its own — that already means a bank-transfer payment method
   // elsewhere in the app; this one moves money between OUR accounts.
   { action: "transfer", label: "העברה בין חשבונות", icon: TransferIcon },
-  { action: "customer", label: "לקוח", icon: UserIcon },
   { action: "collect", label: "קליטת תשלום", icon: PaymentIcon },
-  { action: "document", label: "מסמך", icon: UploadIcon },
 ];
 
 // The only colored glyphs — money in / money out. Everything else stays white.
