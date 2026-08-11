@@ -49,9 +49,17 @@ export default function DashboardGreeting({
     // like "ערב ט…" is worse than two lines), and only the date; the "here's
     // what's happening" tail is desktop-only so the subline stays one clean row.
     <div className="min-w-0">
+      {/* One flowing line of text — the wave is part of the sentence, not a
+          separate flex item, so it never claims a line of its own on a phone.
+          Deliberately the 👋 EMOJI and not a palette icon: this is a greeting,
+          not a control, and the yellow hand is the whole point. (The icon-palette
+          sweep swapped it for a monochrome SVG; that read as a "stop" hand.) */}
       <h1 className="text-xl font-bold leading-snug tracking-tight sm:text-2xl md:text-3xl">
         {greeting}
         {name ? `, ${name}` : ""}
+        <span aria-hidden className="ms-2 align-middle text-[0.75em]">
+          👋
+        </span>
       </h1>
       {today ? (
         <p className="mt-1 text-xs text-muted-foreground sm:text-sm">

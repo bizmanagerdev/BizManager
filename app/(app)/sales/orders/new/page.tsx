@@ -1,5 +1,5 @@
 ﻿import AppShell from "@/components/layout/AppShell";
-import { requireProfile } from "@/lib/auth/requireProfile";
+import { requireStaffPage } from "@/lib/auth/roleAccess";
 import NewOrderClient from "@/app/(app)/sales/orders/new/NewOrderClient";
 import { attachProductStock } from "@/lib/orders/productStock";
 
@@ -29,7 +29,7 @@ export default async function NewSalesOrderPage({
   const duplicateOrderId =
     typeof params.duplicate === "string" && params.duplicate.trim() ? params.duplicate.trim() : null;
 
-  const { profile, supabase } = await requireProfile();
+  const { profile, supabase } = await requireStaffPage();
 
   // "שכפול הזמנה": prefill the create wizard with the source order's customer,
   // items and preferences — fresh date/status/payments, everything editable.

@@ -11,7 +11,6 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { formatShortDate } from "@/lib/date";
-import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import { offlineFetch } from "@/lib/offline-queue";
 import type { DashboardTask } from "@/lib/dashboard/tasks-overview";
 
@@ -120,14 +119,16 @@ export default function MyTasksPanel({ tasks: initialTasks }: { tasks: Dashboard
             <ChecklistIcon className="h-5 w-5 text-muted-foreground" />
             <CardTitle className="text-lg">המשימות שלי</CardTitle>
           </div>
-          <div className="flex flex-wrap gap-1 rounded-xl bg-muted/50 p-1">
+          {/* One row on a phone: no wrap, and the four filters share the width
+              evenly rather than spilling onto a second line. */}
+          <div className="flex w-full gap-1 rounded-xl bg-muted/50 p-1 sm:w-auto">
             {TABS.map((t) => (
               <button
                 key={t.key}
                 type="button"
                 onClick={() => setTab(t.key)}
                 className={cn(
-                  "rounded-lg px-2.5 py-1 text-xs font-medium transition-colors",
+                  "flex-1 whitespace-nowrap rounded-lg px-1.5 py-1 text-xs font-medium transition-colors sm:flex-none sm:px-2.5",
                   tab === t.key
                     ? "bg-card text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
@@ -181,7 +182,13 @@ export default function MyTasksPanel({ tasks: initialTasks }: { tasks: Dashboard
                     </div>
                   </div>
                 </div>
-                <InitialsAvatar name={task.project_name ?? task.subject} />
+                {/* No avatar here. An InitialsAvatar means a PERSON everywhere
+                    else in the app (comments, activity feed, task members, the
+                    top bar); this one was built from the PROJECT name, and since
+                    every project is "הובלה …" every circle came out as ה+one
+                    letter — indistinguishable from the next, and identifying
+                    nothing the row doesn't already say in words. On "המשימות
+                    שלי" every task is the viewer's anyway. */}
               </div>
             );
           })

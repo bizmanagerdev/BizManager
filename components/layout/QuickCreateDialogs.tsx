@@ -29,6 +29,8 @@ import { IncomeDialog } from "@/components/financial/IncomeDialog";
 import { AccountTransferDialog } from "@/components/financial/AccountTransferDialog";
 import { CollectPaymentDialog } from "@/components/collections/CollectPaymentDialog";
 import ReminderFormDialog from "@/components/reminders/ReminderFormDialog";
+import { AttendanceLogDialog } from "@/components/attendance/AttendanceLogDialog";
+import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions } from "@/lib/payroll-worker-type";
 import type { QuickCreateAction, QuickCreateData } from "@/components/layout/quick-create-types";
 
 export default function QuickCreateDialogs({
@@ -83,6 +85,18 @@ export default function QuickCreateDialogs({
         label: property.subtitle ? `${property.name} | ${property.subtitle}` : property.name,
       })),
     [data.properties]
+  );
+  // Workers eligible for phone-attendance logging (session-logging types).
+  const attendanceWorkers = useMemo(
+    () =>
+      data.users
+        .filter(
+          (u) =>
+            (u.role === "worker" || u.role === "worker_no_access") &&
+            payrollWorkerTypeAllowsSessions(normalizePayrollWorkerType(u.payroll_worker_type, u.pay_tracking_mode))
+        )
+        .map((u) => ({ id: u.id, label: u.label })),
+    [data.users]
   );
 
   // Saved → the underlying page re-renders in place; the user never left it.
@@ -253,6 +267,15 @@ export default function QuickCreateDialogs({
         onOpenChange={(open) => {
           if (!open) onClose();
         }}
+        onSaved={() => router.refresh()}
+      />
+
+      <AttendanceLogDialog
+        open={action === "attendance"}
+        onOpenChange={(open) => {
+          if (!open) onClose();
+        }}
+        workers={attendanceWorkers}
         onSaved={() => router.refresh()}
       />
 

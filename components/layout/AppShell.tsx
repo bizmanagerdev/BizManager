@@ -111,7 +111,12 @@ export default function AppShell({
             {/* The curve at the sidebar/top-bar junction is carried by the sidebar
                 itself (rounded-se), so the page background shows through it. */}
             <main className="flex-1 bg-background">
-              <div className="mx-auto w-full max-w-[1600px] p-4 pb-24 md:p-6 md:pb-6 lg:p-8 lg:pb-8">
+              {/* Phone gutter is deliberately narrow (12px, not 16): on a 360px
+                  screen every pixel of side padding is a pixel a table row, a tab
+                  strip or a customer name doesn't get. Anything that breaks out
+                  of it full-bleed uses -mx-3 to match — keep the two in step, or
+                  the page overflows sideways. */}
+              <div className="mx-auto w-full max-w-[1600px] px-3 py-4 pb-24 md:p-6 md:pb-6 lg:p-8 lg:pb-8">
                 {children}
               </div>
             </main>

@@ -8,7 +8,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AddIcon, ExpenseIcon, IncomeIcon, NotificationIcon, OrderIcon, PaymentIcon, ProjectIcon, SpinnerIcon, TaskIcon, TransferIcon } from "@/components/ui/icons";
+import { AddIcon, ClockIcon, ExpenseIcon, IncomeIcon, NotificationIcon, OrderIcon, PaymentIcon, ProjectIcon, SpinnerIcon, TaskIcon, TransferIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { HoverPanel, HoverPanelContent, HoverPanelTrigger, useHoverPanel } from "@/components/ui/hover-panel";
 import { ViewDialog } from "@/components/ui/view-dialog";
@@ -50,6 +50,8 @@ const MENU_ITEMS: MenuItem[] = [
   // elsewhere in the app; this one moves money between OUR accounts.
   { action: "transfer", label: "העברה בין חשבונות", icon: TransferIcon },
   { action: "collect", label: "קליטת תשלום", icon: PaymentIcon },
+  // Log a worker's clock in/out into the phone-attendance queue (boss classifies later).
+  { action: "attendance", label: "החתמת נוכחות", icon: ClockIcon },
 ];
 
 // The only colored glyphs — money in / money out. Everything else stays white.
@@ -61,7 +63,14 @@ const TILE_TONE: Partial<Record<QuickCreateAction, "income" | "expense">> = {
 
 // Reading the ledger / moving money between accounts is admin/office-only — the
 // API would 403 a worker, so don't offer them the tile.
-const ADMIN_OR_OFFICE_ACTIONS = new Set<QuickCreateAction>(["collect", "transfer"]);
+const ADMIN_OR_OFFICE_ACTIONS = new Set<QuickCreateAction>(["collect", "transfer", "attendance"]);
+
+// A worker's + is only what he can actually act on. The rest of the menu
+// (income, expense, order, project) creates records on screens he can't open —
+// see WORKER_ALLOWED_PREFIXES in lib/auth/roleAccess.ts. "החתמת נוכחות" IS his:
+// the foreman on site signs his crew in and out, and it lands in the same
+// approval queue as everything else.
+const WORKER_ACTIONS = new Set<QuickCreateAction>(["task", "reminder", "attendance"]);
 
 // Module-scope cache: the top bar remounts on some navigations, and the picker
 // data (customers / products / projects…) is the same for the whole session, so
@@ -95,7 +104,11 @@ export function QuickCreateMenu({
   variant?: "topbar" | "fab";
 }) {
   const privileged = viewerRole === "admin" || viewerRole === "office";
-  const items = privileged ? MENU_ITEMS : MENU_ITEMS.filter((item) => !ADMIN_OR_OFFICE_ACTIONS.has(item.action));
+  const items = privileged
+    ? MENU_ITEMS
+    : viewerRole === "worker"
+      ? MENU_ITEMS.filter((item) => WORKER_ACTIONS.has(item.action))
+      : MENU_ITEMS.filter((item) => !ADMIN_OR_OFFICE_ACTIONS.has(item.action));
   // Hover reveals the whole grid; clicking the + still toggles it, and on touch
   // (where there is no hover) the tap is the only interaction.
   const panel = useHoverPanel();
@@ -142,9 +155,15 @@ export function QuickCreateMenu({
         event as CustomEvent<{ action?: QuickCreateAction; dueDate?: string; accountId?: string }>
       ).detail;
       if (!detail?.action) return;
-      // Fall back to a task if the caller asked for something this role can't create.
-      const action =
-        ADMIN_OR_OFFICE_ACTIONS.has(detail.action) && !privileged ? "task" : detail.action;
+      // Fall back to a task if the caller asked for something this role can't
+      // create. Checked against the same lists the tiles use, so a worker firing
+      // "attendance" (which IS his) isn't quietly turned into a task.
+      const allowed = privileged
+        ? true
+        : viewerRole === "worker"
+          ? WORKER_ACTIONS.has(detail.action)
+          : !ADMIN_OR_OFFICE_ACTIONS.has(detail.action);
+      const action = allowed ? detail.action : "task";
       prefetch();
       setQuickDate(detail.dueDate);
       setQuickAccountId(detail.accountId);
@@ -152,7 +171,7 @@ export function QuickCreateMenu({
     }
     window.addEventListener("bizh:quick-create", onQuickCreate);
     return () => window.removeEventListener("bizh:quick-create", onQuickCreate);
-  }, [variant, prefetch, privileged]);
+  }, [variant, prefetch, privileged, viewerRole]);
 
   const tiles = items.map((item) => (
     <Button

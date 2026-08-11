@@ -1,5 +1,14 @@
 // Coarse notification buckets — what a user can mute. Every push is tagged with
 // one of these so "mute גבייה" actually silences the right things.
+/**
+ * The buckets a WORKER may see or tune. Everything else on the list is business
+ * alerting — collections, stock, payroll, new orders — which he isn't shown and
+ * isn't pushed (see visibleAudienceRoles/ownAudienceRoles in
+ * lib/reminders/worklist.ts). Offering him a switch for alerts he can never
+ * receive is just a wall of dead checkboxes.
+ */
+export const WORKER_NOTIF_BUCKET_KEYS = ["tasks", "reminders", "digests"] as const;
+
 export const NOTIF_BUCKETS: Array<{ key: string; label: string }> = [
   { key: "money", label: "גבייה ותשלומים" },
   { key: "tasks", label: "משימות" },

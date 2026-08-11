@@ -7,7 +7,7 @@ import SalesOrdersClient from "@/app/(app)/sales/SalesOrdersClient";
 import PriceListClient from "@/app/(app)/sales/PriceListClient";
 import SalesTabsNav from "@/app/(app)/sales/SalesTabsNav";
 import PageAlertBar from "@/components/reminders/PageAlertBar";
-import { requireProfile } from "@/lib/auth/requireProfile";
+import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { Button } from "@/components/ui/button";
 import { DELIVERY_REGIONS } from "@/lib/ui/cities";
 import { loadOrdersPage } from "@/app/(app)/sales/loadOrders";
@@ -106,7 +106,7 @@ export default async function SalesPage({
       ? params.region
       : null;
 
-  const { profile, supabase } = await requireProfile();
+  const { profile, supabase } = await requireStaffPage();
   const [
     { count: openOrdersCount },
     { count: closedOrdersCount },
@@ -283,7 +283,7 @@ export default async function SalesPage({
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
-        <div className={`sticky ${tabsStickyTop} z-20 -mx-4 -mt-4 flex h-[52px] items-end justify-between gap-3 border-b border-border/60 bg-background px-4 md:-mx-6 md:mt-0 md:px-6 lg:-mx-8 lg:px-8`}>
+        <div className={`sticky ${tabsStickyTop} z-20 -mx-3 -mt-4 flex h-[52px] items-end justify-between gap-3 border-b border-border/60 bg-background px-3 md:-mx-6 md:mt-0 md:px-6 lg:-mx-8 lg:px-8`}>
           <SalesTabsNav activeTab={activeTab} counts={salesTabCounts} searchParams={params} />
           <div className="flex flex-wrap items-center gap-3 pb-2">
             {customerName ? (

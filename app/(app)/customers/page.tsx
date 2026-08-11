@@ -1,5 +1,5 @@
 import AppShell from "@/components/layout/AppShell";
-import { requireProfile } from "@/lib/auth/requireProfile";
+import { requireStaffPage } from "@/lib/auth/roleAccess";
 import CustomersClient from "@/app/(app)/customers/CustomersClient";
 import { loadCustomersPage, type CustomerFilterMode } from "@/app/(app)/customers/loadCustomers";
 
@@ -27,7 +27,7 @@ export default async function CustomersPage({
     activeOnly: parseFilterMode(params.active_only),
   };
 
-  const { profile, supabase } = await requireProfile();
+  const { profile, supabase } = await requireStaffPage();
   const { rows, totalCount, hasMore, error: loadError } = await loadCustomersPage(supabase, {
     page: 1,
     filters,

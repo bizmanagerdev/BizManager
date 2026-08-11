@@ -30,6 +30,17 @@ export function formatShortDateTime(value: string | null | undefined, fallback =
   return `${formatShortDate(value, fallback)} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+/**
+ * Just the clock time ("08:30") — for rows that already say which day it was, so
+ * the date isn't repeated on every line.
+ */
+export function formatTimeOnly(value: string | null | undefined, fallback = "-") {
+  if (!value) return fallback;
+  const date = parseDateValue(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 export type DueUrgency = "overdue" | "due-soon" | "due-week" | "none";
 
 /**

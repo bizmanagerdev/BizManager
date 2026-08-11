@@ -19,6 +19,10 @@ type BasePhoneReport = {
   worker_phone: string | null;
   clock_in: string;
   created_at: string;
+  /** phone | phone_manual | app — how the shift got here. */
+  source: string;
+  /** What the worker (or the person logging it) said about the shift. */
+  notes: string | null;
 };
 
 /** Clocked out, awaiting admin approval. */
@@ -44,7 +48,7 @@ export async function loadPhoneQueueData(
 ): Promise<PhoneQueueData> {
   const { data: reports, error } = await supabase
     .from(PHONE_ATTENDANCE_TABLE)
-    .select("id,user_id,clock_in,clock_out,worked_minutes,status,created_at")
+    .select("id,user_id,clock_in,clock_out,worked_minutes,status,source,notes,created_at")
     .in("status", ["open", "pending_review"])
     .order("created_at", { ascending: true })
     .range(0, 199);
@@ -91,6 +95,8 @@ export async function loadPhoneQueueData(
     worker_phone: nameById.get(row.user_id as string)?.phone ?? null,
     clock_in: row.clock_in as string,
     created_at: row.created_at as string,
+    source: typeof row.source === "string" ? row.source : "phone",
+    notes: typeof row.notes === "string" ? row.notes : null,
   });
 
   const pending: PendingPhoneReport[] = [];

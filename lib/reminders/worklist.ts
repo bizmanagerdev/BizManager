@@ -61,7 +61,13 @@ function str(row: Row, key: string): string | null {
 export function visibleAudienceRoles(role: string | null | undefined): string[] {
   if (role === "admin") return ["all", "office", "admin"];
   if (role === "office") return ["all", "office"];
-  return ["all"];
+  // A worker gets NO role buckets — his inbox is his tasks and his own
+  // reminders, nothing else. He used to be in the "all" bucket, which meant any
+  // rule an admin pointed at 'all' in push_alert_config (overdue collections,
+  // low stock, unpaid invoices…) landed on a driver's phone. Items still reach
+  // him the two ways that are actually his: assigned_to = him, or a reminder he
+  // created himself — both handled outside this function.
+  return [];
 }
 
 /**
@@ -77,7 +83,11 @@ export function visibleAudienceRoles(role: string | null | undefined): string[] 
 export function ownAudienceRoles(role: string | null | undefined): string[] {
   if (role === "admin") return ["all", "admin"];
   if (role === "office") return ["all", "office"];
-  return ["all"];
+  // A worker is interrupted only by what is HIS: reminders assigned to him and
+  // his task alerts (both routed by assigned_to, not by bucket) plus the daily
+  // summary. Business-wide alerts are not his to chase. He can still opt into a
+  // bucket explicitly via notification_prefs.subscribe.
+  return [];
 }
 
 /** Manual reminders get a display title derived from what they're attached to. */
@@ -142,8 +152,13 @@ export async function getWorklist(
   // Visible to me = assigned to me, OR an UNASSIGNED reminder I created (so a
   // reminder I made FOR someone else is theirs, not mine), OR a system reminder
   // aimed at one of my role buckets.
-  const visibility =
-    `assigned_to.eq.${userId},and(assigned_to.is.null,created_by.eq.${userId}),audience_role.in.(${roles.join(",")})`;
+  const visibility = [
+    `assigned_to.eq.${userId}`,
+    `and(assigned_to.is.null,created_by.eq.${userId})`,
+    // Empty for a worker — an `in.()` with no values is invalid PostgREST and
+    // would match nothing useful anyway.
+    ...(roles.length > 0 ? [`audience_role.in.(${roles.join(",")})`] : []),
+  ].join(",");
 
   const { data, error } = await supabase
     .from("reminders")

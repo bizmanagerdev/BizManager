@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
-import { NOTIF_BUCKETS } from "@/lib/notifications/categories";
+import { NOTIF_BUCKETS, WORKER_NOTIF_BUCKET_KEYS } from "@/lib/notifications/categories";
 import {
   DEFAULT_PREFS,
   DELIVERY_MODES,
@@ -17,7 +17,15 @@ const HOURS = Array.from({ length: 24 }, (_, h) => h);
 
 // Per-user notification preferences: how much reaches the phone, when the daily
 // summary arrives, what extra (not-mine) topics to opt into, and what to mute.
-export default function NotificationPrefs() {
+export default function NotificationPrefs({ viewerRole }: { viewerRole?: string } = {}) {
+  // A worker only ever receives his own tasks, his own reminders and the daily
+  // summary, so those are the only topics worth offering him. Showing him the
+  // full business list was a page of switches that changed nothing.
+  const isWorker = viewerRole === "worker";
+  const buckets = isWorker
+    ? NOTIF_BUCKETS.filter((b) => (WORKER_NOTIF_BUCKET_KEYS as readonly string[]).includes(b.key))
+    : NOTIF_BUCKETS;
+
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -116,26 +124,30 @@ export default function NotificationPrefs() {
         </section>
       ) : null}
 
-      {/* Opt-in to being PUSHED about things that aren't mine. */}
-      <section className="space-y-1.5">
-        <div className="text-xs font-semibold text-muted-foreground">התראות לנייד גם על דברים שאינם שלי</div>
-        <p className="text-xs text-muted-foreground">
-          כברירת מחדל רק דברים ששייכים לך מתריעים לנייד. סמן נושאים שתרצה לקבל עליהם התראה בנוסף.
-          בכל מקרה הכול מופיע בתיבה — הסימון משפיע רק על ההתראה לנייד.
-        </p>
-        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-          {SUBSCRIBABLE_BUCKETS.map((b) => (
-            <label key={b.key} className="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm">
-              <input
-                type="checkbox"
-                checked={prefs.subscribe.includes(b.key)}
-                onChange={() => toggleIn("subscribe", b.key)}
-              />
-              <span>{b.label}</span>
-            </label>
-          ))}
-        </div>
-      </section>
+      {/* Opt-in to being PUSHED about things that aren't mine. Not offered to a
+          worker: the business buckets aren't his to chase, and subscribing
+          wouldn't show him records he can't open anyway. */}
+      {isWorker ? null : (
+        <section className="space-y-1.5">
+          <div className="text-xs font-semibold text-muted-foreground">התראות לנייד גם על דברים שאינם שלי</div>
+          <p className="text-xs text-muted-foreground">
+            כברירת מחדל רק דברים ששייכים לך מתריעים לנייד. סמן נושאים שתרצה לקבל עליהם התראה בנוסף.
+            בכל מקרה הכול מופיע בתיבה — הסימון משפיע רק על ההתראה לנייד.
+          </p>
+          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+            {SUBSCRIBABLE_BUCKETS.map((b) => (
+              <label key={b.key} className="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm">
+                <input
+                  type="checkbox"
+                  checked={prefs.subscribe.includes(b.key)}
+                  onChange={() => toggleIn("subscribe", b.key)}
+                />
+                <span>{b.label}</span>
+              </label>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Mute — the one control that hides things from view, not just from the phone. */}
       <section className="space-y-1.5">
@@ -144,7 +156,7 @@ export default function NotificationPrefs() {
           נושא שיוסר מהסימון ייעלם לגמרי — לא בתיבה, לא בלוח ולא בנייד.
         </p>
         <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-          {NOTIF_BUCKETS.map((b) => (
+          {buckets.map((b) => (
             <label key={b.key} className="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm">
               <input type="checkbox" checked={!prefs.muted.includes(b.key)} onChange={() => toggleIn("muted", b.key)} />
               <span className={prefs.muted.includes(b.key) ? "text-muted-foreground line-through" : ""}>{b.label}</span>

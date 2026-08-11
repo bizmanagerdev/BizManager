@@ -1,7 +1,7 @@
 ﻿import dynamic from "next/dynamic";
 import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
-import { requireProfile } from "@/lib/auth/requireProfile";
+import { requireStaffPage } from "@/lib/auth/roleAccess";
 import ProjectDetailsActions, { REMINDERS_SECTION_ID } from "@/app/(app)/projects/[id]/ProjectDetailsActions";
 import { getEntityAuditTrail, getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import EntityActivityTimeline from "@/app/(app)/activity/EntityActivityTimeline";
@@ -214,7 +214,7 @@ export default async function ProjectPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { profile, supabase } = await requireProfile();
+  const { profile, supabase } = await requireStaffPage();
   // These reads are all independent (keyed only by the project id), so fetch them
   // in ONE parallel batch instead of ~10 sequential round trips.
   const [

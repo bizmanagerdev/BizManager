@@ -3,7 +3,8 @@ import { toHebrewError } from "@/lib/error-messages";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { DeleteIcon, HideIcon, ShowIcon } from "@/components/ui/icons";
+import type { ComponentType } from "react";
+import { ClockIcon, DeleteIcon, HideIcon, NotificationIcon, ShowIcon, UserIcon, WalletIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -11,6 +12,9 @@ import { ViewDialog } from "@/components/ui/view-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import NotificationPrefs from "@/components/notifications/NotificationPrefs";
 import PushSubscribeButton from "@/components/notifications/PushSubscribeButton";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
@@ -43,6 +47,9 @@ import {
   type WorkSessionRow,
 } from "@/lib/payroll";
 import { EditButton } from "@/components/ui/icon-button";
+import MyShiftCard from "@/components/attendance/MyShiftCard";
+import type { MyShiftReport } from "@/lib/attendance/my-shift";
+import { formatTimeOnly } from "@/lib/date";
 
 type Props = {
   profile: UserProfile;
@@ -55,6 +62,28 @@ type Props = {
   monthlySummaries: MonthlyHoursSummary[];
   projectOptions: Array<{ id: string; label: string }>;
   propertyOptions: Array<{ id: string; label: string }>;
+  /**
+   * A worker reports shifts THROUGH THE APPROVAL QUEUE — he opens and submits,
+   * the boss classifies the domain and approves. So he gets the shift card and
+   * his pending reports here instead of the self-service session controls, which
+   * write straight into attendance_sessions with a self-chosen domain (and which
+   * his RLS policies no longer permit anyway).
+   */
+  isWorker?: boolean;
+  openShiftReport?: MyShiftReport | null;
+  pendingShiftReports?: MyShiftReport[];
+  /** Earned / paid / still owed across every period. Null when unreadable. */
+  payTotals?: { earned: number; paid: number; owed: number } | null;
+  /** session id → payment_status, so a shift row can say whether it was paid. */
+  payBySessionId?: Record<string, string>;
+};
+
+const PAY_STATUS_META: Record<string, { label: string; variant: "success" | "warning" | "destructive" | "neutral" }> = {
+  paid: { label: "שולם", variant: "success" },
+  partial: { label: "שולם חלקית", variant: "warning" },
+  unpaid: { label: "לא שולם", variant: "destructive" },
+  pending: { label: "טרם הגיע מועד", variant: "neutral" },
+  overpaid: { label: "שולם ביתר", variant: "neutral" },
 };
 
 type SplitPartDraft = {
@@ -117,8 +146,11 @@ function toLocalDateTimeValue(date: Date) {
 
 type ProfileTab = "profile" | "notifications" | "sessions" | "salary";
 
-export default function ProfileClient({ profile, initialFontScale, initialAvatarColor, sessions, agreements, payslips, periods, monthlySummaries, projectOptions, propertyOptions }: Props) {
+export default function ProfileClient({ profile, initialFontScale, initialAvatarColor, sessions, agreements, payslips, periods, monthlySummaries, projectOptions, propertyOptions, isWorker = false, openShiftReport = null, pendingShiftReports = [], payTotals = null, payBySessionId = {} }: Props) {
   const router = useRouter();
+  // The whole page is the swipe surface, so the gesture works wherever the
+  // thumb happens to be rather than only on the tab strip.
+  const swipeRef = useRef<HTMLDivElement>(null);
   // Tab lives in the URL so the user menu can deep-link (?tab=notifications) and
   // the browser back button behaves.
   const searchParams = useSearchParams();
@@ -237,7 +269,14 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
   const [sessionEditBillToCustomerAmount, setSessionEditBillToCustomerAmount] = useState("");
   const [splitParts, setSplitParts] = useState<SplitPartDraft[]>([]);
   const [splitEnabled, setSplitEnabled] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState(monthlySummaries[0]?.key ?? monthKeyFromDate(new Date()));
+  // Open on THIS month when there are hours in it — "how am I doing this month"
+  // is the question you come here with. Only when it's empty does it fall back
+  // to the most recent month that has any, so the page is never blank.
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const currentKey = monthKeyFromDate(new Date());
+    if (monthlySummaries.some((summary) => summary.key === currentKey)) return currentKey;
+    return monthlySummaries[0]?.key ?? currentKey;
+  });
 
   // Global text-size multiplier. The whole UI is rem-based, so this scales
   // text, spacing and widths together (no squashing) — see app/globals.css.
@@ -732,35 +771,60 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
   // Three unrelated things used to share one long scroll: how the app looks, how
   // it notifies you, and your shifts. They're separate errands, so they're
   // separate tabs — and the top-bar user menu deep-links straight to each.
-  const tabs: Array<{ key: ProfileTab; label: string }> = [
-    { key: "profile", label: "הפרופיל שלי" },
-    { key: "notifications", label: "הגדרות התראות" },
-    ...(canTrackSessions ? [{ key: "sessions" as ProfileTab, label: "נוכחות ומשמרות" }] : []),
+  const tabs: Array<{ key: ProfileTab; label: string; icon: ComponentType<{ className?: string }> }> = [
+    { key: "profile", label: "פרופיל", icon: UserIcon },
+    { key: "notifications", label: "התראות", icon: NotificationIcon },
+    ...(canTrackSessions
+      ? [{ key: "sessions" as ProfileTab, label: "נוכחות", icon: ClockIcon }]
+      : []),
     // Salary stands alone: you can have payslips without punching shifts, and
     // it has nothing to do with preferences.
-    ...(showSalarySection ? [{ key: "salary" as ProfileTab, label: "שכר ותלושים" }] : []),
+    ...(showSalarySection
+      ? [{ key: "salary" as ProfileTab, label: "משכורת", icon: WalletIcon }]
+      : []),
   ];
   // A stale/ineligible ?tab= falls back rather than showing an empty page.
   const activeTab: ProfileTab = tabs.some((t) => t.key === tabParam) ? tabParam : "profile";
 
+  const activeIndex = tabs.findIndex((t) => t.key === activeTab);
+  const stepTab = (delta: number) => {
+    const next = tabs[activeIndex + delta];
+    if (next) setTab(next.key);
+  };
+  // Swipe the page to move between tabs. Stops at the ends rather than wrapping —
+  // landing back on the first tab from the last reads as a glitch, not a loop.
+  useSwipeNavigation(swipeRef, {
+    onNext: () => stepTab(1),
+    onPrevious: () => stepTab(-1),
+    enabled: tabs.length > 1,
+  });
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-1.5">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`rounded-full border px-3.5 py-1.5 text-sm transition-colors ${
-              activeTab === t.key
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-border bg-background hover:bg-muted"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+    <div className="space-y-4" ref={swipeRef}>
+      {/* The same tab bar as the rest of the system (financial, projects,
+          payroll…), plus swipe left/right on the page to step between them. */}
+      <Tabs value={activeTab} onValueChange={(value) => setTab(value as ProfileTab)}>
+        {/* Full-bleed on a phone (-mx-3 cancels the shell gutter) and the four
+            tabs split the width evenly, so they always fit however narrow the
+            screen — shrinking the text was a guess that still left "משכורת" half
+            off the edge. From sm up they go back to sitting centred at their
+            natural width. */}
+        <TabsList
+          variant="underline"
+          className="-mx-3 w-[calc(100%+1.5rem)] gap-0 px-1 sm:mx-0 sm:w-full sm:justify-center sm:gap-3 sm:px-0"
+        >
+          {tabs.map((t) => (
+            <TabsTrigger
+              key={t.key}
+              value={t.key}
+              className="min-w-0 flex-1 gap-1 px-0.5 text-[0.8125rem] sm:flex-none sm:gap-1 sm:px-2 sm:text-base"
+            >
+              <t.icon className="h-4 w-4 shrink-0" />
+              {t.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
       {activeTab === "profile" ? (
         <>
@@ -1016,7 +1080,7 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
                 <div className="text-base font-semibold">העדפות התראות</div>
                 <div className="text-sm text-muted-foreground">כמה להתריע, מתי, ומה בכלל להציג בתיבה.</div>
               </div>
-              <NotificationPrefs />
+              <NotificationPrefs viewerRole={profile.role} />
             </CardContent>
           </Card>
         </>
@@ -1025,69 +1089,123 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
       {/* No section heading — the active tab already names it. */}
       {activeTab === "sessions" && canTrackSessions ? (
         <section className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <SummaryCard title="סטטוס נוכחי" value={openSession ? "במשמרת" : "לא במשמרת"} hint={openSession ? `נכנסת ב-${formatDateTime(openSession.clock_in)}` : "אין משמרת פתוחה כרגע"} />
-            <SummaryCard title="שעות החודש" value={selectedMonthSummary ? formatMinutes(selectedMonthSummary.totalMinutes) : "0:00"} hint={selectedMonthSummary ? selectedMonthSummary.label : "אין שעות מדווחות"} />
-          </div>
-
-          <Card>
-            <CardContent className="space-y-4 py-5">
-              <div className="flex flex-wrap justify-center gap-3">
-                <Button size="lg" className="min-w-40" disabled={Boolean(openSession) || isPending} onClick={() => void postSessionAction("/api/profile/session/start")}>פתיחת משמרת</Button>
-                <Button size="lg" className="min-w-40" disabled={!openSession || isPending} onClick={() => void postSessionAction("/api/profile/session/end")}>סיום משמרת</Button>
-              </div>
-              {openSession ? <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_220px_220px]">
-                <Input value={sessionNote} onChange={(event) => setSessionNote(event.target.value)} placeholder="הערות למשמרת" />
-                <DomainSelect domains={WORK_SESSION_BUSINESS_DOMAINS} value={sessionDomain} onChange={(value) => setSessionDomain(value as ExpenseBusinessDomain)} />
-                <div className="rounded-xl border bg-muted/30 px-3 py-2 text-sm">{`זמן פתיחה: ${formatDateTime(openSession.clock_in)}`}</div>
-              </div> : null}
-              {actionError ? <div className="text-sm text-destructive">{actionError}</div> : null}
-            </CardContent>
-          </Card>
+          {/* No "סטטוס נוכחי" / "שעות החודש" cards up here: the clock card says
+              whether you're in a shift, and the month picker below gives the
+              hours — with the month you actually chose, rather than a card
+              labelled "this month" showing the last month that had any. */}
+          {isWorker ? (
+            <>
+              <MyShiftCard openShift={openShiftReport} pendingCount={pendingShiftReports.length} />
+              {pendingShiftReports.length > 0 ? (
+                <Card>
+                  <CardContent className="space-y-2 py-5 text-right">
+                    <div className="text-lg font-semibold">ממתינות לאישור</div>
+                    <p className="text-sm text-muted-foreground">
+                      משמרת נכנסת לשעות ולשכר רק אחרי שהמנהל מאשר אותה.
+                    </p>
+                    {pendingShiftReports.map((report) => (
+                      <div
+                        key={report.id}
+                        className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 py-2 last:border-b-0"
+                      >
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium">{formatDateTime(report.clock_in)}</div>
+                          {report.notes ? <div className="text-xs text-muted-foreground">{report.notes}</div> : null}
+                        </div>
+                        <div className="text-sm font-semibold">
+                          {report.worked_minutes ? `${formatMinutes(report.worked_minutes)} שעות` : ""}
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              ) : null}
+            </>
+          ) : (
+            <Card>
+              <CardContent className="space-y-4 py-5">
+                <div className="flex flex-wrap justify-center gap-3">
+                  <Button size="lg" className="min-w-40" disabled={Boolean(openSession) || isPending} onClick={() => void postSessionAction("/api/profile/session/start")}>פתיחת משמרת</Button>
+                  <Button size="lg" className="min-w-40" disabled={!openSession || isPending} onClick={() => void postSessionAction("/api/profile/session/end")}>סיום משמרת</Button>
+                </div>
+                {openSession ? <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_220px_220px]">
+                  <Input value={sessionNote} onChange={(event) => setSessionNote(event.target.value)} placeholder="הערות למשמרת" />
+                  <DomainSelect domains={WORK_SESSION_BUSINESS_DOMAINS} value={sessionDomain} onChange={(value) => setSessionDomain(value as ExpenseBusinessDomain)} />
+                  <div className="rounded-xl border bg-muted/30 px-3 py-2 text-sm">{`זמן פתיחה: ${formatDateTime(openSession.clock_in)}`}</div>
+                </div> : null}
+                {actionError ? <div className="text-sm text-destructive">{actionError}</div> : null}
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardContent className="space-y-4 py-5 text-right">
               <div className="flex flex-row-reverse flex-wrap items-center justify-between gap-2">
-                <Button type="button" variant="outline" onClick={openManualEditor}>הוספת משמרת ידנית</Button>
+                {/* Adding / editing / deleting a session outright is the boss's
+                    call for a worker — his shifts arrive through the queue. */}
+                {isWorker ? null : (
+                  <Button type="button" variant="outline" onClick={openManualEditor}>הוספת משמרת ידנית</Button>
+                )}
                 <NativeSelect value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)}>
                   {monthlySummaries.map((summary) => <option key={summary.key} value={summary.key}>{summary.label}</option>)}
                 </NativeSelect>
               </div>
-              {selectedMonthSummary ? <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              {/* Three numbers, one row — even on a phone. Stacked, they were
+                  three full-width cards for three short figures. */}
+              {selectedMonthSummary ? <div className="grid grid-cols-3 gap-2 md:gap-3">
                 <StatCard label='סה"כ שעות' value={formatMinutes(selectedMonthSummary.totalMinutes)} />
                 <StatCard label="כמות משמרות" value={`${selectedMonthSummary.sessionCount}`} />
                 <StatCard label="משמרות פתוחות" value={`${selectedMonthSummary.openSessionCount}`} />
               </div> : <div className="text-sm text-muted-foreground">עדיין אין נתוני שעות.</div>}
               <div className="space-y-3 text-right">
                 {selectedMonthSessions.length === 0 ? <EmptyState dense>אין עדיין משמרות בחודש הזה.</EmptyState> : selectedMonthSessions.map((session) => <div key={session.id} className="rounded-2xl border p-4 text-sm text-right">
-                  <div className="flex flex-row-reverse flex-wrap items-center justify-between gap-2">
+                  {/* One line per fact, each said once. The old row printed the
+                      whole in/out range and then repeated the clock-out under it,
+                      with the two timestamps colliding in RTL so the range read
+                      backwards. Now: the day, the duration beside it, then the
+                      hours as plain HH:MM (forced LTR so "08:30 - 14:00" can't
+                      flip), then domain + payment. */}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="font-medium">{formatDate(session.clock_in)}</div>
                     {showSessionTimingForProfile ? (
-                      <div className="text-base font-semibold">{formatMinutes(sessionWorkedMinutes(session))}</div>
+                      <div className="text-base font-semibold">{formatMinutes(sessionWorkedMinutes(session))} שעות</div>
                     ) : null}
-                    <div className="font-medium">
-                      {showSessionTimingForProfile
-                        ? `${formatDateTime(session.clock_in)} ${session.clock_out ? `- ${formatDateTime(session.clock_out)}` : "- פתוח"}`
-                        : formatDate(session.clock_in)}
-                    </div>
                   </div>
-                  <div className="mt-1 text-muted-foreground">
-                    תחום: {getBusinessDomainLabel(session.business_domain)}
-                    {showSessionTimingForProfile ? ` | יציאה: ${formatDateTime(session.clock_out)}` : ""}
+                  {showSessionTimingForProfile ? (
+                    <div className="mt-1 text-muted-foreground">
+                      <span dir="ltr" className="inline-block">
+                        {formatTimeOnly(session.clock_in)}
+                        {" - "}
+                        {session.clock_out ? formatTimeOnly(session.clock_out) : "…"}
+                      </span>
+                      {session.clock_out ? null : <span className="ms-2">פתוחה</span>}
+                    </div>
+                  ) : null}
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <Badge variant="neutral">{getBusinessDomainLabel(session.business_domain)}</Badge>
+                    {/* Whether this shift has actually been paid, straight from
+                        worker_debt_items_view. */}
+                    {(() => {
+                      const meta = PAY_STATUS_META[payBySessionId[session.id] ?? ""];
+                      return meta ? <Badge variant={meta.variant}>{meta.label}</Badge> : null;
+                    })()}
                   </div>
                   {session.notes ? <div className="mt-2 text-muted-foreground">{session.notes}</div> : null}
-                  <div className="mt-3 flex flex-row-reverse flex-wrap gap-2">
-                    <Button type="button" size="sm" variant="outline" onClick={() => openSessionEditor(session)}>עריכת משמרת</Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="destructive"
-                      disabled={isPending}
-                      onClick={() => setPendingDeleteSessionId(session.id)}
-                    >
-                      <DeleteIcon className="h-4 w-4" />
-                      מחיקה
-                    </Button>
-                  </div>
+                  {isWorker ? null : (
+                    <div className="mt-3 flex flex-row-reverse flex-wrap gap-2">
+                      <Button type="button" size="sm" variant="outline" onClick={() => openSessionEditor(session)}>עריכת משמרת</Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        disabled={isPending}
+                        onClick={() => setPendingDeleteSessionId(session.id)}
+                      >
+                        <DeleteIcon className="h-4 w-4" />
+                        מחיקה
+                      </Button>
+                    </div>
+                  )}
                 </div>)}
               </div>
             </CardContent>
@@ -1101,6 +1219,30 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
             <SummaryCard title="שכר נוכחי" value={currentAgreement ? currentAgreement.salary_type === "hourly" ? `${formatCurrency(currentAgreement.hourly_rate)} לשעה` : formatCurrency(currentAgreement.monthly_salary) : "-"} hint={currentAgreement ? `סוג שכר: ${getSalaryTypeLabel(currentAgreement.salary_type)}` : "אין משכורת פעילה"} />
             <SummaryCard title="תלוש אחרון" value={latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"} hint={latestPeriod ? `${latestPeriod.period_month} • ${getPayrollStatusLabel(latestPeriod.status)}` : "אין תלושים זמינים"} />
           </div>
+
+          {/* The bottom line, across every period: what the work came to, what
+              has been handed over, and what is still open. */}
+          {payTotals ? (
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded-lg border border-border/60 p-3">
+                <div className="text-xs text-muted-foreground">נצבר</div>
+                <div className="text-base font-semibold">{formatCurrency(payTotals.earned)}</div>
+              </div>
+              <div className="rounded-lg border border-border/60 p-3">
+                <div className="text-xs text-muted-foreground">שולם</div>
+                <div className="text-base font-semibold text-success-soft-foreground">
+                  {formatCurrency(payTotals.paid)}
+                </div>
+              </div>
+              <div className="rounded-lg border border-border/60 p-3">
+                <div className="text-xs text-muted-foreground">נותר לתשלום</div>
+                <div className="text-base font-semibold text-warning-soft-foreground">
+                  {formatCurrency(payTotals.owed)}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           <div className="space-y-4">
             <Card>
               <CardContent className="space-y-3 py-5">
@@ -1251,5 +1393,7 @@ function SummaryCard({ title, value, hint }: { title: string; value: string; hin
   return <Card><CardContent className="space-y-1 py-5"><div className="text-sm text-muted-foreground">{title}</div><div className="text-2xl font-semibold">{value}</div><div className="text-xs text-muted-foreground">{hint}</div></CardContent></Card>;
 }
 function StatCard({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-2xl border bg-muted/20 p-4 text-right"><div className="text-sm text-muted-foreground">{label}</div><div className="mt-1 text-xl font-semibold">{value}</div></div>;
+  // Sized to sit three-across on a phone: tighter padding, a label that may wrap
+  // to two lines, and a figure that scales up only once there's room.
+  return <div className="rounded-2xl border bg-muted/20 p-3 text-right md:p-4"><div className="text-xs text-muted-foreground md:text-sm">{label}</div><div className="mt-1 text-base font-semibold md:text-xl">{value}</div></div>;
 }

@@ -32,7 +32,7 @@ export default function ProjectMobileHeader({
     // No bottom margin of its own — the page stack owns the gap below, so the
     // chips sit exactly one card-gap above the first card.
     <div className="md:hidden">
-      <div className="-mx-4 -mt-4 flex items-center justify-between gap-2 px-4 pb-0 pt-3">
+      <div className="-mx-3 -mt-4 flex items-center justify-between gap-2 px-3 pb-0 pt-3">
         <div className="flex flex-wrap items-center gap-2">
           {status ? <StatusBadge value={status} type="project" /> : null}
           <Badge variant="outline">{typeLabel}</Badge>

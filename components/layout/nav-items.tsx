@@ -30,7 +30,7 @@ function writeCachedRole(role: string) {
     // storage full or private mode
   }
 }
-import { ActivityIcon, BankIcon, BuildingIcon, CalendarIcon, CardIcon, CashIcon, ChatIcon, CoinsIcon, DashboardIcon, FolderIcon, HomeIcon, OrderIcon, PaymentIcon, ProjectIcon, ReceiptIcon, ReportIcon, ScheduleIcon, SettingsIcon, TaskIcon, TransferIcon, UsersIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
+import { ActivityIcon, BankIcon, BuildingIcon, CalendarIcon, CardIcon, CashIcon, ChatIcon, CoinsIcon, DashboardIcon, DeliveryIcon, FolderIcon, HomeIcon, OrderIcon, PaymentIcon, ProjectIcon, ReceiptIcon, ReportIcon, ScheduleIcon, SettingsIcon, TaskIcon, TransferIcon, UsersIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
 
 export type SidebarNavItem = {
   title: string;
@@ -112,6 +112,18 @@ const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
 const ADMIN_ONLY_URLS = new Set(["/activity", "/financial", "/settings", "/financial/loans", "/financial/reports", "/financial/bank"]);
 const ADMIN_OR_OFFICE_URLS = new Set<string>(["/payroll", "/collections", "/communications", "/checks", "/financial/statements", "/financial/taxes", "/financial/payments-calendar", "/vehicles"]);
 
+// A worker's whole world — the deliveries he drives, his tasks and his calendar.
+// (His hours and pay are on his profile, reached from the avatar, so they don't
+// need a nav slot of their own.) This is NOT the security boundary — that's the
+// server-side guards in lib/auth/roleAccess.ts, which allow the same prefixes;
+// it just keeps him from being shown doors that would bounce him to /no-access.
+const WORKER_NAV_ITEMS: SidebarNavItem[] = [
+  { title: "דשבורד", url: "/dashboard", icon: DashboardIcon },
+  { title: "משלוחים", url: "/deliveries", icon: DeliveryIcon },
+  { title: "משימות", url: "/tasks", icon: TaskIcon },
+  { title: "יומן", url: "/calendar", icon: CalendarIcon },
+];
+
 function filterByRole(items: SidebarNavItem[], isAdmin: boolean, isOffice: boolean): SidebarNavItem[] {
   return items.flatMap((item) => {
     if (item.children) {
@@ -180,15 +192,22 @@ export function useNavItems(initialRole?: string | null) {
 
   const isAdmin = viewerRole === "admin";
   const isOffice = viewerRole === "office";
+  const isWorker = viewerRole === "worker";
 
   const sidebarItems = useMemo(
-    () => filterByRole(SIDEBAR_ITEMS, isAdmin, isOffice),
-    [isAdmin, isOffice]
+    () => (isWorker ? WORKER_NAV_ITEMS : filterByRole(SIDEBAR_ITEMS, isAdmin, isOffice)),
+    [isAdmin, isOffice, isWorker]
+  );
+  // Three thumb targets + the centre "+", same as everyone else; the fourth
+  // destination ("השעות שלי") sits behind עוד so the bar keeps its shape.
+  const bottomNavItems = useMemo(
+    () => (isWorker ? WORKER_NAV_ITEMS.slice(0, 3) : BOTTOM_NAV_ITEMS),
+    [isWorker]
   );
   const bottomNavMoreItems = useMemo(
-    () => filterByRole(BOTTOM_NAV_MORE_ITEMS, isAdmin, isOffice),
-    [isAdmin, isOffice]
+    () => (isWorker ? WORKER_NAV_ITEMS.slice(3) : filterByRole(BOTTOM_NAV_MORE_ITEMS, isAdmin, isOffice)),
+    [isAdmin, isOffice, isWorker]
   );
 
-  return { sidebarItems, bottomNavItems: BOTTOM_NAV_ITEMS, bottomNavMoreItems };
+  return { sidebarItems, bottomNavItems, bottomNavMoreItems };
 }

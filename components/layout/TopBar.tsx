@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ClockIcon, LogoutIcon, NotificationIcon, UserIcon, WalletIcon } from "@/components/ui/icons";
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
@@ -18,6 +19,7 @@ import { useAlerts } from "@/lib/ui/alerts-store";
 import { BrandMark } from "@/components/ui/brand-mark";
 import { RAIL_WIDTH, useSidebarCollapse } from "@/components/layout/sidebar-collapse-context";
 import { useHeaderAction, usePageTitle } from "@/components/layout/page-title-context";
+import { titleForPath } from "@/lib/ui/route-titles";
 import { cn } from "@/lib/utils";
 
 // The top-bar glyph for the inbox. Most-looked-at icon in the app, so it lives
@@ -39,15 +41,17 @@ const USER_MENU_LINKS: {
   icon: typeof UserIcon;
   gate?: (me: Me | null) => boolean;
 }[] = [
-  { href: "/profile", label: "הפרופיל שלי", icon: UserIcon },
-  { href: "/profile?tab=notifications", label: "הגדרות התראות", icon: NotificationIcon },
+  // Same four words as the tab strip they deep-link into — a menu row that says
+  // "נוכחות ומשמרות" landing on a tab labelled "נוכחות" reads as two features.
+  { href: "/profile", label: "פרופיל", icon: UserIcon },
+  { href: "/profile?tab=notifications", label: "התראות", icon: NotificationIcon },
   {
     href: "/profile?tab=sessions",
-    label: "נוכחות ומשמרות",
+    label: "נוכחות",
     icon: ClockIcon,
     gate: (me) => me?.canTrackSessions === true,
   },
-  { href: "/profile?tab=salary", label: "שכר ותלושים", icon: WalletIcon, gate: (me) => me?.canViewSalary === true },
+  { href: "/profile?tab=salary", label: "משכורת", icon: WalletIcon, gate: (me) => me?.canViewSalary === true },
 ];
 
 type Props = {
@@ -70,7 +74,15 @@ export function TopBar({
   showSearch = true,
 }: Props) {
   const { collapsed } = useSidebarCollapse();
+  // Global search spans customers, projects, orders and money — all staff-only
+  // for a worker, so the box would only ever return doors he can't open.
+  const showGlobalSearch = showSearch && viewerRole !== "worker";
   const pageTitle = usePageTitle();
+  const pathname = usePathname();
+  // The page's own heading wins (it's the one that can carry a live subtitle);
+  // otherwise fall back to the route's name so no screen is ever nameless.
+  const fallbackTitle = titleForPath(pathname);
+  const headerTitle = pageTitle ?? (fallbackTitle ? { title: fallbackTitle, subtitle: undefined } : null);
   const headerAction = useHeaderAction();
   const { alerts, count, loading: alertsLoading, error: alertsError } = useAlerts();
 
@@ -189,27 +201,28 @@ export function TopBar({
       {pageTitle?.action ?? headerAction ? (
         <div className="shrink-0">{pageTitle?.action ?? headerAction}</div>
       ) : null}
-      {showSearch ? (
+      {showGlobalSearch ? (
         // Fixed width, not flex-1: a `flex-1 basis-0` box would fight the spacer
         // below it and collapse.
         <GlobalSearch desktopOnly className="w-[20rem] max-w-[30vw] flex-none" />
       ) : null}
       {/* Mobile: the bar says WHERE YOU ARE. There's no sidebar on a phone, so
-          without this the header is an anonymous row of icons. Pages declare it
-          via useSetPageTitle(); when none is set the space just stays empty and
-          the search fills it as before. */}
-      {pageTitle ? (
+          without this the header is an anonymous row of icons. A page can declare
+          its own heading via useSetPageTitle() (that's how it gets a live
+          subtitle); everything else falls back to the route's name, so no screen
+          is ever nameless. */}
+      {headerTitle ? (
         <div className="flex min-w-0 flex-1 flex-col items-center justify-center text-center leading-tight lg:hidden">
-          <span className="w-full truncate text-[17px] font-semibold text-white">{pageTitle.title}</span>
-          {pageTitle.subtitle ? (
+          <span className="w-full text-[17px] font-semibold text-white">{headerTitle.title}</span>
+          {headerTitle.subtitle ? (
             // Wraps to a second line instead of clipping — record names live here
             // (e.g. a project's name) and half a name reads as a bug.
             <span className="line-clamp-2 w-full break-words text-[12px] leading-tight text-sidebar-foreground/70">
-              {pageTitle.subtitle}
+              {headerTitle.subtitle}
             </span>
           ) : null}
         </div>
-      ) : showSearch ? (
+      ) : showGlobalSearch ? (
         <GlobalSearch mobileOnly className="min-w-0 flex-1" />
       ) : null}
 
@@ -219,6 +232,10 @@ export function TopBar({
       <div className="hidden flex-1 lg:block" />
 
       <div className="flex items-center gap-1">
+        {/* The title now owns the middle slot on mobile, so search moves here as
+            a glyph rather than disappearing from phones entirely. */}
+        {showGlobalSearch && headerTitle ? <GlobalSearch mobileOnly iconOnly /> : null}
+
         {/* Desktop only — on mobile the bottom nav's centre + is the quick-create,
             and two of them in one screen is one too many. There's no bottom nav
             from md up, so this stays the only door to it there. */}

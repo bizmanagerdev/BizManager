@@ -1,4 +1,4 @@
-﻿import { requireProfile } from "@/lib/auth/requireProfile";
+﻿import { requireStaffPage } from "@/lib/auth/roleAccess";
 import AppShell from "@/components/layout/AppShell";
 import ProjectsClient from "@/app/(app)/projects/ProjectsClient";
 import {
@@ -50,7 +50,7 @@ export default async function ProjectsPage({
   const sort = parseSort(params.sort, view);
   const searchQuery = typeof params.q === "string" ? params.q.trim() : "";
 
-  const { profile, supabase } = await requireProfile();
+  const { profile, supabase } = await requireStaffPage();
 
   const filters = { view, status: statusFilter, customerId, sort, q: searchQuery };
 

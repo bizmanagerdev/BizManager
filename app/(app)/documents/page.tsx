@@ -1,5 +1,5 @@
 import AppShell from "@/components/layout/AppShell";
-import { requireProfile } from "@/lib/auth/requireProfile";
+import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { resolveUserDisplayNamesForValues } from "@/lib/audit";
 import { isExpenseBusinessDomain, mapProjectTypeToExpenseDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
 import DocumentsArchiveClient, {
@@ -154,7 +154,7 @@ export default async function DocumentsPage({
   searchParams?: Promise<DocumentsSearchParams>;
 }) {
   const params = (await searchParams) ?? {};
-  const { profile, supabase } = await requireProfile();
+  const { profile, supabase } = await requireStaffPage();
 
   const { data: documentsRaw, error: documentsError, count } = await supabase
     .from("documents")

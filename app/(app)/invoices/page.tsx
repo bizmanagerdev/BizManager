@@ -1,8 +1,8 @@
 import AppShell from "@/components/layout/AppShell";
-import { requireProfile } from "@/lib/auth/requireProfile";
+import { requireStaffPage } from "@/lib/auth/roleAccess";
 
 export default async function InvoicesPage() {
-  const { profile } = await requireProfile();
+  const { profile } = await requireStaffPage();
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>

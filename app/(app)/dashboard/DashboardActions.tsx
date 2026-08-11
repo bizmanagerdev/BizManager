@@ -17,9 +17,11 @@ import type { UserRole } from "@/lib/auth/requireProfile";
 import { type SalaryAgreementRow } from "@/lib/payroll";
 import type { WorkerDebtItemRow } from "@/lib/payroll-center";
 import {
+  normalizePayrollWorkerType,
   payrollWorkerTypeAllowsSessions,
   type PayrollWorkerType,
 } from "@/lib/payroll-worker-type";
+import { AttendanceLogDialog } from "@/components/attendance/AttendanceLogDialog";
 import { getTodayDate, nowLocal } from "./DashboardActions.helpers";
 import { buildWeekView } from "@/lib/dashboard/week";
 import { QUICK_TILE_CLASS, QuickTileContent } from "@/components/ui/quick-tile";
@@ -114,6 +116,7 @@ export default function DashboardActions({
   const [incomeOpen, setIncomeOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
   const [manualSessionOpen, setManualSessionOpen] = useState(false);
+  const [attendanceLogOpen, setAttendanceLogOpen] = useState(false);
   const [availableUsers, setAvailableUsers] = useState(users);
   // The dropdown data may stream in AFTER the buttons first render (so the
   // quick-action buttons appear instantly and dialogs fill in a moment later).
@@ -189,6 +192,22 @@ export default function DashboardActions({
   const weeklyBuckets = weekView.days;
   const weeklyEntryCount = weekView.totalCount;
   const canManageWorkerSessions = currentUserRole === "admin" || currentUserRole === "office";
+  // A worker's dashboard offers only what he can actually finish: the delivery
+  // run, his week, and a task. Creating an order / project / customer / money
+  // row all end on screens he can't open (lib/auth/roleAccess.ts).
+  const isWorker = currentUserRole === "worker";
+  // Workers eligible for phone-attendance logging (session-logging types).
+  const attendanceWorkers = useMemo(
+    () =>
+      users
+        .filter(
+          (u) =>
+            (u.role === "worker" || u.role === "worker_no_access") &&
+            payrollWorkerTypeAllowsSessions(normalizePayrollWorkerType(u.payroll_worker_type, u.pay_tracking_mode))
+        )
+        .map((u) => ({ id: u.id, label: u.label })),
+    [users]
+  );
   // Same gate as the accounts table's RLS: only admin/office move money between
   // our own accounts.
   const canTransferFunds = currentUserRole === "admin" || currentUserRole === "office";
@@ -275,8 +294,11 @@ export default function DashboardActions({
   const currentUserWorkerType = currentUserId
     ? availableUsers.find((u) => u.id === currentUserId)?.payroll_worker_type ?? null
     : null;
+  // A worker gets the shift card at the top of his dashboard instead — that one
+  // goes through the approval queue, while this tile writes a session directly
+  // (an admin/office-only endpoint that would 403 him anyway).
   const canStartOwnSession =
-    currentUserWorkerType != null && payrollWorkerTypeAllowsSessions(currentUserWorkerType);
+    !isWorker && currentUserWorkerType != null && payrollWorkerTypeAllowsSessions(currentUserWorkerType);
 
   async function startOwnSession() {
     if (!currentUserId || currentOpenSession?.id || selfSessionSubmitting) return;
@@ -414,14 +436,16 @@ export default function DashboardActions({
   return (
     <>
       <AdaptiveGrid variant="quickActions">
-        <Button
-          type="button"
-          variant="outline"
-          className={QUICK_TILE_CLASS}
-          onClick={() => setWeekOverviewOpen(true)}
-        >
-          <QuickTileContent icon={ProjectIcon} label={HEBREW.thisWeek} />
-        </Button>
+        {!isWorker ? (
+          <Button
+            type="button"
+            variant="outline"
+            className={QUICK_TILE_CLASS}
+            onClick={() => setWeekOverviewOpen(true)}
+          >
+            <QuickTileContent icon={ProjectIcon} label={HEBREW.thisWeek} />
+          </Button>
+        ) : null}
 
         <Button
           type="button"
@@ -429,50 +453,58 @@ export default function DashboardActions({
           className={QUICK_TILE_CLASS}
           onClick={() => {
             emitNavigationStart();
-            router.push("/sales?tab=deliveries");
+            router.push(isWorker ? "/deliveries" : "/sales?tab=deliveries");
           }}
         >
           <QuickTileContent icon={OrderIcon} label={HEBREW.ordersByCity} />
         </Button>
 
-        <Button
-          type="button"
-          variant="outline"
-          className={QUICK_TILE_CLASS}
-          onClick={() => setProjectOpen(true)}
-        >
-          <QuickTileContent icon={ProjectIcon} label={HEBREW.projectNew} />
-        </Button>
+        {!isWorker ? (
+          <Button
+            type="button"
+            variant="outline"
+            className={QUICK_TILE_CLASS}
+            onClick={() => setProjectOpen(true)}
+          >
+            <QuickTileContent icon={ProjectIcon} label={HEBREW.projectNew} />
+          </Button>
+        ) : null}
 
-        <Button
-          type="button"
-          variant="outline"
-          className={QUICK_TILE_CLASS}
-          onClick={() => {
-            setOrderActionLocked(false);
-            setOrderOpen(true);
-          }}
-        >
-          <QuickTileContent icon={OrderIcon} label={HEBREW.orderNew} />
-        </Button>
+        {!isWorker ? (
+          <Button
+            type="button"
+            variant="outline"
+            className={QUICK_TILE_CLASS}
+            onClick={() => {
+              setOrderActionLocked(false);
+              setOrderOpen(true);
+            }}
+          >
+            <QuickTileContent icon={OrderIcon} label={HEBREW.orderNew} />
+          </Button>
+        ) : null}
 
-        <Button
-          type="button"
-          variant="outline"
-          className={QUICK_TILE_CLASS}
-          onClick={() => setExpenseOpen(true)}
-        >
-          <QuickTileContent icon={ExpenseIcon} label={HEBREW.expenseNew} tone="expense" />
-        </Button>
+        {!isWorker ? (
+          <Button
+            type="button"
+            variant="outline"
+            className={QUICK_TILE_CLASS}
+            onClick={() => setExpenseOpen(true)}
+          >
+            <QuickTileContent icon={ExpenseIcon} label={HEBREW.expenseNew} tone="expense" />
+          </Button>
+        ) : null}
 
-        <Button
-          type="button"
-          variant="outline"
-          className={QUICK_TILE_CLASS}
-          onClick={() => setIncomeOpen(true)}
-        >
-          <QuickTileContent icon={IncomeIcon} label={HEBREW.incomeNew} tone="income" />
-        </Button>
+        {!isWorker ? (
+          <Button
+            type="button"
+            variant="outline"
+            className={QUICK_TILE_CLASS}
+            onClick={() => setIncomeOpen(true)}
+          >
+            <QuickTileContent icon={IncomeIcon} label={HEBREW.incomeNew} tone="income" />
+          </Button>
+        ) : null}
 
         {canTransferFunds ? (
           <Button
@@ -487,14 +519,16 @@ export default function DashboardActions({
           </Button>
         ) : null}
 
-        <Button
-          type="button"
-          variant="outline"
-          className={QUICK_TILE_CLASS}
-          onClick={() => setCreateCustomerOpen(true)}
-        >
-          <QuickTileContent icon={AddUserIcon} label="לקוח חדש" />
-        </Button>
+        {!isWorker ? (
+          <Button
+            type="button"
+            variant="outline"
+            className={QUICK_TILE_CLASS}
+            onClick={() => setCreateCustomerOpen(true)}
+          >
+            <QuickTileContent icon={AddUserIcon} label="לקוח חדש" />
+          </Button>
+        ) : null}
 
         <Button
           type="button"
@@ -525,6 +559,17 @@ export default function DashboardActions({
             onClick={() => setManualSessionOpen(true)}
           >
             <QuickTileContent icon={ClockIcon} label={HEBREW.manualSessionNew} />
+          </Button>
+        ) : null}
+
+        {canManageWorkerSessions ? (
+          <Button
+            type="button"
+            variant="outline"
+            className={QUICK_TILE_CLASS}
+            onClick={() => setAttendanceLogOpen(true)}
+          >
+            <QuickTileContent icon={AddUserIcon} label="החתמת נוכחות" />
           </Button>
         ) : null}
 
@@ -570,6 +615,13 @@ export default function DashboardActions({
           router.refresh();
           toast.success(msg);
         }}
+      />
+
+      <AttendanceLogDialog
+        open={attendanceLogOpen}
+        onOpenChange={setAttendanceLogOpen}
+        workers={attendanceWorkers}
+        onSaved={() => router.refresh()}
       />
 
       <WorkerPaymentDialog

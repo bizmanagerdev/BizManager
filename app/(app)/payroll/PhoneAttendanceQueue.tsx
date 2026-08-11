@@ -14,12 +14,14 @@ import { DomainSelect } from "@/components/financial/DomainSelect";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DateTimeInput } from "@/components/ui/date-input";
+import { AttendanceLogDialog } from "@/components/attendance/AttendanceLogDialog";
 import { WORK_SESSION_BUSINESS_DOMAINS } from "@/lib/expenses";
 import { formatCurrency, formatMinutes, minutesBetween } from "@/lib/payroll";
-import { formatShortDateTime } from "@/lib/date";
+import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
 import type { OpenPhoneReport, PendingPhoneReport } from "@/lib/attendance/phone-reports";
+import { attendanceSourceLabel } from "@/lib/attendance/my-shift";
 import type { SalaryCenterProjectOption } from "@/lib/payroll-center";
 
 export type AttendanceWorker = { id: string; name: string | null; phone: string | null };
@@ -37,9 +39,36 @@ function hebrewWeekday(iso: string) {
   return new Intl.DateTimeFormat("he-IL", { weekday: "long", timeZone: "Asia/Jerusalem" }).format(new Date(iso));
 }
 
+/** "08:21" — just the time, in Israel time. */
+function timeOnly(iso: string) {
+  return new Intl.DateTimeFormat("he-IL", { timeZone: "Asia/Jerusalem", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(iso));
+}
+
+/** Compact shift range: same day → "10/08/26 · 08:21 — 11:22"; else full datetimes. */
+function shiftRangeText(clockIn: string, clockOut: string) {
+  if (formatShortDate(clockIn) === formatShortDate(clockOut)) {
+    return `${formatShortDate(clockIn)} · ${timeOnly(clockIn)} — ${timeOnly(clockOut)}`;
+  }
+  return `${formatShortDateTime(clockIn)} — ${formatShortDateTime(clockOut)}`;
+}
+
+/** The origin tag, plus a worker note only when it actually adds information beyond the origin. */
+function attendanceMeta(source: string, notes: string | null) {
+  const label = attendanceSourceLabel(source);
+  return notes && notes !== label ? `${label} · ${notes}` : label;
+}
+
 /** Current local time as a datetime-local value ("YYYY-MM-DDTHH:mm") for DateTimeInput defaults. */
 function nowLocal() {
   const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** An ISO timestamp as a local datetime-local value, to prefill an editor with an existing time. */
+function isoToLocal(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
@@ -51,7 +80,9 @@ function nowLocal() {
  */
 export default function PhoneAttendanceQueue({ pending, open, workers, projectOptions, propertyOptions }: Props) {
   const [expanded, setExpanded] = useState(false);
-  const [manualOpen, setManualOpen] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
+  // Same dialog as the dashboard's "החתמת נוכחות" quick action.
+  const dialogWorkers = useMemo(() => workers.map((w) => ({ id: w.id, label: w.name ?? "עובד" })), [workers]);
 
   return (
     <div className="overflow-hidden rounded-lg border border-secondary/30 bg-secondary/5">
@@ -74,11 +105,8 @@ export default function PhoneAttendanceQueue({ pending, open, workers, projectOp
         </button>
         <button
           type="button"
-          onClick={() => {
-            setExpanded(true);
-            setManualOpen(true);
-          }}
-          aria-label="הוספת משמרת ידנית"
+          onClick={() => setLogOpen(true)}
+          aria-label="החתמת נוכחות"
           className="border-r border-secondary/20 px-3 py-2 text-secondary"
         >
           <AddIcon className="h-5 w-5" />
@@ -87,8 +115,6 @@ export default function PhoneAttendanceQueue({ pending, open, workers, projectOp
 
       {expanded ? (
         <div className="space-y-4 border-t border-secondary/20 bg-background p-3">
-          {manualOpen ? <ManualEntryForm workers={workers} onDone={() => setManualOpen(false)} /> : null}
-
           {open.length > 0 ? (
             <section className="space-y-2">
               <h3 className="text-xs font-semibold text-muted-foreground">נוכחים כעת</h3>
@@ -110,90 +136,13 @@ export default function PhoneAttendanceQueue({ pending, open, workers, projectOp
             </section>
           ) : null}
 
-          {pending.length === 0 && open.length === 0 && !manualOpen ? (
-            <p className="text-sm text-muted-foreground">אין דיווחי נוכחות. אפשר להוסיף משמרת ידנית עם +.</p>
+          {pending.length === 0 && open.length === 0 ? (
+            <p className="text-sm text-muted-foreground">אין דיווחי נוכחות. אפשר להחתים נוכחות עם +.</p>
           ) : null}
         </div>
       ) : null}
-    </div>
-  );
-}
 
-/** Manually open a shift for a worker, or record a whole completed shift into the pending queue. */
-function ManualEntryForm({ workers, onDone }: { workers: AttendanceWorker[]; onDone: () => void }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [workerId, setWorkerId] = useState("");
-  const [startLocal, setStartLocal] = useState(() => nowLocal());
-  const [endLocal, setEndLocal] = useState("");
-  const [error, setError] = useState("");
-
-  const workerOptions = useMemo(
-    () => workers.map((w) => ({ value: w.id, label: w.name ?? "עובד", hint: w.phone ?? undefined })),
-    [workers]
-  );
-
-  function submit() {
-    setError("");
-    if (!workerId) return setError("יש לבחור עובד.");
-    const clockIn = new Date(startLocal);
-    if (!startLocal || Number.isNaN(clockIn.getTime())) return setError("שעת כניסה אינה תקינה.");
-    let clockOutIso: string | null = null;
-    if (endLocal) {
-      const clockOut = new Date(endLocal);
-      if (Number.isNaN(clockOut.getTime())) return setError("שעת יציאה אינה תקינה.");
-      if (clockOut <= clockIn) return setError("שעת היציאה חייבת להיות אחרי הכניסה.");
-      clockOutIso = clockOut.toISOString();
-    }
-
-    startTransition(async () => {
-      try {
-        const response = await fetch("/api/attendance/phone-reports/manual", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ user_id: workerId, clock_in: clockIn.toISOString(), clock_out: clockOutIso }),
-        });
-        const json = (await response.json().catch(() => ({}))) as { error?: string };
-        if (!response.ok) return setError(toHebrewError(json.error, "ההוספה נכשלה."));
-        toast.success(clockOutIso ? "המשמרת נוספה וממתינה לאישור." : "נפתחה משמרת לעובד.");
-        onDone();
-        router.refresh();
-      } catch (err: unknown) {
-        setError(toHebrewError(err, "ההוספה נכשלה."));
-      }
-    });
-  }
-
-  return (
-    <div className="space-y-2 rounded-lg border border-secondary/30 bg-secondary/5 p-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold">הוספת משמרת ידנית</h3>
-        <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={onDone} aria-label="סגירה">
-          <CloseIcon className="h-4 w-4" />
-        </Button>
-      </div>
-      <div className="grid gap-2 sm:grid-cols-2">
-        <SearchableSelect options={workerOptions} value={workerId} onChange={setWorkerId} placeholder="בחירת עובד" ariaLabel="עובד" />
-        <div className="grid grid-cols-2 gap-2">
-          <label className="space-y-1">
-            <span className="text-xs text-muted-foreground">כניסה</span>
-            <DateTimeInput value={startLocal} onChange={(e) => setStartLocal(e.target.value)} />
-          </label>
-          <label className="space-y-1">
-            <span className="text-xs text-muted-foreground">יציאה (לא חובה)</span>
-            <DateTimeInput value={endLocal} onChange={(e) => setEndLocal(e.target.value)} />
-          </label>
-        </div>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        השאירו את שדה היציאה ריק כדי לפתוח משמרת פעילה. מלאו את שתיהן כדי לרשום משמרת שהסתיימה — היא תמתין לשיוך תחום ואישור.
-      </p>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      <div className="flex justify-end">
-        <Button type="button" onClick={submit} disabled={isPending}>
-          {isPending ? "..." : "הוספה"}
-        </Button>
-      </div>
+      <AttendanceLogDialog open={logOpen} onOpenChange={setLogOpen} workers={dialogWorkers} />
     </div>
   );
 }
@@ -204,8 +153,34 @@ function OpenRow({ report }: { report: OpenPhoneReport }) {
   const [isPending, startTransition] = useTransition();
   const [closing, setClosing] = useState(false);
   const [closeLocal, setCloseLocal] = useState(() => nowLocal());
+  const [editing, setEditing] = useState(false);
+  const [entryLocal, setEntryLocal] = useState(() => isoToLocal(report.clock_in));
   const [error, setError] = useState("");
   const elapsed = minutesBetween(report.clock_in, new Date());
+
+  function saveEntry() {
+    setError("");
+    const clockIn = new Date(entryLocal);
+    if (!entryLocal || Number.isNaN(clockIn.getTime())) return setError("שעת כניסה אינה תקינה.");
+    if (clockIn.getTime() > Date.now() + 60_000) return setError("שעת הכניסה לא יכולה להיות בעתיד.");
+
+    startTransition(async () => {
+      try {
+        const response = await fetch("/api/attendance/phone-reports/update-entry", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ report_id: report.id, clock_in: clockIn.toISOString() }),
+        });
+        const json = (await response.json().catch(() => ({}))) as { error?: string };
+        if (!response.ok) return setError(toHebrewError(json.error, "עדכון שעת הכניסה נכשל."));
+        toast.success("שעת הכניסה עודכנה.");
+        setEditing(false);
+        router.refresh();
+      } catch (err: unknown) {
+        setError(toHebrewError(err, "עדכון שעת הכניסה נכשל."));
+      }
+    });
+  }
 
   function closeShift() {
     setError("");
@@ -242,16 +217,38 @@ function OpenRow({ report }: { report: OpenPhoneReport }) {
           <div className="mt-0.5 text-sm text-muted-foreground">
             <span className="font-medium text-foreground">{hebrewWeekday(report.clock_in)}</span> · נכנס {formatShortDateTime(report.clock_in)}
           </div>
+          <div className="mt-0.5 text-xs text-muted-foreground">{attendanceMeta(report.source, report.notes)}</div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="whitespace-nowrap text-sm font-medium text-muted-foreground">כבר {formatMinutes(elapsed)} ש׳</span>
-          {!closing ? (
-            <Button type="button" variant="secondary" size="sm" onClick={() => { setCloseLocal(nowLocal()); setClosing(true); }}>
-              סגירת משמרת
-            </Button>
+          {!closing && !editing ? (
+            <>
+              <Button type="button" variant="secondary" size="sm" onClick={() => { setEntryLocal(isoToLocal(report.clock_in)); setError(""); setEditing(true); }}>
+                עריכת כניסה
+              </Button>
+              <Button type="button" variant="secondary" size="sm" onClick={() => { setCloseLocal(nowLocal()); setError(""); setClosing(true); }}>
+                סגירת משמרת
+              </Button>
+            </>
           ) : null}
         </div>
       </div>
+
+      {editing ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
+          <span className="text-sm text-muted-foreground">שעת כניסה:</span>
+          <div className="w-44">
+            <DateTimeInput value={entryLocal} onChange={(e) => setEntryLocal(e.target.value)} />
+          </div>
+          <Button type="button" size="sm" onClick={saveEntry} disabled={isPending}>
+            {isPending ? "..." : "שמור"}
+          </Button>
+          <Button type="button" variant="secondary" size="sm" onClick={() => setEditing(false)} disabled={isPending}>
+            ביטול
+          </Button>
+          {error ? <span className="text-sm text-destructive">{error}</span> : null}
+        </div>
+      ) : null}
 
       {closing ? (
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
@@ -400,7 +397,7 @@ function ReportCard({
 
   return (
     <div className="rounded-lg border border-border bg-card p-3 shadow-sm">
-      {/* Header: worker + duration */}
+      {/* Header: worker + duration/cost */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <span className="font-semibold">{report.worker_name ?? "עובד לא ידוע"}</span>
@@ -419,8 +416,9 @@ function ReportCard({
         </div>
       </div>
       <div className="mt-0.5 text-sm text-muted-foreground">
-        <span className="font-medium text-foreground">{weekday}</span> · {formatShortDateTime(report.clock_in)} — {formatShortDateTime(report.clock_out)}
+        <span className="font-medium text-foreground">{weekday}</span> · {shiftRangeText(report.clock_in, report.clock_out)}
       </div>
+      <div className="mt-0.5 text-xs text-muted-foreground">{attendanceMeta(report.source, report.notes)}</div>
 
       {/* Classification */}
       <div className="mt-3 space-y-2">

@@ -6,7 +6,7 @@ import { ContactLink } from "@/components/ui/contact-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CustomerDeliveryDetails } from "./CustomerDeliveryDetails";
-import { requireProfile } from "@/lib/auth/requireProfile";
+import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { pinFrom } from "@/lib/delivery-location";
 import { whatsappHref } from "@/lib/whatsapp";
 import { formatRelativeDateLabel, formatShortDate } from "@/lib/date";
@@ -152,7 +152,7 @@ export default async function CustomerDetailsPage({
   const { id } = await params;
   const query = (await searchParams) ?? {};
   const returnPage = parsePage(query.return_page);
-  const { profile, supabase } = await requireProfile();
+  const { profile, supabase } = await requireStaffPage();
 
   const [
     { data: customer },

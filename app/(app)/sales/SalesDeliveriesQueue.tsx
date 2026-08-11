@@ -123,6 +123,7 @@ export default function SalesDeliveriesQueue({
   regionLinks,
   totalCount,
   customerId = null,
+  canOpenOrder = true,
 }: {
   initialDeliveries: DeliveryItem[];
   initialHasMore?: boolean;
@@ -130,6 +131,13 @@ export default function SalesDeliveriesQueue({
   regionLinks: RegionLink[];
   totalCount: number;
   customerId?: string | null;
+  /**
+   * Whether the viewer may open the full order screen. False for a worker —
+   * /sales is staff-only, so the link would bounce him to /no-access. He still
+   * gets everything the drive needs: the item list, navigation, share, and
+   * "סמן כסופק" (which collects payment too).
+   */
+  canOpenOrder?: boolean;
 }) {
   // Fetch-from-DB-as-you-scroll: accumulate delivery pages, then group region →
   // city → customer over everything loaded so far (no "next page" button).
@@ -290,6 +298,10 @@ export default function SalesDeliveriesQueue({
                         return (
                           <tr
                             key={delivery.id}
+                            // Lets ?focus=<order id> scroll to this delivery and
+                            // flash it (components/layout/FocusHighlighter.tsx) —
+                            // that's how the dashboard widget links through.
+                            data-focus-id={delivery.id}
                             className={`align-top ${unpaidPrepayment ? PREPAYMENT_ROW_CLASSES : ""}`}
                           >
                             <td className="px-4 py-3">
@@ -356,13 +368,19 @@ export default function SalesDeliveriesQueue({
                                   );
                                 })}
                                 {delivery.items.length > DELIVERY_ITEMS_LIMIT ? (
-                                  <Link
-                                    href={`/sales/orders/${delivery.id}`}
-                                    onClick={() => emitNavigationStart()}
-                                    className="inline-flex items-center whitespace-nowrap rounded-md border border-dashed border-border/60 px-2 py-0.5 text-muted-foreground hover:text-foreground"
-                                  >
-                                    +{delivery.items.length - DELIVERY_ITEMS_LIMIT} נוספים
-                                  </Link>
+                                  canOpenOrder ? (
+                                    <Link
+                                      href={`/sales/orders/${delivery.id}`}
+                                      onClick={() => emitNavigationStart()}
+                                      className="inline-flex items-center whitespace-nowrap rounded-md border border-dashed border-border/60 px-2 py-0.5 text-muted-foreground hover:text-foreground"
+                                    >
+                                      +{delivery.items.length - DELIVERY_ITEMS_LIMIT} נוספים
+                                    </Link>
+                                  ) : (
+                                    <span className="inline-flex items-center whitespace-nowrap rounded-md border border-dashed border-border/60 px-2 py-0.5 text-muted-foreground">
+                                      +{delivery.items.length - DELIVERY_ITEMS_LIMIT} נוספים
+                                    </span>
+                                  )
                                 ) : null}
                               </div>
                             </td>
@@ -398,18 +416,20 @@ export default function SalesDeliveriesQueue({
                                   label=""
                                   className="h-9 w-9 shrink-0 p-0"
                                 />
-                                <Button
-                                  asChild
-                                  type="button"
-                                  variant="secondary"
-                                  size="icon-sm"
-                                  aria-label="פרטי ההזמנה"
-                                  onClick={() => emitNavigationStart()}
-                                >
-                                  <Link href={`/sales/orders/${delivery.id}`}>
-                                    <ShowIcon className="h-4 w-4" />
-                                  </Link>
-                                </Button>
+                                {canOpenOrder ? (
+                                  <Button
+                                    asChild
+                                    type="button"
+                                    variant="secondary"
+                                    size="icon-sm"
+                                    aria-label="פרטי ההזמנה"
+                                    onClick={() => emitNavigationStart()}
+                                  >
+                                    <Link href={`/sales/orders/${delivery.id}`}>
+                                      <ShowIcon className="h-4 w-4" />
+                                    </Link>
+                                  </Button>
+                                ) : null}
                                 <OrderConfirmDialog
                                   orderId={delivery.id}
                                   customerName={delivery.customerName}
@@ -577,6 +597,7 @@ export default function SalesDeliveriesQueue({
                                 return (
                                 <div
                                   key={delivery.id}
+                                  data-focus-id={delivery.id}
                                   title={delivery.notes ?? undefined}
                                   className={`divide-y divide-border/60 border-t border-border/60 ${
                                     unpaidPrepayment ? PREPAYMENT_ROW_CLASSES : ""
@@ -649,13 +670,19 @@ export default function SalesDeliveriesQueue({
                                         );
                                       })}
                                       {delivery.items.length > DELIVERY_ITEMS_LIMIT ? (
-                                        <Link
-                                          href={`/sales/orders/${delivery.id}`}
-                                          onClick={() => emitNavigationStart()}
-                                          className="inline-flex items-center whitespace-nowrap rounded-md border border-dashed border-border/60 px-2 py-0.5 text-muted-foreground hover:text-foreground"
-                                        >
-                                          +{delivery.items.length - DELIVERY_ITEMS_LIMIT} נוספים
-                                        </Link>
+                                        canOpenOrder ? (
+                                          <Link
+                                            href={`/sales/orders/${delivery.id}`}
+                                            onClick={() => emitNavigationStart()}
+                                            className="inline-flex items-center whitespace-nowrap rounded-md border border-dashed border-border/60 px-2 py-0.5 text-muted-foreground hover:text-foreground"
+                                          >
+                                            +{delivery.items.length - DELIVERY_ITEMS_LIMIT} נוספים
+                                          </Link>
+                                        ) : (
+                                          <span className="inline-flex items-center whitespace-nowrap rounded-md border border-dashed border-border/60 px-2 py-0.5 text-muted-foreground">
+                                            +{delivery.items.length - DELIVERY_ITEMS_LIMIT} נוספים
+                                          </span>
+                                        )
                                       ) : null}
                                     </div>
                                   ) : null}
@@ -671,18 +698,20 @@ export default function SalesDeliveriesQueue({
                                       label=""
                                       className="h-9 w-9 shrink-0 p-0"
                                     />
-                                    <Button
-                                      asChild
-                                      type="button"
-                                      variant="secondary"
-                                      size="icon-sm"
-                                      aria-label="פרטי ההזמנה"
-                                      onClick={() => emitNavigationStart()}
-                                    >
-                                      <Link href={`/sales/orders/${delivery.id}`}>
-                                        <ShowIcon className="h-4 w-4" />
-                                      </Link>
-                                    </Button>
+                                    {canOpenOrder ? (
+                                      <Button
+                                        asChild
+                                        type="button"
+                                        variant="secondary"
+                                        size="icon-sm"
+                                        aria-label="פרטי ההזמנה"
+                                        onClick={() => emitNavigationStart()}
+                                      >
+                                        <Link href={`/sales/orders/${delivery.id}`}>
+                                          <ShowIcon className="h-4 w-4" />
+                                        </Link>
+                                      </Button>
+                                    ) : null}
                                     <OrderConfirmDialog
                                       orderId={delivery.id}
                                       customerName={delivery.customerName}

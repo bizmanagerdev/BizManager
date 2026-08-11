@@ -18,6 +18,12 @@ type Props = {
   className?: string;
   desktopOnly?: boolean;
   mobileOnly?: boolean;
+  /**
+   * Render the mobile trigger as a single glyph in the icon cluster instead of a
+   * full-width bar. Used when the header's middle slot is taken by the page
+   * title — search stays one tap away rather than disappearing on a phone.
+   */
+  iconOnly?: boolean;
 };
 
 function translateSearchMetaItem(value: string) {
@@ -151,7 +157,7 @@ function SearchResults({
   );
 }
 
-export function GlobalSearch({ className, desktopOnly = false, mobileOnly = false }: Props) {
+export function GlobalSearch({ className, desktopOnly = false, mobileOnly = false, iconOnly = false }: Props) {
   const router = useRouter();
   const { search: searchCustomers } = useCustomerSearchIndex();
   const desktopRef = useRef<HTMLDivElement | null>(null);
@@ -304,18 +310,24 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
       {!desktopOnly ? (
         // A real search BAR on mobile, not a lone glyph — it reads as "type here".
         // Tapping it opens the full-screen dialog below, which is a far better
-        // place for results on a phone than an inline dropdown would be.
+        // place for results on a phone than an inline dropdown would be. The bar
+        // needs the header's middle slot, so when the page title has taken that
+        // (iconOnly) it falls back to a glyph in the icon cluster.
         <Button
           variant="ghost"
+          size={iconOnly ? "icon-sm" : undefined}
+          aria-label={iconOnly ? "חיפוש" : undefined}
           className={cn(
-            "h-10 w-full justify-start gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-3 font-normal text-sidebar-foreground/60 shadow-none hover:bg-white/[0.1] hover:text-sidebar-foreground lg:hidden",
+            iconOnly
+              ? "shrink-0 text-sidebar-foreground/70 hover:text-sidebar-foreground lg:hidden"
+              : "h-10 w-full justify-start gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-3 font-normal text-sidebar-foreground/60 shadow-none hover:bg-white/[0.1] hover:text-sidebar-foreground lg:hidden",
             className
           )}
           type="button"
           onClick={() => setMobileOpen(true)}
         >
           <SearchIcon className="h-4 w-4 shrink-0" />
-          <span className="truncate">חיפוש...</span>
+          {iconOnly ? null : <span>חיפוש...</span>}
         </Button>
       ) : null}
 

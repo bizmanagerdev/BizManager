@@ -13,15 +13,26 @@ import { PHONE_ATTENDANCE_TABLE } from "@/lib/attendance/phone-reports";
  *
  *  - clock_in only  → an OPEN shift (worker is present now / from the given time).
  *  - clock_in + out → a completed shift that goes straight to pending_review.
+ *
+ * Open to WORKERS too, not just the office: the foreman on site is the one who
+ * knows who turned up. He can file for any worker, and it still only ever lands
+ * in the queue — the RLS policies in 20260811010000 hold that line at the
+ * database, so this route can't be the only thing standing in the way. What he
+ * files is stamped with his name, because "who signed this person in" is the
+ * first thing you'll want to know when approving it.
  */
 
 type Body = { user_id?: string; clock_in?: string; clock_out?: string | null };
 
 export async function POST(req: Request) {
   try {
-    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
+    const access = await requireRouteAccess({ allowedRoles: ["admin", "office", "worker"] });
     if (!access.ok) return access.response;
     const { supabase, profile } = access.value;
+    const isWorker = profile.role === "worker";
+    // 'app' vs 'phone_manual' records WHERE it came from, which is what the queue
+    // labels. A worker's entry always comes from the app; RLS requires it.
+    const source = isWorker ? "app" : "phone_manual";
 
     const body = (await req.json().catch(() => ({}))) as Body;
     const userId = typeof body.user_id === "string" ? body.user_id.trim() : "";
@@ -56,6 +67,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "סוג העובד הזה לא מתעד משמרות." }, { status: 409 });
     }
 
+    // Who filed it. For a shift the person didn't report themselves, that name is
+    // the whole provenance of the record.
+    const reporter = profile.full_name?.trim() || profile.email || "";
+    const notes =
+      userId === profile.id ? "נוסף ידנית" : reporter ? `נרשם ע״י ${reporter}` : "נוסף ידנית";
+
     const row = parsedOut
       ? {
           user_id: userId,
@@ -63,15 +80,15 @@ export async function POST(req: Request) {
           clock_out: parsedOut.toISOString(),
           worked_minutes: minutesBetween(parsedIn, parsedOut),
           status: "pending_review",
-          source: "phone_manual",
-          notes: "נוסף ידנית",
+          source,
+          notes,
         }
       : {
           user_id: userId,
           clock_in: parsedIn.toISOString(),
           status: "open",
-          source: "phone_manual",
-          notes: "נוסף ידנית",
+          source,
+          notes,
         };
 
     const { data: inserted, error: insertError } = await supabase.from(PHONE_ATTENDANCE_TABLE).insert(row).select("id").maybeSingle();

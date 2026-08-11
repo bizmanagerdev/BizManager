@@ -16,9 +16,13 @@ describe("visibleAudienceRoles", () => {
     expect(r).toContain("all");
     expect(r).not.toContain("admin");
   });
-  it("worker (and null) sees only 'all'", () => {
-    expect(visibleAudienceRoles("worker")).toEqual(["all"]);
-    expect(visibleAudienceRoles(null)).toEqual(["all"]);
+  // Changed 2026-08-10: a worker used to sit in the "all" bucket, so any rule an
+  // admin pointed at 'all' in push_alert_config reached every driver's inbox and
+  // phone. His inbox is now only what's assigned to him or what he created —
+  // those two arms are built in getWorklist, not here.
+  it("worker (and null) gets no role buckets — own items only", () => {
+    expect(visibleAudienceRoles("worker")).toEqual([]);
+    expect(visibleAudienceRoles(null)).toEqual([]);
   });
 });
 
@@ -59,9 +63,9 @@ describe("ownAudienceRoles — owner-first delivery", () => {
     expect(ownAudienceRoles("office")).toContain("office");
     expect(ownAudienceRoles("office")).not.toContain("admin");
   });
-  it("worker (and null) only receives 'all'", () => {
-    expect(ownAudienceRoles("worker")).toEqual(["all"]);
-    expect(ownAudienceRoles(null)).toEqual(["all"]);
+  it("worker (and null) is pushed no bucket — only what's assigned to him", () => {
+    expect(ownAudienceRoles("worker")).toEqual([]);
+    expect(ownAudienceRoles(null)).toEqual([]);
   });
   it("permission ceiling stays wider than the delivery default", () => {
     // admin CAN see office items (e.g. to act on them) but doesn't get them pushed.

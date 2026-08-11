@@ -9,6 +9,7 @@ import QuickActionsClient from "@/app/(app)/dashboard/QuickActionsClient";
 import { loadQuickActionsData } from "@/app/(app)/dashboard/quick-actions-data";
 import { sanitizePrefs } from "@/lib/dashboard/widgets";
 import { DashboardPanels, PanelsFallback } from "@/app/(app)/dashboard/DashboardSections";
+import WorkerShiftPanel from "@/app/(app)/dashboard/WorkerShiftPanel";
 
 export const revalidate = 60;
 
@@ -20,7 +21,12 @@ export default async function DashboardPage() {
   // (filling them in place, no remount), and the panels below stream on their own.
   const { profile, supabase } = await requireProfile();
 
-  const dataPromise = loadQuickActionsData(supabase, profile);
+  // A worker has no quick-action tiles: the two that were left (the delivery run
+  // and a new task) are already a tap away in the nav and behind the +. Skipping
+  // the card also skips its picker data — customers, products, projects, orders
+  // — which he can't use and mostly can't read anyway.
+  const isWorker = profile.role === "worker";
+  const dataPromise = isWorker ? null : loadQuickActionsData(supabase, profile);
   // Prefs ride along on the profile (requireProfile's single `users` query), so
   // the shell no longer waits on a second round-trip just to hydrate the customizer.
   const dashboardPrefs = sanitizePrefs(profile.dashboard_prefs);
@@ -44,21 +50,37 @@ export default async function DashboardPage() {
           <div className="min-w-0 flex-1 text-right">
             <DashboardGreeting name={firstName} initialGreeting={greeting} initialDate={greetingDate} />
           </div>
-          <div className="shrink-0">
-            <DashboardCustomizer role={profile.role} initialPrefs={dashboardPrefs} />
-          </div>
+          {/* Nothing worth rearranging on a worker's board — it's the clock, his
+              tasks and his deliveries — so the customizer would be a control
+              over three fixed cards. */}
+          {isWorker ? null : (
+            <div className="shrink-0">
+              <DashboardCustomizer role={profile.role} initialPrefs={dashboardPrefs} />
+            </div>
+          )}
         </section>
 
+        {/* A worker's day starts by clocking in, so the clock sits above
+            everything else on his dashboard. Staff clock people in from the
+            payroll queue instead, so they don't get this. */}
+        {isWorker ? (
+          <Suspense fallback={null}>
+            <WorkerShiftPanel userId={profile.id} />
+          </Suspense>
+        ) : null}
+
         {/* Quick actions — instant. Buttons render now; dialog data streams in. */}
-        <Card>
-          <CardContent className="pt-6">
-            <QuickActionsClient
-              dataPromise={dataPromise}
-              currentUserId={profile.id}
-              currentUserRole={profile.role}
-            />
-          </CardContent>
-        </Card>
+        {dataPromise ? (
+          <Card>
+            <CardContent className="pt-6">
+              <QuickActionsClient
+                dataPromise={dataPromise}
+                currentUserId={profile.id}
+                currentUserRole={profile.role}
+              />
+            </CardContent>
+          </Card>
+        ) : null}
 
         <Suspense fallback={<PanelsFallback />}>
           <DashboardPanels />

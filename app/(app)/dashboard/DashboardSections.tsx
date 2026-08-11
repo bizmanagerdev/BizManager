@@ -175,7 +175,9 @@ export async function DashboardPanels() {
     show("myTasks") ? getMyTasks(supabase, profile.id) : Promise.resolve([]),
     show("taskDonut") && isAdminOrOffice ? getTaskStatusCounts(supabase) : Promise.resolve(null),
     show("projects") && isAdminOrOffice ? getProjectsOverview(supabase) : Promise.resolve(null),
-    show("deliveries") && isAdminOrOffice
+    // No role gate: resolveWidgets already decided, and the deliveries widget is
+    // now allowed for workers too (their whole job).
+    show("deliveries")
       ? loadDeliveriesPage(supabase, { page: 1, filters: { customerId: null } }).then((r) => r.deliveries).catch(() => [] as DeliveryItem[])
       : Promise.resolve([] as DeliveryItem[]),
     show("workforce") && isAdminOrOffice ? getWorkforceOverview(supabase) : Promise.resolve(null),
@@ -245,7 +247,10 @@ export async function DashboardPanels() {
       />
     ) : null,
     projects: projectsOverview ? <ProjectStatusCards statusCounts={projectsOverview.statusCounts} /> : null,
-    deliveries: deliveriesResult.length > 0 ? <UpcomingDeliveries deliveries={deliveriesResult} /> : null,
+    deliveries:
+      deliveriesResult.length > 0 ? (
+        <UpcomingDeliveries deliveries={deliveriesResult} canOpenOrder={isAdminOrOffice} />
+      ) : null,
     taskDonut: taskStatusCounts && taskStatusTotal > 0 ? <TaskStatusDonut counts={taskStatusCounts} /> : null,
     workforce: workforce ? <WorkforceOverview data={workforce} /> : null,
     inventory: inventoryHealth ? <InventoryHealth data={inventoryHealth} /> : null,

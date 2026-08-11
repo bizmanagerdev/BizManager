@@ -1,12 +1,12 @@
 import AppShell from "@/components/layout/AppShell";
 import PageAlertBar from "@/components/reminders/PageAlertBar";
-import { requireProfile } from "@/lib/auth/requireProfile";
+import { requireStaffPage } from "@/lib/auth/roleAccess";
 import InventoryRealtimeBadge from "@/app/(app)/inventory/InventoryRealtimeBadge";
 import SalesInventoryClient from "@/app/(app)/sales/SalesInventoryClient";
 import { loadInventoryListPage } from "@/app/(app)/sales/loadProducts";
 
 export default async function InventoryPage() {
-  const { profile, supabase } = await requireProfile();
+  const { profile, supabase } = await requireStaffPage();
 
   const { items, movements, totalCount, hasMore, error } = await loadInventoryListPage(supabase, {
     page: 1,

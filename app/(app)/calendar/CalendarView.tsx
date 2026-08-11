@@ -362,7 +362,7 @@ export default function CalendarView({
         <div className="flex h-[calc(100dvh-9.25rem)] min-w-0 flex-col md:block md:h-auto">
           {/* Selected-day row: jump-to-today (left) + the day's Gregorian + Hebrew
               date (right), then the labeled count filters. */}
-          <div className="-mx-4 shrink-0 space-y-1.5 border-b bg-background px-2 py-1.5 lg:hidden">
+          <div className="-mx-3 shrink-0 space-y-1.5 border-b bg-background px-2 py-1.5 lg:hidden">
             <div className="flex items-center justify-between gap-2 px-1">
               <span className="min-w-0 overflow-hidden whitespace-nowrap text-sm">
                 <span className="font-semibold text-foreground">{fmtFullDay(selected)}</span>
@@ -384,7 +384,7 @@ export default function CalendarView({
               month (no arrows). Full-bleed on phones, a bordered card from md up. */}
           <div
             ref={scrollRef}
-            className="relative -mx-4 min-h-0 flex-1 touch-none overflow-hidden border-b md:mx-0 md:h-[calc(100vh-11rem)] md:flex-none md:rounded-2xl md:border md:border-t"
+            className="relative -mx-3 min-h-0 flex-1 touch-none overflow-hidden border-b md:mx-0 md:h-[calc(100vh-11rem)] md:flex-none md:rounded-2xl md:border md:border-t"
           >
             {/* Transient month/year label — shows on a page change, then fades. A
                 year jump shows the year big so it's obvious you switched years. */}

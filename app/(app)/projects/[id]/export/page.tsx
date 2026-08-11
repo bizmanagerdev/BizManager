@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { requireProfile } from "@/lib/auth/requireProfile";
+import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import ProjectWorkerExportActions from "@/app/(app)/projects/[id]/export/ProjectWorkerExportActions";
 import { formatMovingEndpoint } from "@/lib/projects/movingAddress";
@@ -92,7 +92,7 @@ export default async function ProjectWorkerExportPage({
     : resolvedSearchParams?.mode;
   const mode = rawMode === "worker" || !rawMode ? "worker" : rawMode;
 
-  const { supabase } = await requireProfile();
+  const { supabase } = await requireStaffPage();
 
   const { data: overview } = await supabase
     .from("project_overview_view")

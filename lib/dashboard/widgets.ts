@@ -54,7 +54,9 @@ export const DASHBOARD_WIDGETS: WidgetMeta[] = [
   { id: "finance", label: "גבייה ותשלומים", roles: BACK_OFFICE, span: 2 },
   { id: "myTasks", label: "המשימות שלי", roles: ALL, span: 2 },
   { id: "projects", label: "סטטוס פרויקטים", roles: BACK_OFFICE, span: 2 },
-  { id: "deliveries", label: "אספקות קרובות", roles: BACK_OFFICE, span: 1 },
+  // Workers see this one too — the delivery run IS their work, and /deliveries
+  // is one of the four routes they can open.
+  { id: "deliveries", label: "אספקות קרובות", roles: ALL, span: 1 },
   { id: "taskDonut", label: "פילוח משימות", roles: BACK_OFFICE, span: 1 },
   { id: "workforce", label: "כוח אדם", roles: BACK_OFFICE, span: 2 },
   { id: "inventory", label: "מצב מלאי", roles: BACK_OFFICE, span: 2 },

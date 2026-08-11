@@ -10,6 +10,9 @@ import {
   WORK_SESSIONS_TABLE,
 } from "@/lib/payroll";
 import ProfileClient from "@/app/(app)/profile/ProfileClient";
+import PageTitle from "@/components/layout/PageTitle";
+import { loadMyShiftState } from "@/lib/attendance/my-shift";
+import { loadMyPayroll } from "@/lib/my-payroll";
 
 type Row = Record<string, unknown>;
 
@@ -106,6 +109,18 @@ export default async function ProfilePage() {
   const rawAvatarColor = (avatarColorRow as { avatar_color?: unknown } | null)?.avatar_color;
   const initialAvatarColor = typeof rawAvatarColor === "string" ? rawAvatarColor : null;
 
+  // A worker's shifts live in the approval queue until the boss classifies them,
+  // so his attendance tab reads from there rather than from attendance_sessions.
+  const isWorker = profile.role === "worker";
+  const shiftState = isWorker
+    ? await loadMyShiftState(supabase, profile.id, { limit: 30 })
+    : { open: null, pending: [], history: [] };
+
+  // Earned / paid / still owed, from worker_debt_items_view — the same view the
+  // salary centre reads, so a worker and his boss can never quote different
+  // numbers. Everyone gets this on their own profile, not just workers.
+  const myPayroll = await loadMyPayroll(supabase, profile.id);
+
   const loadError =
     sessionsError?.message ??
     agreementsError?.message ??
@@ -136,7 +151,12 @@ export default async function ProfilePage() {
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
-        <div>
+        <PageTitle title="הפרופיל שלי" subtitle={profile.full_name ?? undefined} />
+        {/* Desktop only: on a phone the top bar already says "הפרופיל שלי" and
+            the name right under it, so repeating both here was the same line
+            twice. Desktop has no such header, and the details card below is
+            where the email/phone belong anyway. */}
+        <div className="hidden lg:block">
           <h1 className="text-2xl font-semibold">{profile.full_name ?? profile.email ?? "עובד"}</h1>
           {[profile.email, profile.phone].filter(Boolean).length ? (
             <p className="text-sm text-muted-foreground">
@@ -163,6 +183,19 @@ export default async function ProfilePage() {
             monthlySummaries={monthlySummaries}
             projectOptions={projectOptions}
             propertyOptions={propertyOptions}
+            isWorker={isWorker}
+            openShiftReport={shiftState.open}
+            pendingShiftReports={shiftState.pending}
+            payTotals={myPayroll.payUnavailable ? null : myPayroll.totals}
+            payBySessionId={
+              myPayroll.payUnavailable
+                ? {}
+                : Object.fromEntries(
+                    myPayroll.debtItems
+                      .filter((item) => item.sourceType === "session")
+                      .map((item) => [item.sourceId, item.status])
+                  )
+            }
           />
         )}
       </div>

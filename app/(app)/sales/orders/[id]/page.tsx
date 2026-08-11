@@ -6,7 +6,7 @@ import { ChevronLeftIcon, CommentIcon, CopyIcon, DeleteIcon, DeliveryIcon, Docum
 import EntityActivityTimeline from "@/app/(app)/activity/EntityActivityTimeline";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
 import { getOrderStatusLabel } from "@/lib/ui/status-colors";
-import { requireProfile } from "@/lib/auth/requireProfile";
+import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { getEntityAuditTrail, getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import DeleteOrderButton from "@/app/(app)/sales/orders/[id]/DeleteOrderButton";
 import OrderRemindersSection from "@/app/(app)/sales/orders/[id]/OrderRemindersSection";
@@ -112,7 +112,7 @@ export default async function SalesOrderPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { profile, supabase } = await requireProfile();
+  const { profile, supabase } = await requireStaffPage();
 
   const [
     { data: order, error: orderError },

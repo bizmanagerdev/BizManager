@@ -1,7 +1,7 @@
 import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { requireProfile } from "@/lib/auth/requireProfile";
+import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { performGlobalSearch } from "@/lib/global-search";
 import { highlightText, MatchReason } from "@/components/search/highlightMatch";
 
@@ -16,7 +16,7 @@ export default async function SearchPage({
 }) {
   const params = (await searchParams) ?? {};
   const query = (firstValue(params.q) ?? "").trim();
-  const { profile, supabase } = await requireProfile();
+  const { profile, supabase } = await requireStaffPage();
   const results = await performGlobalSearch(supabase, {
     query,
     viewerRole: profile.role,

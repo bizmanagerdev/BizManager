@@ -14,6 +14,7 @@ export const QUICK_CREATE_ACTIONS = [
   "project",
   "collect",
   "transfer",
+  "attendance",
   "customer",
   "reminder",
   "document",

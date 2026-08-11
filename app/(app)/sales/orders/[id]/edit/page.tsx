@@ -1,5 +1,5 @@
 import AppShell from "@/components/layout/AppShell";
-import { requireProfile } from "@/lib/auth/requireProfile";
+import { requireStaffPage } from "@/lib/auth/roleAccess";
 import NewOrderClient from "@/app/(app)/sales/orders/new/NewOrderClient";
 
 type Row = Record<string, unknown>;
@@ -30,7 +30,7 @@ export default async function EditSalesOrderPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { profile, supabase } = await requireProfile();
+  const { profile, supabase } = await requireStaffPage();
 
   const [
     { data: order, error: orderError },

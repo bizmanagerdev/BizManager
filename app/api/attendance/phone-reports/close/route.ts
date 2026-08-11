@@ -15,7 +15,7 @@ type Body = { report_id?: string; clock_out?: string | null };
 
 export async function POST(req: Request) {
   try {
-    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
+    const access = await requireRouteAccess({ allowedRoles: ["admin", "office", "worker"] });
     if (!access.ok) return access.response;
     const { supabase, profile } = access.value;
 
