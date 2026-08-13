@@ -23,6 +23,12 @@ type BasePhoneReport = {
   source: string;
   /** What the worker (or the person logging it) said about the shift. */
   notes: string | null;
+  /**
+   * Who FILED it, when that isn't the worker himself — a colleague or the office
+   * clocking him in. Null for a self-report (or a row predating the column), so
+   * the UI can show it only when it's actually news.
+   */
+  reported_by_name: string | null;
 };
 
 /** Clocked out, awaiting admin approval. */
@@ -48,7 +54,7 @@ export async function loadPhoneQueueData(
 ): Promise<PhoneQueueData> {
   const { data: reports, error } = await supabase
     .from(PHONE_ATTENDANCE_TABLE)
-    .select("id,user_id,clock_in,clock_out,worked_minutes,status,source,notes,created_at")
+    .select("id,user_id,clock_in,clock_out,worked_minutes,status,source,notes,reported_by,created_at")
     .in("status", ["open", "pending_review"])
     .order("created_at", { ascending: true })
     .range(0, 199);
@@ -56,9 +62,14 @@ export async function loadPhoneQueueData(
   if (error || !reports?.length) return { pending: [], open: [] };
 
   const userIds = Array.from(new Set(reports.map((row) => row.user_id).filter(Boolean)));
+  // Reporters are looked up in the SAME round-trip as the subjects — usually the
+  // same people, and one `in` beats a second query per screen.
+  const lookupIds = Array.from(
+    new Set([...userIds, ...reports.map((row) => row.reported_by as string | null).filter(Boolean)])
+  ) as string[];
   const nameById = new Map<string, { name: string | null; phone: string | null }>();
-  if (userIds.length) {
-    const { data: users } = await supabase.from("users").select("id,full_name,phone").in("id", userIds);
+  if (lookupIds.length) {
+    const { data: users } = await supabase.from("users").select("id,full_name,phone").in("id", lookupIds);
     for (const user of users ?? []) {
       nameById.set(user.id as string, {
         name: (user.full_name as string) ?? null,
@@ -88,16 +99,23 @@ export async function loadPhoneQueueData(
     return calculateSessionLaborCost(getActiveSalaryAgreementForDate(list, new Date(clockIn)), minutes);
   };
 
-  const base = (row: (typeof reports)[number]): BasePhoneReport => ({
-    id: row.id as string,
-    user_id: row.user_id as string,
-    worker_name: nameById.get(row.user_id as string)?.name ?? null,
-    worker_phone: nameById.get(row.user_id as string)?.phone ?? null,
-    clock_in: row.clock_in as string,
-    created_at: row.created_at as string,
-    source: typeof row.source === "string" ? row.source : "phone",
-    notes: typeof row.notes === "string" ? row.notes : null,
-  });
+  const base = (row: (typeof reports)[number]): BasePhoneReport => {
+    const reportedBy = typeof row.reported_by === "string" ? row.reported_by : null;
+    return {
+      id: row.id as string,
+      user_id: row.user_id as string,
+      worker_name: nameById.get(row.user_id as string)?.name ?? null,
+      worker_phone: nameById.get(row.user_id as string)?.phone ?? null,
+      clock_in: row.clock_in as string,
+      created_at: row.created_at as string,
+      source: typeof row.source === "string" ? row.source : "phone",
+      notes: typeof row.notes === "string" ? row.notes : null,
+      // Only when someone ELSE filed it — a worker reporting his own shift is the
+      // norm and needs no caption.
+      reported_by_name:
+        reportedBy && reportedBy !== row.user_id ? nameById.get(reportedBy)?.name ?? null : null,
+    };
+  };
 
   const pending: PendingPhoneReport[] = [];
   const open: OpenPhoneReport[] = [];

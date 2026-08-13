@@ -52,10 +52,18 @@ function shiftRangeText(clockIn: string, clockOut: string) {
   return `${formatShortDateTime(clockIn)} — ${formatShortDateTime(clockOut)}`;
 }
 
-/** The origin tag, plus a worker note only when it actually adds information beyond the origin. */
-function attendanceMeta(source: string, notes: string | null) {
+/**
+ * The origin tag, who filed it when that ISN'T the worker himself, and a note —
+ * each part only when it adds something. "נרשם ע״י" is the one you want before
+ * approving: it's the difference between a worker reporting his own hours and a
+ * colleague reporting them for him.
+ */
+function attendanceMeta(source: string, notes: string | null, reportedByName?: string | null) {
   const label = attendanceSourceLabel(source);
-  return notes && notes !== label ? `${label} · ${notes}` : label;
+  const parts = [label];
+  if (reportedByName) parts.push(`נרשם ע״י ${reportedByName}`);
+  if (notes && notes !== label) parts.push(notes);
+  return parts.join(" · ");
 }
 
 /** Current local time as a datetime-local value ("YYYY-MM-DDTHH:mm") for DateTimeInput defaults. */
@@ -217,7 +225,7 @@ function OpenRow({ report }: { report: OpenPhoneReport }) {
           <div className="mt-0.5 text-sm text-muted-foreground">
             <span className="font-medium text-foreground">{hebrewWeekday(report.clock_in)}</span> · נכנס {formatShortDateTime(report.clock_in)}
           </div>
-          <div className="mt-0.5 text-xs text-muted-foreground">{attendanceMeta(report.source, report.notes)}</div>
+          <div className="mt-0.5 text-xs text-muted-foreground">{attendanceMeta(report.source, report.notes, report.reported_by_name)}</div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="whitespace-nowrap text-sm font-medium text-muted-foreground">כבר {formatMinutes(elapsed)} ש׳</span>
@@ -418,7 +426,7 @@ function ReportCard({
       <div className="mt-0.5 text-sm text-muted-foreground">
         <span className="font-medium text-foreground">{weekday}</span> · {shiftRangeText(report.clock_in, report.clock_out)}
       </div>
-      <div className="mt-0.5 text-xs text-muted-foreground">{attendanceMeta(report.source, report.notes)}</div>
+      <div className="mt-0.5 text-xs text-muted-foreground">{attendanceMeta(report.source, report.notes, report.reported_by_name)}</div>
 
       {/* Classification */}
       <div className="mt-3 space-y-2">

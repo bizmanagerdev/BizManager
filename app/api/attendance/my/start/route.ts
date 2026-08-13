@@ -60,6 +60,8 @@ export async function POST(req: Request) {
         clock_in: clockIn.toISOString(),
         status: "open",
         source: APP_ATTENDANCE_SOURCE,
+        // Self-reported: subject and reporter are the same person.
+        reported_by: profile.id,
         notes: notes || null,
       })
       .select("id,clock_in")

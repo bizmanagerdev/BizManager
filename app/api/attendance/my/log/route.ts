@@ -114,6 +114,7 @@ export async function POST(req: Request) {
         worked_minutes: workedMinutes,
         status: "pending_review",
         source: APP_ATTENDANCE_SOURCE,
+        reported_by: profile.id,
         notes: notes || null,
       })
       .select("id,clock_in,clock_out,worked_minutes")

@@ -17,9 +17,9 @@ import { PHONE_ATTENDANCE_TABLE } from "@/lib/attendance/phone-reports";
  * Open to WORKERS too, not just the office: the foreman on site is the one who
  * knows who turned up. He can file for any worker, and it still only ever lands
  * in the queue — the RLS policies in 20260811010000 hold that line at the
- * database, so this route can't be the only thing standing in the way. What he
- * files is stamped with his name, because "who signed this person in" is the
- * first thing you'll want to know when approving it.
+ * database, so this route can't be the only thing standing in the way. Every row
+ * carries `reported_by`, because "who signed this person in" is the first thing
+ * you'll want to know when approving it.
  */
 
 type Body = { user_id?: string; clock_in?: string; clock_out?: string | null };
@@ -67,12 +67,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "סוג העובד הזה לא מתעד משמרות." }, { status: 409 });
     }
 
-    // Who filed it. For a shift the person didn't report themselves, that name is
-    // the whole provenance of the record.
-    const reporter = profile.full_name?.trim() || profile.email || "";
-    const notes =
-      userId === profile.id ? "נוסף ידנית" : reporter ? `נרשם ע״י ${reporter}` : "נוסף ידנית";
-
+    // Who filed it lives in its own column now — the note stays free text for
+    // whatever is actually worth saying about the shift.
     const row = parsedOut
       ? {
           user_id: userId,
@@ -81,14 +77,16 @@ export async function POST(req: Request) {
           worked_minutes: minutesBetween(parsedIn, parsedOut),
           status: "pending_review",
           source,
-          notes,
+          reported_by: profile.id,
+          notes: "נוסף ידנית",
         }
       : {
           user_id: userId,
           clock_in: parsedIn.toISOString(),
           status: "open",
           source,
-          notes,
+          reported_by: profile.id,
+          notes: "נוסף ידנית",
         };
 
     const { data: inserted, error: insertError } = await supabase.from(PHONE_ATTENDANCE_TABLE).insert(row).select("id").maybeSingle();
