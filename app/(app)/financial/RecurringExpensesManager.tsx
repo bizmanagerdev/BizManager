@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AddDateIcon, AddReminderIcon, CheckIcon, DeleteIcon, RecurringIcon, SpinnerIcon } from "@/components/ui/icons";
+import { AddDateIcon, AddReminderIcon, CheckIcon, RecurringIcon, SpinnerIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { toHebrewError } from "@/lib/error-messages";
@@ -14,7 +14,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
 import ReminderFormDialog from "@/components/reminders/ReminderFormDialog";
 import type { Account } from "@/lib/accounts";
-import { EditButton } from "@/components/ui/icon-button";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 
 type Option = {
   id: string;
@@ -426,9 +426,7 @@ export default function RecurringExpensesManager(props: Props) {
                         <AddDateIcon className="h-4 w-4" />
                       </Button>
                       <EditButton onClick={() => openEdit(template)} label="עריכה" />
-                      <Button type="button" size="icon-sm" variant="destructive" onClick={() => setConfirmDeleteId(template.id)} title="מחיקה" aria-label="מחיקה">
-                        <DeleteIcon className="h-4 w-4" />
-                      </Button>
+                      <DeleteButton onClick={() => setConfirmDeleteId(template.id)} />
                     </div>
                   </CardContent>
                 </Card>
@@ -529,9 +527,7 @@ export default function RecurringExpensesManager(props: Props) {
                             <AddDateIcon className="h-4 w-4" />
                           </Button>
                           <EditButton onClick={() => openEdit(template)} label="עריכה" />
-                          <Button type="button" size="icon-sm" variant="destructive" onClick={() => setConfirmDeleteId(template.id)} title="מחיקה" aria-label="מחיקה">
-                            <DeleteIcon className="h-4 w-4" />
-                          </Button>
+                          <DeleteButton onClick={() => setConfirmDeleteId(template.id)} />
                         </div>
                       </td>
                     </tr>

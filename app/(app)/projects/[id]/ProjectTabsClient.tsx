@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { StatActionCard, collectionStatusTextClass } from "@/components/ui/stat-action-card";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
-import { AddIcon, ChartIcon, ChecklistIcon, DeleteIcon, DocumentIcon, PaymentIcon, UploadIcon } from "@/components/ui/icons";
+import { AddIcon, ChartIcon, ChecklistIcon, DocumentIcon, PaymentIcon, UploadIcon } from "@/components/ui/icons";
 import { ClientOnly } from "@/components/ClientOnly";
 import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -52,7 +52,7 @@ import BilledCustomerPrintButton from "./BilledCustomerPrintButton";
 import ProjectMovements, { type Movement } from "./ProjectMovements";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 import dynamic from "next/dynamic";
-import { EditButton } from "@/components/ui/icon-button";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import {
   customerPaymentStatusLabel,
   deriveCustomerPaymentStatus,
@@ -2087,17 +2087,7 @@ export default function ProjectTabsClient({
                       ) : null}
                       <div className="flex gap-1 pt-1">
                         <EditButton onClick={() => openEditTag(d.document_id)} label="עריכת קטגוריה" />
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="sm"
-                          className="h-7 w-7 p-0"
-                          title="מחיקת קובץ"
-                          aria-label="מחיקת קובץ"
-                          onClick={() => openDeleteDocument(d.document_id)}
-                        >
-                          <DeleteIcon className="h-3.5 w-3.5" />
-                        </Button>
+                        <DeleteButton label="מחיקת קובץ" onClick={() => openDeleteDocument(d.document_id)} />
                       </div>
                     </div>
                   </div>

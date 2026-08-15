@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AddIcon, DeleteIcon, DocumentIcon, TaskIcon, VehicleIcon } from "@/components/ui/icons";
+import { AddIcon, DocumentIcon, TaskIcon, VehicleIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,7 +18,7 @@ import { formatCurrency } from "@/lib/payroll";
 import { expiryStatus, type VehicleWithRollup } from "@/lib/vehicles";
 import AddReminderButton from "@/components/reminders/AddReminderButton";
 import { createVehicle, updateVehicle, deleteVehicle, type VehicleInput } from "./actions";
-import { EditButton } from "@/components/ui/icon-button";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 
 const EMPTY_FORM: VehicleInput = {
   name: "",
@@ -164,14 +164,7 @@ export default function VehiclesClient({ vehicles }: { vehicles: VehicleWithRoll
                     <div className="flex shrink-0 gap-1">
                       <AddReminderButton entityType="vehicle" entityId={v.tagId} label={v.name} className="h-9 w-9 p-0" iconOnly />
                       <EditButton onClick={() => openEdit(v)} label="עריכה" />
-                      <Button
-                        variant="secondary"
-                        size="icon"
-                        onClick={() => setDeleteTarget(v)}
-                        aria-label="מחיקה"
-                      >
-                        <DeleteIcon className="h-4 w-4" />
-                      </Button>
+                      <DeleteButton onClick={() => setDeleteTarget(v)} label="מחיקת רכב" />
                     </div>
                   </div>
 

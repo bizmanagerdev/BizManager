@@ -16,7 +16,7 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import { getBusinessDomainLabel, isExpenseBusinessDomain } from "@/lib/expenses";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { findDuplicate, norm, shiftIso, type ExistingExpense } from "@/lib/financial/cardImport";
-import { EditButton } from "@/components/ui/icon-button";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { CheckIcon } from "@/components/ui/icons";
 
 type Option = { id: string; name: string };
@@ -716,14 +716,10 @@ export default function StatementDetailClient({
               </a>
             </Button>
           ) : null}
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-destructive hover:bg-destructive/10"
+          <DeleteButton
+            label="מחיקת פירוט"
             onClick={() => { setDeleteError(null); setShowDeleteConfirm(true); }}
-          >
-            מחיקת פירוט
-          </Button>
+          />
           <Button variant="outline" size="sm" onClick={() => { if (hasPending) { setLeaveTarget("/financial/statements"); setShowLeaveConfirm(true); } else { bypassGuard.current = true; router.push("/financial/statements"); } }}>
             חזרה לרשימה
           </Button>

@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AddIcon, CheckIcon, DeleteIcon } from "@/components/ui/icons";
+import { AddIcon, CheckIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
@@ -22,7 +22,7 @@ import RepaymentPlanPicker, {
   type RepaymentPlanState,
 } from "./RepaymentPlanPicker";
 import { Field, METHOD_OPTIONS, formatDate, formatIls, todayIso } from "./shared";
-import { EditButton } from "@/components/ui/icon-button";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 
 // ════════════════════════════════════════════════════════════════════════════
 // The repayment schedule of one loan, inside the החזרים dialog: the list of
@@ -212,16 +212,11 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
                     שולם
                   </Button>
                   <EditButton onClick={() => setEditTarget(installment)} disabled={pending} label="ערוך תשלום" />
-                  <Button
-                    type="button"
-                    variant="destructive-outline"
-                    size="icon-sm"
+                  <DeleteButton
                     onClick={() => setDeleteTarget(installment)}
                     disabled={pending}
-                    aria-label="מחק תשלום"
-                  >
-                    <DeleteIcon className="h-4 w-4" />
-                  </Button>
+                    label="מחיקת תשלום"
+                  />
                 </div>
               </div>
             );

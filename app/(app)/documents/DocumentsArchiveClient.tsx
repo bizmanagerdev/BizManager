@@ -4,7 +4,8 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useDeferredValue, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { DeleteIcon, DocumentIcon, ExternalLinkIcon, FolderIcon, ImageIcon, LayersIcon, ProductIcon, SearchIcon, TagIcon, UploadIcon } from "@/components/ui/icons";
+import { DocumentIcon, ExternalLinkIcon, FolderIcon, ImageIcon, LayersIcon, ProductIcon, SearchIcon, TagIcon, UploadIcon } from "@/components/ui/icons";
+import { DeleteButton } from "@/components/ui/icon-button";
 import { toast } from "sonner";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Badge } from "@/components/ui/badge";
@@ -874,15 +875,7 @@ export default function DocumentsArchiveClient({
                       >
                         <LayersIcon className="h-4 w-4" />
                       </Button>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        aria-label="מחיקה"
-                        title="מחיקה"
-                        onClick={() => setDeleteDialogDoc(doc)}
-                      >
-                        <DeleteIcon className="h-4 w-4" />
-                      </Button>
+                      <DeleteButton label="מחיקת מסמך" onClick={() => setDeleteDialogDoc(doc)} />
                     </div>
                   </div>
                 );

@@ -4,6 +4,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { DeleteButton } from "@/components/ui/icon-button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -352,16 +353,10 @@ export default function MorningDocumentsPanel({
                 >
                   הערה
                 </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 px-2 text-xs text-destructive"
+                <DeleteButton
                   onClick={() => setPendingDeleteId(document.id)}
-                  disabled={busyKey === `delete:${document.id}`}
-                >
-                  {busyKey === `delete:${document.id}` ? "מוחק..." : "מחיקה"}
-                </Button>
+                  loading={busyKey === `delete:${document.id}`}
+                />
                 {document.status !== "closed" && document.status !== "cancelled" ? (
                   <Button
                     type="button"

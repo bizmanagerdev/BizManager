@@ -4,7 +4,7 @@ import { Fragment, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronDownIcon, DeleteIcon, TransferIcon } from "@/components/ui/icons";
+import { ChevronDownIcon, TransferIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -20,7 +20,7 @@ import {
   type AccountTransferRef,
   type AccountWithLedger,
 } from "@/lib/accounts";
-import { EditButton } from "@/components/ui/icon-button";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 
 function formatIls(amount: number) {
   return new Intl.NumberFormat("he-IL", {
@@ -408,20 +408,15 @@ export default function BankClient({
                                 setTransferToEdit(transfer);
                                 setTransferOpen(true);
                               }} label="עריכת העברה" />
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-sm"
-                              aria-label="מחיקת העברה"
+                            <DeleteButton
+                              label="מחיקת העברה"
                               onClick={() =>
                                 setTransferToDelete({
                                   id: transfer.id,
                                   label: `${row.label} · ${formatIls(row.amount)}`,
                                 })
                               }
-                            >
-                              <DeleteIcon className="h-4 w-4 text-destructive" />
-                            </Button>
+                            />
                           </div>
                         ) : null}
                       </div>

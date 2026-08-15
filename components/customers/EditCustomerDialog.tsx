@@ -6,6 +6,7 @@ import {
   AdaptiveGrid,
 } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
+import { DeleteButton } from "@/components/ui/icon-button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Field } from "@/components/ui/field";
 import { toHebrewError } from "@/lib/error-messages";
@@ -450,14 +451,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
                       <div className="text-sm font-medium">
                         {contact.id ? `איש קשר ${index + 1}` : `איש קשר חדש ${index + 1}`}
                       </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeContact(contact.key)}
-                      >
-                        הסרה
-                      </Button>
+                      <DeleteButton label="הסרת איש קשר" onClick={() => removeContact(contact.key)} />
                     </div>
                     <Field label="שם מלא *">
                       <Input

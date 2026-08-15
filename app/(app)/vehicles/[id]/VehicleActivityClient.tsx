@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AddIcon, DeleteIcon, DocumentIcon, TaskIcon } from "@/components/ui/icons";
+import { AddIcon, DocumentIcon, TaskIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
@@ -25,7 +25,7 @@ import { formatCurrency } from "@/lib/payroll";
 import { taskStatusLabel, type VehicleActivity, type VehicleExpense } from "@/lib/vehicles";
 import { toHebrewError } from "@/lib/error-messages";
 import { offlineUpload } from "@/lib/offline-upload";
-import { EditButton } from "@/components/ui/icon-button";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -259,8 +259,6 @@ export default function VehicleActivityClient({
     }
   }
 
-  const iconBtn = "h-7 w-7";
-
   return (
     <>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -288,9 +286,7 @@ export default function VehicleActivityClient({
                   <div className="flex shrink-0 items-center gap-1">
                     <span className="font-semibold text-destructive">{formatCurrency(e.amount)}</span>
                     <EditButton onClick={() => openEditExpense(e)} label="עריכה" />
-                    <Button variant="secondary" size="icon" className={iconBtn} onClick={() => setDel({ kind: "expense", id: e.id, label: e.category || "הוצאה" })} aria-label="מחיקה">
-                      <DeleteIcon className="h-3.5 w-3.5" />
-                    </Button>
+                    <DeleteButton onClick={() => setDel({ kind: "expense", id: e.id, label: e.category || "הוצאה" })} label="מחיקת הוצאה" />
                   </div>
                 </div>
               ))
@@ -320,9 +316,7 @@ export default function VehicleActivityClient({
                   <div className="flex shrink-0 items-center gap-1">
                     <span className="font-semibold text-emerald-600">{formatCurrency(p.amount)}</span>
                     {p.projectId ? null : (
-                      <Button variant="secondary" size="icon" className={iconBtn} onClick={() => setDel({ kind: "payment", id: p.id, label: "הכנסה" })} aria-label="מחיקה">
-                        <DeleteIcon className="h-3.5 w-3.5" />
-                      </Button>
+                      <DeleteButton onClick={() => setDel({ kind: "payment", id: p.id, label: "הכנסה" })} label="מחיקת הכנסה" />
                     )}
                   </div>
                 </div>
@@ -356,9 +350,7 @@ export default function VehicleActivityClient({
                   <div className="flex shrink-0 items-center gap-1">
                     <Badge variant="outline">{taskStatusLabel(t.status)}</Badge>
                     <EditButton onClick={() => openEditTask(t.id)} label="עריכה" />
-                    <Button variant="secondary" size="icon" className={iconBtn} onClick={() => setDel({ kind: "task", id: t.id, label: t.subject || "משימה" })} aria-label="מחיקה">
-                      <DeleteIcon className="h-3.5 w-3.5" />
-                    </Button>
+                    <DeleteButton onClick={() => setDel({ kind: "task", id: t.id, label: t.subject || "משימה" })} label="מחיקת משימה" />
                   </div>
                 </div>
               ))
@@ -392,9 +384,7 @@ export default function VehicleActivityClient({
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     {d.refYear ? <Badge variant="neutral">{d.refYear}</Badge> : null}
-                    <Button variant="secondary" size="icon" className={iconBtn} onClick={() => setDel({ kind: "document", id: d.id, label: d.title || "מסמך" })} aria-label="מחיקה">
-                      <DeleteIcon className="h-3.5 w-3.5" />
-                    </Button>
+                    <DeleteButton onClick={() => setDel({ kind: "document", id: d.id, label: d.title || "מסמך" })} label="מחיקת מסמך" />
                   </div>
                 </div>
               ))

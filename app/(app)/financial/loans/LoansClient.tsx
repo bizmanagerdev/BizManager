@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { AddIcon, AttachIcon, DeleteIcon, ReceiptIcon, UndoIcon } from "@/components/ui/icons";
+import { AddIcon, AttachIcon, ReceiptIcon, UndoIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Card, CardContent } from "@/components/ui/card";
@@ -54,7 +54,7 @@ import {
   formatIls,
   todayIso,
 } from "./shared";
-import { EditButton } from "@/components/ui/icon-button";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 
 // The business owner — auto-filled on "our" side of every loan.
 const BUSINESS_OWNER_NAME = "יעקב הלר";
@@ -534,16 +534,11 @@ function RepaymentsDialog({
                         >
                           <UndoIcon className="h-4 w-4" />
                         </Button>
-                        <Button
-                          type="button"
-                          variant="destructive-outline"
-                          size="icon-sm"
+                        <DeleteButton
                           onClick={() => removeRepayment(r.id)}
                           disabled={pending}
-                          aria-label="מחק החזר"
-                        >
-                          <DeleteIcon className="h-4 w-4" />
-                        </Button>
+                          label="מחיקת החזר"
+                        />
                       </div>
                     </div>
                   ))
@@ -790,16 +785,11 @@ function LoanDocumentsDialog({
                       <span className="text-muted-foreground"> · {formatDate(doc.uploadedAt)}</span>
                     ) : null}
                   </div>
-                  <Button
-                    type="button"
-                    variant="destructive-outline"
-                    size="icon-sm"
+                  <DeleteButton
                     onClick={() => void removeDoc(doc.id)}
                     disabled={busy}
-                    aria-label="מחק מסמך"
-                  >
-                    <DeleteIcon className="h-4 w-4" />
-                  </Button>
+                    label="מחיקת מסמך"
+                  />
                 </div>
               ))
             )}
@@ -1006,15 +996,7 @@ export default function LoansClient({ loans, summary }: { loans: Loan[]; summary
                       מסמכים
                     </Button>
                     <EditButton onClick={() => openEdit(loan)} label="עריכה" />
-                    <Button
-                      type="button"
-                      variant="destructive-outline"
-                      size="icon-sm"
-                      onClick={() => setDeleteTarget(loan)}
-                      aria-label="מחק הלוואה"
-                    >
-                      <DeleteIcon className="h-4 w-4" />
-                    </Button>
+                    <DeleteButton onClick={() => setDeleteTarget(loan)} label="מחיקת הלוואה" />
                   </div>
                 </CardContent>
               </Card>

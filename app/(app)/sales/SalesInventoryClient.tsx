@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AddProductIcon, DeleteIcon } from "@/components/ui/icons";
+import { AddProductIcon } from "@/components/ui/icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,7 @@ import type { InventoryItem, ProductsFilters } from "@/app/(app)/sales/loadProdu
 import { FormDialog } from "@/components/ui/form-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
-import { EditButton } from "@/components/ui/icon-button";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 
 type Row = Record<string, unknown>;
 
@@ -898,17 +898,7 @@ export default function SalesInventoryClient({
                                 {isManual ? (
                                   <div className="-my-1.5 flex items-center gap-1.5">
                                     <EditButton onClick={() => openEditDialog(row)} label="עריכת תנועה" />
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="destructive"
-                                      className="h-7 w-7 p-0"
-                                      title="מחיקת תנועה"
-                                      aria-label="מחיקת תנועה"
-                                      onClick={() => setDeleteRow(row)}
-                                    >
-                                      <DeleteIcon className="h-3.5 w-3.5" />
-                                    </Button>
+                                    <DeleteButton label="מחיקת תנועה" onClick={() => setDeleteRow(row)} />
                                   </div>
                                 ) : null}
                               </td>
@@ -950,17 +940,7 @@ export default function SalesInventoryClient({
                               {isManual ? (
                                 <>
                                   <EditButton onClick={() => openEditDialog(row)} label="עריכת תנועה" />
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="destructive"
-                                    className="h-8 w-8 shrink-0 p-0"
-                                    title="מחיקת תנועה"
-                                    aria-label="מחיקת תנועה"
-                                    onClick={() => setDeleteRow(row)}
-                                  >
-                                    <DeleteIcon className="h-4 w-4" />
-                                  </Button>
+                                  <DeleteButton label="מחיקת תנועה" onClick={() => setDeleteRow(row)} />
                                 </>
                               ) : null}
                             </div>

@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AddIcon, AddUserIcon, AiIcon, CardIcon, CheckIcon, CloseIcon, DeleteIcon, DocumentIcon, EditIcon, OrderIcon, RemoveIcon, SearchIcon, UserIcon, WazeIcon } from "@/components/ui/icons";
+import { AddIcon, AddUserIcon, AiIcon, CardIcon, CheckIcon, CloseIcon, DocumentIcon, EditIcon, OrderIcon, RemoveIcon, SearchIcon, UserIcon, WazeIcon } from "@/components/ui/icons";
+import { DeleteButton } from "@/components/ui/icon-button";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { cn } from "@/lib/utils";
 import { toHebrewError } from "@/lib/error-messages";
@@ -1360,15 +1361,11 @@ export default function NewOrderClient({
                               <AddIcon className="h-3.5 w-3.5" />
                             </button>
                           </div>
-                          <button
-                            type="button"
-                            className="text-muted-foreground transition hover:text-destructive"
+                          <DeleteButton
                             onClick={() => removeLine(index)}
                             disabled={actionLocked}
-                            aria-label={`הסרת ${line.product_name}`}
-                          >
-                            <DeleteIcon className="h-4 w-4" />
-                          </button>
+                            label={`הסרת ${line.product_name}`}
+                          />
                         </div>
 
                         <details open={Boolean(line.discount_amount || line.notes)}>
@@ -1685,9 +1682,7 @@ export default function NewOrderClient({
                 <div key={index} className="space-y-3 rounded-xl border p-3">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-medium">תשלום חדש #{index + 1}</p>
-                    <Button type="button" size="sm" variant="secondary" onClick={() => removePaymentDraft(index)} disabled={actionLocked}>
-                      הסר
-                    </Button>
+                    <DeleteButton onClick={() => removePaymentDraft(index)} disabled={actionLocked} label="הסרת תשלום" />
                   </div>
 
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { DeleteIcon, NoteIcon } from "@/components/ui/icons";
+import { NoteIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,7 +10,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import { toHebrewError } from "@/lib/error-messages";
 import { parseOrderComments, type OrderComment } from "@/lib/orders/comments";
-import { EditButton } from "@/components/ui/icon-button";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 
 /**
  * Attributed comment thread on the order page: post several timestamped comments
@@ -161,17 +161,7 @@ export default function OrderCommentsThread({
                   {editingIndex === index ? null : (
                     <div className="flex shrink-0 items-center gap-1">
                       <EditButton onClick={() => startEdit(index)} label="עריכת תגובה" />
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="destructive"
-                        className="h-7 w-7 p-0"
-                        title="מחיקת תגובה"
-                        aria-label="מחיקת תגובה"
-                        onClick={() => setPendingDelete(index)}
-                      >
-                        <DeleteIcon className="h-3.5 w-3.5" />
-                      </Button>
+                      <DeleteButton label="מחיקת תגובה" onClick={() => setPendingDelete(index)} />
                     </div>
                   )}
                 </div>

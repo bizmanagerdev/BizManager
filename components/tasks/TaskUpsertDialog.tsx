@@ -6,7 +6,8 @@ import { offlineUpload } from "@/lib/offline-upload";
 import { toHebrewError } from "@/lib/error-messages";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { AttachIcon, BusinessIcon, ClockIcon, DeleteIcon, LocationIcon, LockIcon, NotificationIcon, SpinnerIcon, SuccessIcon, TagIcon, TextIcon, UncheckedIcon, UnlockIcon, UsersIcon } from "@/components/ui/icons";
+import { AttachIcon, BusinessIcon, ClockIcon, LocationIcon, LockIcon, NotificationIcon, SpinnerIcon, SuccessIcon, TagIcon, TextIcon, UncheckedIcon, UnlockIcon, UsersIcon } from "@/components/ui/icons";
+import { DeleteButton } from "@/components/ui/icon-button";
 import {
   emitProgressActivityEnd,
   emitProgressActivityStart,
@@ -1020,16 +1021,11 @@ export function TaskUpsertDialog(props: Props) {
               </span>
             ) : null}
             {isEditing && targetTaskId ? (
-              <button
-                type="button"
-                aria-label="מחיקת המשימה"
-                title="מחיקת המשימה"
+              <DeleteButton
+                label="מחיקת המשימה"
                 disabled={saving || loading}
                 onClick={() => setConfirmDeleteOpen(true)}
-                className="shrink-0 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-40"
-              >
-                <DeleteIcon className="h-5 w-5" />
-              </button>
+              />
             ) : null}
           </div>
           <DialogDescription className="sr-only">פרטי המשימה</DialogDescription>

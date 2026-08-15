@@ -3,7 +3,7 @@ import { toHebrewError } from "@/lib/error-messages";
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { ChatIcon, CommentIcon, DeleteIcon, MailIcon, PhoneIcon, PhoneInIcon, PhoneOutIcon, UsersIcon } from "@/components/ui/icons";
+import { ChatIcon, CommentIcon, MailIcon, PhoneIcon, PhoneInIcon, PhoneOutIcon, UsersIcon } from "@/components/ui/icons";
 import { NavLink } from "@/components/NavLink";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -15,7 +15,7 @@ import {
   type CommunicationLog,
 } from "@/lib/communications";
 import { offlineFetch } from "@/lib/offline-queue";
-import { EditButton } from "@/components/ui/icon-button";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 
 type LogItem = CommunicationLog & {
   customer_name?: string | null;
@@ -250,16 +250,7 @@ export default function CommunicationLogItem({
           ) : (
             <>
               <EditButton onClick={() => setEditing(true)} label="עריכה" />
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8 rounded-full border border-border/60 bg-background text-destructive hover:text-destructive"
-                title="מחיקה"
-                onClick={() => setConfirmDelete(true)}
-              >
-                <DeleteIcon className="h-3.5 w-3.5" />
-              </Button>
+              <DeleteButton onClick={() => setConfirmDelete(true)} />
             </>
           )}
         </div>

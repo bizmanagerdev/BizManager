@@ -4,6 +4,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { DeleteButton } from "@/components/ui/icon-button";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -149,16 +150,11 @@ export default function MorningQuoteDialog({
                     value={line.unitPrice}
                     onChange={(event) => updateLine(index, { unitPrice: event.target.value })}
                   />
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="text-destructive"
+                  <DeleteButton
+                    label="הסרת שורה"
                     onClick={() => removeLine(index)}
                     disabled={lines.length === 1}
-                  >
-                    הסר
-                  </Button>
+                  />
                 </div>
               ))}
             </div>

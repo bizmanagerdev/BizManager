@@ -1,10 +1,10 @@
 "use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
-import { Button } from "@/components/ui/button";
+import { DeleteButton } from "@/components/ui/icon-button";
 import { offlineFetch } from "@/lib/offline-queue";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
@@ -13,11 +13,8 @@ export default function DeleteProjectButton({
   projectName,
   redirectTo,
   onDeleted,
-  size = "sm",
-  variant = "destructive",
   className,
-  children,
-  ariaLabel,
+  triggerLabel = "מחיקת פרויקט",
   hideTrigger = false,
   open: openProp,
   onOpenChange,
@@ -26,12 +23,9 @@ export default function DeleteProjectButton({
   projectName?: string;
   redirectTo?: string;
   onDeleted?: () => void;
-  size?: "default" | "sm" | "lg" | "icon" | "icon-sm";
-  /** "ghost" reads as a quiet last resort — used at the foot of the phone פעולות list. */
-  variant?: "destructive" | "ghost";
   className?: string;
-  children?: ReactNode;
-  ariaLabel?: string;
+  /** The tooltip word — say WHAT is being deleted ("מחיקת הצעת מחיר"). */
+  triggerLabel?: string;
   /** Render only the confirm dialog — for callers that trigger it from their own menu. */
   hideTrigger?: boolean;
   /** Control the confirm dialog from outside (pairs with hideTrigger). */
@@ -93,22 +87,12 @@ export default function DeleteProjectButton({
   return (
     <div className="space-y-1">
         {hideTrigger ? null : (
-          <Button
-            type="button"
-            variant={variant}
-            size={size}
+          <DeleteButton
+            label={triggerLabel}
+            className={className}
+            loading={loading}
             onClick={() => setOpen(true)}
-            disabled={loading}
-            className={
-              variant === "ghost"
-                ? `text-destructive hover:text-destructive ${className ?? ""}`.trim()
-                : className
-            }
-            aria-label={ariaLabel}
-            title={ariaLabel}
-          >
-            {loading ? "מוחק..." : children ?? "מחיקת פרויקט"}
-          </Button>
+          />
         )}
       <ConfirmDialog
         open={open}

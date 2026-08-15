@@ -6,10 +6,10 @@
 // TaskUpsertDialog.helpers.ts; the orchestrator is TaskUpsertDialog.tsx.)
 
 import Image from "next/image";
-import { AddIcon, AttachIcon, CheckIcon, ClockIcon, CloseIcon, CommentIcon, DeleteIcon, LocationIcon, NotificationIcon } from "@/components/ui/icons";
+import { AddIcon, AttachIcon, CheckIcon, ClockIcon, CloseIcon, CommentIcon, LocationIcon, NotificationIcon } from "@/components/ui/icons";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
-import { EditButton } from "@/components/ui/icon-button";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
@@ -453,17 +453,7 @@ export function TaskPendingFilesSection({
               className="flex items-center justify-between gap-2 rounded-md border bg-background px-2 py-1.5"
             >
               <span className="min-w-0 truncate text-xs">{file.name}</span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-6 w-6 shrink-0 p-0 text-destructive"
-                title="הסרה"
-                aria-label={`הסרת ${file.name}`}
-                onClick={() => onRemove(index)}
-              >
-                <DeleteIcon className="h-3.5 w-3.5" />
-              </Button>
+              <DeleteButton label={`הסרת ${file.name}`} onClick={() => onRemove(index)} />
             </div>
           ))}
           <div className="text-[11px] text-muted-foreground">{files.length} קבצים יועלו עם השמירה</div>
@@ -549,14 +539,10 @@ export function TaskAttachmentsSection({
                   ) : null}
                 </span>
               </a>
-              <button
-                type="button"
+              <DeleteButton
+                label="מחיקת קובץ"
                 onClick={() => onRequestDelete({ id: attachment.id, name: attachment.original_name })}
-                aria-label="מחיקת קובץ"
-                className="shrink-0 text-muted-foreground transition-colors hover:text-destructive"
-              >
-                <DeleteIcon className="h-4 w-4" />
-              </button>
+              />
             </div>
           ))}
         </div>
@@ -646,14 +632,7 @@ export function TaskRemindersStagingSection({
                   <div className="truncate text-xs text-muted-foreground">{reminder.content}</div>
                 ) : null}
               </div>
-              <button
-                type="button"
-                onClick={() => onRemove(index)}
-                aria-label="הסרת תזכורת"
-                className="shrink-0 text-muted-foreground transition-colors hover:text-destructive"
-              >
-                <DeleteIcon className="h-4 w-4" />
-              </button>
+              <DeleteButton label="הסרת תזכורת" onClick={() => onRemove(index)} />
             </div>
           ))}
         </div>

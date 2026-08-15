@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { AddIcon, AddReminderIcon, CalendarIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, DeleteIcon, ExternalLinkIcon, ListIcon, SplitIcon, WarningIcon } from "@/components/ui/icons";
+import { AddIcon, AddReminderIcon, CalendarIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ExternalLinkIcon, ListIcon, SplitIcon, WarningIcon } from "@/components/ui/icons";
+import { DeleteButton } from "@/components/ui/icon-button";
 import ReminderFormDialog from "@/components/reminders/ReminderFormDialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -676,9 +677,7 @@ function PaymentItemCard({
               <AddReminderIcon className="h-4 w-4" />
             </Button>
             {canDelete ? (
-              <Button type="button" size="icon-sm" variant="destructive" onClick={onDelete} title="מחיקה" aria-label="מחיקה">
-                <DeleteIcon className="h-4 w-4" />
-              </Button>
+              <DeleteButton onClick={onDelete} />
             ) : null}
           </div>
         </div>
@@ -732,10 +731,7 @@ function PaymentItemCard({
           תזכורת
         </Button>
         {canDelete ? (
-          <Button type="button" size="sm" variant="destructive" onClick={onDelete}>
-            <DeleteIcon className="ml-1 h-3.5 w-3.5" />
-            מחיקה
-          </Button>
+          <DeleteButton onClick={onDelete} />
         ) : null}
       </div>
     </div>
@@ -854,9 +850,7 @@ function PaymentsMonthList({
                           <AddReminderIcon className="h-4 w-4" />
                         </Button>
                         {canDelete ? (
-                          <Button type="button" size="icon-sm" variant="destructive" onClick={() => setDeleteItem(item)} title="מחיקה" aria-label="מחיקה">
-                            <DeleteIcon className="h-4 w-4" />
-                          </Button>
+                          <DeleteButton onClick={() => setDeleteItem(item)} />
                         ) : null}
                       </div>
                     </td>

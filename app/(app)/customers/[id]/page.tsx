@@ -1132,8 +1132,6 @@ export default async function CustomerDetailsPage({
                     customerId={id}
                     customerName={customerName}
                     returnHref={returnCustomersHref}
-                    iconOnly
-                    className="h-8 w-8 rounded-full border border-border/60 bg-background text-destructive hover:bg-destructive-soft hover:text-destructive"
                   />
                 </div>
               </div>

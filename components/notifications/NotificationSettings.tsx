@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CheckIcon, ChevronDownIcon, ChevronUpIcon, CloseIcon } from "@/components/ui/icons";
+import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Field } from "@/components/ui/field";
@@ -11,7 +11,7 @@ import type { AlertMode, AlertRow, AlertSchedule } from "@/lib/notifications/typ
 import { BUILTIN_ALERT_TYPES } from "@/lib/notifications/types";
 import AlertMetricsPanel from "@/components/notifications/AlertMetricsPanel";
 import { notifyAlertsChanged } from "@/lib/ui/alerts-refresh";
-import { EditButton } from "@/components/ui/icon-button";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 
 // This screen answers ONE question for an admin: which automatic alerts exist,
 // and who gets them. That's the "live" rules list — everything else (scheduled
@@ -309,17 +309,11 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
 
         {/* System rules (rule_key) aren't deletable — only toggled/edited. */}
         {!alert.rule_key ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 shrink-0 p-0 text-destructive hover:bg-destructive/10"
-            title="מחיקה"
-            aria-label="מחיקת התראה"
-            disabled={deleting === alert.id}
+          <DeleteButton
+            label="מחיקת התראה"
+            loading={deleting === alert.id}
             onClick={() => setConfirmDelete(alert)}
-          >
-            <CloseIcon className="h-3.5 w-3.5" />
-          </Button>
+          />
         ) : null}
       </div>
     );

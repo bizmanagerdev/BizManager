@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { DeleteButton } from "@/components/ui/icon-button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { FormDialog } from "@/components/ui/form-dialog";
@@ -121,14 +121,7 @@ export default function EditCommunicationDialog({
         busy={busy}
         error={error || undefined}
         footerStart={
-          <Button
-            type="button"
-            variant="destructive"
-            onClick={() => setConfirmDelete(true)}
-            disabled={busy}
-          >
-            מחיקה
-          </Button>
+          <DeleteButton onClick={() => setConfirmDelete(true)} disabled={busy} size="default" />
         }
       >
 

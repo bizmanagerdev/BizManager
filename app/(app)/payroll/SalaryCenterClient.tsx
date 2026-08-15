@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
-import { AddIcon, CalendarCheckIcon, CashIcon, CoinsIcon, DeleteIcon, FilterIcon, LaborIcon, LockIcon, PrintIcon, ReceiptIcon, UsersIcon, WalletIcon, WarningIcon } from "@/components/ui/icons";
+import { AddIcon, CalendarCheckIcon, CashIcon, CoinsIcon, FilterIcon, LaborIcon, LockIcon, PrintIcon, ReceiptIcon, UsersIcon, WalletIcon, WarningIcon } from "@/components/ui/icons";
 import SalaryProtected from "@/components/payroll/SalaryProtected";
 import SessionEditorDialog from "./SessionEditorDialog";
 import { Badge } from "@/components/ui/badge";
@@ -2915,15 +2915,11 @@ export default function SalaryCenterClient({
                                 {"סגירה"}
                               </Button>
                             ) : null}
-                            <Button
-                              variant="destructive"
-                              size="icon"
+                            <DeleteButton
                               onClick={() => deleteSession(session.id)}
-                              aria-label="מחיקה"
+                              label="מחיקת משמרת"
                               disabled={session.locked || isPending}
-                            >
-                              <DeleteIcon className="h-4 w-4" />
-                            </Button>
+                            />
                           </div>
                         ) : null}
                       </div>
@@ -2982,15 +2978,11 @@ export default function SalaryCenterClient({
                                       {"סגירה"}
                                     </Button>
                                   ) : null}
-                                  <Button
-                                    variant="destructive"
-                                    size="icon"
+                                  <DeleteButton
                                     onClick={() => deleteSession(session.id)}
-                                    aria-label="מחיקה"
+                                    label="מחיקת משמרת"
                                     disabled={session.locked || isPending}
-                                  >
-                                    <DeleteIcon className="h-4 w-4" />
-                                  </Button>
+                                  />
                                 </div>
                               ) : (
                                 <span className="text-muted-foreground">-</span>
@@ -3101,14 +3093,7 @@ export default function SalaryCenterClient({
                                 </div>
                                 <div className="mt-2 flex justify-end gap-2">
                                   <EditButton onClick={() => openEditAgreementDialog(agreement)} label="עריכה" />
-                                  <Button
-                                    variant="destructive"
-                                    size="icon"
-                                    onClick={() => deleteAgreement(agreement)}
-                                    aria-label="מחיקה"
-                                  >
-                                    <DeleteIcon className="h-4 w-4" />
-                                  </Button>
+                                  <DeleteButton onClick={() => deleteAgreement(agreement)} label="מחיקת הסכם" />
                                 </div>
                               </div>
                             ))}
@@ -3153,14 +3138,7 @@ export default function SalaryCenterClient({
                               <td className="px-3 py-3">
                                 <div className="flex flex-wrap justify-end gap-2">
                                   <EditButton onClick={() => openEditAgreementDialog(agreement)} label="עריכה" />
-                                  <Button
-                                    variant="destructive"
-                                    size="icon"
-                                    onClick={() => deleteAgreement(agreement)}
-                                    aria-label="מחיקה"
-                                  >
-                                    <DeleteIcon className="h-4 w-4" />
-                                  </Button>
+                                  <DeleteButton onClick={() => deleteAgreement(agreement)} label="מחיקת הסכם" />
                                 </div>
                               </td>
                               <td className="px-3 py-3">
@@ -3321,14 +3299,11 @@ export default function SalaryCenterClient({
                               <div key={item.id} className="flex items-center justify-between gap-2 py-0.5">
                                 <div className="flex items-center gap-1.5">
                                   {isEditable && (
-                                    <button
-                                      type="button"
+                                    <DeleteButton
                                       onClick={() => deletePayslipItem(item.id, payslip.id)}
                                       disabled={isPending}
-                                      className="text-muted-foreground hover:text-destructive transition-colors"
-                                    >
-                                      <DeleteIcon className="h-3.5 w-3.5" />
-                                    </button>
+                                      label="מחיקת פריט"
+                                    />
                                   )}
                                   <span className={isNegative || isException ? "text-destructive font-medium" : "font-medium"}>
                                     {formatCurrency(item.amount)}
@@ -3584,9 +3559,7 @@ export default function SalaryCenterClient({
                           </Button>
                         ) : null}
                         {canCreateUsers ? (
-                          <Button variant="destructive" onClick={() => deleteSelectedWorker()} disabled={isPending}>
-                            {"מחק עובד"}
-                          </Button>
+                          <DeleteButton onClick={() => deleteSelectedWorker()} disabled={isPending} label="מחיקת עובד" size="default" />
                         ) : null}
                       </div>
                     </div>
@@ -3922,14 +3895,7 @@ export default function SalaryCenterClient({
                                           <td className="px-3 py-2">
                                             <div className="flex gap-2">
                                               <EditButton onClick={() => openEditAgreementDialog(agreement)} label="עריכה" />
-                                              <Button
-                                                variant="destructive"
-                                                size="icon"
-                                                onClick={() => deleteAgreement(agreement)}
-                                                aria-label="מחיקה"
-                                              >
-                                                <DeleteIcon className="h-4 w-4" />
-                                              </Button>
+                                              <DeleteButton onClick={() => deleteAgreement(agreement)} label="מחיקת הסכם" />
                                             </div>
                                           </td>
                                         </tr>
@@ -4173,14 +4139,12 @@ export default function SalaryCenterClient({
         busyLabel="שומר..."
         busy={isPending}
         footerStart={
-          <Button
-            type="button"
-            variant="destructive"
+          <DeleteButton
             onClick={() => deleteSelectedWorker()}
             disabled={isPending}
-          >
-            מחק עובד
-          </Button>
+            label="מחיקת עובד"
+            size="default"
+          />
         }
       >
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">

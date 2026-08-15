@@ -300,9 +300,7 @@ export default function RecurringTasksClient(props: Props) {
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      <Button type="button" variant="destructive" size="sm" onClick={() => setPendingDeleteId(template.id)}>
-                        מחיקה
-                      </Button>
+                      <DeleteButton onClick={() => setPendingDeleteId(template.id)} />
                     </div>
                   </CardContent>
                 </Card>

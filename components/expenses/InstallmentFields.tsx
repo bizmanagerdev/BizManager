@@ -1,6 +1,7 @@
 "use client";
 
-import { AddIcon, DeleteIcon } from "@/components/ui/icons";
+import { AddIcon } from "@/components/ui/icons";
+import { DeleteButton } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { DateInput } from "@/components/ui/date-input";
@@ -119,15 +120,11 @@ export function InstallmentFields({ total, startDate, rows, onChange }: Props) {
                 <div className="text-xs font-medium text-muted-foreground">סכום</div>
                 <CurrencyInput type="number" min="0" step="0.01" value={row.amount} onChange={(e) => updateRow(index, { amount: e.target.value })} />
               </div>
-              <button
-                type="button"
-                onClick={() => removeRow(index)}
+              <DeleteButton
+                label="הסרת תשלום"
                 disabled={rows.length <= 2}
-                className="pb-2 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-30"
-                aria-label="הסרת תשלום"
-              >
-                <DeleteIcon className="h-4 w-4" />
-              </button>
+                onClick={() => removeRow(index)}
+              />
             </div>
             <label className="mt-1 flex w-fit cursor-pointer items-center gap-1.5 ps-8 text-xs font-medium">
               <input type="checkbox" checked={!!row.paid} onChange={(e) => updateRow(index, { paid: e.target.checked })} />

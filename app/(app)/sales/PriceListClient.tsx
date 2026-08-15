@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { loadMorePriceList } from "@/app/(app)/sales/actions";
 import type { ProductsFilters } from "@/app/(app)/sales/loadProducts";
-import { AddIcon, DeleteIcon, FilterIcon, SearchIcon, SendIcon, SpinnerIcon } from "@/components/ui/icons";
+import { AddIcon, FilterIcon, SearchIcon, SendIcon, SpinnerIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Field } from "@/components/ui/field";
@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
-import { EditButton } from "@/components/ui/icon-button";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 
 type CategoryOption = {
   id: string;
@@ -1065,22 +1065,10 @@ export default function PriceListClient({
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-2">
                         <EditButton onClick={() => openEdit(product)} label="עריכה" />
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="destructive"
-                          className="h-8 w-8 p-0"
-                          title="מחיקה"
-                          aria-label="מחיקה"
-                          disabled={deleteLoadingId === product.id}
+                        <DeleteButton
+                          loading={deleteLoadingId === product.id}
                           onClick={() => openDeleteDialog(product)}
-                        >
-                          {deleteLoadingId === product.id ? (
-                            <SpinnerIcon className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <DeleteIcon className="h-4 w-4" />
-                          )}
-                        </Button>
+                        />
                       </div>
                     </td>
                   </tr>
@@ -1130,22 +1118,10 @@ export default function PriceListClient({
 
                 <div className="mt-2 flex justify-end gap-2">
                   <EditButton onClick={() => openEdit(product)} label="עריכה" />
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="destructive"
-                    className="h-9 w-9 rounded-lg p-0"
-                    title="מחיקה"
-                    aria-label="מחיקה"
-                    disabled={deleteLoadingId === product.id}
+                  <DeleteButton
+                    loading={deleteLoadingId === product.id}
                     onClick={() => openDeleteDialog(product)}
-                  >
-                    {deleteLoadingId === product.id ? (
-                      <SpinnerIcon className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <DeleteIcon className="h-4 w-4" />
-                    )}
-                  </Button>
+                  />
                 </div>
               </div>
             ))}

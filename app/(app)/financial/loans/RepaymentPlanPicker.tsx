@@ -1,6 +1,7 @@
 "use client";
 
-import { AddIcon, DeleteIcon } from "@/components/ui/icons";
+import { AddIcon } from "@/components/ui/icons";
+import { DeleteButton } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
@@ -242,15 +243,7 @@ export default function RepaymentPlanPicker({
                       onChange={(e) => setRow(index, "amount", e.target.value)}
                     />
                   </div>
-                  <Button
-                    type="button"
-                    variant="destructive-outline"
-                    size="icon-sm"
-                    onClick={() => removeRow(index)}
-                    aria-label="הסר תשלום"
-                  >
-                    <DeleteIcon className="h-4 w-4" />
-                  </Button>
+                  <DeleteButton onClick={() => removeRow(index)} label="הסרת תשלום" />
                 </div>
               ))}
               <div className="flex flex-wrap items-center justify-between gap-2">

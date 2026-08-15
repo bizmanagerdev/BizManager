@@ -4,7 +4,6 @@ import { toast } from "sonner";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { DeleteIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { DateInput } from "@/components/ui/date-input";
@@ -26,7 +25,7 @@ import { offlineFetch } from "@/lib/offline-queue";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import type { MorningLocalDocument } from "@/lib/morning/types";
-import { EditButton } from "@/components/ui/icon-button";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 
 export type PaymentItem = {
   id: string;
@@ -499,15 +498,7 @@ export function OrderPaymentActionsClient({
                         </Button>
                       </div>
                     ) : (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        onClick={() => setDeletingId(payment.id)}
-                      >
-                        <DeleteIcon className="h-4 w-4" />
-                      </Button>
+                      <DeleteButton label="מחיקת תשלום" onClick={() => setDeletingId(payment.id)} />
                     )}
                   </div>
                 ) : null}

@@ -2,7 +2,7 @@ import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { StatActionCard, collectionStatusTextClass } from "@/components/ui/stat-action-card";
-import { ChevronLeftIcon, CommentIcon, CopyIcon, DeleteIcon, DeliveryIcon, DocumentIcon, HistoryIcon, OrderIcon, PaymentIcon, ReceiptIcon } from "@/components/ui/icons";
+import { ChevronLeftIcon, CommentIcon, CopyIcon, DeliveryIcon, DocumentIcon, HistoryIcon, OrderIcon, PaymentIcon, ReceiptIcon } from "@/components/ui/icons";
 import EntityActivityTimeline from "@/app/(app)/activity/EntityActivityTimeline";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
 import { getOrderStatusLabel } from "@/lib/ui/status-colors";
@@ -541,14 +541,7 @@ export default async function SalesOrderPage({
             {order ? (
               <div className="hidden shrink-0 flex-wrap items-center gap-2 lg:flex">
                 {orderActionButtons}
-                <DeleteOrderButton
-                  orderId={id}
-                  variant="ghost"
-                  className="h-9 border border-destructive/40 hover:bg-destructive/10"
-                >
-                  <DeleteIcon className="h-4 w-4" />
-                  <span>מחיקה</span>
-                </DeleteOrderButton>
+                <DeleteOrderButton orderId={id} />
               </div>
             ) : null}
           </div>

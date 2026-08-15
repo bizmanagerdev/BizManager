@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
+import { DeleteButton } from "@/components/ui/icon-button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Field } from "@/components/ui/field";
 import { toHebrewError } from "@/lib/error-messages";
@@ -581,9 +582,7 @@ export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExi
                 <div key={contact.key} className="space-y-3 rounded-md border bg-background p-3">
                   <div className="flex items-center justify-between gap-2">
                     <div className="text-sm font-medium">איש קשר {index + 1}</div>
-                    <Button type="button" variant="secondary" size="sm" onClick={() => removeContact(contact.key)}>
-                      הסרה
-                    </Button>
+                    <DeleteButton label="הסרת איש קשר" onClick={() => removeContact(contact.key)} />
                   </div>
                   <Field label="שם מלא *">
                     <Input value={contact.full_name} onChange={(e) => updateContact(contact.key, { full_name: e.target.value })} />

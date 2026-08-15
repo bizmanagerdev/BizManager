@@ -29,7 +29,7 @@ import {
 } from "@/components/projects/MovingAddressFields";
 import DeleteProjectButton from "@/app/(app)/projects/DeleteProjectButton";
 import LogCommunicationButton from "@/components/communications/LogCommunicationButton";
-import { EditButton } from "@/components/ui/icon-button";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import ProjectShareActions, {
   printProjectSheet,
   projectShareHref,
@@ -438,13 +438,7 @@ export default function ProjectDetailsActions({
             projectId={project.id}
             projectName={project.name}
             redirectTo="/projects"
-            size="sm"
-            variant="ghost"
-            className="h-9 border border-destructive/40 hover:bg-destructive/10"
-          >
-            <DeleteIcon className="h-4 w-4" />
-            <span>מחיקה</span>
-          </DeleteProjectButton>
+          />
         </div>
       )}
 
@@ -657,15 +651,12 @@ export default function ProjectDetailsActions({
                               </Link>
                             </Button>
                           ) : null}
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={deletingDocumentId === document.document_id || editSubmitting}
+                          <DeleteButton
+                            label="מחיקת מסמך"
+                            disabled={editSubmitting}
+                            loading={deletingDocumentId === document.document_id}
                             onClick={() => void deleteProjectDocument(document.document_id)}
-                          >
-                            {deletingDocumentId === document.document_id ? "מוחק..." : "מחק"}
-                          </Button>
+                          />
                         </div>
                       </div>
                     );

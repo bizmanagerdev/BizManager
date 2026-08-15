@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import type { ReactNode } from "react";
 import SalaryProtected from "@/components/payroll/SalaryProtected";
 import { Button } from "@/components/ui/button";
+import { DeleteButton } from "@/components/ui/icon-button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
@@ -955,9 +956,7 @@ export default function SessionEditorDialog({
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="text-sm font-medium">{`חלק ${index + 1}`}</div>
                         {sessionSplitParts.length > 2 ? (
-                          <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => removeSessionSplitPart(part.id)}>
-                            {"הסרה"}
-                          </Button>
+                          <DeleteButton onClick={() => removeSessionSplitPart(part.id)} label="הסרת חלק" />
                         ) : null}
                       </div>
                       <div className="flex flex-wrap items-end justify-end gap-2">
@@ -1056,9 +1055,7 @@ export default function SessionEditorDialog({
                           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                             <span>{formatMinutes(part.minutes)}</span>
                             {!isLast && sessionSplitParts.length > 2 ? (
-                              <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => removeSessionSplitPart(part.id)}>
-                                {"הסרה"}
-                              </Button>
+                              <DeleteButton onClick={() => removeSessionSplitPart(part.id)} label="הסרת חלק" />
                             ) : null}
                           </div>
                         </div>

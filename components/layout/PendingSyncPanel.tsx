@@ -3,7 +3,8 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useCallback, useEffect, useState } from "react";
-import { CloseIcon, DeleteIcon, DocumentIcon, RefreshIcon, SyncIcon, WarningIcon } from "@/components/ui/icons";
+import { CloseIcon, DocumentIcon, RefreshIcon, SyncIcon, WarningIcon } from "@/components/ui/icons";
+import { DeleteButton } from "@/components/ui/icon-button";
 import {
   CONNECTION_EVENTS,
   getFailed,
@@ -211,14 +212,7 @@ function Row({
           >
             <RefreshIcon className="h-4 w-4" />
           </button>
-          <button
-            type="button"
-            onClick={onDiscard}
-            aria-label="הסר"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted/60"
-          >
-            <DeleteIcon className="h-4 w-4" />
-          </button>
+          <DeleteButton label="הסרה מהתור" onClick={onDiscard} />
         </div>
       ) : (
         <CloseIcon className="h-3.5 w-3.5 shrink-0 text-transparent" />

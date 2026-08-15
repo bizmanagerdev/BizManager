@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowDownIcon, ArrowUpIcon, BalanceIcon, CalculatorIcon, ChartIcon, ClockIcon, CoinsIcon, DeleteIcon, FilterIcon, HistoryIcon, LedgerIcon, RefreshIcon, ScheduleIcon, SearchIcon, SuccessIcon, TrendChartIcon, UsersIcon } from "@/components/ui/icons";
+import { ArrowDownIcon, ArrowUpIcon, BalanceIcon, CalculatorIcon, ChartIcon, ClockIcon, CoinsIcon, FilterIcon, HistoryIcon, LedgerIcon, RefreshIcon, ScheduleIcon, SearchIcon, SuccessIcon, TrendChartIcon, UsersIcon } from "@/components/ui/icons";
 import { TagPicker } from "@/components/tags/TagPicker";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Badge } from "@/components/ui/badge";
@@ -66,7 +66,7 @@ import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-qu
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
-import { EditButton } from "@/components/ui/icon-button";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 
 const useIsomorphicLayoutEffect =
   typeof window !== "undefined" ? useLayoutEffect : useEffect;
@@ -1385,10 +1385,7 @@ export default function FinancialPageClient({
                       {canManageExpenses && editableExpense ? (
                         <div className="flex justify-end gap-2 pt-1">
                           <EditButton onClick={(event) => { event.stopPropagation(); openExpenseEditor(editableExpense); }} label="עריכה" />
-                          <Button type="button" variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={(event) => { event.stopPropagation(); setDeletingExpense(editableExpense); }}>
-                            <DeleteIcon className="ml-1 h-4 w-4" />
-                            מחיקה
-                          </Button>
+                          <DeleteButton onClick={(event) => { event.stopPropagation(); setDeletingExpense(editableExpense); }} />
                         </div>
                       ) : null}
                     </div>
@@ -1472,10 +1469,7 @@ export default function FinancialPageClient({
                             {editableExpense ? (
                               <div className="flex items-center justify-end gap-1">
                                 <EditButton onClick={(event) => { event.stopPropagation(); openExpenseEditor(editableExpense); }} label="עריכה" />
-                                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={(event) => { event.stopPropagation(); setDeletingExpense(editableExpense); }}>
-                                  <DeleteIcon className="h-4 w-4" />
-                                  <span className="sr-only">מחיקת חיוב</span>
-                                </Button>
+                                <DeleteButton onClick={(event) => { event.stopPropagation(); setDeletingExpense(editableExpense); }} />
                               </div>
                             ) : null}
                           </td>
@@ -1657,19 +1651,12 @@ export default function FinancialPageClient({
                                     event.stopPropagation();
                                     openExpenseEditor(editableExpense);
                                   }} label="עריכה" />
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 text-destructive hover:text-destructive"
+                                <DeleteButton
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     setDeletingExpense(editableExpense);
                                   }}
-                                >
-                                  <DeleteIcon className="h-4 w-4" />
-                                  <span className="sr-only">מחיקת חיוב</span>
-                                </Button>
+                                />
                               </div>
                             ) : null}
                           </td>
@@ -1833,19 +1820,12 @@ export default function FinancialPageClient({
                               event.stopPropagation();
                               openExpenseEditor(editableExpense);
                             }} label="עריכה" />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="text-destructive hover:text-destructive"
+                          <DeleteButton
                             onClick={(event) => {
                               event.stopPropagation();
                               setDeletingExpense(editableExpense);
                             }}
-                          >
-                            <DeleteIcon className="ml-1 h-4 w-4" />
-                            מחיקה
-                          </Button>
+                          />
                         </div>
                       ) : null}
                     </div>
@@ -1990,19 +1970,12 @@ export default function FinancialPageClient({
                                     event.stopPropagation();
                                     openExpenseEditor(editableExpense);
                                   }} label="עריכה" />
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 text-destructive hover:text-destructive"
+                                <DeleteButton
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     setDeletingExpense(editableExpense);
                                   }}
-                                >
-                                  <DeleteIcon className="h-4 w-4" />
-                                  <span className="sr-only">מחיקת חיוב</span>
-                                </Button>
+                                />
                               </div>
                             ) : null}
                           </td>

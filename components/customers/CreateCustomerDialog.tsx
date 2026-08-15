@@ -8,6 +8,7 @@ import { invalidateCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import { AddIcon, AiIcon, CardIcon, UserIcon, UsersIcon } from "@/components/ui/icons";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
+import { DeleteButton } from "@/components/ui/icon-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Field } from "@/components/ui/field";
@@ -673,14 +674,7 @@ export function CreateCustomerDialog({
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="text-sm font-medium">איש קשר {index + 1}</div>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => removeContact(index)}
-                      >
-                        הסרה
-                      </Button>
+                      <DeleteButton label="הסרת איש קשר" onClick={() => removeContact(index)} />
                     </div>
                     <Field label="שם מלא" required>
                       <Input

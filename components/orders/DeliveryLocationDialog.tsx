@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { LocationIcon, WazeIcon } from "@/components/ui/icons";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { Button } from "@/components/ui/button";
+import { DeleteButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toHebrewError } from "@/lib/error-messages";
@@ -179,13 +180,7 @@ export function DeliveryLocationDialog({
               {pin ? (
                 <div className="flex items-center justify-between gap-2 text-xs">
                   <span className="text-muted-foreground">נשמר: {formatPin(pin)}</span>
-                  <button
-                    type="button"
-                    className="text-destructive hover:underline"
-                    onClick={() => setPin(null)}
-                  >
-                    מחיקה
-                  </button>
+                  <DeleteButton onClick={() => setPin(null)} label="מחיקת מיקום" />
                 </div>
               ) : null}
 

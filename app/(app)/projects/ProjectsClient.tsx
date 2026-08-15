@@ -15,7 +15,7 @@ import { SwipeActions } from "@/components/ui/swipe-actions";
 import { NativeSelect } from "@/components/ui/native-select";
 import { loadMoreProjects } from "@/app/(app)/projects/actions";
 import type { ProjectsFilters } from "@/app/(app)/projects/loadProjects";
-import { AddIcon, ChatIcon, DeleteIcon, DocumentIcon, EditIcon, FilterIcon, ProjectIcon, SearchIcon, SuccessIcon } from "@/components/ui/icons";
+import { AddIcon, ChatIcon, DocumentIcon, EditIcon, FilterIcon, ProjectIcon, SearchIcon, SuccessIcon } from "@/components/ui/icons";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { paymentStatusClasses, collectionStatusClasses, collectionStatusLabel } from "@/lib/orders/paymentStatus";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
@@ -974,13 +974,9 @@ export default function ProjectsClient({
                         <DeleteProjectButton
                           projectId={id}
                           projectName={projectDisplayName(row)}
-                          size="icon"
-                          className="h-9 w-9 rounded-xl"
-                          ariaLabel={currentStatus === "quote" ? "מחיקת הצעת מחיר" : "מחיקת פרויקט"}
+                          triggerLabel={currentStatus === "quote" ? "מחיקת הצעת מחיר" : "מחיקת פרויקט"}
                           onDeleted={() => removeProject(id)}
-                        >
-                          <DeleteIcon className="h-4 w-4" />
-                        </DeleteProjectButton>
+                        />
                       </div>
                     </td>
                   </tr>

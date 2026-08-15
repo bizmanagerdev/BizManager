@@ -5,7 +5,8 @@ import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-qu
 import { toHebrewError } from "@/lib/error-messages";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronDownIcon, DeleteIcon, DragIcon } from "@/components/ui/icons";
+import { ChevronDownIcon, DragIcon } from "@/components/ui/icons";
+import { DeleteButton } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -990,17 +991,12 @@ export default function PayrollAdminClient({
 
                         return (
                           <div key={session.id} className="relative rounded-2xl border bg-muted/10 p-4 text-sm">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="absolute left-3 top-3 h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                            <DeleteButton
+                              className="absolute left-3 top-3"
+                              label="מחיקת משמרת"
                               disabled={Boolean(deletingSessionId) || isPending}
                               onClick={() => void deleteSession(session)}
-                              aria-label="מחיקת משמרת"
-                              title="מחיקת משמרת"
-                            >
-                              <DeleteIcon className="h-4 w-4" />
-                            </Button>
+                            />
                             <div className="flex flex-wrap items-start justify-between gap-2">
                               <div>
                                 <div className="font-medium">

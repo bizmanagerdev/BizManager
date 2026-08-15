@@ -1,30 +1,22 @@
 ﻿"use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { DeleteIcon } from "@/components/ui/icons";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
-import { Button } from "@/components/ui/button";
+import { DeleteButton } from "@/components/ui/icon-button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { offlineFetch } from "@/lib/offline-queue";
 
 export default function DeleteOrderButton({
   orderId,
-  iconOnly = false,
-  variant = "destructive",
   className,
-  children,
   hideTrigger = false,
   open: openProp,
   onOpenChange,
 }: {
   orderId: string;
-  iconOnly?: boolean;
-  /** "ghost" (+ a destructive border) reads as a quiet last resort in an action row. */
-  variant?: "destructive" | "ghost";
   className?: string;
-  children?: ReactNode;
   /** Render only the confirm dialog — for callers that trigger it from their own menu. */
   hideTrigger?: boolean;
   /** Control the confirm dialog from outside (pairs with hideTrigger). */
@@ -74,22 +66,12 @@ export default function DeleteOrderButton({
   return (
     <div className="space-y-1">
       {hideTrigger ? null : (
-        <Button
-          type="button"
-          variant={variant}
-          size="sm"
-          className={
-            variant === "ghost"
-              ? `text-destructive hover:text-destructive ${className ?? ""}`.trim()
-              : className ?? (iconOnly ? "h-9 w-9 p-0" : undefined)
-          }
-          aria-label="מחיקת הזמנה"
-          title="מחיקת הזמנה"
+        <DeleteButton
+          label="מחיקת הזמנה"
+          className={className}
+          loading={loading}
           onClick={() => setConfirmOpen(true)}
-          disabled={loading}
-        >
-          {loading ? "מוחק..." : children ?? (iconOnly ? <DeleteIcon className="h-4 w-4" /> : "מחיקת הזמנה")}
-        </Button>
+        />
       )}
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
       <ConfirmDialog

@@ -3,10 +3,9 @@ import { toHebrewError } from "@/lib/error-messages";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { DeleteIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
-import { Button } from "@/components/ui/button";
+import { DeleteButton } from "@/components/ui/icon-button";
 import { offlineFetch } from "@/lib/offline-queue";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
@@ -14,13 +13,11 @@ export default function DeleteCustomerButton({
   customerId,
   customerName,
   returnHref,
-  iconOnly = false,
   className,
 }: {
   customerId: string;
   customerName: string;
   returnHref: string;
-  iconOnly?: boolean;
   className?: string;
 }) {
   const router = useRouter();
@@ -70,23 +67,7 @@ export default function DeleteCustomerButton({
 
   return (
     <>
-      {iconOnly ? (
-        <Button
-          type="button"
-          variant="destructive"
-          size="icon"
-          className={className ?? "h-9 w-9 rounded-xl"}
-          onClick={openConfirm}
-          aria-label="מחיקת לקוח"
-          title="מחיקת לקוח"
-        >
-          <DeleteIcon className="h-4 w-4" />
-        </Button>
-      ) : (
-        <Button type="button" variant="destructive" size="sm" className={className} onClick={openConfirm}>
-          מחיקת לקוח
-        </Button>
-      )}
+      <DeleteButton label="מחיקת לקוח" className={className} loading={loading} onClick={openConfirm} />
 
       <ConfirmDialog
         open={open}
