@@ -4,15 +4,13 @@ import { toHebrewError } from "@/lib/error-messages";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ComponentType } from "react";
-import { ClockIcon, DeleteIcon, HideIcon, NotificationIcon, ShowIcon, UserIcon, WalletIcon } from "@/components/ui/icons";
+import { ClockIcon, HideIcon, NotificationIcon, ShowIcon, UserIcon, WalletIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ViewDialog } from "@/components/ui/view-dialog";
-import { EmptyState } from "@/components/ui/empty-state";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import NotificationPrefs from "@/components/notifications/NotificationPrefs";
@@ -23,7 +21,7 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { InitialsAvatar, isHexColor } from "@/components/dashboard/InitialsAvatar";
 import { setAvatarColorCache } from "@/lib/ui/avatar-color";
 import type { UserProfile } from "@/lib/auth/requireProfile";
-import { EXPENSE_BUSINESS_DOMAINS, WORK_SESSION_BUSINESS_DOMAINS, getBusinessDomainLabel, type ExpenseBusinessDomain } from "@/lib/expenses";
+import { EXPENSE_BUSINESS_DOMAINS, WORK_SESSION_BUSINESS_DOMAINS, type ExpenseBusinessDomain } from "@/lib/expenses";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions, payrollWorkerTypeGeneratesPayslips, shouldShowSessionHours } from "@/lib/payroll-worker-type";
 import {
@@ -38,6 +36,7 @@ import {
   getSalaryTypeLabel,
   minutesBetween,
   monthKeyFromDate,
+  monthLabelFromKey,
   sessionWorkedMinutes,
   toNumber,
   type MonthlyHoursSummary,
@@ -46,10 +45,10 @@ import {
   type SalaryAgreementRow,
   type WorkSessionRow,
 } from "@/lib/payroll";
-import { EditButton } from "@/components/ui/icon-button";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import MyShiftCard from "@/components/attendance/MyShiftCard";
+import SessionList from "@/components/attendance/SessionList";
 import type { MyShiftReport } from "@/lib/attendance/my-shift";
-import { formatTimeOnly } from "@/lib/date";
 
 type Props = {
   profile: UserProfile;
@@ -76,14 +75,8 @@ type Props = {
   payTotals?: { earned: number; paid: number; owed: number } | null;
   /** session id → payment_status, so a shift row can say whether it was paid. */
   payBySessionId?: Record<string, string>;
-};
-
-const PAY_STATUS_META: Record<string, { label: string; variant: "success" | "warning" | "destructive" | "neutral" }> = {
-  paid: { label: "שולם", variant: "success" },
-  partial: { label: "שולם חלקית", variant: "warning" },
-  unpaid: { label: "לא שולם", variant: "destructive" },
-  pending: { label: "טרם הגיע מועד", variant: "neutral" },
-  overpaid: { label: "שולם ביתר", variant: "neutral" },
+  /** session id → the specific project name / property address it was booked to. */
+  linkLabelBySessionId?: Record<string, string>;
 };
 
 type SplitPartDraft = {
@@ -146,7 +139,7 @@ function toLocalDateTimeValue(date: Date) {
 
 type ProfileTab = "profile" | "notifications" | "sessions" | "salary";
 
-export default function ProfileClient({ profile, initialFontScale, initialAvatarColor, sessions, agreements, payslips, periods, monthlySummaries, projectOptions, propertyOptions, isWorker = false, openShiftReport = null, pendingShiftReports = [], payTotals = null, payBySessionId = {} }: Props) {
+export default function ProfileClient({ profile, initialFontScale, initialAvatarColor, sessions, agreements, payslips, periods, monthlySummaries, projectOptions, propertyOptions, isWorker = false, openShiftReport = null, pendingShiftReports = [], payTotals = null, payBySessionId = {}, linkLabelBySessionId = {} }: Props) {
   const router = useRouter();
   // The whole page is the swipe surface, so the gesture works wherever the
   // thumb happens to be rather than only on the tab strip.
@@ -272,11 +265,25 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
   // Open on THIS month when there are hours in it — "how am I doing this month"
   // is the question you come here with. Only when it's empty does it fall back
   // to the most recent month that has any, so the page is never blank.
-  const [selectedMonth, setSelectedMonth] = useState(() => {
+  // The month list is built from shifts that EXIST, so the current month is
+  // missing until the first one is approved — and "where's August?" on the 14th
+  // of August is a broken page, not an empty one. Always offer it, at zero.
+  const monthOptions = useMemo(() => {
     const currentKey = monthKeyFromDate(new Date());
-    if (monthlySummaries.some((summary) => summary.key === currentKey)) return currentKey;
-    return monthlySummaries[0]?.key ?? currentKey;
-  });
+    if (monthlySummaries.some((summary) => summary.key === currentKey)) return monthlySummaries;
+    return [
+      {
+        key: currentKey,
+        label: monthLabelFromKey(currentKey),
+        totalMinutes: 0,
+        sessionCount: 0,
+        openSessionCount: 0,
+      },
+      ...monthlySummaries,
+    ];
+  }, [monthlySummaries]);
+
+  const [selectedMonth, setSelectedMonth] = useState(() => monthKeyFromDate(new Date()));
 
   // Global text-size multiplier. The whole UI is rem-based, so this scales
   // text, spacing and widths together (no squashing) — see app/globals.css.
@@ -357,7 +364,9 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
     return match ? match[1] : new Date().toISOString().slice(0, 10);
   })();
   const periodsById = useMemo(() => new Map(periods.map((period) => [period.id, period])), [periods]);
-  const selectedMonthSummary = monthlySummaries.find((summary) => summary.key === selectedMonth) ?? monthlySummaries[0] ?? null;
+  // No cross-month fallback: showing July's totals under a header that says
+  // August is worse than showing zeros.
+  const selectedMonthSummary = monthOptions.find((summary) => summary.key === selectedMonth) ?? null;
   const selectedMonthSessions = useMemo(() => sessions.filter((session) => monthKeyFromDate(session.clock_in) === selectedMonth), [selectedMonth, sessions]);
   const latestPayslip = useMemo(() => [...payslips].sort((a, b) => (periodsById.get(b.payroll_period_id)?.period_month ?? "").localeCompare(periodsById.get(a.payroll_period_id)?.period_month ?? ""))[0] ?? null, [payslips, periodsById]);
   const latestPeriod = latestPayslip ? periodsById.get(latestPayslip.payroll_period_id) ?? null : null;
@@ -749,7 +758,7 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
                 return <div key={part.id} className="rounded-xl border bg-background/70 p-3">
                   <div className="mb-2 flex flex-row-reverse flex-wrap items-center justify-between gap-2">
                     <div className="text-sm font-medium">חלק {index + 1}</div>
-                    <div className="flex flex-row-reverse flex-wrap items-center gap-2 text-xs text-muted-foreground"><span>{formatMinutes(part.minutes)}</span>{!isLast && splitParts.length > 2 ? <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => removeSplitPart(part.id)}>הסרה</Button> : null}</div>
+                    <div className="flex flex-row-reverse flex-wrap items-center gap-2 text-xs text-muted-foreground"><span>{formatMinutes(part.minutes)}</span>{!isLast && splitParts.length > 2 ? <DeleteButton label="הסרת חלק" onClick={() => removeSplitPart(part.id)} /> : null}</div>
                   </div>
                   <div className="flex flex-row-reverse flex-wrap items-end justify-end gap-2">
                     <label className="space-y-1 text-right"><span className="block text-xs text-muted-foreground">כניסה</span><div className="flex h-9 min-w-24 items-center justify-center rounded-md border border-dashed px-3 text-sm text-muted-foreground">{splitTimeLabel(part.startLocal)}</div></label>
@@ -800,9 +809,12 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
   });
 
   return (
+    // Swipe anywhere on the page to change tab — except over content that claims
+    // the gesture for itself (the shift rows, which open on a swipe, and any
+    // sideways-scrolling table). See lib/ui/gesture-claim.
     <div className="space-y-4" ref={swipeRef}>
-      {/* The same tab bar as the rest of the system (financial, projects,
-          payroll…), plus swipe left/right on the page to step between them. */}
+      {/* The same tab bar as the rest of the system (financial, projects, payroll…). */}
+      <div>
       <Tabs value={activeTab} onValueChange={(value) => setTab(value as ProfileTab)}>
         {/* Full-bleed on a phone (-mx-3 cancels the shell gutter) and the four
             tabs split the width evenly, so they always fit however narrow the
@@ -825,6 +837,7 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
           ))}
         </TabsList>
       </Tabs>
+      </div>
 
       {activeTab === "profile" ? (
         <>
@@ -1101,7 +1114,7 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
                   <CardContent className="space-y-2 py-5 text-right">
                     <div className="text-lg font-semibold">ממתינות לאישור</div>
                     <p className="text-sm text-muted-foreground">
-                      משמרת נכנסת לשעות ולשכר רק אחרי שהמנהל מאשר אותה.
+                      משמרת נכנסת לשעות ולשכר רק אחרי שהלר מאשר אותה.
                     </p>
                     {pendingShiftReports.map((report) => (
                       <div
@@ -1138,8 +1151,15 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
             </Card>
           )}
 
-          <Card>
-            <CardContent className="space-y-4 py-5 text-right">
+          {/* overflow-hidden: the shift list runs full-bleed (it cancels the
+              padding below so its rules span the whole card), and without
+              clipping those straight lines cut across the 1.5rem corner radius —
+              the card looked like its border was broken at the bottom. */}
+          <Card className="overflow-hidden">
+            {/* Tighter side padding on a phone than the default p-6: the card
+                already sits inside the page gutter, and 24px of card padding on
+                top of that left the shift rows squeezed into the middle. */}
+            <CardContent className="space-y-4 px-3 py-5 text-right md:px-6">
               <div className="flex flex-row-reverse flex-wrap items-center justify-between gap-2">
                 {/* Adding / editing / deleting a session outright is the boss's
                     call for a worker — his shifts arrive through the queue. */}
@@ -1147,7 +1167,7 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
                   <Button type="button" variant="outline" onClick={openManualEditor}>הוספת משמרת ידנית</Button>
                 )}
                 <NativeSelect value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)}>
-                  {monthlySummaries.map((summary) => <option key={summary.key} value={summary.key}>{summary.label}</option>)}
+                  {monthOptions.map((summary) => <option key={summary.key} value={summary.key}>{summary.label}</option>)}
                 </NativeSelect>
               </div>
               {/* Three numbers, one row — even on a phone. Stacked, they were
@@ -1157,57 +1177,28 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
                 <StatCard label="כמות משמרות" value={`${selectedMonthSummary.sessionCount}`} />
                 <StatCard label="משמרות פתוחות" value={`${selectedMonthSummary.openSessionCount}`} />
               </div> : <div className="text-sm text-muted-foreground">עדיין אין נתוני שעות.</div>}
-              <div className="space-y-3 text-right">
-                {selectedMonthSessions.length === 0 ? <EmptyState dense>אין עדיין משמרות בחודש הזה.</EmptyState> : selectedMonthSessions.map((session) => <div key={session.id} className="rounded-2xl border p-4 text-sm text-right">
-                  {/* One line per fact, each said once. The old row printed the
-                      whole in/out range and then repeated the clock-out under it,
-                      with the two timestamps colliding in RTL so the range read
-                      backwards. Now: the day, the duration beside it, then the
-                      hours as plain HH:MM (forced LTR so "08:30 - 14:00" can't
-                      flip), then domain + payment. */}
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="font-medium">{formatDate(session.clock_in)}</div>
-                    {showSessionTimingForProfile ? (
-                      <div className="text-base font-semibold">{formatMinutes(sessionWorkedMinutes(session))} שעות</div>
-                    ) : null}
-                  </div>
-                  {showSessionTimingForProfile ? (
-                    <div className="mt-1 text-muted-foreground">
-                      <span dir="ltr" className="inline-block">
-                        {formatTimeOnly(session.clock_in)}
-                        {" - "}
-                        {session.clock_out ? formatTimeOnly(session.clock_out) : "…"}
-                      </span>
-                      {session.clock_out ? null : <span className="ms-2">פתוחה</span>}
-                    </div>
-                  ) : null}
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <Badge variant="neutral">{getBusinessDomainLabel(session.business_domain)}</Badge>
-                    {/* Whether this shift has actually been paid, straight from
-                        worker_debt_items_view. */}
-                    {(() => {
-                      const meta = PAY_STATUS_META[payBySessionId[session.id] ?? ""];
-                      return meta ? <Badge variant={meta.variant}>{meta.label}</Badge> : null;
-                    })()}
-                  </div>
-                  {session.notes ? <div className="mt-2 text-muted-foreground">{session.notes}</div> : null}
-                  {isWorker ? null : (
-                    <div className="mt-3 flex flex-row-reverse flex-wrap gap-2">
-                      <Button type="button" size="sm" variant="outline" onClick={() => openSessionEditor(session)}>עריכת משמרת</Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="destructive"
-                        disabled={isPending}
-                        onClick={() => setPendingDeleteSessionId(session.id)}
-                      >
-                        <DeleteIcon className="h-4 w-4" />
-                        מחיקה
-                      </Button>
-                    </div>
-                  )}
-                </div>)}
-              </div>
+              {/* Swipeable cards on a phone, a real table from md up. A worker
+                  edits through the correction flow (withdraws the shift from
+                  payroll, back to the queue); staff keep the direct editor,
+                  which writes attendance_sessions in place. */}
+              <SessionList
+                items={selectedMonthSessions.map((session) => ({
+                  session,
+                  paymentStatus: payBySessionId[session.id],
+                  linkLabel: linkLabelBySessionId[session.id],
+                }))}
+                showTiming={showSessionTimingForProfile}
+                canEdit={isWorker}
+                staffActions={
+                  isWorker
+                    ? undefined
+                    : {
+                        onEdit: (session) => openSessionEditor(session),
+                        onDelete: (session) => setPendingDeleteSessionId(session.id),
+                        disabled: isPending,
+                      }
+                }
+              />
             </CardContent>
           </Card>
         </section>
@@ -1245,12 +1236,44 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
 
           <div className="space-y-4">
             <Card>
-              <CardContent className="space-y-3 py-5">
+              <CardContent className="space-y-3 px-3 py-5 md:px-6">
                 <div className="text-lg font-semibold">היסטוריית שכר</div>
                 {agreements.length === 0 ? (
                   <div className="text-sm text-muted-foreground">אין היסטוריית שכר זמינה.</div>
                 ) : (
-                  <div className="overflow-x-auto rounded-lg border">
+                  <>
+                  {/* Phone: label-above-value rows. Five columns squeezed into a
+                      360px screen turned every cell into a two-character sliver
+                      with a sideways scrollbar under it. */}
+                  <div className="space-y-2 md:hidden">
+                    {agreements.map((agreement) => (
+                      <div key={agreement.id} className="rounded-lg border p-3 text-sm">
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                          <span className="font-semibold">
+                            {agreement.salary_type === "hourly"
+                              ? `${formatCurrency(agreement.hourly_rate)} לשעה`
+                              : formatCurrency(agreement.monthly_salary)}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {getSalaryTypeLabel(agreement.salary_type)}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {formatDate(agreement.valid_from)} - {formatDate(agreement.valid_to)}
+                        </div>
+                        {showSessionTimingForProfile ? (
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            שעות תקן: {toNumber(agreement.standard_daily_hours)}
+                            {agreement.overtime_rate ? ` · נוספות: ${formatCurrency(agreement.overtime_rate)}` : ""}
+                          </div>
+                        ) : null}
+                        {agreement.notes ? (
+                          <div className="mt-1 text-xs text-muted-foreground">{agreement.notes}</div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="hidden overflow-x-auto rounded-lg border md:block">
                     <table className="w-full text-right text-sm">
                       <thead className="border-b bg-muted text-muted-foreground">
                         <tr>
@@ -1289,16 +1312,54 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
                       </tbody>
                     </table>
                   </div>
+                  </>
                 )}
               </CardContent>
             </Card>
             <Card>
-              <CardContent className="space-y-3 py-5">
+              <CardContent className="space-y-3 px-3 py-5 md:px-6">
                 <div className="text-lg font-semibold">תלושי שכר</div>
                 {payslips.length === 0 ? (
                   <div className="text-sm text-muted-foreground">אין תלושי שכר זמינים כרגע.</div>
                 ) : (
-                  <div className="overflow-x-auto rounded-lg border">
+                  <>
+                  {/* Phone: the amount is what you came for, so it leads; the
+                      breakdown (base + adjustments) reads as a sentence under it
+                      rather than as three columns three characters wide. */}
+                  <div className="space-y-2 md:hidden">
+                    {payslips.map((payslip) => {
+                      const period = periodsById.get(payslip.payroll_period_id) ?? null;
+                      return (
+                        <div key={payslip.id} className="rounded-lg border p-3 text-sm">
+                          <div className="flex flex-wrap items-baseline justify-between gap-2">
+                            <span className="font-medium">{period?.period_month ?? "תקופת שכר"}</span>
+                            <span className="font-semibold">{formatCurrency(payslip.gross_salary)}</span>
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {getSalaryTypeLabel(payslip.calculated_salary_type)}
+                            {showSessionTimingForProfile ? ` · ${formatMinutes(payslip.total_work_minutes)} שעות` : ""}
+                            {period ? ` · ${getPayrollStatusLabel(period.status)}` : ""}
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            בסיס {formatCurrency(payslip.calculated_base_salary)}
+                            {toNumber(payslip.manual_adjustments) !== 0
+                              ? ` · התאמות ${formatCurrency(payslip.manual_adjustments)}`
+                              : ""}
+                          </div>
+                          {period ? (
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {formatDate(period.start_date)} - {formatDate(period.end_date)} · צפי תשלום:{" "}
+                              {getNextMonthDueText(period.end_date)}
+                            </div>
+                          ) : null}
+                          {payslip.notes ? (
+                            <div className="mt-1 text-xs text-muted-foreground">{payslip.notes}</div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="hidden overflow-x-auto rounded-lg border md:block">
                     <table className="w-full text-right text-sm">
                       <thead className="border-b bg-muted text-muted-foreground">
                         <tr>
@@ -1339,6 +1400,7 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
                       </tbody>
                     </table>
                   </div>
+                  </>
                 )}
               </CardContent>
             </Card>

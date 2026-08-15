@@ -18,6 +18,7 @@
 
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { claimHorizontalGesture } from "@/lib/ui/gesture-claim";
 
 export type SwipeAction = {
   key: string;
@@ -74,6 +75,9 @@ export function SwipeActions({
   const onPointerDown = useCallback(
     (event: React.PointerEvent) => {
       if (event.pointerType === "mouse" && event.button !== 0) return;
+      // Tell any page-level swipe (tab paging) to keep off this drag — see
+      // lib/ui/gesture-claim.
+      claimHorizontalGesture();
       startX.current = event.clientX;
       startY.current = event.clientY;
       axis.current = null;
@@ -110,7 +114,11 @@ export function SwipeActions({
   }, [dragOffset, onOpenChange, stripWidth]);
 
   return (
-    <div className={cn("relative min-w-0 overflow-hidden rounded-2xl", className)}>
+    // data-swipe-owner: this subtree handles horizontal drags itself. Page-level
+    // gesture handlers (useSwipeNavigation, which pages tabs) look for this and
+    // keep out — otherwise swiping a row open and back also flicked the page to
+    // the next tab, because both were reading the same finger.
+    <div data-swipe-owner="" className={cn("relative min-w-0 overflow-hidden rounded-2xl", className)}>
       {/* The strip sits UNDER the card, pinned to the left (RTL end) edge. */}
       <div className="absolute inset-y-0 left-0 flex" style={{ width: stripWidth }} aria-hidden={!isOpen}>
         {actions.map((action) =>

@@ -51,6 +51,9 @@ export default function MyShiftCard({
   const [fullEndLocal, setFullEndLocal] = useState("");
   const [endMode, setEndMode] = useState<"now" | "custom">("now");
   const [endLocal, setEndLocal] = useState("");
+  // The closing form is behind a press — an open shift shouldn't sit there with
+  // a half-filled form on screen all day.
+  const [closing, setClosing] = useState(false);
 
   // Ticks the elapsed reading once a minute — the shift is measured in minutes,
   // so a per-second timer would only burn battery on a phone in a van.
@@ -84,6 +87,7 @@ export default function MyShiftCard({
       setFullEndLocal("");
       setEndMode("now");
       setEndLocal("");
+      setClosing(false);
       toast.success(successMessage);
       startSaving(() => router.refresh());
     } catch (error: unknown) {
@@ -144,70 +148,95 @@ export default function MyShiftCard({
     <Card>
       <CardContent className="space-y-3 py-4 text-right" dir="rtl">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-base font-semibold">
+          {/* When a shift is running the heading carries the start time itself —
+              a title that only said "משמרת פתוחה" with "נפתחה ב־…" repeated on
+              the line below was the same fact twice. */}
+          <div className="flex min-w-0 items-center gap-2 text-base font-semibold">
             <ClockIcon className="h-5 w-5 shrink-0" />
-            <span>{openShift ? "משמרת פתוחה" : "שעון נוכחות"}</span>
+            <span className="break-words">
+              {openShift ? `משמרת פתוחה מ־${formatShortDateTime(openShift.clock_in)}` : "שעון נוכחות"}
+            </span>
           </div>
           {pendingCount > 0 ? (
             <Badge variant="warning">{pendingCount} משמרות ממתינות לאישור</Badge>
           ) : null}
         </div>
 
-        {openShift ? (
-          <div className="space-y-1 text-sm">
-            <div>
-              נפתחה ב־<span className="font-semibold">{formatShortDateTime(openShift.clock_in)}</span>
-            </div>
-            {/* Null until the first client tick, so the server and client render
-                the same markup and the time can't hydrate-mismatch. */}
-            {elapsedMinutes !== null ? (
-              <div className="text-muted-foreground">עד עכשיו: {formatMinutes(elapsedMinutes)} שעות</div>
-            ) : null}
-          </div>
+        {/* Null until the first client tick, so the server and client render the
+            same markup and the running total can't hydrate-mismatch. */}
+        {openShift && elapsedMinutes !== null ? (
+          <div className="text-sm text-muted-foreground">עד עכשיו: {formatMinutes(elapsedMinutes)} שעות</div>
         ) : null}
 
-        {/* The note is asked for only when CLOSING: at the start of the shift
-            there is nothing to report yet, and an empty box above the button just
-            made the card look like a form. */}
+        {/* While the shift just runs, the card is one line and one button. The
+            closing FORM — end time and what you did — appears only once you say
+            you're finishing, the same two-step the payroll queue uses to close
+            someone's shift. */}
         {openShift ? (
-          <Textarea
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            rows={2}
-            disabled={working}
-            aria-label="הערה למשמרת"
-            placeholder="מה עשית במשמרת? (עוזר למנהל לשייך אותה)"
-          />
-        ) : null}
-
-        {openShift ? (
-          <div className="space-y-2">
-            <NativeSelect
-              value={endMode}
+          !closing ? (
+            <Button
+              type="button"
+              className="w-full"
               disabled={working}
-              aria-label="שעת סיום המשמרת"
-              onChange={(event) => {
-                const custom = event.target.value === "custom";
-                setEndMode(custom ? "custom" : "now");
-                if (custom && !endLocal) setEndLocal(nowLocal());
+              onClick={() => {
+                setEndMode("now");
+                setEndLocal("");
+                setClosing(true);
               }}
             >
-              <option value="now">סיימתי עכשיו</option>
-              <option value="custom">סיימתי בשעה אחרת</option>
-            </NativeSelect>
-            {endMode === "custom" ? (
-              <DateTimeInput
-                value={endLocal}
-                onChange={(event) => setEndLocal(event.target.value)}
-                disabled={working}
-                aria-label="שעת סיום"
-              />
-            ) : null}
-            <Button type="button" className="w-full" disabled={working} onClick={closeShift}>
-              {working ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : null}
-              סיום ושליחה לאישור
+              סיום משמרת
             </Button>
-          </div>
+          ) : (
+            <div className="space-y-2">
+              <NativeSelect
+                value={endMode}
+                disabled={working}
+                aria-label="שעת סיום המשמרת"
+                onChange={(event) => {
+                  const custom = event.target.value === "custom";
+                  setEndMode(custom ? "custom" : "now");
+                  if (custom && !endLocal) setEndLocal(nowLocal());
+                }}
+              >
+                <option value="now">סיימתי עכשיו</option>
+                <option value="custom">סיימתי בשעה אחרת</option>
+              </NativeSelect>
+              {endMode === "custom" ? (
+                <DateTimeInput
+                  value={endLocal}
+                  onChange={(event) => setEndLocal(event.target.value)}
+                  disabled={working}
+                  aria-label="שעת סיום"
+                />
+              ) : null}
+              <label className="block space-y-1">
+                <span className="block text-xs text-muted-foreground">מה עשית במשמרת?</span>
+                <Textarea
+                  value={note}
+                  onChange={(event) => setNote(event.target.value)}
+                  rows={2}
+                  disabled={working}
+                />
+              </label>
+              <div className="flex gap-2">
+                <Button type="button" className="flex-1" disabled={working} onClick={closeShift}>
+                  {working ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : null}
+                  שליחה לאישור
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={working}
+                  onClick={() => {
+                    setClosing(false);
+                    setNote("");
+                  }}
+                >
+                  ביטול
+                </Button>
+              </div>
+            </div>
+          )
         ) : (
           <div className="space-y-2">
             <NativeSelect
@@ -252,14 +281,15 @@ export default function MyShiftCard({
                 </label>
                 {/* Worth asking here: a shift reported days later gives the boss
                     nothing else to go on when picking the business domain. */}
-                <Textarea
-                  value={note}
-                  onChange={(event) => setNote(event.target.value)}
-                  rows={2}
-                  disabled={working}
-                  aria-label="הערה למשמרת"
-                  placeholder="מה עשית במשמרת? (עוזר למנהל לשייך אותה)"
-                />
+                <label className="block space-y-1">
+                  <span className="block text-xs text-muted-foreground">מה עשית במשמרת?</span>
+                  <Textarea
+                    value={note}
+                    onChange={(event) => setNote(event.target.value)}
+                    rows={2}
+                    disabled={working}
+                  />
+                </label>
               </>
             ) : null}
             <Button type="button" className="w-full" disabled={working} onClick={openShiftNow}>

@@ -121,6 +121,43 @@ export default async function ProfilePage() {
   // numbers. Everyone gets this on their own profile, not just workers.
   const myPayroll = await loadMyPayroll(supabase, profile.id);
 
+  // What each shift was actually ON. The domain alone ("פרויקטים") is the same
+  // word on every project row, so resolve the specific job/address by id —
+  // queried directly rather than off the pickers below, which are capped lists
+  // and (for a worker) may not include a project at all.
+  const sessionRows2 = asSessions(sessionRows);
+  const linkedProjectIds = [
+    ...new Set(sessionRows2.map((s) => s.project_id).filter((id): id is string => Boolean(id))),
+  ];
+  const linkedPropertyIds = [
+    ...new Set(sessionRows2.map((s) => s.property_id).filter((id): id is string => Boolean(id))),
+  ];
+  const [linkedProjectsRes, linkedPropertiesRes] = await Promise.all([
+    linkedProjectIds.length
+      ? supabase.from("projects").select("id,name").in("id", linkedProjectIds)
+      : Promise.resolve({ data: [] as Row[] }),
+    linkedPropertyIds.length
+      ? supabase.from("properties").select("id,address").in("id", linkedPropertyIds)
+      : Promise.resolve({ data: [] as Row[] }),
+  ]);
+  const linkLabelById = new Map<string, string>();
+  for (const row of (linkedProjectsRes.data ?? []) as Row[]) {
+    const id = typeof row.id === "string" ? row.id : "";
+    const name = typeof row.name === "string" ? row.name.trim() : "";
+    if (id && name) linkLabelById.set(id, name);
+  }
+  for (const row of (linkedPropertiesRes.data ?? []) as Row[]) {
+    const id = typeof row.id === "string" ? row.id : "";
+    const address = typeof row.address === "string" ? row.address.trim() : "";
+    if (id && address) linkLabelById.set(id, address);
+  }
+  const linkLabelBySessionId: Record<string, string> = {};
+  for (const session of sessionRows2) {
+    const linkId = session.project_id ?? session.property_id;
+    const label = linkId ? linkLabelById.get(linkId) : undefined;
+    if (label) linkLabelBySessionId[session.id] = label;
+  }
+
   const loadError =
     sessionsError?.message ??
     agreementsError?.message ??
@@ -152,18 +189,9 @@ export default async function ProfilePage() {
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
         <PageTitle title="הפרופיל שלי" subtitle={profile.full_name ?? undefined} />
-        {/* Desktop only: on a phone the top bar already says "הפרופיל שלי" and
-            the name right under it, so repeating both here was the same line
-            twice. Desktop has no such header, and the details card below is
-            where the email/phone belong anyway. */}
-        <div className="hidden lg:block">
-          <h1 className="text-2xl font-semibold">{profile.full_name ?? profile.email ?? "עובד"}</h1>
-          {[profile.email, profile.phone].filter(Boolean).length ? (
-            <p className="text-sm text-muted-foreground">
-              {[profile.email, profile.phone].filter(Boolean).join(" · ")}
-            </p>
-          ) : null}
-        </div>
+        {/* No name/email banner above the tabs: this is YOUR profile — you know
+            who you are — and the details card in the first tab is where those
+            fields live anyway. (The phone's top bar still names the screen.) */}
 
         {loadError ? (
           <Card>
@@ -186,6 +214,7 @@ export default async function ProfilePage() {
             isWorker={isWorker}
             openShiftReport={shiftState.open}
             pendingShiftReports={shiftState.pending}
+            linkLabelBySessionId={linkLabelBySessionId}
             payTotals={myPayroll.payUnavailable ? null : myPayroll.totals}
             payBySessionId={
               myPayroll.payUnavailable
