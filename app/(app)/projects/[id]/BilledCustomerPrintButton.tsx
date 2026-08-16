@@ -95,9 +95,57 @@ function nowLabel() {
   );
 }
 
-function pdfFileName(data: BilledPrintData) {
+/** Hebrew name — safe for a desktop browser download. */
+function downloadFileName(data: BilledPrintData) {
   const safeName = data.projectName.replace(/[\\/:*?"<>|]/g, "").trim();
   return `לחיוב לקוח - ${safeName || "פרויקט"}.pdf`;
+}
+
+/**
+ * ASCII-only name for the native share sheet. A Hebrew file name survives the
+ * WebView → Android → WhatsApp hand-off as mojibake ("×'×'×..." — the UTF-8
+ * bytes read back as Latin-1), so the shared file keeps a plain-ASCII name and
+ * the Hebrew wording travels in the share title/text, which is not mangled.
+ */
+function shareFileName(data: BilledPrintData) {
+  const asciiName = data.projectName
+    .replace(/[^A-Za-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+  const stamp = new Date().toISOString().slice(0, 10);
+  return asciiName ? `billing-${asciiName}-${stamp}.pdf` : `billing-${stamp}.pdf`;
+}
+
+function shareTitle(data: BilledPrintData) {
+  return data.customerName
+    ? `לחיוב לקוח — ${data.projectName} · ${data.customerName}`
+    : `לחיוב לקוח — ${data.projectName}`;
+}
+
+/**
+ * html-to-image's failure mode is silent: when the capture goes wrong it hands
+ * back an all-white canvas rather than throwing, which used to ship as a blank
+ * PDF. Sampling the pixels turns that into a visible error instead.
+ */
+function isBlankCapture(canvas: HTMLCanvasElement) {
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context || !canvas.width || !canvas.height) return true;
+
+  let pixels: Uint8ClampedArray;
+  try {
+    pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+  } catch {
+    // Tainted canvas (shouldn't happen — the source is a data URL) — don't
+    // block the export on a check that couldn't run.
+    return false;
+  }
+
+  // Every 8th pixel: the sheet's rules and text are far wider than 8px, so
+  // nothing legible can hide between samples.
+  for (let i = 0; i < pixels.length; i += 32) {
+    if (pixels[i] < 240 || pixels[i + 1] < 240 || pixels[i + 2] < 240) return false;
+  }
+  return true;
 }
 
 export default function BilledCustomerPrintButton({ data }: { data: BilledPrintData }) {
@@ -112,16 +160,33 @@ export default function BilledCustomerPrintButton({ data }: { data: BilledPrintD
     if (building) return;
     setBuilding(true);
 
+    // The sheet must be laid out (not display:none) for html-to-image to
+    // rasterise it — but it must NOT be moved off-screen. html-to-image copies
+    // the node's COMPUTED cssText onto its clone and drops that clone into an
+    // SVG foreignObject; a `position:fixed;left:-10000px` node therefore clones
+    // as fixed at -10000px INSIDE the SVG viewport and renders outside the
+    // frame, producing a blank white capture (an "empty" PDF). Same fix as the
+    // delivery slip: park it at the origin inside a zero-size clipping wrapper
+    // so it stays in frame while remaining invisible on screen.
+    const wrapper = document.createElement("div");
+    wrapper.setAttribute("aria-hidden", "true");
+    wrapper.style.cssText =
+      "position:fixed;top:0;left:0;width:0;height:0;overflow:hidden;opacity:0;z-index:-1;pointer-events:none;";
+
     const node = document.createElement("div");
     node.setAttribute("dir", "rtl");
-    // Off-screen but laid out (not display:none) — html-to-image rasterises the
-    // real rendering. 794px ≈ A4 width at 96dpi.
+    // 794px ≈ A4 width at 96dpi.
     node.style.cssText =
-      "position:fixed;top:0;left:-10000px;width:794px;padding:40px;background:#ffffff;color:#0A1020;font-family:system-ui,'Segoe UI',Arial,sans-serif;";
+      "width:794px;box-sizing:border-box;padding:40px;background:#ffffff;color:#0A1020;font-family:system-ui,'Segoe UI',Arial,sans-serif;";
     node.innerHTML = buildSheetMarkup(data, nowLabel());
-    document.body.appendChild(node);
+    wrapper.appendChild(node);
+    document.body.appendChild(wrapper);
 
     try {
+      if ("fonts" in document) {
+        await document.fonts.ready;
+      }
+
       // Same capture path as the worker export: html-to-image (NOT html2canvas,
       // which chokes on Tailwind v4 color-mix values elsewhere in the app).
       const [{ toCanvas }, { default: jsPDF }] = await Promise.all([
@@ -133,7 +198,15 @@ export default function BilledCustomerPrintButton({ data }: { data: BilledPrintD
         pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
         backgroundColor: "#ffffff",
         skipFonts: true,
+        // Measure the sheet itself: its parent is a 0×0 clip box, so leaving
+        // the size implicit risks a zero-size capture.
+        width: node.offsetWidth,
+        height: node.offsetHeight,
       });
+
+      if (isBlankCapture(canvas)) {
+        throw new Error("יצירת ה-PDF נכשלה: הדף שנוצר יצא ריק. נסו שוב.");
+      }
 
       const pdf = new jsPDF({ orientation: "p", unit: "mm", format: "a4", compress: true });
       const pageWidth = pdf.internal.pageSize.getWidth();
@@ -152,9 +225,10 @@ export default function BilledCustomerPrintButton({ data }: { data: BilledPrintD
         heightLeft -= pageHeight;
       }
 
-      const fileName = pdfFileName(data);
-      const file = new File([pdf.output("blob")], fileName, { type: "application/pdf" });
-      const shareData = { title: fileName, text: fileName, files: [file] };
+      const pdfBlob = pdf.output("blob");
+      const title = shareTitle(data);
+      const shareFile = new File([pdfBlob], shareFileName(data), { type: "application/pdf" });
+      const shareData = { title, text: title, files: [shareFile] };
 
       if (
         typeof navigator !== "undefined" &&
@@ -166,7 +240,9 @@ export default function BilledCustomerPrintButton({ data }: { data: BilledPrintD
         return;
       }
 
-      const fileUrl = URL.createObjectURL(file);
+      // Desktop download: here the Hebrew name reaches the file system intact.
+      const fileName = downloadFileName(data);
+      const fileUrl = URL.createObjectURL(pdfBlob);
       const link = document.createElement("a");
       link.href = fileUrl;
       link.download = fileName;
@@ -181,7 +257,7 @@ export default function BilledCustomerPrintButton({ data }: { data: BilledPrintD
       if (error instanceof Error && error.name === "AbortError") return;
       toast.error(toHebrewError(error, "יצירת ה-PDF נכשלה."));
     } finally {
-      node.remove();
+      wrapper.remove();
       setBuilding(false);
     }
   }
