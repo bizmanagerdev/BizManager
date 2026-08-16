@@ -6,11 +6,16 @@ import { useSetPageTitle } from "@/components/layout/page-title-context";
 // No reactive source — the date is read once per render from the local clock.
 const subscribe = () => () => {};
 
-// "יום ראשון · 16 באוגוסט". No year: the bar is one shrink-to-fit line and the
-// year is the one part of today's date nobody needs told.
+// "יום ראשון · 16.8" — weekday spelled out (the part you actually use in Israel),
+// date numeric, no year.
+//
+// The bar's middle slot is ~125px on a 360px phone once the back arrow and the
+// three end icons have taken theirs, and the title does NOT shrink to fit — it
+// overflows. The month spelled out ("16 באוגוסט") is ~12px too wide and ran under
+// the search glyph. Keep this string short; it is the longest title in the app.
 function formatHeaderDate(date: Date) {
   const weekday = new Intl.DateTimeFormat("he-IL", { weekday: "long" }).format(date);
-  const rest = new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "long" }).format(date);
+  const rest = new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "numeric" }).format(date);
   return `${weekday} · ${rest}`;
 }
 

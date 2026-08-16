@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import TodayCard from "@/components/dashboard/TodayCard";
-import WeekOverview from "@/components/dashboard/WeekOverview";
 import MyTasksPanel from "@/components/dashboard/MyTasksPanel";
 import ProjectStatusCards from "@/components/dashboard/ProjectStatusCards";
 import UpcomingDeliveries from "@/components/dashboard/UpcomingDeliveries";
@@ -11,7 +10,7 @@ import AttendanceApprovals from "@/components/dashboard/AttendanceApprovals";
 import InventoryHealth from "@/components/dashboard/InventoryHealth";
 import RecentActivityFeed from "@/components/dashboard/RecentActivityFeed";
 import CompactFinanceStrip from "@/components/dashboard/CompactFinanceStrip";
-import { getInboxView } from "@/lib/reminders/worklist";
+import { getInboxView, todaySlice } from "@/lib/reminders/worklist";
 import { getPaymentsDueToday, type PaymentDueToday } from "@/lib/collections";
 import { getScheduleEntries, type CalendarEntry } from "@/lib/projectSchedule";
 import { getMyTasks, getTaskStatusCounts } from "@/lib/dashboard/tasks-overview";
@@ -140,8 +139,10 @@ export async function DashboardPanels() {
     domainBreakdown,
     digestItems,
   ] = await Promise.all([
+    // Both feed the one "היום" card: the inbox for today's DATED alerts, the
+    // schedule for today's tasks / projects / reminders.
     show("today") ? getInboxView(supabase, { userId: profile.id, role }).catch(() => null) : Promise.resolve(null),
-    show("week")
+    show("today")
       ? getScheduleEntries(supabase, { scope: "mine", userId: profile.id }).catch(() => [] as CalendarEntry[])
       : Promise.resolve([] as CalendarEntry[]),
     show("myTasks") ? getMyTasks(supabase, profile.id) : Promise.resolve([]),
@@ -195,8 +196,11 @@ export async function DashboardPanels() {
   // ── Rendered node per widget (null when its data is empty, so we never show an
   // empty panel — mirrors the previous presence flags). ──────────────────────
   const nodes: Record<WidgetId, ReactNode> = {
-    today: inboxResult ? <TodayCard inbox={inboxResult} /> : null,
-    week: show("week") ? <WeekOverview entries={scheduleEntries} /> : null,
+    today: inboxResult ? (
+      // Grouped HERE (server) because it's pure rule knowledge; the card only
+      // does the date bucketing, which has to happen on the viewer's clock.
+      <TodayCard entries={scheduleEntries} {...todaySlice(inboxResult)} />
+    ) : null,
     myTasks: myTasks.length > 0 ? <MyTasksPanel tasks={myTasks} /> : null,
     finance: show("finance") && isAdminOrOffice ? (
       <CompactFinanceStrip

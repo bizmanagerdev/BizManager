@@ -63,8 +63,8 @@ describe("resolveWidgets — order & visibility", () => {
 
     const ids = resolveWidgets("admin", prefs).map((w) => w.id);
     expect(ids[0]).toBe("finance");
-    // Default-order widgets (e.g. week, today, myTasks) still render.
-    expect(ids).toContain("week");
+    // Default-order widgets (e.g. today, myTasks) still render.
+    expect(ids).toContain("today");
     expect(ids).toContain("myTasks");
     expect(ids.length).toBe(catalogForRole("admin").length);
   });
@@ -85,14 +85,29 @@ describe("sanitizePrefs", () => {
   });
 
   it("drops RETIRED widget ids from saved prefs without breaking the board", () => {
-    // "alerts" + "reminders" merged into "today". Users still have them in their
-    // saved order/hidden — those must be ignored, not crash or hide the new card.
-    const prefs = sanitizePrefs({ order: ["alerts", "today", "reminders"], hidden: ["reminders"] });
+    // "alerts" + "reminders" merged into "today" (2026-07-16), and "week" — the
+    // "מבט על היום" card — merged into it too (2026-08-16). Users still have all
+    // three in their saved order/hidden; those must be ignored, not crash, and
+    // above all not hide the card that replaced them.
+    const prefs = sanitizePrefs({
+      order: ["alerts", "today", "reminders", "week"],
+      hidden: ["reminders", "week"],
+    });
     expect(prefs).toEqual({ order: ["today"], hidden: [] });
 
     const ids = resolveWidgets("admin", prefs).map((w) => w.id);
     expect(ids).toContain("today");
     expect(ids).not.toContain("alerts");
     expect(ids).not.toContain("reminders");
+    expect(ids).not.toContain("week");
+  });
+
+  it("a user who had hidden 'week' still gets the merged היום card", () => {
+    // The trap this guards: `hidden: ["week"]` used to hide the schedule card.
+    // "week" is no longer a widget id, so it must be dropped from `hidden` rather
+    // than carried over onto "today" — otherwise the merge would silently blank
+    // the dashboard for everyone who'd turned the old card off.
+    const ids = resolveWidgets("admin", sanitizePrefs({ order: [], hidden: ["week"] })).map((w) => w.id);
+    expect(ids).toContain("today");
   });
 });

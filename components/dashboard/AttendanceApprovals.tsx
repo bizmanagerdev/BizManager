@@ -2,7 +2,6 @@ import Link from "next/link";
 import { ApprovedUserIcon, ChevronLeftIcon, ClockIcon, PendingIcon } from "@/components/ui/icons";
 import type { IconComponent } from "@/components/ui/icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import QuickAttendanceButton from "@/components/dashboard/QuickAttendanceButton";
@@ -43,32 +42,41 @@ function Stat({
   return (
     <div
       className={cn(
-        "rounded-xl border bg-background p-3",
+        "min-w-0 rounded-xl border bg-background p-2.5 sm:p-3",
         tone === "warning" && "border-warning/40 bg-warning-soft",
         tone === "success" && "border-success/40 bg-success-soft"
       )}
     >
-      <div className="flex items-center justify-between gap-2">
+      {/* Number first and ALONE on its line. The glyph used to share that line
+          with it under `justify-between`, which pinned the two to opposite edges
+          — fine for "18:15", but a 1-character count left a whole tile's width
+          of empty space between "3" and its hourglass, and the row read as two
+          unrelated things. Dropping it down beside the label ties it to the
+          words it illustrates and lets the number own the tile.
+          Sized for the WIDEST value here ("18:15", not a digit): at text-2xl
+          that overran a ~6rem phone tile. tabular-nums keeps the three tiles'
+          digits on one rhythm. */}
+      <div
+        className={cn(
+          "whitespace-nowrap text-xl font-bold leading-none tabular-nums text-foreground sm:text-2xl",
+          tone === "warning" && "text-warning",
+          tone === "success" && "text-success"
+        )}
+      >
+        {value}
+      </div>
+      {/* text-xs, not sm: three tiles across a phone leave ~6rem each, and a
+          wider label turns into a two-line stack. */}
+      <div className="mt-1.5 flex items-start gap-1 text-xs text-muted-foreground">
         <Icon
           className={cn(
-            "h-4 w-4 shrink-0 text-muted-foreground",
+            "mt-px h-3.5 w-3.5 shrink-0",
             tone === "warning" && "text-warning",
             tone === "success" && "text-success"
           )}
         />
-        <span
-          className={cn(
-            "text-2xl font-bold text-foreground",
-            tone === "warning" && "text-warning",
-            tone === "success" && "text-success"
-          )}
-        >
-          {value}
-        </span>
+        <span className="min-w-0">{label}</span>
       </div>
-      {/* text-xs, not sm: three tiles across a phone leave ~6rem each, and a
-          wider label turns into a two-line stack. */}
-      <div className="mt-1 text-xs text-muted-foreground">{label}</div>
     </div>
   );
 }
@@ -94,10 +102,12 @@ export default function AttendanceApprovals({ data }: { data: PhoneQueueData }) 
   return (
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-3">
+        {/* No count badge next to the title: the first stat tile below already
+            says "N / ממתינים לאישור" in the same words, and two copies of the
+            same number a centimetre apart just read as clutter. */}
         <div className="flex items-center gap-2">
           <ClockIcon className="h-5 w-5 text-secondary" />
           <CardTitle className="text-lg">נוכחות עובדים</CardTitle>
-          {pending.length > 0 ? <Badge variant="warning">{pending.length} ממתינים לאישור</Badge> : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <QuickAttendanceButton />

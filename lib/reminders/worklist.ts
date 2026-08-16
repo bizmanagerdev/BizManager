@@ -321,6 +321,8 @@ export type WorklistSummary = {
   /** The system rule behind the line — a summary's `id` can't be parsed for it
    *  (count-in-title rows carry a reminder id, collapsed rows carry `sum-<rule>`). */
   ruleKey: string;
+  /** How many underlying items this line stands for. */
+  count: number;
 };
 const RANK_TO_SEVERITY: WorklistSeverity[] = ["danger", "warning", "info"];
 
@@ -394,7 +396,9 @@ export async function getInboxView(
       agg.rank = Math.min(agg.rank, SEVERITY_RANK[item.severity]);
       collapse.set(rk, agg);
     } else if (item.isSummary) {
-      summaries.push({ id: item.id, title: item.title, href: item.url, severity: item.severity, ruleKey: rk });
+      // A count-in-title row ("מלאי נמוך: 3 פריטים") is ONE reminder that already
+      // counted itself, so it stands for one row here.
+      summaries.push({ id: item.id, title: item.title, href: item.url, severity: item.severity, ruleKey: rk, count: 1 });
     } else {
       items.push(item);
     }
@@ -406,6 +410,7 @@ export async function getInboxView(
       href: COLLAPSE_META[rk].href,
       severity: RANK_TO_SEVERITY[agg.rank] ?? "info",
       ruleKey: rk,
+      count: agg.count,
     });
   }
 
@@ -456,17 +461,74 @@ export async function getInboxView(
 //
 // A rule not listed here defaults to BACKLOG (inbox only) — the safe side: a new
 // rule can't quietly start filling up the dashboard.
-const TODAY_RULES = new Set<string>([
-  "check_deposit_due", // a cheque whose deposit date has arrived
-  "payment_due_today", // money in, due today
-  "payment_outflow_due", // money out — the day's payment run
-]);
+//
+// Each rule gets its OWN label + href here rather than reusing COLLAPSE_META,
+// because these two surfaces want opposite things: the inbox lists five cheques
+// as five rows you tick off one by one, while the dashboard wants ONE line that
+// says "five cheques are waiting". Adding them to COLLAPSE_META would collapse
+// them in the inbox too, which would take away the ticking.
+const TODAY_RULES: Record<string, { label: string; href: string }> = {
+  check_deposit_due: { label: "צ׳קים להפקדה", href: "/checks" },
+  payment_due_today: { label: "תשלומים לגבייה היום", href: "/collections" },
+  payment_outflow_due: { label: "תשלומים לתשלום", href: "/financial/payments-calendar" },
+};
 
-/** The dated slice of the inbox: what the dashboard's "היום" card may show. */
-export function todaySlice(inbox: InboxView): { items: WorklistItem[]; summaries: WorklistSummary[] } {
+/** One grouped line per dated rule — "צ׳קים להפקדה: 5", never five cheque rows. */
+export type TodayAlert = {
+  id: string;
+  title: string;
+  href: string;
+  severity: WorklistSeverity;
+  count: number;
+};
+
+/**
+ * The dated slice of the inbox, GROUPED — what the dashboard's "היום" card shows
+ * below the day's actual schedule.
+ *
+ * Grouped because the card answers "what do I have to do today", and a list of
+ * five near-identical "צ׳ק לפירעון" rows reads as a heavy day when it's really
+ * one errand at the bank. The user's words: "technically I barely have anything
+ * to do today but I see a whole huge list."
+ *
+ * `rest` = open inbox rows this card does NOT stand for, for the quiet tail link.
+ */
+export function todaySlice(inbox: InboxView): { alerts: TodayAlert[]; rest: number } {
+  const agg = new Map<string, { count: number; rank: number }>();
+  let foldedRows = 0;
+
+  const add = (ruleKey: string, count: number, severity: WorklistSeverity) => {
+    if (!TODAY_RULES[ruleKey]) return false;
+    const cur = agg.get(ruleKey) ?? { count: 0, rank: 99 };
+    cur.count += count;
+    cur.rank = Math.min(cur.rank, SEVERITY_RANK[severity]);
+    agg.set(ruleKey, cur);
+    return true;
+  };
+
+  for (const item of inbox.items) {
+    if (add(ruleKeyOf(item), 1, item.severity)) foldedRows += 1;
+  }
+  // Rules the inbox ALREADY collapsed (payment_outflow_due) arrive as one row
+  // standing for `count` bills — take the count so the number matches the
+  // payments calendar, but only one inbox row has been folded away.
+  for (const summary of inbox.summaries) {
+    if (add(summary.ruleKey, summary.count, summary.severity)) foldedRows += 1;
+  }
+
+  const alerts = [...agg]
+    .map(([ruleKey, a]) => ({
+      id: `today-${ruleKey}`,
+      title: `${TODAY_RULES[ruleKey].label}: ${a.count}`,
+      href: TODAY_RULES[ruleKey].href,
+      severity: RANK_TO_SEVERITY[a.rank] ?? "info",
+      count: a.count,
+    }))
+    .sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
+
   return {
-    items: inbox.items.filter((item) => TODAY_RULES.has(ruleKeyOf(item))),
-    summaries: inbox.summaries.filter((summary) => TODAY_RULES.has(summary.ruleKey)),
+    alerts,
+    rest: Math.max(inbox.items.length + inbox.summaries.length - foldedRows, 0),
   };
 }
 

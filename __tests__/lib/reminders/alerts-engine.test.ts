@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { visibleAudienceRoles, ownAudienceRoles } from "@/lib/reminders/worklist";
+import {
+  visibleAudienceRoles,
+  ownAudienceRoles,
+  todaySlice,
+  type InboxView,
+  type WorklistItem,
+  type WorklistSeverity,
+} from "@/lib/reminders/worklist";
 import { sanitizeNotificationPrefs, shouldPushNow, DEFAULT_PREFS } from "@/lib/notifications/prefs";
 import { reminderBucket } from "@/lib/notifications/categories";
 import { digestTablesForRole } from "@/lib/audit";
@@ -166,5 +173,113 @@ describe("getDunningStages", () => {
     expect(stages.length).toBeGreaterThanOrEqual(4);
     expect(stages[0].offset).toBe(0);
     expect(stages.every((s) => ["info", "warning", "danger"].includes(s.severity))).toBe(true);
+  });
+});
+
+describe("todaySlice — the dashboard's היום card", () => {
+  // The card answers "what do I have to do today". These tests lock the two
+  // things that made it useless before: it showed BACKLOG items, and it showed
+  // every cheque as its own row so a quiet day looked like a heavy one.
+  const item = (dedupeKey: string, severity: WorklistSeverity = "warning"): WorklistItem =>
+    ({
+      id: dedupeKey,
+      source: "system",
+      severity,
+      behavior: "ping_once",
+      isSummary: false,
+      title: dedupeKey,
+      content: null,
+      url: "/x",
+      category: "system",
+      remindAt: "2026-08-16T06:00:00.000Z",
+      snoozedUntil: null,
+      nextPingAt: null,
+      notifiedAt: null,
+      assignedTo: null,
+      audienceRole: "office",
+      createdBy: null,
+      customerId: null,
+      customerName: null,
+      customerPhone: null,
+      taskId: null,
+      taskSubject: null,
+      assignedToName: null,
+      dedupeKey,
+    }) as unknown as WorklistItem;
+
+  const view = (over: Partial<InboxView>): InboxView =>
+    ({
+      items: [],
+      summaries: [],
+      snoozed: [],
+      counts: { all: 0, mine: 0, auto: 0, new: 0 },
+      byBucket: {},
+      ...over,
+    }) as InboxView;
+
+  it("collapses many cheques into ONE line carrying the count", () => {
+    const { alerts } = todaySlice(
+      view({ items: [item("check_deposit_due:a"), item("check_deposit_due:b"), item("check_deposit_due:c")] })
+    );
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].count).toBe(3);
+    expect(alerts[0].title).toContain("3");
+    expect(alerts[0].href).toBe("/checks");
+  });
+
+  it("keeps BACKLOG rules off the card entirely", () => {
+    // Overdue debts / low stock / wages owed are queues, not today's work.
+    const { alerts, rest } = todaySlice(
+      view({
+        items: [item("collection_overdue:a"), item("wage_overdue:b")],
+        summaries: [
+          { id: "s1", title: "מלאי נמוך: 4", href: "/inventory", severity: "warning", ruleKey: "low_stock", count: 1 },
+        ],
+      })
+    );
+    expect(alerts).toEqual([]);
+    // Nothing was folded in, so all three rows are still "in the inbox".
+    expect(rest).toBe(3);
+  });
+
+  it("takes the real bill count from an already-collapsed summary", () => {
+    // payment_outflow_due reaches the inbox pre-collapsed: ONE row standing for
+    // N bills. The card must show N (matching the payments calendar) while only
+    // one inbox row is folded away.
+    const { alerts, rest } = todaySlice(
+      view({
+        items: [item("check_deposit_due:a")],
+        summaries: [
+          {
+            id: "sum-payment_outflow_due",
+            title: "תשלומים לתשלום: 7",
+            href: "/financial/payments-calendar",
+            severity: "danger",
+            ruleKey: "payment_outflow_due",
+            count: 7,
+          },
+        ],
+      })
+    );
+    expect(alerts.find((a) => a.id === "today-payment_outflow_due")?.count).toBe(7);
+    expect(rest).toBe(0);
+  });
+
+  it("gives the group the worst severity in it, and sorts worst-first", () => {
+    const { alerts } = todaySlice(
+      view({
+        items: [
+          item("payment_due_today:a", "warning"),
+          item("check_deposit_due:a", "warning"),
+          item("check_deposit_due:b", "danger"),
+        ],
+      })
+    );
+    expect(alerts[0].severity).toBe("danger");
+    expect(alerts[0].id).toBe("today-check_deposit_due");
+  });
+
+  it("is empty when the inbox is", () => {
+    expect(todaySlice(view({}))).toEqual({ alerts: [], rest: 0 });
   });
 });

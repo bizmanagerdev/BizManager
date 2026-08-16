@@ -36,10 +36,12 @@ export default async function DashboardPage() {
     "he-IL",
     { day: "numeric", month: "long", year: "numeric" }
   ).format(now)}`;
-  // The mobile bar's version — no year, so it fits the one shrink-to-fit line.
+  // The mobile bar's version — numeric date, no year. Must stay in step with
+  // formatHeaderDate in DashboardHeaderDate (this is only the SSR snapshot), and
+  // must stay SHORT: the bar's title doesn't shrink, it overflows.
   const headerDate = `${new Intl.DateTimeFormat("he-IL", { weekday: "long" }).format(now)} · ${new Intl.DateTimeFormat(
     "he-IL",
-    { day: "numeric", month: "long" }
+    { day: "numeric", month: "numeric" }
   ).format(now)}`;
 
   return (

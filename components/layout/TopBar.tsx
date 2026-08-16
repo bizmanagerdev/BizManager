@@ -210,9 +210,17 @@ export function TopBar({
           without this the header is an anonymous row of icons. A page can declare
           its own heading via useSetPageTitle() (that's how it gets a live
           subtitle); everything else falls back to the route's name, so no screen
-          is ever nameless. */}
+          is ever nameless.
+
+          `overflow-hidden` on the slot is a GUARD, not a layout strategy. The
+          title span below is `whitespace-nowrap`, so a title wider than the slot
+          doesn't shrink or wrap — it SPILLS, and the slot's neighbour is the
+          search glyph, so it spilled straight under the magnifier (the date read
+          as "16 באוגוס🔍ט"). Worse, every bit of padding added to separate the two
+          made the slot narrower and the spill longer. Titles are chosen to fit;
+          this only stops a stray long one from painting over the icons. */}
       {headerTitle ? (
-        <div className="flex min-w-0 flex-1 flex-col items-center justify-center px-1.5 text-center leading-tight lg:hidden">
+        <div className="flex min-w-0 flex-1 flex-col items-center justify-center overflow-hidden px-3 text-center leading-tight lg:hidden">
           {/* One line, always: the title SHRINKS to fit the middle slot rather than
               wrapping mid-word ("עובדי / ם") or clipping. clamp() scales it with the
               viewport down to a still-legible floor. */}
@@ -236,7 +244,12 @@ export function TopBar({
           already does that. */}
       <div className="hidden flex-1 lg:block" />
 
-      <div className="flex items-center gap-1">
+      {/* ms-3 (RTL → space on the RIGHT, i.e. toward the title): the search glyph
+          leads this cluster on a phone and sat flush against the page title, so
+          the magnifier read as part of the words. The gap lives here rather than
+          as yet more title padding so it only ever separates the title from the
+          icons — the icons keep their own tighter gap-1 between themselves. */}
+      <div className="ms-3 flex items-center gap-1">
         {/* The title now owns the middle slot on mobile, so search moves here as
             a glyph rather than disappearing from phones entirely. */}
         {showGlobalSearch && headerTitle ? <GlobalSearch mobileOnly iconOnly /> : null}

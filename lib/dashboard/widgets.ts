@@ -15,7 +15,6 @@ import type { UserRole } from "@/lib/auth/requireProfile";
 
 export type WidgetId =
   | "today"
-  | "week"
   | "myTasks"
   | "finance"
   | "projects"
@@ -47,11 +46,13 @@ const ADMIN_ONLY: UserRole[] = ["admin"];
  * an explicit order.
  */
 export const DASHBOARD_WIDGETS: WidgetMeta[] = [
-  // "היום" is the morning landing: the first thing you see is what needs you
-  // today. It replaces the old separate "התראות" + "תזכורות" widgets — those were
-  // two views of the same inbox, so neither was the single place to look.
+  // "היום" is the morning landing, and it means TODAY: the calendar's tasks /
+  // projects / reminders for the day plus the alerts genuinely dated today.
+  // It absorbed three earlier widgets — "התראות" + "תזכורות" (two views of one
+  // inbox) and "מבט על היום" (registered as `week`), which showed the same day
+  // from the other side. Backlog alerts stay in /inbox; a card called היום that
+  // lists everything open is just the inbox wearing a date.
   { id: "today", label: "היום", roles: ALL, span: 2 },
-  { id: "week", label: "מבט על השבוע", roles: ALL, span: 2 },
   { id: "finance", label: "גבייה ותשלומים", roles: BACK_OFFICE, span: 2 },
   { id: "myTasks", label: "המשימות שלי", roles: ALL, span: 2 },
   { id: "projects", label: "סטטוס פרויקטים", roles: BACK_OFFICE, span: 2 },
