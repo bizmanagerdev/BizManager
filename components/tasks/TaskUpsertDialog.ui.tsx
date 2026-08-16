@@ -60,32 +60,6 @@ export type AttachmentItem = {
   url: string | null;
 };
 
-// Trello-style "add detail" button that toggles an editor section.
-export function ActionChip({
-  icon: Icon,
-  label,
-  active,
-  onClick,
-}: {
-  icon: typeof NotificationIcon;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm transition-colors ${
-        active ? "border-primary/40 bg-primary/10 text-primary" : "bg-background hover:bg-muted"
-      }`}
-    >
-      <Icon className="h-3.5 w-3.5" />
-      {label}
-    </button>
-  );
-}
-
 export function TaskDescriptionSection({
   description,
   onChange,

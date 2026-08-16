@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { RecurringIcon, TaskIcon } from "@/components/ui/icons";
 import type { IconComponent } from "@/components/ui/icons";
@@ -24,7 +25,7 @@ function triggerClassName(isActive: boolean) {
     : `${base} border-transparent font-medium text-muted-foreground hover:text-foreground`;
 }
 
-export function TasksTabs() {
+export function TasksTabs({ actions }: { actions?: ReactNode }) {
   const pathname = usePathname();
   const isRecurring = pathname?.startsWith("/tasks/recurring") ?? false;
 
@@ -49,6 +50,9 @@ export function TasksTabs() {
           </Link>
         );
       })}
+      {/* The page's own controls ride the END of this row (the left, in RTL)
+          instead of getting a toolbar block of their own underneath it. */}
+      {actions ? <div className="ms-auto flex shrink-0 items-center gap-2 pb-1.5">{actions}</div> : null}
     </div>
   );
 }

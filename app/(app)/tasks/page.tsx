@@ -2,7 +2,6 @@ import AppShell from "@/components/layout/AppShell";
 import PageAlertBar from "@/components/reminders/PageAlertBar";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
-import { TasksTabs } from "@/components/tasks/TasksTabs";
 import TasksPageClient from "./TasksPageClient";
 import { loadTasksBoard } from "./loadTasks";
 
@@ -139,8 +138,11 @@ export default async function TasksPage({
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
         <PageAlertBar keys={["task_overdue", "task_due_soon"]} />
-        {/* Recurring tasks is admin/office-only — only they get the tab bar. */}
-        {canSeeAll ? <TasksTabs /> : null}
+        {/* The tab bar is rendered by TasksPageClient on this page — the board's
+            search / filters / + ride the END of that same row on desktop, and
+            they're client-owned. Phones get no tab bar at all: "משימות קבועות"
+            is a button in the header strip there (the recurring page keeps its
+            tabs, so there's always a way back). */}
         {boardResult.error ? (
           <div className="text-destructive text-sm">שגיאה: {boardResult.error}</div>
         ) : (

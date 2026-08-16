@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { DeleteIcon, EditIcon } from "@/components/ui/icons";
+import { SwipeActions } from "@/components/ui/swipe-actions";
 import { NativeSelect } from "@/components/ui/native-select";
 import { toHebrewError } from "@/lib/error-messages";
 import { Card, CardContent } from "@/components/ui/card";
@@ -102,6 +104,8 @@ export default function RecurringTasksClient(props: Props) {
   const [form, setForm] = useState<FormState>(createEmptyForm());
   // Deleting asks through the styled ConfirmDialog, never window.confirm.
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  // Only one card's actions are uncovered at a time (phones).
+  const [swipedTemplateId, setSwipedTemplateId] = useState<string | null>(null);
 
   const requirement = linkRequirement(form.business_domain);
   const canSave =
@@ -253,6 +257,9 @@ export default function RecurringTasksClient(props: Props) {
       ) : (
         <>
           <div className="space-y-2 md:hidden">
+            {/* Same hint the customers list carries — a swipe is invisible until
+                someone tells you it's there. */}
+            <p className="px-1 text-[11px] text-muted-foreground">החלק כרטיס ימינה לעריכה ומחיקה</p>
             {props.templates.map((template) => {
               const linkedLabel =
                 template.project_id
@@ -266,16 +273,47 @@ export default function RecurringTasksClient(props: Props) {
                 .join(", ");
 
               return (
-                <Card key={template.id} className="overflow-hidden">
-                  <CardContent className="space-y-2 p-3 text-sm">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="space-y-1">
-                        <div className="font-medium">{template.subject_template}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {getBusinessDomainLabel(template.business_domain)} • {linkedLabel}
-                        </div>
+                // Swipe for עריכה / מחיקה — the same pattern as the customers
+                // list. The buttons used to sit ON the card, which cost a row
+                // each and made every template card taller than its content.
+                <SwipeActions
+                  key={template.id}
+                  className="rounded-xl border border-border/70 bg-card shadow-sm"
+                  open={swipedTemplateId === template.id}
+                  onOpenChange={(next) => setSwipedTemplateId(next ? template.id : null)}
+                  actions={[
+                    {
+                      key: "edit",
+                      label: "עריכה",
+                      icon: <EditIcon className="h-5 w-5" />,
+                      className: "bg-secondary",
+                      onSelect: () => {
+                        setSwipedTemplateId(null);
+                        openEdit(template);
+                      },
+                    },
+                    {
+                      key: "delete",
+                      label: "מחיקה",
+                      icon: <DeleteIcon className="h-5 w-5" />,
+                      className: "bg-destructive",
+                      onSelect: () => {
+                        setSwipedTemplateId(null);
+                        setPendingDeleteId(template.id);
+                      },
+                    },
+                  ]}
+                >
+                  <button
+                    type="button"
+                    onClick={() => openEdit(template)}
+                    className="w-full space-y-2 p-3 text-right text-sm"
+                  >
+                    <div className="space-y-1">
+                      <div className="font-medium">{template.subject_template}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {getBusinessDomainLabel(template.business_domain)} • {linkedLabel}
                       </div>
-                      <EditButton onClick={() => openEdit(template)} />
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusBadge value={template.default_priority} type="priority" />
@@ -299,11 +337,8 @@ export default function RecurringTasksClient(props: Props) {
                         </span>
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      <DeleteButton onClick={() => setPendingDeleteId(template.id)} />
-                    </div>
-                  </CardContent>
-                </Card>
+                  </button>
+                </SwipeActions>
               );
             })}
           </div>

@@ -49,7 +49,14 @@ export function BottomNav({ items, moreItems = [], viewerRole }: Props) {
           top bar (sidebar tokens), not a light bar. Idle items are light-on-navy;
           the active tab is a sky pill. The safe-area padding keeps the row above
           the iPhone home indicator. */}
-      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-sidebar pb-[env(safe-area-inset-bottom)] text-sidebar-foreground md:hidden">
+      {/* data-bottom-nav: a full-height page (the tasks board) measures its own
+          height against this bar's real top edge. Anchoring to window.innerHeight
+          instead leaves a white strip, because mobile browsers don't agree on
+          which viewport that number refers to. */}
+      <nav
+        data-bottom-nav
+        className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-sidebar pb-[env(safe-area-inset-bottom)] text-sidebar-foreground md:hidden"
+      >
         {/* Fixed px sizing (not rem) so the nav bar stays compact and never
             collides/overflows when the user picks a large text size. */}
         <div className="flex h-[58px] items-center justify-around gap-0.5 px-1">
@@ -122,8 +129,14 @@ export function BottomNav({ items, moreItems = [], viewerRole }: Props) {
         </div>
       </nav>
 
-      {/* Spacer matches the nav height PLUS the safe-area inset it adds. */}
-      <div className="md:hidden h-[calc(58px+env(safe-area-inset-bottom))] shrink-0" />
+      {/* Spacer matches the nav height PLUS the safe-area inset it adds. Tagged
+          so a full-height page (the tasks board) can measure how much room the
+          nav takes instead of guessing at the safe-area inset, which no two
+          phones agree on. */}
+      <div
+        data-bottom-nav-spacer
+        className="md:hidden h-[calc(58px+env(safe-area-inset-bottom))] shrink-0"
+      />
     </>
   );
 }

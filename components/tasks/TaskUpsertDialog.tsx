@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
 import { offlineUpload } from "@/lib/offline-upload";
 import { toHebrewError } from "@/lib/error-messages";
@@ -36,7 +37,6 @@ import {
 } from "@/lib/expenses";
 import { CITY_OPTIONS } from "@/lib/ui/cities";
 import {
-  nextWizardStep,
   parseLegacyNotes,
   targetTypeForDomain,
   allowedDomainsForFixedTarget,
@@ -53,7 +53,6 @@ import {
   type TaskTargetType,
 } from "@/components/tasks/TaskUpsertDialog.helpers";
 import {
-  ActionChip,
   TaskAttachmentsSection,
   TaskCardSidebar,
   TaskDatesSection,
@@ -124,10 +123,6 @@ export function TaskUpsertDialog(props: Props) {
   // Only one section open at a time (accordion). Description is the default-open one.
   const wizard = props.wizard ?? false;
   const [openSection, setOpenSection] = useState<string | null>("description");
-  const isOpen = (key: string) => openSection === key;
-  function toggleSection(key: string) {
-    setOpenSection((prev) => (prev === key ? null : key));
-  }
 
   const defaultDomain = useMemo<ExpenseBusinessDomain>(() => {
     if (props.defaultProjectType) return mapProjectTypeToExpenseDomain(props.defaultProjectType);
@@ -878,6 +873,45 @@ export function TaskUpsertDialog(props: Props) {
   const dialogTitle = isEditing ? "כרטיס משימה" : "משימה חדשה";
   const targetTaskId = activeTaskId ?? props.taskId ?? null;
 
+  // The card's sections, in order — they're the tab strip, the "הבא" order, and
+  // what a swipe steps through, all from one list. Reminders are a section only
+  // while creating; once the task exists they live in the card's own panel with
+  // immediate add/done/cancel.
+  const sections = useMemo(
+    () => [
+      { key: "description", label: "תיאור", icon: TextIcon },
+      { key: "domain", label: "תחום", icon: BusinessIcon },
+      { key: "dates", label: "תאריך", icon: ClockIcon },
+      { key: "people", label: "אחראי וחברים", icon: UsersIcon },
+      { key: "labels", label: "עדיפות וסטטוס", icon: TagIcon },
+      { key: "location", label: "מיקום", icon: LocationIcon },
+      ...(!isEditing ? [{ key: "reminders", label: "תזכורות", icon: NotificationIcon }] : []),
+      // Uploading needs a task id, but CHOOSING files doesn't — on a new task
+      // they're staged and uploaded right after it's created.
+      { key: "files", label: "קבצים ותמונות", icon: AttachIcon },
+    ],
+    [isEditing]
+  );
+  // Tabs always have exactly one open — an unknown/cleared section falls back to
+  // the first rather than showing an empty body under a strip of tabs.
+  const activeIndex = Math.max(
+    0,
+    sections.findIndex((section) => section.key === openSection)
+  );
+  const activeSection = sections[activeIndex].key;
+  // Bodies key off the RESOLVED section, not the raw state — otherwise a stale
+  // key (e.g. "reminders" on a card that's since been saved) shows a tab strip
+  // with nothing under it.
+  const isOpen = (key: string) => activeSection === key;
+
+  // Swipe the panel sideways to move between sections.
+  const sectionsRef = useRef<HTMLDivElement | null>(null);
+  useSwipeNavigation(sectionsRef, {
+    enabled: props.open && !loading,
+    onNext: () => setOpenSection(sections[Math.min(sections.length - 1, activeIndex + 1)].key),
+    onPrevious: () => setOpenSection(sections[Math.max(0, activeIndex - 1)].key),
+  });
+
   // Track unsaved edits so (in edit mode) Save only appears once something changed.
   const formSnapshot = buildTaskFormSnapshot({
     effectiveDomain,
@@ -935,10 +969,16 @@ export function TaskUpsertDialog(props: Props) {
         attemptClose();
       }}
     >
-      <AdaptiveDialog size={isEditing && targetTaskId ? "details4xl" : "form2xl"}>
+      {/* A column, not a scrolling block: header and action bar are pinned and
+          only the sections between them scroll (see dialog-chrome for the same
+          shape). p-0 because each band brings its own padding. */}
+      <AdaptiveDialog
+        size={isEditing && targetTaskId ? "details4xl" : "form2xl"}
+        className="flex flex-col gap-0 overflow-y-hidden p-0 sm:p-0"
+      >
         {/* A line under the name block, so the header reads as a pinned bar like
             every other dialog even though this one owns its own layout. */}
-        <DialogHeader className="border-b border-border/70 pb-3">
+        <DialogHeader className="shrink-0 border-b border-border/70 px-4 pb-3 pt-4 sm:px-6">
           <DialogTitle className="sr-only">{subject.trim() ? subject : dialogTitle}</DialogTitle>
           {/* pe-8 keeps the end button clear of the dialog's close X (top-left in RTL). */}
           {/* items-start, not items-center: the name grows downward when it's a list. */}
@@ -964,42 +1004,55 @@ export function TaskUpsertDialog(props: Props) {
                 we'd never know it was a list.
                 flex-1 + min-w-0 or it collapses to its intrinsic width in this
                 flex row; min-h-0 to shed the component's 110px minimum, which is
-                meant for a description box, not a title. */}
-            <Textarea
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              onKeyDown={(e) => {
-                // Enter still submits a normal one-line name; Shift+Enter (and
-                // paste, and dictation) start a new line.
-                if (e.key === "Enter" && !e.shiftKey && !subject.includes("\n")) {
-                  e.preventDefault();
-                  if (canSubmit && !saving && !loading) void submit();
+                meant for a description box, not a title.
+                The mic sits INSIDE the name field (bottom-end corner, with pe-10
+                keeping the text clear of it): it belongs to the text it dictates,
+                and on a phone the header row has no width to spare for it. */}
+            <div className="relative min-w-0 flex-1">
+              <Textarea
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                onKeyDown={(e) => {
+                  // Enter still submits a normal one-line name; Shift+Enter (and
+                  // paste, and dictation) start a new line.
+                  if (e.key === "Enter" && !e.shiftKey && !subject.includes("\n")) {
+                    e.preventDefault();
+                    if (canSubmit && !saving && !loading) void submit();
+                  }
+                }}
+                placeholder="שם המשימה"
+                disabled={loading}
+                rows={Math.min(Math.max(subjectLines.length, 1), 8)}
+                // Bordered like any other field: without a box it read as a
+                // heading, not as the thing you're meant to type the name into.
+                // min-h-10 (not min-h-0): one line of text-lg is shorter than the
+                // mic sitting in the corner, so the button poked out of the field.
+                className="min-h-10 w-full resize-none px-3 py-1.5 pe-11 text-lg font-semibold leading-snug"
+              />
+              <DictateButton
+                onTranscript={(text) =>
+                  // One recording, several tasks: speech comes back as
+                  // "לבדוק את הדירה, לדבר עם הקבלן ולתקן..." — split it into lines
+                  // so you can say the whole list in one go instead of
+                  // record-stop-record per row.
+                  setSubject((prev) => appendDictatedLines(prev, text))
                 }
-              }}
-              placeholder="שם המשימה"
-              disabled={loading}
-              rows={Math.min(Math.max(subjectLines.length, 1), 8)}
-              className="min-h-0 flex-1 resize-none border-transparent bg-transparent px-1 py-1 text-lg font-semibold leading-snug shadow-none focus-visible:border-input"
-            />
-            <DictateButton
-              onTranscript={(text) =>
-                // One recording, several tasks: speech comes back as
-                // "לבדוק את הדירה, לדבר עם הקבלן ולתקן..." — split it into lines
-                // so you can say the whole list in one go instead of
-                // record-stop-record per row.
-                setSubject((prev) => appendDictatedLines(prev, text))
-              }
-              disabled={loading}
-              title="הכתבת שם המשימה — אפשר להקריא כמה משימות ברצף"
-              className="shrink-0"
-            />
+                disabled={loading}
+                title="הכתבת שם המשימה — אפשר להקריא כמה משימות ברצף"
+                className="absolute bottom-1 end-1 h-8 w-8"
+              />
+            </div>
+            {/* Icon only — the word "הפוך לפרטי" cost the name field a third of
+                the row on a phone. Filled lock = private, outlined open lock =
+                not; the title carries the wording. */}
             {viewerIsCreator ? (
               <Button
                 type="button"
-                variant={isPrivate ? "default" : "secondary"}
-                size="sm"
+                variant={isPrivate ? "default" : "outline"}
+                size="icon-sm"
                 disabled={loading}
                 onClick={() => void togglePrivate()}
+                aria-label={isPrivate ? "ביטול משימה פרטית" : "הפיכה למשימה פרטית"}
                 title={
                   isPrivate
                     ? "משימה פרטית — רק את/ה רואה אותה. לחצו כדי לבטל"
@@ -1007,17 +1060,16 @@ export function TaskUpsertDialog(props: Props) {
                 }
                 className="shrink-0"
               >
-                {isPrivate ? <LockIcon className="ms-1 h-3.5 w-3.5" /> : <UnlockIcon className="ms-1 h-3.5 w-3.5" />}
-                {isPrivate ? "פרטי" : "הפוך לפרטי"}
+                {isPrivate ? <LockIcon /> : <UnlockIcon />}
               </Button>
             ) : isPrivate ? (
               // Non-creator viewing a private task they own: show a static marker.
               <span
-                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-primary/40 bg-primary/10 px-2.5 py-1.5 text-sm text-primary"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-primary/40 bg-primary/10 text-primary"
                 title="משימה פרטית"
+                aria-label="משימה פרטית"
               >
-                <LockIcon className="h-3.5 w-3.5" />
-                פרטי
+                <LockIcon className="h-4 w-4" />
               </span>
             ) : null}
             {isEditing && targetTaskId ? (
@@ -1032,51 +1084,64 @@ export function TaskUpsertDialog(props: Props) {
         </DialogHeader>
 
         {loading ? (
-          <div className="mt-6 flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+          <div className="flex items-center justify-center gap-2 px-6 py-12 text-sm text-muted-foreground">
             <SpinnerIcon className="h-5 w-5 animate-spin" />
             טוען נתוני משימה...
           </div>
         ) : (
-        <div className={isEditing && targetTaskId ? "mt-4 grid gap-5 lg:grid-cols-[1.5fr_1fr]" : "mt-4"}>
+        // The dialog is a column: header, ONE scrolling middle, and a footer that
+        // can't scroll away. The form owns the column so its submit button can
+        // stay in the footer.
         <form
-          className="space-y-3"
+          className="flex min-h-0 flex-1 flex-col"
           onSubmit={(e) => {
             e.preventDefault();
             void submit();
           }}
         >
-          {/* Voice fill — speak the whole task, let AI fill the fields (create only). */}
-          {!isEditing ? (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed bg-muted/20 p-2">
-              <span className="text-xs text-muted-foreground">
-                דברו את כל פרטי המשימה והכרטיס יתמלא אוטומטית
-              </span>
-              <TaskVoiceFillButton
-                users={props.users.map((u) => ({ id: u.id, label: u.label }))}
-                domains={domainOptions}
-                onParsed={applyParsed}
-                disabled={loading}
-              />
+          {/* The section tabs — one row, always exactly one open, scrollable
+              sideways when they don't fit. Swipe the panel below to step through
+              them (see useSwipeNavigation: right = forward, matching the rest of
+              the app's RTL paging). */}
+          <div className="shrink-0 border-b border-border/70 px-4 sm:px-6">
+            <div dir="rtl" className="flex min-w-0 items-center gap-2 overflow-x-auto overflow-y-hidden sm:gap-3">
+              {sections.map((section) => {
+                const active = section.key === activeSection;
+                const Icon = section.icon;
+                return (
+                  <button
+                    key={section.key}
+                    type="button"
+                    aria-current={active ? "true" : undefined}
+                    onClick={() => setOpenSection(section.key)}
+                    className={`-mb-px inline-flex shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-t-md border-b-[3px] px-2 pb-2 pt-1 text-sm leading-tight transition-colors hover:bg-muted/60 ${
+                      active
+                        ? "border-primary font-bold text-primary"
+                        : "border-transparent font-medium text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    {section.label}
+                  </button>
+                );
+              })}
             </div>
-          ) : null}
-
-          {/* Action buttons — toggle each detail editor (one open at a time). */}
-          <div className="flex flex-wrap gap-1.5">
-            <ActionChip icon={TextIcon} label="תיאור" active={isOpen("description")} onClick={() => toggleSection("description")} />
-            <ActionChip icon={BusinessIcon} label="תחום" active={isOpen("domain")} onClick={() => toggleSection("domain")} />
-            <ActionChip icon={ClockIcon} label="תאריך" active={isOpen("dates")} onClick={() => toggleSection("dates")} />
-            <ActionChip icon={UsersIcon} label="אחראי וחברים" active={isOpen("people")} onClick={() => toggleSection("people")} />
-            <ActionChip icon={TagIcon} label="עדיפות וסטטוס" active={isOpen("labels")} onClick={() => toggleSection("labels")} />
-            <ActionChip icon={LocationIcon} label="מיקום" active={isOpen("location")} onClick={() => toggleSection("location")} />
-            {/* Reminders during creation — once the task exists they live in the
-                right-hand card column with immediate add/done/cancel. */}
-            {!isEditing ? (
-              <ActionChip icon={NotificationIcon} label="תזכורות" active={isOpen("reminders")} onClick={() => toggleSection("reminders")} />
-            ) : null}
-            {/* Uploading needs a task id, but CHOOSING files doesn't — on a new
-                task they're staged and uploaded right after it's created. */}
-            <ActionChip icon={AttachIcon} label="קבצים ותמונות" active={isOpen("files")} onClick={() => toggleSection("files")} />
           </div>
+
+          <div ref={sectionsRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+          {/* Editing, the card's comments/reminders sit BESIDE the sections on a
+              wide screen and under them on a phone — one scroll either way. */}
+          <div className={isEditing && targetTaskId ? "grid gap-5 lg:grid-cols-[1.5fr_1fr]" : ""}>
+          <div className="space-y-3">
+          {/* Voice fill — a button like any other, above the open section. */}
+          {!isEditing ? (
+            <TaskVoiceFillButton
+              users={props.users.map((u) => ({ id: u.id, label: u.label }))}
+              domains={domainOptions}
+              onParsed={applyParsed}
+              disabled={loading}
+            />
+          ) : null}
 
           {isOpen("description") ? (
             <TaskDescriptionSection description={description} onChange={setDescription} />
@@ -1178,17 +1243,46 @@ export function TaskUpsertDialog(props: Props) {
                   onRemove={removePendingReminder}
                 />
               ) : null}
+          </div>
 
-          {/* Action bar — the same shape as every other dialog: a line, then the
-              primary action at the end. No cancel button; the X closes (through
-              attemptClose, so the unsaved-changes guard still runs). */}
-          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border/70 pt-3">
-            {wizard && nextWizardStep(openSection) ? (
+          {/* Card extras — comments and history. Not a tab: they're what the card
+              IS, not one of its fields. */}
+          {isEditing && targetTaskId ? (
+            <TaskCardSidebar
+              reminders={reminders}
+              reminderAt={reminderAt}
+              setReminderAt={setReminderAt}
+              reminderNote={reminderNote}
+              setReminderNote={setReminderNote}
+              addingReminder={addingReminder}
+              editingReminderId={editingReminderId}
+              onAddReminder={() => void (editingReminderId ? saveReminderEdit() : addReminder())}
+              onEditReminder={beginEditReminder}
+              onCancelEditReminder={cancelEditReminder}
+              onSetReminderStatus={(id, nextStatus) => void setReminderStatus(id, nextStatus)}
+              comments={comments}
+              legacyNotes={legacyNotes}
+              newComment={newComment}
+              setNewComment={setNewComment}
+              addingComment={addingComment}
+              onAddComment={() => void addComment()}
+              colorIndexById={colorIndexById}
+              chosenColorById={chosenColorById}
+            />
+          ) : null}
+          </div>
+          </div>
+
+          {/* Action bar — a real footer of the dialog, outside the scrolling
+              area, so "הבא" and Save are on screen wherever you are in the form.
+              They used to sit at the end of the scroll, below the fold. */}
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border/70 bg-background px-4 py-3 sm:px-6">
+            {wizard && activeIndex < sections.length - 1 ? (
               <Button
                 type="button"
                 variant="secondary"
                 className="me-auto"
-                onClick={() => setOpenSection(nextWizardStep(openSection))}
+                onClick={() => setOpenSection(sections[activeIndex + 1].key)}
               >
                 הבא ›
               </Button>
@@ -1202,32 +1296,6 @@ export function TaskUpsertDialog(props: Props) {
             ) : null}
           </div>
         </form>
-
-        {/* Card extras — left column beside the form (stacks on mobile). */}
-        {isEditing && targetTaskId ? (
-          <TaskCardSidebar
-            reminders={reminders}
-            reminderAt={reminderAt}
-            setReminderAt={setReminderAt}
-            reminderNote={reminderNote}
-            setReminderNote={setReminderNote}
-            addingReminder={addingReminder}
-            editingReminderId={editingReminderId}
-            onAddReminder={() => void (editingReminderId ? saveReminderEdit() : addReminder())}
-            onEditReminder={beginEditReminder}
-            onCancelEditReminder={cancelEditReminder}
-            onSetReminderStatus={(id, nextStatus) => void setReminderStatus(id, nextStatus)}
-            comments={comments}
-            legacyNotes={legacyNotes}
-            newComment={newComment}
-            setNewComment={setNewComment}
-            addingComment={addingComment}
-            onAddComment={() => void addComment()}
-            colorIndexById={colorIndexById}
-            chosenColorById={chosenColorById}
-          />
-        ) : null}
-        </div>
         )}
       </AdaptiveDialog>
     </Dialog>

@@ -2,6 +2,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   DndContext,
@@ -21,27 +22,30 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { AddIcon, AttachIcon, BuildingIcon, ClockIcon, CommentIcon, DragIcon, LockIcon, NotificationIcon, ProjectIcon, SuccessIcon, UncheckedIcon, UserIcon, WazeIcon } from "@/components/ui/icons";
+import { AddIcon, AttachIcon, BuildingIcon, ClockIcon, CloseIcon, CommentIcon, DragIcon, FilterIcon, LockIcon, NotificationIcon, ProjectIcon, RecurringIcon, SearchIcon, SuccessIcon, UncheckedIcon, UserIcon, WazeIcon, ZoomInIcon, ZoomOutIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { offlineFetch } from "@/lib/offline-queue";
 import { BOARD_STATUSES, type TaskBoardItem } from "@/app/(app)/tasks/loadTasks";
 import { AddressLink } from "@/components/ui/address-link";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
+import { DeleteButton } from "@/components/ui/icon-button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedLines, parseTaskLines } from "@/components/tasks/taskLines.helpers";
-import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { InitialsAvatar, buildColorIndexMap } from "@/components/dashboard/InitialsAvatar";
 import { dueUrgencyChipClass, formatShortDate, getDueUrgency } from "@/lib/date";
 import { TaskUpsertDialog, type TaskOption, type TaskStatus, type UserOption } from "@/components/tasks/TaskUpsertDialog";
+import { TasksTabs } from "@/components/tasks/TasksTabs";
 import { emitNavigationStart, emitProgressActivityEnd, emitProgressActivityStart } from "@/components/layout/TopNavigationProgress";
 import { DomainSelect } from "@/components/financial/DomainSelect";
+import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
+import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { getTaskPriorityLabel, getTaskStatusLabel } from "@/lib/ui/status-colors";
 
 type Props = {
@@ -63,6 +67,19 @@ type Props = {
 
 const PRIORITY_OPTIONS = ["low", "medium", "high", "urgent"] as const;
 const COLUMN_PREFIX = "column:";
+
+// The magnifier is a two-state toggle: normal, or the whole list shrunk to fit
+// the screen. The card's text and spacing are `em`, so a font-size on the
+// scroller scales entire cards. 1 = normal (a card's base text is text-sm).
+const CARD_BASE_REM = 0.875;
+// Used when the list already fits and there's nothing to measure a fit against.
+const OVERVIEW_FALLBACK_ZOOM = 0.6;
+const MIN_OVERVIEW_ZOOM = 0.35;
+// How far the board's background runs on past its content, behind the bottom nav.
+const BOARD_BLEED = 40;
+// The only priorities a card shows. "בינונית" on every card is a chip that says
+// nothing — the badge is worth its space only when the task deviates from normal.
+const SHOWN_PRIORITIES = new Set(["high", "urgent"]);
 
 type UrlFilters = {
   q: string;
@@ -95,12 +112,18 @@ function TaskCard({
   onToggleDone,
   onContextMenu,
   colorIndexById,
+  longPress,
+  overview,
 }: {
   task: TaskBoardItem;
   onOpen: (id: string) => void;
   onToggleDone: (id: string, done: boolean) => void;
   onContextMenu: (id: string, x: number, y: number) => void;
   colorIndexById: Map<string, number>;
+  /** Phones: hold a card to open its menu (there's no right-click and no drag). */
+  longPress: boolean;
+  /** Zoomed out: titles only — the point is to see the list, not each card. */
+  overview: boolean;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
   const extraMembers = task.members.length > 3 ? task.members.length - 3 : 0;
@@ -109,21 +132,72 @@ function TaskCard({
   const dueUrgency = getDueUrgency(task.due_date, { done: isDone });
   const dueChipClass = dueUrgencyChipClass(dueUrgency);
 
+  // Long press → the card menu. The timer is cancelled by a move (that's a
+  // scroll, not a press) or by lifting early; `firedRef` swallows the click that
+  // follows so holding a card doesn't also open it.
+  const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressStartRef = useRef({ x: 0, y: 0 });
+  const firedRef = useRef(false);
+  const cancelPress = useCallback(() => {
+    if (pressTimerRef.current) {
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+  }, []);
+  useEffect(() => cancelPress, [cancelPress]);
+
+  // Everything the meta row carries — skipped entirely when zoomed out.
+  const hasMeta =
+    Boolean(task.project_name || task.property_name || task.customer_name || task.due_date || task.city) ||
+    task.is_private ||
+    task.has_open_reminder ||
+    task.attachment_count > 0 ||
+    task.comment_count > 0;
+
+  // Sizes below are `em`, not rem: the board's magnifier sets a font-size on the
+  // scroller and the whole card — text, padding, glyphs — scales with it.
   return (
     <div
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      onClick={() => onOpen(task.id)}
+      onClick={() => {
+        if (firedRef.current) {
+          firedRef.current = false;
+          return;
+        }
+        onOpen(task.id);
+      }}
       onContextMenu={(e) => {
         e.preventDefault();
         onContextMenu(task.id, e.clientX, e.clientY);
       }}
-      className={`cursor-pointer select-none rounded-lg border bg-card p-2.5 text-sm shadow-sm transition hover:border-primary/40 ${
+      onPointerDown={(e) => {
+        if (!longPress || e.pointerType === "mouse") return;
+        pressStartRef.current = { x: e.clientX, y: e.clientY };
+        firedRef.current = false;
+        cancelPress();
+        pressTimerRef.current = setTimeout(() => {
+          firedRef.current = true;
+          navigator.vibrate?.(12);
+          onContextMenu(task.id, e.clientX, e.clientY);
+        }, 420);
+      }}
+      onPointerMove={(e) => {
+        if (!pressTimerRef.current) return;
+        const moved =
+          Math.abs(e.clientX - pressStartRef.current.x) + Math.abs(e.clientY - pressStartRef.current.y);
+        if (moved > 10) cancelPress();
+      }}
+      onPointerUp={cancelPress}
+      onPointerCancel={cancelPress}
+      className={`cursor-pointer select-none rounded-lg border bg-card p-[0.55em] text-[1em] shadow-sm transition hover:border-primary/40 ${
         isDragging ? "opacity-40" : ""
       }`}
     >
-      <div className="flex items-start gap-2">
+      {/* Title line carries the badge and the faces too — they used to cost a row
+          each, which is why four cards filled a phone screen. */}
+      <div className="flex items-start gap-[0.5em]">
         {/* Complete circle — click to move to/from done (Trello-style). */}
         <button
           type="button"
@@ -134,102 +208,101 @@ function TaskCard({
             e.stopPropagation();
             onToggleDone(task.id, !isDone);
           }}
-          className="mt-0.5 shrink-0 text-muted-foreground transition-colors hover:text-success"
+          className="mt-[0.15em] shrink-0 text-muted-foreground transition-colors hover:text-success"
         >
-          {isDone ? <SuccessIcon className="h-4 w-4 text-success" /> : <UncheckedIcon className="h-4 w-4" />}
+          {isDone ? (
+            <SuccessIcon className="h-[1.15em] w-[1.15em] text-success" />
+          ) : (
+            <UncheckedIcon className="h-[1.15em] w-[1.15em]" />
+          )}
         </button>
         <div className={`min-w-0 flex-1 font-medium leading-snug ${isDone ? "text-muted-foreground line-through" : ""}`}>
           {task.subject}
         </div>
-        {task.priority ? <StatusBadge value={task.priority} type="priority" className="shrink-0 text-[10px]" /> : null}
+        {!overview && task.priority && SHOWN_PRIORITIES.has(task.priority) ? (
+          <StatusBadge value={task.priority} type="priority" className="shrink-0 text-[0.72em]" />
+        ) : null}
+        {!overview && task.members.length > 0 ? (
+          <div className="flex shrink-0 -space-x-1.5">
+            {task.members.slice(0, 3).map((member) => (
+              <InitialsAvatar key={member.id} name={member.name} color={member.color} colorKey={member.id} colorIndex={colorIndexById.get(member.id)} size="xs" className="ring-2 ring-background" />
+            ))}
+            {extraMembers > 0 ? (
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[9px] font-medium ring-2 ring-background">
+                +{extraMembers}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
-      {/* What this task is attached to: project / property / customer. */}
-      {task.project_name || task.property_name || task.customer_name ? (
-        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+      {/* One wrapped meta row: what it's attached to, when it's due, and the
+          indicators — instead of three separate lines. */}
+      {!overview && hasMeta ? (
+        <div className="mt-[0.35em] flex flex-wrap items-center gap-x-[0.5em] gap-y-[0.2em] text-[0.8em] text-muted-foreground">
+          {task.due_date ? (
+            <span
+              className={
+                dueChipClass
+                  ? `inline-flex items-center gap-[0.3em] rounded-md border px-[0.4em] py-[0.1em] font-medium ${dueChipClass}`
+                  : ""
+              }
+            >
+              {dueChipClass ? <ClockIcon className="h-[1.1em] w-[1.1em]" /> : null}
+              {formatShortDate(task.due_date)}
+              {task.due_time ? ` ${task.due_time}` : ""}
+            </span>
+          ) : null}
           {task.project_name ? (
-            <span className="inline-flex max-w-full items-center gap-1 rounded-md border bg-muted/30 px-1.5 py-0.5 text-muted-foreground">
-              <ProjectIcon className="h-3 w-3 shrink-0" />
-              <span className="truncate">{task.project_name}</span>
+            <span className="inline-flex max-w-full items-center gap-[0.25em]">
+              <ProjectIcon className="h-[1.1em] w-[1.1em] shrink-0" />
+              <span className="min-w-0 break-words">{task.project_name}</span>
             </span>
           ) : null}
           {task.property_name ? (
-            <span className="inline-flex max-w-full items-center gap-1 rounded-md border bg-muted/30 px-1.5 py-0.5 text-muted-foreground">
-              <BuildingIcon className="h-3 w-3 shrink-0" />
-              <span className="truncate">{task.property_name}</span>
+            <span className="inline-flex max-w-full items-center gap-[0.25em]">
+              <BuildingIcon className="h-[1.1em] w-[1.1em] shrink-0" />
+              <span className="min-w-0 break-words">{task.property_name}</span>
             </span>
           ) : null}
           {task.customer_name ? (
-            <span className="inline-flex max-w-full items-center gap-1 rounded-md border bg-muted/30 px-1.5 py-0.5 text-muted-foreground">
-              <UserIcon className="h-3 w-3 shrink-0" />
-              <span className="truncate">
+            <span className="inline-flex max-w-full items-center gap-[0.25em]">
+              <UserIcon className="h-[1.1em] w-[1.1em] shrink-0" />
+              <span className="min-w-0 break-words">
                 {task.customer_name}
                 {task.customer_phone ? <span dir="ltr"> · {task.customer_phone}</span> : null}
               </span>
             </span>
           ) : null}
-        </div>
-      ) : null}
-
-      {/* Date (start/right) + assignees/indicators (end/left), one row. */}
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-          {task.due_date ? (
-            <span
-              className={
-                dueChipClass
-                  ? `inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-medium ${dueChipClass}`
-                  : ""
-              }
-            >
-              {dueChipClass ? <ClockIcon className="h-3 w-3" /> : null}
-              {formatShortDate(task.due_date)}
-              {task.due_time ? ` ${task.due_time}` : ""}
-            </span>
-          ) : null}
           {task.city ? (
-            <AddressLink address={task.city} className="inline-flex items-center gap-0.5">
-              <WazeIcon className="h-3 w-3" />
+            <AddressLink address={task.city} className="inline-flex items-center gap-[0.2em]">
+              <WazeIcon className="h-[1.1em] w-[1.1em]" />
               {task.city}
             </AddressLink>
           ) : null}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
           {task.is_private ? (
             <span title="משימה פרטית — רק את/ה רואה אותה">
-              <LockIcon className="h-3.5 w-3.5 text-muted-foreground" />
+              <LockIcon className="h-[1.15em] w-[1.15em]" />
             </span>
           ) : null}
-          {task.has_open_reminder ? <NotificationIcon className="h-3.5 w-3.5 text-warning-strong" /> : null}
+          {task.has_open_reminder ? <NotificationIcon className="h-[1.15em] w-[1.15em] text-warning-strong" /> : null}
           {task.attachment_count > 0 ? (
             <span
-              className="inline-flex items-center gap-0.5 text-xs text-muted-foreground"
+              className="inline-flex items-center gap-[0.2em]"
               title={task.attachment_count === 1 ? "קובץ אחד מצורף" : `${task.attachment_count} קבצים מצורפים`}
             >
-              <AttachIcon className="h-3.5 w-3.5" />
+              <AttachIcon className="h-[1.15em] w-[1.15em]" />
               {task.attachment_count}
             </span>
           ) : null}
           {task.comment_count > 0 ? (
-            <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground">
-              <CommentIcon className="h-3.5 w-3.5" />
+            <span className="inline-flex items-center gap-[0.2em]">
+              <CommentIcon className="h-[1.15em] w-[1.15em]" />
               {task.comment_count}
             </span>
           ) : null}
-          {task.members.length > 0 ? (
-            <div className="flex -space-x-2">
-              {task.members.slice(0, 3).map((member) => (
-                <InitialsAvatar key={member.id} name={member.name} color={member.color} colorKey={member.id} colorIndex={colorIndexById.get(member.id)} size="sm" className="ring-2 ring-background" />
-              ))}
-              {extraMembers > 0 ? (
-                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-muted text-[11px] font-medium ring-2 ring-background">
-                  +{extraMembers}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }
@@ -243,6 +316,9 @@ function BoardColumn({
   onContextMenu,
   onQuickAdd,
   colorIndexById,
+  onColumnRef,
+  longPress,
+  overview,
 }: {
   status: string;
   tasks: TaskBoardItem[];
@@ -252,6 +328,10 @@ function BoardColumn({
   /** One title per line — the box doubles as a list. */
   onQuickAdd: (status: string, titles: string[]) => Promise<void>;
   colorIndexById: Map<string, number>;
+  /** Lets the board find this column's box so it can centre it on screen. */
+  onColumnRef: (status: string, node: HTMLElement | null) => void;
+  longPress: boolean;
+  overview: boolean;
 }) {
   const {
     setNodeRef,
@@ -326,28 +406,37 @@ function BoardColumn({
     </div>
   );
 
+  // The list is a fixed-height column: a pinned header, a scrolling middle, and a
+  // pinned "add a card" foot. Scrolling a list scrolls THAT list — not the page —
+  // which is the whole reason the board fits a phone screen at all.
   return (
     <div
-      ref={setNodeRef}
+      ref={(node) => {
+        setNodeRef(node);
+        onColumnRef(status, node);
+      }}
       style={style}
-      className={`flex min-w-[78vw] snap-start flex-col rounded-xl bg-muted/70 lg:min-w-0 ${
+      data-column={status}
+      className={`flex h-full min-h-0 w-[90vw] shrink-0 snap-center flex-col rounded-xl bg-muted lg:w-auto lg:shrink lg:snap-align-none ${
         isDragging ? "z-10 opacity-70" : ""
       }`}
     >
-      <div className="flex items-center justify-between px-3 py-2.5">
-        <div className="flex items-center gap-2 text-sm font-semibold">
+      <div className="flex shrink-0 items-center justify-between gap-2 rounded-t-xl border-b border-border/60 px-2.5 py-1.5">
+        <div className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+          {/* Reordering lists is a desktop affordance: on a phone the grip was
+              mostly grabbed by accident, and it cost header width. */}
           <button
             type="button"
             ref={setActivatorNodeRef}
             {...attributes}
             {...listeners}
             aria-label="גרירת רשימה"
-            className="cursor-grab touch-none text-muted-foreground hover:text-foreground active:cursor-grabbing"
+            className="hidden shrink-0 cursor-grab touch-none text-muted-foreground hover:text-foreground active:cursor-grabbing md:block"
           >
             <DragIcon className="h-4 w-4" />
           </button>
           {getTaskStatusLabel(status)}
-          <span className="rounded-full bg-background px-1.5 text-xs font-normal text-muted-foreground">
+          <span className="shrink-0 rounded-full bg-background px-1.5 text-xs font-normal text-muted-foreground">
             {tasks.length}
           </span>
         </div>
@@ -356,13 +445,18 @@ function BoardColumn({
           type="button"
           onClick={() => setAdding("top")}
           aria-label="הוספת כרטיס"
-          className="rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+          className="shrink-0 rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
         >
           <AddIcon className="h-4 w-4" />
         </button>
       </div>
 
-      <div className="flex-1 space-y-2 px-2 pb-2">
+      {/* overscroll-contain: reaching the end of a list must not hand the scroll
+          over to the page behind it (which is what made the board feel broken).
+          The gap between cards is `em` like the cards themselves, so the
+          magnifier shrinks the spacing too — otherwise "fit the whole list on
+          screen" stops fitting after a dozen cards. */}
+      <div data-cards className="min-h-0 flex-1 space-y-[0.4em] overflow-y-auto overscroll-contain px-1.5 py-1.5">
         {adding === "top" ? addBox : null}
 
         {tasks.map((task) => (
@@ -373,9 +467,17 @@ function BoardColumn({
             onToggleDone={onToggleDone}
             onContextMenu={onContextMenu}
             colorIndexById={colorIndexById}
+            longPress={longPress}
+            overview={overview}
           />
         ))}
 
+        {tasks.length === 0 && adding === null ? (
+          <p className="px-1 py-2 text-xs text-muted-foreground">אין משימות ברשימה הזו.</p>
+        ) : null}
+      </div>
+
+      <div className="shrink-0 border-t border-border/60 px-1.5 py-1">
         {adding === "bottom" ? (
           addBox
         ) : (
@@ -444,6 +546,198 @@ export default function TasksPageClient(props: Props) {
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => setQInput(urlQ), [urlQ]);
 
+  // ── Phone chrome ────────────────────────────────────────────────────────────
+  // The filter card used to fill the whole phone screen before you saw a single
+  // task. Search + filters now live in the dark header; the filters drop down
+  // over the board when asked for.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const hasActiveFilter = Boolean(urlPriority || urlDomain || urlLinkedId) || urlScope === "all";
+  useEffect(() => {
+    if (!filtersOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFiltersOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [filtersOpen]);
+
+  // Magnifier — one button, two states. Normal (1) shows the minus glyph; press
+  // it and the list shrinks to fit the screen and the glyph flips to a plus to
+  // come back. Always starts normal — a zoomed-out board isn't a resting state.
+  const [zoom, setZoom] = useState(1);
+  const isOverview = zoom < 1;
+
+  // The board fills from wherever it starts down to the bottom of the screen, so
+  // the PAGE never scrolls — the lists do. Measured rather than a fixed calc()
+  // because what sits above it varies (alert bar, tabs, toolbar).
+  const boardRef = useRef<HTMLDivElement | null>(null);
+  const [boardBox, setBoardBox] = useState<{ height: number; bleed: number } | null>(null);
+  useEffect(() => {
+    const measure = () => {
+      const el = boardRef.current;
+      if (!el) return;
+      const boardTop = el.getBoundingClientRect().top;
+      // Phones: run down to the bottom nav's REAL top edge. The nav is
+      // `fixed bottom-0`, so the browser has already resolved the safe-area
+      // inset and which viewport it counts as current — measuring its rect
+      // borrows that answer instead of re-deriving it from window.innerHeight,
+      // which is what left a white strip under the board.
+      const nav = document.querySelector<HTMLElement>("[data-bottom-nav]");
+      const navTop = nav && nav.offsetWidth > 0 ? nav.getBoundingClientRect().top : null;
+      const next =
+        navTop !== null
+          ? // Both rects are viewport-relative; the nav is fixed and the board
+            // isn't, so a scrolled page has to be taken back out.
+            Math.round(navTop - boardTop - window.scrollY)
+          : Math.round(window.innerHeight - (boardTop + window.scrollY) - 32);
+      // Bleed: the board's box runs BOARD_BLEED px past where its content ends,
+      // so its colour continues behind the (opaque) bottom bar. Belt and braces
+      // for the measurement above — no arithmetic that's a few pixels out, and
+      // no browser that moves the bar after we measured, can put a strip of
+      // white page between the board and the nav. The padding keeps the lists
+      // where they were and the negative margin keeps the page from growing, so
+      // the bleed costs nothing but paint. Desktop has no bar, so no bleed.
+      setBoardBox((prev) => {
+        const height = Math.max(320, next);
+        const bleed = navTop !== null ? BOARD_BLEED : 0;
+        return prev && Math.abs(prev.height - height) < 2 && prev.bleed === bleed
+          ? prev
+          : { height, bleed };
+      });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    // Anything above the board changing height (an alert dismissed, the tabs
+    // gone) moves its top edge. Watching document.body is useless here — the
+    // shell is min-h-screen, so the body never changes size no matter what the
+    // page does — so watch every ancestor between the board and the body: one of
+    // them is the box that actually shrank.
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    if (observer) {
+      let node = boardRef.current?.parentElement ?? null;
+      while (node && node !== document.body) {
+        observer.observe(node);
+        node = node.parentElement;
+      }
+    }
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+      observer?.disconnect();
+    };
+  }, []);
+
+  // ── One list on screen at a time (phones) ───────────────────────────────────
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const columnNodes = useRef(new Map<string, HTMLElement>());
+  const userScrolledRef = useRef(false);
+  const [centeredStatus, setCenteredStatus] = useState<string>("todo");
+
+  const registerColumn = useCallback((status: string, node: HTMLElement | null) => {
+    if (node) columnNodes.current.set(status, node);
+    else columnNodes.current.delete(status);
+  }, []);
+
+  const centerColumn = useCallback((status: string, behavior: ScrollBehavior = "smooth") => {
+    const scroller = scrollerRef.current;
+    const node = columnNodes.current.get(status);
+    if (!scroller || !node) return;
+    const scrollerBox = scroller.getBoundingClientRect();
+    const nodeBox = node.getBoundingClientRect();
+    // scrollBy with a delta, not scrollLeft: RTL scroll origins differ between
+    // engines, a relative move doesn't care which convention we're in.
+    const delta = nodeBox.left + nodeBox.width / 2 - (scrollerBox.left + scrollerBox.width / 2);
+    if (Math.abs(delta) < 1) return;
+    scroller.scrollBy({ left: delta, behavior });
+  }, []);
+
+  // "לביצוע" is what you came to look at, so it's the list you land on.
+  useEffect(() => {
+    if (userScrolledRef.current) return;
+    if (window.matchMedia("(min-width: 1024px)").matches) return;
+    // Next frame: the columns need their widths before we can centre one.
+    const frame = requestAnimationFrame(() => centerColumn("todo", "auto"));
+    return () => cancelAnimationFrame(frame);
+  }, [centerColumn, columnOrder, boardBox]);
+
+  /** The list currently nearest the middle of the screen. */
+  const nearestColumn = useCallback(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return "";
+    const scrollerBox = scroller.getBoundingClientRect();
+    const middle = scrollerBox.left + scrollerBox.width / 2;
+    let best = "";
+    let bestDistance = Number.POSITIVE_INFINITY;
+    columnNodes.current.forEach((node, status) => {
+      const box = node.getBoundingClientRect();
+      const distance = Math.abs(box.left + box.width / 2 - middle);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = status;
+      }
+    });
+    return best;
+  }, []);
+
+  // Track the list on screen, and hold the board to ONE list per swipe: snap
+  // alone lets a flick skip two or three, so once the scroll settles we walk
+  // back to the neighbour of wherever the swipe started.
+  const swipeFromIndexRef = useRef(0);
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    let frame = 0;
+    let settle: ReturnType<typeof setTimeout> | null = null;
+    const onScroll = () => {
+      if (!frame) {
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          const status = nearestColumn();
+          if (status) setCenteredStatus(status);
+        });
+      }
+      if (settle) clearTimeout(settle);
+      settle = setTimeout(() => {
+        settle = null;
+        const landed = columnOrder.indexOf(nearestColumn());
+        const from = swipeFromIndexRef.current;
+        if (landed < 0 || from < 0 || from >= columnOrder.length) return;
+        const step = landed - from;
+        if (Math.abs(step) > 1) {
+          const nextIndex = from + Math.sign(step);
+          swipeFromIndexRef.current = nextIndex;
+          centerColumn(columnOrder[nextIndex]);
+          return;
+        }
+        swipeFromIndexRef.current = landed;
+      }, 140);
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+      if (settle) clearTimeout(settle);
+    };
+  }, [centerColumn, columnOrder, nearestColumn]);
+
+  // Shrink the list you're looking at until all of it is on screen — then back.
+  const toggleOverview = useCallback(() => {
+    if (isOverview) {
+      setZoom(1);
+      return;
+    }
+    const cards = columnNodes.current.get(centeredStatus)?.querySelector<HTMLElement>("[data-cards]");
+    if (!cards || cards.scrollHeight <= cards.clientHeight) {
+      // Nothing overflowing to measure against — just go small.
+      setZoom(OVERVIEW_FALLBACK_ZOOM);
+      return;
+    }
+    // 0.95 for the bits that don't scale (borders, the column's own chrome).
+    const fit = (cards.clientHeight / cards.scrollHeight) * 0.95;
+    setZoom(Math.max(MIN_OVERVIEW_ZOOM, Math.min(OVERVIEW_FALLBACK_ZOOM, fit)));
+  }, [centeredStatus, isOverview]);
+
   // Open the card for a deep-linked ?task=<id>.
   useEffect(() => {
     if (urlTask) setEditId(urlTask);
@@ -458,12 +752,23 @@ export default function TasksPageClient(props: Props) {
     router.replace(qs ? `/tasks?${qs}` : "/tasks");
   }
 
+  // Touch dragging is for tablets up. On a phone only one list is on screen, so
+  // dragging a card to another one never really worked — holding a card opens a
+  // menu with "העברה ל…" instead, and the two gestures can't both own the hold.
+  const [touchDrag, setTouchDrag] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 768px)");
+    const apply = () => setTouchDrag(query.matches);
+    apply();
+    query.addEventListener("change", apply);
+    return () => query.removeEventListener("change", apply);
+  }, []);
+
   // Mouse for desktop (drag after 8px so plain clicks open the card); touch with a
-  // short press-delay for mobile so a tap opens the card and the board still scrolls.
-  const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } })
-  );
+  // short press-delay so a tap opens the card and the board still scrolls.
+  const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 8 } });
+  const touchSensor = useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } });
+  const sensors = useSensors(mouseSensor, touchDrag ? touchSensor : null);
 
   // Unique, stable color slot per user — shared by the card avatars (and matches
   // the dialog, which builds the same map from the same user list).
@@ -659,111 +964,315 @@ export default function TasksPageClient(props: Props) {
     }
   }
 
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardContent className="flex flex-wrap items-end gap-2 pt-4 text-sm">
-          <div className="min-w-[220px] space-y-1">
-            <div className="text-[11px] text-muted-foreground">חיפוש</div>
-            <Input value={qInput} onChange={(e) => handleQChange(e.target.value)} placeholder="חיפוש..." />
-          </div>
-          {canSeeAll ? (
-            <div className="flex rounded-xl border bg-secondary/40 p-0.5 text-sm">
-              <button
-                type="button"
-                onClick={() => pushFilters({ q: urlQ, priority: urlPriority, domain: urlDomain, linkedId: urlLinkedId, scope: "mine" })}
-                className={`rounded-lg px-3 py-1.5 transition-colors ${urlScope === "mine" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-              >
-                שלי
-              </button>
-              <button
-                type="button"
-                onClick={() => pushFilters({ q: urlQ, priority: urlPriority, domain: urlDomain, linkedId: urlLinkedId, scope: "all" })}
-                className={`rounded-lg px-3 py-1.5 transition-colors ${urlScope === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-              >
-                הכל
-              </button>
-            </div>
-          ) : null}
-          <div className="w-[120px] space-y-1">
-            <div className="text-[11px] text-muted-foreground">עדיפות</div>
-            <NativeSelect dense
-              value={urlPriority}
-              onChange={(e) => pushFilters({ q: urlQ, priority: e.target.value, domain: urlDomain, linkedId: urlLinkedId, scope: urlScope })}
+  function openCreate(status?: string) {
+    setCreateSubject("");
+    // On a phone the + adds to the list you're looking at, like the board does.
+    setCreateStatus(
+      status && (BOARD_STATUSES as readonly string[]).includes(status) ? (status as TaskStatus) : "todo"
+    );
+    setCreateOpen(true);
+  }
+
+  // Phones have no sidebar to say where you are — the dark header says it, with
+  // the board's size as the subtitle.
+  useSetPageTitle("משימות", `${tasks.length} משימות`);
+
+  // One definition of the filter controls, used by both the desktop toolbar and
+  // the phone drop-down, so the two can't drift apart.
+  const filterFields = (
+    <>
+      {canSeeAll ? (
+        <div className="w-full space-y-1 md:w-auto">
+          <div className="text-[11px] text-muted-foreground">היקף</div>
+          <div className="flex rounded-xl border bg-secondary/10 p-0.5 text-sm">
+            <button
+              type="button"
+              onClick={() => pushFilters({ q: urlQ, priority: urlPriority, domain: urlDomain, linkedId: urlLinkedId, scope: "mine" })}
+              className={`flex-1 rounded-lg px-3 py-1.5 transition-colors ${urlScope === "mine" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
             >
-              <option value="">הכל</option>
-              {PRIORITY_OPTIONS.map((priority) => (
-                <option key={priority} value={priority}>
-                  {getTaskPriorityLabel(priority)}
-                </option>
-              ))}
-            </NativeSelect>
+              שלי
+            </button>
+            <button
+              type="button"
+              onClick={() => pushFilters({ q: urlQ, priority: urlPriority, domain: urlDomain, linkedId: urlLinkedId, scope: "all" })}
+              className={`flex-1 rounded-lg px-3 py-1.5 transition-colors ${urlScope === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+            >
+              הכל
+            </button>
           </div>
-          <div className="w-[160px] space-y-1">
-            <div className="text-[11px] text-muted-foreground">דומיין</div>
-            <DomainSelect
-              value={urlDomain}
-              emptyLabel="הכל"
-              onChange={(value) => pushFilters({ q: urlQ, priority: urlPriority, domain: value, linkedId: "", scope: urlScope })}
+        </div>
+      ) : null}
+      <div className="w-full space-y-1 md:w-[120px]">
+        <div className="text-[11px] text-muted-foreground">עדיפות</div>
+        <NativeSelect dense
+          value={urlPriority}
+          onChange={(e) => pushFilters({ q: urlQ, priority: e.target.value, domain: urlDomain, linkedId: urlLinkedId, scope: urlScope })}
+        >
+          <option value="">הכל</option>
+          {PRIORITY_OPTIONS.map((priority) => (
+            <option key={priority} value={priority}>
+              {getTaskPriorityLabel(priority)}
+            </option>
+          ))}
+        </NativeSelect>
+      </div>
+      <div className="w-full space-y-1 md:w-[160px]">
+        <div className="text-[11px] text-muted-foreground">דומיין</div>
+        <DomainSelect
+          value={urlDomain}
+          emptyLabel="הכל"
+          onChange={(value) => pushFilters({ q: urlQ, priority: urlPriority, domain: value, linkedId: "", scope: urlScope })}
+        />
+      </div>
+      {linkedTarget ? (
+        <div className="col-span-2 w-full space-y-1 md:col-span-1 md:w-[200px]">
+          <div className="text-[11px] text-muted-foreground">{linkedTarget === "project" ? "פרויקט" : "נכס"}</div>
+          {linkedTarget === "project" ? (
+            <ProjectPicker
+              className="h-9"
+              value={urlLinkedId}
+              onChange={(linkedId) => pushFilters({ q: urlQ, priority: urlPriority, domain: urlDomain, linkedId, scope: urlScope })}
+              emptyLabel="כל הפרויקטים"
+              searchPlaceholder="חיפוש פרויקט..."
+              projects={linkedOptions.map((option) => ({ id: option.id, label: option.label }))}
             />
-          </div>
-          {linkedTarget ? (
-            <div className="w-[200px] space-y-1">
-              <div className="text-[11px] text-muted-foreground">{linkedTarget === "project" ? "פרויקט" : "נכס"}</div>
-              {linkedTarget === "project" ? (
-                <ProjectPicker
-                  className="h-9"
-                  value={urlLinkedId}
-                  onChange={(linkedId) => pushFilters({ q: urlQ, priority: urlPriority, domain: urlDomain, linkedId, scope: urlScope })}
-                  emptyLabel="כל הפרויקטים"
-                  searchPlaceholder="חיפוש פרויקט..."
-                  projects={linkedOptions.map((option) => ({ id: option.id, label: option.label }))}
-                />
-              ) : (
-                <SearchableSelect
-                  className="h-9"
-                  value={urlLinkedId}
-                  onChange={(linkedId) => pushFilters({ q: urlQ, priority: urlPriority, domain: urlDomain, linkedId, scope: urlScope })}
-                  ariaLabel="סינון לפי נכס"
-                  emptyOptionLabel="כל הנכסים"
-                  searchPlaceholder="חיפוש נכס..."
-                  options={linkedOptions.map((option) => ({ value: option.id, label: option.label }))}
-                />
-              )}
-            </div>
-          ) : null}
+          ) : (
+            <SearchableSelect
+              className="h-9"
+              value={urlLinkedId}
+              onChange={(linkedId) => pushFilters({ q: urlQ, priority: urlPriority, domain: urlDomain, linkedId, scope: urlScope })}
+              ariaLabel="סינון לפי נכס"
+              emptyOptionLabel="כל הנכסים"
+              searchPlaceholder="חיפוש נכס..."
+              options={linkedOptions.map((option) => ({ value: option.id, label: option.label }))}
+            />
+          )}
+        </div>
+      ) : null}
+    </>
+  );
+
+  // Desktop controls — they live at the end of the tab row (see below). Search
+  // stays a field (you type into it); everything else is a button, with the
+  // number of live filters on the מסננים one so a hidden filter can't be
+  // forgotten about.
+  const activeFilterCount =
+    (urlPriority ? 1 : 0) + (urlDomain ? 1 : 0) + (urlLinkedId ? 1 : 0) + (urlScope === "all" ? 1 : 0);
+  const desktopControls = (
+    <>
+      <div className="relative w-56">
+        <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={qInput}
+          onChange={(e) => handleQChange(e.target.value)}
+          placeholder="חיפוש..."
+          className="h-9 rounded-xl ps-9"
+        />
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        className="h-9 gap-1.5 rounded-xl"
+        aria-expanded={filtersOpen}
+        onClick={() => setFiltersOpen((x) => !x)}
+      >
+        <FilterIcon className="h-4 w-4" />
+        מסננים
+        {activeFilterCount > 0 ? (
+          <span className="rounded-full bg-white/25 px-1.5 text-[11px] leading-5">{activeFilterCount}</span>
+        ) : null}
+      </Button>
+      <Button type="button" size="sm" className="h-9 gap-1 rounded-xl" onClick={() => openCreate("todo")}>
+        <AddIcon className="h-4 w-4" />
+        משימה
+      </Button>
+    </>
+  );
+
+  return (
+    // Cancel the shell's padding above and below on phones: the board runs from
+    // the header strip straight down to the bottom nav, with no white margin
+    // around it, and the page itself doesn't scroll.
+    <div className="-mb-24 -mt-4 space-y-3 md:mb-0 md:mt-0 md:space-y-4">
+      {/* Phone toolbar lives INSIDE the dark header (see PageHeaderToolbar), so
+          the board starts at the top of the page instead of below a screenful of
+          filter fields. */}
+      <PageHeaderToolbar>
+        <div className="mx-auto flex w-full max-w-md items-center justify-center gap-1.5">
           <Button
             type="button"
-            className="ms-auto"
-            onClick={() => {
-              setCreateSubject("");
-              setCreateStatus("todo");
-              setCreateOpen(true);
-            }}
+            aria-label="משימה חדשה"
+            className="h-10 shrink-0 gap-1 rounded-xl px-2.5"
+            onClick={() => openCreate(centeredStatus)}
           >
-            <AddIcon className="ms-1 h-4 w-4" />
-            משימה
+            <AddIcon className="h-4 w-4" />
+            <span className="text-xs">משימה</span>
           </Button>
-        </CardContent>
-      </Card>
+          {/* Same navy treatment as every other page's header strip (orders,
+              customers): a recessed white/10 field on the bar, not a light one. */}
+          <div className="relative w-full min-w-0">
+            <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
+            <Input
+              value={qInput}
+              onChange={(e) => handleQChange(e.target.value)}
+              placeholder="חיפוש..."
+              className="h-10 w-full rounded-xl border-white/10 bg-white/[0.06] ps-9 text-sidebar-foreground shadow-none placeholder:text-sidebar-foreground/60 focus-visible:bg-white/[0.12] focus-visible:ring-1 focus-visible:ring-white/25"
+            />
+          </div>
+          {/* Reads as ON (sky fill) while the panel is open or a filter is set. */}
+          <Button
+            type="button"
+            size="icon"
+            aria-label={filtersOpen ? "הסתרת מסננים" : "הצגת מסננים"}
+            className={
+              filtersOpen || hasActiveFilter
+                ? "h-10 w-10 shrink-0 rounded-xl"
+                : "h-10 w-10 shrink-0 rounded-xl !border-white/10 !bg-white/[0.06] !text-sidebar-foreground !shadow-none hover:!bg-white/[0.14]"
+            }
+            onClick={() => setFiltersOpen((x) => !x)}
+          >
+            <FilterIcon className="h-4 w-4" />
+          </Button>
+          {/* "משימות קבועות" as a button, not a tab row: the tab strip cost the
+              board a whole line for a link used once a month. The tabs are still
+              there from tablet up (and on the recurring page itself, so there's
+              always a way back). */}
+          {canSeeAll ? (
+            <Button
+              asChild
+              size="icon"
+              className="h-10 w-10 shrink-0 rounded-xl !border-white/10 !bg-white/[0.06] !text-sidebar-foreground !shadow-none hover:!bg-white/[0.14]"
+              aria-label="משימות קבועות"
+              title="משימות קבועות"
+            >
+              <Link href="/tasks/recurring" onClick={() => emitNavigationStart()}>
+                <RecurringIcon className="h-4 w-4" />
+              </Link>
+            </Button>
+          ) : null}
+        </div>
+      </PageHeaderToolbar>
+
+      {/* Phone: the filters drop DOWN OVER the board, pinned under the sticky
+          header (60px top bar + 52px toolbar) — where you're already looking. */}
+      {filtersOpen ? (
+        <>
+          <button
+            type="button"
+            aria-label="סגירת מסננים"
+            className="fixed inset-0 top-[112px] z-20 bg-black/30 md:hidden"
+            onClick={() => setFiltersOpen(false)}
+          />
+          <div className="fixed inset-x-0 top-[112px] z-20 border-b border-border bg-card p-3 shadow-lg md:hidden">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-medium">מסננים</span>
+              <button
+                type="button"
+                aria-label="סגירת מסננים"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground"
+                onClick={() => setFiltersOpen(false)}
+              >
+                <CloseIcon className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">{filterFields}</div>
+          </div>
+        </>
+      ) : null}
+
+      {/* Tablet and up: the tab row carries the controls at its end, and the
+          filters drop out of it — a toolbar CARD above the board cost a third of
+          the screen for four fields that are usually left alone. */}
+      <div className="hidden md:block">
+        {canSeeAll ? (
+          <TasksTabs actions={desktopControls} />
+        ) : (
+          // No tab row for a worker (recurring tasks are admin/office), but the
+          // controls still belong on that line rather than in a block of their own.
+          <div className="flex items-center justify-end gap-2 border-b border-border/60 pb-1.5">
+            {desktopControls}
+          </div>
+        )}
+      </div>
+
+      {filtersOpen ? (
+        <div className="hidden rounded-xl border bg-card p-3 md:block">
+          <div className="flex flex-wrap items-end gap-3">{filterFields}</div>
+        </div>
+      ) : null}
 
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <SortableContext items={columnOrder.map(columnSortableId)} strategy={horizontalListSortingStrategy}>
-          <div className="flex snap-x gap-3 overflow-x-auto pb-2 lg:grid lg:grid-cols-4 lg:overflow-visible">
-            {columnOrder.map((status) => (
-              <BoardColumn
-                key={status}
-                status={status}
-                tasks={tasksByStatus.get(status) ?? []}
-                onOpen={openCard}
-                onToggleDone={toggleDone}
-                onContextMenu={openMenu}
-                onQuickAdd={quickAdd}
-                colorIndexById={colorIndexById}
-              />
-            ))}
-          </div>
-        </SortableContext>
+        {/* The board is a dark surface (like Trello's): it's what makes the light
+            lists and white cards pop, and it marks where the page stops and the
+            board begins. Full-bleed on phones — -mx-3 matches the shell gutter.
+            The two house colours as a gradient (navy → sky) rather than a flat
+            navy slab: it's the one place a gradient earns its keep, because the
+            board is a backdrop and never carries text of its own. It runs
+            diagonally from the top-START corner — the top right, where a Hebrew
+            page begins — down to the opposite one. */}
+        <div
+          ref={boardRef}
+          style={
+            boardBox
+              ? {
+                  height: boardBox.height + boardBox.bleed,
+                  paddingBottom: boardBox.bleed,
+                  marginBottom: -boardBox.bleed,
+                }
+              : undefined
+          }
+          className="relative -mx-3 flex min-h-[20rem] flex-col overflow-hidden bg-gradient-to-bl from-primary from-15% to-secondary md:mx-0 md:rounded-2xl"
+        >
+          <SortableContext items={columnOrder.map(columnSortableId)} strategy={horizontalListSortingStrategy}>
+            {/* snap-mandatory + snap-center on each list: one swipe steps to the
+                next list and parks it in the middle of the screen.
+                px-[5vw] with 90vw lists: the first and last list can sit in the
+                MIDDLE of the screen too (without it the browser clamps them to
+                the edge), and the gutter is exactly the peek of the next list. */}
+            <div
+              ref={scrollerRef}
+              onPointerDown={() => {
+                userScrolledRef.current = true;
+                // Where this swipe started from — the one-list-per-swipe clamp
+                // measures against it.
+                swipeFromIndexRef.current = columnOrder.indexOf(centeredStatus);
+              }}
+              style={{ fontSize: `${CARD_BASE_REM * zoom}rem` }}
+              className="flex min-h-0 flex-1 snap-x snap-mandatory gap-2 overflow-x-auto overscroll-x-contain px-[5vw] py-2 lg:grid lg:grid-cols-4 lg:gap-3 lg:overflow-x-visible lg:px-3"
+            >
+              {columnOrder.map((status) => (
+                <BoardColumn
+                  key={status}
+                  status={status}
+                  tasks={tasksByStatus.get(status) ?? []}
+                  onOpen={openCard}
+                  onToggleDone={toggleDone}
+                  onContextMenu={openMenu}
+                  onQuickAdd={quickAdd}
+                  colorIndexById={colorIndexById}
+                  onColumnRef={registerColumn}
+                  longPress={!touchDrag}
+                  overview={isOverview}
+                />
+              ))}
+            </div>
+          </SortableContext>
+
+          {/* The magnifier floats in the corner instead of owning a whole bar —
+              one button, two states: minus shrinks the list until all of it is
+              on screen, plus puts it back. Sits above the "הוספת כרטיס" foot so
+              the two never fight for the same corner. */}
+          <button
+            type="button"
+            onClick={toggleOverview}
+            aria-pressed={isOverview}
+            aria-label={isOverview ? "חזרה לתצוגה רגילה" : "הצגת כל הרשימה במסך אחד"}
+            title={isOverview ? "חזרה לתצוגה רגילה" : "הצגת כל הרשימה במסך אחד"}
+            className="absolute bottom-16 right-3 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-sidebar/90 text-sidebar-foreground shadow-lg ring-1 ring-white/20 backdrop-blur transition-colors hover:bg-sidebar"
+          >
+            {isOverview ? <ZoomInIcon className="h-5 w-5" /> : <ZoomOutIcon className="h-5 w-5" />}
+          </button>
+        </div>
 
         <DragOverlay>
           {activeColumnStatus ? (
@@ -778,45 +1287,101 @@ export default function TasksPageClient(props: Props) {
         </DragOverlay>
       </DndContext>
 
-      {/* Right-click card menu */}
+      {/* Card menu — right-click on desktop, hold a card on a phone. "העברה ל…"
+          is how a card changes list where there's no dragging. */}
       {menu ? (
-        <>
-          <div
-            className="fixed inset-0 z-40"
-            onClick={() => setMenu(null)}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              setMenu(null);
-            }}
-          />
-          <div
-            className="fixed z-50 min-w-36 overflow-hidden rounded-md border bg-popover py-1 text-sm shadow-md"
-            style={{ top: menu.y, left: menu.x }}
-          >
-            <button
-              type="button"
-              onClick={() => {
-                const id = menu.id;
-                setMenu(null);
-                setEditId(id);
-              }}
-              className="block w-full px-3 py-1.5 text-start hover:bg-muted/50"
-            >
-              פתיחה
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const id = menu.id;
-                setMenu(null);
-                setDeleteTaskId(id);
-              }}
-              className="block w-full px-3 py-1.5 text-start text-destructive hover:bg-destructive/10"
-            >
-              מחיקה
-            </button>
-          </div>
-        </>
+        (() => {
+          const menuTask = tasks.find((t) => t.id === menu.id) ?? null;
+          const menuStatus = menuTask?.status ?? "todo";
+          const moveTargets = columnOrder.filter((s) => s !== menuStatus);
+          const open = () => {
+            const id = menu.id;
+            setMenu(null);
+            setEditId(id);
+          };
+          const remove = () => {
+            const id = menu.id;
+            setMenu(null);
+            setDeleteTaskId(id);
+          };
+          const move = (target: string) => {
+            const id = menu.id;
+            setMenu(null);
+            void moveTask(id, target);
+          };
+          return (
+            <>
+              {/* z above the bottom nav (z-50), or the sheet lands under it. */}
+              <div
+                className="fixed inset-0 z-[55] bg-black/20 md:bg-transparent"
+                onClick={() => setMenu(null)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setMenu(null);
+                }}
+              />
+              {/* Phone: a sheet at the bottom, in reach of the thumb that just
+                  held the card — not a popover under the fingertip. It clears the
+                  bottom nav the same way the nav's own spacer does. */}
+              <div className="fixed inset-x-2 bottom-[calc(58px+env(safe-area-inset-bottom)+0.5rem)] z-[60] rounded-2xl border bg-popover p-2 shadow-xl md:hidden">
+                <div className="px-1 pb-2 pt-1 text-sm font-medium leading-snug">
+                  {menuTask?.subject ?? "משימה"}
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {moveTargets.map((target) => (
+                    <button
+                      key={target}
+                      type="button"
+                      onClick={() => move(target)}
+                      className="rounded-xl border bg-muted/40 px-3 py-2.5 text-sm font-medium transition-colors active:bg-muted"
+                    >
+                      {getTaskStatusLabel(target)}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-1.5 flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={open}
+                    className="flex-1 rounded-xl bg-secondary px-3 py-2.5 text-sm font-medium text-secondary-foreground"
+                  >
+                    פתיחה
+                  </button>
+                  <DeleteButton label="מחיקת המשימה" size="default" onClick={remove} />
+                </div>
+              </div>
+              {/* Desktop: at the cursor, where the right-click happened. */}
+              <div
+                className="fixed z-[60] hidden min-w-40 overflow-hidden rounded-md border bg-popover py-1 text-sm shadow-md md:block"
+                style={{ top: menu.y, left: menu.x }}
+              >
+                <button type="button" onClick={open} className="block w-full px-3 py-1.5 text-start hover:bg-muted/50">
+                  פתיחה
+                </button>
+                <div className="my-1 border-t" />
+                <div className="px-3 pb-0.5 text-[11px] text-muted-foreground">העברה ל…</div>
+                {moveTargets.map((target) => (
+                  <button
+                    key={target}
+                    type="button"
+                    onClick={() => move(target)}
+                    className="block w-full px-3 py-1.5 text-start hover:bg-muted/50"
+                  >
+                    {getTaskStatusLabel(target)}
+                  </button>
+                ))}
+                <div className="my-1 border-t" />
+                <button
+                  type="button"
+                  onClick={remove}
+                  className="block w-full px-3 py-1.5 text-start text-destructive hover:bg-destructive/10"
+                >
+                  מחיקה
+                </button>
+              </div>
+            </>
+          );
+        })()
       ) : null}
 
       <TaskUpsertDialog
