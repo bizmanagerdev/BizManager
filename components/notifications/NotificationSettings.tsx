@@ -56,6 +56,7 @@ const BUILTIN_LABELS: Record<string, string> = {
   projects_deadline: "פרויקטים קרובים לסיום",
   deliveries: "משלוחים היום",
   weekly_summary: "סיכום שבועי",
+  pending_attendance: "דיווחי נוכחות לאישור",
 };
 
 type PageSection = {

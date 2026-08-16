@@ -2,11 +2,9 @@ import { Suspense } from "react";
 import AppShell from "@/components/layout/AppShell";
 import { PageStack } from "@/components/layout/page-layout";
 import { requireProfile } from "@/lib/auth/requireProfile";
-import { Card, CardContent } from "@/components/ui/card";
 import DashboardGreeting from "@/components/dashboard/DashboardGreeting";
+import DashboardHeaderDate from "@/components/dashboard/DashboardHeaderDate";
 import DashboardCustomizer from "@/components/dashboard/DashboardCustomizer";
-import QuickActionsClient from "@/app/(app)/dashboard/QuickActionsClient";
-import { loadQuickActionsData } from "@/app/(app)/dashboard/quick-actions-data";
 import { sanitizePrefs } from "@/lib/dashboard/widgets";
 import { DashboardPanels, PanelsFallback } from "@/app/(app)/dashboard/DashboardSections";
 import WorkerShiftPanel from "@/app/(app)/dashboard/WorkerShiftPanel";
@@ -14,19 +12,18 @@ import WorkerShiftPanel from "@/app/(app)/dashboard/WorkerShiftPanel";
 export const revalidate = 60;
 
 export default async function DashboardPage() {
-  // Only the (fast, indexed) auth/profile check is awaited up front. The greeting
-  // and — critically — the quick-action BUTTONS render immediately after it, so
-  // they're present and clickable at first paint. The dropdown data they need is
-  // kicked off here but NOT awaited: it streams into the dialogs a moment later
-  // (filling them in place, no remount), and the panels below stream on their own.
-  const { profile, supabase } = await requireProfile();
+  // Only the (fast, indexed) auth/profile check is awaited up front; the greeting
+  // renders immediately after it and the panels below stream on their own.
+  //
+  // There is no quick-action grid here any more — every create flow lives behind
+  // the + (top bar on desktop, the raised FAB in the bottom nav on a phone), so
+  // it's the same menu on every screen instead of one set on the dashboard and a
+  // shorter one everywhere else. That also drops this page's heaviest fetch: the
+  // picker data (customers / products / projects / orders / workers) is now
+  // loaded on demand by the menu itself, once, when it's first opened.
+  const { profile } = await requireProfile();
 
-  // A worker has no quick-action tiles: the two that were left (the delivery run
-  // and a new task) are already a tap away in the nav and behind the +. Skipping
-  // the card also skips its picker data — customers, products, projects, orders
-  // — which he can't use and mostly can't read anyway.
   const isWorker = profile.role === "worker";
-  const dataPromise = isWorker ? null : loadQuickActionsData(supabase, profile);
   // Prefs ride along on the profile (requireProfile's single `users` query), so
   // the shell no longer waits on a second round-trip just to hydrate the customizer.
   const dashboardPrefs = sanitizePrefs(profile.dashboard_prefs);
@@ -39,10 +36,17 @@ export default async function DashboardPage() {
     "he-IL",
     { day: "numeric", month: "long", year: "numeric" }
   ).format(now)}`;
+  // The mobile bar's version — no year, so it fits the one shrink-to-fit line.
+  const headerDate = `${new Intl.DateTimeFormat("he-IL", { weekday: "long" }).format(now)} · ${new Intl.DateTimeFormat(
+    "he-IL",
+    { day: "numeric", month: "long" }
+  ).format(now)}`;
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <PageStack>
+        {/* Phone header text: today's date instead of the word "דשבורד". */}
+        <DashboardHeaderDate initialDate={headerDate} />
         <section className="flex items-start justify-between gap-3">
           {/* min-w-0 lets this flex item shrink below its content so a long
               (unbreakable) name wraps instead of pushing the row — and the whole
@@ -67,19 +71,6 @@ export default async function DashboardPage() {
           <Suspense fallback={null}>
             <WorkerShiftPanel userId={profile.id} />
           </Suspense>
-        ) : null}
-
-        {/* Quick actions — instant. Buttons render now; dialog data streams in. */}
-        {dataPromise ? (
-          <Card>
-            <CardContent className="pt-6">
-              <QuickActionsClient
-                dataPromise={dataPromise}
-                currentUserId={profile.id}
-                currentUserRole={profile.role}
-              />
-            </CardContent>
-          </Card>
         ) : null}
 
         <Suspense fallback={<PanelsFallback />}>

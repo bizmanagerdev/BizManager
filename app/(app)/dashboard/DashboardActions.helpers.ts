@@ -48,27 +48,8 @@ export function durationHours(clockIn: string, clockOut: string) {
 
 // Note: week-bucketing date helpers (toDateOnly / startOfWeek / addDays / isSameDay)
 // live in lib/dashboard/week.ts — the single source of truth shared with buildWeekView.
-
-export function formatWeekRangeLabel(start: Date, end: Date) {
-  return `${new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "long" }).format(start)} - ${new Intl.DateTimeFormat(
-    "he-IL",
-    { day: "numeric", month: "long", year: "numeric" }
-  ).format(end)}`;
-}
-
-export function shortWeekDay(date: Date) {
-  return new Intl.DateTimeFormat("he-IL", { weekday: "short" }).format(date);
-}
-
-export const WEEK_PALETTE = [
-  { bar: "bg-info", chip: "bg-info-soft text-info-soft-foreground" },
-  { bar: "bg-success", chip: "bg-success-soft text-success-soft-foreground" },
-  { bar: "bg-warning", chip: "bg-warning-soft text-warning-soft-foreground" },
-  { bar: "bg-secondary", chip: "bg-accent text-accent-foreground" },
-  { bar: "bg-destructive", chip: "bg-destructive-soft text-destructive-soft-foreground" },
-  { bar: "bg-info/70", chip: "bg-info-soft/70 text-info-soft-foreground" },
-  { bar: "bg-palette-orange-4", chip: "bg-palette-orange-10 text-primary-1" },
-] as const;
+// The week-LABEL helpers and colour palette that used to sit here went with the
+// "מה יש השבוע" dialog; the דשבורד's "מבט על היום" panel is the week view now.
 
 export function formatIls(value: number | null) {
   if (value === null) return "—";

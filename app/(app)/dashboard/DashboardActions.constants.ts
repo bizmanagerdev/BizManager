@@ -103,11 +103,9 @@ export const HEBREW = {
   incomeInvalidAmount: "יש להזין סכום הכנסה תקין.",
   incomeCreateFailed: "הוספת ההכנסה נכשלה.",
   incomeSaved: "ההכנסה נשמרה",
-  selfSessionStart: "פתיחת משמרת",
-  selfSessionHint: "פתיחה מיידית לעצמך",
-  selfSessionOpenExists: "כבר יש משמרת פתוחה",
-  selfSessionStarted: "המשמרת נפתחה",
-  selfSessionStartFailed: "פתיחת המשמרת נכשלה.",
+  // No self-session strings here any more: opening your own shift from a quick
+  // action was removed 2026-08-16 (every logged shift goes through the approval
+  // queue via "דיווח נוכחות"). /profile still has the button, with its own text.
   manualSessionNew: "הוספת משמרת ידנית",
   manualSessionHint: "רישום משמרת סגורה מהדשבורד",
   manualSessionDescription:

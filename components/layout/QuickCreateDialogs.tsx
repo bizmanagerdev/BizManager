@@ -13,6 +13,12 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import SessionEditorDialog from "@/app/(app)/payroll/SessionEditorDialog";
+import type { SessionFormState } from "@/app/(app)/payroll/SalaryCenter.types";
+import type { SalaryCenterProjectOption, SalaryCenterUserRow } from "@/lib/payroll-center";
+import type { SalaryAgreementRow } from "@/lib/payroll";
+import { WorkerPaymentDialog } from "@/components/payroll/WorkerPaymentDialog";
+import { nowLocal } from "@/app/(app)/dashboard/DashboardActions.helpers";
 import NewOrderClient from "@/app/(app)/sales/orders/new/NewOrderClient";
 import NewProjectClient, {
   mapProjectCustomer,
@@ -97,6 +103,69 @@ export default function QuickCreateDialogs({
         )
         .map((u) => ({ id: u.id, label: u.label })),
     [data.users]
+  );
+
+  // ── "משמרת ידנית" ───────────────────────────────────────────────────────────
+  // The shared payroll <SessionEditorDialog/> owns all the session / split /
+  // payment behaviour; these just map the lighter picker shapes into the ones it
+  // expects. Only admin + office reach this action (see ADMIN_OR_OFFICE_ACTIONS).
+  const canManageWorkerSessions = data.role === "admin" || data.role === "office";
+  const [salaryUnlocked, setSalaryUnlocked] = useState(false);
+  const sessionEditorWorkers = useMemo<SalaryCenterUserRow[]>(
+    () =>
+      data.users.map((user) => ({
+        id: user.id,
+        full_name: user.label,
+        email: null,
+        phone: null,
+        role: user.role ?? null,
+        active: true,
+        system_access: true,
+        payroll_worker_type: user.payroll_worker_type ?? null,
+        pay_tracking_mode: (user.pay_tracking_mode as "session" | "payslip" | null) ?? null,
+      })),
+    [data.users]
+  );
+  const sessionEditorProjectOptions = useMemo<SalaryCenterProjectOption[]>(
+    () => data.projects.map((project) => ({ id: project.id, label: project.name })),
+    [data.projects]
+  );
+  const sessionEditorPropertyOptions = useMemo<SalaryCenterProjectOption[]>(
+    () => data.properties.map((property) => ({ id: property.id, label: property.name })),
+    [data.properties]
+  );
+  const sessionEditorAgreementsByUserId = useMemo(() => {
+    const next = new Map<string, SalaryAgreementRow[]>();
+    data.salaryAgreements.forEach((agreement) => {
+      const list = next.get(agreement.user_id) ?? [];
+      list.push(agreement);
+      next.set(agreement.user_id, list);
+    });
+    return next;
+  }, [data.salaryAgreements]);
+  // Defaults to the last hour — the common "I forgot to clock that" shape.
+  const sessionEditorInitialForm = useMemo<SessionFormState>(
+    () => ({
+      session_id: "",
+      user_id: canManageWorkerSessions ? "" : data.currentUserId ?? "",
+      business_domain: "general_business",
+      project_id: "",
+      property_id: "",
+      notes: "",
+      clock_in: nowLocal(-60),
+      clock_out: nowLocal(),
+      labor_cost: "",
+      original_user_id: "",
+      original_clock_in: "",
+      original_clock_out: "",
+      original_labor_cost: "",
+      is_billable_to_customer: false,
+      bill_to_customer_amount: "",
+      billing_status: "not_billable",
+      mark_paid_now: false,
+      paid_amount_now: "",
+    }),
+    [canManageWorkerSessions, data.currentUserId]
   );
 
   // Saved → the underlying page re-renders in place; the user never left it.
@@ -278,6 +347,43 @@ export default function QuickCreateDialogs({
         }}
         workers={attendanceWorkers}
         onSaved={() => router.refresh()}
+      />
+
+      {/* Pay a worker — the amount nets against their open payslips / sessions. */}
+      <WorkerPaymentDialog
+        open={action === "workerPayment"}
+        onOpenChange={(open) => {
+          if (!open) onClose();
+        }}
+        users={data.users}
+        currentUserRole={data.role ?? undefined}
+        onSaved={() => {
+          router.refresh();
+          toast.success("התשלום לעובד נרשם.");
+        }}
+      />
+
+      {/* A closed shift typed in after the fact — writes the session directly,
+          unlike "דיווח נוכחות", which lands in the approval queue. */}
+      <SessionEditorDialog
+        open={action === "manualSession"}
+        onOpenChange={(open) => {
+          if (!open) onClose();
+        }}
+        mode="create"
+        initialForm={sessionEditorInitialForm}
+        workers={sessionEditorWorkers}
+        projectOptions={sessionEditorProjectOptions}
+        propertyOptions={sessionEditorPropertyOptions}
+        agreementsByUserId={sessionEditorAgreementsByUserId}
+        salaryUnlocked={salaryUnlocked}
+        hasPasswordConfigured={false}
+        canViewSalary={canManageWorkerSessions}
+        onUnlockSuccess={() => setSalaryUnlocked(true)}
+        onSaved={(message) => {
+          router.refresh();
+          toast.success(message);
+        }}
       />
 
       <UploadDocumentDialog

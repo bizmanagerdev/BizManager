@@ -916,40 +916,30 @@ const unprocessedItemsRule: SystemRule = {
   },
 };
 
-const sessionUnallocatedRule: SystemRule = {
-  key: "session_unallocated",
-  label: "שעות עבודה לשיוך",
-  async evaluate(supabase, ctx) {
-    // "Needs allocation" is a heuristic: a COMPLETED session still on the default
-    // domain with no project/property — the boss hasn't assigned where the hours
-    // went. (No explicit flag exists; refine if this over/under-counts.)
-    const since = new Date(ctx.today);
-    since.setDate(since.getDate() - 90);
-    const sinceIso = since.toISOString();
-    const { count, error } = await supabase
-      .from("attendance_sessions")
-      .select("id", { count: "estimated", head: true })
-      .not("clock_out", "is", null)
-      .eq("business_domain", "general_business")
-      .is("project_id", null)
-      .is("property_id", null)
-      .gte("clock_in", sinceIso);
-    throwIf(error, "attendance_sessions");
-    const n = typeof count === "number" ? count : 0;
-    if (n <= 0) return [];
-    return [
-      {
-        key: "summary",
-        title: `שעות עבודה לשיוך: ${n} משמרות`,
-        content: "משמרות שהסתיימו וטרם שויכו לתחום/פרויקט.",
-        url: "/payroll",
-        severity: "warning",
-        behavior: "silent",
-        audienceRole: "admin",
-      },
-    ];
-  },
-};
+// session_unallocated ("שעות עבודה לשיוך") was REMOVED 2026-08-16 — it could not
+// be made accurate. It counted completed sessions on `general_business` with no
+// project/property and called them "unassigned", but attendance_sessions.
+// business_domain is NOT NULL DEFAULT 'general_business' and the enum has no
+// "unchosen" value: שוטף is a legitimate domain AND the default, so the query
+// cannot tell "nobody picked one" from "this really was general work".
+//
+// In the live data it matched 36 shifts, none of them from the approval queue
+// (approving forces a domain) — they were שוטף shifts entered via הוספת משמרת,
+// several with explicit notes like "סידור מחסן תובל". Worse, the alert could
+// never reach zero: re-assigning such a shift to שוטף still matches.
+//
+// Reviving it needs a real signal — e.g. a column recording that a domain was
+// deliberately chosen — not another heuristic over the same columns.
+
+/**
+ * Rule keys that USED to exist. Reconciled against an empty set on every sync so
+ * their leftover reminders auto-close instead of sitting in the inbox and the nav
+ * badges forever — the engine only ever closes reminders for rules it still
+ * evaluates, so simply deleting a rule would strand its rows.
+ *
+ * Cheap to leave here: once the last one is closed each entry is a no-op query.
+ */
+const RETIRED_RULE_KEYS = ["session_unallocated"] as const;
 
 export const SYSTEM_RULES: SystemRule[] = [
   // Ported from the old alerts (Phase 2)
@@ -976,7 +966,6 @@ export const SYSTEM_RULES: SystemRule[] = [
   // Silent summaries
   lowStockRule,
   unprocessedItemsRule,
-  sessionUnallocatedRule,
 ];
 
 // --- the reconcile engine --------------------------------------------------
@@ -1148,6 +1137,15 @@ export async function syncSystemReminders(supabase: SupabaseClient, now: Date): 
       results.push(await reconcileRule(supabase, rule, adjusted, ctx.nowIso));
     } catch (err) {
       results.push({ rule: rule.key, active: 0, inserted: 0, resolved: 0, refreshed: 0, error: (err as Error)?.message ?? "failed" });
+    }
+  }
+
+  // Close out anything left behind by a rule that no longer exists.
+  for (const key of RETIRED_RULE_KEYS) {
+    try {
+      results.push(await reconcileRule(supabase, { key, label: key, evaluate: async () => [] }, [], ctx.nowIso));
+    } catch (err) {
+      results.push({ rule: key, active: 0, inserted: 0, resolved: 0, refreshed: 0, error: (err as Error)?.message ?? "failed" });
     }
   }
 

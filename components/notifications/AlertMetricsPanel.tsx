@@ -19,7 +19,6 @@ const RULE_LABEL: Record<string, string> = {
   promise_broken: "הבטחות תשלום שהופרו",
   recurring_expense_confirm: "אישור הוצאות קבועות",
   wage_overdue: "שכר עובדים באיחור",
-  session_unallocated: "שעות עבודה לשיוך",
   vehicle_expiry: "רכבים — טסט/ביטוח/רישוי",
   low_stock: "מלאי נמוך",
   unprocessed_items: "הוצאות לא מעובדות",

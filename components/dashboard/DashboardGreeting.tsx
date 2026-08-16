@@ -61,10 +61,12 @@ export default function DashboardGreeting({
           👋
         </span>
       </h1>
+      {/* Desktop only. Below `lg` the top bar shows the date instead (see
+          DashboardHeaderDate) — that breakpoint is exactly where the bar's title
+          slot appears, so the date is always shown once and never twice. */}
       {today ? (
-        <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
-          {today}
-          <span className="hidden sm:inline"> · הנה מה שקורה היום</span>
+        <p className="mt-1 hidden text-sm text-muted-foreground lg:block">
+          {today} · הנה מה שקורה היום
         </p>
       ) : null}
     </div>

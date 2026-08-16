@@ -18,6 +18,8 @@ export const QUICK_CREATE_ACTIONS = [
   "customer",
   "reminder",
   "document",
+  "workerPayment",
+  "manualSession",
 ] as const;
 
 export type QuickCreateAction = (typeof QUICK_CREATE_ACTIONS)[number];

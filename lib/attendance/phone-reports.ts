@@ -17,6 +17,9 @@ type BasePhoneReport = {
   user_id: string;
   worker_name: string | null;
   worker_phone: string | null;
+  /** The worker's own avatar color (users.avatar_color) so their circle matches
+   *  everywhere else in the app rather than falling back to a name hash. */
+  worker_avatar_color: string | null;
   clock_in: string;
   created_at: string;
   /** phone | phone_manual | app — how the shift got here. */
@@ -48,6 +51,20 @@ export type PhoneQueueData = {
   open: OpenPhoneReport[];
 };
 
+/**
+ * Just how many reports are waiting for approval — for the section-nav badge on
+ * pages that don't render the queue itself. A head-only count, so it costs one
+ * cheap round-trip instead of loading (and name-resolving) every report.
+ */
+export async function countPendingPhoneReports(supabase: SupabaseClient): Promise<number> {
+  const { count, error } = await supabase
+    .from(PHONE_ATTENDANCE_TABLE)
+    .select("id", { count: "exact", head: true })
+    .eq("status", "pending_review");
+  if (error) return 0;
+  return count ?? 0;
+}
+
 export async function loadPhoneQueueData(
   supabase: SupabaseClient,
   opts?: { includeCost?: boolean }
@@ -67,13 +84,15 @@ export async function loadPhoneQueueData(
   const lookupIds = Array.from(
     new Set([...userIds, ...reports.map((row) => row.reported_by as string | null).filter(Boolean)])
   ) as string[];
-  const nameById = new Map<string, { name: string | null; phone: string | null }>();
+  const nameById = new Map<string, { name: string | null; phone: string | null; avatarColor: string | null }>();
   if (lookupIds.length) {
-    const { data: users } = await supabase.from("users").select("id,full_name,phone").in("id", lookupIds);
+    const { data: users } = await supabase.from("users").select("id,full_name,phone,avatar_color").in("id", lookupIds);
     for (const user of users ?? []) {
+      const color = typeof user.avatar_color === "string" ? user.avatar_color.trim() : "";
       nameById.set(user.id as string, {
         name: (user.full_name as string) ?? null,
         phone: (user.phone as string) ?? null,
+        avatarColor: color || null,
       });
     }
   }
@@ -106,6 +125,7 @@ export async function loadPhoneQueueData(
       user_id: row.user_id as string,
       worker_name: nameById.get(row.user_id as string)?.name ?? null,
       worker_phone: nameById.get(row.user_id as string)?.phone ?? null,
+      worker_avatar_color: nameById.get(row.user_id as string)?.avatarColor ?? null,
       clock_in: row.clock_in as string,
       created_at: row.created_at as string,
       source: typeof row.source === "string" ? row.source : "phone",

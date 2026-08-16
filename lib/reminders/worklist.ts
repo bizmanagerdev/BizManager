@@ -318,6 +318,9 @@ export type WorklistSummary = {
   title: string;
   href: string;
   severity: WorklistSeverity;
+  /** The system rule behind the line — a summary's `id` can't be parsed for it
+   *  (count-in-title rows carry a reminder id, collapsed rows carry `sum-<rule>`). */
+  ruleKey: string;
 };
 const RANK_TO_SEVERITY: WorklistSeverity[] = ["danger", "warning", "info"];
 
@@ -391,7 +394,7 @@ export async function getInboxView(
       agg.rank = Math.min(agg.rank, SEVERITY_RANK[item.severity]);
       collapse.set(rk, agg);
     } else if (item.isSummary) {
-      summaries.push({ id: item.id, title: item.title, href: item.url, severity: item.severity });
+      summaries.push({ id: item.id, title: item.title, href: item.url, severity: item.severity, ruleKey: rk });
     } else {
       items.push(item);
     }
@@ -402,6 +405,7 @@ export async function getInboxView(
       title: `${COLLAPSE_META[rk].label}: ${agg.count}`,
       href: COLLAPSE_META[rk].href,
       severity: RANK_TO_SEVERITY[agg.rank] ?? "info",
+      ruleKey: rk,
     });
   }
 
@@ -436,6 +440,36 @@ export async function getInboxView(
   };
 }
 
+// --- The dashboard's "היום" slice -------------------------------------------
+//
+// Which system rules may appear on the dashboard's TODAY card. The test is
+// whether a rule is DATED — it becomes true on the day the thing falls due and
+// goes away once that day's work is done — as opposed to a BACKLOG, which stays
+// true until someone works it off (overdue debts, low stock, an unbilled
+// project, wages owed). A backlog on a card headed "היום" is what turned that
+// card into a second copy of the inbox; backlogs belong in the inbox, where
+// they can actually be worked through.
+//
+// Deliberately absent even though they ARE dated: task_overdue, task_due_soon,
+// project_starting, project_deadline. The card lists today's tasks and projects
+// straight from the calendar feed, so these rules would print the same row twice.
+//
+// A rule not listed here defaults to BACKLOG (inbox only) — the safe side: a new
+// rule can't quietly start filling up the dashboard.
+const TODAY_RULES = new Set<string>([
+  "check_deposit_due", // a cheque whose deposit date has arrived
+  "payment_due_today", // money in, due today
+  "payment_outflow_due", // money out — the day's payment run
+]);
+
+/** The dated slice of the inbox: what the dashboard's "היום" card may show. */
+export function todaySlice(inbox: InboxView): { items: WorklistItem[]; summaries: WorklistSummary[] } {
+  return {
+    items: inbox.items.filter((item) => TODAY_RULES.has(ruleKeyOf(item))),
+    summaries: inbox.summaries.filter((summary) => TODAY_RULES.has(summary.ruleKey)),
+  };
+}
+
 // Which sidebar entry each RULE badges. Per-rule (not per-section) so nested
 // routes light up too — a section-level map could only ever badge one destination
 // per area, so /checks, /financial and /inventory silently never badged.
@@ -460,7 +494,6 @@ const RULE_NAV_URL: Record<string, string> = {
   project_closed_unbilled: "/projects",
   // payroll
   wage_overdue: "/payroll",
-  session_unallocated: "/payroll",
   // ops
   low_stock: "/inventory",
   vehicle_expiry: "/vehicles",

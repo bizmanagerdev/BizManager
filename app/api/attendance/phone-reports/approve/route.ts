@@ -63,7 +63,7 @@ export async function POST(req: Request) {
 
     const { data: report, error: reportError } = await supabase
       .from(PHONE_ATTENDANCE_TABLE)
-      .select("id,user_id,clock_in,clock_out,status")
+      .select("id,user_id,clock_in,clock_out,status,notes")
       .eq("id", reportId)
       .maybeSingle();
 
@@ -73,6 +73,7 @@ export async function POST(req: Request) {
 
     const clockIn = report.clock_in as string;
     const clockOut = report.clock_out as string;
+    const reportNotes = (typeof report.notes === "string" && report.notes.trim() ? report.notes.trim() : "דיווח טלפוני").slice(0, 500);
     const totalMinutes = minutesBetween(clockIn, clockOut);
     if (totalMinutes <= 0) return NextResponse.json({ error: "טווח הזמן של הדיווח אינו תקין." }, { status: 400 });
     if (rawParts.length > totalMinutes) {
@@ -173,7 +174,11 @@ export async function POST(req: Request) {
         is_billable_to_customer: part.billable,
         bill_to_customer_amount: part.billAmount,
         billing_status: part.billable ? "billable" : "not_billable",
-        notes: "דיווח טלפוני",
+        // Carry the report's own note through — the write-up made at CLOCK-OUT
+        // (by the worker, or by whoever closed the shift for him). Approving is a
+        // classification step, so nothing is typed here. Falls back to the origin
+        // tag, which is all the row said before there was anywhere to write.
+        notes: reportNotes,
         business_domain: part.domain,
         project_id: part.projectId,
         property_id: part.propertyId,

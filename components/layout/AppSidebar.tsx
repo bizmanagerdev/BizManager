@@ -29,6 +29,10 @@ const subLinkBase =
 // the sidebar carries the current filters (date/domain/…) so context isn't lost.
 const FILTER_SHARED_ROUTES = new Set(["/financial", "/financial/reports"]);
 
+// Sub-tabs whose own children are separate sub-tabs: matched exactly, so the
+// section root ("/payroll") doesn't stay lit while you're on "/payroll/attendance".
+const EXACT_MATCH_CHILDREN = new Set(["/financial", "/payroll"]);
+
 // Lower = more urgent, for picking a group's roll-up tone.
 const SEVERITY_ORDER: Record<NavCount["severity"], number> = { danger: 0, warning: 1, info: 2 };
 
@@ -130,7 +134,7 @@ function NavFlyout({
                   ? { pathname: child.url, query: sharedQuery }
                   : child.url
               }
-              end={child.url === "/financial"}
+              end={EXACT_MATCH_CHILDREN.has(child.url)}
               onClick={onLeave}
               className={flyoutSubRow}
               activeClassName="bg-secondary text-secondary-foreground font-medium"
@@ -225,7 +229,7 @@ function NavGroup({
                   ? { pathname: child.url, query: sharedQuery }
                   : child.url
               }
-              end={child.url === "/financial"}
+              end={EXACT_MATCH_CHILDREN.has(child.url)}
               className={cn(subLinkBase, collapsed && "justify-center px-0")}
               activeClassName="bg-secondary text-secondary-foreground font-medium"
               pendingClassName={linkPending}

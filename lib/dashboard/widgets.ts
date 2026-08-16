@@ -22,6 +22,7 @@ export type WidgetId =
   | "deliveries"
   | "taskDonut"
   | "workforce"
+  | "attendanceQueue"
   | "inventory"
   | "domainChart"
   | "activity";
@@ -59,6 +60,9 @@ export const DASHBOARD_WIDGETS: WidgetMeta[] = [
   { id: "deliveries", label: "אספקות קרובות", roles: ALL, span: 1 },
   { id: "taskDonut", label: "פילוח משימות", roles: BACK_OFFICE, span: 1 },
   { id: "workforce", label: "כוח אדם", roles: BACK_OFFICE, span: 2 },
+  // Shift reports waiting to be approved into payroll. Sits next to the workforce
+  // stats because it's the actionable half of the same picture.
+  { id: "attendanceQueue", label: "נוכחות עובדים לאישור", roles: BACK_OFFICE, span: 2 },
   { id: "inventory", label: "מצב מלאי", roles: BACK_OFFICE, span: 2 },
   { id: "domainChart", label: "הכנסות והוצאות לפי תחום", roles: BACK_OFFICE, span: 2 },
   { id: "activity", label: "פעילות אחרונה", roles: ADMIN_ONLY, span: 1 },

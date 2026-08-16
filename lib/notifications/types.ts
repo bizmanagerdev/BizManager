@@ -40,4 +40,8 @@ export const BUILTIN_ALERT_TYPES = [
   "projects_deadline",
   "deliveries",
   "weekly_summary",
+  // Nightly nudge: shifts the workers reported that nobody has approved into
+  // payroll yet. Sends only when there are any, and the hour is admin-editable
+  // like every other row in push_alert_config.
+  "pending_attendance",
 ] as const;

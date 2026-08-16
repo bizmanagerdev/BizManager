@@ -72,6 +72,39 @@ export type PayrollPageData = {
   loadError: string | null;
 };
 
+export type AttendanceRefData = {
+  users: SalaryCenterUserRow[];
+  projectOptions: SalaryCenterProjectOption[];
+  propertyOptions: SalaryCenterProjectOption[];
+  loadError: string | null;
+};
+
+/**
+ * Just the reference data the attendance queue needs — who can be clocked in,
+ * and the projects / properties a shift can be attributed to. Deliberately NOT
+ * loadPayrollPageData: that one scans 18 months of sessions in 1000-row chunks
+ * to build the salary center, and the queue never looks at a single session.
+ */
+export async function loadAttendanceRefData(supabase: SupabaseClient): Promise<AttendanceRefData> {
+  const [usersResult, projectsResult, propertiesResult] = await Promise.all([
+    supabase
+      .from("users")
+      .select("id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode")
+      .or("role.eq.admin,role.eq.office,role.eq.worker,role.eq.worker_no_access")
+      .order("full_name", { ascending: true })
+      .range(0, 999),
+    supabase.from("project_dashboard_view").select("id,name").order("name", { ascending: true }).range(0, 999),
+    supabase.from("properties").select("id,address").order("address", { ascending: true }).range(0, 999),
+  ]);
+
+  return {
+    users: mapUsers((usersResult.data ?? []) as Row[]),
+    projectOptions: mapOptions((projectsResult.data ?? []) as Row[], "name"),
+    propertyOptions: mapOptions((propertiesResult.data ?? []) as Row[], "address"),
+    loadError: usersResult.error?.message ?? projectsResult.error?.message ?? propertiesResult.error?.message ?? null,
+  };
+}
+
 export async function loadPayrollPageData(supabase: SupabaseClient): Promise<PayrollPageData> {
   const cutoff = new Date();
   cutoff.setMonth(cutoff.getMonth() - 18);

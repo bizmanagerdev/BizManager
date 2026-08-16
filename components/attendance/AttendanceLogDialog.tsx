@@ -7,6 +7,7 @@ import { ClockIcon, SpinnerIcon } from "@/components/ui/icons";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Textarea } from "@/components/ui/textarea";
 import { DateTimeInput } from "@/components/ui/date-input";
 import { formatMinutes, minutesBetween } from "@/lib/payroll";
 import { formatShortDateTime } from "@/lib/date";
@@ -54,9 +55,9 @@ export function AttendanceLogDialog({
         <DialogHeader className="space-y-1 text-start">
           <DialogTitle className="flex items-center gap-2">
             <ClockIcon className="h-5 w-5 text-secondary" />
-            החתמת נוכחות לעובד
+            דיווח נוכחות לעובד
           </DialogTitle>
-          <DialogDescription>בחרו עובד, ואז החתימו כניסה או יציאה — הדיווח ייכנס לתור לשיוך תחום ואישור.</DialogDescription>
+          <DialogDescription>בחרו עובד, ואז דווחו כניסה או יציאה — הדיווח ייכנס לתור לשיוך תחום ואישור.</DialogDescription>
         </DialogHeader>
         {/* Body unmounts on close (DialogContent unmounts), so every open starts fresh. */}
         <AttendanceLogBody workers={workers} onSaved={onSaved} onClose={() => onOpenChange(false)} />
@@ -87,9 +88,18 @@ function AttendanceLogBody({
   const [endLocal, setEndLocal] = useState("");
   const [outLocal, setOutLocal] = useState(() => nowLocal());
   const [entryLocal, setEntryLocal] = useState("");
+  /** "מה העובד עשה" — the same write-up the worker gives on his own clock-out. */
+  const [note, setNote] = useState("");
   const [error, setError] = useState("");
 
   const workerOptions = useMemo(() => workers.map((w) => ({ value: w.id, label: w.label })), [workers]);
+  // You picked a name from a dropdown and the dialog closes on save, so the
+  // confirmation has to say WHO it landed on — otherwise clocking in the wrong
+  // colleague looks exactly like clocking in the right one.
+  const workerLabel = useMemo(
+    () => workers.find((w) => w.id === workerId)?.label ?? "העובד",
+    [workers, workerId]
+  );
 
   // Load the worker's current state on selection (in the event handler — not an effect).
   function selectWorker(next: string) {
@@ -98,6 +108,7 @@ function AttendanceLogBody({
     setManualMode(false);
     setCustomOut(false);
     setEditEntry(false);
+    setNote("");
     setState(null);
     setStateLoaded(false);
     if (!next) return;
@@ -137,8 +148,8 @@ function AttendanceLogBody({
     post(
       "/api/attendance/phone-reports/manual",
       { user_id: workerId, clock_in: new Date().toISOString(), clock_out: null },
-      "נפתחה משמרת לעובד.",
-      "החתמת הכניסה נכשלה."
+      `נפתחה משמרת עבור ${workerLabel}.`,
+      "דיווח הכניסה נכשל."
     );
   }
 
@@ -147,9 +158,9 @@ function AttendanceLogBody({
     if (!atLocal || Number.isNaN(d.getTime())) return setError("שעת יציאה אינה תקינה.");
     post(
       "/api/attendance/phone-reports/close",
-      { report_id: state?.id, clock_out: d.toISOString() },
-      "המשמרת נסגרה וממתינה לאישור.",
-      "החתמת היציאה נכשלה."
+      { report_id: state?.id, clock_out: d.toISOString(), notes: note.trim() || null },
+      `המשמרת של ${workerLabel} נסגרה וממתינה לאישור.`,
+      "דיווח היציאה נכשל."
     );
   }
 
@@ -167,7 +178,7 @@ function AttendanceLogBody({
         });
         const json = (await res.json().catch(() => ({}))) as { error?: string };
         if (!res.ok) return setError(toHebrewError(json.error, "עדכון שעת הכניסה נכשל."));
-        toast.success("שעת הכניסה עודכנה.");
+        toast.success(`שעת הכניסה של ${workerLabel} עודכנה.`);
         onSaved?.();
         router.refresh();
         setEditEntry(false);
@@ -190,8 +201,10 @@ function AttendanceLogBody({
     }
     post(
       "/api/attendance/phone-reports/manual",
-      { user_id: workerId, clock_in: cin.toISOString(), clock_out: coutIso },
-      coutIso ? "המשמרת נוספה וממתינה לאישור." : "נפתחה משמרת לעובד.",
+      { user_id: workerId, clock_in: cin.toISOString(), clock_out: coutIso, notes: note.trim() || null },
+      coutIso
+        ? `המשמרת של ${workerLabel} נוספה וממתינה לאישור.`
+        : `נפתחה משמרת עבור ${workerLabel}.`,
       "ההוספה נכשלה."
     );
   }
@@ -213,6 +226,13 @@ function AttendanceLogBody({
             <span className="font-medium text-secondary">כרגע במשמרת</span> · נכנס {formatShortDateTime(state.clock_in)} · כבר{" "}
             {formatMinutes(minutesBetween(state.clock_in, new Date()))} ש׳
           </p>
+          {/* The same question the worker answers on his own clock-out
+              ("מה עשית במשמרת?"), so a shift closed for him doesn't reach the
+              approval queue with nothing written on it. */}
+          <label className="block space-y-1">
+            <span className="block text-xs text-muted-foreground">מה העובד עשה במשמרת?</span>
+            <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} disabled={isPending} />
+          </label>
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" onClick={() => signOut(nowLocal())} disabled={isPending}>
               {isPending ? "..." : "יציאה"}
@@ -280,6 +300,10 @@ function AttendanceLogBody({
                   <DateTimeInput value={endLocal} onChange={(e) => setEndLocal(e.target.value)} />
                 </label>
               </div>
+              <label className="block space-y-1">
+                <span className="block text-xs text-muted-foreground">מה העובד עשה במשמרת?</span>
+                <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} disabled={isPending} />
+              </label>
               <div className="flex justify-end">
                 <Button type="button" onClick={submitManual} disabled={isPending}>
                   {isPending ? "..." : "שמירה"}

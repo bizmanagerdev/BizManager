@@ -3,11 +3,8 @@ import AppShell from "@/components/layout/AppShell";
 import PageAlertBar from "@/components/reminders/PageAlertBar";
 import { Card, CardContent } from "@/components/ui/card";
 import SalaryCenterClient from "@/app/(app)/payroll/SalaryCenterClient";
-import PhoneAttendanceQueue from "@/app/(app)/payroll/PhoneAttendanceQueue";
 import { requireProfile, type UserRole } from "@/lib/auth/requireProfile";
 import { loadPayrollPageData } from "@/lib/payroll-page-loader";
-import { loadPhoneQueueData } from "@/lib/attendance/phone-reports";
-import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions } from "@/lib/payroll-worker-type";
 
 export default async function PayrollPage({
   searchParams,
@@ -24,31 +21,14 @@ export default async function PayrollPage({
     redirect("/no-access");
   }
 
+  // The attendance queue lives on its own route (/payroll/attendance, a sub-tab
+  // of עובדים in the sidebar), so this page no longer loads it at all.
   const { users, sessions, projectOptions, propertyOptions, periods, loadError } = await loadPayrollPageData(supabase);
-  // Cost/pay is salary data — only compute it for admins (office manages hours, not salary).
-  const phoneQueue = await loadPhoneQueueData(supabase, { includeCost: profile.role === "admin" });
-
-  // Workers eligible for manual phone-attendance entry (active, session-logging types).
-  const attendanceWorkers = users
-    .filter(
-      (u) =>
-        u.active !== false &&
-        (u.role === "worker" || u.role === "worker_no_access") &&
-        payrollWorkerTypeAllowsSessions(normalizePayrollWorkerType(u.payroll_worker_type, u.pay_tracking_mode))
-    )
-    .map((u) => ({ id: u.id, name: u.full_name, phone: u.phone }));
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4 text-right" dir="rtl">
-        <PageAlertBar keys={["wage_overdue", "session_unallocated"]} />
-        <PhoneAttendanceQueue
-          pending={phoneQueue.pending}
-          open={phoneQueue.open}
-          workers={attendanceWorkers}
-          projectOptions={projectOptions}
-          propertyOptions={propertyOptions}
-        />
+        <PageAlertBar keys={["wage_overdue"]} />
         {loadError ? (
           <Card>
             <CardContent className="py-6 text-sm text-destructive">

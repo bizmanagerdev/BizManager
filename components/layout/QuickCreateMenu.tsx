@@ -5,10 +5,15 @@
 // log an expense, and you should not have to navigate away and find your place
 // again. Every action opens a dialog ON TOP of the current page; closing it (or
 // saving) leaves you exactly where you were.
+//
+// This is now the app's ONLY quick-action surface. The dashboard used to carry a
+// tile grid of its own with a partly-overlapping, partly-different set; that grid
+// is gone and everything it offered lives here, so "where do I add a…" has one
+// answer on every screen.
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AddIcon, ClockIcon, ExpenseIcon, IncomeIcon, NotificationIcon, OrderIcon, PaymentIcon, ProjectIcon, SpinnerIcon, TaskIcon, TransferIcon } from "@/components/ui/icons";
+import { AddIcon, AddUserIcon, CashIcon, ClockIcon, ExpenseIcon, IncomeIcon, NotificationIcon, OrderIcon, PaymentIcon, ProjectIcon, SpinnerIcon, TaskIcon, TimerIcon, TransferIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { HoverPanel, HoverPanelContent, HoverPanelTrigger, useHoverPanel } from "@/components/ui/hover-panel";
 import { ViewDialog } from "@/components/ui/view-dialog";
@@ -26,19 +31,16 @@ const QuickCreateDialogs = dynamic(() => import("@/components/layout/QuickCreate
 
 type MenuItem = { action: QuickCreateAction; label: string; icon: typeof TaskIcon };
 
-// Laid out two per row, in this exact order (user-specified):
-//   משימה  תזכורת   /   הכנסה  הוצאה   /   הזמנה  פרויקט   /
-//   העברה בין חשבונות  קליטת תשלום
-// The count is kept EVEN so the grid never ends on a half row. Eight tiles, and
-// the two admin/office-only ones share the last row — so a worker sees exactly
-// three full rows once they're filtered out.
-// לקוח and מסמך were tiles for a few days (2026-08-05) and the user removed them
-// again (2026-08-10): a customer is nearly always created inside an order or
-// project wizard, and a document is uploaded from the record it belongs to. Both
-// ACTIONS still exist (QuickCreateDialogs handles them, and the `bizh:quick-create`
-// event can still ask for them) — they just don't get a tile here.
+// Laid out two per row, in this order: the everyday create flows first, then
+// money, then the payroll ones an admin reaches for far less often.
 // Glyphs here carry NO "+" badge (Bell, not BellPlus): the whole grid already
 // lives behind the + button, so every tile repeating it is noise. The user's call.
+//
+// לקוח was pulled from this menu on 2026-08-10 (a customer is nearly always
+// created inside an order or project wizard) but the dashboard grid kept its own
+// "לקוח חדש" tile. With that grid gone this is the only place left for it, so
+// it's back. מסמך stays tile-less — a document is uploaded from the record it
+// belongs to — though the ACTION still exists for the `bizh:quick-create` event.
 const MENU_ITEMS: MenuItem[] = [
   { action: "task", label: "משימה", icon: TaskIcon },
   { action: "reminder", label: "תזכורת", icon: NotificationIcon },
@@ -46,28 +48,46 @@ const MENU_ITEMS: MenuItem[] = [
   { action: "expense", label: "הוצאה", icon: ExpenseIcon },
   { action: "order", label: "הזמנה", icon: OrderIcon },
   { action: "project", label: "פרויקט", icon: ProjectIcon },
+  { action: "customer", label: "לקוח", icon: AddUserIcon },
+  { action: "collect", label: "קליטת תשלום", icon: PaymentIcon },
   // Not "העברה" on its own — that already means a bank-transfer payment method
   // elsewhere in the app; this one moves money between OUR accounts.
   { action: "transfer", label: "העברה בין חשבונות", icon: TransferIcon },
-  { action: "collect", label: "קליטת תשלום", icon: PaymentIcon },
   // Log a worker's clock in/out into the phone-attendance queue (boss classifies later).
-  { action: "attendance", label: "החתמת נוכחות", icon: ClockIcon },
+  { action: "attendance", label: "דיווח נוכחות", icon: ClockIcon },
+  { action: "workerPayment", label: "תשלום לעובד", icon: CashIcon },
+  // A CLOSED shift, typed in after the fact — writes a session directly, unlike
+  // "דיווח נוכחות" above, which lands in the approval queue.
+  { action: "manualSession", label: "משמרת ידנית", icon: TimerIcon },
 ];
 
+// No "פתיחת משמרת" tile. It was here for a day (2026-08-16) and the user removed
+// it: every shift a worker logs is meant to reach the approval queue through
+// "דיווח נוכחות", and a tile that opened a session directly was a second,
+// unreviewed way in. Clocking yourself in still exists on /profile.
+
 // The only colored glyphs — money in / money out. Everything else stays white.
+// (תשלום לעובד is money out, but it settles a debt we already booked, so it is
+// deliberately NOT red: nothing new leaves the P&L when it's recorded.)
 const TILE_TONE: Partial<Record<QuickCreateAction, "income" | "expense">> = {
   income: "income",
   expense: "expense",
   collect: "income",
 };
 
-// Reading the ledger / moving money between accounts is admin/office-only — the
-// API would 403 a worker, so don't offer them the tile.
-const ADMIN_OR_OFFICE_ACTIONS = new Set<QuickCreateAction>(["collect", "transfer", "attendance"]);
+// Reading the ledger / moving money between accounts / anything payroll is
+// admin-or-office only — the API would 403 a worker, so don't offer them the tile.
+const ADMIN_OR_OFFICE_ACTIONS = new Set<QuickCreateAction>([
+  "collect",
+  "transfer",
+  "attendance",
+  "workerPayment",
+  "manualSession",
+]);
 
 // A worker's + is only what he can actually act on. The rest of the menu
 // (income, expense, order, project) creates records on screens he can't open —
-// see WORKER_ALLOWED_PREFIXES in lib/auth/roleAccess.ts. "החתמת נוכחות" IS his:
+// see WORKER_ALLOWED_PREFIXES in lib/auth/roleAccess.ts. "דיווח נוכחות" IS his:
 // the foreman on site signs his crew in and out, and it lands in the same
 // approval queue as everything else.
 const WORKER_ACTIONS = new Set<QuickCreateAction>(["task", "reminder", "attendance"]);

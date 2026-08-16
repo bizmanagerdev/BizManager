@@ -11,7 +11,7 @@ import { PHONE_ATTENDANCE_TABLE } from "@/lib/attendance/phone-reports";
  * moves it to pending_review so the boss can classify + approve it like any other report.
  */
 
-type Body = { report_id?: string; clock_out?: string | null };
+type Body = { report_id?: string; clock_out?: string | null; notes?: string | null };
 
 export async function POST(req: Request) {
   try {
@@ -22,11 +22,14 @@ export async function POST(req: Request) {
     const body = (await req.json().catch(() => ({}))) as Body;
     const reportId = typeof body.report_id === "string" ? body.report_id.trim() : "";
     const clockOutRaw = typeof body.clock_out === "string" ? body.clock_out.trim() : "";
+    // What the worker did — same field the worker writes on their own close
+    // (api/attendance/my/close). Capped: it's a note, not a document.
+    const notes = typeof body.notes === "string" ? body.notes.trim().slice(0, 500) : "";
     if (!reportId) return NextResponse.json({ error: "חסר מזהה דיווח." }, { status: 400 });
 
     const { data: report, error: reportError } = await supabase
       .from(PHONE_ATTENDANCE_TABLE)
-      .select("id,clock_in,status")
+      .select("id,clock_in,status,notes")
       .eq("id", reportId)
       .maybeSingle();
     if (reportError) return NextResponse.json({ error: toHebrewError(reportError.message) }, { status: 400 });
@@ -40,9 +43,20 @@ export async function POST(req: Request) {
     }
 
     const worked = minutesBetween(report.clock_in as string, clockOut);
+    // Keep whatever was written when the shift opened and append the closing
+    // note, so neither one silently overwrites the other — same as my/close.
+    const existingNotes = typeof report.notes === "string" ? report.notes.trim() : "";
+    const mergedNotes = [existingNotes, notes].filter(Boolean).join(" · ") || null;
+
     const { data: updated, error: updateError } = await supabase
       .from(PHONE_ATTENDANCE_TABLE)
-      .update({ clock_out: clockOut.toISOString(), worked_minutes: worked, status: "pending_review", updated_at: new Date().toISOString() })
+      .update({
+        clock_out: clockOut.toISOString(),
+        worked_minutes: worked,
+        status: "pending_review",
+        notes: mergedNotes,
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", reportId)
       .eq("status", "open")
       .select("id")

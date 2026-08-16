@@ -9,7 +9,7 @@ import { PHONE_ATTENDANCE_TABLE } from "@/lib/attendance/phone-reports";
  * their shift actually started earlier. Only allowed while the shift is still open; once it's
  * closed/approved the times are edited through the approval flow instead.
  *
- * Open to workers for the same reason the rest of החתמת נוכחות is: whoever signs a colleague in
+ * Open to workers for the same reason the rest of דיווח נוכחות is: whoever signs a colleague in
  * is the one who notices he typed 09:00 for an 08:00 start. The shift stays open and unapproved,
  * so the correction still has to pass the boss.
  */

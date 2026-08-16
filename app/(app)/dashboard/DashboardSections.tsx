@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import Link from "next/link";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import TodayCard from "@/components/dashboard/TodayCard";
 import WeekOverview from "@/components/dashboard/WeekOverview";
@@ -8,6 +7,7 @@ import ProjectStatusCards from "@/components/dashboard/ProjectStatusCards";
 import UpcomingDeliveries from "@/components/dashboard/UpcomingDeliveries";
 import TaskStatusDonut from "@/components/dashboard/TaskStatusDonut";
 import WorkforceOverview from "@/components/dashboard/WorkforceOverview";
+import AttendanceApprovals from "@/components/dashboard/AttendanceApprovals";
 import InventoryHealth from "@/components/dashboard/InventoryHealth";
 import RecentActivityFeed from "@/components/dashboard/RecentActivityFeed";
 import CompactFinanceStrip from "@/components/dashboard/CompactFinanceStrip";
@@ -17,6 +17,7 @@ import { getScheduleEntries, type CalendarEntry } from "@/lib/projectSchedule";
 import { getMyTasks, getTaskStatusCounts } from "@/lib/dashboard/tasks-overview";
 import { getProjectsOverview } from "@/lib/dashboard/projects-overview";
 import { getWorkforceOverview } from "@/lib/dashboard/workforce";
+import { loadPhoneQueueData, type PhoneQueueData } from "@/lib/attendance/phone-reports";
 import { getInventoryHealth } from "@/lib/dashboard/inventory-health";
 import { sanitizePrefs, resolveWidgets, type WidgetId } from "@/lib/dashboard/widgets";
 import { loadDeliveriesPage, type DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
@@ -25,35 +26,12 @@ import MissedDigestBar from "@/components/dashboard/MissedDigestBar";
 import { loadDomainCashBreakdown } from "@/lib/financial";
 import DomainBarChart from "@/components/charts/DomainBarChart";
 import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type Row = Record<string, unknown>;
 
-function getNumber(row: Row | null | undefined, key: string) {
-  const value = row?.[key];
-  if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  if (typeof value === "string") {
-    const parsed = Number(value.replace(/,/g, "").trim());
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
 // ── Suspense fallbacks (kept close to the real layout so the swap is shift-free) ──
-
-// Mirrors the real quick-action button grid (AdaptiveGrid "quickActions" +
-// aspect-square buttons) so the loading skeleton occupies the exact same space.
-export function QuickActionsFallback() {
-  return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-5 sm:gap-1.5 lg:grid-cols-10">
-      {Array.from({ length: 10 }).map((_, i) => (
-        <Skeleton key={i} className="mx-auto aspect-square w-full max-w-[7rem] rounded-2xl" />
-      ))}
-    </div>
-  );
-}
 
 export function PanelsFallback() {
   return (
@@ -141,15 +119,10 @@ export async function DashboardPanels() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const todayIso = today.toISOString().slice(0, 10);
-  const forecastHorizon = new Date(today);
-  forecastHorizon.setUTCDate(forecastHorizon.getUTCDate() + 30);
-  const forecastHorizonIso = forecastHorizon.toISOString().slice(0, 10);
   const monthStartIso = `${todayIso.slice(0, 7)}-01`;
 
-  // The cash-tightening banner (admin-only, conditional) is a system element —
-  // it is NOT in the widget catalog and can't be hidden — so its inputs
-  // (workerOwed / near-term in/out forecasts) are gated on role only, not on a
-  // widget toggle.
+  // `workerOwed` is gated on role rather than a widget toggle because it feeds
+  // the finance strip's payroll count, which is admin-only inside that widget.
   const [
     inboxResult,
     scheduleEntries,
@@ -158,13 +131,12 @@ export async function DashboardPanels() {
     projectsOverview,
     deliveriesResult,
     workforce,
+    attendanceQueue,
     inventoryHealth,
     recentActivity,
     unpaidBalanceResult,
     workerOwedResult,
     dueTodayResult,
-    forecastInResult,
-    forecastOutResult,
     domainBreakdown,
     digestItems,
   ] = await Promise.all([
@@ -181,6 +153,10 @@ export async function DashboardPanels() {
       ? loadDeliveriesPage(supabase, { page: 1, filters: { customerId: null } }).then((r) => r.deliveries).catch(() => [] as DeliveryItem[])
       : Promise.resolve([] as DeliveryItem[]),
     show("workforce") && isAdminOrOffice ? getWorkforceOverview(supabase) : Promise.resolve(null),
+    // No cost: the dashboard shows the queue as counts and hours, never ₪.
+    show("attendanceQueue") && isAdminOrOffice
+      ? loadPhoneQueueData(supabase).catch(() => null as PhoneQueueData | null)
+      : Promise.resolve(null),
     show("inventory") && isAdminOrOffice ? getInventoryHealth(supabase) : Promise.resolve(null),
     show("activity") && isAdmin ? getRecentAuditEvents(supabase, 8).then((r) => r.items).catch(() => [] as AuditFeedItem[]) : Promise.resolve([] as AuditFeedItem[]),
     show("finance") && isAdminOrOffice
@@ -190,12 +166,6 @@ export async function DashboardPanels() {
       ? supabase.from("worker_debt_items_view").select("owed_amount").eq("source_type", "payslip").gt("owed_amount", 0.009).range(0, 999)
       : Promise.resolve({ data: null, error: null }),
     show("finance") && isAdminOrOffice ? getPaymentsDueToday(supabase).catch(() => [] as PaymentDueToday[]) : Promise.resolve([] as PaymentDueToday[]),
-    isAdmin
-      ? supabase.from("payments").select("amount_total").eq("payment_status", "pending").not("due_date", "is", null).gte("due_date", todayIso).lte("due_date", forecastHorizonIso).range(0, 999)
-      : Promise.resolve({ data: null, error: null }),
-    isAdmin
-      ? supabase.from("expenses").select("amount,paid_amount").in("payment_status", ["not_paid", "partial"]).gte("expense_date", todayIso).lte("expense_date", forecastHorizonIso).range(0, 999)
-      : Promise.resolve({ data: null, error: null }),
     show("domainChart") && isAdminOrOffice
       ? loadDomainCashBreakdown(supabase, { from: monthStartIso, to: todayIso })
           .catch(() => [] as { domainName: string; inflow: number; outflow: number }[])
@@ -211,18 +181,7 @@ export async function DashboardPanels() {
   const unpaidInvoices = invoicesTableMissing ? [] : ((unpaidBalanceResult.data ?? []) as Row[]);
   const openCollectionsCount = unpaidInvoices.length;
   const dueTodayCount = dueTodayResult.length;
-  const workerOwedRows = (workerOwedResult.data ?? []) as Row[];
-  const workerOwedCount = workerOwedRows.length;
-
-  // Lightweight cash heads-up: near-term outflows vs expected incoming (≤30d).
-  const expectedIncoming30 = ((forecastInResult.data ?? []) as Row[]).reduce((sum, r) => sum + (getNumber(r, "amount_total") ?? 0), 0);
-  const workerOwedTotal = workerOwedRows.reduce((sum, r) => sum + (getNumber(r, "owed_amount") ?? 0), 0);
-  const upcomingExpensesOut = ((forecastOutResult.data ?? []) as Row[]).reduce(
-    (sum, r) => sum + Math.max((getNumber(r, "amount") ?? 0) - (getNumber(r, "paid_amount") ?? 0), 0),
-    0
-  );
-  const nearTermOutflow = workerOwedTotal + upcomingExpensesOut;
-  const cashTighteningSoon = isAdmin && nearTermOutflow > 0 && nearTermOutflow > expectedIncoming30;
+  const workerOwedCount = ((workerOwedResult.data ?? []) as Row[]).length;
 
   // Income vs expenses per business domain (current month) — one diagram.
   const domainBars = (domainBreakdown ?? [])
@@ -253,6 +212,7 @@ export async function DashboardPanels() {
       ) : null,
     taskDonut: taskStatusCounts && taskStatusTotal > 0 ? <TaskStatusDonut counts={taskStatusCounts} /> : null,
     workforce: workforce ? <WorkforceOverview data={workforce} /> : null,
+    attendanceQueue: attendanceQueue ? <AttendanceApprovals data={attendanceQueue} /> : null,
     inventory: inventoryHealth ? <InventoryHealth data={inventoryHealth} /> : null,
     domainChart: domainBars.length > 0 ? (
       <Card>
@@ -278,21 +238,6 @@ export async function DashboardPanels() {
     <>
       {/* "What you missed" digest — top of the dashboard, dismissible (admin + office). */}
       {isAdminOrOffice ? <MissedDigestBar initialItems={digestItems} /> : null}
-
-      {/* System banner — critical cash warning, not user-hideable. */}
-      {cashTighteningSoon ? (
-        <Card className="border-warning/50">
-          <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm">
-            <div className="space-y-0.5 text-right">
-              <div className="font-medium">תזרים להמשך החודש דורש תשומת לב</div>
-              <div className="text-muted-foreground">ההתחייבויות הצפויות ב-30 הימים הקרובים עשויות לעלות על התקבולים הצפויים.</div>
-            </div>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/financial/reports">לתחזית התזרים</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      ) : null}
 
       {widgetRows.map((row) =>
         row.length === 2 ? (

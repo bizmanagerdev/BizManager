@@ -22,7 +22,7 @@ import { PHONE_ATTENDANCE_TABLE } from "@/lib/attendance/phone-reports";
  * you'll want to know when approving it.
  */
 
-type Body = { user_id?: string; clock_in?: string; clock_out?: string | null };
+type Body = { user_id?: string; clock_in?: string; clock_out?: string | null; notes?: string | null };
 
 export async function POST(req: Request) {
   try {
@@ -68,7 +68,11 @@ export async function POST(req: Request) {
     }
 
     // Who filed it lives in its own column now — the note stays free text for
-    // whatever is actually worth saying about the shift.
+    // whatever is actually worth saying about the shift. A whole shift logged at
+    // once can carry the write-up straight away; "נוסף ידנית" is only the fallback.
+    const noteText = typeof body.notes === "string" ? body.notes.trim().slice(0, 500) : "";
+    const notes = ["נוסף ידנית", noteText].filter(Boolean).join(" · ");
+
     const row = parsedOut
       ? {
           user_id: userId,
@@ -78,7 +82,7 @@ export async function POST(req: Request) {
           status: "pending_review",
           source,
           reported_by: profile.id,
-          notes: "נוסף ידנית",
+          notes,
         }
       : {
           user_id: userId,
@@ -86,7 +90,7 @@ export async function POST(req: Request) {
           status: "open",
           source,
           reported_by: profile.id,
-          notes: "נוסף ידנית",
+          notes,
         };
 
     const { data: inserted, error: insertError } = await supabase.from(PHONE_ATTENDANCE_TABLE).insert(row).select("id").maybeSingle();

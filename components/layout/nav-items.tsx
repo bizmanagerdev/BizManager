@@ -30,7 +30,7 @@ function writeCachedRole(role: string) {
     // storage full or private mode
   }
 }
-import { ActivityIcon, BankIcon, BuildingIcon, CalendarIcon, CardIcon, CashIcon, ChatIcon, CoinsIcon, DashboardIcon, DeliveryIcon, FolderIcon, HomeIcon, OrderIcon, PaymentIcon, ProjectIcon, ReceiptIcon, ReportIcon, ScheduleIcon, SettingsIcon, TaskIcon, TransferIcon, UsersIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
+import { ActivityIcon, BankIcon, BuildingIcon, CalendarIcon, CardIcon, CashIcon, ChatIcon, ClockIcon, CoinsIcon, DashboardIcon, DeliveryIcon, FolderIcon, HomeIcon, OrderIcon, PaymentIcon, ProjectIcon, ReceiptIcon, ReportIcon, ScheduleIcon, SettingsIcon, TaskIcon, TransferIcon, UsersIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
 
 export type SidebarNavItem = {
   title: string;
@@ -72,7 +72,17 @@ const SIDEBAR_ITEMS: SidebarNavItem[] = [
       { title: "כ. אשראי", url: "/financial/statements", icon: CardIcon },
     ],
   },
-  { title: "עובדים", url: "/payroll", icon: WalletIcon },
+  {
+    title: "עובדים",
+    url: "/payroll",
+    icon: WalletIcon,
+    children: [
+      { title: "עובדים ושכר", url: "/payroll", icon: WalletIcon },
+      // The attendance queue is its own destination, not a tab inside the salary
+      // center: it's the daily approve-shifts job, and it carries a count badge.
+      { title: "דיווחי נוכחות", url: "/payroll/attendance", icon: ClockIcon },
+    ],
+  },
   { title: "מסמכים", url: "/documents", icon: FolderIcon },
   { title: "פעילות", url: "/activity", icon: ActivityIcon },
   { title: "הגדרות ניהול", url: "/settings", icon: SettingsIcon },
@@ -104,13 +114,14 @@ const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
   { title: "הלוואות", url: "/financial/loans", icon: PaymentIcon },
   { title: "כ. אשראי", url: "/financial/statements", icon: CardIcon },
   { title: "עובדים", url: "/payroll", icon: WalletIcon },
+  { title: "דיווחי נוכחות", url: "/payroll/attendance", icon: ClockIcon },
   { title: "מסמכים", url: "/documents", icon: FolderIcon },
   { title: "פעילות", url: "/activity", icon: ActivityIcon },
   { title: "הגדרות ניהול", url: "/settings", icon: SettingsIcon },
 ];
 
 const ADMIN_ONLY_URLS = new Set(["/activity", "/financial", "/settings", "/financial/loans", "/financial/reports", "/financial/bank"]);
-const ADMIN_OR_OFFICE_URLS = new Set<string>(["/payroll", "/collections", "/communications", "/checks", "/financial/statements", "/financial/taxes", "/financial/payments-calendar", "/vehicles"]);
+const ADMIN_OR_OFFICE_URLS = new Set<string>(["/payroll", "/payroll/attendance", "/collections", "/communications", "/checks", "/financial/statements", "/financial/taxes", "/financial/payments-calendar", "/vehicles"]);
 
 // A worker's whole world — the deliveries he drives, his tasks and his calendar.
 // (His hours and pay are on his profile, reached from the avatar, so they don't

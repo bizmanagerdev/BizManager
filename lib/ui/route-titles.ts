@@ -36,6 +36,7 @@ const ROUTE_TITLES: Array<[string, string]> = [
   ["/financial/bank", "חשבונות"],
   ["/financial", "תזרים"],
   ["/payroll/workers", "כרטיס עובד"],
+  ["/payroll/attendance", "דיווחי נוכחות"],
   ["/payroll", "עובדים"],
   ["/documents", "מסמכים"],
   ["/activity", "פעילות"],

@@ -25,7 +25,7 @@ const MONEY = new Set(["collection_overdue", "check_deposit_due", "payment_due_t
 const TASKS = new Set(["task_overdue", "task_due_soon"]);
 const PROJECTS = new Set(["project_deadline", "project_starting", "stale_quote", "project_closed_unbilled"]);
 const OPS = new Set(["low_stock", "unprocessed_items", "vehicle_expiry"]);
-const PAYROLL = new Set(["wage_overdue", "session_unallocated"]);
+const PAYROLL = new Set(["wage_overdue"]);
 
 /** Map a reminder (source + category + dedupe_key) to a mute bucket. */
 export function reminderBucket(opts: { source: string | null; category: string | null; dedupeKey: string | null }): string {

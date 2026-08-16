@@ -22,7 +22,7 @@ export default function WorkforceOverview({ data }: { data: WorkforceOverviewDat
     { label: "עובדים פעילים היום", value: data.activeToday, icon: UsersIcon },
     { label: "במשמרת כעת", value: data.clockedInNow, icon: LoginIcon, note: "פתוחות כרגע" },
     {
-      label: "החתמות יציאה חסרות",
+      label: "דיווחי יציאה חסרים",
       value: data.missingClockOuts,
       icon: AlarmIcon,
       urgent: data.missingClockOuts > 0,

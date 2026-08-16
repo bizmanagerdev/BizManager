@@ -212,8 +212,13 @@ export function TopBar({
           subtitle); everything else falls back to the route's name, so no screen
           is ever nameless. */}
       {headerTitle ? (
-        <div className="flex min-w-0 flex-1 flex-col items-center justify-center text-center leading-tight lg:hidden">
-          <span className="w-full text-[17px] font-semibold text-white">{headerTitle.title}</span>
+        <div className="flex min-w-0 flex-1 flex-col items-center justify-center px-1.5 text-center leading-tight lg:hidden">
+          {/* One line, always: the title SHRINKS to fit the middle slot rather than
+              wrapping mid-word ("עובדי / ם") or clipping. clamp() scales it with the
+              viewport down to a still-legible floor. */}
+          <span className="w-full whitespace-nowrap text-[clamp(0.75rem,3.4vw,1.0625rem)] font-semibold text-white">
+            {headerTitle.title}
+          </span>
           {headerTitle.subtitle ? (
             // Wraps to a second line instead of clipping — record names live here
             // (e.g. a project's name) and half a name reads as a bug.

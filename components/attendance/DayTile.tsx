@@ -46,6 +46,9 @@ export function DayTile({ clockIn, clockOut }: { clockIn: string; clockOut?: str
  * in an RTL row the eye met the end time first and read the shift backwards.
  * Plain RTL text with the word עד puts the start on the right where it belongs;
  * each HH:MM is digits, which the browser lays out left-to-right on its own.
+ *
+ * A shift still running says "עד עכשיו", never "…" — an ellipsis reads as text
+ * the layout cut off rather than as a fact about the shift.
  */
 export function shiftHoursText(clockIn: string, clockOut: string | null | undefined) {
   const time = (iso: string) =>
@@ -55,7 +58,7 @@ export function shiftHoursText(clockIn: string, clockOut: string | null | undefi
       minute: "2-digit",
       hourCycle: "h23",
     }).format(new Date(iso));
-  return `${time(clockIn)} עד ${clockOut ? time(clockOut) : "…"}`;
+  return `${time(clockIn)} עד ${clockOut ? time(clockOut) : "עכשיו"}`;
 }
 
 export default DayTile;

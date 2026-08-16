@@ -178,6 +178,38 @@ export async function GET(req: Request) {
         }
         break;
       }
+      case "pending_attendance": {
+        // Shifts the workers reported that are still waiting to be approved into
+        // payroll. Sends ONLY when there are any — a nightly "0 waiting" push is
+        // noise, and this is the one alert whose whole job is "don't forget".
+        const { data } = await supabase
+          .from("phone_attendance_reports")
+          .select("user_id,clock_in,clock_out")
+          .eq("status", "pending_review")
+          .order("clock_in", { ascending: true })
+          .range(0, 199);
+        const rows = (data ?? []) as Row[];
+        if (rows.length > 0) {
+          const names = await (async () => {
+            const ids = [...new Set(rows.map((r) => getString(r, "user_id")).filter((v): v is string => Boolean(v)))];
+            if (!ids.length) return [] as string[];
+            const { data: users } = await supabase.from("users").select("id,full_name").in("id", ids);
+            return ((users ?? []) as Row[]).map((u) => getString(u, "full_name") ?? "עובד");
+          })();
+          // Whose hours are waiting matters more than how many rows: it's the
+          // name you chase. Oldest first, so the worst offender leads.
+          const shown = names.slice(0, 4).join(", ");
+          const body = names.length > 4 ? `${shown} ועוד ${names.length - 4}` : shown;
+          notifications.push({
+            title: `🕐 ${rows.length} ${alert.title}`,
+            body: body || "משמרות שהסתיימו וממתינות לאישור.",
+            url: alert.url,
+            tag,
+            recipients,
+          });
+        }
+        break;
+      }
       case "weekly_summary": {
         const { data } = await supabase.from("project_dashboard_view").select("name")
           .not("status", "in", INACTIVE).lte("start_date", in7DaysIso).range(0, 99);

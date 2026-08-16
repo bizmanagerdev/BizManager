@@ -37,7 +37,6 @@ const RULE_ICON: Record<string, typeof NotificationIcon> = {
   stale_quote: ProjectIcon,
   project_closed_unbilled: ProjectIcon,
   wage_overdue: WalletIcon,
-  session_unallocated: WalletIcon,
   low_stock: ProductIcon,
   unprocessed_items: ProductIcon,
   vehicle_expiry: VehicleIcon,
@@ -59,7 +58,7 @@ function actionLabel(item: WorklistItem): string {
   if (rule === "low_stock") return "הזמן מלאי";
   if (rule === "unprocessed_items") return "פתח דף אשראי";
   if (rule === "vehicle_expiry") return "פתח רכב";
-  if (rule === "wage_overdue" || rule === "session_unallocated") return "פתח שכר";
+  if (rule === "wage_overdue") return "פתח שכר";
   if (rule === "recurring_expense_confirm") return "פתח הוצאה";
   return "פתח";
 }
