@@ -262,6 +262,7 @@ export default function QuickCreateDialogs({
       <ReminderFormDialog
         mode="create"
         category="general"
+        canAssignOthers={data.role !== "worker"}
         open={action === "reminder"}
         defaultRemindAt={quickCreateDate ? `${quickCreateDate}T09:00` : undefined}
         onOpenChange={(open) => {

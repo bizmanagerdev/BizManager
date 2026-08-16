@@ -38,6 +38,7 @@ export default function ReminderFormDialog({
   category = "order",
   defaultNote,
   defaultRemindAt,
+  canAssignOthers = true,
 }: {
   mode: "create" | "edit";
   open: boolean;
@@ -52,6 +53,12 @@ export default function ReminderFormDialog({
   defaultNote?: string;
   /** Pre-fill the remind date/time on create (e.g. a calendar day). */
   defaultRemindAt?: string;
+  /**
+   * False for a worker: his reminders are his own, and the server pins them to
+   * him regardless. Offering a picker whose choice is then overruled is worse
+   * than not offering one.
+   */
+  canAssignOthers?: boolean;
 }) {
   const { currentUserId } = useAssignableUsers();
   const [remindAt, setRemindAt] = useState("");
@@ -156,10 +163,12 @@ export default function ReminderFormDialog({
             <label className="text-sm font-medium">על מה להזכיר? *</label>
             <Input ref={noteRef} value={note} onChange={(e) => setNote(e.target.value)} />
           </div>
-          <div className="space-y-1">
-            <label className="text-sm font-medium">אחראי</label>
-            <AssigneeSelect value={assignee} onChange={setAssignee} includeMeDefault />
-          </div>
+          {canAssignOthers ? (
+            <div className="space-y-1">
+              <label className="text-sm font-medium">אחראי</label>
+              <AssigneeSelect value={assignee} onChange={setAssignee} includeMeDefault />
+            </div>
+          ) : null}
         </div>
     </FormDialog>
   );

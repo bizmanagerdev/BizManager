@@ -76,8 +76,12 @@ export async function POST(req: Request) {
     const address = typeof body.address === "string" && body.address.trim() ? body.address.trim() : null;
     // Every task must have an owner — default to the creator when no assignee is
     // supplied, so we never store ownerless tasks.
+    // A worker's task is his own — he can add to his own list, not to someone
+    // else's. (Staff keep the picker; his simply isn't offered.)
     const assignedUserId =
-      typeof body.assigned_user_id === "string" && body.assigned_user_id.trim()
+      profile.role !== "worker" &&
+      typeof body.assigned_user_id === "string" &&
+      body.assigned_user_id.trim()
         ? body.assigned_user_id.trim()
         : profile.id;
     const memberIds = Array.isArray(body.member_ids)

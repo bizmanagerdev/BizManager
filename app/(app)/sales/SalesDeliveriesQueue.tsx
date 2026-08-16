@@ -235,7 +235,10 @@ export default function SalesDeliveriesQueue({
             {label}
           </Link>
         ))}
-        <span className="mr-auto text-xs text-muted-foreground">
+        {/* Desktop only: on a phone this wrapped onto a line of its own under
+            the pills — a whole row of screen for a number you can see by
+            scrolling. Beside the pills on a wider screen it costs nothing. */}
+        <span className="mr-auto hidden text-xs text-muted-foreground md:inline">
           {regionFilter ? `${totalVisible} משלוחים באזור ${regionFilter}` : `${totalCount} משלוחים`}
         </span>
       </div>
@@ -458,17 +461,13 @@ export default function SalesDeliveriesQueue({
         {/* Mobile (< xl): stop cards grouped region → city → customer. */}
         <div className="space-y-4 xl:hidden">
         {orderedRegions.map(([region, cities]) => {
-          const regionCustomers = cities.reduce((sum, [, groups]) => sum + groups.length, 0);
-
           return (
             <div key={region} className="min-w-0 space-y-2">
-              {/* Region header — boxed, so the eye can tell "this is a region"
-                  from "this is a stop" without reading either. Empty regions are
-                  filtered out upstream, so every section here has stops. */}
-              <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2">
-                <span className="text-sm font-bold text-foreground">{region}</span>
-                <span className="text-xs text-muted-foreground">{regionCustomers} לקוחות</span>
-              </div>
+              {/* No region header bar on a phone: the filter pills above already
+                  name the regions and switch between them, so a boxed "מרכז ·
+                  7 לקוחות" between the stops was the same word again, costing a
+                  row of screen on the one device with none to spare. The list is
+                  still ordered by region, and the city headings carry the place. */}
 
               {/* Cities in region */}
               {cities.map(([city, customerGroups]) => (
