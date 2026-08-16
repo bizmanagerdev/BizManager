@@ -95,25 +95,15 @@ function nowLabel() {
   );
 }
 
-/** Hebrew name — safe for a desktop browser download. */
-function downloadFileName(data: BilledPrintData) {
-  const safeName = data.projectName.replace(/[\\/:*?"<>|]/g, "").trim();
-  return `לחיוב לקוח - ${safeName || "פרויקט"}.pdf`;
-}
-
 /**
- * ASCII-only name for the native share sheet. A Hebrew file name survives the
- * WebView → Android → WhatsApp hand-off as mojibake ("×'×'×..." — the UTF-8
- * bytes read back as Latin-1), so the shared file keeps a plain-ASCII name and
- * the Hebrew wording travels in the share title/text, which is not mangled.
+ * "לחיוב לקוח - <שם הפרויקט>.pdf" — the name the file carries everywhere, on
+ * the share sheet and on a desktop download alike. NFC-normalised, since a
+ * decomposed Hebrew string is a second way a receiving app can render the name
+ * wrong. Only characters no file system accepts are stripped.
  */
-function shareFileName(data: BilledPrintData) {
-  const asciiName = data.projectName
-    .replace(/[^A-Za-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-  const stamp = new Date().toISOString().slice(0, 10);
-  return asciiName ? `billing-${asciiName}-${stamp}.pdf` : `billing-${stamp}.pdf`;
+function pdfFileName(data: BilledPrintData) {
+  const safeName = data.projectName.replace(/[\\/:*?"<>|]/g, "").trim();
+  return `לחיוב לקוח - ${safeName || "פרויקט"}.pdf`.normalize("NFC");
 }
 
 function shareTitle(data: BilledPrintData) {
@@ -226,9 +216,10 @@ export default function BilledCustomerPrintButton({ data }: { data: BilledPrintD
       }
 
       const pdfBlob = pdf.output("blob");
+      const fileName = pdfFileName(data);
       const title = shareTitle(data);
-      const shareFile = new File([pdfBlob], shareFileName(data), { type: "application/pdf" });
-      const shareData = { title, text: title, files: [shareFile] };
+      const file = new File([pdfBlob], fileName, { type: "application/pdf" });
+      const shareData = { title, text: title, files: [file] };
 
       if (
         typeof navigator !== "undefined" &&
@@ -240,8 +231,6 @@ export default function BilledCustomerPrintButton({ data }: { data: BilledPrintD
         return;
       }
 
-      // Desktop download: here the Hebrew name reaches the file system intact.
-      const fileName = downloadFileName(data);
       const fileUrl = URL.createObjectURL(pdfBlob);
       const link = document.createElement("a");
       link.href = fileUrl;
