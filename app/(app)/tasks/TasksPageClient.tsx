@@ -1270,12 +1270,9 @@ export default function TasksPageClient(props: Props) {
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         {/* The board is a dark surface (like Trello's): it's what makes the light
             lists and white cards pop, and it marks where the page stops and the
-            board begins. Full-bleed on phones — -mx-3 matches the shell gutter.
-            The two house colours as a gradient (navy → sky) rather than a flat
-            navy slab: it's the one place a gradient earns its keep, because the
-            board is a backdrop and never carries text of its own. It runs
-            diagonally from the top-START corner — the top right, where a Hebrew
-            page begins — down to the opposite one. */}
+            board begins. Flat navy — the same primary as the chrome above it, so
+            the header and the board read as one surface. Full-bleed at every
+            size; the -mx values match the shell's gutters. */}
         <div
           ref={boardRef}
           // The bleed is always applied so the geometry the loop measures stays
@@ -1285,7 +1282,7 @@ export default function TasksPageClient(props: Props) {
             paddingBottom: BOARD_BLEED,
             marginBottom: -BOARD_BLEED,
           }}
-          className="relative -mx-3 flex min-h-[20rem] flex-col overflow-hidden bg-gradient-to-bl from-primary from-0% via-secondary via-50% to-primary md:-mx-6 lg:-mx-8"
+          className="relative -mx-3 flex min-h-[20rem] flex-col overflow-hidden bg-primary md:-mx-6 lg:-mx-8"
         >
           <SortableContext items={columnOrder.map(columnSortableId)} strategy={horizontalListSortingStrategy}>
             {/* snap-mandatory + snap-center on each list: one swipe steps to the
