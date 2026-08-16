@@ -32,7 +32,13 @@ export default function PwaRegistration() {
       return;
     }
 
-    void navigator.serviceWorker.register("/sw.js").then((reg) => {
+    // Version the script URL with the build id so every deploy is a distinct
+    // service worker: the browser installs it, activate() purges the previous
+    // build's caches, and the controllerchange handler below reloads once onto
+    // the fresh bundle. A constant "/sw.js" URL let stale caches live forever.
+    const swUrl = `/sw.js?v=${encodeURIComponent(process.env.NEXT_PUBLIC_BUILD_ID ?? "v13")}`;
+
+    void navigator.serviceWorker.register(swUrl).then((reg) => {
       // Proactively check for a newer service worker on each load (don't wait for the
       // browser's periodic check) so a fixed build / cache-version bump is picked up fast.
       void reg.update().catch(() => {});

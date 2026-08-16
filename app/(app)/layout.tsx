@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import AppShell from "@/components/layout/AppShell";
+import SentryUser from "@/components/observability/SentryUser";
 import { requireProfile } from "@/lib/auth/requireProfile";
 
 // Shared chrome for every authenticated page. Rendering the shell here (instead
@@ -28,6 +29,12 @@ export default async function AppGroupLayout({ children }: { children: ReactNode
       viewerRole={profile.role}
       avatarColor={avatarColor}
     >
+      <SentryUser
+        id={profile.id}
+        email={profile.email}
+        fullName={profile.full_name}
+        role={profile.role}
+      />
       {children}
     </AppShell>
   );

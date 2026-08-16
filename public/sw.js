@@ -1,4 +1,12 @@
-const V = "v13";
+// Cache version = the deploy's build id, passed in on the script URL by
+// PwaRegistration (`/sw.js?v=<NEXT_PUBLIC_BUILD_ID>`). A changed script URL is a
+// new service worker, so each deploy installs, activates, and purges every cache
+// whose name doesn't carry the current version. Do NOT hardcode this again: a
+// frozen version meant caches survived every deploy, and a device could end up
+// serving stale HTML that referenced chunks the CDN had already dropped —
+// the JS then never executed and the app came up blank with nothing logged.
+// The fallback only applies if the query param is missing.
+const V = new URL(self.location.href).searchParams.get("v") || "v13";
 const STATIC_CACHE = `bizh-static-${V}`;   // immutable _next/static chunks
 const PAGES_CACHE  = `bizh-pages-${V}`;    // navigation responses
 const API_CACHE    = `bizh-api-${V}`;      // /api GET responses
@@ -53,10 +61,15 @@ const PRECACHE = [
 // ── Install ──────────────────────────────────────────────────────────────────
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches
-      .open(STATIC_CACHE)
-      .then((cache) => cache.addAll(PRECACHE))
-      .then(() => self.skipWaiting())
+    (async () => {
+      const cache = await caches.open(STATIC_CACHE);
+      // Per-entry, failure-tolerant. cache.addAll() rejects the whole batch if a
+      // single URL 404s or errors, which fails the install — and a SW that never
+      // installs never activates, so the OLD one keeps serving its stale caches
+      // forever. Precaching is an optimisation; it must never block the purge.
+      await Promise.all(PRECACHE.map((url) => cache.add(url).catch(() => {})));
+      await self.skipWaiting();
+    })()
   );
 });
 

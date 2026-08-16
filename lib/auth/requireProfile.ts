@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { redirect } from "next/navigation";
+import * as Sentry from "@sentry/nextjs";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isPayrollWorkerType, type PayrollWorkerType } from "@/lib/payroll-worker-type";
 
@@ -54,6 +55,16 @@ export const requireProfile = cache(async () => {
   if (!typed.active || !typed.system_access || typed.role === "worker_no_access") {
     redirect("/no-access");
   }
+
+  // Attribute server-side errors to this user. The Sentry Node SDK keeps an
+  // isolation scope per request, so this does not leak across concurrent
+  // requests. Client-side events are tagged by components/observability/SentryUser.
+  Sentry.setUser({
+    id: typed.id,
+    email: typed.email ?? undefined,
+    username: typed.full_name ?? undefined,
+  });
+  Sentry.setTag("user.role", typed.role);
 
   return { supabase, user: fastSession.user, profile: typed };
 });
