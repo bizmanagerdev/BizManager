@@ -32,7 +32,14 @@ export function TasksTabs({ actions }: { actions?: ReactNode }) {
   return (
     <div
       dir="rtl"
-      className="flex min-w-0 items-center gap-2 overflow-x-auto overflow-y-hidden border-b border-border/60 text-muted-foreground sm:gap-3"
+      // items-END, not center: the row is as tall as its tallest control (the
+      // search field), and centring the tabs left their underline floating above
+      // the row's own line with a strip of page showing between the two.
+      // overflow-visible from md up: the row's `overflow-y-hidden` (needed only
+      // so the phone's sideways scroll doesn't grow a vertical scrollbar) was
+      // slicing the top and bottom off the buttons that ride at the end of it.
+      // There's room for everything on a tablet and up, so nothing to scroll.
+      className="flex min-w-0 items-end gap-2 overflow-x-auto overflow-y-hidden border-b border-border/60 text-muted-foreground sm:gap-3 md:overflow-visible"
     >
       {TASK_TABS.map((tab) => {
         const isActive = tab.href === "/tasks/recurring" ? isRecurring : !isRecurring;

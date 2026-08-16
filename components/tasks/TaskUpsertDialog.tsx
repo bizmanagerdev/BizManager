@@ -7,7 +7,7 @@ import { offlineUpload } from "@/lib/offline-upload";
 import { toHebrewError } from "@/lib/error-messages";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { AttachIcon, BusinessIcon, ClockIcon, LocationIcon, LockIcon, NotificationIcon, SpinnerIcon, SuccessIcon, TagIcon, TextIcon, UncheckedIcon, UnlockIcon, UsersIcon } from "@/components/ui/icons";
+import { AttachIcon, BusinessIcon, ClockIcon, CommentIcon, LocationIcon, LockIcon, NotificationIcon, SpinnerIcon, SuccessIcon, TagIcon, TextIcon, UncheckedIcon, UnlockIcon, UsersIcon } from "@/components/ui/icons";
 import { DeleteButton } from "@/components/ui/icon-button";
 import {
   emitProgressActivityEnd,
@@ -54,7 +54,8 @@ import {
 } from "@/components/tasks/TaskUpsertDialog.helpers";
 import {
   TaskAttachmentsSection,
-  TaskCardSidebar,
+  TaskCommentsPanel,
+  TaskRemindersPanel,
   TaskDatesSection,
   TaskDescriptionSection,
   TaskDomainSection,
@@ -885,12 +886,16 @@ export function TaskUpsertDialog(props: Props) {
       { key: "people", label: "אחראי וחברים", icon: UsersIcon },
       { key: "labels", label: "עדיפות וסטטוס", icon: TagIcon },
       { key: "location", label: "מיקום", icon: LocationIcon },
-      ...(!isEditing ? [{ key: "reminders", label: "תזכורות", icon: NotificationIcon }] : []),
+      // Reminders are a tab either way — staged before the task exists, live
+      // (add / edit / done / cancel) once it does.
+      { key: "reminders", label: "תזכורות", icon: NotificationIcon },
       // Uploading needs a task id, but CHOOSING files doesn't — on a new task
       // they're staged and uploaded right after it's created.
       { key: "files", label: "קבצים ותמונות", icon: AttachIcon },
+      // Comments only exist on a saved task.
+      ...(isEditing && targetTaskId ? [{ key: "comments", label: "תגובות", icon: CommentIcon }] : []),
     ],
-    [isEditing]
+    [isEditing, targetTaskId]
   );
   // Tabs always have exactly one open — an unknown/cleared section falls back to
   // the first rather than showing an empty body under a strip of tabs.
@@ -903,6 +908,23 @@ export function TaskUpsertDialog(props: Props) {
   // key (e.g. "reminders" on a card that's since been saved) shows a tab strip
   // with nothing under it.
   const isOpen = (key: string) => activeSection === key;
+
+  // Whichever section is open, its tab has to be ON SCREEN — pressing "הבא"
+  // used to advance to a tab that was still off the end of the strip, so the
+  // form changed under you with nothing to show which step you'd reached.
+  const tabStripRef = useRef<HTMLDivElement | null>(null);
+  const tabRefs = useRef(new Map<string, HTMLButtonElement>());
+  useEffect(() => {
+    const strip = tabStripRef.current;
+    const tab = tabRefs.current.get(activeSection);
+    if (!strip || !tab) return;
+    const stripBox = strip.getBoundingClientRect();
+    const tabBox = tab.getBoundingClientRect();
+    // scrollBy with a delta: RTL scroll origins differ between engines.
+    const delta = tabBox.left + tabBox.width / 2 - (stripBox.left + stripBox.width / 2);
+    if (Math.abs(delta) < 1) return;
+    strip.scrollBy({ left: delta, behavior: "smooth" });
+  }, [activeSection]);
 
   // Swipe the panel sideways to move between sections.
   const sectionsRef = useRef<HTMLDivElement | null>(null);
@@ -972,8 +994,10 @@ export function TaskUpsertDialog(props: Props) {
       {/* A column, not a scrolling block: header and action bar are pinned and
           only the sections between them scroll (see dialog-chrome for the same
           shape). p-0 because each band brings its own padding. */}
+      {/* One width for both modes now that everything is tabbed — the wide
+          `details4xl` existed for the old two-column edit layout. */}
       <AdaptiveDialog
-        size={isEditing && targetTaskId ? "details4xl" : "form2xl"}
+        size="form2xl"
         className="flex flex-col gap-0 overflow-y-hidden p-0 sm:p-0"
       >
         {/* A line under the name block, so the header reads as a pinned bar like
@@ -1104,13 +1128,21 @@ export function TaskUpsertDialog(props: Props) {
               them (see useSwipeNavigation: right = forward, matching the rest of
               the app's RTL paging). */}
           <div className="shrink-0 border-b border-border/70 px-4 sm:px-6">
-            <div dir="rtl" className="flex min-w-0 items-center gap-2 overflow-x-auto overflow-y-hidden sm:gap-3">
+            <div
+              ref={tabStripRef}
+              dir="rtl"
+              className="flex min-w-0 items-center gap-2 overflow-x-auto overflow-y-hidden sm:gap-3"
+            >
               {sections.map((section) => {
                 const active = section.key === activeSection;
                 const Icon = section.icon;
                 return (
                   <button
                     key={section.key}
+                    ref={(node) => {
+                      if (node) tabRefs.current.set(section.key, node);
+                      else tabRefs.current.delete(section.key);
+                    }}
                     type="button"
                     aria-current={active ? "true" : undefined}
                     onClick={() => setOpenSection(section.key)}
@@ -1129,9 +1161,6 @@ export function TaskUpsertDialog(props: Props) {
           </div>
 
           <div ref={sectionsRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
-          {/* Editing, the card's comments/reminders sit BESIDE the sections on a
-              wide screen and under them on a phone — one scroll either way. */}
-          <div className={isEditing && targetTaskId ? "grid gap-5 lg:grid-cols-[1.5fr_1fr]" : ""}>
           <div className="space-y-3">
           {/* Voice fill — a button like any other, above the open section. */}
           {!isEditing ? (
@@ -1232,44 +1261,48 @@ export function TaskUpsertDialog(props: Props) {
                 />
               ) : null}
 
-              {isOpen("reminders") && !isEditing ? (
-                <TaskRemindersStagingSection
-                  pendingReminders={pendingReminders}
-                  reminderAt={reminderAt}
-                  setReminderAt={setReminderAt}
-                  reminderNote={reminderNote}
-                  setReminderNote={setReminderNote}
-                  onStage={stageReminder}
-                  onRemove={removePendingReminder}
+              {/* Reminders: staged locally before the task exists, live once it
+                  does — one tab, either way. */}
+              {isOpen("reminders") ? (
+                isEditing && targetTaskId ? (
+                  <TaskRemindersPanel
+                    reminders={reminders}
+                    reminderAt={reminderAt}
+                    setReminderAt={setReminderAt}
+                    reminderNote={reminderNote}
+                    setReminderNote={setReminderNote}
+                    addingReminder={addingReminder}
+                    editingReminderId={editingReminderId}
+                    onAddReminder={() => void (editingReminderId ? saveReminderEdit() : addReminder())}
+                    onEditReminder={beginEditReminder}
+                    onCancelEditReminder={cancelEditReminder}
+                    onSetReminderStatus={(id, nextStatus) => void setReminderStatus(id, nextStatus)}
+                  />
+                ) : (
+                  <TaskRemindersStagingSection
+                    pendingReminders={pendingReminders}
+                    reminderAt={reminderAt}
+                    setReminderAt={setReminderAt}
+                    reminderNote={reminderNote}
+                    setReminderNote={setReminderNote}
+                    onStage={stageReminder}
+                    onRemove={removePendingReminder}
+                  />
+                )
+              ) : null}
+
+              {isOpen("comments") && isEditing && targetTaskId ? (
+                <TaskCommentsPanel
+                  comments={comments}
+                  legacyNotes={legacyNotes}
+                  newComment={newComment}
+                  setNewComment={setNewComment}
+                  addingComment={addingComment}
+                  onAddComment={() => void addComment()}
+                  colorIndexById={colorIndexById}
+                  chosenColorById={chosenColorById}
                 />
               ) : null}
-          </div>
-
-          {/* Card extras — comments and history. Not a tab: they're what the card
-              IS, not one of its fields. */}
-          {isEditing && targetTaskId ? (
-            <TaskCardSidebar
-              reminders={reminders}
-              reminderAt={reminderAt}
-              setReminderAt={setReminderAt}
-              reminderNote={reminderNote}
-              setReminderNote={setReminderNote}
-              addingReminder={addingReminder}
-              editingReminderId={editingReminderId}
-              onAddReminder={() => void (editingReminderId ? saveReminderEdit() : addReminder())}
-              onEditReminder={beginEditReminder}
-              onCancelEditReminder={cancelEditReminder}
-              onSetReminderStatus={(id, nextStatus) => void setReminderStatus(id, nextStatus)}
-              comments={comments}
-              legacyNotes={legacyNotes}
-              newComment={newComment}
-              setNewComment={setNewComment}
-              addingComment={addingComment}
-              onAddComment={() => void addComment()}
-              colorIndexById={colorIndexById}
-              chosenColorById={chosenColorById}
-            />
-          ) : null}
           </div>
           </div>
 

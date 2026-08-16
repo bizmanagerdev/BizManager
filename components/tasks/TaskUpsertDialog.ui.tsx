@@ -6,7 +6,7 @@
 // TaskUpsertDialog.helpers.ts; the orchestrator is TaskUpsertDialog.tsx.)
 
 import Image from "next/image";
-import { AddIcon, AttachIcon, CheckIcon, ClockIcon, CloseIcon, CommentIcon, LocationIcon, NotificationIcon } from "@/components/ui/icons";
+import { AddIcon, AttachIcon, CheckIcon, ClockIcon, CloseIcon, LocationIcon, NotificationIcon } from "@/components/ui/icons";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
@@ -67,11 +67,14 @@ export function TaskDescriptionSection({
   description: string;
   onChange: (value: string) => void;
 }) {
+  // No panel around it and no "תיאור" heading: the tab above already says which
+  // section this is, so a titled box inside a titled tab was a box in a box.
   return (
-    <div className="space-y-1 rounded-md border bg-muted/20 p-3">
-      <div className="text-sm font-medium">תיאור</div>
-      <Textarea value={description} onChange={(e) => onChange(e.target.value)} />
-    </div>
+    <Textarea
+      value={description}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder="הוסיפו תיאור מפורט..."
+    />
   );
 }
 
@@ -111,7 +114,7 @@ export function TaskDomainSection({
   onCustomerIdChange: (id: string) => void;
 }) {
   return (
-    <div className="space-y-3 rounded-md border bg-muted/20 p-3">
+    <div className="space-y-3">
       <div className="space-y-1">
         <div className="text-sm font-medium">תחום עסקי</div>
         <DomainSelect
@@ -190,7 +193,7 @@ export function TaskDatesSection({
   onDueTimeChange: (value: string) => void;
 }) {
   return (
-    <div className="rounded-md border bg-muted/20 p-3">
+    <div>
       <AdaptiveGrid variant="formTwo">
         <div className="space-y-1">
           <div className="text-sm font-medium">תאריך יעד</div>
@@ -232,7 +235,7 @@ export function TaskPeopleSection({
   colorIndexById: Map<string, number>;
 }) {
   return (
-    <div className="space-y-3 rounded-md border bg-muted/20 p-3">
+    <div className="space-y-3">
       <div className="space-y-1">
         <div className="text-sm font-medium">אחראי</div>
         <NativeSelect
@@ -337,7 +340,7 @@ export function TaskLocationSection({
   onAddressChange: (value: string) => void;
 }) {
   return (
-    <div className="space-y-3 rounded-md border bg-muted/20 p-3">
+    <div className="space-y-3">
       <AdaptiveGrid variant="formTwo">
         <div className="space-y-1">
           <div className="flex items-center gap-1 text-sm font-medium">
@@ -399,7 +402,7 @@ export function TaskPendingFilesSection({
   onRemove: (index: number) => void;
 }) {
   return (
-    <div className="space-y-3 rounded-md border bg-muted/20 p-3">
+    <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-sm font-medium">
           <AttachIcon className="h-3.5 w-3.5 text-muted-foreground" />
@@ -449,7 +452,7 @@ export function TaskAttachmentsSection({
   onRequestDelete: (target: { id: string; name: string | null }) => void;
 }) {
   return (
-    <div className="space-y-3 rounded-md border bg-muted/20 p-3">
+    <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-sm font-medium">
           <AttachIcon className="h-3.5 w-3.5 text-muted-foreground" />
@@ -537,7 +540,7 @@ export function TaskLabelsSection({
   onStatusChange: (value: TaskStatus) => void;
 }) {
   return (
-    <div className="rounded-md border bg-muted/20 p-3">
+    <div>
       <AdaptiveGrid variant="formTwo">
         <div className="space-y-1">
           <div className="text-sm font-medium">עדיפות</div>
@@ -588,7 +591,7 @@ export function TaskRemindersStagingSection({
   onRemove: (index: number) => void;
 }) {
   return (
-    <div className="space-y-3 rounded-md border bg-muted/20 p-3">
+    <div className="space-y-3">
       <div className="flex items-center gap-1.5 text-sm font-medium">
         <NotificationIcon className="h-3.5 w-3.5 text-muted-foreground" />
         תזכורות
@@ -632,8 +635,9 @@ export function TaskRemindersStagingSection({
   );
 }
 
-// Edit-mode right column: live reminders (add / done / cancel) + comments.
-export function TaskCardSidebar({
+// Live reminders on a saved task (add / edit / done / cancel) — its own tab in
+// the card, not a strip under every other section.
+export function TaskRemindersPanel({
   reminders,
   reminderAt,
   setReminderAt,
@@ -645,14 +649,6 @@ export function TaskCardSidebar({
   onEditReminder,
   onCancelEditReminder,
   onSetReminderStatus,
-  comments,
-  legacyNotes,
-  newComment,
-  setNewComment,
-  addingComment,
-  onAddComment,
-  colorIndexById,
-  chosenColorById,
 }: {
   reminders: ReminderItem[];
   reminderAt: string;
@@ -665,23 +661,9 @@ export function TaskCardSidebar({
   onEditReminder: (reminder: ReminderItem) => void;
   onCancelEditReminder: () => void;
   onSetReminderStatus: (id: string, status: "done" | "cancelled") => void;
-  comments: CommentItem[];
-  legacyNotes: LegacyNote[];
-  newComment: string;
-  setNewComment: (value: string) => void;
-  addingComment: boolean;
-  onAddComment: () => void;
-  colorIndexById: Map<string, number>;
-  chosenColorById: Map<string, string>;
 }) {
   return (
-    <div className="space-y-4 rounded-lg bg-muted/40 p-4 lg:p-5">
-      {/* Reminders */}
       <section className="space-y-2">
-        <div className="flex items-center gap-1.5 text-sm font-semibold">
-          <NotificationIcon className="h-4 w-4 text-muted-foreground" />
-          תזכורות
-        </div>
         {reminders.filter((r) => r.status === "pending").length === 0 ? (
           <div className="text-xs text-muted-foreground">אין תזכורות פעילות.</div>
         ) : (
@@ -735,13 +717,31 @@ export function TaskCardSidebar({
           </Button>
         </div>
       </section>
+  );
+}
 
-      {/* Comments */}
+// The card's conversation — its own tab beside the fields.
+export function TaskCommentsPanel({
+  comments,
+  legacyNotes,
+  newComment,
+  setNewComment,
+  addingComment,
+  onAddComment,
+  colorIndexById,
+  chosenColorById,
+}: {
+  comments: CommentItem[];
+  legacyNotes: LegacyNote[];
+  newComment: string;
+  setNewComment: (value: string) => void;
+  addingComment: boolean;
+  onAddComment: () => void;
+  colorIndexById: Map<string, number>;
+  chosenColorById: Map<string, string>;
+}) {
+  return (
       <section className="space-y-2">
-        <div className="flex items-center gap-1.5 text-sm font-semibold">
-          <CommentIcon className="h-4 w-4 text-muted-foreground" />
-          תגובות
-        </div>
         {comments.length === 0 && legacyNotes.length === 0 ? (
           <div className="text-xs text-muted-foreground">אין תגובות עדיין.</div>
         ) : (
@@ -786,6 +786,5 @@ export function TaskCardSidebar({
           </Button>
         </div>
       </section>
-    </div>
   );
 }

@@ -75,8 +75,10 @@ const CARD_BASE_REM = 0.875;
 // Used when the list already fits and there's nothing to measure a fit against.
 const OVERVIEW_FALLBACK_ZOOM = 0.6;
 const MIN_OVERVIEW_ZOOM = 0.35;
-// How far the board's background runs on past its content, behind the bottom nav.
-const BOARD_BLEED = 40;
+// How far the board's background runs on past its content (behind the bottom nav
+// on a phone, past the bottom of the window on desktop). The parent clips it —
+// keep the clip margin there bigger than this.
+const BOARD_BLEED = 48;
 // The only priorities a card shows. "בינונית" on every card is a chip that says
 // nothing — the badge is worth its space only when the task deviates from normal.
 const SHOWN_PRIORITIES = new Set(["high", "urgent"]);
@@ -132,12 +134,16 @@ function TaskCard({
   const dueUrgency = getDueUrgency(task.due_date, { done: isDone });
   const dueChipClass = dueUrgencyChipClass(dueUrgency);
 
-  // Long press → the card menu. The timer is cancelled by a move (that's a
-  // scroll, not a press) or by lifting early; `firedRef` swallows the click that
-  // follows so holding a card doesn't also open it.
+  // Long press → the card menu, opened on the RELEASE rather than while the
+  // finger is still down. A menu that appears under a finger is dismissed by
+  // that same finger: the click which follows the press lands on whatever the
+  // menu just put there. So the press only ARMS it (with a haptic tick, so the
+  // hold is acknowledged) and the click that ends the press opens it — after
+  // which no further click is pending. The timer is cancelled by a move (that's
+  // a scroll, not a press) or by lifting early.
   const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pressStartRef = useRef({ x: 0, y: 0 });
-  const firedRef = useRef(false);
+  const menuPendingRef = useRef(false);
   const cancelPress = useCallback(() => {
     if (pressTimerRef.current) {
       clearTimeout(pressTimerRef.current);
@@ -162,8 +168,9 @@ function TaskCard({
       {...listeners}
       {...attributes}
       onClick={() => {
-        if (firedRef.current) {
-          firedRef.current = false;
+        if (menuPendingRef.current) {
+          menuPendingRef.current = false;
+          onContextMenu(task.id, pressStartRef.current.x, pressStartRef.current.y);
           return;
         }
         onOpen(task.id);
@@ -175,12 +182,13 @@ function TaskCard({
       onPointerDown={(e) => {
         if (!longPress || e.pointerType === "mouse") return;
         pressStartRef.current = { x: e.clientX, y: e.clientY };
-        firedRef.current = false;
+        // Reset here too: a press that armed the menu but never produced a click
+        // (the finger scrolled away) must not fire on the NEXT tap.
+        menuPendingRef.current = false;
         cancelPress();
         pressTimerRef.current = setTimeout(() => {
-          firedRef.current = true;
+          menuPendingRef.current = true;
           navigator.vibrate?.(12);
-          onContextMenu(task.id, e.clientX, e.clientY);
         }, 420);
       }}
       onPointerMove={(e) => {
@@ -451,12 +459,15 @@ function BoardColumn({
         </button>
       </div>
 
-      {/* overscroll-contain: reaching the end of a list must not hand the scroll
-          over to the page behind it (which is what made the board feel broken).
+      {/* overscroll-Y-contain, not overscroll-contain: reaching the end of a
+          list must not hand the VERTICAL scroll to the page behind it, but
+          `contain` locks BOTH axes — which is what stopped a sideways swipe over
+          the cards from reaching the board and paging to the next list. The
+          horizontal axis has to keep chaining outward.
           The gap between cards is `em` like the cards themselves, so the
           magnifier shrinks the spacing too — otherwise "fit the whole list on
           screen" stops fitting after a dozen cards. */}
-      <div data-cards className="min-h-0 flex-1 space-y-[0.4em] overflow-y-auto overscroll-contain px-1.5 py-1.5">
+      <div data-cards className="min-h-0 flex-1 space-y-[0.4em] overflow-y-auto overscroll-y-contain px-1.5 py-1.5">
         {adding === "top" ? addBox : null}
 
         {tasks.map((task) => (
@@ -571,38 +582,35 @@ export default function TasksPageClient(props: Props) {
   // the PAGE never scrolls — the lists do. Measured rather than a fixed calc()
   // because what sits above it varies (alert bar, tabs, toolbar).
   const boardRef = useRef<HTMLDivElement | null>(null);
-  const [boardBox, setBoardBox] = useState<{ height: number; bleed: number } | null>(null);
+  const [boardHeight, setBoardHeight] = useState<number | null>(null);
   useEffect(() => {
+    // Closed loop, not a formula: look at where the board's content ACTUALLY
+    // ends on screen, compare it with where it should end, and correct by the
+    // difference. Every formula tried here (innerHeight minus a nav height,
+    // then 100dvh minus a measured top) left a strip of white page under the
+    // board on some screen — each depends on the browser and the CSS agreeing
+    // about where the viewport ends, and they don't always. This asks the
+    // rendered box instead, so it converges whatever the cause. It settles in a
+    // frame or two: the correction resizes the board, the observer below fires,
+    // the next pass finds a delta of ~0 and stops.
     const measure = () => {
       const el = boardRef.current;
       if (!el) return;
-      const boardTop = el.getBoundingClientRect().top;
-      // Phones: run down to the bottom nav's REAL top edge. The nav is
-      // `fixed bottom-0`, so the browser has already resolved the safe-area
-      // inset and which viewport it counts as current — measuring its rect
-      // borrows that answer instead of re-deriving it from window.innerHeight,
-      // which is what left a white strip under the board.
+      const rect = el.getBoundingClientRect();
+      // Phones stop at the bottom bar; otherwise the bottom of the viewport.
+      // documentElement.clientHeight, not innerHeight: it excludes scrollbars.
       const nav = document.querySelector<HTMLElement>("[data-bottom-nav]");
-      const navTop = nav && nav.offsetWidth > 0 ? nav.getBoundingClientRect().top : null;
-      const next =
-        navTop !== null
-          ? // Both rects are viewport-relative; the nav is fixed and the board
-            // isn't, so a scrolled page has to be taken back out.
-            Math.round(navTop - boardTop - window.scrollY)
-          : Math.round(window.innerHeight - (boardTop + window.scrollY) - 32);
-      // Bleed: the board's box runs BOARD_BLEED px past where its content ends,
-      // so its colour continues behind the (opaque) bottom bar. Belt and braces
-      // for the measurement above — no arithmetic that's a few pixels out, and
-      // no browser that moves the bar after we measured, can put a strip of
-      // white page between the board and the nav. The padding keeps the lists
-      // where they were and the negative margin keeps the page from growing, so
-      // the bleed costs nothing but paint. Desktop has no bar, so no bleed.
-      setBoardBox((prev) => {
-        const height = Math.max(320, next);
-        const bleed = navTop !== null ? BOARD_BLEED : 0;
-        return prev && Math.abs(prev.height - height) < 2 && prev.bleed === bleed
-          ? prev
-          : { height, bleed };
+      const targetBottom =
+        nav && nav.offsetWidth > 0
+          ? nav.getBoundingClientRect().top
+          : document.documentElement.clientHeight;
+      // The bleed below the content is pure paint — don't count it as content.
+      const contentBottom = rect.bottom - BOARD_BLEED + window.scrollY;
+      const delta = targetBottom - contentBottom;
+      if (Math.abs(delta) < 1) return;
+      setBoardHeight((prev) => {
+        const current = prev ?? rect.height - BOARD_BLEED;
+        return Math.max(320, Math.round(current + delta));
       });
     };
     measure();
@@ -659,7 +667,7 @@ export default function TasksPageClient(props: Props) {
     // Next frame: the columns need their widths before we can centre one.
     const frame = requestAnimationFrame(() => centerColumn("todo", "auto"));
     return () => cancelAnimationFrame(frame);
-  }, [centerColumn, columnOrder, boardBox]);
+  }, [centerColumn, columnOrder, boardHeight]);
 
   /** The list currently nearest the middle of the screen. */
   const nearestColumn = useCallback(() => {
@@ -809,7 +817,9 @@ export default function TasksPageClient(props: Props) {
   const linkedOptions = linkedTarget === "project" ? props.projects : linkedTarget === "property" ? props.properties : [];
 
   const moveTask = useCallback(
-    async (taskId: string, targetStatus: string) => {
+    // `successMessage` lets the caller say what actually happened — ticking a
+    // card off should say the task's name and that it's done, not "הסטטוס עודכן".
+    async (taskId: string, targetStatus: string, successMessage?: string) => {
       const task = tasks.find((t) => t.id === taskId);
       if (!task || (task.status ?? "todo") === targetStatus) return;
       setTasks((prev) =>
@@ -831,7 +841,7 @@ export default function TasksPageClient(props: Props) {
           setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: task.status } : t)));
           return;
         }
-        if (!result.queued) toast.success("הסטטוס עודכן");
+        if (!result.queued) toast.success(successMessage ?? "הסטטוס עודכן");
       } catch (error: unknown) {
         toast.error("שגיאה בעדכון סטטוס", { description: toHebrewError(error, "") });
         setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: task.status } : t)));
@@ -886,7 +896,12 @@ export default function TasksPageClient(props: Props) {
   }
 
   function toggleDone(id: string, done: boolean) {
-    void moveTask(id, done ? "done" : "todo");
+    const subject = tasks.find((t) => t.id === id)?.subject ?? "המשימה";
+    void moveTask(
+      id,
+      done ? "done" : "todo",
+      done ? `"${subject}" סומנה כבוצע` : `"${subject}" הוחזרה ללביצוע`
+    );
   }
 
   function openMenu(id: string, x: number, y: number) {
@@ -973,9 +988,11 @@ export default function TasksPageClient(props: Props) {
     setCreateOpen(true);
   }
 
-  // Phones have no sidebar to say where you are — the dark header says it, with
-  // the board's size as the subtitle.
-  useSetPageTitle("משימות", `${tasks.length} משימות`);
+  // Phones have no sidebar to say where you are — the dark header says it. The
+  // subtitle counts what's still TO DO: the total includes everything already
+  // done, which is the one number nobody needs at a glance.
+  const todoCount = (tasksByStatus.get("todo") ?? []).length;
+  useSetPageTitle("משימות", `${todoCount} לביצוע`);
 
   // One definition of the filter controls, used by both the desktop toolbar and
   // the phone drop-down, so the two can't drift apart.
@@ -1090,10 +1107,16 @@ export default function TasksPageClient(props: Props) {
   );
 
   return (
-    // Cancel the shell's padding above and below on phones: the board runs from
-    // the header strip straight down to the bottom nav, with no white margin
-    // around it, and the page itself doesn't scroll.
-    <div className="-mb-24 -mt-4 space-y-3 md:mb-0 md:mt-0 md:space-y-4">
+    // Cancel the shell's padding around the board at every size: the board is a
+    // full-bleed surface that runs from under the tabs to the bottom of the
+    // screen (a phone stops at the nav), and the page itself doesn't scroll.
+    // No space-y here — the few things above the board carry their own margin,
+    // so the board can sit flush under them.
+    // overflow-clip + a clip margin: the board's colour bleeds past its box (see
+    // BOARD_BLEED) and this contains the overspill without turning it into
+    // scrollable page. The margin has to clear the board's own -mx bleed too,
+    // which is why it's 3rem and not 0.
+    <div className="-mb-24 -mt-4 overflow-clip [overflow-clip-margin:4rem] md:-mb-6 md:mt-0 lg:-mb-8">
       {/* Phone toolbar lives INSIDE the dark header (see PageHeaderToolbar), so
           the board starts at the top of the page instead of below a screenful of
           filter fields. */}
@@ -1183,6 +1206,8 @@ export default function TasksPageClient(props: Props) {
       {/* Tablet and up: the tab row carries the controls at its end, and the
           filters drop out of it — a toolbar CARD above the board cost a third of
           the screen for four fields that are usually left alone. */}
+      {/* No gap under the tab row: the board's colour starts at that line and
+          runs to the bottom of the window. */}
       <div className="hidden md:block">
         {canSeeAll ? (
           <TasksTabs actions={desktopControls} />
@@ -1196,7 +1221,7 @@ export default function TasksPageClient(props: Props) {
       </div>
 
       {filtersOpen ? (
-        <div className="hidden rounded-xl border bg-card p-3 md:block">
+        <div className="hidden rounded-xl border bg-card p-3 md:mb-3 md:block">
           <div className="flex flex-wrap items-end gap-3">{filterFields}</div>
         </div>
       ) : null}
@@ -1212,16 +1237,14 @@ export default function TasksPageClient(props: Props) {
             page begins — down to the opposite one. */}
         <div
           ref={boardRef}
-          style={
-            boardBox
-              ? {
-                  height: boardBox.height + boardBox.bleed,
-                  paddingBottom: boardBox.bleed,
-                  marginBottom: -boardBox.bleed,
-                }
-              : undefined
-          }
-          className="relative -mx-3 flex min-h-[20rem] flex-col overflow-hidden bg-gradient-to-bl from-primary from-15% to-secondary md:mx-0 md:rounded-2xl"
+          // The bleed is always applied so the geometry the loop measures stays
+          // the same before and after the first correction.
+          style={{
+            height: boardHeight === null ? undefined : boardHeight + BOARD_BLEED,
+            paddingBottom: BOARD_BLEED,
+            marginBottom: -BOARD_BLEED,
+          }}
+          className="relative -mx-3 flex min-h-[20rem] flex-col overflow-hidden bg-gradient-to-bl from-primary from-0% via-secondary via-50% to-primary md:-mx-6 lg:-mx-8"
         >
           <SortableContext items={columnOrder.map(columnSortableId)} strategy={horizontalListSortingStrategy}>
             {/* snap-mandatory + snap-center on each list: one swipe steps to the
@@ -1327,13 +1350,18 @@ export default function TasksPageClient(props: Props) {
                 <div className="px-1 pb-2 pt-1 text-sm font-medium leading-snug">
                   {menuTask?.subject ?? "משימה"}
                 </div>
-                <div className="grid grid-cols-2 gap-1.5">
+                {/* Say what the row DOES — three status words on their own read
+                    as a filter or a label, not as "move it there". Always
+                    exactly three (the four lists minus the one it's in), so they
+                    fit one row. */}
+                <div className="px-1 pb-1 text-[11px] text-muted-foreground">העברה לרשימה</div>
+                <div className="grid grid-cols-3 gap-1.5">
                   {moveTargets.map((target) => (
                     <button
                       key={target}
                       type="button"
                       onClick={() => move(target)}
-                      className="rounded-xl border bg-muted/40 px-3 py-2.5 text-sm font-medium transition-colors active:bg-muted"
+                      className="rounded-xl border bg-muted/40 px-1 py-2.5 text-center text-sm font-medium transition-colors active:bg-muted"
                     >
                       {getTaskStatusLabel(target)}
                     </button>
