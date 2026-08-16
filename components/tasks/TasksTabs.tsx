@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { RecurringIcon, TaskIcon } from "@/components/ui/icons";
 import type { IconComponent } from "@/components/ui/icons";
@@ -25,21 +24,14 @@ function triggerClassName(isActive: boolean) {
     : `${base} border-transparent font-medium text-muted-foreground hover:text-foreground`;
 }
 
-export function TasksTabs({ actions }: { actions?: ReactNode }) {
+export function TasksTabs() {
   const pathname = usePathname();
   const isRecurring = pathname?.startsWith("/tasks/recurring") ?? false;
 
   return (
     <div
       dir="rtl"
-      // items-END, not center: the row is as tall as its tallest control (the
-      // search field), and centring the tabs left their underline floating above
-      // the row's own line with a strip of page showing between the two.
-      // overflow-visible from md up: the row's `overflow-y-hidden` (needed only
-      // so the phone's sideways scroll doesn't grow a vertical scrollbar) was
-      // slicing the top and bottom off the buttons that ride at the end of it.
-      // There's room for everything on a tablet and up, so nothing to scroll.
-      className="flex min-w-0 items-end gap-2 overflow-x-auto overflow-y-hidden border-b border-border/60 text-muted-foreground sm:gap-3 md:overflow-visible"
+      className="flex min-w-0 items-end gap-2 overflow-x-auto overflow-y-hidden border-b border-border/60 text-muted-foreground sm:gap-3"
     >
       {TASK_TABS.map((tab) => {
         const isActive = tab.href === "/tasks/recurring" ? isRecurring : !isRecurring;
@@ -57,9 +49,6 @@ export function TasksTabs({ actions }: { actions?: ReactNode }) {
           </Link>
         );
       })}
-      {/* The page's own controls ride the END of this row (the left, in RTL)
-          instead of getting a toolbar block of their own underneath it. */}
-      {actions ? <div className="ms-auto flex shrink-0 items-center gap-2 pb-1.5">{actions}</div> : null}
     </div>
   );
 }

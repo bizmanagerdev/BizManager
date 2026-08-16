@@ -41,7 +41,6 @@ import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { InitialsAvatar, buildColorIndexMap } from "@/components/dashboard/InitialsAvatar";
 import { dueUrgencyChipClass, formatShortDate, getDueUrgency } from "@/lib/date";
 import { TaskUpsertDialog, type TaskOption, type TaskStatus, type UserOption } from "@/components/tasks/TaskUpsertDialog";
-import { TasksTabs } from "@/components/tasks/TasksTabs";
 import { emitNavigationStart, emitProgressActivityEnd, emitProgressActivityStart } from "@/components/layout/TopNavigationProgress";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
@@ -817,8 +816,9 @@ export default function TasksPageClient(props: Props) {
   const linkedOptions = linkedTarget === "project" ? props.projects : linkedTarget === "property" ? props.properties : [];
 
   const moveTask = useCallback(
-    // `successMessage` lets the caller say what actually happened — ticking a
-    // card off should say the task's name and that it's done, not "הסטטוס עודכן".
+    // No message, no toast: dragging a card to another list IS the feedback, and
+    // a toast for something you just watched happen is noise. Callers that move
+    // a card you can't see (the tick, the card menu) pass what to say.
     async (taskId: string, targetStatus: string, successMessage?: string) => {
       const task = tasks.find((t) => t.id === taskId);
       if (!task || (task.status ?? "todo") === targetStatus) return;
@@ -841,7 +841,7 @@ export default function TasksPageClient(props: Props) {
           setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: task.status } : t)));
           return;
         }
-        if (!result.queued) toast.success(successMessage ?? "הסטטוס עודכן");
+        if (!result.queued && successMessage) toast.success(successMessage);
       } catch (error: unknown) {
         toast.error("שגיאה בעדכון סטטוס", { description: toHebrewError(error, "") });
         setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: task.status } : t)));
@@ -999,7 +999,7 @@ export default function TasksPageClient(props: Props) {
   const filterFields = (
     <>
       {canSeeAll ? (
-        <div className="w-full space-y-1 md:w-auto">
+        <div className="w-full space-y-1">
           <div className="text-[11px] text-muted-foreground">היקף</div>
           <div className="flex rounded-xl border bg-secondary/10 p-0.5 text-sm">
             <button
@@ -1019,7 +1019,7 @@ export default function TasksPageClient(props: Props) {
           </div>
         </div>
       ) : null}
-      <div className="w-full space-y-1 md:w-[120px]">
+      <div className="w-full space-y-1">
         <div className="text-[11px] text-muted-foreground">עדיפות</div>
         <NativeSelect dense
           value={urlPriority}
@@ -1033,7 +1033,7 @@ export default function TasksPageClient(props: Props) {
           ))}
         </NativeSelect>
       </div>
-      <div className="w-full space-y-1 md:w-[160px]">
+      <div className="w-full space-y-1">
         <div className="text-[11px] text-muted-foreground">דומיין</div>
         <DomainSelect
           value={urlDomain}
@@ -1042,7 +1042,7 @@ export default function TasksPageClient(props: Props) {
         />
       </div>
       {linkedTarget ? (
-        <div className="col-span-2 w-full space-y-1 md:col-span-1 md:w-[200px]">
+        <div className="col-span-2 w-full space-y-1">
           <div className="text-[11px] text-muted-foreground">{linkedTarget === "project" ? "פרויקט" : "נכס"}</div>
           {linkedTarget === "project" ? (
             <ProjectPicker
@@ -1075,21 +1075,25 @@ export default function TasksPageClient(props: Props) {
   // forgotten about.
   const activeFilterCount =
     (urlPriority ? 1 : 0) + (urlDomain ? 1 : 0) + (urlLinkedId ? 1 : 0) + (urlScope === "all" ? 1 : 0);
-  const desktopControls = (
+  // Sized and coloured for the navy strip they sit on — the same recessed
+  // white/10 treatment the phone header uses, so the two read as one bar.
+  const desktopSearch = (
+    <div className="relative w-64">
+      <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
+      <Input
+        value={qInput}
+        onChange={(e) => handleQChange(e.target.value)}
+        placeholder="חיפוש..."
+        className="h-8 rounded-lg border-white/10 bg-white/[0.06] ps-9 text-sidebar-foreground shadow-none placeholder:text-sidebar-foreground/60 focus-visible:bg-white/[0.12] focus-visible:ring-1 focus-visible:ring-white/25"
+      />
+    </div>
+  );
+  const desktopActions = (
     <>
-      <div className="relative w-56">
-        <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={qInput}
-          onChange={(e) => handleQChange(e.target.value)}
-          placeholder="חיפוש..."
-          className="h-9 rounded-xl ps-9"
-        />
-      </div>
       <Button
         type="button"
         size="sm"
-        className="h-9 gap-1.5 rounded-xl"
+        className="h-8 gap-1.5 rounded-lg px-2.5"
         aria-expanded={filtersOpen}
         onClick={() => setFiltersOpen((x) => !x)}
       >
@@ -1099,10 +1103,26 @@ export default function TasksPageClient(props: Props) {
           <span className="rounded-full bg-white/25 px-1.5 text-[11px] leading-5">{activeFilterCount}</span>
         ) : null}
       </Button>
-      <Button type="button" size="sm" className="h-9 gap-1 rounded-xl" onClick={() => openCreate("todo")}>
+      <Button type="button" size="sm" className="h-8 gap-1 rounded-lg px-2.5" onClick={() => openCreate("todo")}>
         <AddIcon className="h-4 w-4" />
         משימה
       </Button>
+      {/* Recurring tasks is a button here too, like the phone header — it was a
+          whole tab bar for a link used once a month, and the board wants the
+          room. (The recurring page keeps its tabs, so there's a way back.) */}
+      {canSeeAll ? (
+        <Button
+          asChild
+          size="icon"
+          className="h-8 w-8 shrink-0 rounded-lg !border-white/10 !bg-white/[0.06] !text-sidebar-foreground !shadow-none hover:!bg-white/[0.14]"
+          aria-label="משימות קבועות"
+          title="משימות קבועות"
+        >
+          <Link href="/tasks/recurring" onClick={() => emitNavigationStart()}>
+            <RecurringIcon className="h-4 w-4" />
+          </Link>
+        </Button>
+      ) : null}
     </>
   );
 
@@ -1116,7 +1136,7 @@ export default function TasksPageClient(props: Props) {
     // BOARD_BLEED) and this contains the overspill without turning it into
     // scrollable page. The margin has to clear the board's own -mx bleed too,
     // which is why it's 3rem and not 0.
-    <div className="-mb-24 -mt-4 overflow-clip [overflow-clip-margin:4rem] md:-mb-6 md:mt-0 lg:-mb-8">
+    <div className="-mb-24 -mt-4 overflow-clip [overflow-clip-margin:4rem] md:-mb-6 md:-mt-6 lg:-mb-8 lg:-mt-8">
       {/* Phone toolbar lives INSIDE the dark header (see PageHeaderToolbar), so
           the board starts at the top of the page instead of below a screenful of
           filter fields. */}
@@ -1206,23 +1226,44 @@ export default function TasksPageClient(props: Props) {
       {/* Tablet and up: the tab row carries the controls at its end, and the
           filters drop out of it — a toolbar CARD above the board cost a third of
           the screen for four fields that are usually left alone. */}
-      {/* No gap under the tab row: the board's colour starts at that line and
-          runs to the bottom of the window. */}
-      <div className="hidden md:block">
-        {canSeeAll ? (
-          <TasksTabs actions={desktopControls} />
-        ) : (
-          // No tab row for a worker (recurring tasks are admin/office), but the
-          // controls still belong on that line rather than in a block of their own.
-          <div className="flex items-center justify-end gap-2 border-b border-border/60 pb-1.5">
-            {desktopControls}
-          </div>
-        )}
+      {/* Desktop: ONE narrow navy row — add, search, filters, recurring — that
+          continues the top bar, with the board owning everything under it. Same
+          shape as the phone header; the tab bar is gone from this page entirely
+          (see the recurring button above). Full-bleed like the board, so the
+          dark runs edge to edge. */}
+      <div className="-mx-3 hidden items-center gap-2 bg-sidebar px-3 py-1.5 md:-mx-6 md:flex md:px-6 lg:-mx-8 lg:px-8">
+        {/* Equal flex-1 flanks put the search dead centre; the actions ride the
+            end of the row (the left, in RTL). */}
+        <div className="flex-1" />
+        {desktopSearch}
+        <div className="flex flex-1 items-center justify-end gap-2">{desktopActions}</div>
       </div>
 
+      {/* Desktop filters: a card floating OVER the board, hung under the מסננים
+          button (fixed, so the board's overflow-clip can't cut it off). Inline
+          it pushed the board down every time it opened. */}
       {filtersOpen ? (
-        <div className="hidden rounded-xl border bg-card p-3 md:mb-3 md:block">
-          <div className="flex flex-wrap items-end gap-3">{filterFields}</div>
+        <div className="hidden md:block">
+          <button
+            type="button"
+            aria-label="סגירת מסננים"
+            className="fixed inset-0 z-40 bg-black/20"
+            onClick={() => setFiltersOpen(false)}
+          />
+          <div className="fixed left-6 top-[7rem] z-50 w-[28rem] max-w-[calc(100vw-3rem)] rounded-xl border bg-card p-3 shadow-xl lg:left-8">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-medium">מסננים</span>
+              <button
+                type="button"
+                aria-label="סגירת מסננים"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted"
+                onClick={() => setFiltersOpen(false)}
+              >
+                <CloseIcon className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">{filterFields}</div>
+          </div>
         </div>
       ) : null}
 
@@ -1330,6 +1371,8 @@ export default function TasksPageClient(props: Props) {
           const move = (target: string) => {
             const id = menu.id;
             setMenu(null);
+            // Silent, like a drag: you chose the list by name a moment ago, so a
+            // toast repeating it back is noise. Only failures speak.
             void moveTask(id, target);
           };
           return (
