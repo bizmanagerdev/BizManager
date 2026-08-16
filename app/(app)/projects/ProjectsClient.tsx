@@ -602,7 +602,7 @@ export default function ProjectsClient({
     <PageStack>
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <div className="hidden md:block">
-          <TabsList variant="underline" className="justify-center">
+          <TabsList variant="underline" className="justify-start">
             <TabsTrigger value="quotes"><DocumentIcon className="h-4 w-4" />הצעות ({quoteCount})</TabsTrigger>
             <TabsTrigger value="projects"><ProjectIcon className="h-4 w-4" />פרויקטים ({projectCount})</TabsTrigger>
             <TabsTrigger value="closed"><SuccessIcon className="h-4 w-4" />סגורים ({closedCount})</TabsTrigger>
