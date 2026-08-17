@@ -6,6 +6,7 @@ import type {
   SalaryCenterProjectOption,
   SalaryCenterUserRow,
   SessionPublicRow,
+  WorkerDebtSourceType,
 } from "@/lib/payroll-center";
 
 // Form-state + view-state types for the payroll center. Extracted from
@@ -102,10 +103,12 @@ export type PayslipItemFormState = {
   item_type: string;
   amount: string;
   notes: string;
+  /** Which day the item is for. Asked for on a בונוס, ignored on the rest. */
+  item_date: string;
 };
 
 export type WorkerPaymentAllocationFormState = {
-  source_type: "session" | "payslip";
+  source_type: WorkerDebtSourceType;
   source_id: string;
   amount: string;
   max_amount: number;
@@ -148,7 +151,29 @@ export type PendingSalaryDeletion =
   | { kind: "session"; sessionId: string; workerLabel: string }
   | { kind: "worker"; userId: string; workerLabel: string }
   | { kind: "agreement"; agreementId: string; userId: string; workerLabel: string }
-  | { kind: "payment"; paymentId: string; userId: string; amountLabel: string };
+  | { kind: "payment"; paymentId: string; userId: string; amountLabel: string }
+  | { kind: "bonus"; bonusId: string; amountLabel: string }
+  | { kind: "absence"; absenceId: string; dateLabel: string };
+
+export type BonusFormState = {
+  user_id: string;
+  bonus_date: string;
+  amount: string;
+  notes: string;
+};
+
+export type AbsenceFormState = {
+  user_id: string;
+  absence_date: string;
+  absence_type: string;
+  notes: string;
+  /**
+   * "כל העובדים" — mark the same day off for every active worker instead of just
+   * this one. The business closing for a day is one action, not one dialog per
+   * person; the API takes a list and skips anyone already marked.
+   */
+  applyToAll: boolean;
+};
 
 export type WorkerPrintFilters = {
   projectId: string;

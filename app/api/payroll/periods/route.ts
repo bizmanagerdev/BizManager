@@ -122,29 +122,12 @@ export async function POST(req: Request) {
       return NextResponse.json(generated);
     }
 
-    if (action === "mark_paid") {
-      return NextResponse.json(
-        { error: "Use worker payments to record actual payroll payments. Period status is no longer the payment source of truth." },
-        { status: 409 }
-      );
-    }
-
-    if (action === "lock") {
-      const nextStatus = "locked";
-      const updateResult = await supabase
-        .from("payroll_periods")
-        .update({ status: nextStatus })
-        .eq("id", period.id)
-        .select("id,period_month,start_date,end_date,status")
-        .maybeSingle();
-
-      if (updateResult.error) {
-        return NextResponse.json({ error: toHebrewError(updateResult.error.message) }, { status: 400 });
-      }
-
-      return NextResponse.json({ period: updateResult.data });
-    }
-
+    // No "lock" / "mark_paid" here on purpose (user, Aug 2026): freezing a month was
+    // an opt-in step nobody used, and a half-understood switch that silently stops
+    // payslips recalculating is worse than no switch. Periods are created open and
+    // stay open. The read-side guards (isPayrollPeriodEditable and friends) are left
+    // standing so a period locked by hand in SQL is still respected — and so this can
+    // come back as one button if it's ever wanted.
     return NextResponse.json({ error: "Unsupported action." }, { status: 400 });
   } catch (error: unknown) {
     const message = toHebrewError(error, "Unknown error");

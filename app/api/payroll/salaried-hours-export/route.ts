@@ -2,6 +2,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { buildSalariedHoursWorkbook, buildPeriodMonthBounds } from "@/lib/payroll-salaried-export";
 import type { SalaryAgreementRow, WorkSessionRow } from "@/lib/payroll";
+import { WORKER_ABSENCE_COLUMNS, WORKER_ABSENCES_TABLE, type WorkerAbsenceRow } from "@/lib/payroll-bonuses";
 
 type UserRow = {
   id: string;
@@ -56,7 +57,7 @@ export async function GET(req: Request) {
     const users = ((usersResult.data ?? []) as UserRow[]).filter((user) => user.id);
     const userIds = users.map((user) => user.id);
 
-    const [agreementsResult, sessionsResult] = await Promise.all([
+    const [agreementsResult, sessionsResult, absencesResult] = await Promise.all([
       supabase
         .from("salary_agreements")
         .select(
@@ -73,6 +74,13 @@ export async function GET(req: Request) {
         .gte("clock_in", `${bounds.startDate}T00:00:00`)
         .lte("clock_in", `${bounds.endDate}T23:59:59.999`)
         .range(0, 9999),
+      supabase
+        .from(WORKER_ABSENCES_TABLE)
+        .select(WORKER_ABSENCE_COLUMNS)
+        .in("user_id", userIds)
+        .gte("absence_date", bounds.startDate)
+        .lte("absence_date", bounds.endDate)
+        .range(0, 4999),
     ]);
 
     if (agreementsResult.error) {
@@ -88,11 +96,17 @@ export async function GET(req: Request) {
       });
     }
 
+    // Tolerant on purpose: until the bonuses/absences migration is applied the
+    // table doesn't exist, and an hours sheet without the days-off column still
+    // beats a failed download.
+    const absences = absencesResult.error ? [] : ((absencesResult.data ?? []) as WorkerAbsenceRow[]);
+
     const workbook = buildSalariedHoursWorkbook(
       periodMonth,
       users,
       (agreementsResult.data ?? []) as SalaryAgreementRow[],
-      (sessionsResult.data ?? []) as WorkSessionRow[]
+      (sessionsResult.data ?? []) as WorkSessionRow[],
+      absences
     );
 
     return new Response(workbook, {

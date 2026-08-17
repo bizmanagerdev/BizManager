@@ -32,7 +32,6 @@ import {
   formatMinutes,
   getCurrentSalaryAgreement,
   getNextMonthDueText,
-  getPayrollStatusLabel,
   getSalaryTypeLabel,
   minutesBetween,
   monthKeyFromDate,
@@ -47,7 +46,9 @@ import {
 } from "@/lib/payroll";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import MyShiftCard from "@/components/attendance/MyShiftCard";
+import MyBonusCard from "@/components/payroll/MyBonusCard";
 import SessionList from "@/components/attendance/SessionList";
+import type { PayslipItemRow as BonusItemRow } from "@/lib/payroll-bonuses";
 import type { MyShiftReport } from "@/lib/attendance/my-shift";
 
 type Props = {
@@ -71,6 +72,8 @@ type Props = {
   isWorker?: boolean;
   openShiftReport?: MyShiftReport | null;
   pendingShiftReports?: MyShiftReport[];
+  /** His own bonuses — one payslip_items row each. */
+  myBonuses?: BonusItemRow[];
   /** Earned / paid / still owed across every period. Null when unreadable. */
   payTotals?: { earned: number; paid: number; owed: number } | null;
   /** session id → payment_status, so a shift row can say whether it was paid. */
@@ -139,7 +142,7 @@ function toLocalDateTimeValue(date: Date) {
 
 type ProfileTab = "profile" | "notifications" | "sessions" | "salary";
 
-export default function ProfileClient({ profile, initialFontScale, initialAvatarColor, sessions, agreements, payslips, periods, monthlySummaries, projectOptions, propertyOptions, isWorker = false, openShiftReport = null, pendingShiftReports = [], payTotals = null, payBySessionId = {}, linkLabelBySessionId = {} }: Props) {
+export default function ProfileClient({ profile, initialFontScale, initialAvatarColor, sessions, agreements, payslips, periods, monthlySummaries, projectOptions, propertyOptions, isWorker = false, openShiftReport = null, pendingShiftReports = [], myBonuses = [], payTotals = null, payBySessionId = {}, linkLabelBySessionId = {} }: Props) {
   const router = useRouter();
   // The whole page is the swipe surface, so the gesture works wherever the
   // thumb happens to be rather than only on the tab strip.
@@ -368,8 +371,30 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
   // August is worse than showing zeros.
   const selectedMonthSummary = monthOptions.find((summary) => summary.key === selectedMonth) ?? null;
   const selectedMonthSessions = useMemo(() => sessions.filter((session) => monthKeyFromDate(session.clock_in) === selectedMonth), [selectedMonth, sessions]);
-  const latestPayslip = useMemo(() => [...payslips].sort((a, b) => (periodsById.get(b.payroll_period_id)?.period_month ?? "").localeCompare(periodsById.get(a.payroll_period_id)?.period_month ?? ""))[0] ?? null, [payslips, periodsById]);
+  // Newest month first. The payslips query has no ORDER BY (it can't — the month
+  // lives on the period, not the payslip), so unsorted they came back in whatever
+  // order Postgres felt like: 05, 04, 07, 06.
+  const sortedPayslips = useMemo(
+    () =>
+      [...payslips].sort((a, b) =>
+        (periodsById.get(b.payroll_period_id)?.period_month ?? "").localeCompare(
+          periodsById.get(a.payroll_period_id)?.period_month ?? ""
+        )
+      ),
+    [payslips, periodsById]
+  );
+  const latestPayslip = sortedPayslips[0] ?? null;
   const latestPeriod = latestPayslip ? periodsById.get(latestPayslip.payroll_period_id) ?? null : null;
+  // Bonus total per payslip, so the row can show what's inside its סכום rather
+  // than leaving him to guess whether his ₪300 made it in.
+  const bonusTotalByPayslipId = useMemo(() => {
+    const next = new Map<string, number>();
+    myBonuses.forEach((bonus) => {
+      if (!bonus.payslip_id) return;
+      next.set(bonus.payslip_id, (next.get(bonus.payslip_id) ?? 0) + toNumber(bonus.amount));
+    });
+    return next;
+  }, [myBonuses]);
   const editorSession = useMemo(() => sessions.find((session) => session.id === sessionEditorId) ?? null, [sessionEditorId, sessions]);
   // Self-service splitting is TIME-only and applies to hourly workers. Contract/session workers
   // (session_only) are paid by money per part — that's an admin-only action in the payroll center,
@@ -1109,6 +1134,9 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
           {isWorker ? (
             <>
               <MyShiftCard openShift={openShiftReport} pendingCount={pendingShiftReports.length} />
+              {/* Right under the clock: "I marked my hours, and I also got a
+                  ₪300 bonus that day" is one thought, not two screens. */}
+              <MyBonusCard bonuses={myBonuses} />
               {pendingShiftReports.length > 0 ? (
                 <Card>
                   <CardContent className="space-y-2 py-5 text-right">
@@ -1206,9 +1234,12 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
 
       {activeTab === "salary" && showSalarySection ? (
         <section className="space-y-4">
+          {/* A global (monthly) worker has no נוכחות tab at all — no shifts to
+              punch — so his bonus card lives here instead of next to a clock. */}
+          {isWorker && !canTrackSessions ? <MyBonusCard bonuses={myBonuses} /> : null}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <SummaryCard title="שכר נוכחי" value={currentAgreement ? currentAgreement.salary_type === "hourly" ? `${formatCurrency(currentAgreement.hourly_rate)} לשעה` : formatCurrency(currentAgreement.monthly_salary) : "-"} hint={currentAgreement ? `סוג שכר: ${getSalaryTypeLabel(currentAgreement.salary_type)}` : "אין משכורת פעילה"} />
-            <SummaryCard title="תלוש אחרון" value={latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"} hint={latestPeriod ? `${latestPeriod.period_month} • ${getPayrollStatusLabel(latestPeriod.status)}` : "אין תלושים זמינים"} />
+            <SummaryCard title="תלוש אחרון" value={latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"} hint={latestPeriod ? latestPeriod.period_month : "אין תלושים זמינים"} />
           </div>
 
           {/* The bottom line, across every period: what the work came to, what
@@ -1327,8 +1358,9 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
                       breakdown (base + adjustments) reads as a sentence under it
                       rather than as three columns three characters wide. */}
                   <div className="space-y-2 md:hidden">
-                    {payslips.map((payslip) => {
+                    {sortedPayslips.map((payslip) => {
                       const period = periodsById.get(payslip.payroll_period_id) ?? null;
+                      const bonusTotal = bonusTotalByPayslipId.get(payslip.id) ?? 0;
                       return (
                         <div key={payslip.id} className="rounded-lg border p-3 text-sm">
                           <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -1338,10 +1370,10 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
                           <div className="mt-1 text-xs text-muted-foreground">
                             {getSalaryTypeLabel(payslip.calculated_salary_type)}
                             {showSessionTimingForProfile ? ` · ${formatMinutes(payslip.total_work_minutes)} שעות` : ""}
-                            {period ? ` · ${getPayrollStatusLabel(period.status)}` : ""}
                           </div>
                           <div className="mt-1 text-xs text-muted-foreground">
                             בסיס {formatCurrency(payslip.calculated_base_salary)}
+                            {bonusTotal > 0 ? ` · בונוסים ${formatCurrency(bonusTotal)}` : ""}
                             {toNumber(payslip.manual_adjustments) !== 0
                               ? ` · התאמות ${formatCurrency(payslip.manual_adjustments)}`
                               : ""}
@@ -1367,14 +1399,15 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
                           <th className="px-3 py-2 font-medium">סוג</th>
                           {showSessionTimingForProfile ? <th className="px-3 py-2 font-medium">שעות</th> : null}
                           <th className="px-3 py-2 font-medium">שכר בסיס</th>
+                          <th className="px-3 py-2 font-medium">בונוסים</th>
                           <th className="px-3 py-2 font-medium">התאמות</th>
                           <th className="px-3 py-2 font-medium">סכום</th>
-                          <th className="px-3 py-2 font-medium">סטטוס</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {payslips.map((payslip, index) => {
+                        {sortedPayslips.map((payslip, index) => {
                           const period = periodsById.get(payslip.payroll_period_id) ?? null;
+                          const bonusTotal = bonusTotalByPayslipId.get(payslip.id) ?? 0;
                           return (
                             <tr key={payslip.id} className={`border-b align-top ${index % 2 === 0 ? "bg-muted/20" : "bg-background"}`}>
                               <td className="px-3 py-2">
@@ -1391,9 +1424,11 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
                                 <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{formatMinutes(payslip.total_work_minutes)}</td>
                               ) : null}
                               <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{formatCurrency(payslip.calculated_base_salary)}</td>
+                              <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
+                                {bonusTotal > 0 ? formatCurrency(bonusTotal) : "—"}
+                              </td>
                               <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{formatCurrency(payslip.manual_adjustments)}</td>
                               <td className="whitespace-nowrap px-3 py-2 font-semibold">{formatCurrency(payslip.gross_salary)}</td>
-                              <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{period ? getPayrollStatusLabel(period.status) : "—"}</td>
                             </tr>
                           );
                         })}

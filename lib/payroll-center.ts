@@ -7,6 +7,13 @@ import {
 import { getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import { fetchAllPagedResult } from "@/lib/supabase/paginate";
 import {
+  PAYSLIP_ITEM_COLUMNS,
+  PAYSLIP_ITEMS_TABLE,
+  WORKER_ABSENCE_COLUMNS,
+  WORKER_ABSENCES_TABLE,
+  type WorkerAbsenceRow,
+} from "@/lib/payroll-bonuses";
+import {
   calculateSessionLaborCost,
   getActiveSalaryAgreementForDate,
   monthKeyFromDate,
@@ -59,9 +66,13 @@ export type HourlySalaryOverrideRow = {
 
 export type PayslipItemRow = {
   id: string;
-  payslip_id: string;
+  /** Null while the item is waiting for its month's payslip to be generated. */
+  payslip_id: string | null;
+  user_id?: string | null;
   item_type: string | null;
   amount: number | string | null;
+  /** The day the item is for — a bonus is dated, a travel allowance need not be. */
+  item_date?: string | null;
   notes: string | null;
 };
 
@@ -75,6 +86,7 @@ export type SalaryCenterProtectedPayload = {
   workerPayments: WorkerPaymentRow[];
   workerPaymentAllocations: WorkerPaymentAllocationRow[];
   workerDebtItems: WorkerDebtItemRow[];
+  workerAbsences: WorkerAbsenceRow[];
   sessionEffectivePayments: SessionEffectivePaymentRow[];
   workerBalances: WorkerBalanceRow[];
   workerPaymentRecordedByNameById: Record<string, string>;
@@ -99,10 +111,13 @@ export type WorkerPaymentRow = {
   created_at: string | null;
 };
 
+/** The two things a payment can settle. See worker_debt_items_view. */
+export type WorkerDebtSourceType = "session" | "payslip";
+
 export type WorkerPaymentAllocationRow = {
   id: string;
   worker_payment_id: string;
-  source_type: "session" | "payslip";
+  source_type: WorkerDebtSourceType;
   attendance_session_id: string | null;
   payslip_id: string | null;
   amount: number | string | null;
@@ -110,7 +125,7 @@ export type WorkerPaymentAllocationRow = {
 };
 
 export type WorkerDebtItemRow = {
-  source_type: "session" | "payslip";
+  source_type: WorkerDebtSourceType;
   source_id: string;
   user_id: string;
   project_id: string | null;
@@ -171,6 +186,7 @@ type QueryLike = {
   update: (payload: Record<string, unknown>) => QueryLike;
   in: (column: string, values: string[]) => QueryLike;
   eq: (column: string, value: string) => QueryLike;
+  is: (column: string, value: null) => QueryLike;
   gte: (column: string, value: string) => QueryLike;
   lte: (column: string, value: string) => QueryLike;
   order: (column: string, options?: { ascending?: boolean }) => QueryLike;
@@ -183,15 +199,22 @@ function query(builder: unknown) {
   return builder as QueryLike;
 }
 
+/**
+ * "That column isn't there yet" — a pre-migration read of a column the code
+ * already knows about.
+ *
+ * Message-based, NOT code-based: these queries run through fetchAllPagedResult,
+ * which used to flatten the PostgREST error down to `{ message }` and drop the
+ * `42703` code, so a code check silently never matched and the caller's fallback
+ * never ran. It's also table-agnostic — an earlier version hardcoded
+ * `worker_debt_items_view.`, which made it useless for any other table.
+ */
 function isMissingColumnError(error: unknown, columnName: string) {
   if (!error || typeof error !== "object") return false;
-  const code = "code" in error ? (error as { code?: unknown }).code : undefined;
   const message = "message" in error ? (error as { message?: unknown }).message : undefined;
-  return (
-    code === "42703" &&
-    typeof message === "string" &&
-    message.toLowerCase().includes(`column worker_debt_items_view.${columnName}`.toLowerCase())
-  );
+  if (typeof message !== "string") return false;
+  const lowered = message.toLowerCase();
+  return lowered.includes(columnName.toLowerCase()) && lowered.includes("does not exist");
 }
 
 export function normalizePayrollStatus(value: string | null | undefined) {
@@ -450,6 +473,7 @@ export async function fetchSalaryCenterProtectedPayload(
     workerPayments: [],
     workerPaymentAllocations: [],
     workerDebtItems: [],
+    workerAbsences: [],
     sessionEffectivePayments: [],
     workerBalances: [],
     workerPaymentRecordedByNameById: {},
@@ -473,6 +497,7 @@ export async function fetchSalaryCenterProtectedPayload(
     workerPaymentsResult,
     workerDebtItemsInitialResult,
     sessionEffectivePaymentsResult,
+    workerAbsencesResult,
   ] = await Promise.all([
     query(supabase.from("salary_agreements"))
       .select(
@@ -530,6 +555,15 @@ export async function fetchSalaryCenterProtectedPayload(
         .in("user_id", safeUserIds)
         .range(lo, hi)
     ),
+    // Days off. Tolerant below — before the migration runs the table doesn't
+    // exist, and the rest of the salary centre still works.
+    fetchAllPagedResult((lo, hi) =>
+      query(supabase.from(WORKER_ABSENCES_TABLE))
+        .select(WORKER_ABSENCE_COLUMNS)
+        .in("user_id", safeUserIds)
+        .order("absence_date", { ascending: false })
+        .range(lo, hi)
+    ),
   ]);
 
   let workerDebtItemsResult = workerDebtItemsInitialResult;
@@ -551,6 +585,12 @@ export async function fetchSalaryCenterProtectedPayload(
     ? []
     : ((sessionEffectivePaymentsResult.data ?? []) as SessionEffectivePaymentRow[]).filter((row) => row.session_id);
 
+  // Same tolerance for the absence table: missing until the migration is applied,
+  // and its absence must not take the whole payroll page down.
+  const workerAbsences = workerAbsencesResult.error
+    ? []
+    : ((workerAbsencesResult.data ?? []) as WorkerAbsenceRow[]).filter((row) => row.id);
+
   if (agreementsResult.error) throw new Error(agreementsResult.error.message);
   if (periodsResult.error) throw new Error(periodsResult.error.message);
   if (payslipsResult.error) throw new Error(payslipsResult.error.message);
@@ -564,14 +604,26 @@ export async function fetchSalaryCenterProtectedPayload(
   const payslipIds = payslips.map((row) => row.id);
   const workerPayments = ((workerPaymentsResult.data ?? []) as WorkerPaymentRow[]).filter((row) => row.id);
   const workerPaymentIds = workerPayments.map((row) => row.id);
-  const payslipItemsResult = payslipIds.length
-    ? await fetchAllPagedResult((lo, hi) =>
-        query(supabase.from("payslip_items"))
-          .select("id,payslip_id,item_type,amount,notes")
-          .in("payslip_id", payslipIds)
-          .range(lo, hi)
-      )
-    : { data: [], error: null };
+  // By USER, not by payslip: a bonus recorded mid-month has no payslip_id yet, and
+  // the worker's card has to show it before that month is generated.
+  let payslipItemsResult = await fetchAllPagedResult((lo, hi) =>
+    query(supabase.from(PAYSLIP_ITEMS_TABLE))
+      .select(PAYSLIP_ITEM_COLUMNS)
+      .in("user_id", safeUserIds)
+      .range(lo, hi)
+  );
+  // Pre-migration there is no user_id column — fall back to the payslip-scoped read,
+  // which is what this always was.
+  if (payslipItemsResult.error) {
+    payslipItemsResult = payslipIds.length
+      ? await fetchAllPagedResult((lo, hi) =>
+          query(supabase.from(PAYSLIP_ITEMS_TABLE))
+            .select("id,payslip_id,item_type,amount,notes")
+            .in("payslip_id", payslipIds)
+            .range(lo, hi)
+        )
+      : { data: [], error: null };
+  }
   const workerPaymentAllocationsResult = workerPaymentIds.length
     ? await fetchAllPagedResult((lo, hi) =>
         query(supabase.from("worker_payment_allocations"))
@@ -674,6 +726,7 @@ export async function fetchSalaryCenterProtectedPayload(
     workerDebtItems: ((workerDebtItemsResult.data ?? []) as WorkerDebtItemRow[]).filter(
       (row) => row.user_id && row.source_id
     ),
+    workerAbsences,
     sessionEffectivePayments,
     workerBalances,
     workerPaymentRecordedByNameById,
@@ -788,49 +841,121 @@ export async function generatePayslipsForPeriod(
 
     const existingPayslip = existingPayslips.find((row) => row.user_id === user.id) ?? null;
     const manualAdjustments = toNumber(existingPayslip?.manual_adjustments);
-    const itemTotal = existingPayslip ? getPayslipItemsTotal(payslipItems, existingPayslip.id) : 0;
-    const grossSalary = Math.round((calculatedBaseSalary + manualAdjustments + itemTotal) * 100) / 100;
 
-    if (existingPayslip) {
-      const updateResult = await query(supabase.from("payslips"))
-        .update({
+    // The payslip row has to exist before loose items can point at it — a bonus
+    // recorded on the 3rd has no payslip yet by design. So: ensure the row, adopt
+    // this month's loose items, and only then work out the gross.
+    let payslipId = existingPayslip?.id ?? null;
+    if (!payslipId) {
+      const insertResult = await query(supabase.from("payslips"))
+        .insert({
+          payroll_period_id: period.id,
+          user_id: user.id,
           calculated_salary_type: calculatedSalaryType,
           total_work_minutes: totalWorkMinutes,
           calculated_base_salary: calculatedBaseSalary,
-          gross_salary: grossSalary,
+          manual_adjustments: 0,
+          // Provisional — rewritten below once the items are in.
+          gross_salary: Math.round(calculatedBaseSalary * 100) / 100,
+          notes: null,
         })
-        .eq("id", existingPayslip.id)
-        .select(
-          "id,payroll_period_id,user_id,calculated_salary_type,total_work_minutes,calculated_base_salary,manual_adjustments,gross_salary,notes"
-        )
+        .select("id")
         .maybeSingle();
 
-      if (updateResult.error) throw new Error(updateResult.error.message);
-      if (updateResult.data) createdOrUpdated.push(updateResult.data as PayslipRow);
-      continue;
+      if (insertResult.error) throw new Error(insertResult.error.message);
+      payslipId = (insertResult.data as { id: string } | null)?.id ?? null;
+      if (!payslipId) continue;
     }
 
-    const insertResult = await query(supabase.from("payslips"))
-      .insert({
-        payroll_period_id: period.id,
-        user_id: user.id,
+    const adopted = await attachLooseItemsToPayslip(supabase, user.id, payslipId, period);
+    payslipItems.push(...adopted);
+
+    const itemTotal = getPayslipItemsTotal(payslipItems, payslipId);
+    const grossSalary = Math.round((calculatedBaseSalary + manualAdjustments + itemTotal) * 100) / 100;
+
+    const updateResult = await query(supabase.from("payslips"))
+      .update({
         calculated_salary_type: calculatedSalaryType,
         total_work_minutes: totalWorkMinutes,
         calculated_base_salary: calculatedBaseSalary,
-        manual_adjustments: 0,
         gross_salary: grossSalary,
-        notes: null,
       })
+      .eq("id", payslipId)
       .select(
         "id,payroll_period_id,user_id,calculated_salary_type,total_work_minutes,calculated_base_salary,manual_adjustments,gross_salary,notes"
       )
       .maybeSingle();
 
-    if (insertResult.error) throw new Error(insertResult.error.message);
-    if (insertResult.data) createdOrUpdated.push(insertResult.data as PayslipRow);
+    if (updateResult.error) throw new Error(updateResult.error.message);
+    if (updateResult.data) createdOrUpdated.push(updateResult.data as PayslipRow);
   }
 
   return { payslips: createdOrUpdated };
+}
+
+/**
+ * The payslip that should carry a bonus dated `bonusDate`, if there is one yet.
+ *
+ * Returns `{ payslipId }` when that month is already generated, `{}` when it isn't
+ * (the row stays loose and `attachLooseItemsToPayslip` adopts it later), or
+ * `{ error }` when the month is LOCKED — a locked period is never regenerated, so
+ * a bonus filed into one would be money that changes no number anywhere.
+ */
+export async function resolveBonusPayslip(
+  supabase: SupabaseLike,
+  userId: string,
+  bonusDate: string
+): Promise<{ payslipId?: string; error?: string }> {
+  const periodResult = await query(supabase.from("payroll_periods"))
+    .select("id,period_month,status")
+    .lte("start_date", bonusDate)
+    .gte("end_date", bonusDate)
+    .maybeSingle();
+
+  if (periodResult.error || !periodResult.data) return {};
+
+  const period = periodResult.data as unknown as { id: string; period_month: string; status: string | null };
+  if (!isPayrollPeriodEditable(period.status)) {
+    return { error: `תקופת השכר ${period.period_month} נעולה — לא ניתן להוסיף בונוס בתאריך הזה.` };
+  }
+
+  const payslipResult = await query(supabase.from("payslips"))
+    .select("id")
+    .eq("payroll_period_id", period.id)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (payslipResult.error || !payslipResult.data) return {};
+  return { payslipId: (payslipResult.data as unknown as { id: string }).id };
+}
+
+/**
+ * Roll this month's not-yet-attached רכיבי שכר (in practice: bonuses the worker
+ * recorded during the month) into the payslip that now covers them.
+ *
+ * Matching is by `item_date` inside the period, so a bonus can only ever land in
+ * the month it was earned in. Returns the rows it adopted so the caller can add
+ * them to its in-memory list before totalling.
+ *
+ * Tolerant: pre-migration there is no `item_date` / `payslip_id is null` case at
+ * all, and payslips must still generate.
+ */
+async function attachLooseItemsToPayslip(
+  supabase: SupabaseLike,
+  userId: string,
+  payslipId: string,
+  period: PayrollPeriodRow
+): Promise<PayslipItemRow[]> {
+  const result = await query(supabase.from(PAYSLIP_ITEMS_TABLE))
+    .update({ payslip_id: payslipId })
+    .eq("user_id", userId)
+    .is("payslip_id", null)
+    .gte("item_date", period.start_date)
+    .lte("item_date", period.end_date)
+    .select(PAYSLIP_ITEM_COLUMNS);
+
+  if (result.error) return [];
+  return (result.data ?? []) as PayslipItemRow[];
 }
 
 export async function regenerateEditablePayslipsForUsers(

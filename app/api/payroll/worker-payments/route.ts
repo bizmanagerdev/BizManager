@@ -7,8 +7,10 @@ import {
   payrollWorkerTypePaymentAllocationSource,
 } from "@/lib/payroll-worker-type";
 
+type AllocationSourceType = "session" | "payslip";
+
 type WorkerPaymentAllocationInput = {
-  source_type?: "session" | "payslip";
+  source_type?: AllocationSourceType;
   source_id?: string;
   amount?: number | string;
 };
@@ -26,7 +28,7 @@ type WorkerPaymentPayload = {
 };
 
 type DebtItemRow = {
-  source_type: "session" | "payslip";
+  source_type: AllocationSourceType;
   source_id: string;
   user_id: string;
   owed_amount: number | string | null;
@@ -34,11 +36,16 @@ type DebtItemRow = {
 
 type ExistingAllocationRow = {
   id: string;
-  source_type: "session" | "payslip";
+  source_type: AllocationSourceType;
   attendance_session_id: string | null;
   payslip_id: string | null;
   amount: number | string | null;
 };
+
+/** The debt-item column a given source type points at. */
+function allocationSourceId(allocation: ExistingAllocationRow) {
+  return allocation.source_type === "session" ? allocation.attendance_session_id : allocation.payslip_id;
+}
 
 function toAmount(value: unknown) {
   if (typeof value === "number") return value;
@@ -102,7 +109,7 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
 
   const normalizedAllocations = allocations
     .map((allocation) => {
-      const sourceType = allocation.source_type === "payslip" ? "payslip" : "session";
+      const sourceType: AllocationSourceType = allocation.source_type === "payslip" ? "payslip" : "session";
       const sourceId = typeof allocation.source_id === "string" ? allocation.source_id.trim() : "";
       const allocationAmount = toAmount(allocation.amount);
       return {
@@ -113,7 +120,8 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
     })
     .filter((allocation) => allocation.source_id && Number.isFinite(allocation.amount) && allocation.amount > 0);
 
-  if (normalizedAllocations.some((allocation) => allocation.source_type !== expectedSourceType)) {
+  const allowedSourceTypes: AllocationSourceType[] = [expectedSourceType];
+  if (normalizedAllocations.some((allocation) => !allowedSourceTypes.includes(allocation.source_type))) {
     return NextResponse.json(
       { error: `Worker payments for this worker must be allocated by ${expectedSourceType}.` },
       { status: 400 }
@@ -159,19 +167,26 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
     existingAllocations = (existingAllocationsResult.data ?? []) as ExistingAllocationRow[];
   }
 
-  const mergedBySourceId = new Map<string, number>();
+  // Keyed by type AND id: session ids and payslip ids come from different tables,
+  // so an id alone doesn't identify a debt item.
+  const debtKey = (sourceType: string, sourceId: string) => `${sourceType}:${sourceId}`;
+
+  const mergedByKey = new Map<string, number>();
   normalizedAllocations.forEach((allocation) => {
-    mergedBySourceId.set(allocation.source_id, (mergedBySourceId.get(allocation.source_id) ?? 0) + allocation.amount);
+    const key = debtKey(allocation.source_type, allocation.source_id);
+    mergedByKey.set(key, (mergedByKey.get(key) ?? 0) + allocation.amount);
   });
 
-  const existingAllocationBySourceId = new Map<string, number>();
+  const existingAllocationByKey = new Map<string, number>();
   existingAllocations.forEach((allocation) => {
-    const sourceId = allocation.source_type === "session" ? allocation.attendance_session_id : allocation.payslip_id;
+    const sourceId = allocationSourceId(allocation);
     if (!sourceId) return;
-    existingAllocationBySourceId.set(sourceId, (existingAllocationBySourceId.get(sourceId) ?? 0) + (toAmount(allocation.amount) || 0));
+    const key = debtKey(allocation.source_type, sourceId);
+    existingAllocationByKey.set(key, (existingAllocationByKey.get(key) ?? 0) + (toAmount(allocation.amount) || 0));
   });
 
-  const sourceIdsToValidate = Array.from(new Set([...mergedBySourceId.keys(), ...existingAllocationBySourceId.keys()]));
+  const keysToValidate = Array.from(new Set([...mergedByKey.keys(), ...existingAllocationByKey.keys()]));
+  const sourceIdsToValidate = Array.from(new Set(keysToValidate.map((key) => key.slice(key.indexOf(":") + 1))));
   // Only hit the debt view when there's something to validate — an unallocated
   // payment has no source ids and must not be blocked by this check.
   let debtItems: DebtItemRow[] = [];
@@ -180,7 +195,7 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
       .from("worker_debt_items_view")
       .select("source_type,source_id,user_id,owed_amount")
       .eq("user_id", userId)
-      .eq("source_type", expectedSourceType)
+      .in("source_type", allowedSourceTypes)
       .in("source_id", sourceIdsToValidate);
 
     if (debtItemsResult.error) {
@@ -188,15 +203,17 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
     }
 
     debtItems = (debtItemsResult.data ?? []) as DebtItemRow[];
-    if (debtItems.length !== sourceIdsToValidate.length) {
+    const foundKeys = new Set(debtItems.map((item) => debtKey(item.source_type, item.source_id)));
+    if (keysToValidate.some((key) => !foundKeys.has(key))) {
       return NextResponse.json({ error: "One or more allocations do not belong to this worker." }, { status: 400 });
     }
   }
 
   for (const item of debtItems) {
-    const requestedAmount = mergedBySourceId.get(item.source_id) ?? 0;
+    const key = debtKey(item.source_type, item.source_id);
+    const requestedAmount = mergedByKey.get(key) ?? 0;
     const currentOwedAmount = toAmount(item.owed_amount);
-    const existingAmountOnThisPayment = existingAllocationBySourceId.get(item.source_id) ?? 0;
+    const existingAmountOnThisPayment = existingAllocationByKey.get(key) ?? 0;
     const availableAmount = currentOwedAmount + existingAmountOnThisPayment;
     if (!Number.isFinite(currentOwedAmount) || requestedAmount - availableAmount > 0.01) {
       return NextResponse.json(

@@ -55,4 +55,16 @@ describe("fetchAllPagedResult — {data,error} drop-in (no throw)", () => {
     expect(res.data).toBeNull();
     expect(res.error).toEqual({ message: "nope" });
   });
+
+  it("preserves the PostgREST code, which callers use to spot a pre-migration column", async () => {
+    // Losing `code` here silently defeats every "column does not exist → fall back
+    // to the old column list" branch, and a missing column then blanks the page.
+    const res = await fetchAllPagedResult(() =>
+      Promise.resolve({
+        data: null,
+        error: { message: "column x.y does not exist", code: "42703" },
+      })
+    );
+    expect(res.error).toEqual({ message: "column x.y does not exist", code: "42703" });
+  });
 });

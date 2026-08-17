@@ -13,6 +13,12 @@ import ProfileClient from "@/app/(app)/profile/ProfileClient";
 import PageTitle from "@/components/layout/PageTitle";
 import { loadMyShiftState } from "@/lib/attendance/my-shift";
 import { loadMyPayroll } from "@/lib/my-payroll";
+import {
+  BONUS_ITEM_TYPE,
+  PAYSLIP_ITEM_COLUMNS,
+  PAYSLIP_ITEMS_TABLE,
+  type PayslipItemRow,
+} from "@/lib/payroll-bonuses";
 
 type Row = Record<string, unknown>;
 
@@ -121,6 +127,18 @@ export default async function ProfilePage() {
   // numbers. Everyone gets this on their own profile, not just workers.
   const myPayroll = await loadMyPayroll(supabase, profile.id);
 
+  // His own bonuses — a payslip_items row each, whether or not the month has been
+  // closed into a payslip yet. Tolerant: before the bonus migration runs there is
+  // no user_id / item_date column, and the rest of the profile must still render.
+  const myBonusesResult = await supabase
+    .from(PAYSLIP_ITEMS_TABLE)
+    .select(PAYSLIP_ITEM_COLUMNS)
+    .eq("user_id", profile.id)
+    .eq("item_type", BONUS_ITEM_TYPE)
+    .order("item_date", { ascending: false })
+    .range(0, 99);
+  const myBonuses = myBonusesResult.error ? [] : ((myBonusesResult.data ?? []) as PayslipItemRow[]);
+
   // What each shift was actually ON. The domain alone ("פרויקטים") is the same
   // word on every project row, so resolve the specific job/address by id —
   // queried directly rather than off the pickers below, which are capped lists
@@ -214,6 +232,7 @@ export default async function ProfilePage() {
             isWorker={isWorker}
             openShiftReport={shiftState.open}
             pendingShiftReports={shiftState.pending}
+            myBonuses={myBonuses}
             linkLabelBySessionId={linkLabelBySessionId}
             payTotals={myPayroll.payUnavailable ? null : myPayroll.totals}
             payBySessionId={

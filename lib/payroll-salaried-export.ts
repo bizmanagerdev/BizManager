@@ -1,4 +1,3 @@
-import Holidays from "date-holidays";
 import {
   formatCurrency,
   formatMinutes,
@@ -9,6 +8,8 @@ import {
   type SalaryAgreementRow,
   type WorkSessionRow,
 } from "@/lib/payroll";
+import { getNonWorkingHolidaysInRange } from "@/lib/payroll-holidays";
+import { getWorkerAbsenceTypeLabel, type WorkerAbsenceRow } from "@/lib/payroll-bonuses";
 
 export type SalariedExportUser = {
   id: string;
@@ -25,6 +26,8 @@ type DailySheetRow = {
   endTime: string;
   plannedHours: number;
   reportedMinutes: number;
+  /** Set when the worker was marked absent — the row prints with empty hours. */
+  absenceLabel: string | null;
 };
 
 type WorkerSheet = {
@@ -33,6 +36,7 @@ type WorkerSheet = {
   workdayCount: number;
   plannedHoursTotal: number;
   reportedMinutesTotal: number;
+  absenceCount: number;
   excludedHolidayLabels: string[];
   rows: DailySheetRow[];
 };
@@ -108,21 +112,17 @@ function isSundayThroughThursday(date: Date) {
   return day >= 0 && day <= 4;
 }
 
-function toHolidayNames(value: unknown) {
-  if (!value) return [];
-  const items = Array.isArray(value) ? value : [value];
-  return items
-    .map((item) => {
-      if (!item || typeof item !== "object") return null;
-      const maybeName = "name" in item ? item.name : null;
-      const maybeType = "type" in item ? item.type : null;
-      const name = typeof maybeName === "string" ? maybeName.trim() : "";
-      const type = typeof maybeType === "string" ? maybeType.trim().toLowerCase() : "";
-      if (!name) return null;
-      if (!["public", "bank"].includes(type)) return null;
-      return name;
-    })
-    .filter((item): item is string => Boolean(item));
+/** `${userId}:${YYYY-MM-DD}` → the Hebrew label to print instead of hours. */
+function buildAbsenceLabelsByUserDay(absences: WorkerAbsenceRow[]) {
+  const map = new Map<string, string>();
+  absences.forEach((absence) => {
+    if (!absence.user_id || !absence.absence_date) return;
+    const day = absence.absence_date.slice(0, 10);
+    const note = absence.notes?.trim();
+    const label = getWorkerAbsenceTypeLabel(absence.absence_type);
+    map.set(`${absence.user_id}:${day}`, note ? `${label} — ${note}` : label);
+  });
+  return map;
 }
 
 function buildSessionMinutesByUserDay(sessions: WorkSessionRow[]) {
@@ -141,14 +141,21 @@ function buildWorkerSheets(
   periodMonth: string,
   users: SalariedExportUser[],
   agreements: SalaryAgreementRow[],
-  sessions: WorkSessionRow[]
+  sessions: WorkSessionRow[],
+  absences: WorkerAbsenceRow[]
 ) {
   const parsed = parsePeriodMonth(periodMonth);
   if (!parsed) return [];
 
   const periodEnd = new Date(parsed.year, parsed.month, 0, 23, 59, 59, 999);
-  const holidayCalendar = new Holidays("IL");
+  // Non-working days for the whole month, once — sukkot/pesach chol hamoed and
+  // the erev-chag days included, which the old public-holiday list missed.
+  const holidaysByDay = getNonWorkingHolidaysInRange(
+    new Date(parsed.year, parsed.month - 1, 1),
+    new Date(parsed.year, parsed.month, 0)
+  );
   const sessionMinutesByUserDay = buildSessionMinutesByUserDay(sessions);
+  const absenceLabelsByUserDay = buildAbsenceLabelsByUserDay(absences);
 
   return users
     .map((user) => {
@@ -169,29 +176,37 @@ function buildWorkerSheets(
         const current = new Date(parsed.year, parsed.month - 1, day, 12, 0, 0, 0);
         if (!isSundayThroughThursday(current)) continue;
 
-        const holidayNames = toHolidayNames(holidayCalendar.isHoliday(current));
-        if (holidayNames.length > 0) {
-          excludedHolidayLabels.push(`${formatDateKey(current)} - ${holidayNames.join(", ")}`);
+        const dateKey = formatDateKey(current);
+        // The business was closed: the day leaves the sheet entirely, exactly as
+        // it did before — it isn't a day anyone was expected to work.
+        const holidayName = holidaysByDay.get(dateKey);
+        if (holidayName) {
+          excludedHolidayLabels.push(`${dateKey} - ${holidayName}`);
           continue;
         }
 
-        const dateKey = formatDateKey(current);
+        // The worker personally was off. The row STAYS — the whole point is that
+        // the sheet shows that day as his and empty — but with no hours on it.
+        const absenceLabel = absenceLabelsByUserDay.get(`${user.id}:${dateKey}`) ?? null;
         rows.push({
           date: dateKey,
           weekdayLabel: WEEKDAY_LABELS[current.getDay()],
-          startTime: "09:00",
-          endTime: buildEndTime(standardDailyHours),
-          plannedHours: standardDailyHours,
-          reportedMinutes: sessionMinutesByUserDay.get(`${user.id}:${dateKey}`) ?? 0,
+          startTime: absenceLabel ? "" : "09:00",
+          endTime: absenceLabel ? "" : buildEndTime(standardDailyHours),
+          plannedHours: absenceLabel ? 0 : standardDailyHours,
+          reportedMinutes: absenceLabel ? 0 : sessionMinutesByUserDay.get(`${user.id}:${dateKey}`) ?? 0,
+          absenceLabel,
         });
       }
 
       return {
         user,
         agreement,
-        workdayCount: rows.length,
+        // Days off don't count as worked days, but they still print.
+        workdayCount: rows.filter((row) => !row.absenceLabel).length,
         plannedHoursTotal: rows.reduce((sum, row) => sum + row.plannedHours, 0),
         reportedMinutesTotal: rows.reduce((sum, row) => sum + row.reportedMinutes, 0),
+        absenceCount: rows.filter((row) => row.absenceLabel).length,
         excludedHolidayLabels,
         rows,
       } satisfies WorkerSheet;
@@ -267,6 +282,7 @@ function summaryWorksheetXml(periodMonth: string, sheets: WorkerSheet[]) {
         ${stringCell(role)}
         ${numberCell(toNumber(sheet.agreement.standard_daily_hours))}
         ${numberCell(sheet.workdayCount)}
+        ${numberCell(sheet.absenceCount)}
         ${numberCell(sheet.plannedHoursTotal)}
         ${stringCell(formatMinutes(sheet.reportedMinutesTotal))}
         ${stringCell(formatCurrency(sheet.agreement.monthly_salary))}
@@ -275,14 +291,15 @@ function summaryWorksheetXml(periodMonth: string, sheets: WorkerSheet[]) {
     .join("");
 
   return `<Worksheet ss:Name="סיכום" ss:RightToLeft="1">
-    <Table ss:ExpandedColumnCount="7" ss:DefaultColumnWidth="110">
-      <Row><Cell ss:MergeAcross="6" ss:StyleID="title"><Data ss:Type="String">${escapeXml(`גליונות שעות גלובליים - ${monthLabelFromKey(periodMonth)}`)}</Data></Cell></Row>
+    <Table ss:ExpandedColumnCount="8" ss:DefaultColumnWidth="110">
+      <Row><Cell ss:MergeAcross="7" ss:StyleID="title"><Data ss:Type="String">${escapeXml(`גליונות שעות גלובליים - ${monthLabelFromKey(periodMonth)}`)}</Data></Cell></Row>
       <Row/>
       <Row>
         ${stringCell("עובד", "header")}
         ${stringCell("תפקיד", "header")}
         ${stringCell("שעות יומיות", "header")}
         ${stringCell("ימי עבודה", "header")}
+        ${stringCell("ימי היעדרות", "header")}
         ${stringCell("סה״כ שעות מתוכננות", "header")}
         ${stringCell("שעות מדווחות", "header")}
         ${stringCell("שכר גלובלי", "header")}
@@ -297,21 +314,26 @@ function workerWorksheetXml(sheet: WorkerSheet, index: number, periodMonth: stri
   const title = sheet.user.full_name ?? sheet.user.email ?? `עובד ${index + 1}`;
   const holidayLabel = sheet.excludedHolidayLabels.length > 0 ? sheet.excludedHolidayLabels.join(" | ") : "ללא חגים באמצע ימי העבודה";
   const rowsXml = sheet.rows
-    .map(
-      (row) => `<Row>
+    .map((row) => {
+      // A day off prints its date and its reason and NOTHING else — an empty row
+      // is the whole point. Zeroes in the hour columns would read as "worked 0
+      // hours" and, worse, would sum into the totals as real workdays.
+      const off = Boolean(row.absenceLabel);
+      return `<Row>
         ${stringCell(row.date)}
         ${stringCell(row.weekdayLabel)}
         ${stringCell(row.startTime)}
         ${stringCell(row.endTime)}
-        ${numberCell(row.plannedHours)}
-        ${stringCell(formatMinutes(row.reportedMinutes))}
-      </Row>`
-    )
+        ${off ? stringCell("") : numberCell(row.plannedHours)}
+        ${off ? stringCell("") : stringCell(formatMinutes(row.reportedMinutes))}
+        ${stringCell(row.absenceLabel ?? "")}
+      </Row>`;
+    })
     .join("");
 
   return `<Worksheet ss:Name="${escapeXml(sanitizeWorksheetName(title, index))}" ss:RightToLeft="1">
-    <Table ss:ExpandedColumnCount="6" ss:DefaultColumnWidth="110">
-      <Row><Cell ss:MergeAcross="5" ss:StyleID="title"><Data ss:Type="String">${escapeXml(`${title} - ${monthLabelFromKey(periodMonth)}`)}</Data></Cell></Row>
+    <Table ss:ExpandedColumnCount="7" ss:DefaultColumnWidth="110">
+      <Row><Cell ss:MergeAcross="6" ss:StyleID="title"><Data ss:Type="String">${escapeXml(`${title} - ${monthLabelFromKey(periodMonth)}`)}</Data></Cell></Row>
       <Row>
         ${stringCell("שכר גלובלי", "summaryLabel")}
         ${stringCell(formatCurrency(sheet.agreement.monthly_salary))}
@@ -319,14 +341,20 @@ function workerWorksheetXml(sheet: WorkerSheet, index: number, periodMonth: stri
         ${numberCell(toNumber(sheet.agreement.standard_daily_hours))}
         ${stringCell("שעות מדווחות", "summaryLabel")}
         ${stringCell(formatMinutes(sheet.reportedMinutesTotal))}
+        ${stringCell("")}
       </Row>
       <Row>
         ${stringCell("ימי עבודה", "summaryLabel")}
         ${numberCell(sheet.workdayCount)}
         ${stringCell("סה״כ שעות מתוכננות", "summaryLabel")}
         ${numberCell(sheet.plannedHoursTotal)}
+        ${stringCell("ימי היעדרות", "summaryLabel")}
+        ${numberCell(sheet.absenceCount)}
+        ${stringCell("")}
+      </Row>
+      <Row>
         ${stringCell("חגים שהוחרגו", "summaryLabel")}
-        ${stringCell(holidayLabel)}
+        <Cell ss:MergeAcross="5" ss:StyleID="cell"><Data ss:Type="String">${escapeXml(holidayLabel)}</Data></Cell>
       </Row>
       <Row/>
       <Row>
@@ -336,6 +364,7 @@ function workerWorksheetXml(sheet: WorkerSheet, index: number, periodMonth: stri
         ${stringCell("שעת סיום", "header")}
         ${stringCell("שעות מתוכננות", "header")}
         ${stringCell("שעות מדווחות", "header")}
+        ${stringCell("הערה", "header")}
       </Row>
       ${rowsXml}
       <Row>
@@ -345,6 +374,7 @@ function workerWorksheetXml(sheet: WorkerSheet, index: number, periodMonth: stri
         ${stringCell("", "total")}
         ${numberCell(sheet.plannedHoursTotal, "total")}
         ${stringCell(formatMinutes(sheet.reportedMinutesTotal), "total")}
+        ${stringCell("", "total")}
       </Row>
     </Table>
     <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel"><DisplayRightToLeft/></WorksheetOptions>
@@ -355,9 +385,10 @@ export function buildSalariedHoursWorkbook(
   periodMonth: string,
   users: SalariedExportUser[],
   agreements: SalaryAgreementRow[],
-  sessions: WorkSessionRow[]
+  sessions: WorkSessionRow[],
+  absences: WorkerAbsenceRow[] = []
 ) {
-  const sheets = buildWorkerSheets(periodMonth, users, agreements, sessions);
+  const sheets = buildWorkerSheets(periodMonth, users, agreements, sessions, absences);
   if (sheets.length === 0) {
     throw new Error("No active monthly-salary workers were found for this month.");
   }

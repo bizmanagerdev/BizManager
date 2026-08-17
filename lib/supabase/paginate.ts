@@ -36,7 +36,9 @@ export async function fetchAllPaged<T = Record<string, unknown>>(
 export async function fetchAllPagedResult<T = Record<string, unknown>>(
   page: (from: number, to: number) => PromiseLike<{ data: unknown; error: unknown }>,
   pageSize: number = DEFAULT_PAGE_SIZE
-): Promise<{ data: T[]; error: null } | { data: null; error: { message: string } }> {
+): Promise<
+  { data: T[]; error: null } | { data: null; error: { message: string; code?: string } }
+> {
   try {
     return { data: await fetchAllPaged<T>(page, pageSize), error: null };
   } catch (error) {
@@ -47,6 +49,14 @@ export async function fetchAllPagedResult<T = Record<string, unknown>>(
         : error && typeof error === "object" && "message" in error && typeof (error as { message: unknown }).message === "string"
           ? (error as { message: string }).message
           : "query failed";
-    return { data: null, error: { message } };
+    // …and its PostgREST `code`. Dropping it used to defeat every caller that
+    // recognises a pre-migration "column does not exist" (42703) and falls back to
+    // an older column list — the check simply never matched, so the fallback never
+    // ran and a missing column took the whole page down.
+    const code =
+      error && typeof error === "object" && "code" in error && typeof (error as { code: unknown }).code === "string"
+        ? (error as { code: string }).code
+        : undefined;
+    return { data: null, error: code ? { message, code } : { message } };
   }
 }

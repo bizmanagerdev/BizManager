@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
-import { AddIcon, CalendarCheckIcon, CashIcon, CoinsIcon, FilterIcon, LaborIcon, LockIcon, PrintIcon, ReceiptIcon, UsersIcon, WalletIcon, WarningIcon } from "@/components/ui/icons";
+import { AddIcon, CalendarCheckIcon, CashIcon, CheckIcon, CoinsIcon, DeleteIcon, EditIcon, FilterIcon, LaborIcon, LockIcon, PrintIcon, ReceiptIcon, UsersIcon, WalletIcon, WarningIcon } from "@/components/ui/icons";
+import { SwipeActions, type SwipeAction } from "@/components/ui/swipe-actions";
 import SalaryProtected from "@/components/payroll/SalaryProtected";
 import SessionEditorDialog from "./SessionEditorDialog";
 import { Badge } from "@/components/ui/badge";
@@ -66,10 +67,17 @@ import {
   type WorkerDebtItemRow,
   type WorkerPaymentRow,
 } from "@/lib/payroll-center";
+import {
+  BONUS_ITEM_TYPE,
+  WORKER_ABSENCE_TYPES,
+  getWorkerAbsenceTypeLabel,
+} from "@/lib/payroll-bonuses";
 import { toHebrewError } from "@/lib/error-messages";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import type {
   Props,
+  AbsenceFormState,
+  BonusFormState,
   SessionFormState,
   WorkerFormState,
   CreateUserFormState,
@@ -89,7 +97,6 @@ import {
   PaymentStatusBadge,
   RoleBadge,
   StatusPill,
-  SummaryCard,
   Tag,
   WorkerTypeBadge,
   escapePrintHtml,
@@ -100,7 +107,6 @@ import {
   formatSessionRange,
   formatWorkerPaymentMethodLabel,
   getBillingStatusLabel,
-  getPayrollPeriodLabel,
   getPayslipItemTypeLabel,
   getRoleLabel,
   isExceptionItemType,
@@ -158,6 +164,7 @@ const DEFAULT_PAYSLIP_ITEM_FORM: PayslipItemFormState = {
   item_type: "bonus",
   amount: "",
   notes: "",
+  item_date: "",
 };
 
 const DEFAULT_CREATE_USER_FORM: CreateUserFormState = {
@@ -181,6 +188,25 @@ const DEFAULT_WORKER_PAYMENT_FORM: WorkerPaymentFormState = {
   reference_number: "",
   notes: "",
   allocations: [],
+};
+
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+const DEFAULT_BONUS_FORM: BonusFormState = {
+  user_id: "",
+  bonus_date: todayIsoDate(),
+  amount: "",
+  notes: "",
+};
+
+const DEFAULT_ABSENCE_FORM: AbsenceFormState = {
+  user_id: "",
+  absence_date: todayIsoDate(),
+  absence_type: "day_off",
+  notes: "",
+  applyToAll: false,
 };
 
 const DEFAULT_WORKER_PRINT_FILTERS: WorkerPrintFilters = {
@@ -207,6 +233,9 @@ export default function SalaryCenterClient({
   const [isPending, startTransition] = useTransition();
   const [activeTab, setActiveTab] = useState("employees");
   const [search, setSearch] = useState("");
+  // Only one card may sit swiped open at a time, per mobile list.
+  const [swipedSessionId, setSwipedSessionId] = useState<string | null>(null);
+  const [swipedAgreementId, setSwipedAgreementId] = useState<string | null>(null);
   const [attendanceFilters, setAttendanceFilters] = useState({
     workerId: "",
     businessDomain: "",
@@ -258,6 +287,12 @@ export default function SalaryCenterClient({
   const [selectedSummaryMonth, setSelectedSummaryMonth] = useState(getCurrentMonthKey());
   const [payslipItemForm, setPayslipItemForm] = useState<PayslipItemFormState>(DEFAULT_PAYSLIP_ITEM_FORM);
   const [payslipAdjustmentDrafts, setPayslipAdjustmentDrafts] = useState<Record<string, string>>({});
+  const [bonusDialogOpen, setBonusDialogOpen] = useState(false);
+  const [bonusForm, setBonusForm] = useState<BonusFormState>(DEFAULT_BONUS_FORM);
+  const [bonusError, setBonusError] = useState("");
+  const [absenceDialogOpen, setAbsenceDialogOpen] = useState(false);
+  const [absenceForm, setAbsenceForm] = useState<AbsenceFormState>(DEFAULT_ABSENCE_FORM);
+  const [absenceError, setAbsenceError] = useState("");
 
   const canManageSalary = viewerRole === "admin";
   const agreementStandardDailyHoursValid = toNumber(agreementForm.standard_daily_hours) > 0;
@@ -277,6 +312,10 @@ export default function SalaryCenterClient({
       ),
     [publicUsers]
   );
+  // Who "כל העובדים" means when marking a day off: the same population the
+  // salaried-hours export builds sheets from (active, with a payroll role), so a
+  // marked day can't land on somebody the sheet never shows.
+  const absenceEligibleWorkers = allAgreementEligibleUsers;
   const canManageAttendance = viewerRole === "admin" || viewerRole === "office";
   const canCreateUsers = viewerRole === "admin";
   // Office may VIEW salaries of lower-status users (the protected endpoint scopes the
@@ -404,6 +443,7 @@ export default function SalaryCenterClient({
     });
     return next;
   }, [agreements]);
+  const payslipsById = useMemo(() => new Map(payslips.map((payslip) => [payslip.id, payslip])), [payslips]);
   const payslipsByUserId = useMemo(() => {
     const next = new Map<string, PayslipRow[]>();
     payslips.forEach((payslip) => {
@@ -433,6 +473,27 @@ export default function SalaryCenterClient({
     });
     return next;
   }, [protectedData]);
+  // A bonus is just a רכיב שכר with a date on it — same table, same total.
+  const workerBonuses = useMemo(
+    () => payslipItems.filter((item) => item.item_type === BONUS_ITEM_TYPE),
+    [payslipItems]
+  );
+  // Items no payslip has adopted. A DB trigger attaches them the moment they're
+  // written (see 20260817000000), so in a normal open month this is empty — what's
+  // left over is genuinely stranded: the worker it belongs to has no payslip for
+  // the month, or the month is locked. Worth naming, since that money is otherwise
+  // invisible on the תלוש.
+  const unattachedItemsInSelectedPeriod = useMemo(() => {
+    if (!selectedPayslipPeriod) return [];
+    return payslipItems.filter(
+      (item) =>
+        !item.payslip_id &&
+        item.item_date &&
+        item.item_date >= selectedPayslipPeriod.start_date &&
+        item.item_date <= selectedPayslipPeriod.end_date
+    );
+  }, [payslipItems, selectedPayslipPeriod]);
+  const workerAbsences = useMemo(() => protectedData?.workerAbsences ?? [], [protectedData]);
   // Effective per-session paid status (folds in payslip coverage), from the central
   // session_effective_payment_view. See db/sql/create_session_effective_payment_view.sql.
   const sessionEffectivePaymentBySessionId = useMemo(() => {
@@ -1072,21 +1133,11 @@ export default function SalaryCenterClient({
     });
   }
 
-  function runPeriodAction(action: "generate" | "lock" | "mark_paid", periodId = selectedPeriodId) {
+  function runPeriodAction(action: "generate", periodId = selectedPeriodId) {
     if (!periodId) return;
-    if (action === "mark_paid") {
-      setError("תשלומי שכר נרשמים עכשיו דרך כרטיס העובד, לא דרך סימון תקופה כשולמה.");
-      return;
-    }
     runAction(async () => {
       await postJson("/api/payroll/periods", { action, period_id: periodId });
-      setMessage(
-        action === "generate"
-          ? "התלושים נוצרו."
-          : action === "lock"
-            ? "תקופת השכר ננעלה."
-            : ""
-      );
+      setMessage("התלושים נוצרו.");
       await refreshAll();
     });
   }
@@ -1135,6 +1186,113 @@ export default function SalaryCenterClient({
       const json = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) throw new Error(toHebrewError(json.error, "Request failed."));
       setMessage("פריט התלוש נמחק.");
+      await refreshAll();
+    });
+  }
+
+  // ── בונוסים ───────────────────────────────────────────────────────────────
+  // An admin's bonus is approved on the spot (he IS the approval); the pending
+  // ones arrive from workers reporting their own and are settled below.
+
+  function openNewBonusDialog(userId: string) {
+    setBonusError("");
+    setBonusForm({ ...DEFAULT_BONUS_FORM, user_id: userId, bonus_date: todayIsoDate() });
+    setBonusDialogOpen(true);
+  }
+
+  function saveBonus() {
+    const amount = toNumber(bonusForm.amount);
+    if (!bonusForm.user_id) {
+      setBonusError("יש לבחור עובד.");
+      return;
+    }
+    if (!bonusForm.bonus_date) {
+      setBonusError("יש לבחור תאריך.");
+      return;
+    }
+    if (!(amount > 0)) {
+      setBonusError("יש להזין סכום בונוס חיובי.");
+      return;
+    }
+
+    setBonusError("");
+    runAction(async () => {
+      const response = await fetch("/api/payroll/bonuses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          user_id: bonusForm.user_id,
+          bonus_date: bonusForm.bonus_date,
+          amount,
+          notes: bonusForm.notes,
+        }),
+      });
+      const json = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(toHebrewError(json.error, "שמירת הבונוס נכשלה."));
+      setBonusDialogOpen(false);
+      setBonusForm(DEFAULT_BONUS_FORM);
+      setMessage("הבונוס נוסף לתלוש של אותו חודש.");
+      await refreshAll();
+    });
+  }
+
+  // ── ימי חופש / היעדרות ────────────────────────────────────────────────────
+
+  function openAbsenceDialog(userId: string) {
+    setAbsenceError("");
+    setAbsenceForm({ ...DEFAULT_ABSENCE_FORM, user_id: userId, absence_date: todayIsoDate() });
+    setAbsenceDialogOpen(true);
+  }
+
+  function saveAbsence() {
+    // "כל העובדים" = every active worker who has a salary agreement type at all —
+    // the same people the hours sheet is built from, so nobody gets a day off row
+    // on a sheet they don't appear in.
+    const targetIds = absenceForm.applyToAll
+      ? absenceEligibleWorkers.map((worker) => worker.id)
+      : absenceForm.user_id
+        ? [absenceForm.user_id]
+        : [];
+
+    if (targetIds.length === 0) {
+      setAbsenceError(absenceForm.applyToAll ? "לא נמצאו עובדים פעילים." : "יש לבחור עובד.");
+      return;
+    }
+    if (!absenceForm.absence_date) {
+      setAbsenceError("יש לבחור תאריך.");
+      return;
+    }
+
+    setAbsenceError("");
+    runAction(async () => {
+      const response = await fetch("/api/payroll/absences", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          user_ids: targetIds,
+          absence_date: absenceForm.absence_date,
+          absence_type: absenceForm.absence_type,
+          notes: absenceForm.notes,
+        }),
+      });
+      const json = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        skipped?: number;
+        absences?: unknown[];
+      };
+      if (!response.ok) throw new Error(toHebrewError(json.error, "שמירת ההיעדרות נכשלה."));
+      const added = json.absences?.length ?? 0;
+      setAbsenceDialogOpen(false);
+      setAbsenceForm(DEFAULT_ABSENCE_FORM);
+      // Say how many actually landed — with "all workers" the difference between
+      // "12 marked" and "already marked" is the whole answer.
+      setMessage(
+        added === 0
+          ? "היום הזה כבר סומן."
+          : targetIds.length > 1
+            ? `היום סומן כהיעדרות ל-${added} עובדים.`
+            : "היום סומן כהיעדרות."
+      );
       await refreshAll();
     });
   }
@@ -1385,6 +1543,23 @@ export default function SalaryCenterClient({
         return;
       }
 
+      if (pending.kind === "bonus" || pending.kind === "absence") {
+        const isBonus = pending.kind === "bonus";
+        const response = await fetch(isBonus ? "/api/payroll/bonuses" : "/api/payroll/absences", {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(
+            isBonus ? { item_id: pending.bonusId } : { absence_id: pending.absenceId }
+          ),
+        });
+        const json = (await response.json().catch(() => ({}))) as { error?: string };
+        if (!response.ok) throw new Error(toHebrewError(json.error, "המחיקה נכשלה."));
+        setMessage(isBonus ? "הבונוס נמחק." : "ההיעדרות נמחקה.");
+        setPendingDeletion(null);
+        await refreshAll();
+        return;
+      }
+
       const response = await fetch("/api/payroll/worker-payments", {
         method: "DELETE",
         headers: { "content-type": "application/json" },
@@ -1433,6 +1608,20 @@ export default function SalaryCenterClient({
         label: pendingDeletion.workerLabel,
       };
     }
+    if (pendingDeletion.kind === "bonus") {
+      return {
+        title: "מחיקת בונוס",
+        description: "הפעולה תמחק את הבונוס ואת החוב שנוצר ממנו.",
+        label: pendingDeletion.amountLabel,
+      };
+    }
+    if (pendingDeletion.kind === "absence") {
+      return {
+        title: "מחיקת היעדרות",
+        description: "היום יחזור להיות יום עבודה רגיל בגליון השעות.",
+        label: pendingDeletion.dateLabel,
+      };
+    }
     return {
       title: "מחיקת תשלום",
       description: "הפעולה תמחק את התשלום ואת ההקצאות שלו לחובות העובד.",
@@ -1479,6 +1668,18 @@ export default function SalaryCenterClient({
     () => (selectedWorker ? (protectedData?.hourlyOverrides ?? []).filter((override) => override.user_id === selectedWorker.id) : []),
     [protectedData, selectedWorker]
   );
+  const selectedWorkerBonuses = useMemo(() => {
+    if (!selectedWorker) return [];
+    return workerBonuses
+      .filter((bonus) => bonus.user_id === selectedWorker.id)
+      .sort((a, b) => (b.item_date ?? "").localeCompare(a.item_date ?? ""));
+  }, [selectedWorker, workerBonuses]);
+  const selectedWorkerAbsences = useMemo(() => {
+    if (!selectedWorker) return [];
+    return workerAbsences
+      .filter((absence) => absence.user_id === selectedWorker.id)
+      .sort((a, b) => (b.absence_date ?? "").localeCompare(a.absence_date ?? ""));
+  }, [selectedWorker, workerAbsences]);
   const selectedWorkerProjectOptions = useMemo(() => {
     const next = new Map<string, string>();
     selectedWorkerSessionsSorted.forEach((session) => {
@@ -1672,10 +1873,13 @@ export default function SalaryCenterClient({
     };
     // Earned = the shifts shown in "פירוט עבודה" (session cost) — correct for both worker
     // modes and matches the table the worker is looking at.
-    const earned = selectedWorkerPrintSessions.reduce((sum, session) => {
+    const sessionEarned = selectedWorkerPrintSessions.reduce((sum, session) => {
       const debtItem = workerDebtItemsBySourceKey.get(`session:${session.id}`) ?? null;
       return sum + (debtItem ? toNumber(debtItem.earned_amount) : sessionCostsById.get(session.id) ?? 0);
     }, 0);
+    // Bonuses need nothing here: they're רכיבי שכר inside the month's payslip, so
+    // they're already in the payslip debt row this reads for `paid`.
+    const earned = sessionEarned;
     // Paid = the SAME per-item paid_amount the rest of the salary center trusts, straight
     // from worker_debt_items_view (so the number matches every other screen and correctly
     // reflects fully-paid months). Session-tracked workers have a debt row per shift;
@@ -2070,6 +2274,11 @@ export default function SalaryCenterClient({
     );
   }, [sessionForm.session_id, workerPaymentAllocationsBySessionId, workerPaymentsById]);
 
+  /**
+   * The approved bonuses folded into a payslip's gross — the same set
+   * generatePayslipsForPeriod summed server-side (approved, dated inside the
+   * period), so the printed breakdown always adds up to the ברוטו above it.
+   */
   function buildDebtItemTitle(item: WorkerDebtItemRow) {
     if (item.source_type === "payslip") {
       return item.period_month ? `תלוש ${monthLabelFromKey(item.period_month)}` : "תלוש";
@@ -2120,42 +2329,53 @@ export default function SalaryCenterClient({
       ) : null}
 
       {!isWorkerDetailMode ? <>
-      <div className="space-y-2 py-1 text-center">
-        <div className="flex justify-center">
-          <NativeSelect
-            value={selectedSummaryMonth}
-            onChange={(event) => setSelectedSummaryMonth(event.target.value)} className="min-w-[220px] border-0 bg-transparent text-center text-lg font-semibold shadow-none"
-          >
-            {selectedSummaryMonthOptions.map((monthKey) => (
-              <option key={monthKey} value={monthKey}>
-                {monthLabelFromKey(monthKey)}
-              </option>
-            ))}
-          </NativeSelect>
+      {/* Top row: month picker at the start (right in RTL), search in the middle, create actions at the end. */}
+      <div className="flex flex-col items-center gap-2 py-1 sm:flex-row sm:justify-between">
+        <NativeSelect
+          value={selectedSummaryMonth}
+          onChange={(event) => setSelectedSummaryMonth(event.target.value)} className="w-auto shrink-0 border-0 bg-transparent px-0 text-center text-lg font-semibold shadow-none sm:text-right"
+        >
+          {selectedSummaryMonthOptions.map((monthKey) => (
+            <option key={monthKey} value={monthKey}>
+              {monthLabelFromKey(monthKey)}
+            </option>
+          ))}
+        </NativeSelect>
+
+        <Input
+          name="payroll_worker_search"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="חיפוש עובד לפי שם, אימייל או טלפון"
+          autoComplete="off"
+          spellCheck={false}
+          data-lpignore="true"
+          className="w-full max-w-sm text-right sm:mx-2"
+        />
+
+        <div className="flex shrink-0 flex-wrap justify-center gap-2 sm:flex-nowrap">
+          {canManageAttendance ? (
+            <Button onClick={() => openCreateSession()}>
+              <AddIcon className="h-4 w-4" />
+              {"הוספת משמרת"}
+            </Button>
+          ) : null}
+          {canCreateUsers ? (
+            <Button variant="outline" onClick={() => setCreateUserOpen(true)}>
+              <AddIcon className="ms-2 h-4 w-4" />
+              {"הוספת משתמש"}
+            </Button>
+          ) : null}
+          {false ? (
+            <Button variant="outline" onClick={() => lockSalaryData()}>
+              <LockIcon className="h-4 w-4" />
+              {"נעילת נתוני שכר"}
+            </Button>
+          ) : null}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <SalaryProtected
-          unlocked={salaryUnlocked}
-          hasPasswordConfigured={hasPasswordConfigured}
-          canUnlock={canViewSalary}
-          onUnlockSuccess={loadProtectedData}
-          fallback={<SummaryCard title="עלות עבודה החודש" value="מוגן" protectedValue />}
-        >
-          <SummaryCard title="עלות עבודה החודש" value={formatCurrency(summary.totalLaborCost)} protectedValue loading={protectedLoading} />
-        </SalaryProtected>
-        <SalaryProtected
-          unlocked={salaryUnlocked}
-          hasPasswordConfigured={hasPasswordConfigured}
-          canUnlock={canViewSalary}
-          onUnlockSuccess={loadProtectedData}
-          fallback={<SummaryCard title="יתרה לעובדים" value="מוגן" protectedValue />}
-        >
-          <SummaryCard title="יתרה לעובדים" value={formatCurrency(summary.totalWorkerOwed)} protectedValue loading={protectedLoading} />
-        </SalaryProtected>
-      </div>
-
+      {/* Totals + per-worker-type breakdown share one row: five stats, one card. */}
       <SalaryProtected
         unlocked={salaryUnlocked}
         hasPasswordConfigured={hasPasswordConfigured}
@@ -2163,12 +2383,30 @@ export default function SalaryCenterClient({
         onUnlockSuccess={loadProtectedData}
         fallback={
           <Card>
-            <CardContent className="py-4 text-sm text-muted-foreground">{"פירוט לפי סוג עובד: מוגן"}</CardContent>
+            <CardContent className="grid grid-cols-2 gap-2 py-3 sm:grid-cols-3 lg:grid-cols-5">
+              <MiniStat label="עלות עבודה החודש" value="מוגן" strong />
+              <MiniStat label="יתרה לעובדים" value="מוגן" strong />
+              <MiniStat label="קבלנות" value="מוגן" />
+              <MiniStat label="שעתי עם תלוש" value="מוגן" />
+              <MiniStat label="חודשי גלובלי" value="מוגן" />
+            </CardContent>
           </Card>
         }
       >
         <Card>
-          <CardContent className="grid grid-cols-1 gap-3 py-4 sm:grid-cols-3">
+          <CardContent className="grid grid-cols-2 gap-2 py-3 sm:grid-cols-3 lg:grid-cols-5">
+            <MiniStat
+              label="עלות עבודה החודש"
+              loading={protectedLoading}
+              value={formatCurrency(summary.totalLaborCost)}
+              strong
+            />
+            <MiniStat
+              label="יתרה לעובדים"
+              loading={protectedLoading}
+              value={formatCurrency(summary.totalWorkerOwed)}
+              strong
+            />
             <MiniStat
               label="קבלנות"
               loading={protectedLoading}
@@ -2187,40 +2425,6 @@ export default function SalaryCenterClient({
           </CardContent>
         </Card>
       </SalaryProtected>
-
-      <div className="flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap-reverse sm:items-center sm:justify-between">
-        <div className="flex flex-wrap justify-center gap-2">
-          {canCreateUsers ? (
-            <Button variant="outline" onClick={() => setCreateUserOpen(true)}>
-              <AddIcon className="ms-2 h-4 w-4" />
-              {"הוספת משתמש"}
-            </Button>
-          ) : null}
-          {canManageAttendance ? (
-            <Button onClick={() => openCreateSession()}>
-              <AddIcon className="h-4 w-4" />
-              {"הוספת משמרת"}
-            </Button>
-          ) : null}
-          {false ? (
-            <Button variant="outline" onClick={() => lockSalaryData()}>
-              <LockIcon className="h-4 w-4" />
-              {"נעילת נתוני שכר"}
-            </Button>
-          ) : null}
-        </div>
-
-        <Input
-          name="payroll_worker_search"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="חיפוש עובד לפי שם, אימייל או טלפון"
-          autoComplete="off"
-          spellCheck={false}
-          data-lpignore="true"
-          className="w-full max-w-sm text-right"
-        />
-      </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} dir="rtl">
         <TabsList variant="underline" className="sm:justify-center">
@@ -2794,8 +2998,6 @@ export default function SalaryCenterClient({
                   <option value="">{"הכול"}</option>
                   <option value="open">{"פתוח"}</option>
                   <option value="closed">{"סגור"}</option>
-                  <option value="locked">{"נעול"}</option>
-                  <option value="editable">{"ניתן לעריכה"}</option>
                 </NativeSelect>
               </Field>
             <Field label="מתאריך">
@@ -2839,8 +3041,42 @@ export default function SalaryCenterClient({
                       : null;
                     const rowShowHours = shouldShowSessionHours(rowWorkerType);
                     const rowShowPrice = shouldShowSessionPrice(rowWorkerType);
-                    return (
-                      <div key={session.id} className="rounded-2xl border bg-background p-4 text-right shadow-sm">
+                    // Actions live behind a swipe on phones, so the card stays compact.
+                    // A locked session (or one mid-mutation) offers none, and then the
+                    // card renders plain — swiping would only uncover an empty strip.
+                    const sessionActions: SwipeAction[] =
+                      canManageAttendance && !session.locked && !isPending
+                        ? [
+                            {
+                              key: "edit",
+                              label: "עריכה",
+                              icon: <EditIcon className="h-5 w-5" />,
+                              className: "bg-secondary-2",
+                              onSelect: () => openEditSession(session),
+                            },
+                            ...(!session.clock_out
+                              ? [
+                                  {
+                                    key: "close",
+                                    label: "סגירה",
+                                    icon: <CheckIcon className="h-5 w-5" />,
+                                    className: "bg-secondary",
+                                    onSelect: () => closeOpenSession(session.id),
+                                  },
+                                ]
+                              : []),
+                            {
+                              key: "delete",
+                              label: "מחיקה",
+                              icon: <DeleteIcon className="h-5 w-5" />,
+                              className: "bg-destructive",
+                              onSelect: () => deleteSession(session.id),
+                            },
+                          ]
+                        : [];
+
+                    const card = (
+                      <div className="p-4 text-right">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="font-semibold">{worker?.full_name ?? worker?.email ?? "עובד"}</div>
@@ -2851,9 +3087,6 @@ export default function SalaryCenterClient({
                           <div className="flex flex-wrap justify-end gap-1.5">
                             <StatusPill tone={session.clock_out ? "success" : "warning"}>
                               {session.clock_out ? "סגור" : "פתוח"}
-                            </StatusPill>
-                            <StatusPill tone={session.locked ? "danger" : "muted"}>
-                              {session.locked ? "נעול" : "ניתן לעריכה"}
                             </StatusPill>
                             {session.billing_status && session.is_billable_to_customer ? (
                               <StatusPill tone={session.billing_status === "paid" ? "success" : "muted"}>
@@ -2902,27 +3135,27 @@ export default function SalaryCenterClient({
                             </span>
                           </div>
                         </div>
-                        {canManageAttendance ? (
-                          <div className="mt-3 flex flex-wrap justify-end gap-2">
-                            <EditButton onClick={() => openEditSession(session)} disabled={session.locked || isPending} label="עריכה" />
-                            {!session.clock_out ? (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => closeOpenSession(session.id)}
-                                disabled={session.locked || isPending}
-                              >
-                                {"סגירה"}
-                              </Button>
-                            ) : null}
-                            <DeleteButton
-                              onClick={() => deleteSession(session.id)}
-                              label="מחיקת משמרת"
-                              disabled={session.locked || isPending}
-                            />
-                          </div>
-                        ) : null}
                       </div>
+                    );
+
+                    if (sessionActions.length === 0) {
+                      return (
+                        <div key={session.id} className="rounded-2xl border bg-background shadow-sm">
+                          {card}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <SwipeActions
+                        key={session.id}
+                        className="border border-border/70 bg-background shadow-sm"
+                        actions={sessionActions}
+                        open={swipedSessionId === session.id}
+                        onOpenChange={(next) => setSwipedSessionId(next ? session.id : null)}
+                      >
+                        {card}
+                      </SwipeActions>
                     );
                   })
                 )}
@@ -2932,16 +3165,17 @@ export default function SalaryCenterClient({
               <div className="hidden max-h-[70vh] overflow-auto lg:block">
                 <table className="w-full text-right text-sm">
                   <thead className="sticky top-0 z-10 bg-muted">
+                    {/* RTL reading order: the worker opens the row (rightmost), actions close it. */}
                     <tr className="border-b text-muted-foreground">
-                      <th className="px-3 py-2 font-medium">פעולות</th>
-                      <th className="px-3 py-2 font-medium">עלות עבודה</th>
-                      <th className="px-3 py-2 font-medium">חיוב לקוח</th>
-                      <th className="px-3 py-2 font-medium">משך</th>
-                      <th className="px-3 py-2 font-medium">טווח</th>
-                      <th className="px-3 py-2 font-medium">קישור</th>
-                      <th className="px-3 py-2 font-medium">תחום</th>
-                      <th className="px-3 py-2 font-medium">סטטוס</th>
                       <th className="px-3 py-2 font-medium">עובד</th>
+                      <th className="px-3 py-2 font-medium">סטטוס</th>
+                      <th className="px-3 py-2 font-medium">תחום</th>
+                      <th className="px-3 py-2 font-medium">קישור</th>
+                      <th className="px-3 py-2 font-medium">טווח</th>
+                      <th className="px-3 py-2 font-medium">משך</th>
+                      <th className="px-3 py-2 font-medium">חיוב לקוח</th>
+                      <th className="px-3 py-2 font-medium">עלות עבודה</th>
+                      <th className="px-3 py-2 font-medium">פעולות</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2964,6 +3198,50 @@ export default function SalaryCenterClient({
 
                         return (
                           <tr key={session.id} className={`border-b align-top ${rowClass}`}>
+                            <td className="px-3 py-3 font-medium">
+                              {worker?.full_name ?? worker?.email ?? "עובד"}
+                            </td>
+                            <td className="px-3 py-3">
+                              <div className="flex flex-wrap justify-end gap-2">
+                                <StatusPill tone={session.clock_out ? "success" : "warning"}>
+                                  {session.clock_out ? "סגור" : "פתוח"}
+                                </StatusPill>
+                                {session.billing_status && session.is_billable_to_customer ? (
+                                  <StatusPill tone={session.billing_status === "paid" ? "success" : "muted"}>
+                                    {getBillingStatusLabel(session.billing_status)}
+                                  </StatusPill>
+                                ) : null}
+                              </div>
+                            </td>
+                            <td className="px-3 py-3">{getBusinessDomainLabel(session.business_domain)}</td>
+                            <td className="px-3 py-3">{linkLabel}</td>
+                            <td className="px-3 py-3 text-muted-foreground">
+                              <div>{rowShowHours ? formatSessionRange(session.clock_in, session.clock_out) : formatDate(session.clock_in)}</div>
+                              {session.notes ? <div className="mt-1 text-xs">{session.notes}</div> : null}
+                            </td>
+                            <td className="px-3 py-3">
+                              {rowShowHours ? formatMinutes(sessionWorkedMinutes(session)) : <span className="text-muted-foreground">—</span>}
+                            </td>
+                            <td className="px-3 py-3">
+                              {session.is_billable_to_customer
+                                ? formatCurrency(session.bill_to_customer_amount)
+                                : "לא לחיוב"}
+                            </td>
+                            <td className="px-3 py-3">
+                              {rowShowPrice ? (
+                                <SalaryProtected
+                                  unlocked={salaryUnlocked}
+                                  hasPasswordConfigured={hasPasswordConfigured}
+                                  canUnlock={canViewSalary}
+                                  onUnlockSuccess={loadProtectedData}
+                                  fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                                >
+                                  <span className="font-medium">{formatCurrency(sessionCostsById.get(session.id) ?? 0)}</span>
+                                </SalaryProtected>
+                              ) : (
+                                <span className="text-muted-foreground">אוטומטי</span>
+                              )}
+                            </td>
                             <td className="px-3 py-3">
                               {canManageAttendance ? (
                                 <div className="flex flex-wrap justify-end gap-2">
@@ -2987,53 +3265,6 @@ export default function SalaryCenterClient({
                               ) : (
                                 <span className="text-muted-foreground">-</span>
                               )}
-                            </td>
-                            <td className="px-3 py-3">
-                              {rowShowPrice ? (
-                                <SalaryProtected
-                                  unlocked={salaryUnlocked}
-                                  hasPasswordConfigured={hasPasswordConfigured}
-                                  canUnlock={canViewSalary}
-                                  onUnlockSuccess={loadProtectedData}
-                                  fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
-                                >
-                                  <span className="font-medium">{formatCurrency(sessionCostsById.get(session.id) ?? 0)}</span>
-                                </SalaryProtected>
-                              ) : (
-                                <span className="text-muted-foreground">אוטומטי</span>
-                              )}
-                            </td>
-                            <td className="px-3 py-3">
-                              {session.is_billable_to_customer
-                                ? formatCurrency(session.bill_to_customer_amount)
-                                : "לא לחיוב"}
-                            </td>
-                            <td className="px-3 py-3">
-                              {rowShowHours ? formatMinutes(sessionWorkedMinutes(session)) : <span className="text-muted-foreground">—</span>}
-                            </td>
-                            <td className="px-3 py-3 text-muted-foreground">
-                              <div>{rowShowHours ? formatSessionRange(session.clock_in, session.clock_out) : formatDate(session.clock_in)}</div>
-                              {session.notes ? <div className="mt-1 text-xs">{session.notes}</div> : null}
-                            </td>
-                            <td className="px-3 py-3">{linkLabel}</td>
-                            <td className="px-3 py-3">{getBusinessDomainLabel(session.business_domain)}</td>
-                            <td className="px-3 py-3">
-                              <div className="flex flex-wrap justify-end gap-2">
-                                <StatusPill tone={session.clock_out ? "success" : "warning"}>
-                                  {session.clock_out ? "סגור" : "פתוח"}
-                                </StatusPill>
-                                <StatusPill tone={session.locked ? "danger" : "muted"}>
-                                  {session.locked ? "נעול" : "ניתן לעריכה"}
-                                </StatusPill>
-                                {session.billing_status && session.is_billable_to_customer ? (
-                                  <StatusPill tone={session.billing_status === "paid" ? "success" : "muted"}>
-                                    {getBillingStatusLabel(session.billing_status)}
-                                  </StatusPill>
-                                ) : null}
-                              </div>
-                            </td>
-                            <td className="px-3 py-3 font-medium">
-                              {worker?.full_name ?? worker?.email ?? "עובד"}
                             </td>
                           </tr>
                         );
@@ -3076,8 +3307,29 @@ export default function SalaryCenterClient({
                           <div className="font-semibold">{worker.full_name ?? worker.email ?? "עובד"}</div>
                           <div className="mt-3 space-y-2">
                             {workerAgreements.map((agreement) => (
-                              <div key={agreement.id} className="rounded-xl border px-3 py-2">
-                                <div className="flex items-start justify-between gap-2">
+                              <SwipeActions
+                                key={agreement.id}
+                                className="rounded-xl border"
+                                actions={[
+                                  {
+                                    key: "edit",
+                                    label: "עריכה",
+                                    icon: <EditIcon className="h-5 w-5" />,
+                                    className: "bg-secondary-2",
+                                    onSelect: () => openEditAgreementDialog(agreement),
+                                  },
+                                  {
+                                    key: "delete",
+                                    label: "מחיקה",
+                                    icon: <DeleteIcon className="h-5 w-5" />,
+                                    className: "bg-destructive",
+                                    onSelect: () => deleteAgreement(agreement),
+                                  },
+                                ]}
+                                open={swipedAgreementId === agreement.id}
+                                onOpenChange={(next) => setSwipedAgreementId(next ? agreement.id : null)}
+                              >
+                                <div className="flex items-start justify-between gap-2 px-3 py-2">
                                   <div className="min-w-0">
                                     <div className="font-semibold">
                                       {agreement.salary_type === "hourly"
@@ -3091,11 +3343,7 @@ export default function SalaryCenterClient({
                                   </div>
                                   {current?.id === agreement.id ? <Tag>{"נוכחי"}</Tag> : null}
                                 </div>
-                                <div className="mt-2 flex justify-end gap-2">
-                                  <EditButton onClick={() => openEditAgreementDialog(agreement)} label="עריכה" />
-                                  <DeleteButton onClick={() => deleteAgreement(agreement)} label="מחיקת הסכם" />
-                                </div>
-                              </div>
+                              </SwipeActions>
                             ))}
                           </div>
                         </div>
@@ -3109,13 +3357,13 @@ export default function SalaryCenterClient({
                   <table className="w-full text-right text-sm">
                     <thead className="sticky top-0 z-10 bg-muted">
                       <tr className="border-b text-muted-foreground">
-                        <th className="px-3 py-2 font-medium">פעולות</th>
-                        <th className="px-3 py-2 font-medium">מצב</th>
-                        <th className="px-3 py-2 font-medium">עד תאריך</th>
-                        <th className="px-3 py-2 font-medium">מתאריך</th>
-                        <th className="px-3 py-2 font-medium">סכום</th>
-                        <th className="px-3 py-2 font-medium">סוג</th>
                         <th className="px-3 py-2 font-medium">עובד</th>
+                        <th className="px-3 py-2 font-medium">סוג</th>
+                        <th className="px-3 py-2 font-medium">סכום</th>
+                        <th className="px-3 py-2 font-medium">מתאריך</th>
+                        <th className="px-3 py-2 font-medium">עד תאריך</th>
+                        <th className="px-3 py-2 font-medium">מצב</th>
+                        <th className="px-3 py-2 font-medium">פעולות</th>
                       </tr>
                     </thead>
                     {agreementUsersWithAgreements.map((worker, workerIndex) => {
@@ -3135,28 +3383,28 @@ export default function SalaryCenterClient({
                                   : `border-b ${workerRowClass} align-top`
                               }
                             >
+                              {index === 0 ? (
+                                <td rowSpan={workerAgreements.length} className="px-3 py-3 align-top font-medium">
+                                  {worker.full_name ?? worker.email ?? "עובד"}
+                                </td>
+                              ) : null}
+                              <td className="px-3 py-3">{getSalaryTypeLabel(agreement.salary_type)}</td>
+                              <td className="px-3 py-3 font-semibold">
+                                {agreement.salary_type === "hourly"
+                                  ? `${formatCurrency(agreement.hourly_rate)} / שעה`
+                                  : formatCurrency(agreement.monthly_salary)}
+                              </td>
+                              <td className="px-3 py-3 text-muted-foreground">{formatDate(agreement.valid_from)}</td>
+                              <td className="px-3 py-3 text-muted-foreground">{formatDate(agreement.valid_to)}</td>
+                              <td className="px-3 py-3">
+                                {current?.id === agreement.id ? <Tag>{"נוכחי"}</Tag> : <span className="text-muted-foreground">-</span>}
+                              </td>
                               <td className="px-3 py-3">
                                 <div className="flex flex-wrap justify-end gap-2">
                                   <EditButton onClick={() => openEditAgreementDialog(agreement)} label="עריכה" />
                                   <DeleteButton onClick={() => deleteAgreement(agreement)} label="מחיקת הסכם" />
                                 </div>
                               </td>
-                              <td className="px-3 py-3">
-                                {current?.id === agreement.id ? <Tag>{"נוכחי"}</Tag> : <span className="text-muted-foreground">-</span>}
-                              </td>
-                              <td className="px-3 py-3 text-muted-foreground">{formatDate(agreement.valid_to)}</td>
-                              <td className="px-3 py-3 text-muted-foreground">{formatDate(agreement.valid_from)}</td>
-                              <td className="px-3 py-3 font-semibold">
-                                {agreement.salary_type === "hourly"
-                                  ? `${formatCurrency(agreement.hourly_rate)} / שעה`
-                                  : formatCurrency(agreement.monthly_salary)}
-                              </td>
-                              <td className="px-3 py-3">{getSalaryTypeLabel(agreement.salary_type)}</td>
-                              {index === 0 ? (
-                                <td rowSpan={workerAgreements.length} className="px-3 py-3 align-top font-medium">
-                                  {worker.full_name ?? worker.email ?? "עובד"}
-                                </td>
-                              ) : null}
                             </tr>
                           ))}
                         </tbody>
@@ -3193,20 +3441,12 @@ export default function SalaryCenterClient({
                           <Button asChild size="sm" variant="outline">
                             <Link href={selectedSalariedExportHref}>{"יצוא לאקסל"}</Link>
                           </Button>
-                          {selectedPayslipPeriod && isPayrollPeriodEditable(selectedPayslipPeriod.status) && (
-                            <Button size="sm" variant="outline" onClick={() => runPeriodAction("lock")} disabled={isPending}>
-                              {"נעילה"}
-                            </Button>
-                          )}
                         </>
                       )}
                     </div>
                     <div className="text-right">
                       {selectedPayslipPeriod ? (
-                        <div className="flex items-center gap-2 justify-end">
-                          <Tag>{getPayrollPeriodLabel(selectedPayslipPeriod.status)}</Tag>
-                          <div className="text-lg font-semibold">{monthLabelFromKey(selectedPayslipPeriod.period_month)}</div>
-                        </div>
+                        <div className="text-lg font-semibold">{monthLabelFromKey(selectedPayslipPeriod.period_month)}</div>
                       ) : (
                         <div className="text-sm text-muted-foreground">{"לא נבחרה תקופה — לחץ ניהול תקופות"}</div>
                       )}
@@ -3243,6 +3483,28 @@ export default function SalaryCenterClient({
                 </Card>
               )}
 
+              {unattachedItemsInSelectedPeriod.length > 0 ? (
+                <Card>
+                  <CardContent className="py-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-warning/40 bg-warning-soft px-4 py-3">
+                      <div className="min-w-0 text-sm">
+                        <div className="font-medium text-warning-soft-foreground">
+                          {`${unattachedItemsInSelectedPeriod.length} רכיבי שכר עוד לא נכנסו לתלושים`}
+                        </div>
+                        <div className="text-muted-foreground">
+                          {`סה״כ ${formatCurrency(
+                            unattachedItemsInSelectedPeriod.reduce((sum, item) => sum + toNumber(item.amount), 0)
+                          )} — לעובד אין תלוש לחודש הזה. לחץ «יצירת / רענון תלושים».`}
+                        </div>
+                      </div>
+                      <Button size="sm" onClick={() => runPeriodAction("generate")} disabled={isPending}>
+                        {"יצירת / רענון תלושים"}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : null}
+
               {/* Empty states */}
               {!selectedPayslipPeriod ? (
                 <Card>
@@ -3271,24 +3533,25 @@ export default function SalaryCenterClient({
                 return (
                   <Card key={payslip.id}>
                     <CardContent className="space-y-3 py-5">
-                      <div className="flex flex-wrap-reverse items-start justify-between gap-3">
+                      {/* RTL: the worker opens the card, the badges trail at the end. */}
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="font-semibold">{worker?.full_name ?? worker?.email ?? "עובד"}</div>
                         <div className="flex flex-wrap justify-end gap-2">
                           {workerType ? <WorkerTypeBadge workerType={workerType} /> : null}
                           <Tag>{getSalaryTypeLabel(payslip.calculated_salary_type)}</Tag>
-                          <Tag>{period ? getPayrollPeriodLabel(period.status) : "-"}</Tag>
                         </div>
-                        <div className="font-semibold">{worker?.full_name ?? worker?.email ?? "עובד"}</div>
                       </div>
 
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <MiniStat label="דקות עבודה" value={formatMinutes(payslip.total_work_minutes)} />
                         <MiniStat label="ברוטו" value={formatCurrency(payslip.gross_salary)} />
+                        <MiniStat label="דקות עבודה" value={formatMinutes(payslip.total_work_minutes)} />
                       </div>
 
+                      {/* Every line here reads label-first (right) and money-last (left). */}
                       <div className="rounded-2xl border p-3 space-y-1 text-sm">
                         <div className="flex justify-between text-muted-foreground">
-                          <span className="font-medium text-foreground">{formatCurrency(payslip.calculated_base_salary)}</span>
                           <span>שכר בסיס</span>
+                          <span className="font-medium text-foreground">{formatCurrency(payslip.calculated_base_salary)}</span>
                         </div>
                         {payslipItems
                           .filter((item) => item.payslip_id === payslip.id)
@@ -3297,7 +3560,21 @@ export default function SalaryCenterClient({
                             const isNegative = toNumber(item.amount) < 0;
                             return (
                               <div key={item.id} className="flex items-center justify-between gap-2 py-0.5">
+                                <div className="flex items-center gap-1.5 text-right">
+                                  {isException && <WarningIcon className="h-3.5 w-3.5 text-warning-soft-foreground shrink-0" />}
+                                  <span className="text-muted-foreground">
+                                    {/* A dated item (a bonus) says WHICH day it was for —
+                                        that's the difference between "₪300 bonus" and
+                                        "₪300 for the ten-hour Tuesday". */}
+                                    {item.item_date ? `${formatDate(item.item_date)} • ` : ""}
+                                    {item.notes || getPayslipItemTypeLabel(item.item_type)}
+                                  </span>
+                                  <Badge variant="outline" className="text-xs px-1.5 py-0">{getPayslipItemTypeLabel(item.item_type)}</Badge>
+                                </div>
                                 <div className="flex items-center gap-1.5">
+                                  <span className={isNegative || isException ? "text-destructive font-medium" : "font-medium"}>
+                                    {formatCurrency(item.amount)}
+                                  </span>
                                   {isEditable && (
                                     <DeleteButton
                                       onClick={() => deletePayslipItem(item.id, payslip.id)}
@@ -3305,31 +3582,39 @@ export default function SalaryCenterClient({
                                       label="מחיקת פריט"
                                     />
                                   )}
-                                  <span className={isNegative || isException ? "text-destructive font-medium" : "font-medium"}>
-                                    {formatCurrency(item.amount)}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-1.5 text-right">
-                                  {isException && <WarningIcon className="h-3.5 w-3.5 text-warning-soft-foreground shrink-0" />}
-                                  <span className="text-muted-foreground">{item.notes || getPayslipItemTypeLabel(item.item_type)}</span>
-                                  <Badge variant="outline" className="text-xs px-1.5 py-0">{getPayslipItemTypeLabel(item.item_type)}</Badge>
                                 </div>
                               </div>
                             );
                           })}
                         {toNumber(payslip.manual_adjustments) !== 0 && (
                           <div className="flex justify-between text-muted-foreground">
-                            <span className={toNumber(payslip.manual_adjustments) < 0 ? "text-destructive" : ""}>{formatCurrency(payslip.manual_adjustments)}</span>
                             <span>התאמה ידנית</span>
+                            <span className={toNumber(payslip.manual_adjustments) < 0 ? "text-destructive" : ""}>{formatCurrency(payslip.manual_adjustments)}</span>
                           </div>
                         )}
                         <div className="flex justify-between font-semibold border-t pt-2 mt-1">
-                          <span>{formatCurrency(payslip.gross_salary)}</span>
                           <span>ברוטו</span>
+                          <span>{formatCurrency(payslip.gross_salary)}</span>
                         </div>
                       </div>
 
                       <div className="flex flex-wrap items-end justify-between gap-3">
+                        {/* Fixed-width input — a full-width `1fr` cell rendered as a big empty box on mobile. */}
+                        <div className="w-40 max-w-full">
+                          <Field label="התאמה ידנית">
+                            <CurrencyInput
+                              inputMode="decimal"
+                              value={payslipAdjustmentDrafts[payslip.id] ?? String(payslip.manual_adjustments ?? 0)}
+                              onChange={(event) =>
+                                setPayslipAdjustmentDrafts((current) => ({
+                                  ...current,
+                                  [payslip.id]: event.target.value,
+                                }))
+                              }
+                              disabled={!isEditable}
+                            />
+                          </Field>
+                        </div>
                         <div className="flex flex-wrap gap-2">
                           <Button
                             variant="secondary"
@@ -3354,22 +3639,6 @@ export default function SalaryCenterClient({
                           >
                             {"+ רכיב שכר"}
                           </Button>
-                        </div>
-                        {/* Fixed-width input — a full-width `1fr` cell rendered as a big empty box on mobile. */}
-                        <div className="w-40 max-w-full">
-                          <Field label="התאמה ידנית">
-                            <CurrencyInput
-                              inputMode="decimal"
-                              value={payslipAdjustmentDrafts[payslip.id] ?? String(payslip.manual_adjustments ?? 0)}
-                              onChange={(event) =>
-                                setPayslipAdjustmentDrafts((current) => ({
-                                  ...current,
-                                  [payslip.id]: event.target.value,
-                                }))
-                              }
-                              disabled={!isEditable}
-                            />
-                          </Field>
                         </div>
                       </div>
                     </CardContent>
@@ -3403,7 +3672,7 @@ export default function SalaryCenterClient({
                         }}
                         disabled={isPending}
                       >
-                        {"יצירה / פתיחה מחדש"}
+                        {"יצירת תקופה"}
                       </Button>
                     </div>
                   </div>
@@ -3423,7 +3692,6 @@ export default function SalaryCenterClient({
                             }`}
                           >
                             <div className="flex flex-wrap items-center justify-end gap-2">
-                              <Tag>{getPayrollPeriodLabel(period.status)}</Tag>
                               <Button
                                 size="sm"
                                 variant={isSelected ? "default" : "outline"}
@@ -3496,6 +3764,18 @@ export default function SalaryCenterClient({
                       />
                     </Field>
                   </div>
+                  {/* A bonus is about a specific day ("the ten-hour Tuesday"), so it
+                      gets the date the other components don't need. */}
+                  {payslipItemForm.item_type === BONUS_ITEM_TYPE ? (
+                    <Field label="על איזה יום">
+                      <DateInput
+                        value={payslipItemForm.item_date}
+                        onChange={(event) =>
+                          setPayslipItemForm((current) => ({ ...current, item_date: event.target.value }))
+                        }
+                      />
+                    </Field>
+                  ) : null}
                   </div>
             </FormDialog>
           </SalaryProtected>
@@ -3647,6 +3927,13 @@ export default function SalaryCenterClient({
                     {canSelectedWorkerHaveAgreement && canManageSalary ? (
                       <TabsTrigger value="salary"><CashIcon className="h-4 w-4" />שכר</TabsTrigger>
                     ) : null}
+                    {/* Bonuses and days off — the two records that aren't hours.
+                        Offered for EVERY worker type: a global worker has no
+                        נוכחות tab at all, and this is where his days off live. */}
+                    <TabsTrigger value="extras">
+                      <CoinsIcon className="h-4 w-4" />
+                      בונוסים וחופשות
+                    </TabsTrigger>
                     <TabsTrigger value="print"><PrintIcon className="h-4 w-4" />הדפסה</TabsTrigger>
                   </TabsList>
 
@@ -3745,8 +4032,6 @@ export default function SalaryCenterClient({
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="flex flex-wrap justify-end gap-2">
                               <Tag>{getBusinessDomainLabel(session.business_domain)}</Tag>
-                              <Tag>{session.locked ? "נעול" : "פתוח לעריכה"}</Tag>
-                              {payrollPeriod ? <Tag>{getPayrollPeriodLabel(payrollPeriod.status)}</Tag> : null}
                               {debtItem ? (
                                 <PaymentStatusBadge
                                   status={debtItem.payment_status}
@@ -4008,6 +4293,143 @@ export default function SalaryCenterClient({
                     </TabsContent>
                   ) : null}
 
+                  <TabsContent value="extras" className="space-y-5">
+                    {/* Two cards, two different permissions: a bonus is money and
+                        stays admin-only, a day off moves none and office may mark
+                        it — the same split the rest of the payroll centre uses. */}
+                    <Card>
+                      <CardContent className="space-y-3 py-5">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-lg font-semibold">בונוסים</div>
+                            <div className="text-sm text-muted-foreground">
+                              רכיב שכר עם תאריך. נכנס לברוטו של התלוש של החודש שבו התאריך נמצא — גם אם הוזן באיחור.
+                            </div>
+                          </div>
+                          {canManageSalary ? (
+                            <Button onClick={() => openNewBonusDialog(selectedWorker.id)} disabled={isPending}>
+                              <AddIcon className="ms-2 h-4 w-4" />
+                              הוספת בונוס
+                            </Button>
+                          ) : null}
+                        </div>
+
+                        {protectedLoading ? (
+                          <div className="flex justify-center py-4">
+                            <LoadingDots />
+                          </div>
+                        ) : selectedWorkerBonuses.length === 0 ? (
+                          <div className="text-sm text-muted-foreground">אין בונוסים לעובד הזה.</div>
+                        ) : (
+                          <div className="space-y-2">
+                            {selectedWorkerBonuses.map((bonus) => (
+                              <div
+                                key={bonus.id}
+                                className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-xl border px-3 py-2 text-sm"
+                              >
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="font-semibold">{formatCurrency(bonus.amount)}</span>
+                                    {/* Which month's ברוטו it landed in — or that it's
+                                        still waiting for that month to be generated. */}
+                                    {bonus.payslip_id ? (
+                                      <Tag>
+                                        {`בתלוש ${monthLabelFromKey(
+                                          periodsById.get(payslipsById.get(bonus.payslip_id)?.payroll_period_id ?? "")
+                                            ?.period_month ?? ""
+                                        )}`}
+                                      </Tag>
+                                    ) : (
+                                      <Tag>
+                                        {bonus.item_date
+                                          ? `ייכנס לתלוש ${monthLabelFromKey(bonus.item_date.slice(0, 7))}`
+                                          : "ייכנס לתלוש"}
+                                      </Tag>
+                                    )}
+                                  </div>
+                                  <div className="mt-0.5 text-muted-foreground">
+                                    {bonus.item_date ? `${formatDate(bonus.item_date)} • ` : ""}
+                                    {bonus.notes || "בונוס"}
+                                  </div>
+                                </div>
+                                {canManageSalary ? (
+                                  <DeleteButton
+                                    onClick={() =>
+                                      setPendingDeletion({
+                                        kind: "bonus",
+                                        bonusId: bonus.id,
+                                        amountLabel: `${formatCurrency(bonus.amount)}${
+                                          bonus.item_date ? ` • ${formatDate(bonus.item_date)}` : ""
+                                        }`,
+                                      })
+                                    }
+                                    label="מחיקת בונוס"
+                                  />
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardContent className="space-y-3 py-5">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-lg font-semibold">ימי חופש והיעדרות</div>
+                            <div className="text-sm text-muted-foreground">
+                              לא יורד כסף — היום פשוט יופיע ריק בגליון השעות שמייצאים לאקסל.
+                            </div>
+                          </div>
+                          {canManageAttendance ? (
+                            <Button onClick={() => openAbsenceDialog(selectedWorker.id)} disabled={isPending}>
+                              <AddIcon className="ms-2 h-4 w-4" />
+                              סימון יום חופש
+                            </Button>
+                          ) : null}
+                        </div>
+
+                        {protectedLoading ? (
+                          <div className="flex justify-center py-4">
+                            <LoadingDots />
+                          </div>
+                        ) : selectedWorkerAbsences.length === 0 ? (
+                          <div className="text-sm text-muted-foreground">לא סומנו ימי חופש לעובד הזה.</div>
+                        ) : (
+                          <div className="space-y-2">
+                            {selectedWorkerAbsences.map((absence) => (
+                              <div
+                                key={absence.id}
+                                className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-xl border px-3 py-2 text-sm"
+                              >
+                                <div className="min-w-0">
+                                  <div className="font-medium">{formatDate(absence.absence_date)}</div>
+                                  <div className="text-muted-foreground">
+                                    {getWorkerAbsenceTypeLabel(absence.absence_type)}
+                                    {absence.notes ? ` — ${absence.notes}` : ""}
+                                  </div>
+                                </div>
+                                {canManageAttendance ? (
+                                  <DeleteButton
+                                    onClick={() =>
+                                      setPendingDeletion({
+                                        kind: "absence",
+                                        absenceId: absence.id,
+                                        dateLabel: formatDate(absence.absence_date),
+                                      })
+                                    }
+                                    label="מחיקת היעדרות"
+                                  />
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+
                   <TabsContent value="print" className="space-y-5">
                     <Card>
                       <CardContent className="space-y-4 py-5">
@@ -4127,6 +4549,119 @@ export default function SalaryCenterClient({
           </div>
         </section>
       ) : null}
+
+      {/* Bonus — a רכיב שכר with a date on it */}
+      <FormDialog
+        open={bonusDialogOpen}
+        onOpenChange={(open) => {
+          setBonusDialogOpen(open);
+          if (!open) {
+            setBonusForm(DEFAULT_BONUS_FORM);
+            setBonusError("");
+          }
+        }}
+        title="הוספת בונוס"
+        description="נכנס כרכיב שכר לתלוש של החודש שבו התאריך נמצא."
+        onSubmit={() => saveBonus()}
+        submitLabel="הוספת בונוס"
+        busyLabel="שומר..."
+        busy={isPending}
+        error={bonusError}
+      >
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="על איזה יום">
+              <DateInput
+                value={bonusForm.bonus_date}
+                onChange={(event) =>
+                  setBonusForm((current) => ({ ...current, bonus_date: event.target.value }))
+                }
+              />
+            </Field>
+            <Field label="סכום">
+              <CurrencyInput
+                inputMode="decimal"
+                value={bonusForm.amount}
+                onChange={(event) => setBonusForm((current) => ({ ...current, amount: event.target.value }))}
+              />
+            </Field>
+          </div>
+          <Field label="על מה הבונוס">
+            <Input
+              placeholder="לדוגמה: 10 שעות ביום אחד"
+              value={bonusForm.notes}
+              onChange={(event) => setBonusForm((current) => ({ ...current, notes: event.target.value }))}
+            />
+          </Field>
+        </div>
+      </FormDialog>
+
+      {/* Day off / absence */}
+      <FormDialog
+        open={absenceDialogOpen}
+        onOpenChange={(open) => {
+          setAbsenceDialogOpen(open);
+          if (!open) {
+            setAbsenceForm(DEFAULT_ABSENCE_FORM);
+            setAbsenceError("");
+          }
+        }}
+        title="סימון יום חופש"
+        description="לא יורד כסף — היום רק יופיע ריק בגליון השעות."
+        onSubmit={() => saveAbsence()}
+        submitLabel="שמירה"
+        busyLabel="שומר..."
+        busy={isPending}
+        error={absenceError}
+      >
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="תאריך">
+              <DateInput
+                value={absenceForm.absence_date}
+                onChange={(event) =>
+                  setAbsenceForm((current) => ({ ...current, absence_date: event.target.value }))
+                }
+              />
+            </Field>
+            <Field label="סוג">
+              <NativeSelect
+                value={absenceForm.absence_type}
+                onChange={(event) =>
+                  setAbsenceForm((current) => ({ ...current, absence_type: event.target.value }))
+                }
+              >
+                {WORKER_ABSENCE_TYPES.map((type) => (
+                  <option key={type.value} value={type.value}>
+                    {type.label}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+          </div>
+          <Field label="הערות">
+            <Input
+              value={absenceForm.notes}
+              onChange={(event) => setAbsenceForm((current) => ({ ...current, notes: event.target.value }))}
+            />
+          </Field>
+          {/* The business closing for a day is one action, not one dialog per
+              person. Anyone already marked for that date is skipped. */}
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-secondary"
+              checked={absenceForm.applyToAll}
+              onChange={(event) =>
+                setAbsenceForm((current) => ({ ...current, applyToAll: event.target.checked }))
+              }
+            />
+            <span>
+              {`סימון לכל העובדים (${absenceEligibleWorkers.length}) — לא רק לעובד הזה`}
+            </span>
+          </label>
+        </div>
+      </FormDialog>
 
       <FormDialog
         open={workerAccessDialogOpen}

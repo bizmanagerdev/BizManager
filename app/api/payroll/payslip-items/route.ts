@@ -8,6 +8,8 @@ type PayslipItemPayload = {
   item_type?: string | null;
   amount?: number | string | null;
   notes?: string | null;
+  /** Optional — which day the item is for. A bonus is dated; most types aren't. */
+  item_date?: string | null;
 };
 
 type DeletePayslipItemPayload = {
@@ -28,18 +30,27 @@ export async function POST(req: Request) {
 
     const body = (await req.json().catch(() => ({}))) as PayslipItemPayload;
     const payslipId = typeof body.payslip_id === "string" ? body.payslip_id.trim() : "";
-    const itemType = typeof body.item_type === "string" ? body.item_type.trim() : "manual";
+    // "manual_adjustment", not "manual" — the latter isn't one of the allowed
+    // item types, so the fallback itself would fail the check constraint.
+    const itemType = typeof body.item_type === "string" ? body.item_type.trim() : "manual_adjustment";
     const amount = toNullableNumber(body.amount);
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
+    const itemDate =
+      typeof body.item_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.item_date.trim())
+        ? body.item_date.trim()
+        : null;
 
     if (!payslipId || amount === null) {
       return NextResponse.json({ error: "payslip_id and amount are required." }, { status: 400 });
     }
 
-    const { supabase } = access.value;
+    const { supabase, profile } = access.value;
+    // user_id comes along for the ride: an item now carries its own owner so it can
+    // exist before the payslip does (that's how a mid-month bonus works), and the
+    // column is NOT NULL — an insert without it fails outright.
     const payslipResult = await supabase
       .from("payslips")
-      .select("id,payroll_period_id")
+      .select("id,payroll_period_id,user_id")
       .eq("id", payslipId)
       .maybeSingle();
 
@@ -67,11 +78,14 @@ export async function POST(req: Request) {
       .from("payslip_items")
       .insert({
         payslip_id: payslipId,
-        item_type: itemType || "manual",
+        user_id: payslipResult.data.user_id,
+        item_type: itemType || "manual_adjustment",
         amount,
+        item_date: itemDate,
         notes,
+        created_by: profile.id,
       })
-      .select("id,payslip_id,item_type,amount,notes")
+      .select("id,payslip_id,user_id,item_type,amount,item_date,notes")
       .maybeSingle();
 
     if (insertResult.error) {

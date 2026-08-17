@@ -1,12 +1,10 @@
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { LoadingDots } from "@/components/ui/loading-dots";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { getPaymentStatusLabel as getSharedPaymentStatusLabel } from "@/lib/ui/status-colors";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { getPayrollWorkerTypeLabel, type PayrollWorkerType } from "@/lib/payroll-worker-type";
-import { normalizePayrollStatus } from "@/lib/payroll-center";
 import { formatDateTime, toNumber } from "@/lib/payroll";
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -83,13 +81,6 @@ export function getRoleLabel(value: string | null | undefined) {
   return value || "-";
 }
 
-export function getPayrollPeriodLabel(value: string | null | undefined) {
-  const normalized = normalizePayrollStatus(value);
-  if (normalized === "paid") return "שולם";
-  if (normalized === "locked") return "נעול";
-  return "פתוח";
-}
-
 export function getBillingStatusLabel(value: string | null | undefined) {
   if (value === "paid") return "שולם";
   if (value === "billable") return "לחיוב";
@@ -151,29 +142,6 @@ export function toDateTimeLocalValue(date: Date) {
 
 // ── Presentational components ───────────────────────────────────────────────
 
-export function SummaryCard({
-  title,
-  value,
-  protectedValue = false,
-  loading = false,
-}: {
-  title: string;
-  value: string;
-  protectedValue?: boolean;
-  loading?: boolean;
-}) {
-  return (
-    <Card>
-      <CardContent className="space-y-1 py-4 text-center">
-        <div className="text-sm text-muted-foreground">{title}</div>
-        <div className={`text-xl font-semibold ${protectedValue ? "tracking-tight" : ""}`}>
-          {loading ? <LoadingDots /> : value}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 export function WorkerTypeBadge({ workerType }: { workerType: PayrollWorkerType }) {
   // Worker descriptor badges are all blue (info) so they read as one group and never
   // get confused with the green/orange/red payment-status badge.
@@ -184,15 +152,18 @@ export function MiniStat({
   label,
   value,
   loading = false,
+  strong = false,
 }: {
   label: string;
   value: ReactNode;
   loading?: boolean;
+  // Headline figures sitting in the same row as their breakdown read bigger.
+  strong?: boolean;
 }) {
   return (
-    <div className="rounded-xl border bg-muted/10 p-2.5 text-center">
+    <div className={`rounded-xl border p-2.5 text-center ${strong ? "bg-muted/30" : "bg-muted/10"}`}>
       <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-0.5 font-semibold">{loading ? <LoadingDots /> : value}</div>
+      <div className={`mt-0.5 font-semibold ${strong ? "text-lg" : ""}`}>{loading ? <LoadingDots /> : value}</div>
     </div>
   );
 }
