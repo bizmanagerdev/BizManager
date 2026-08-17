@@ -184,6 +184,12 @@ function putInCache(cacheName, request, response) {
   caches.open(cacheName).then((cache) => cache.put(request, clone)).catch(() => {});
 }
 
+// How long a page navigation may wait on the network before we answer from
+// cache instead. Deliberately shorter than lib/offline-queue.ts's 12s write
+// timeout: this one is the PWA cold-launch path, and every second of it is a
+// user staring at the splash screen.
+const NAV_TIMEOUT_MS = 8000;
+
 const OFFLINE_HTML = `<!doctype html>
 <html lang="he" dir="rtl">
 <head>
@@ -284,26 +290,48 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // 5. Page navigations — network-first; cache each page so it reopens offline
+  // 5. Page navigations — network-first, but ALWAYS bounded by a timeout.
+  //
+  // A plain .catch() fallback is not enough. On a half-open mobile connection
+  // (carrier dead spot, captive portal black-holing traffic) fetch() neither
+  // resolves NOR rejects — so respondWith() never settles, the navigation never
+  // completes, and the PWA sits on its splash screen indefinitely with nothing
+  // logged anywhere. Racing a timer guarantees the launch always gets an answer:
+  // the real page, the last cached one, or the Hebrew offline page.
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request)
-        .then((res) => {
+      (async () => {
+        const network = fetch(request).then((res) => {
           putInCache(PAGES_CACHE, request, res);
           return res;
-        })
-        .catch(async () => {
-          // Try the exact page, then dashboard, then login, then root
-          const cached =
-            (await caches.match(request)) ??
-            (await caches.match("/dashboard")) ??
-            (await caches.match("/login")) ??
-            (await caches.match("/"));
-          if (cached) return cached;
-          return new Response(OFFLINE_HTML, {
-            headers: { "Content-Type": "text/html; charset=utf-8" },
-          });
-        })
+        });
+
+        let res = null;
+        try {
+          res = await Promise.race([
+            network,
+            new Promise((resolve) => setTimeout(() => resolve(null), NAV_TIMEOUT_MS)),
+          ]);
+        } catch {
+          res = null; // network rejected outright — fall through to cache
+        }
+        if (res) return res;
+
+        // Timed out: leave the request in flight so a merely-slow network still
+        // warms PAGES_CACHE for the next launch, but stop waiting on it here.
+        network.catch(() => {});
+
+        // Try the exact page, then dashboard, then login, then root
+        const cached =
+          (await caches.match(request)) ??
+          (await caches.match("/dashboard")) ??
+          (await caches.match("/login")) ??
+          (await caches.match("/"));
+        if (cached) return cached;
+        return new Response(OFFLINE_HTML, {
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      })()
     );
     return;
   }
