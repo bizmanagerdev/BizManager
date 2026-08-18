@@ -9,15 +9,22 @@ export const metadata: Metadata = {
   title: "BizH",
   description: "מערכת ניהול עסק",
   manifest: "/manifest.webmanifest",
+  // TAB vs INSTALLED APP are deliberately different artwork:
+  //   tab   — the bare sky mark, no background (app/icon.svg → favicon.ico)
+  //   app   — the same mark on a navy tile (public/brand/heller-tile.svg → PNGs)
+  // So `icons.icon` lists ONLY the transparent set. The 192/512 tiles used to be
+  // in here too, which let a browser pick a navy square for the tab strip; they
+  // belong to the manifest, which is what install and the home screen read.
+  // `app/icon.svg` is also picked up by Next's file convention and takes
+  // precedence over this list — it's the real tab icon; favicon.ico is the
+  // fallback for anything that requests /favicon.ico directly.
+  //
+  // Bump ?v= whenever the artwork changes (v4 = the Heller mark, was the "H").
+  // Favicons are cached about as hard as anything on the web.
   icons: {
-    icon: [
-      { url: "/favicon.ico?v=3", sizes: "any" },
-      { url: "/icon-192.png?v=1", type: "image/png", sizes: "192x192" },
-      { url: "/icon-512.png?v=1", type: "image/png", sizes: "512x512" },
-      { url: "/icon.svg?v=3", type: "image/svg+xml" },
-    ],
-    shortcut: "/favicon.ico?v=3",
-    apple: "/apple-touch-icon.png?v=1",
+    icon: [{ url: "/favicon.ico?v=4", sizes: "any" }],
+    shortcut: "/favicon.ico?v=4",
+    apple: "/apple-touch-icon.png?v=2",
   },
   appleWebApp: {
     capable: true,

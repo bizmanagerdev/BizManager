@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { BrandMark } from "@/components/ui/brand-mark";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 type Props = {
@@ -14,14 +15,20 @@ export function AuthScreen({ title, description, children, footer }: Props) {
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-10">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute right-[8%] top-16 h-48 w-48 rounded-full bg-destructive/18 blur-3xl" />
+        {/* Both glows are PRIMARY. The top one was `bg-destructive/18` — a red
+            wash on the sign-in page, which read as an error state and was the
+            only non-brand colour on the screen. */}
+        <div className="absolute right-[8%] top-16 h-48 w-48 rounded-full bg-primary/18 blur-3xl" />
         <div className="absolute bottom-12 left-[10%] h-56 w-56 rounded-full bg-primary/18 blur-3xl" />
       </div>
 
       <div className="relative z-10 w-full max-w-md">
+        {/* The real mark, secondary on WHITE — the pairing every in-app surface
+            uses. (The navy tile with a black "H" in it predates the logo; the
+            navy-backed version is the INSTALLED app icon's job, not a page's.) */}
         <div className="mb-6 flex items-center justify-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/25">
-            <span className="text-lg font-black">H</span>
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-background shadow-lg shadow-primary/15">
+            <BrandMark size="md" />
           </div>
         </div>
 

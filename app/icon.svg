@@ -1,17 +1,16 @@
-<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="bizh-b" x1="40" y1="32" x2="212" y2="224" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#E13B4B"/>
-      <stop offset="0.55" stop-color="#E13B4B"/>
-      <stop offset="1" stop-color="#1F346D"/>
-    </linearGradient>
-    <filter id="shadow" x="8" y="12" width="240" height="236" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-      <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#E13B4B" flood-opacity="0.24"/>
-    </filter>
-  </defs>
-  <rect width="256" height="256" rx="64" fill="#F5F7FB"/>
-  <g filter="url(#shadow)">
-    <rect x="32" y="28" width="192" height="192" rx="42" fill="url(#bizh-b)"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="BizH">
+  <title>BizH</title>
+  <!-- THE TAB ICON: the mark in secondary sky, no background (user's call). Next's
+       app/icon.* file convention, so this is what wins in the tab strip.
+       Edge to edge on a square canvas — a favicon renders at 16px, so every pixel
+       of padding costs legibility. The 100 x 90.92 mark is centred vertically in
+       the square (4.54 of slack top and bottom).
+       The INSTALLED app icon is a different file on purpose: see
+       public/brand/heller-tile.svg — a home screen and an apple-touch icon both
+       need an opaque tile, or the OS paints one for you. -->
+  <g transform="translate(0 4.54)" fill="#0369A1">
+    <path d="M 99.54 31.20 L 87.41 38.81 L 49.96 15.30 L 12.40 38.88 L 0.16 31.20 L 49.85 0.00 Z"/>
+    <path d="M 0.00 41.88 L 12.29 49.60 L 49.85 26.02 L 87.39 49.59 L 100.00 41.68 L 100.00 57.04 L 87.49 64.90 L 75.25 57.22 L 49.96 41.32 L 12.40 64.90 L 0.16 57.22 L 0.00 57.11 Z"/>
+    <path d="M 0.00 67.90 L 12.29 75.62 L 49.85 52.04 L 87.39 75.61 L 100.00 67.70 L 100.00 83.06 L 87.49 90.92 L 75.25 83.23 L 49.96 67.33 L 12.40 90.92 L 0.16 83.23 L 0.00 83.13 Z"/>
   </g>
-  <path d="M89 67H116.5V126.5H165.5V67H193V214H165.5V151.5H116.5V214H89V67Z" fill="white"/>
 </svg>
