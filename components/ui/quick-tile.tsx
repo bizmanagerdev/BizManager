@@ -15,13 +15,16 @@ import { cn } from "@/lib/utils";
 export const QUICK_TILE_CLASS =
   "h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-secondary !text-secondary-foreground shadow-md shadow-secondary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-secondary/90";
 
-/** Compact variant for the top-bar + menu, where the grid sits in a popover.
+/** Compact variant for the + menu, where the grid sits in a popover. Grown from
+ *  5.5rem to 6.5rem on 2026-08-18 (user: "a drop bigger… more prominent").
  *  The height is FIXED, not `aspect-square`: aspect-ratio is only a preferred
  *  size, so a label that wraps to a third line (העברה בין חשבונות) used to grow
  *  its tile and the grid came out ragged. Fixed h/w = every tile identical; the
- *  glyph + label block just centres in whatever room that leaves. */
+ *  glyph + label block just centres in whatever room that leaves.
+ *  (The phone panel overrides h/w and levels the rows with `auto-rows-fr`
+ *  instead — see QuickCreateMenu.) */
 export const QUICK_TILE_CLASS_SM =
-  "h-[5.5rem] w-[5.5rem] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-2xl border-transparent !bg-secondary p-2 text-center text-[0.7rem] leading-tight !text-secondary-foreground shadow-md shadow-secondary/30 !whitespace-normal focus:!bg-secondary/90 hover:!bg-secondary/90";
+  "h-[6.5rem] w-[6.5rem] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-2xl border-transparent !bg-secondary p-2 text-center text-xs leading-tight !text-secondary-foreground shadow-md shadow-secondary/30 !whitespace-normal focus:!bg-secondary/90 hover:!bg-secondary/90";
 
 /** The only two colored glyphs. Everything else inherits the tile's white text. */
 const TONE_CLASS = {
@@ -45,7 +48,7 @@ export function QuickTileContent({
   return (
     <>
       <Icon
-        className={cn(sm ? "!h-7 !w-7 shrink-0" : "!h-9 !w-9", tone && TONE_CLASS[tone])}
+        className={cn(sm ? "!h-8 !w-8 shrink-0" : "!h-9 !w-9", tone && TONE_CLASS[tone])}
         strokeWidth={tone ? 2.4 : 2.2}
       />
       {/* The label sits right under the glyph on the tile's own `gap` — nothing

@@ -307,11 +307,13 @@ export function QuickCreateMenu({
                   // primary action on mobile, so it reads as a button, not a glyph.
                   "h-[52px] w-[52px] -translate-y-3 rounded-2xl bg-secondary text-secondary-foreground shadow-lg shadow-secondary/30 ring-4 ring-sidebar hover:bg-secondary hover:text-secondary-foreground [&_svg]:!size-7"
                 : variant === "desktopFab"
-                  ? // The SAME shape as the mobile FAB — a raised rounded square,
-                    // not a circle — so the + is one recognisable button on every
-                    // screen. Only the bottom bar's lift and ring are dropped:
-                    // this one floats over the page, with nothing to sit in.
-                    "h-[52px] w-[52px] rounded-2xl bg-secondary text-secondary-foreground shadow-lg shadow-secondary/30 hover:bg-secondary hover:text-secondary-foreground [&_svg]:!size-7"
+                  ? // The same raised rounded square as the mobile FAB — not a
+                    // circle — but a size up (60px) with a heavier shadow: on a
+                    // phone the + sits in the nav bar where you expect it, while
+                    // on desktop it floats over an empty corner and has to be
+                    // found. The bottom bar's lift and ring are dropped — this
+                    // one has nothing to sit in.
+                    "h-[60px] w-[60px] rounded-2xl bg-secondary text-secondary-foreground shadow-xl shadow-secondary/40 hover:bg-secondary hover:text-secondary-foreground [&_svg]:!size-8"
                   : // Same transparent glyph treatment as its neighbours (no fill — the
                     // user vetoed a colored blob up here); only the size is bumped, since
                     // it's the one button you act with rather than glance at.
@@ -342,16 +344,17 @@ export function QuickCreateMenu({
           // the height so it can never run past the viewport.
           collisionPadding={12}
           className={cn(
-            "w-auto rounded-2xl p-2",
-            // Phone: a near-full-width navy card sitting above the scrim, not a
-            // little popover — wide enough for three tiles per row so all 12 fit
-            // on one screen with nothing to scroll. (White was tried in between;
-            // the navy came back once the tiles were small enough that it no
-            // longer read as a wall of blue.)
+            // Navy card at BOTH widths (white was tried on the phone in between
+            // and dropped): the sky tiles sit on the same chrome navy as the
+            // sidebar and top bar, so the panel reads as part of the shell.
+            "w-auto rounded-2xl border-white/15 bg-primary p-2 text-primary-foreground shadow-2xl",
+            // Phone: a near-full-width sheet rather than a little popover — wide
+            // enough for three tiles per row so all 12 fit on one screen with
+            // nothing to scroll.
             isFab &&
               // Width matches the 12px collisionPadding on both sides, so Radix
               // has nothing to shift and the card stays centred under the FAB.
-              "z-[70] w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] rounded-[1.5rem] border-white/15 bg-primary p-2 text-primary-foreground shadow-2xl"
+              "z-[70] w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] rounded-[1.5rem]"
           )}
           // Follow the finger while it drags, then settle back (or close).
           style={
