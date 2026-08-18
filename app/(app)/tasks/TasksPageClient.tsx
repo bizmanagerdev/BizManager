@@ -40,7 +40,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { InitialsAvatar, buildColorIndexMap } from "@/components/dashboard/InitialsAvatar";
 import { dueUrgencyChipClass, formatShortDate, getDueUrgency } from "@/lib/date";
-import { TaskUpsertDialog, type TaskOption, type TaskStatus, type UserOption } from "@/components/tasks/TaskUpsertDialog";
+import { TaskUpsertDialog, type TaskOption, type UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { emitNavigationStart, emitProgressActivityEnd, emitProgressActivityStart } from "@/components/layout/TopNavigationProgress";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
@@ -542,9 +542,6 @@ export default function TasksPageClient(props: Props) {
     }
   }, [storageKey]);
 
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createSubject, setCreateSubject] = useState("");
-  const [createStatus, setCreateStatus] = useState<TaskStatus>("todo");
   const [editId, setEditId] = useState<string | null>(null);
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null);
   const [deletingTask, setDeletingTask] = useState(false);
@@ -979,15 +976,6 @@ export default function TasksPageClient(props: Props) {
     }
   }
 
-  function openCreate(status?: string) {
-    setCreateSubject("");
-    // On a phone the + adds to the list you're looking at, like the board does.
-    setCreateStatus(
-      status && (BOARD_STATUSES as readonly string[]).includes(status) ? (status as TaskStatus) : "todo"
-    );
-    setCreateOpen(true);
-  }
-
   // Phones have no sidebar to say where you are — the dark header says it. The
   // subtitle counts what's still TO DO: the total includes everything already
   // done, which is the one number nobody needs at a glance.
@@ -1103,10 +1091,9 @@ export default function TasksPageClient(props: Props) {
           <span className="rounded-full bg-white/25 px-1.5 text-[11px] leading-5">{activeFilterCount}</span>
         ) : null}
       </Button>
-      <Button type="button" size="sm" className="h-8 gap-1 rounded-lg px-2.5" onClick={() => openCreate("todo")}>
-        <AddIcon className="h-4 w-4" />
-        משימה
-      </Button>
+      {/* No "משימה" + here — the app's one quick-create + carries it. Each board
+          list keeps its own inline "הוספת כרטיס", which files the card straight
+          into that list; the global + can't do that. */}
       {/* Recurring tasks is a button here too, like the phone header — it was a
           whole tab bar for a link used once a month, and the board wants the
           room. (The recurring page keeps its tabs, so there's a way back.) */}
@@ -1142,15 +1129,7 @@ export default function TasksPageClient(props: Props) {
           filter fields. */}
       <PageHeaderToolbar>
         <div className="mx-auto flex w-full max-w-md items-center justify-center gap-1.5">
-          <Button
-            type="button"
-            aria-label="משימה חדשה"
-            className="h-10 shrink-0 gap-1 rounded-xl px-2.5"
-            onClick={() => openCreate(centeredStatus)}
-          >
-            <AddIcon className="h-4 w-4" />
-            <span className="text-xs">משימה</span>
-          </Button>
+          {/* No "משימה" + here — see desktopActions above. */}
           {/* Same navy treatment as every other page's header strip (orders,
               customers): a recessed white/10 field on the bar, not a light one. */}
           <div className="relative w-full min-w-0">
@@ -1452,23 +1431,8 @@ export default function TasksPageClient(props: Props) {
         })()
       ) : null}
 
-      <TaskUpsertDialog
-        open={createOpen}
-        onOpenChange={(open) => {
-          setCreateOpen(open);
-          if (!open) setCreateSubject("");
-        }}
-        mode="create"
-        users={props.users}
-        projects={props.projects}
-        properties={props.properties}
-        customers={props.customers}
-        currentUserId={props.currentUserId}
-        wizard
-        defaultSubject={createSubject}
-        defaultStatus={createStatus}
-        onSaved={() => router.refresh()}
-      />
+      {/* No create dialog on this page — a full new task comes from the app's one
+          quick-create +, and a quick card comes from a list's inline composer. */}
 
       <TaskUpsertDialog
         open={editId !== null}

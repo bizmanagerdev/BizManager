@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { AddIcon, CheckIcon, ChevronDownIcon, CommentIcon, EditIcon, NotificationIcon, SearchIcon } from "@/components/ui/icons";
+import { CheckIcon, ChevronDownIcon, CommentIcon, EditIcon, NotificationIcon, SearchIcon } from "@/components/ui/icons";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { useOfflineRows } from "@/hooks/useOfflineRows";
 import StaleDataBadge from "@/components/layout/StaleDataBadge";
@@ -553,17 +553,12 @@ export default function SalesOrdersClient({
 
   return (
     <div className="space-y-4">
-      {/* Mobile: new-order + search ride in the dark header (see the customers
-          and projects pages), so the list starts right under the bar. */}
+      {/* Mobile: the search rides in the dark header (see the customers and
+          projects pages), so the list starts right under the bar. No new-order
+          button — "הזמנה" is a tile in the app's one quick-create +. */}
       <PageHeaderToolbar>
         <div className="mx-auto flex w-full max-w-md items-center justify-center gap-2">
-          <Button asChild type="button" className="h-10 shrink-0 gap-1 rounded-xl px-3">
-            <Link href="/sales/orders/new" onClick={() => emitNavigationStart()}>
-              <AddIcon className="h-4 w-4" />
-              הזמנה
-            </Link>
-          </Button>
-          <div className="relative w-full min-w-0 max-w-[13rem]">
+          <div className="relative w-full min-w-0">
             <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
             <Input
               value={query}

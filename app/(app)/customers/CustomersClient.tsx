@@ -9,8 +9,6 @@ import { offlineFetch } from "@/lib/offline-queue";
 import { loadCustomerRowsByIds, loadMoreCustomers } from "@/app/(app)/customers/actions";
 import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import type { CustomersFilters } from "@/app/(app)/customers/loadCustomers";
-import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
-import type { CreatedCustomer } from "@/components/customers/CreateCustomerDialog";
 import { EditCustomerDialog, type EditCustomerInput } from "@/components/customers/EditCustomerDialog";
 import {
   AdaptiveCell,
@@ -22,7 +20,7 @@ import StaleDataBadge from "@/components/layout/StaleDataBadge";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
-import { AddIcon, ChevronLeftIcon, CloseIcon, EditIcon, FilterIcon, OrderIcon, ProjectIcon, SearchIcon, WazeIcon } from "@/components/ui/icons";
+import { ChevronLeftIcon, CloseIcon, EditIcon, FilterIcon, OrderIcon, ProjectIcon, SearchIcon, WazeIcon } from "@/components/ui/icons";
 import { Card } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
 import { SwipeActions } from "@/components/ui/swipe-actions";
@@ -164,8 +162,6 @@ export default function CustomersClient({
     const qs = params.toString();
     router.push(qs ? `/customers?${qs}` : "/customers", { scroll: false });
   }
-
-  const [createOpen, setCreateOpen] = useState(false);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<EditCustomerInput | null>(null);
@@ -415,24 +411,12 @@ export default function CustomersClient({
           the header subtitle already say both. */}
       <PageHeaderToolbar>
         <div className="mx-auto flex w-full max-w-md items-center justify-center gap-2">
-          {/* The + is the section's primary action, so it carries a solid
-              SECONDARY fill. The filter beside it is a toggle, so it stays
-              recessed until it's on — the two aren't the same kind of control and
-              shouldn't look alike. */}
-          {/* Labelled "לקוח" so it can't be mistaken for the bottom nav's big
-              generic + a few centimetres below it — this one adds a customer. */}
-          <Button
-            type="button"
-            aria-label="הוספת לקוח"
-            className="h-10 shrink-0 gap-1 rounded-xl px-2.5"
-            onClick={() => setCreateOpen(true)}
-          >
-            <AddIcon className="h-4 w-4" />
-            <span className="text-xs">לקוח</span>
-          </Button>
+          {/* No "לקוח" + button here: creating a customer belongs to the app's one
+              quick-create + (top bar / bottom-nav FAB), which is on screen on this
+              page too — see components/layout/QuickCreateMenu.tsx. */}
           {/* Icon + a short "חיפוש..." — what it searches over is discoverable by
               using it, and spelling out every field ate the whole bar. */}
-          <div className="relative w-full min-w-0 max-w-[13rem]">
+          <div className="relative w-full min-w-0">
             <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
             <Input
               value={query}
@@ -464,7 +448,9 @@ export default function CustomersClient({
       </PageHeaderToolbar>
 
       <AdaptiveGrid variant="customersToolbar" className="hidden lg:grid">
-        <AdaptiveCell variant="customersPrimary">
+        {/* Six of the eight columns now that the "הוספת לקוח" cell is gone — the
+            row still fills the width instead of trailing off. */}
+        <AdaptiveCell variant="customersPrimary" className="lg:col-span-6">
           <div className="flex items-center justify-between gap-2">
             <label className="text-sm text-muted-foreground">חיפוש לקוחות</label>
             {indexStale ? <StaleDataBadge savedAt={indexSavedAt} /> : null}
@@ -485,12 +471,6 @@ export default function CustomersClient({
             onClick={() => setFiltersOpen((x) => !x)}
           >
             {filtersOpen ? "הסתר מסננים" : "הצג מסננים"}
-          </Button>
-        </AdaptiveCell>
-        <AdaptiveCell variant="customersSecondary">
-          <label className="text-sm text-muted-foreground opacity-0">לקוח חדש</label>
-          <Button type="button" className="h-11 w-full" onClick={() => setCreateOpen(true)}>
-            הוספת לקוח
           </Button>
         </AdaptiveCell>
       </AdaptiveGrid>
@@ -782,35 +762,8 @@ export default function CustomersClient({
         </div>
       ) : null}
 
-      <CreateCustomerDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        description="שדות חובה: שם, טלפון ועיר."
-        onCreated={(customer: CreatedCustomer, contacts) => {
-          setRows((prev) => [
-            {
-              customer_id: customer.id,
-              customer_name: customer.name,
-              name: customer.name,
-              name_for_invoice: customer.name_for_invoice,
-              registration_number: customer.registration_number,
-              email: customer.email,
-              phone: customer.phone,
-              whatsapp: customer.whatsapp,
-              address: customer.address,
-              active: customer.active,
-              requires_prepayment: customer.requires_prepayment,
-              orders_count: 0,
-              projects_count: 0,
-              total_sales: 0,
-              total_paid: 0,
-              open_balance: 0,
-              contacts,
-            },
-            ...prev,
-          ]);
-        }}
-      />
+      {/* No create dialog on this page — "לקוח" is a tile in the global + menu,
+          which refreshes the route on save, so the new customer shows up here. */}
 
       <EditCustomerDialog
         open={editOpen}

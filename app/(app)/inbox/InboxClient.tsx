@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AddIcon, CashIcon, CheckIcon, CheckboxCheckedIcon, ChevronLeftIcon, ClockIcon, CoinsIcon, NotificationIcon, ProductIcon, ProjectIcon, ReceiptIcon, SettingsIcon, SuccessIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
+import { CashIcon, CheckIcon, CheckboxCheckedIcon, ChevronLeftIcon, ClockIcon, CoinsIcon, NotificationIcon, ProductIcon, ProjectIcon, ReceiptIcon, SettingsIcon, SuccessIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { toHebrewError } from "@/lib/error-messages";
 import { refreshAlerts } from "@/lib/ui/alerts-store";
@@ -120,7 +120,6 @@ export default function InboxClient({
   const [snoozeOpen, setSnoozeOpen] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [marking, setMarking] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<ReminderFormValue | null>(null);
   const [showSnoozed, setShowSnoozed] = useState(false);
 
@@ -329,8 +328,8 @@ export default function InboxClient({
               סמן הכול כנקרא
             </Button>
           ) : null}
-          {/* Only "תזכורת" is a real create action, so it's the one solid button;
-              the rest are quiet so the header doesn't read as a row of pills. */}
+          {/* No "תזכורת" + button here — creating a reminder is a tile in the
+              app's one quick-create +, which is on screen on this page too. */}
           <Button asChild variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
             <Link href="/profile#notifications">
               <SettingsIcon className="me-1 h-4 w-4" />
@@ -348,10 +347,6 @@ export default function InboxClient({
               {syncing ? "מעדכן…" : "רענן"}
             </Button>
           ) : null}
-          <Button size="sm" onClick={() => setAddOpen(true)}>
-            <AddIcon className="me-1 h-4 w-4" />
-            תזכורת
-          </Button>
           {!hasPush ? <PushSubscribeButton /> : null}
         </div>
       </div>
@@ -473,17 +468,6 @@ export default function InboxClient({
         </Link>
       </div>
 
-      <ReminderFormDialog
-        mode="create"
-        open={addOpen}
-        onOpenChange={setAddOpen}
-        links={{}}
-        category="general"
-        onSaved={() => {
-          refreshAlerts();
-          router.refresh();
-        }}
-      />
       <ReminderFormDialog
         mode="edit"
         open={editing !== null}

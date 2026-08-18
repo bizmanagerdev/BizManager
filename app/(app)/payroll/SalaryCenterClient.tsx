@@ -2354,12 +2354,9 @@ export default function SalaryCenterClient({
         />
 
         <div className="flex shrink-0 flex-wrap justify-center gap-2 sm:flex-nowrap">
-          {canManageAttendance ? (
-            <Button onClick={() => openCreateSession()}>
-              <AddIcon className="h-4 w-4" />
-              {"הוספת משמרת"}
-            </Button>
-          ) : null}
+          {/* No generic "הוספת משמרת" + here — "משמרת ידנית" is a tile in the
+              app's one quick-create +. The per-worker "הוסף משמרת" below stays:
+              it opens on the worker you have selected. */}
           {canCreateUsers ? (
             <Button variant="outline" onClick={() => setCreateUserOpen(true)}>
               <AddIcon className="ms-2 h-4 w-4" />

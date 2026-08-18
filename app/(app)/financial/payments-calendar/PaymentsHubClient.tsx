@@ -49,7 +49,6 @@ export default function PaymentsHubClient({
 }: Props) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabKey>("calendar");
-  const [addOpen, setAddOpen] = useState(false);
   const [newTemplateOpen, setNewTemplateOpen] = useState(false);
   const [cashOpen, setCashOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -94,10 +93,9 @@ export default function PaymentsHubClient({
                 <CalculatorIcon className="ml-1 h-4 w-4" />
                 כמה צריך?
               </Button>
-              <Button type="button" size="sm" onClick={() => setAddOpen(true)}>
-                <AddIcon className="ml-1 h-4 w-4" />
-                הוסף תשלום
-              </Button>
+              {/* No generic "הוסף תשלום" here — a one-off payment is "הוצאה" in
+                  the app's one quick-create +. The calendar's own per-day add
+                  stays: it carries the day you clicked. */}
             </>
           ) : (
             <>
@@ -143,21 +141,6 @@ export default function PaymentsHubClient({
         items={items}
         accounts={accounts}
         todayIso={todayIso}
-      />
-
-      {/* Global quick-add payment (calendar tab) — defaults to today */}
-      <ExpenseDialog
-        open={addOpen}
-        onOpenChange={setAddOpen}
-        defaultDate={todayIso}
-        showAttachments
-        recurringProjects={projects}
-        recurringOrders={orders}
-        recurringProperties={properties}
-        onSaved={() => {
-          setAddOpen(false);
-          router.refresh();
-        }}
       />
 
       {/* New recurring template (recurring tab) — opens in recurring mode */}

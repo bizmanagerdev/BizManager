@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 import AppShell from "@/components/layout/AppShell";
 import SalesDeliveriesQueue from "@/app/(app)/sales/SalesDeliveriesQueue";
@@ -8,7 +7,6 @@ import PriceListClient from "@/app/(app)/sales/PriceListClient";
 import SalesTabsNav from "@/app/(app)/sales/SalesTabsNav";
 import PageAlertBar from "@/components/reminders/PageAlertBar";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
-import { Button } from "@/components/ui/button";
 import { DELIVERY_REGIONS } from "@/lib/ui/cities";
 import { loadOrdersPage } from "@/app/(app)/sales/loadOrders";
 import { loadPriceListPage, loadInventoryListPage } from "@/app/(app)/sales/loadProducts";
@@ -289,9 +287,7 @@ export default async function SalesPage({
             {customerName ? (
               <div className="text-base font-medium sm:text-lg">לקוח: {customerName}</div>
             ) : null}
-            <Button asChild className="hidden xl:inline-flex">
-              <Link href="/sales/orders/new">הזמנה חדשה</Link>
-            </Button>
+            {/* No "הזמנה חדשה" button — the app's one quick-create + carries it. */}
           </div>
         </div>
         <PageAlertBar keys={["low_stock"]} />

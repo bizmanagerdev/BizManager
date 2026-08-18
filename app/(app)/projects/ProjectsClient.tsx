@@ -15,7 +15,7 @@ import { SwipeActions } from "@/components/ui/swipe-actions";
 import { NativeSelect } from "@/components/ui/native-select";
 import { loadMoreProjects } from "@/app/(app)/projects/actions";
 import type { ProjectsFilters } from "@/app/(app)/projects/loadProjects";
-import { AddIcon, ChatIcon, DocumentIcon, EditIcon, FilterIcon, ProjectIcon, SearchIcon, SuccessIcon } from "@/components/ui/icons";
+import { ChatIcon, DocumentIcon, EditIcon, FilterIcon, ProjectIcon, SearchIcon, SuccessIcon } from "@/components/ui/icons";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { paymentStatusClasses, collectionStatusClasses, collectionStatusLabel } from "@/lib/orders/paymentStatus";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
@@ -616,18 +616,9 @@ export default function ProjectsClient({
             React context, so these triggers still talk to the <Tabs> above. */}
         <PageHeaderToolbar>
           <div className="mx-auto flex w-full max-w-md items-center justify-center gap-2">
-          {/* Labelled, so it can't be mistaken for the bottom nav's big generic +
-              just below it — this one adds a project (or a quote on that tab). */}
-          <Button
-            type="button"
-            aria-label={activeTab === "quotes" ? "הצעת מחיר חדשה" : "הוספת פרויקט"}
-            className="h-10 shrink-0 gap-1 rounded-xl px-2.5"
-            onClick={() => openCreateDialog(activeTab)}
-          >
-            <AddIcon className="h-4 w-4" />
-            <span className="text-xs">{activeTab === "quotes" ? "הצעה" : "פרויקט"}</span>
-          </Button>
-          <div className="relative w-full min-w-0 max-w-[13rem]">
+          {/* No create button here: "פרויקט" is a tile in the app's one
+              quick-create + (its wizard's status list covers הצעת מחיר too). */}
+          <div className="relative w-full min-w-0">
             <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
             <Input
               value={query}
@@ -739,7 +730,9 @@ export default function ProjectsClient({
         variant="toolbar"
         className="hidden min-w-0 md:flex md:flex-col md:gap-4 xl:flex-row xl:items-end xl:justify-between xl:gap-6"
       >
-        <AdaptiveGrid variant="projectsToolbarControls" className="min-w-0 lg:grid-cols-4">
+        {/* xl:flex-1 — with the create button gone this grid is the row's only
+            child, so it takes the width the button used to sit beside. */}
+        <AdaptiveGrid variant="projectsToolbarControls" className="min-w-0 lg:grid-cols-4 xl:flex-1">
           <div className="min-w-0 lg:col-span-2">
             <div className="flex items-center justify-between gap-2">
               <label className="text-sm text-muted-foreground">חיפוש</label>
@@ -786,13 +779,6 @@ export default function ProjectsClient({
 
         </AdaptiveGrid>
 
-        <div className="w-full xl:w-auto">
-          <div className="grid w-full grid-cols-1 gap-2 xl:flex xl:w-auto">
-            <Button type="button" className="h-11 w-full xl:w-auto" onClick={() => openCreateDialog(activeTab)}>
-              {activeTab === "quotes" ? "הצעת מחיר חדשה" : "הוספת פרויקט"}
-            </Button>
-          </div>
-        </div>
       </AdaptiveStack>
 
       <div className="hidden text-sm text-muted-foreground md:block">
