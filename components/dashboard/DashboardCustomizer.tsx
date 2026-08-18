@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   DndContext,
@@ -12,22 +12,14 @@ import {
 } from "@dnd-kit/core";
 import {
   SortableContext,
-  verticalListSortingStrategy,
+  rectSortingStrategy,
   useSortable,
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { DragIcon, FilterIcon, HideIcon, RefreshIcon, ShowIcon } from "@/components/ui/icons";
+import { DragIcon, HideIcon, RefreshIcon, ShowIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import {
@@ -38,7 +30,19 @@ import {
   type WidgetMeta,
 } from "@/lib/dashboard/widgets";
 
-function SortableWidgetRow({
+/** Long enough to fold a burst of clicks into one request, short enough to feel instant. */
+const SAVE_DEBOUNCE_MS = 500;
+
+/**
+ * One widget as a CHIP, not a full-width row (user, 2026-08-18: "it's too fat and
+ * long, put it in a row or something"). Seven stacked rows of drag handle + label
+ * + a worded button ran most of a screen for a preference you set once; as chips
+ * they wrap into two lines. Same three parts, shrunk: grab, name, show/hide.
+ *
+ * The eye is icon-only — an icon-only control is the one thing exempt from
+ * "every button gets a fill" — and its title/aria carries the Hebrew word.
+ */
+function SortableWidgetChip({
   widget,
   hidden,
   onToggle,
@@ -57,33 +61,41 @@ function SortableWidgetRow({
       ref={setNodeRef}
       style={style}
       className={cn(
-        "flex items-center gap-3 rounded-xl border border-border/60 bg-background p-3",
-        isDragging && "opacity-70 shadow-lg",
-        hidden && "opacity-60"
+        "inline-flex items-center gap-1.5 rounded-full border py-1 pe-1.5 ps-2.5 transition-colors",
+        hidden
+          ? "border-dashed border-border bg-background text-muted-foreground"
+          : "border-secondary/40 bg-secondary/10 text-foreground",
+        isDragging && "shadow-lg"
       )}
     >
+      {/* Its own activator, so dragging never fights the toggle beside it. */}
       <button
         type="button"
         ref={setActivatorNodeRef}
         className="cursor-grab touch-none text-muted-foreground hover:text-foreground active:cursor-grabbing"
-        aria-label="גרור לשינוי הסדר"
+        aria-label={`גרור לשינוי הסדר — ${widget.label}`}
+        title="גרור לשינוי הסדר"
         {...attributes}
         {...listeners}
       >
-        <DragIcon className="h-5 w-5" />
+        <DragIcon className="h-4 w-4" />
       </button>
 
-      <span className={cn("flex-1 text-sm font-medium", hidden && "text-muted-foreground")}>{widget.label}</span>
+      <span className="text-sm font-medium">{widget.label}</span>
 
-      <Button
+      <button
         type="button"
-        size="sm"
-        variant={hidden ? "outline" : "secondary"}
         onClick={() => onToggle(widget.id)}
+        aria-pressed={!hidden}
+        aria-label={hidden ? `הצגת ${widget.label}` : `הסתרת ${widget.label}`}
+        title={hidden ? "מוסתר — לחצו להצגה" : "מוצג — לחצו להסתרה"}
+        className={cn(
+          "flex h-6 w-6 items-center justify-center rounded-full transition-colors",
+          hidden ? "text-muted-foreground hover:bg-muted" : "text-secondary hover:bg-secondary/20"
+        )}
       >
         {hidden ? <HideIcon className="h-4 w-4" /> : <ShowIcon className="h-4 w-4" />}
-        {hidden ? "מוסתר" : "מוצג"}
-      </Button>
+      </button>
     </div>
   );
 }
@@ -93,6 +105,18 @@ function SortableWidgetRow({
  * by dragging. Role bounds the catalog (only widgets the role is allowed to see
  * appear here), so this can never reveal forbidden data. Saving persists the
  * choice to the account and refreshes the server-rendered dashboard.
+ *
+ * Renders INLINE, as the body of a /profile section (user, 2026-08-18: "not to
+ * open as a side overlay ... just open, like the other sections"). It used to be
+ * a button that slid a Sheet in from the left, which made a preference sitting
+ * among other preferences feel like a different kind of thing — and hid the list
+ * behind a click for no gain now that it lives on a settings page.
+ *
+ * It SAVES ITSELF (user: "I don't want to need to hit save here"). Every toggle
+ * and every drop persists, debounced, so a burst of changes is one request.
+ * There's no Save button to forget, and no success toast either — a toast per
+ * click is noise; the line under the chips says what's happening, and only a
+ * FAILURE is worth interrupting for.
  */
 export default function DashboardCustomizer({
   role,
@@ -102,7 +126,6 @@ export default function DashboardCustomizer({
   initialPrefs: DashboardPrefs | null;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
   const [items, setItems] = useState<WidgetMeta[]>(() => orderedCatalog(role, initialPrefs));
   const [hidden, setHidden] = useState<Set<WidgetId>>(() => new Set(initialPrefs?.hidden ?? []));
   const [saving, setSaving] = useState(false);
@@ -112,96 +135,110 @@ export default function DashboardCustomizer({
     useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 6 } })
   );
 
+  const persist = useCallback(
+    async (prefs: DashboardPrefs | null) => {
+      setSaving(true);
+      try {
+        const res = await fetch("/api/profile/dashboard-prefs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prefs }),
+          // The save can still be in flight when the page unmounts (toggle, then
+          // navigate) — keepalive lets the browser finish it anyway.
+          keepalive: true,
+        });
+        if (!res.ok) throw new Error("save failed");
+        const data = (await res.json().catch(() => ({}))) as { synced?: boolean };
+        if (data.synced === false) {
+          toast.warning("השינויים נשמרו מקומית אך טרם סונכרנו לחשבון");
+        }
+        router.refresh();
+      } catch {
+        toast.error("שמירת ההגדרות נכשלה, נסו שוב");
+      } finally {
+        setSaving(false);
+      }
+    },
+    [router]
+  );
+
+  // Dragging a chip across four slots is four drops; hiding three widgets is
+  // three clicks. Each schedules a save and cancels the one before it, so the
+  // account gets the settled state in a single request.
+  const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const schedule = useCallback(
+    (prefs: DashboardPrefs) => {
+      if (pending.current) clearTimeout(pending.current);
+      pending.current = setTimeout(() => {
+        pending.current = null;
+        void persist(prefs);
+      }, SAVE_DEBOUNCE_MS);
+    },
+    [persist]
+  );
+
+  // Leaving the page with a save still queued must not lose it. The ref holds the
+  // CURRENT state, so the unmount effect can stay [] and still flush what's live.
+  const flush = useRef<() => void>(() => {});
+  flush.current = () => {
+    if (!pending.current) return;
+    clearTimeout(pending.current);
+    pending.current = null;
+    void persist({ order: items.map((w) => w.id), hidden: [...hidden] });
+  };
+  useEffect(() => () => flush.current(), []);
+
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    setItems((prev) => {
-      const from = prev.findIndex((w) => w.id === active.id);
-      const to = prev.findIndex((w) => w.id === over.id);
-      if (from === -1 || to === -1) return prev;
-      return arrayMove(prev, from, to);
-    });
+    const from = items.findIndex((w) => w.id === active.id);
+    const to = items.findIndex((w) => w.id === over.id);
+    if (from === -1 || to === -1) return;
+    const next = arrayMove(items, from, to);
+    setItems(next);
+    schedule({ order: next.map((w) => w.id), hidden: [...hidden] });
   }
 
   function toggle(id: WidgetId) {
-    setHidden((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  async function persist(prefs: DashboardPrefs | null) {
-    setSaving(true);
-    try {
-      const res = await fetch("/api/profile/dashboard-prefs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prefs }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { synced?: boolean };
-      if (!res.ok) throw new Error("save failed");
-      if (data.synced === false) {
-        toast.warning("השינויים נשמרו מקומית אך טרם סונכרנו לחשבון");
-      } else {
-        toast.success("הלוח עודכן");
-      }
-      setOpen(false);
-      router.refresh();
-    } catch {
-      toast.error("שמירת ההגדרות נכשלה, נסו שוב");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function handleSave() {
-    void persist({ order: items.map((w) => w.id), hidden: [...hidden] });
+    const next = new Set(hidden);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setHidden(next);
+    schedule({ order: items.map((w) => w.id), hidden: [...next] });
   }
 
   function handleReset() {
+    if (pending.current) clearTimeout(pending.current);
+    pending.current = null;
     setItems(catalogForRole(role));
     setHidden(new Set());
     void persist(null);
   }
 
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
-        {/* Icon-only on phones so the greeting beside it keeps the full width;
-            the label comes back once there's room for it. */}
-        <Button variant="outline" size="sm" aria-label="התאמת לוח" className="px-2.5 sm:px-3">
-          <FilterIcon className="h-4 w-4" />
-          <span className="hidden sm:inline">התאמת לוח</span>
+    <div className="space-y-3">
+      {/* rectSortingStrategy, not the vertical one: the chips wrap, so a strategy
+          that only knows about a single column would compute the drop target from
+          the wrong axis. */}
+      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+        <SortableContext items={items.map((w) => w.id)} strategy={rectSortingStrategy}>
+          <div className="flex flex-wrap gap-2">
+            {items.map((w) => (
+              <SortableWidgetChip key={w.id} widget={w} hidden={hidden.has(w.id)} onToggle={toggle} />
+            ))}
+          </div>
+        </SortableContext>
+      </DndContext>
+
+      <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3">
+        <Button type="button" variant="outline" size="sm" onClick={handleReset} disabled={saving}>
+          <RefreshIcon className="h-4 w-4" />
+          ברירת מחדל
         </Button>
-      </SheetTrigger>
-      <SheetContent side="left" className="flex w-full flex-col gap-0 sm:max-w-md">
-        <SheetHeader className="text-right">
-          <SheetTitle>התאמת לוח</SheetTitle>
-          <SheetDescription>בחרו אילו כרטיסים להציג וגררו לשינוי הסדר.</SheetDescription>
-        </SheetHeader>
-
-        <div className="-mx-2 mt-4 flex-1 space-y-2 overflow-y-auto px-2">
-          <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-            <SortableContext items={items.map((w) => w.id)} strategy={verticalListSortingStrategy}>
-              {items.map((w) => (
-                <SortableWidgetRow key={w.id} widget={w} hidden={hidden.has(w.id)} onToggle={toggle} />
-              ))}
-            </SortableContext>
-          </DndContext>
-        </div>
-
-        <div className="mt-4 flex items-center justify-between gap-2 border-t border-border/60 pt-4">
-          <Button type="button" variant="outline" size="sm" onClick={handleReset} disabled={saving}>
-            <RefreshIcon className="h-4 w-4" />
-            ברירת מחדל
-          </Button>
-          <Button type="button" onClick={handleSave} disabled={saving}>
-            {saving ? "שומר..." : "שמירה"}
-          </Button>
-        </div>
-      </SheetContent>
-    </Sheet>
+        <span className="text-xs text-muted-foreground">
+          {saving ? "שומר..." : "השינויים נשמרים אוטומטית"}
+        </span>
+      </div>
+    </div>
   );
 }

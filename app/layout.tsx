@@ -46,7 +46,7 @@ export default function RootLayout({
       <head>
         {/* Apply the saved global text-size multiplier before first paint.
             Migrates the legacy absolute-px key (biz-font-size) to a scale. */}
-        <script dangerouslySetInnerHTML={{ __html: `try{var s=localStorage.getItem('biz-font-scale');if(!s){var px=parseFloat(localStorage.getItem('biz-font-size'));if(px>0){s=String(px/17);localStorage.setItem('biz-font-scale',s);}}if(s){document.documentElement.style.setProperty('--font-scale',s);}}catch(e){}` }} />
+        <script dangerouslySetInnerHTML={{ __html: `try{var d=document.documentElement;var s=localStorage.getItem('biz-font-scale');if(!s){var px=parseFloat(localStorage.getItem('biz-font-size'));if(px>0){s=String(px/17);localStorage.setItem('biz-font-scale',s);}}if(s){d.style.setProperty('--font-scale',s);}var m=localStorage.getItem('biz-font-scale-mobile');if(m){d.style.setProperty('--font-scale-mobile',m);}}catch(e){}` }} />
       </head>
       <body className="antialiased">
         <PwaRegistration />

@@ -13,6 +13,17 @@ import { useEffect } from "react";
 // Trade-off: a cross-device scale change takes effect on the next reload instead
 // of shifting the page the user is currently looking at. (Same-device changes
 // from the profile page still apply instantly there.)
+/** Persist ONE account value to its localStorage key. Unset → keep what's local. */
+function cache(key: string, value: number | null | undefined) {
+  const scale = Number(value);
+  if (!Number.isFinite(scale) || scale <= 0) return;
+  try {
+    if (localStorage.getItem(key) !== String(scale)) localStorage.setItem(key, String(scale));
+  } catch {
+    // localStorage unavailable (private mode) — nothing to cache into.
+  }
+}
+
 export default function FontScaleSync() {
   useEffect(() => {
     try {
@@ -24,17 +35,13 @@ export default function FontScaleSync() {
     let active = true;
     void fetch("/api/profile/font-scale", { cache: "no-store" })
       .then((response) => (response.ok ? response.json() : null))
-      .then((json: { fontScale?: number | null } | null) => {
+      .then((json: { fontScale?: number | null; fontScaleMobile?: number | null } | null) => {
         if (!active) return;
         try { sessionStorage.setItem("biz-font-scale-synced", "1"); } catch { /* ignore */ }
-        const scale = Number(json?.fontScale);
-        if (!Number.isFinite(scale) || scale <= 0) return; // unset → keep local
-        // Persist only — applied pre-paint on the next load, so no reflow now.
-        try {
-          if (localStorage.getItem("biz-font-scale") !== String(scale)) {
-            localStorage.setItem("biz-font-scale", String(scale));
-          }
-        } catch { /* ignore */ }
+        // One key per device class — the CSS picks between them by viewport, so
+        // both travel with the account and each device reads the one it needs.
+        cache("biz-font-scale", json?.fontScale);
+        cache("biz-font-scale-mobile", json?.fontScaleMobile);
       })
       .catch(() => {
         // Offline / network error — the locally-cached value stays in effect.

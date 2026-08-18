@@ -10,6 +10,8 @@ import {
   WORK_SESSIONS_TABLE,
 } from "@/lib/payroll";
 import ProfileClient from "@/app/(app)/profile/ProfileClient";
+import DashboardCustomizer from "@/components/dashboard/DashboardCustomizer";
+import { sanitizePrefs } from "@/lib/dashboard/widgets";
 import PageTitle from "@/components/layout/PageTitle";
 import { loadMyShiftState } from "@/lib/attendance/my-shift";
 import { loadMyPayroll } from "@/lib/my-payroll";
@@ -94,16 +96,19 @@ export default async function ProfilePage() {
         .range(0, 199),
     ]);
 
-  // Per-user text-size multiplier. Tolerant of the column not existing yet
-  // (before db/sql/add_user_font_scale.sql is run) — falls back to null so the
-  // client uses its localStorage value.
+  // Per-user text-size multipliers, one per device class. Tolerant of either
+  // column not existing yet (font_scale predates font_scale_mobile, migration
+  // 20260818000000) — a failed read falls back to null and the client uses its
+  // localStorage value.
   const { data: fontScaleRow } = await supabase
     .from("users")
-    .select("font_scale")
+    .select("font_scale,font_scale_mobile")
     .eq("id", profile.id)
     .maybeSingle();
-  const rawFontScale = (fontScaleRow as { font_scale?: unknown } | null)?.font_scale;
-  const initialFontScale = typeof rawFontScale === "number" && rawFontScale > 0 ? rawFontScale : null;
+  const fontScales = fontScaleRow as { font_scale?: unknown; font_scale_mobile?: unknown } | null;
+  const positive = (value: unknown) => (typeof value === "number" && value > 0 ? value : null);
+  const initialFontScale = positive(fontScales?.font_scale);
+  const initialFontScaleMobile = positive(fontScales?.font_scale_mobile);
 
   // Chosen avatar color — separate query so a missing column (before
   // db/sql/add_user_avatar_color.sql runs) can't break the font-scale load.
@@ -221,6 +226,7 @@ export default async function ProfilePage() {
           <ProfileClient
             profile={profile}
             initialFontScale={initialFontScale}
+            initialFontScaleMobile={initialFontScaleMobile}
             initialAvatarColor={initialAvatarColor}
             sessions={sessions}
             agreements={agreements}
@@ -230,6 +236,13 @@ export default async function ProfilePage() {
             projectOptions={projectOptions}
             propertyOptions={propertyOptions}
             isWorker={isWorker}
+            dashboardCustomizer={
+              // Nothing worth rearranging on a worker's board — it's the clock,
+              // his tasks and his deliveries.
+              isWorker ? null : (
+                <DashboardCustomizer role={profile.role} initialPrefs={sanitizePrefs(profile.dashboard_prefs)} />
+              )
+            }
             openShiftReport={shiftState.open}
             pendingShiftReports={shiftState.pending}
             myBonuses={myBonuses}

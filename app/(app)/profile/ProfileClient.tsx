@@ -3,8 +3,8 @@ import { toHebrewError } from "@/lib/error-messages";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { ComponentType } from "react";
-import { ClockIcon, HideIcon, NotificationIcon, ShowIcon, UserIcon, WalletIcon } from "@/components/ui/icons";
+import type { ComponentType, ReactNode } from "react";
+import { ClockIcon, DesktopIcon, HideIcon, MobileIcon, NotificationIcon, ShowIcon, UserIcon, WalletIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -54,6 +54,8 @@ import type { MyShiftReport } from "@/lib/attendance/my-shift";
 type Props = {
   profile: UserProfile;
   initialFontScale: number | null;
+  /** The phone's own multiplier; null = follow the desktop one. */
+  initialFontScaleMobile: number | null;
   initialAvatarColor: string | null;
   sessions: WorkSessionRow[];
   agreements: SalaryAgreementRow[];
@@ -70,6 +72,12 @@ type Props = {
    * his RLS policies no longer permit anyway).
    */
   isWorker?: boolean;
+  /**
+   * The «התאמת לוח» trigger, built by the page (it needs the widget catalog and
+   * the saved prefs). Passed in rather than imported so this file stays out of
+   * the dashboard's business; null for a worker, who has no board to arrange.
+   */
+  dashboardCustomizer?: ReactNode;
   openShiftReport?: MyShiftReport | null;
   pendingShiftReports?: MyShiftReport[];
   /** His own bonuses — one payslip_items row each. */
@@ -142,7 +150,7 @@ function toLocalDateTimeValue(date: Date) {
 
 type ProfileTab = "profile" | "notifications" | "sessions" | "salary";
 
-export default function ProfileClient({ profile, initialFontScale, initialAvatarColor, sessions, agreements, payslips, periods, monthlySummaries, projectOptions, propertyOptions, isWorker = false, openShiftReport = null, pendingShiftReports = [], myBonuses = [], payTotals = null, payBySessionId = {}, linkLabelBySessionId = {} }: Props) {
+export default function ProfileClient({ profile, initialFontScale, initialFontScaleMobile, initialAvatarColor, sessions, agreements, payslips, periods, monthlySummaries, projectOptions, propertyOptions, isWorker = false, dashboardCustomizer = null, openShiftReport = null, pendingShiftReports = [], myBonuses = [], payTotals = null, payBySessionId = {}, linkLabelBySessionId = {} }: Props) {
   const router = useRouter();
   // The whole page is the swipe surface, so the gesture works wherever the
   // thumb happens to be rather than only on the tab strip.
@@ -297,12 +305,22 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
     { label: "גדול מאוד", scale: 1.3 },
     { label: "ענק", scale: 1.5 },
   ] as const;
+  // Which screen each row of the chooser sets. Order matters: the device you're
+  // most likely reading this on first.
+  const FONT_SCALE_DEVICES = [
+    { key: "desktop" as const, label: "במחשב", icon: DesktopIcon },
+    { key: "mobile" as const, label: "בטלפון", icon: MobileIcon },
+  ];
   const snapToScale = (value: number) =>
     FONT_SCALES.reduce(
       (best, option) =>
         Math.abs(option.scale - value) < Math.abs(best - value) ? option.scale : best,
       1 as number,
     );
+  // TWO sizes, one per device class: the desktop multiplier (--font-scale) and
+  // the phone's (--font-scale-mobile). The CSS picks between them by viewport, so
+  // both are set here and only the one for the screen you're on takes effect —
+  // which is why each chooser says which device it's for.
   const [fontScale, setFontScale] = useState<number>(() => {
     // The account value (synced across devices) wins when set.
     if (initialFontScale && initialFontScale > 0) return snapToScale(initialFontScale);
@@ -313,22 +331,37 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
     const oldPx = Number(localStorage.getItem("biz-font-size"));
     return Number.isFinite(oldPx) && oldPx > 0 ? snapToScale(oldPx / 17) : 1;
   });
+  // Falls back to the desktop size rather than to 1: before this setting existed
+  // there was one value for both, and nobody's phone should silently reset.
+  const [fontScaleMobile, setFontScaleMobile] = useState<number>(() => {
+    if (initialFontScaleMobile && initialFontScaleMobile > 0) return snapToScale(initialFontScaleMobile);
+    if (typeof window === "undefined") return snapToScale(initialFontScale ?? 1);
+    const saved = Number(localStorage.getItem("biz-font-scale-mobile"));
+    if (Number.isFinite(saved) && saved > 0) return snapToScale(saved);
+    const desktop = Number(localStorage.getItem("biz-font-scale"));
+    return Number.isFinite(desktop) && desktop > 0 ? snapToScale(desktop) : snapToScale(initialFontScale ?? 1);
+  });
   useEffect(() => {
     const root = document.documentElement;
     // Older builds set an absolute inline font-size here; clear it so the CSS
     // calc(17px * var(--font-scale)) governs the size again.
     root.style.removeProperty("font-size");
     root.style.setProperty("--font-scale", String(fontScale));
-    try { localStorage.setItem("biz-font-scale", String(fontScale)); } catch (_) {}
-  }, [fontScale]);
-  function selectFontScale(scale: number) {
-    setFontScale(scale);
+    root.style.setProperty("--font-scale-mobile", String(fontScaleMobile));
+    try {
+      localStorage.setItem("biz-font-scale", String(fontScale));
+      localStorage.setItem("biz-font-scale-mobile", String(fontScaleMobile));
+    } catch (_) {}
+  }, [fontScale, fontScaleMobile]);
+  function selectFontScale(scale: number, device: "desktop" | "mobile") {
+    if (device === "mobile") setFontScaleMobile(scale);
+    else setFontScale(scale);
     // Persist to the account so the choice follows the user across devices.
     // Fire-and-forget: the local apply above already took effect.
     void fetch("/api/profile/font-scale", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ scale }),
+      body: JSON.stringify({ scale, device }),
     }).catch(() => {});
   }
 
@@ -1016,31 +1049,66 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
         </CardContent>
       </Card>
 
+      {/* «התאמת לוח» lives here rather than on the dashboard itself (user,
+          2026-08-17): it's a personal display preference like the two below it,
+          and it was the one control standing between the board's header and its
+          cards. A worker gets no button — his board is the clock, his tasks and
+          his deliveries, so there'd be nothing to rearrange. */}
+      {dashboardCustomizer ? (
+        <Card>
+          <CardContent className="py-5">
+            <div className="mb-1 text-sm font-semibold">התאמת לוח</div>
+            <div className="mb-3 text-xs text-muted-foreground">
+              בחרו אילו כרטיסים יופיעו בדשבורד וגררו לשינוי הסדר. הבחירה נשמרת בחשבון שלך.
+            </div>
+            {/* The list itself, open on the page — the same shape as every other
+                section here, rather than a button that slides a panel in. */}
+            {dashboardCustomizer}
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardContent className="py-5">
           <div className="mb-1 text-sm font-semibold">גודל טקסט</div>
-          <div className="mb-3 text-xs text-muted-foreground">
-            הבחירה משנה את גודל הטקסט בכל המערכת ונשמרת בחשבון שלך — בכל מכשיר שתתחבר ממנו.
+          <div className="mb-4 text-xs text-muted-foreground">
+            גודל נפרד למחשב ולטלפון — כל מסך מקבל את מה שנוח לקרוא בו. הבחירה נשמרת
+            בחשבון שלך ומגיעה איתך לכל מכשיר.
           </div>
-          <div className="flex flex-wrap gap-2">
-            {FONT_SCALES.map((option) => {
-              const isActive = Math.abs(fontScale - option.scale) < 0.01;
-              return (
-                <button
-                  key={option.scale}
-                  type="button"
-                  onClick={() => selectFontScale(option.scale)}
-                  className={`flex flex-col items-center gap-1 rounded-2xl border px-4 py-3 transition-all ${
-                    isActive
-                      ? "border-primary bg-primary text-primary-foreground shadow-md shadow-primary/25"
-                      : "border-border bg-background text-foreground hover:border-primary/40 hover:bg-primary/5"
-                  }`}
-                >
-                  <span style={{ fontSize: `${17 * option.scale}px`, lineHeight: 1 }}>א</span>
-                  <span className="text-xs font-medium">{option.label}</span>
-                </button>
-              );
-            })}
+          {/* Two rows, one per device class. Each applies to the screen it names,
+              so changing the phone size from a desktop shows nothing here — the
+              row is labelled for exactly that reason. */}
+          <div className="space-y-4">
+            {FONT_SCALE_DEVICES.map((device) => (
+              <div key={device.key}>
+                <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                  <device.icon className="h-4 w-4" />
+                  {device.label}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {FONT_SCALES.map((option) => {
+                    const current = device.key === "mobile" ? fontScaleMobile : fontScale;
+                    const isActive = Math.abs(current - option.scale) < 0.01;
+                    return (
+                      <button
+                        key={option.scale}
+                        type="button"
+                        onClick={() => selectFontScale(option.scale, device.key)}
+                        aria-pressed={isActive}
+                        className={`flex flex-col items-center gap-1 rounded-2xl border px-4 py-3 transition-all ${
+                          isActive
+                            ? "border-primary bg-primary text-primary-foreground shadow-md shadow-primary/25"
+                            : "border-border bg-background text-foreground hover:border-primary/40 hover:bg-primary/5"
+                        }`}
+                      >
+                        <span style={{ fontSize: `${17 * option.scale}px`, lineHeight: 1 }}>א</span>
+                        <span className="text-xs font-medium">{option.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>
