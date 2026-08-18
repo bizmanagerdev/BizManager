@@ -16,6 +16,18 @@ function parseDateValue(value: string) {
   return new Date(value);
 }
 
+/**
+ * "יום שני" — the full Hebrew weekday of a timestamp, in Israel time.
+ *
+ * Lives here rather than beside the attendance card that first needed it: a
+ * "use client" module's exports can't be called from a server component (Next
+ * throws "attempted to call X from the server but X is on the client"), and the
+ * dashboard's server-rendered day headings need exactly this.
+ */
+export function hebrewWeekday(iso: string) {
+  return new Intl.DateTimeFormat("he-IL", { weekday: "long", timeZone: "Asia/Jerusalem" }).format(new Date(iso));
+}
+
 export function formatShortDate(value: string | null | undefined, fallback = "-") {
   if (!value) return fallback;
   const date = parseDateValue(value);

@@ -8,7 +8,10 @@ export const Card = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "brand-frame surface-panel rounded-[1.5rem] border border-border/60 text-card-foreground shadow-card",
+      // 1.125rem, down from 1.5 (user, 2026-08-18: "a little less rounded").
+      // Every overlay link and skeleton that has to match a card's corner spells
+      // the same number out — grep rounded-[1.125rem] before changing it.
+      "brand-frame surface-panel rounded-[1.125rem] border border-border/60 text-card-foreground shadow-card",
       className
     )}
     {...props}

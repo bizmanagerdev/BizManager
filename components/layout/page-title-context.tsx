@@ -18,7 +18,17 @@ import {
   type ReactNode,
 } from "react";
 
-export type PageTitle = { title: string; subtitle?: string; action?: ReactNode } | null;
+export type PageTitle = {
+  /**
+   * Usually a string (a route name). A ReactNode when a page needs part of its
+   * heading to drop on a narrow bar — the dashboard's greeting keeps the name on
+   * a wide bar and shows "ערב טוב 👋" alone on a phone, because the bar's title
+   * slot SPILLS rather than shrinking (see TopBar).
+   */
+  title: ReactNode;
+  subtitle?: string;
+  action?: ReactNode;
+} | null;
 
 type Store = {
   pageTitle: PageTitle;
@@ -75,9 +85,10 @@ export function useSetHeaderAction(node: ReactNode) {
 /**
  * Declare this page's title (and optional subtitle, e.g. a live row count).
  * Clears itself on unmount so a page that doesn't set one shows nothing rather
- * than inheriting the previous page's heading.
+ * than inheriting the previous page's heading. Shown in the top bar at every
+ * width — see TopBar.
  */
-export function useSetPageTitle(title: string, subtitle?: string, action?: ReactNode) {
+export function useSetPageTitle(title: ReactNode, subtitle?: string, action?: ReactNode) {
   const { setPageTitle } = useContext(PageTitleContext);
   useEffect(() => {
     setPageTitle({ title, subtitle, action });

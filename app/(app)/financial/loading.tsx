@@ -14,7 +14,7 @@ export default function FinancialLoading() {
         </div>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 w-full rounded-[1.5rem]" />
+            <Skeleton key={i} className="h-24 w-full rounded-[1.125rem]" />
           ))}
         </div>
         <div className="space-y-3">

@@ -62,10 +62,13 @@ export default function DeliveryShareActions({
   delivery,
   className,
   label = "שיתוף",
+  variant = "secondary",
 }: {
   delivery: DeliveryItem;
   className?: string;
   label?: string;
+  /** "ghost" for a bare glyph with no button plate — see the dashboard card. */
+  variant?: React.ComponentProps<typeof Button>["variant"];
 }) {
   const slipRef = useRef<HTMLDivElement>(null);
   const [renderingImage, setRenderingImage] = useState(false);
@@ -219,7 +222,7 @@ export default function DeliveryShareActions({
     <>
       <Button
         type="button"
-        variant="secondary"
+        variant={variant}
         size="sm"
         className={cn("gap-1", className)}
         onClick={() => setRenderingImage(true)}

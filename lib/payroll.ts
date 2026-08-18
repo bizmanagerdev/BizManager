@@ -1,4 +1,5 @@
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
+import { formatMoney } from "@/lib/money";
 import type { FinancialAttachment } from "@/lib/payments";
 
 export const WORK_SESSIONS_TABLE = "attendance_sessions";
@@ -79,13 +80,14 @@ export function toNumber(value: number | string | null | undefined) {
   return 0;
 }
 
+/**
+ * Kept as the payroll-side name for the app's ONE money format — see lib/money.
+ * It used to build its own `he-IL` currency string, which trails the ₪ and wraps
+ * it in RTL marks, so payroll amounts read `‏5,000 ‏₪` while every hand-written
+ * amount elsewhere read `₪5,000`. Same quantity, two shapes.
+ */
 export function formatCurrency(value: number | string | null | undefined) {
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(toNumber(value));
+  return formatMoney(value);
 }
 
 export function formatMinutes(minutes: number | string | null | undefined) {

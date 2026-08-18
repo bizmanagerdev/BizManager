@@ -14,17 +14,23 @@
        Because the entire UI is rem-based, scaling the root scales text, spacing,
        paddings and widths together. --font-scale is set from the profile page
        (persisted in localStorage, applied pre-paint in app/layout.tsx); it
-       defaults to 1 below. */
+       defaults to 1 below.
+
+       TWO multipliers, one per device class: --font-scale is the DESKTOP size and
+       --font-scale-mobile the phone's (see the media query below). A size that
+       reads well on a 27" screen isn't the one you want on a 360px one. */
     font-size: calc(17px * var(--font-scale, 1));
   }
 
   @media (max-width: 767px) {
     html {
-      /* On phones the viewport width is fixed, so a very large multiplier would
+      /* The phone's own multiplier, falling back to the desktop one when it was
+         never set — so anyone who chose a size before this existed keeps it.
+         On phones the viewport width is fixed, so a very large multiplier would
          blow the layout past the screen. Cap the effective root size to a share
          of the viewport width (6vw): the chosen size is honoured up to what the
          screen can actually lay out, keeping everything readable AND on-screen. */
-      font-size: min(calc(17px * var(--font-scale, 1)), 6vw);
+      font-size: min(calc(17px * var(--font-scale-mobile, var(--font-scale, 1))), 6vw);
     }
     body {
       font-weight: 500;
@@ -76,6 +82,25 @@
   }
   html::-webkit-scrollbar-button {
     display: none;
+  }
+
+  /* Cards on the dashboard carry a view-transition-name, so when the board
+     repacks (a card dismissed, a section opened) the browser morphs each one
+     from its old box to its new one. Short, and eased out: this is feedback for
+     a click, not an entrance. */
+  ::view-transition-group(*) {
+    animation-duration: 220ms;
+    animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  /* The JS side already skips the transition under reduced motion; this covers
+     any transition started elsewhere. */
+  @media (prefers-reduced-motion: reduce) {
+    ::view-transition-group(*),
+    ::view-transition-old(*),
+    ::view-transition-new(*) {
+      animation: none !important;
+    }
   }
 
   /* Long unbreakable strings (URLs, IBANs, long numbers) wrap instead of pushing
@@ -167,6 +192,14 @@
     /* === SEMANTIC TOKENS (what components reference) === */
 
     --background: var(--white);
+
+    /* The DASHBOARD's backdrop — the one page where a light hue behind white
+       cards is what gives the board its depth. It is NOT --background: that
+       token paints every page, and the top bar's brand corner with it, so the
+       tint turned up in places that should stay white (user, 2026-08-18: "I
+       don't want this light color everywhere, only on the dashboard").
+       Applied by .board-backdrop, which the dashboard page renders. */
+    --board-backdrop: 241 246 253;
     --foreground: var(--primary-3);
 
     --card: var(--white);
@@ -299,28 +332,14 @@
     @apply border-border;
   }
 
+  /* PLAIN WHITE, everywhere (user, 2026-08-18: "I want it white again — only the
+     dashboard should have colour in the background"). The tinted gradients and
+     the faint grid that used to live here painted every screen in the app; they
+     moved onto .board-backdrop, which only the dashboard renders. */
   body {
     @apply bg-background text-foreground font-sans antialiased;
     direction: rtl;
     min-height: 100vh;
-    background-image:
-      radial-gradient(circle at top right, rgb(var(--secondary-5) / 0.10), transparent 28%),
-      radial-gradient(circle at left 20%, rgb(var(--secondary-5) / 0.08), transparent 30%),
-      linear-gradient(180deg, rgb(var(--white)), rgb(var(--secondary-10) / 0.35));
-    background-attachment: fixed;
-  }
-
-  body::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    background-image:
-      linear-gradient(rgb(var(--secondary-5) / 0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgb(var(--secondary-5) / 0.03) 1px, transparent 1px);
-    background-size: 32px 32px;
-    mask-image: linear-gradient(180deg, white, transparent 80%);
-    z-index: -1;
   }
 
   h1,
@@ -358,10 +377,39 @@
     box-shadow: var(--shadow-lg);
   }
 
+  /* FLAT, not a 135deg gradient. The old diagonal ran from 0.96 to 0.84 alpha,
+     so the page's tinted background showed through more towards one corner and
+     every card carried a faint slanted band across it — visible as "slanty lines
+     in the background" on the big cards (the chart, the delivery list). One even
+     fill: nothing to band. */
+  /* A full-bleed layer behind ONE page's content. `fixed` so it covers the
+     scroll area without stretching the page, and `-z-10` to sit behind
+     everything the page draws while staying above the body's own gradient. */
+  .board-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: -10;
+    pointer-events: none;
+    background-color: rgb(var(--board-backdrop));
+    /* The app's old body texture, now the board's alone: two soft accent washes
+       and a 32px grid that fades out down the page. White cards on top of it are
+       what give the board its depth. */
+    background-image:
+      linear-gradient(rgb(var(--secondary-5) / 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(var(--secondary-5) / 0.035) 1px, transparent 1px),
+      radial-gradient(circle at top right, rgb(var(--secondary-5) / 0.10), transparent 28%),
+      radial-gradient(circle at left 20%, rgb(var(--secondary-5) / 0.08), transparent 30%);
+    background-size: 32px 32px, 32px 32px, auto, auto;
+  }
+
   .surface-panel {
-    background:
-      linear-gradient(135deg, rgb(var(--card) / 0.96), rgb(var(--white) / 0.84));
-    backdrop-filter: blur(16px);
+    /* PURE WHITE and fully opaque (user, 2026-08-18: "make the page a light hue
+       and the cards white"). At 0.96 the page's tint came through every card, so
+       cards and page were the same colour and nothing looked raised — the
+       contrast is the point. Opaque also means the blur behind it was painting
+       nothing, so it's gone: one less backdrop-filter, which is also one less
+       containing block for `fixed` children. */
+    background: rgb(var(--card));
   }
 
   .brand-frame {
@@ -471,4 +519,89 @@ select:not([multiple]):not([size]) {
   background-position: left 0.6rem center;
   background-size: 1.5rem 1.5rem;
   padding-left: 2.4rem;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PHONE: the dashboard's cards become full-bleed SECTIONS.
+
+   OUTSIDE every @layer, on purpose. Inside `@layer utilities` this lost to the
+   card's own `rounded-[1.125rem]` / `border` utilities: cascade LAYERS are
+   resolved before specificity, so a same-layer utility written later in the
+   sheet wins no matter how specific the selector is. Unlayered rules beat every
+   layered one, which is exactly what a "the board overrides its cards here"
+   rule needs.
+
+   One rule rather than a `max-md:` class on nine card components — every card
+   wears .surface-panel (that IS Card), so the board says this once, for the
+   cards it holds today and whatever gets added later.
+
+   A card is a device for separating things that sit side by side. On a 390px
+   screen nothing does — so the ROUNDING, the shadow and the page gutter go, and
+   what's left is a bordered section edge to edge. What went too far and had to
+   come back: dropping the border entirely and pinning the headers. Sections with
+   nothing around them but a seam read as one long flow with lines in it.
+   ───────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  /* A stronger blue behind the board on a phone. On desktop the tint only has to
+     hint, because the columns and the gaps already separate the cards; here the
+     page between sections is a 4px margin and a 10px gap, and at desktop's
+     whisper of colour that gap read as part of the white. This is what makes a
+     section look like a separate thing. */
+  .board-backdrop {
+    background-color: rgb(var(--secondary-10));
+  }
+
+  .board-flush {
+    /* Cancels AppShell's px-3 page gutter entirely — sections run edge to edge.
+       They can now, because the blue behind the board does the separating: the
+       10px of it between one section and the next says where each one ends, so
+       the side margin that used to carry that job is width the content gets
+       back. Keep this in step with the page's px-3. */
+    margin-inline: -0.75rem;
+    /* And the page's py-4 above the board: the first section starts against the
+       top bar. A strip of blue between a dark bar and the first card is a gap
+       that belongs to neither. */
+    margin-block-start: -1rem;
+    /* Air between one section and the next — and the only place the blue shows. */
+    gap: 0.625rem;
+  }
+
+  /* A contained block: full border, a small radius, no shadow. Flatter and wider
+     than a card, but still visibly a thing with edges — the rounding is what
+     stops a bordered band from reading as a rule across the page.
+     2px, DELIBERATELY heavier than the 1px rules between rows inside it: at the
+     same weight the outline of a section and the line between two of its rows
+     say the same thing, and the eye can't tell where one section ends. */
+  .board-flush .surface-panel {
+    border-radius: 0.5rem;
+    border-width: 2px;
+    box-shadow: none;
+  }
+
+  /* A phone shows the HEAD of each list — three rows — and the footer's count
+     says how many there are in all. Otherwise one card's list fills the screen
+     and every other section starts below the fold: you scroll a list to reach a
+     list. Rows past the third are hidden, not dropped, so this stays a CSS
+     decision the server doesn't have to guess at.
+
+     Flat lists only. A grouped one (attendance by day, payments by stage) would
+     lose its headings to nth-child. */
+  .board-flush .board-list > :nth-child(n + 4) {
+    display: none;
+  }
+
+  /* A 1px gradient outline around a full-width band reads as a mistake. */
+  .board-flush .brand-frame::before {
+    display: none;
+  }
+}
+
+/* The board's backdrop sits at z-index:-10, which puts it behind `main`'s own
+   background too — and main is `bg-background`, i.e. opaque white. So the tint
+   was being painted and then covered, on every width.
+   `main` steps aside on the one page that brings a backdrop of its own. Unlayered,
+   so it beats the bg-background utility; :has() is supported everywhere this app
+   runs, and where it isn't the page simply stays white. */
+main:has(.board-backdrop) {
+  background-color: transparent;
 }

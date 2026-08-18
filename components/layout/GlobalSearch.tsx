@@ -310,16 +310,19 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
       {!desktopOnly ? (
         // A real search BAR on mobile, not a lone glyph — it reads as "type here".
         // Tapping it opens the full-screen dialog below, which is a far better
-        // place for results on a phone than an inline dropdown would be. The bar
-        // needs the header's middle slot, so when the page title has taken that
-        // (iconOnly) it falls back to a glyph in the icon cluster.
+        // place for results on a phone than an inline dropdown would be.
+        //
+        // `iconOnly` is the glyph-in-the-icon-cluster form, and it is NOT
+        // lg:hidden: the top bar now uses it at every width (the 20rem desktop box
+        // was dropped, and the bar's middle slot went to the page title), so one
+        // magnifier opens the same dialog on a phone and on a desktop.
         <Button
           variant="ghost"
           size={iconOnly ? "icon-sm" : undefined}
           aria-label={iconOnly ? "חיפוש" : undefined}
           className={cn(
             iconOnly
-              ? "shrink-0 text-sidebar-foreground/70 hover:text-sidebar-foreground lg:hidden"
+              ? "shrink-0 text-sidebar-foreground/70 hover:text-sidebar-foreground"
               : "h-10 w-full justify-start gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-3 font-normal text-sidebar-foreground/60 shadow-none hover:bg-white/[0.1] hover:text-sidebar-foreground lg:hidden",
             className
           )}

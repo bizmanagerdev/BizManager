@@ -4,7 +4,6 @@ import AttendanceQueuePanel from "@/components/attendance/AttendanceQueuePanel";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { loadPhoneQueueData } from "@/lib/attendance/phone-reports";
 import { loadAttendanceRefData } from "@/lib/payroll-page-loader";
-import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions } from "@/lib/payroll-worker-type";
 
 /**
  * "דיווחי נוכחות" — the attendance queue as its own page under עובדים: raw
@@ -23,20 +22,10 @@ export default async function PayrollAttendancePage() {
     redirect("/no-access");
   }
 
-  const [{ users, projectOptions, propertyOptions }, phoneQueue] = await Promise.all([
+  const [{ projectOptions, propertyOptions }, phoneQueue] = await Promise.all([
     loadAttendanceRefData(supabase),
     loadPhoneQueueData(supabase, { includeCost: profile.role === "admin" }),
   ]);
-
-  // Workers eligible for manual phone-attendance entry (active, session-logging types).
-  const attendanceWorkers = users
-    .filter(
-      (u) =>
-        u.active !== false &&
-        (u.role === "worker" || u.role === "worker_no_access") &&
-        payrollWorkerTypeAllowsSessions(normalizePayrollWorkerType(u.payroll_worker_type, u.pay_tracking_mode))
-    )
-    .map((u) => ({ id: u.id, name: u.full_name, phone: u.phone }));
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
@@ -44,7 +33,6 @@ export default async function PayrollAttendancePage() {
         <AttendanceQueuePanel
           pending={phoneQueue.pending}
           open={phoneQueue.open}
-          workers={attendanceWorkers}
           projectOptions={projectOptions}
           propertyOptions={propertyOptions}
         />

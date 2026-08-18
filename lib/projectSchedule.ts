@@ -26,6 +26,16 @@ function getString(row: Row, key: string) {
   return typeof value === "string" ? value : null;
 }
 
+/**
+ * "14:00" out of a stored time, or null. `tasks.due_time` is free TEXT (see
+ * db/sql/tasks_trello_upgrade.sql), so anything that isn't a plain HH:MM is
+ * dropped rather than printed on a card. Seconds, if present, are cut.
+ */
+function hhmm(value: string | null): string | null {
+  const match = value ? /^([01]\d|2[0-3]):([0-5]\d)/.exec(value.trim()) : null;
+  return match ? `${match[1]}:${match[2]}` : null;
+}
+
 function uniqueIds(rows: Row[], key: string) {
   return [
     ...new Set(rows.map((row) => (typeof row[key] === "string" ? (row[key] as string) : "")).filter(Boolean)),
@@ -54,7 +64,7 @@ export async function getScheduleEntries(
 ): Promise<CalendarEntry[]> {
   let tasksQuery = supabase
     .from("tasks")
-    .select("id,subject,status,priority,due_date,assigned_user_id,project_id")
+    .select("id,subject,status,priority,due_date,due_time,assigned_user_id,project_id")
     .in("status", OPEN_TASK_STATUSES)
     .order("due_date", { ascending: true })
     .range(0, 499);
@@ -123,15 +133,28 @@ export async function getScheduleEntries(
       const projectId = getString(row, "project_id");
       const assigneeId = getString(row, "assigned_user_id");
       const subtitleParts = [
+        // The hour FIRST when the task has one (tasks.due_time, free text
+        // 'HH:MM'), the way a reminder's subtitle already reads: on a day's list
+        // "when" is what you scan for, and a task at 14:00 is a different thing
+        // from one due sometime today.
+        hhmm(getString(row, "due_time")),
         projectId ? projectNameById.get(projectId) ?? null : null,
-        assigneeId ? userNameById.get(assigneeId) ?? null : null,
+        // WHO only when the feed can hold someone else's work. Under scope
+        // "mine" every row is the viewer's by definition, so printing their own
+        // name on every line said nothing (user, 2026-08-18: "I don't need my
+        // name here").
+        scope === "all" && assigneeId ? userNameById.get(assigneeId) ?? null : null,
       ].filter((value): value is string => Boolean(value && value.trim()));
       const due = getString(row, "due_date");
       return {
         id: taskId,
         kind: "task" as const,
         title: getString(row, "subject") ?? "משימה",
-        subtitle: subtitleParts.join(" • ") || "ללא שיוך",
+        // Empty when there's nothing to say — no hour, no project, nobody else's
+        // name. "ללא שיוך" was a label for the ABSENCE of detail: it took a line
+        // on every unassigned task to tell you nothing. Every surface that prints
+        // a subtitle already guards on it being empty.
+        subtitle: subtitleParts.join(" • "),
         href: `/tasks/${taskId}`,
         startDate: due,
         endDate: due,

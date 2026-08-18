@@ -354,7 +354,7 @@ export function QuickCreateMenu({
             isFab &&
               // Width matches the 12px collisionPadding on both sides, so Radix
               // has nothing to shift and the card stays centred under the FAB.
-              "z-[70] w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] rounded-[1.5rem]"
+              "z-[70] w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] rounded-[1.125rem]"
           )}
           // Follow the finger while it drags, then settle back (or close).
           style={

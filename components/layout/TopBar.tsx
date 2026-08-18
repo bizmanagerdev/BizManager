@@ -7,9 +7,7 @@ import { ClockIcon, LogoutIcon, NotificationIcon, UserIcon, WalletIcon } from "@
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import { getAvatarColorCache, setAvatarColorCache, subscribeAvatarColor } from "@/lib/ui/avatar-color";
 import { BackButton } from "@/components/layout/BackButton";
-import { RefreshButton } from "@/components/layout/RefreshButton";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
-import { QuickCreateMenu } from "@/components/layout/QuickCreateMenu";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { TOPBAR_ICON_BUTTON, TOPBAR_ICON_STROKE } from "@/components/layout/topbar-icon";
 import PwaInstallButton from "@/components/pwa/PwaInstallButton";
@@ -82,6 +80,11 @@ export function TopBar({
   // The page's own heading wins (it's the one that can carry a live subtitle);
   // otherwise fall back to the route's name so no screen is ever nameless.
   const fallbackTitle = titleForPath(pathname);
+  // EVERY page's heading stays in the bar at every width now (user, 2026-08-18):
+  // it used to be mobile-only — desktop had the sidebar to say where you are —
+  // but the bar was otherwise empty past `lg` on every page except the dashboard,
+  // which had opted itself in. Showing it everywhere is what made that
+  // inconsistency visible in the first place.
   const headerTitle = pageTitle ?? (fallbackTitle ? { title: fallbackTitle, subtitle: undefined } : null);
   const headerAction = useHeaderAction();
   const { alerts, count, loading: alertsLoading, error: alertsError } = useAlerts();
@@ -201,16 +204,9 @@ export function TopBar({
       {pageTitle?.action ?? headerAction ? (
         <div className="shrink-0">{pageTitle?.action ?? headerAction}</div>
       ) : null}
-      {showGlobalSearch ? (
-        // Fixed width, not flex-1: a `flex-1 basis-0` box would fight the spacer
-        // below it and collapse.
-        <GlobalSearch desktopOnly className="w-[20rem] max-w-[30vw] flex-none" />
-      ) : null}
-      {/* Mobile: the bar says WHERE YOU ARE. There's no sidebar on a phone, so
-          without this the header is an anonymous row of icons. A page can declare
-          its own heading via useSetPageTitle() (that's how it gets a live
-          subtitle); everything else falls back to the route's name, so no screen
-          is ever nameless.
+      {/* The bar says WHERE YOU ARE, at every width now — it used to be
+          mobile-only (a phone has no sidebar to say it instead), which is also
+          why titles are written short: "לקוחות · 571 לקוחות", not a sentence.
 
           `overflow-hidden` on the slot is a GUARD, not a layout strategy. The
           title span below is `whitespace-nowrap`, so a title wider than the slot
@@ -220,7 +216,14 @@ export function TopBar({
           made the slot narrower and the spill longer. Titles are chosen to fit;
           this only stops a stray long one from painting over the icons. */}
       {headerTitle ? (
-        <div className="flex min-w-0 flex-1 flex-col items-center justify-center overflow-hidden px-3 text-center leading-tight lg:hidden">
+        <div
+          className={cn(
+            "flex min-w-0 flex-1 flex-col justify-center overflow-hidden px-3 leading-tight",
+            // Centred on a phone like every other title; from lg up it starts at
+            // the leading edge, where a page's own heading would otherwise sit.
+            "items-center text-center lg:items-start lg:text-start"
+          )}
+        >
           {/* One line, always: the title SHRINKS to fit the middle slot rather than
               wrapping mid-word ("עובדי / ם") or clipping. clamp() scales it with the
               viewport down to a still-legible floor. */}
@@ -235,14 +238,12 @@ export function TopBar({
             </span>
           ) : null}
         </div>
-      ) : showGlobalSearch ? (
-        <GlobalSearch mobileOnly className="min-w-0 flex-1" />
       ) : null}
 
-      {/* Desktop only: the search box is a fixed width there, so this is what
-          pushes the icon cluster to the far edge. On mobile the search bar above
-          already does that. */}
-      <div className="hidden flex-1 lg:block" />
+      {/* Pushes the icon cluster to the far edge on desktop when there's no title
+          at all (a route missing from titleForPath) — normally the title itself
+          is flex-1 and already fills the gap. */}
+      {headerTitle ? null : <div className="hidden flex-1 lg:block" />}
 
       {/* ms-3 (RTL → space on the RIGHT, i.e. toward the title): the search glyph
           leads this cluster on a phone and sat flush against the page title, so
@@ -250,22 +251,11 @@ export function TopBar({
           as yet more title padding so it only ever separates the title from the
           icons — the icons keep their own tighter gap-1 between themselves. */}
       <div className="ms-3 flex items-center gap-1">
-        {/* The title now owns the middle slot on mobile, so search moves here as
-            a glyph rather than disappearing from phones entirely. */}
-        {showGlobalSearch && headerTitle ? <GlobalSearch mobileOnly iconOnly /> : null}
+        {/* Search is a GLYPH at every width now — the 20rem desktop box is gone and
+            the middle slot belongs to the title. The magnifier opens the same
+            full-screen search dialog on a phone and on a desktop. */}
+        {showGlobalSearch ? <GlobalSearch mobileOnly iconOnly /> : null}
 
-        {/* Desktop only — on mobile the bottom nav's centre + is the quick-create,
-            and two of them in one screen is one too many. There's no bottom nav
-            from md up, so this stays the only door to it there. */}
-        <div className="hidden md:block">
-          <QuickCreateMenu viewerRole={viewerRole} />
-        </div>
-
-        {/* Desktop only — on a phone you pull the page down to refresh, so the
-            glyph is just another target competing for a narrow bar. */}
-        <div className="hidden md:block">
-          <RefreshButton />
-        </div>
 
         <HoverPanel open={inboxPanel.open} onOpenChange={inboxPanel.setOpen}>
           <HoverPanelTrigger asChild>
@@ -382,17 +372,24 @@ export function TopBar({
           <Button
             variant="ghost"
             size="icon-sm"
-            className="h-10 w-10 rounded-full p-0 hover:bg-secondary"
+            className="h-[40px] w-[40px] rounded-full p-0 hover:bg-secondary"
             type="button"
             aria-label={userName ? `החשבון שלי — ${userName}` : "החשבון שלי"}
             id="topbar-user-trigger"
             {...userPanel.triggerProps}
           >
+            {/* px, like the button around it — see topbar-icon.ts. */}
             {userName ? (
-              <InitialsAvatar name={userName} colorKey={userName} color={avatarColor} size="md" />
+              <InitialsAvatar
+                name={userName}
+                colorKey={userName}
+                color={avatarColor}
+                size="md"
+                className="!h-[36px] !w-[36px] !text-[13px]"
+              />
             ) : (
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
-                <UserIcon className="h-4 w-4" fill="currentColor" strokeWidth={2.2} />
+              <div className="flex h-[36px] w-[36px] items-center justify-center rounded-full bg-secondary text-secondary-foreground">
+                <UserIcon className="h-[18px] w-[18px]" fill="currentColor" strokeWidth={2.2} />
               </div>
             )}
           </Button>

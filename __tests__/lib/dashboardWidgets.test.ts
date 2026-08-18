@@ -9,62 +9,62 @@ import {
 
 describe("resolveWidgets — role is the security boundary", () => {
   it("never surfaces office/admin widgets for a worker, even if prefs name them", () => {
-    // A worker tries (via a tampered/stale pref) to show finance + workforce.
+    // A worker tries (via a tampered/stale pref) to show the back-office cards.
     const prefs: DashboardPrefs = {
-      order: ["finance", "workforce", "myTasks", "today"],
+      order: ["domainChart", "attendanceQueue", "myTasks", "todaySchedule"],
       hidden: [],
     };
     const ids = resolveWidgets("worker", prefs).map((w) => w.id);
-    expect(ids).not.toContain("finance");
-    expect(ids).not.toContain("workforce");
+    expect(ids).not.toContain("domainChart");
+    expect(ids).not.toContain("attendanceQueue");
     // Worker still sees only their allowed (personal) widgets.
     expect(ids.every((id) => catalogForRole("worker").some((w) => w.id === id))).toBe(true);
     expect(ids).toContain("myTasks");
   });
 
-  it("office sees the sales/collections catalog but not admin-only widgets", () => {
+  it("office sees the sales/collections catalog, and only role-allowed widgets", () => {
     const ids = resolveWidgets("office", null).map((w) => w.id);
-    expect(ids).toContain("finance");
+    expect(ids).toContain("domainChart");
     expect(ids).toContain("deliveries");
-    expect(ids).not.toContain("activity"); // admin-only
+    expect(ids.every((id) => catalogForRole("office").some((w) => w.id === id))).toBe(true);
   });
 });
 
 describe("resolveWidgets — order & visibility", () => {
   it("respects the user's saved order", () => {
     const prefs: DashboardPrefs = {
-      order: ["myTasks", "today", "finance"],
+      order: ["myTasks", "todaySchedule", "deliveries"],
       hidden: [],
     };
     const ids = resolveWidgets("admin", prefs).map((w) => w.id);
-    expect(ids.indexOf("myTasks")).toBeLessThan(ids.indexOf("today"));
-    expect(ids.indexOf("today")).toBeLessThan(ids.indexOf("finance"));
+    expect(ids.indexOf("myTasks")).toBeLessThan(ids.indexOf("todaySchedule"));
+    expect(ids.indexOf("todaySchedule")).toBeLessThan(ids.indexOf("deliveries"));
   });
 
   it("drops hidden widgets but keeps them in the customizer catalog", () => {
-    const prefs: DashboardPrefs = { order: [], hidden: ["inventory", "workforce"] };
+    const prefs: DashboardPrefs = { order: [], hidden: ["deliveries", "attendanceQueue"] };
     const rendered = resolveWidgets("admin", prefs).map((w) => w.id);
-    expect(rendered).not.toContain("inventory");
-    expect(rendered).not.toContain("workforce");
+    expect(rendered).not.toContain("deliveries");
+    expect(rendered).not.toContain("attendanceQueue");
     // orderedCatalog still lists them so they can be toggled back on.
     const catalog = orderedCatalog("admin", prefs).map((w) => w.id);
-    expect(catalog).toContain("inventory");
-    expect(catalog).toContain("workforce");
+    expect(catalog).toContain("deliveries");
+    expect(catalog).toContain("attendanceQueue");
   });
 
   it("places unknown/new ids at their default position and tolerates junk", () => {
-    // Only "finance" is explicitly ordered; everything else keeps default order
+    // Only "deliveries" is explicitly ordered; everything else keeps default order
     // AFTER it. A future widget not present in saved order must still appear.
     const prefs = sanitizePrefs({
-      order: ["finance", "not-a-widget", 42, "finance"],
+      order: ["deliveries", "not-a-widget", 42, "deliveries"],
       hidden: ["also-bogus"],
     });
-    expect(prefs).toEqual({ order: ["finance"], hidden: [] });
+    expect(prefs).toEqual({ order: ["deliveries"], hidden: [] });
 
     const ids = resolveWidgets("admin", prefs).map((w) => w.id);
-    expect(ids[0]).toBe("finance");
-    // Default-order widgets (e.g. today, myTasks) still render.
-    expect(ids).toContain("today");
+    expect(ids[0]).toBe("deliveries");
+    // Default-order widgets (e.g. the היום cards, myTasks) still render.
+    expect(ids).toContain("todaySchedule");
     expect(ids).toContain("myTasks");
     expect(ids.length).toBe(catalogForRole("admin").length);
   });
@@ -78,9 +78,9 @@ describe("sanitizePrefs", () => {
   });
 
   it("de-dupes order and strips unknown ids", () => {
-    expect(sanitizePrefs({ order: ["today", "today", "ghost"], hidden: ["finance", "finance"] })).toEqual({
-      order: ["today"],
-      hidden: ["finance"],
+    expect(sanitizePrefs({ order: ["myTasks", "myTasks", "ghost"], hidden: ["deliveries", "deliveries"] })).toEqual({
+      order: ["myTasks"],
+      hidden: ["deliveries"],
     });
   });
 
@@ -88,26 +88,56 @@ describe("sanitizePrefs", () => {
     // "alerts" + "reminders" merged into "today" (2026-07-16), and "week" — the
     // "מבט על היום" card — merged into it too (2026-08-16). Users still have all
     // three in their saved order/hidden; those must be ignored, not crash, and
-    // above all not hide the card that replaced them.
+    // above all not hide the cards that replaced them.
     const prefs = sanitizePrefs({
-      order: ["alerts", "today", "reminders", "week"],
+      order: ["alerts", "myTasks", "reminders", "week"],
       hidden: ["reminders", "week"],
     });
-    expect(prefs).toEqual({ order: ["today"], hidden: [] });
+    expect(prefs).toEqual({ order: ["myTasks"], hidden: [] });
 
     const ids = resolveWidgets("admin", prefs).map((w) => w.id);
-    expect(ids).toContain("today");
+    expect(ids).toContain("myTasks");
     expect(ids).not.toContain("alerts");
     expect(ids).not.toContain("reminders");
     expect(ids).not.toContain("week");
   });
 
-  it("a user who had hidden 'week' still gets the merged היום card", () => {
+  it("a user who had hidden 'week' still gets the היום cards", () => {
     // The trap this guards: `hidden: ["week"]` used to hide the schedule card.
     // "week" is no longer a widget id, so it must be dropped from `hidden` rather
-    // than carried over onto "today" — otherwise the merge would silently blank
-    // the dashboard for everyone who'd turned the old card off.
+    // than carried over onto the היום cards — otherwise the merge would silently
+    // blank the dashboard for everyone who'd turned the old card off.
     const ids = resolveWidgets("admin", sanitizePrefs({ order: [], hidden: ["week"] })).map((w) => w.id);
-    expect(ids).toContain("today");
+    expect(ids).toContain("todaySchedule");
+    expect(ids).toContain("todayAlerts");
+  });
+});
+
+describe("sanitizePrefs — the 'today' → two-card split (2026-08-17)", () => {
+  it("expands a saved 'today' into both cards, in its old slot", () => {
+    const prefs = sanitizePrefs({ order: ["myTasks", "today", "deliveries"], hidden: [] });
+    expect(prefs).toEqual({
+      order: ["myTasks", "todaySchedule", "todayAlerts", "deliveries"],
+      hidden: [],
+    });
+
+    const ids = resolveWidgets("admin", prefs).map((w) => w.id);
+    expect(ids.indexOf("myTasks")).toBeLessThan(ids.indexOf("todaySchedule"));
+    expect(ids.indexOf("todayAlerts")).toBeLessThan(ids.indexOf("deliveries"));
+  });
+
+  it("carries a hidden 'today' onto BOTH new cards", () => {
+    // Someone who had turned the old היום card off must not get half of it back.
+    const prefs = sanitizePrefs({ order: [], hidden: ["today"] });
+    expect(prefs?.hidden).toEqual(["todaySchedule", "todayAlerts"]);
+
+    const ids = resolveWidgets("admin", prefs).map((w) => w.id);
+    expect(ids).not.toContain("todaySchedule");
+    expect(ids).not.toContain("todayAlerts");
+  });
+
+  it("does not duplicate when saved prefs name both the old and a new id", () => {
+    const prefs = sanitizePrefs({ order: ["today", "todaySchedule"], hidden: [] });
+    expect(prefs).toEqual({ order: ["todaySchedule", "todayAlerts"], hidden: [] });
   });
 });

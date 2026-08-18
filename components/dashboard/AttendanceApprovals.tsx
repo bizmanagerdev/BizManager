@@ -1,211 +1,214 @@
+"use client";
+
+import { useCallback, useState } from "react";
 import Link from "next/link";
-import { ApprovedUserIcon, ChevronLeftIcon, ClockIcon, PendingIcon } from "@/components/ui/icons";
-import type { IconComponent } from "@/components/ui/icons";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { ChevronDownIcon, ClockIcon } from "@/components/ui/icons";
+import { Card, CardContent } from "@/components/ui/card";
+import DashboardCardHeader from "@/components/dashboard/DashboardCardHeader";
+import DashboardCardFooter from "@/components/dashboard/DashboardCardFooter";
+import Sparkline from "@/components/charts/Sparkline";
+import QuietCard from "@/components/dashboard/QuietCard";
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
-import QuickAttendanceButton from "@/components/dashboard/QuickAttendanceButton";
+import PendingReportCard from "@/components/attendance/PendingReportCard";
 import { formatMinutes, minutesBetween } from "@/lib/payroll";
-import { formatShortDate } from "@/lib/date";
 import { cn } from "@/lib/utils";
-import type { PhoneQueueData } from "@/lib/attendance/phone-reports";
+import { formatShortDate, hebrewWeekday } from "@/lib/date";
+import type { PendingPhoneReport, PhoneQueueData } from "@/lib/attendance/phone-reports";
+import type { SalaryCenterProjectOption } from "@/lib/payroll-center";
 
-/** Where every link on this card lands: the payroll attendance-queue page. */
-const QUEUE_HREF = "/payroll/attendance";
-
-/** "יום שני" — the weekday of a timestamp, in Israel time. */
-function hebrewWeekday(iso: string) {
-  return new Intl.DateTimeFormat("he-IL", { weekday: "long", timeZone: "Asia/Jerusalem" }).format(new Date(iso));
-}
-
-/** "08:21" — just the time, in Israel time. */
-function timeOnly(iso: string) {
-  return new Intl.DateTimeFormat("he-IL", {
+/** The shift's DAY in Israel time — the grouping key, sortable as a string. */
+function dayKey(iso: string) {
+  return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jerusalem",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
   }).format(new Date(iso));
 }
 
-function Stat({
-  icon: Icon,
-  label,
-  value,
-  tone = "neutral",
-}: {
-  icon: IconComponent;
-  label: string;
-  value: string;
-  tone?: "neutral" | "warning" | "success";
-}) {
-  return (
-    <div
-      className={cn(
-        "min-w-0 rounded-xl border bg-background p-2.5 sm:p-3",
-        tone === "warning" && "border-warning/40 bg-warning-soft",
-        tone === "success" && "border-success/40 bg-success-soft"
-      )}
-    >
-      {/* Number first and ALONE on its line. The glyph used to share that line
-          with it under `justify-between`, which pinned the two to opposite edges
-          — fine for "18:15", but a 1-character count left a whole tile's width
-          of empty space between "3" and its hourglass, and the row read as two
-          unrelated things. Dropping it down beside the label ties it to the
-          words it illustrates and lets the number own the tile.
-          Sized for the WIDEST value here ("18:15", not a digit): at text-2xl
-          that overran a ~6rem phone tile. tabular-nums keeps the three tiles'
-          digits on one rhythm. */}
-      <div
-        className={cn(
-          "whitespace-nowrap text-xl font-bold leading-none tabular-nums text-foreground sm:text-2xl",
-          tone === "warning" && "text-warning",
-          tone === "success" && "text-success"
-        )}
-      >
-        {value}
-      </div>
-      {/* text-xs, not sm: three tiles across a phone leave ~6rem each, and a
-          wider label turns into a two-line stack. */}
-      <div className="mt-1.5 flex items-start gap-1 text-xs text-muted-foreground">
-        <Icon
-          className={cn(
-            "mt-px h-3.5 w-3.5 shrink-0",
-            tone === "warning" && "text-warning",
-            tone === "success" && "text-success"
-          )}
-        />
-        <span className="min-w-0">{label}</span>
-      </div>
-    </div>
-  );
+/** "יום שני 10/08/26" — the heading over one day's reports. */
+function dayLabel(iso: string) {
+  return `${hebrewWeekday(iso)} ${formatShortDate(iso)}`;
 }
 
-/**
- * "נוכחות עובדים" — the attendance queue on the dashboard: how many shift
- * reports are waiting to be approved into payroll, who is clocked in right now,
- * and the head of the waiting list. Approval itself needs a business domain per
- * shift, so the rows link into the payroll queue rather than approving here.
- * Counts and hours only — no ₪ on the dashboard.
- */
-export default function AttendanceApprovals({ data }: { data: PhoneQueueData }) {
-  const { pending, open } = data;
-  if (pending.length === 0 && open.length === 0) return null;
+/** One entry per day, in the order the reports already came in (newest first). */
+function groupByDay(reports: PendingPhoneReport[]): Array<[string, PendingPhoneReport[]]> {
+  const byDay = new Map<string, PendingPhoneReport[]>();
+  for (const report of reports) {
+    const key = dayKey(report.clock_in);
+    const bucket = byDay.get(key);
+    if (bucket) bucket.push(report);
+    else byDay.set(key, [report]);
+  }
+  return [...byDay.entries()];
+}
 
-  const pendingMinutes = pending.reduce(
-    (sum, r) => sum + (r.worked_minutes ?? minutesBetween(r.clock_in, r.clock_out)),
-    0
-  );
-  const shown = pending.slice(0, 4);
-  const rest = pending.length - shown.length;
+/** Where the card leads: the payroll attendance-queue page. */
+const QUEUE_HREF = "/payroll/attendance";
+
+/** How many waiting reports the dashboard shows before deferring to the page. */
+const SHOWN_LIMIT = 4;
+
+/**
+ * "נוכחות עובדים" — the head of the attendance queue, ACTIONABLE in place: each
+ * waiting report is the same approve / reject / split card the queue page uses
+ * (PendingReportCard), so a shift gets classified and approved without leaving
+ * the dashboard.
+ *
+ * Deliberately no summary tiles, no "דיווח נוכחות" button and no link button
+ * (user, 2026-08-17): the numbers only restated the list under them, the + lives
+ * in the top bar's quick-create menu, and the card itself is the link — click
+ * anywhere outside a report row and you land on the queue page.
+ *
+ * Cost stays off: the dashboard calls loadPhoneQueueData without `includeCost`,
+ * so labor_cost is null and the report card prints no ₪.
+ */
+export default function AttendanceApprovals({
+  data,
+  spark,
+  projectOptions,
+  propertyOptions,
+}: {
+  data: PhoneQueueData;
+  /** Shifts started per day over the last week, oldest first. */
+  spark?: number[];
+  /** What an approved shift can be attributed to — the approve form needs both. */
+  projectOptions: SalaryCenterProjectOption[];
+  propertyOptions: SalaryCenterProjectOption[];
+}) {
+  // Which days are UNFOLDED. Days start CLOSED: the card opens as a short list of
+  // "which days have shifts waiting, and how many", and you open the one you mean
+  // to work through. Four open reports at full height is most of a column spent
+  // on forms nobody asked for yet.
+  const [openDays, setOpenDays] = useState<Set<string>>(() => new Set());
+  const toggleDay = useCallback((day: string) => {
+    setOpenDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(day)) next.delete(day);
+      else next.add(day);
+      return next;
+    });
+  }, []);
+
+  const { pending, open } = data;
+  if (pending.length === 0 && open.length === 0) {
+    return <QuietCard icon={ClockIcon} title="נוכחות עובדים" note="אין דיווחים לאישור" href={QUEUE_HREF} />;
+  }
+
+  // The head of the queue; the footer's count says how many there are in all.
+  const shown = pending.slice(0, SHOWN_LIMIT);
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-3">
-        {/* No count badge next to the title: the first stat tile below already
-            says "N / ממתינים לאישור" in the same words, and two copies of the
-            same number a centimetre apart just read as clutter. */}
-        <div className="flex items-center gap-2">
-          <ClockIcon className="h-5 w-5 text-secondary" />
-          <CardTitle className="text-lg">נוכחות עובדים</CardTitle>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <QuickAttendanceButton />
-          <Button asChild size="sm">
-            <Link href={QUEUE_HREF}>לתור האישורים</Link>
-          </Button>
-        </div>
-      </CardHeader>
+    // The whole card leads to the queue page, EXCEPT the report rows: those are
+    // controls now, and a click meant for a domain select must not navigate away.
+    // The link sits underneath as a full-bleed overlay and everything that isn't
+    // a report row (header, gaps, the on-shift strip) falls through to it —
+    // nesting the rows inside an <a> wouldn't be legal HTML.
+    <Card className="relative flex h-full flex-col">
+      <Link
+        href={QUEUE_HREF}
+        aria-label="פתיחת תור דיווחי הנוכחות"
+        className="absolute inset-0 rounded-[1.125rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      />
 
-      <CardContent className="space-y-3">
-        <div className="grid grid-cols-3 gap-3">
-          <Stat
-            icon={PendingIcon}
-            label="ממתינים לאישור"
-            value={String(pending.length)}
-            tone={pending.length > 0 ? "warning" : "neutral"}
-          />
-          <Stat
-            icon={ApprovedUserIcon}
-            label="נוכחים כעת"
-            value={String(open.length)}
-            tone={open.length > 0 ? "success" : "neutral"}
-          />
-          <Stat icon={ClockIcon} label="שעות ממתינות" value={formatMinutes(pendingMinutes)} />
-        </div>
+      <div className="pointer-events-none relative flex min-h-0 flex-1 flex-col">
+        <DashboardCardHeader
+          icon={ClockIcon}
+          title="נוכחות עובדים"
+          count={pending.length}
+          // The anchor is WHO'S ON SHIFT — the card's headline number, now beside
+          // the trend instead of under it. One number, one place.
+          spark={
+            spark ? (
+              <Sparkline points={spark} value={open.length} valueLabel="במשמרת" label="7 הימים האחרונים" />
+            ) : undefined
+          }
+        />
 
-        {open.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-success/40 bg-success-soft px-3 py-2">
-            <span className="text-sm font-medium text-success-soft-foreground">במשמרת עכשיו:</span>
-            {open.map((report) => (
-              <span
-                key={report.id}
-                className="inline-flex items-center gap-1.5 rounded-full bg-background px-2 py-1 text-sm"
-              >
-                <InitialsAvatar
-                  name={report.worker_name ?? "עובד"}
-                  color={report.worker_avatar_color}
-                  colorKey={report.user_id}
-                  size="sm"
-                />
-                <span className="font-medium">{report.worker_name ?? "עובד לא ידוע"}</span>
-                <span className="text-muted-foreground">
-                  {formatMinutes(minutesBetween(report.clock_in, new Date()))} ש׳
-                </span>
-              </span>
-            ))}
-          </div>
-        ) : null}
-
-        {shown.length > 0 ? (
-          <div className="space-y-1.5">
-            {shown.map((report) => {
-              const minutes = report.worked_minutes ?? minutesBetween(report.clock_in, report.clock_out);
-              return (
-                <Link
-                  key={report.id}
-                  href={QUEUE_HREF}
-                  className="flex items-center gap-2.5 rounded-xl border border-border/60 px-3 py-2 transition-colors hover:bg-muted/40"
-                >
-                  <InitialsAvatar
-                    name={report.worker_name ?? "עובד"}
-                    color={report.worker_avatar_color}
-                    colorKey={report.user_id}
-                    size="sm"
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="flex flex-wrap items-center gap-x-2 text-sm font-medium">
-                      {report.worker_name ?? "עובד לא ידוע"}
-                      {report.worker_phone ? (
-                        <span className="text-xs font-normal text-muted-foreground" dir="ltr">
-                          {report.worker_phone}
-                        </span>
-                      ) : null}
-                    </span>
-                    {/* "08:21 עד 11:22", never a dash range: the dash is a neutral
-                        bidi character and flips the pair on an RTL line, so the end
-                        time reads first. Matches SessionList / the queue page. */}
-                    <span className="block text-xs text-muted-foreground">
-                      {hebrewWeekday(report.clock_in)} {formatShortDate(report.clock_in)} · {timeOnly(report.clock_in)} עד{" "}
-                      {timeOnly(report.clock_out)}
+        {/* p-0, like every other list card: the rows own their padding, so a row's
+            hover runs to the card's edges instead of stopping short as a box in
+            the middle. Anything that ISN'T a row brings its own margin. */}
+        <CardContent className="pointer-events-auto min-h-0 flex-1 overflow-y-auto p-0">
+          {/* WHO is on shift. The COUNT moved up beside the sparkline, where it
+              anchors the trend — printing it here as well made one card carry the
+              same number twice, in two sizes. What's left is the part the number
+              can't say: which of them. */}
+          {open.length > 0 ? (
+            <div className="px-4 pb-3 pt-3">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                {open.map((report) => (
+                  <span key={report.id} className="inline-flex items-center gap-1">
+                    <InitialsAvatar
+                      name={report.worker_name ?? "עובד"}
+                      color={report.worker_avatar_color}
+                      colorKey={report.user_id}
+                      size="sm"
+                    />
+                    <span className="font-medium text-foreground">{report.worker_name ?? "עובד לא ידוע"}</span>
+                    <span className="tabular-nums">
+                      {formatMinutes(minutesBetween(report.clock_in, new Date()))} ש׳
                     </span>
                   </span>
-                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-secondary/10 px-2 py-0.5 text-xs font-semibold text-secondary">
-                    <ClockIcon className="h-3 w-3" />
-                    {formatMinutes(minutes)}
-                  </span>
-                  <ChevronLeftIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                </Link>
-              );
-            })}
-            {rest > 0 ? (
-              <Link href={QUEUE_HREF} className="block px-3 py-1 text-sm text-secondary hover:underline">
-                ועוד {rest} דיווחים ממתינים ›
-              </Link>
-            ) : null}
-          </div>
-        ) : null}
-      </CardContent>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {/* GROUPED BY DAY, so the date is written once per group instead of
+              once per report — which is what let each row drop it and give its
+              corner to the hours. Reports arrive newest-first, so the groups do.
+              divide-y on the GROUPS as well as on the rows: `divide-y` only draws
+              BETWEEN children, so the last row of a day had nothing under it and
+              the next date heading floated in a gap. */}
+          {shown.length > 0 ? (
+            <div className="divide-y divide-border/50">
+              {groupByDay(shown).map(([day, reports]) => {
+                const isOpen = openDays.has(day);
+                return (
+                  <section key={day}>
+                    {/* The date IS the toggle: a day you've dealt with folds away,
+                        and folding it makes the CARD shorter — the cells start at
+                        their content's height, so the space goes back to the cards
+                        beside it rather than sitting empty under this one. */}
+                    <button
+                      type="button"
+                      onClick={() => toggleDay(day)}
+                      aria-expanded={isOpen}
+                      className="pointer-events-auto flex w-full items-center gap-1.5 border-b border-border/50 px-4 pb-1.5 pt-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary/10 hover:text-foreground"
+                    >
+                      <ChevronDownIcon
+                        className={cn("h-3.5 w-3.5 shrink-0 transition-transform", isOpen ? "rotate-0" : "rotate-90")}
+                      />
+                      <span>{dayLabel(reports[0].clock_in)}</span>
+                      <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums">{reports.length}</span>
+                    </button>
+                    {isOpen ? (
+                      <div className="divide-y divide-border/50">
+                        {/* pointer-events-auto per ROW, not on the wrapper: the gaps
+                            between rows stay part of the card's own click target. */}
+                        {reports.map((report) => (
+                          <div key={report.id} className="pointer-events-auto">
+                            <PendingReportCard
+                              report={report}
+                              projectOptions={projectOptions}
+                              propertyOptions={propertyOptions}
+                              flat
+                              // Opens the queue AT this report: FocusHighlighter finds
+                              // the matching data-focus-id, scrolls to it, flashes it.
+                              href={`${QUEUE_HREF}?focus=${encodeURIComponent(report.id)}`}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </section>
+                );
+              })}
+            </div>
+          ) : null}
+        </CardContent>
+        <DashboardCardFooter href={QUEUE_HREF} label="כל הנוכחות" count={pending.length} />
+      </div>
     </Card>
   );
 }

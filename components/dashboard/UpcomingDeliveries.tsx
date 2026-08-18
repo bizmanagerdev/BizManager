@@ -1,91 +1,152 @@
 import Link from "next/link";
 import { DeliveryIcon } from "@/components/ui/icons";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { getOrderStatusColor, getOrderStatusLabel } from "@/lib/ui/status-colors";
+import { Card, CardContent } from "@/components/ui/card";
+import DashboardCardHeader from "@/components/dashboard/DashboardCardHeader";
+import DashboardCardFooter from "@/components/dashboard/DashboardCardFooter";
+import Sparkline from "@/components/charts/Sparkline";
+import QuietCard from "@/components/dashboard/QuietCard";
+import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
+import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import type { DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
-
-const COLOR_TO_VARIANT = {
-  success: "success",
-  warning: "warning",
-  danger: "destructive",
-  info: "info",
-  neutral: "neutral",
-} as const;
 
 /**
  * "משלוחים קרובים" — the next open deliveries.
  *
- * Each row answers one question: who, where, and what state is it in. The order
- * id (#a1b2c3d4) and the initials circle were both dropped — the id is an
- * internal handle nobody reads off a dashboard, and the circle was built from
+ * Everything here is a click target, and nothing is a button to a page: the ROW
+ * opens its own order, and the card around it opens the delivery queue. No
+ * status badge either — this list is open deliveries by definition, so the badge
+ * said "פתוח" on every line.
+ *
+ * The two things you'd actually do to a delivery ride on the row: share the slip
+ * (DeliveryShareActions) and confirm it (OrderConfirmDialog, "סמן כסופק"). Both
+ * are the queue's own components, so the two surfaces can't drift.
+ *
+ * The order id (#a1b2c3d4) and the initials circle were both dropped — the id is
+ * an internal handle nobody reads off a dashboard, and the circle was built from
  * the customer's name, so a screen of them was a column of near-identical
- * two-letter blobs that identified nothing. Tapping a row opens that delivery in
- * the queue (`?focus=` scrolls to it and flashes it), which is where the address,
- * the items and the actions live.
+ * two-letter blobs that identified nothing.
  */
 export default function UpcomingDeliveries({
   deliveries,
+  spark,
   canOpenOrder = true,
 }: {
   deliveries: DeliveryItem[];
+  /** Orders dated per day over the last week, oldest first. */
+  spark?: number[];
   /** False for a worker: /sales is staff-only, so the row would dead-end. */
   canOpenOrder?: boolean;
 }) {
-  if (deliveries.length === 0) return null;
+  // Nothing open → one quiet line rather than a card that disappears. See
+  // QuietCard for why an absent card is worse than an empty one.
+  if (deliveries.length === 0) {
+    return (
+      <QuietCard
+        icon={DeliveryIcon}
+        title="משלוחים קרובים"
+        note="אין משלוחים פתוחים"
+        href={canOpenOrder ? "/sales?tab=deliveries" : "/deliveries"}
+      />
+    );
+  }
   const rows = deliveries.slice(0, 6);
   const allHref = canOpenOrder ? "/sales?tab=deliveries" : "/deliveries";
   const hrefFor = (id: string) =>
     canOpenOrder ? `/sales/orders/${id}` : `/deliveries?focus=${encodeURIComponent(id)}`;
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <DeliveryIcon className="h-5 w-5 text-muted-foreground" />
-            <CardTitle className="text-lg">משלוחים קרובים</CardTitle>
-          </div>
-          <Link href={allHref} className="text-sm text-secondary hover:underline">
-            כל המשלוחים ›
-          </Link>
-        </div>
-      </CardHeader>
-      <CardContent className="p-0">
-        <ul className="divide-y">
-          {rows.map((delivery) => (
-            <li key={delivery.id}>
-              <Link
-                href={hrefFor(delivery.id)}
-                className="flex items-start justify-between gap-3 px-4 py-3 transition-colors hover:bg-muted/40"
+    // Two nested click targets, each an overlay link rather than a wrapper: the
+    // rows hold buttons, and a <button> inside an <a> isn't legal HTML. The card's
+    // link sits under `pointer-events-none` content; each row re-enables pointer
+    // events and lays its own link over its text, with the action buttons stacked
+    // above that link so they keep their own clicks.
+    <Card className="relative flex h-full flex-col">
+      <Link
+        href={allHref}
+        aria-label="כל המשלוחים"
+        className="absolute inset-0 rounded-[1.125rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      />
+
+      <div className="pointer-events-none relative flex min-h-0 flex-1 flex-col">
+        <DashboardCardHeader
+          icon={DeliveryIcon}
+          title="משלוחים קרובים"
+          count={deliveries.length}
+          spark={spark ? <Sparkline points={spark} variant="bar" valueLabel="הזמנות היום" label="7 הימים האחרונים" /> : undefined}
+        />
+
+        <CardContent className="pointer-events-auto min-h-0 flex-1 overflow-y-auto p-0">
+          <ul className="board-list divide-y">
+            {rows.map((delivery) => (
+              <li
+                key={delivery.id}
+                className="pointer-events-auto relative px-4 py-3 transition-colors hover:bg-secondary/10"
               >
-                <div className="min-w-0 flex-1 space-y-0.5">
-                  {/* Wraps rather than truncating — half a customer's name reads
-                      as a bug, and this is the one thing the row is for. */}
-                  <div className="font-medium break-words">{delivery.customerName}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {delivery.city}
-                    {delivery.customerPhone ? (
-                      <>
-                        {" · "}
-                        <span dir="ltr" className="inline-block">
-                          {delivery.customerPhone}
-                        </span>
-                      </>
-                    ) : null}
+                {/* Covers the row. The text block below is deliberately NOT
+                    positioned, so this link paints over it and takes its clicks. */}
+                <Link
+                  href={hrefFor(delivery.id)}
+                  aria-label={`פרטי המשלוח — ${delivery.customerName}`}
+                  className="absolute inset-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+
+                {/* items-center: the action reads as belonging to the whole row,
+                    not to its first line. */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    {/* The ONE place in the app that truncates (user, 2026-08-18:
+                        "if the name doesn't fit put 3 dots so all rows are
+                        consistent"). Every other surface wraps — see the
+                        never-truncate rule — but here a two-line name made its row
+                        taller than its neighbours, and a column of rows that don't
+                        line up reads as broken. The full name is in the title
+                        attribute and one click away on the order. */}
+                    <div className="truncate text-sm font-medium" title={delivery.customerName}>
+                      {delivery.customerName}
+                    </div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {delivery.city}
+                      {delivery.customerPhone ? (
+                        <>
+                          {" · "}
+                          <span dir="ltr" className="inline-block tabular-nums">
+                            {delivery.customerPhone}
+                          </span>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                  {/* Both actions ride in the corner the status badge used to
+                      occupy, on the customer's line. `relative` lifts them over
+                      the row link so their own clicks still land. */}
+                  <div className="relative flex shrink-0 items-center gap-1.5">
+                    {/* A bare glyph, no button plate — an icon-only control, which
+                        is the one thing exempt from "every button gets a fill". */}
+                    <DeliveryShareActions
+                      delivery={delivery}
+                      label=""
+                      variant="ghost"
+                      className="h-8 w-8 p-0 shadow-none max-md:min-h-[44px] max-md:min-w-[44px]"
+                    />
+                    {/* OUTLINE, not filled (user, 2026-08-18, from a reference
+                        board): one filled button per row down four cards made the
+                        board a column of blue blocks, with the action shouting
+                        louder than the delivery it belonged to. */}
+                    <OrderConfirmDialog
+                      orderId={delivery.id}
+                      customerName={delivery.customerName}
+                      buttonVariant="outline"
+                      buttonClassName="h-8 px-3 text-sm max-md:min-h-[44px]"
+                      buttonLabel="סופק"
+                    />
                   </div>
                 </div>
-                <Badge
-                  variant={COLOR_TO_VARIANT[getOrderStatusColor(delivery.status)]}
-                  className="shrink-0"
-                >
-                  {getOrderStatusLabel(delivery.status)}
-                </Badge>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </CardContent>
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+        <DashboardCardFooter href={allHref} label="כל המשלוחים" count={deliveries.length} />
+      </div>
     </Card>
   );
 }

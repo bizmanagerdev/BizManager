@@ -4,6 +4,7 @@ import { createContext, Suspense, useContext, type ReactNode } from "react";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { TopBar } from "@/components/layout/TopBar";
 import { BottomNav } from "@/components/layout/BottomNav";
+import { DesktopQuickCreateFab } from "@/components/layout/DesktopQuickCreateFab";
 import { TopNavigationProgress } from "@/components/layout/TopNavigationProgress";
 import OfflineBanner from "@/components/layout/OfflineBanner";
 import ConnectionToasts from "@/components/layout/ConnectionToasts";
@@ -123,6 +124,10 @@ export default function AppShell({
             {bottom.length > 0 && <BottomNav items={bottom} moreItems={more} viewerRole={viewerRole} />}
           </div>
         </div>
+
+        {/* Quick-create, floating over the bottom-left corner on desktop — it
+            portals itself to <body>, see the component for why. */}
+        <DesktopQuickCreateFab viewerRole={viewerRole} />
       </div>
       </PageTitleProvider>
      </SidebarCollapseProvider>
