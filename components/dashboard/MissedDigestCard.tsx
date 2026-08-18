@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AiIcon, ChevronDownIcon, CloseIcon } from "@/components/ui/icons";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
@@ -66,6 +67,7 @@ export default function MissedDigestCell({
   /** The board already gave this card a cell — render into it, don't make one. */
   planned?: boolean;
 }) {
+  const router = useRouter();
   const [items, setItems] = useState<AuditFeedItem[]>(initialItems);
   const [dismissed, setDismissed] = useState(false);
   // Which topics are expanded — none to begin with, so the card lands compact.
@@ -144,14 +146,26 @@ export default function MissedDigestCell({
 
   const dismiss = useCallback(async () => {
     // The card leaves the board entirely and everything after it packs up into
-    // the hole. This is the repack worth animating.
+    // the hole. This is the repack worth animating — it's instant, local, and
+    // doesn't wait on the network.
     withViewTransition(() => setDismissed(true));
     try {
       await fetch("/api/dashboard/digest/dismiss", { method: "POST" });
+      // The board's COLUMN layout — how many columns, and which cards share
+      // which one — was planned server-side around this card occupying a cell.
+      // Hiding it via local state lets its own column's siblings grow into the
+      // gap (plain CSS), but a column where this was the ONLY card is left
+      // empty until the board is replanned without it. router.refresh() re-runs
+      // DashboardPanels so that happens right away instead of on the next
+      // manual reload — the bug this fixed (user, 2026-08-19).
+      router.refresh();
     } catch {
-      // best-effort
+      // Best-effort, and deliberately NOT refreshed on failure: if the anchor
+      // didn't move, the server still sees this activity as unseen and a
+      // refresh would bring the card right back — worse than just leaving the
+      // optimistic dismiss in place until the next real reload.
     }
-  }, []);
+  }, [router]);
 
   // Its own size, for the live case below only: when the server already knew
   // there was something it planned this card's cell and wrapped us in it. One
