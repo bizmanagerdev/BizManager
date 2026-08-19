@@ -28,6 +28,10 @@ export type CheckRow = {
   notes: string | null;
   photo_url: string | null;
   photo_count: number;
+  account_id: string | null;
+  reference_number: string | null;
+  /** Preserved verbatim on edit — flips a project payment's VAT-split accounting. */
+  requires_split: boolean;
 };
 
 export type ChecksData = {
@@ -81,7 +85,9 @@ export function checkStatusClasses(status: CheckStatus): string {
 export async function getChecks(supabase: SupabaseClient): Promise<ChecksData> {
   const { data, error } = await supabase
     .from("payments")
-    .select("id,amount_total,due_date,payment_date,payment_status,check_number,order_id,project_id,notes")
+    .select(
+      "id,amount_total,due_date,payment_date,payment_status,check_number,order_id,project_id,notes,account_id,reference_number,requires_split"
+    )
     .eq("payment_method", "check")
     .range(0, 999);
 
@@ -232,6 +238,9 @@ export async function getChecks(supabase: SupabaseClient): Promise<ChecksData> {
       notes: str(row, "notes"),
       photo_url: firstUrl,
       photo_count: keys.length,
+      account_id: str(row, "account_id"),
+      reference_number: str(row, "reference_number"),
+      requires_split: row.requires_split === true,
     };
   });
 

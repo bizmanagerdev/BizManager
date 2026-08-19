@@ -2,12 +2,24 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { AttachIcon, PhoneIcon } from "@/components/ui/icons";
 import { NavLink } from "@/components/NavLink";
 import { Badge } from "@/components/ui/badge";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
+import { DateInput } from "@/components/ui/date-input";
+import { FormDialog } from "@/components/ui/form-dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { EditButton, DeleteButton } from "@/components/ui/icon-button";
+import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
+import AccountSelect from "@/components/financial/AccountSelect";
+import type { Account } from "@/lib/accounts";
+import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
+import { offlineFetch } from "@/lib/offline-queue";
+import { toHebrewError } from "@/lib/error-messages";
 import { formatShortDate } from "@/lib/date";
 import { checkStatusClasses, checkStatusLabel, type CheckRow } from "@/lib/checks";
 
@@ -65,6 +77,10 @@ export default function ChecksClient({ checks }: Props) {
   const [sort, setSort] = useState<SortKey>("due");
   const [search, setSearch] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [editingCheck, setEditingCheck] = useState<CheckRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<CheckRow | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const today = todayIso();
   const weekEnd = weekFromNowIso();
@@ -146,6 +162,36 @@ export default function ChecksClient({ checks }: Props) {
     }
   }
 
+  async function deleteCheck(c: CheckRow) {
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      const { url, body } =
+        c.source_type === "order"
+          ? { url: "/api/orders/payments/delete", body: { id: c.payment_id, order_id: c.source_id } }
+          : c.source_type === "project"
+            ? { url: "/api/payments/delete", body: { id: c.payment_id, project_id: c.source_id } }
+            : { url: "/api/payments/delete", body: { id: c.payment_id } };
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setDeleteError(toHebrewError(json?.error, "מחיקת הצ׳ק נכשלה."));
+        return;
+      }
+      toast.success("הצ׳ק נמחק");
+      setDeleteTarget(null);
+      router.refresh();
+    } catch (err) {
+      setDeleteError(toHebrewError(err, "מחיקת הצ׳ק נכשלה."));
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
   const tabs: { key: FilterKey; label: string }[] = [
     { key: "open", label: "טרם נפרעו" },
     { key: "all", label: "הכל" },
@@ -218,7 +264,15 @@ export default function ChecksClient({ checks }: Props) {
               </thead>
               <tbody>
                 {filtered.map((c) => (
-                  <CheckRowDesktop key={c.payment_id} c={c} today={today} busy={busyId === c.payment_id} onSetCleared={setCleared} />
+                  <CheckRowDesktop
+                    key={c.payment_id}
+                    c={c}
+                    today={today}
+                    busy={busyId === c.payment_id}
+                    onSetCleared={setCleared}
+                    onEdit={setEditingCheck}
+                    onDeleteRequest={setDeleteTarget}
+                  />
                 ))}
               </tbody>
               <tfoot>
@@ -236,11 +290,53 @@ export default function ChecksClient({ checks }: Props) {
           {/* Mobile cards */}
           <div className="space-y-3 sm:hidden">
             {filtered.map((c) => (
-              <CheckCard key={c.payment_id} c={c} today={today} busy={busyId === c.payment_id} onSetCleared={setCleared} />
+              <CheckCard
+                key={c.payment_id}
+                c={c}
+                today={today}
+                busy={busyId === c.payment_id}
+                onSetCleared={setCleared}
+                onEdit={setEditingCheck}
+                onDeleteRequest={setDeleteTarget}
+              />
             ))}
           </div>
         </>
       )}
+
+      {editingCheck ? (
+        <EditCheckDialog
+          check={editingCheck}
+          onClose={() => setEditingCheck(null)}
+          onSaved={() => {
+            setEditingCheck(null);
+            router.refresh();
+          }}
+        />
+      ) : null}
+
+      <ConfirmDialog
+        open={deleteTarget != null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null);
+            setDeleteError(null);
+          }
+        }}
+        title="מחיקת צ׳ק"
+        description={
+          deleteTarget
+            ? `למחוק את הצ׳ק של ${deleteTarget.customer_name} על סך ${formatCurrency(deleteTarget.amount)}?`
+            : undefined
+        }
+        destructive
+        loading={deleteBusy}
+        confirmLabel="מחיקה"
+        error={deleteError ?? undefined}
+        onConfirm={() => {
+          if (deleteTarget) void deleteCheck(deleteTarget);
+        }}
+      />
     </div>
   );
 }
@@ -286,23 +382,31 @@ function ActionCell({
   c,
   busy,
   onSetCleared,
+  onEdit,
+  onDeleteRequest,
 }: {
   c: CheckRow;
   busy: boolean;
   onSetCleared: (id: string, cleared: boolean) => void;
+  onEdit: (c: CheckRow) => void;
+  onDeleteRequest: (c: CheckRow) => void;
 }) {
-  if (c.status === "cleared") {
-    return (
-      <Button type="button" size="sm" variant="ghost" className="h-8 text-xs" disabled={busy} onClick={() => onSetCleared(c.payment_id, false)}>
-        {busy ? "..." : "בטל פירעון"}
-      </Button>
-    );
-  }
-  if (c.status === "bounced") return <span className="text-xs text-destructive">חזר</span>;
   return (
-    <Button type="button" size="sm" variant="outline" className="h-8 text-xs" disabled={busy} onClick={() => onSetCleared(c.payment_id, true)}>
-      {busy ? "מסמן..." : "סמן כנפרע"}
-    </Button>
+    <div className="flex items-center justify-center gap-1">
+      {c.status === "cleared" ? (
+        <Button type="button" size="sm" variant="ghost" className="h-8 text-xs" disabled={busy} onClick={() => onSetCleared(c.payment_id, false)}>
+          {busy ? "..." : "בטל פירעון"}
+        </Button>
+      ) : c.status === "bounced" ? (
+        <span className="text-xs text-destructive">חזר</span>
+      ) : (
+        <Button type="button" size="sm" variant="outline" className="h-8 text-xs" disabled={busy} onClick={() => onSetCleared(c.payment_id, true)}>
+          {busy ? "מסמן..." : "סמן כנפרע"}
+        </Button>
+      )}
+      <EditButton label="עריכת צ׳ק" onClick={() => onEdit(c)} />
+      <DeleteButton label="מחיקת צ׳ק" onClick={() => onDeleteRequest(c)} />
+    </div>
   );
 }
 
@@ -311,11 +415,15 @@ function CheckRowDesktop({
   today,
   busy,
   onSetCleared,
+  onEdit,
+  onDeleteRequest,
 }: {
   c: CheckRow;
   today: string;
   busy: boolean;
   onSetCleared: (id: string, cleared: boolean) => void;
+  onEdit: (c: CheckRow) => void;
+  onDeleteRequest: (c: CheckRow) => void;
 }) {
   return (
     <tr className="border-b border-border/50 hover:bg-muted/30">
@@ -348,7 +456,7 @@ function CheckRowDesktop({
         <PhotoCell c={c} />
       </td>
       <td className="px-2 py-2 text-center">
-        <ActionCell c={c} busy={busy} onSetCleared={onSetCleared} />
+        <ActionCell c={c} busy={busy} onSetCleared={onSetCleared} onEdit={onEdit} onDeleteRequest={onDeleteRequest} />
       </td>
     </tr>
   );
@@ -359,11 +467,15 @@ function CheckCard({
   today,
   busy,
   onSetCleared,
+  onEdit,
+  onDeleteRequest,
 }: {
   c: CheckRow;
   today: string;
   busy: boolean;
   onSetCleared: (id: string, cleared: boolean) => void;
+  onEdit: (c: CheckRow) => void;
+  onDeleteRequest: (c: CheckRow) => void;
 }) {
   return (
     <div className="rounded-2xl border border-border/70 p-3">
@@ -391,8 +503,134 @@ function CheckCard({
         <PhotoCell c={c} />
       </div>
       <div className="mt-2 border-t border-border/50 pt-2">
-        <ActionCell c={c} busy={busy} onSetCleared={onSetCleared} />
+        <ActionCell c={c} busy={busy} onSetCleared={onSetCleared} onEdit={onEdit} onDeleteRequest={onDeleteRequest} />
       </div>
     </div>
+  );
+}
+
+function EditCheckDialog({
+  check,
+  onClose,
+  onSaved,
+}: {
+  check: CheckRow;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [amount, setAmount] = useState(String(check.amount));
+  const [dueDate, setDueDate] = useState(check.due_date ?? "");
+  const [checkNumber, setCheckNumber] = useState(check.check_number ?? "");
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
+  const [accountId, setAccountId] = useState(check.account_id ?? "");
+  const [accountsList, setAccountsList] = useState<Account[]>([]);
+  const [notes, setNotes] = useState(check.notes ?? "");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit() {
+    if (submitting) return;
+    setError(null);
+
+    const amountNumber = Number(amount);
+    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
+      setError("יש להזין סכום גדול מ-0.");
+      return;
+    }
+    if (!dueDate) {
+      setError("יש להזין תאריך פירעון.");
+      return;
+    }
+    if (accountsList.length > 0 && !accountId) {
+      setError("יש לבחור חשבון לתנועה.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const endpoint = check.source_type === "order" ? "/api/orders/payments/update" : "/api/payments/update";
+      const body: Record<string, unknown> = {
+        id: check.payment_id,
+        payment_date: check.payment_date,
+        payment_method: "check",
+        amount_total: amountNumber,
+        due_date: dueDate,
+        check_number: checkNumber.trim() || undefined,
+        reference_number: check.reference_number ?? undefined,
+        notes: notes.trim() || undefined,
+        account_id: accountId || undefined,
+      };
+      if (check.source_type === "order") {
+        body.order_id = check.source_id;
+      } else {
+        if (check.source_type === "project") body.project_id = check.source_id;
+        body.requires_split = check.requires_split;
+      }
+
+      const result = await offlineFetch(endpoint, body, "עדכון צ׳ק");
+      if (!result.queued && !result.ok) {
+        setError(toHebrewError(result.error, "עדכון הצ׳ק נכשל."));
+        return;
+      }
+      if (photoFiles.length > 0) {
+        await uploadCheckPhotos(check.payment_id, photoFiles);
+      }
+      onSaved();
+    } catch (err) {
+      setError(toHebrewError(err, "שגיאה לא ידועה"));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <FormDialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title="עריכת צ׳ק"
+      description={check.customer_name}
+      onSubmit={() => void handleSubmit()}
+      submitLabel="שמירת שינויים"
+      busyLabel="שומר..."
+      busy={submitting}
+      error={error || undefined}
+    >
+      <div className="grid gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="space-y-1">
+            <label className="text-sm font-medium">סכום *</label>
+            <CurrencyInput
+              type="number"
+              min="0"
+              step="0.01"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="0.00"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium">תאריך פירעון *</label>
+            <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+          </div>
+        </div>
+
+        <CheckDetailsFields
+          checkNumber={checkNumber}
+          onCheckNumberChange={setCheckNumber}
+          photoFiles={photoFiles}
+          onPhotoFilesChange={setPhotoFiles}
+          disabled={submitting}
+        />
+
+        <AccountSelect value={accountId} onChange={setAccountId} onLoaded={setAccountsList} />
+
+        <div className="space-y-1">
+          <label className="text-sm font-medium">הערות</label>
+          <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="אופציונלי" />
+        </div>
+      </div>
+    </FormDialog>
   );
 }

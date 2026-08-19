@@ -52,7 +52,7 @@ export async function POST(req: Request) {
 
     const { data: existing, error: existingError } = await supabase
       .from("payments")
-      .select("id,order_id,project_id,property_id,business_domain")
+      .select("id,order_id,project_id,property_id,business_domain,payment_status")
       .eq("id", paymentId)
       .maybeSingle();
 
@@ -60,6 +60,15 @@ export async function POST(req: Request) {
     if (!existing?.id || existing.order_id !== orderId) {
       return NextResponse.json({ error: "התשלום לא נמצא עבור ההזמנה." }, { status: 404 });
     }
+
+    // Preserve the existing collection status (cleared/rejected) — otherwise every
+    // edit (e.g. fixing a check number) silently reverts a cleared check to pending.
+    const preservedStatus =
+      existing.payment_status === "pending" ||
+      existing.payment_status === "cleared" ||
+      existing.payment_status === "rejected"
+        ? existing.payment_status
+        : undefined;
 
     const { recorded_by: _ignored, ...paymentValues } = buildPaymentInsert({
       amountTotal: amountNumber,
@@ -69,6 +78,7 @@ export async function POST(req: Request) {
       propertyId: existing.property_id ?? undefined,
       paymentDate,
       paymentMethod,
+      paymentStatus: preservedStatus,
       dueDate,
       referenceNumber,
       checkNumber,

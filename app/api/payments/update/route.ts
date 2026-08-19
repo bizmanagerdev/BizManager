@@ -45,8 +45,8 @@ export async function POST(req: Request) {
     const amountNumber = toNumber(body.amount_total);
     const requiresSplit = body.requires_split === true;
 
-    if (!paymentId || !projectId) {
-      return NextResponse.json({ error: "Missing id or project_id" }, { status: 400 });
+    if (!paymentId) {
+      return NextResponse.json({ error: "Missing id" }, { status: 400 });
     }
     if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
       return NextResponse.json({ error: "Missing or invalid amount_total" }, { status: 400 });
@@ -71,8 +71,20 @@ export async function POST(req: Request) {
     if (existingPaymentError) {
       return NextResponse.json({ error: toHebrewError(existingPaymentError.message) }, { status: 400 });
     }
-    if (!existingPayment?.id || existingPayment.project_id !== projectId) {
-      return NextResponse.json({ error: "Payment not found for project" }, { status: 404 });
+    if (!existingPayment?.id) {
+      return NextResponse.json({ error: "Payment not found" }, { status: 404 });
+    }
+    if (projectId) {
+      if (existingPayment.project_id !== projectId) {
+        return NextResponse.json({ error: "Payment not found for project" }, { status: 404 });
+      }
+    } else if (existingPayment.project_id || existingPayment.order_id) {
+      // No project_id supplied → only standalone income (no project/order link)
+      // may be edited this way. Linked payments must go through their own flow.
+      return NextResponse.json(
+        { error: "תשלום משויך לפרויקט/הזמנה — יש לערוך אותו מהמסך המתאים." },
+        { status: 400 }
+      );
     }
 
     const businessDomain = isExpenseBusinessDomain(body.business_domain)
@@ -100,10 +112,15 @@ export async function POST(req: Request) {
         : businessDomain,
       paymentDate,
       paymentMethod,
-      // Preserve a manually-set 'rejected' status; otherwise let buildPaymentInsert
-      // derive pending vs cleared from the due_date.
-      paymentStatus: existingPayment.payment_status === "rejected" ? "rejected" : undefined,
-      projectId,
+      // Preserve the existing collection status — otherwise every edit (e.g.
+      // fixing a check number) silently reverts a cleared check to pending.
+      paymentStatus:
+        existingPayment.payment_status === "pending" ||
+        existingPayment.payment_status === "cleared" ||
+        existingPayment.payment_status === "rejected"
+          ? existingPayment.payment_status
+          : undefined,
+      projectId: existingPayment.project_id ?? undefined,
       orderId: existingPayment.order_id,
       propertyId: existingPayment.property_id,
       referenceNumber,
