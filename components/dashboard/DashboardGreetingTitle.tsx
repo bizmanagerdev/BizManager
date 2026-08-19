@@ -31,6 +31,7 @@ export default function DashboardGreetingTitle({
 }) {
   const greeting = useSyncExternalStore(
     subscribe,
+    // The DEVICE's own hour: a viewer abroad gets their morning, not Israel's.
     () => greetingForHour(new Date().getHours()),
     () => initialGreeting
   );
@@ -54,6 +55,7 @@ export default function DashboardGreetingTitle({
     [greeting, name]
   );
 
-  useSetPageTitle(title);
+  // …and the ONE page that keeps its heading in the bar on desktop.
+  useSetPageTitle(title, undefined, undefined, true);
   return null;
 }

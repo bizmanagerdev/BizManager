@@ -5,6 +5,11 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 import { STATUS_PILL_CLASSES } from "@/lib/ui/status-color-classes";
 
+// NEVER put a margin on an icon inside a Button. `gap-2` below already spaces
+// the glyph from the words, symmetrically and direction-aware; a `me-1` on top
+// of it double-spaces one side, so the content stops sitting centred in its
+// padding — and a PHYSICAL `ml-1`/`mr-1` in this RTL app puts the space on the
+// far side of the glyph entirely. Swept out of 13 files on 2026-08-19.
 const buttonVariants = cva(
   "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-transparent text-sm font-medium ring-offset-background transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-60 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {

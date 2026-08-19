@@ -88,7 +88,7 @@ export default function CommunicationsClient({ logs }: { logs: CommunicationLogW
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" variant="outline" onClick={() => setAddCallOpen(true)}>
-          <PhoneIcon className="me-1 h-4 w-4 text-success" />
+          <PhoneIcon className="h-4 w-4 text-success" />
           תיעוד שיחה
         </Button>
         <NativeSelect value={topic} onChange={(e) => setTopic(e.target.value)}>

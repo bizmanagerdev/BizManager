@@ -198,8 +198,41 @@
        token paints every page, and the top bar's brand corner with it, so the
        tint turned up in places that should stay white (user, 2026-08-18: "I
        don't want this light color everywhere, only on the dashboard").
-       Applied by .board-backdrop, which the dashboard page renders. */
-    --board-backdrop: 241 246 253;
+       Applied by .board-backdrop, which the dashboard page renders.
+
+       WHITE on desktop since 2026-08-19 (user: "make the background white
+       instead of blue and use the blue in the top row of cards"). The tint
+       didn't disappear — it swapped surfaces: the board is paper and the
+       SECONDARY row of cards carries the blue (SECONDARY_EMPHASIS_CLASS in
+       lib/dashboard/widgets.ts), which puts the emphasis on the cards that
+       matter instead of spreading it evenly under all of them.
+       PHONES KEEP THE BLUE — see the media query at the end of this file. There
+       the cards are full-bleed flush sections with no gutter and no side
+       borders, so the backdrop showing between them IS the separation; a white
+       board there would run every section into the next. */
+    --board-backdrop: var(--white);
+    /* THE MARK, tiled, instead of a checker grid (2026-08-19). Same three
+       chevrons as the logo, drawn far fainter than the document watermark
+       (1.1% vs its 4%) — at 132px and 4% it read as a zigzag wallpaper the
+       cards sat on, which is exactly what a texture must not do.
+       THREE dials, and they only make sense together, which is why the SVG is
+       inlined here rather than linked:
+         - fill-opacity  — how present it is.
+         - the PADDED viewBox — the mark is 100x90.92 and sits inside a 156x141
+           tile, so it fills ~64% of it. That's the only honest way to make the
+           chevrons THINNER (user, 2026-08-19): the band thickness is baked into
+           the logo's own geometry, so a smaller mark is a finer line. The
+           padding is also the gap between repeats — the mark never touches its
+           neighbour.
+         - --board-texture-size — the tile, hence the mark, in px.
+       Two soft sky washes used to sit under the mark; they went with the blue
+       board (2026-08-19). On white they were the blue, just blurrier, and the
+       point of the swap was to leave the page as paper.
+       To go back to the checker, put two 1px linear-gradients (32px 32px) in
+       place of the url() below. */
+    --board-texture:
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%22-28%20-25%20156%20141%22%20fill%3D%22%23161C2B%22%20fill-opacity%3D%220.011%22%3E%3Cpath%20d%3D%22M%2099.54%2031.20%20L%2087.41%2038.81%20L%2049.96%2015.30%20L%2012.40%2038.88%20L%200.16%2031.20%20L%2049.85%200.00%20Z%22%2F%3E%3Cpath%20d%3D%22M%200.00%2041.88%20L%2012.29%2049.60%20L%2049.85%2026.02%20L%2087.39%2049.59%20L%20100.00%2041.68%20L%20100.00%2057.04%20L%2087.49%2064.90%20L%2075.25%2057.22%20L%2049.96%2041.32%20L%2012.40%2064.90%20L%200.16%2057.22%20L%200.00%2057.11%20Z%22%2F%3E%3Cpath%20d%3D%22M%200.00%2067.90%20L%2012.29%2075.62%20L%2049.85%2052.04%20L%2087.39%2075.61%20L%20100.00%2067.70%20L%20100.00%2083.06%20L%2087.49%2090.92%20L%2075.25%2083.23%20L%2049.96%2067.33%20L%2012.40%2090.92%20L%200.16%2083.23%20L%200.00%2083.13%20Z%22%2F%3E%3C%2Fsvg%3E");
+    --board-texture-size: 62px auto;
     --foreground: var(--primary-3);
 
     --card: var(--white);
@@ -391,15 +424,12 @@
     z-index: -10;
     pointer-events: none;
     background-color: rgb(var(--board-backdrop));
-    /* The app's old body texture, now the board's alone: two soft accent washes
-       and a 32px grid that fades out down the page. White cards on top of it are
-       what give the board its depth. */
-    background-image:
-      linear-gradient(rgb(var(--secondary-5) / 0.035) 1px, transparent 1px),
-      linear-gradient(90deg, rgb(var(--secondary-5) / 0.035) 1px, transparent 1px),
-      radial-gradient(circle at top right, rgb(var(--secondary-5) / 0.10), transparent 28%),
-      radial-gradient(circle at left 20%, rgb(var(--secondary-5) / 0.08), transparent 30%);
-    background-size: 32px 32px, 32px 32px, auto, auto;
+    /* The app's old body texture, now the board's alone: the tiled mark.
+       Named in a variable because the TOP BAR wears the same thing on this page
+       — see the :has() rule at the end of this file — and a checker pattern that
+       doesn't line up between the two is worse than no pattern at all. */
+    background-image: var(--board-texture);
+    background-size: var(--board-texture-size);
   }
 
   .surface-panel {
@@ -562,8 +592,11 @@ select:not([multiple]):not([size]) {
        top bar. A strip of blue between a dark bar and the first card is a gap
        that belongs to neither. */
     margin-block-start: -1rem;
-    /* Air between one section and the next — and the only place the blue shows. */
-    gap: 0.625rem;
+    /* Air between one section and the next — and the only place the blue shows.
+       1rem, not the 0.625rem this started at (user, 2026-08-19: "a drop more
+       space between the sections") — enough for the backdrop to read as a gap
+       between two things rather than a seam in one. */
+    gap: 1rem;
   }
 
   /* A contained block: full border, a small radius, no shadow. Flatter and wider
@@ -604,4 +637,40 @@ select:not([multiple]):not([size]) {
    runs, and where it isn't the page simply stays white. */
 main:has(.board-backdrop) {
   background-color: transparent;
+}
+
+/* The DASHBOARD's bar matches its page (user, 2026-08-19). Everywhere else the
+   bar is white over a white page; the board brings its own tint, and a white
+   strip over it read as a separate sheet laid on top rather than as the top of
+   the same surface.
+
+   Keyed off the backdrop the dashboard already renders, so no page has to be
+   named here — the bar is a sibling of `main`, hence :has() on <body> rather
+   than on main. Unlayered, to beat the bg-background utility. */
+body:has(.board-backdrop) header {
+  background-color: rgb(var(--board-backdrop));
+  /* The same tiled mark as the page under it, `fixed` so it's anchored to the
+     VIEWPORT rather than to the header's own box — that's what makes the
+     pattern continue through the bar unbroken instead of restarting at its top
+     edge. Without the texture the bar was a flat panel laid over a patterned
+     page, which is the seam the colour match alone didn't remove. */
+  background-image: var(--board-texture);
+  background-size: var(--board-texture-size);
+  background-attachment: fixed;
+}
+
+@media (max-width: 767px) {
+  /* THE PHONE IS THE ONE PLACE THE BLUE BOARD SURVIVES. Desktop went white and
+     handed the tint to the secondary row of cards (see --board-backdrop above),
+     but that trade doesn't exist here: below md there is no secondary row and
+     no cards at all — the widgets are full-bleed flush sections, and the 10px
+     of backdrop between them is the ONLY thing saying they're separate. White
+     there would run the whole board into one sheet.
+     A drop lighter than sky-100, which read as a colour of its own rather than
+     as paper (user, 2026-08-19). The bar matches it exactly, or the two blues
+     meet at a seam right under the chrome. */
+  body:has(.board-backdrop) header,
+  .board-backdrop {
+    background-color: rgb(236 245 254);
+  }
 }

@@ -172,7 +172,7 @@ export default function AttendanceQueuePanel({
               value={workerFilter}
               onChange={(e) => setWorkerFilter(e.target.value)}
               aria-label="סינון לפי עובד"
-              className="h-10 w-full min-w-0 max-w-[13rem] rounded-xl border-white/10 bg-white/[0.06] text-sidebar-foreground shadow-none focus-visible:bg-white/[0.12] focus-visible:ring-1 focus-visible:ring-white/25"
+              className="h-10 w-full min-w-0 max-w-[13rem] rounded-xl"
             >
               {workerFilterSelect}
             </NativeSelect>

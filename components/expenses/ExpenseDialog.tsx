@@ -1580,7 +1580,7 @@ export function ExpenseDialog({
     return (
       <div className="mt-6 flex items-center justify-center gap-3">
         <Button type="button" onClick={onClick ?? (() => expressGo(1))} disabled={disabled}>
-          <ArrowLeftIcon className="ml-1 h-4 w-4" />{label}
+          <ArrowLeftIcon className="h-4 w-4" />{label}
         </Button>
         {skip ? (
           <button type="button" onClick={skip} className="mr-auto text-sm font-semibold text-muted-foreground hover:text-foreground">
@@ -2357,7 +2357,7 @@ export function ExpenseDialog({
             </div>
             <div className="mt-6">
               <Button type="button" onClick={() => void handleSubmit()} disabled={saving} className="w-full">
-                {saving ? (<><SpinnerIcon className="ml-2 h-4 w-4 animate-spin" />שומר...</>) : (<><CheckIcon className="ml-2 h-4 w-4" />{isWorkerPayment ? "שמור משמרת" : isRecurring ? "שמור הוצאה קבועה" : "שמור הוצאה"}</>)}
+                {saving ? (<><SpinnerIcon className="h-4 w-4 animate-spin" />שומר...</>) : (<><CheckIcon className="h-4 w-4" />{isWorkerPayment ? "שמור משמרת" : isRecurring ? "שמור הוצאה קבועה" : "שמור הוצאה"}</>)}
               </Button>
             </div>
           </>
@@ -3330,7 +3330,7 @@ export function ExpenseDialog({
             <Button type="submit" disabled={saving}>
               {saving ? (
                 <>
-                  <SpinnerIcon className="ml-2 h-4 w-4 animate-spin" />
+                  <SpinnerIcon className="h-4 w-4 animate-spin" />
                   שומר...
                 </>
               ) : (

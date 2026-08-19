@@ -135,7 +135,7 @@ export function InstallmentFields({ total, startDate, rows, onChange }: Props) {
       </div>
 
       <Button type="button" size="sm" variant="secondary" onClick={addRow}>
-        <AddIcon className="ml-1 h-4 w-4" />
+        <AddIcon className="h-4 w-4" />
         הוסף תשלום
       </Button>
     </div>

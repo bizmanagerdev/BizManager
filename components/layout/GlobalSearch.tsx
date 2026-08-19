@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { ViewDialog } from "@/components/ui/view-dialog";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
+import { TOPBAR_ICON_BUTTON } from "@/components/layout/topbar-icon";
 import { cn } from "@/lib/utils";
 import { highlightText, MatchReason } from "@/components/search/highlightMatch";
 import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
@@ -321,8 +322,13 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
           size={iconOnly ? "icon-sm" : undefined}
           aria-label={iconOnly ? "חיפוש" : undefined}
           className={cn(
+            // The glyph form IS a top-bar icon button — same 40px circle, same
+            // light hover as the bell and the back arrow. It used to carry its
+            // own classes and fell back to the plain ghost variant, so it was
+            // the one control up there with a different shape and a different
+            // hover (user, 2026-08-19).
             iconOnly
-              ? "shrink-0 text-sidebar-foreground/70 hover:text-sidebar-foreground"
+              ? cn("shrink-0", TOPBAR_ICON_BUTTON)
               : "h-10 w-full justify-start gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-3 font-normal text-sidebar-foreground/60 shadow-none hover:bg-white/[0.1] hover:text-sidebar-foreground lg:hidden",
             className
           )}

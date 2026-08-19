@@ -28,6 +28,14 @@ export type PageTitle = {
   title: ReactNode;
   subtitle?: string;
   action?: ReactNode;
+  /**
+   * Show this heading in the bar on DESKTOP too. Off by default (user,
+   * 2026-08-19): past `lg` the sidebar already says which page you're on, so a
+   * title up there repeats it — and the bar is a strip of the page now, not a
+   * header that needs a name. The dashboard is the exception, because its
+   * heading is a greeting rather than a page name and nothing else says it.
+   */
+  showOnDesktop?: boolean;
 } | null;
 
 type Store = {
@@ -85,13 +93,20 @@ export function useSetHeaderAction(node: ReactNode) {
 /**
  * Declare this page's title (and optional subtitle, e.g. a live row count).
  * Clears itself on unmount so a page that doesn't set one shows nothing rather
- * than inheriting the previous page's heading. Shown in the top bar at every
- * width — see TopBar.
+ * than inheriting the previous page's heading. Shown in the top bar on PHONES;
+ * pass `showOnDesktop` for the rare page whose heading is worth the bar past
+ * `lg` too — see TopBar.
  */
-export function useSetPageTitle(title: ReactNode, subtitle?: string, action?: ReactNode) {
+export function useSetPageTitle(
+  title: ReactNode,
+  subtitle?: string,
+  action?: ReactNode,
+  /** A plain boolean, not an options object — it has to be a stable dep. */
+  showOnDesktop?: boolean
+) {
   const { setPageTitle } = useContext(PageTitleContext);
   useEffect(() => {
-    setPageTitle({ title, subtitle, action });
+    setPageTitle({ title, subtitle, action, showOnDesktop });
     return () => setPageTitle(null);
-  }, [setPageTitle, title, subtitle, action]);
+  }, [setPageTitle, title, subtitle, action, showOnDesktop]);
 }

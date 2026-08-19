@@ -133,7 +133,7 @@ export default function VehiclesClient({ vehicles }: { vehicles: VehicleWithRoll
           </p>
         </div>
         <Button onClick={openCreate}>
-          <AddIcon className="me-1 h-4 w-4" />
+          <AddIcon className="h-4 w-4" />
           הוספת רכב
         </Button>
       </div>

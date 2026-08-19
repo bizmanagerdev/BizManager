@@ -225,11 +225,11 @@ export default function ProfitLossPanel({
         </span>
         <div className="flex items-center gap-2">
           <Button type="button" variant="outline" size="sm" onClick={exportCsv}>
-            <DownloadIcon className="ml-1 h-4 w-4" />
+            <DownloadIcon className="h-4 w-4" />
             ייצוא CSV
           </Button>
           <Button type="button" size="sm" onClick={() => window.print()}>
-            <PrintIcon className="ml-1 h-4 w-4" />
+            <PrintIcon className="h-4 w-4" />
             הדפסה / PDF
           </Button>
         </div>

@@ -267,7 +267,7 @@ export default function VehicleActivityClient({
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
             <CardTitle className="text-base">הוצאות ({activity.expenses.length})</CardTitle>
             <Button size="sm" onClick={openAddExpense}>
-              <AddIcon className="me-1 h-4 w-4" />
+              <AddIcon className="h-4 w-4" />
               הוצאה
             </Button>
           </CardHeader>
@@ -299,7 +299,7 @@ export default function VehicleActivityClient({
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
             <CardTitle className="text-base">הכנסות ({activity.payments.length})</CardTitle>
             <Button size="sm" onClick={openAddIncome}>
-              <AddIcon className="me-1 h-4 w-4" />
+              <AddIcon className="h-4 w-4" />
               הכנסה
             </Button>
           </CardHeader>
@@ -333,7 +333,7 @@ export default function VehicleActivityClient({
               משימות ({activity.tasks.length})
             </CardTitle>
             <Button size="sm" onClick={openAddTask}>
-              <AddIcon className="me-1 h-4 w-4" />
+              <AddIcon className="h-4 w-4" />
               משימה
             </Button>
           </CardHeader>
@@ -366,7 +366,7 @@ export default function VehicleActivityClient({
               מסמכים ({activity.documents.length})
             </CardTitle>
             <Button size="sm" onClick={openAddDoc}>
-              <AddIcon className="me-1 h-4 w-4" />
+              <AddIcon className="h-4 w-4" />
               מסמך
             </Button>
           </CardHeader>

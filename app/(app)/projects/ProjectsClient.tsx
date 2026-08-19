@@ -619,12 +619,12 @@ export default function ProjectsClient({
           {/* No create button here: "פרויקט" is a tile in the app's one
               quick-create + (its wizard's status list covers הצעת מחיר too). */}
           <div className="relative w-full min-w-0">
-            <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
+            <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="חיפוש..."
-              className="h-10 w-full rounded-xl border-white/10 bg-white/[0.06] ps-9 text-sidebar-foreground shadow-none placeholder:text-sidebar-foreground/60 focus-visible:bg-white/[0.12] focus-visible:ring-1 focus-visible:ring-white/25"
+              className="h-10 w-full rounded-xl ps-9"
             />
           </div>
           <Button
@@ -636,7 +636,7 @@ export default function ProjectsClient({
             className={
               mobileFiltersOpen
                 ? "h-10 w-10 shrink-0 rounded-xl"
-                : "h-10 w-10 shrink-0 rounded-xl !border-white/10 !bg-white/[0.06] !text-sidebar-foreground !shadow-none hover:!bg-white/[0.14]"
+                : "h-10 w-10 shrink-0 rounded-xl "
             }
             onClick={() => setMobileFiltersOpen((current) => !current)}
           >

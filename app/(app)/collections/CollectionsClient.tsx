@@ -74,11 +74,11 @@ export default function CollectionsClient({ customers, totals, dueToday }: Props
         </div>
         <div className="flex flex-wrap gap-2">
           <Button type="button" size="sm" variant="outline" onClick={() => setAddCallOpen(true)}>
-            <PhoneIcon className="me-1 h-4 w-4 text-success" />
+            <PhoneIcon className="h-4 w-4 text-success" />
             תיעוד שיחה
           </Button>
           <Button type="button" size="sm" variant="outline" onClick={() => setAddReminderOpen(true)}>
-            <NotificationIcon className="me-1 h-4 w-4 text-warning" />
+            <NotificationIcon className="h-4 w-4 text-warning" />
             הוספת תזכורת
           </Button>
         </div>

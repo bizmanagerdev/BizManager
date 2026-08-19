@@ -92,12 +92,14 @@ export default function AppShell({
           initialColor={avatarColor}
           showSearch={showSearch}
         />
-        {/* Slot for a page's own search/filter row, rendered as part of the dark
-            header so the two read as one block. `empty:hidden` keeps it out of
-            the layout entirely on pages that don't use it. */}
+        {/* Slot for a page's own search/filter row, directly under the bar and on
+            the SAME surface as it — the bar is the page's colour now, so a dark
+            strip here would put back exactly the separation we just removed
+            (user, 2026-08-19: "I want it to flow as one page"). `empty:hidden`
+            keeps it out of the layout entirely on pages that don't use it. */}
         <div
           id={PAGE_HEADER_TOOLBAR_ID}
-          className="sticky top-[60px] z-20 flex h-[52px] items-center bg-sidebar px-3 empty:hidden md:hidden"
+          className="sticky top-[60px] z-20 flex h-[52px] items-center bg-background px-3 empty:hidden md:hidden"
         />
         <OfflineBanner />
         <div className="flex min-w-0 flex-1">

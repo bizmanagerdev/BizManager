@@ -2359,7 +2359,7 @@ export default function SalaryCenterClient({
               it opens on the worker you have selected. */}
           {canCreateUsers ? (
             <Button variant="outline" onClick={() => setCreateUserOpen(true)}>
-              <AddIcon className="ms-2 h-4 w-4" />
+              <AddIcon className="h-4 w-4" />
               {"הוספת משתמש"}
             </Button>
           ) : null}
@@ -2929,7 +2929,7 @@ export default function SalaryCenterClient({
               size="sm"
               onClick={() => setAttendanceFiltersOpen((value) => !value)}
             >
-              <FilterIcon className="ms-2 h-4 w-4" />
+              <FilterIcon className="h-4 w-4" />
               {attendanceFiltersOpen ? "הסתרת סינון" : "סינון"}
               {(() => {
                 const activeCount = Object.values(attendanceFilters).filter(Boolean).length;
@@ -3285,7 +3285,7 @@ export default function SalaryCenterClient({
               <CardContent className="space-y-4 py-4">
                 <div className="flex justify-end">
                   <Button onClick={() => openNewAgreementDialog()} disabled={isPending}>
-                    <AddIcon className="ms-2 h-4 w-4" />
+                    <AddIcon className="h-4 w-4" />
                     {"הוספת משכורת"}
                   </Button>
                 </div>
@@ -4305,7 +4305,7 @@ export default function SalaryCenterClient({
                           </div>
                           {canManageSalary ? (
                             <Button onClick={() => openNewBonusDialog(selectedWorker.id)} disabled={isPending}>
-                              <AddIcon className="ms-2 h-4 w-4" />
+                              <AddIcon className="h-4 w-4" />
                               הוספת בונוס
                             </Button>
                           ) : null}
@@ -4381,7 +4381,7 @@ export default function SalaryCenterClient({
                           </div>
                           {canManageAttendance ? (
                             <Button onClick={() => openAbsenceDialog(selectedWorker.id)} disabled={isPending}>
-                              <AddIcon className="ms-2 h-4 w-4" />
+                              <AddIcon className="h-4 w-4" />
                               סימון יום חופש
                             </Button>
                           ) : null}

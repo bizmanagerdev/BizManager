@@ -120,7 +120,7 @@ export default function EntityReminders({
       {canManage && !hideAddButton ? (
         <div className="flex justify-end">
           <Button size="sm" variant="secondary" onClick={() => setAddOpen(true)}>
-            <AddIcon className="me-1 h-4 w-4" /> הוסף תזכורת
+            <AddIcon className="h-4 w-4" /> הוסף תזכורת
           </Button>
         </div>
       ) : null}

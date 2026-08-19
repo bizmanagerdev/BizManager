@@ -814,7 +814,7 @@ export default function FinancialPageClient({
   const advancedFilterButton = (
     <>
       <Button type="button" variant="outline" onClick={() => setFiltersOpen((value) => !value)}>
-        <FilterIcon className="ml-2 h-4 w-4" />
+        <FilterIcon className="h-4 w-4" />
         סינון מתקדם
         {activeFilterCount > 0 ? (
           <Badge variant="secondary" className="ms-2">{activeFilterCount}</Badge>
@@ -822,7 +822,7 @@ export default function FinancialPageClient({
       </Button>
       {activeFilterCount > 0 ? (
         <Button type="button" variant="ghost" onClick={resetFilters}>
-          <RefreshIcon className="ml-1 h-4 w-4" />
+          <RefreshIcon className="h-4 w-4" />
           איפוס סינון
         </Button>
       ) : null}
@@ -889,7 +889,7 @@ export default function FinancialPageClient({
       </label>
       {activeFilterCount > 0 ? (
         <Button type="button" variant="ghost" size="sm" onClick={resetFilters} className="ms-auto h-9">
-          <RefreshIcon className="ml-1 h-4 w-4" />
+          <RefreshIcon className="h-4 w-4" />
           איפוס
         </Button>
       ) : null}

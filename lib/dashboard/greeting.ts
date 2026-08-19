@@ -11,10 +11,32 @@
 // hydration, which is why these are plain functions shared by both sides rather
 // than two copies that drift apart.
 
+/** The app's default clock when the viewer's own isn't knowable — i.e. the server. */
+export const DEFAULT_TIME_ZONE = "Asia/Jerusalem";
+
+/**
+ * MORNING STARTS AT 04:00 (user, 2026-08-19). Between midnight and 04:00 it is
+ * still "ערב טוב": someone up at 02:00 is at the end of a long evening, not at
+ * the start of a new morning, and "בוקר טוב" at that hour reads as a machine
+ * that only noticed the date changed.
+ */
 export function greetingForHour(hour: number): string {
+  if (hour < 4) return "ערב טוב";
   if (hour < 12) return "בוקר טוב";
   if (hour < 18) return "צהריים טובים";
   return "ערב טוב";
+}
+
+/**
+ * The hour on the VIEWER's clock. On the client that is simply their device, so
+ * someone abroad gets their own morning rather than ours. On the SERVER there is
+ * no viewer clock (it runs UTC), so the SSR snapshot falls back to Israel, where
+ * all but the odd traveller is — without it the pre-hydration greeting is three
+ * hours behind and visibly flips after hydration.
+ */
+export function viewerHour(date: Date = new Date(), timeZone = DEFAULT_TIME_ZONE): number {
+  const hour = new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", hourCycle: "h23" }).format(date);
+  return Number(hour);
 }
 
 /**

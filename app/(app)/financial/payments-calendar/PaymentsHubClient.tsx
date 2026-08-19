@@ -90,7 +90,7 @@ export default function PaymentsHubClient({
           {activeTab === "calendar" ? (
             <>
               <Button type="button" size="sm" variant="secondary" onClick={() => setCashOpen(true)}>
-                <CalculatorIcon className="ml-1 h-4 w-4" />
+                <CalculatorIcon className="h-4 w-4" />
                 כמה צריך?
               </Button>
               {/* No generic "הוסף תשלום" here — a one-off payment is "הוצאה" in
@@ -100,11 +100,11 @@ export default function PaymentsHubClient({
           ) : (
             <>
               <Button type="button" size="sm" onClick={() => setNewTemplateOpen(true)} disabled={expenseMissingSchema}>
-                <AddIcon className="ml-1 h-4 w-4" />
+                <AddIcon className="h-4 w-4" />
                 הוצאה קבועה חדשה
               </Button>
               <Button type="button" size="sm" variant="outline" onClick={() => void generateCycle()} disabled={generating || expenseMissingSchema}>
-                <RefreshIcon className={`ml-1 h-4 w-4 ${generating ? "animate-spin" : ""}`} />
+                <RefreshIcon className={`h-4 w-4 ${generating ? "animate-spin" : ""}`} />
                 {generating ? "מייצר..." : "צור מחזור נוכחי"}
               </Button>
             </>

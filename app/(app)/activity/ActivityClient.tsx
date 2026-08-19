@@ -580,7 +580,7 @@ export default function ActivityClient({
           The dropdowns themselves open in the panel just below. */}
       <PageHeaderToolbar>
         <div className="mx-auto flex w-full max-w-md items-center justify-between gap-2">
-          <span className="inline-flex items-center gap-1.5 text-xs text-sidebar-foreground/80">
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
             <span className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success-soft-foreground/70" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-success-soft-foreground" />
@@ -598,7 +598,7 @@ export default function ActivityClient({
             className={
               mobileFiltersOpen
                 ? "h-10 shrink-0 gap-1.5 rounded-xl px-3"
-                : "h-10 shrink-0 gap-1.5 rounded-xl px-3 !border-white/10 !bg-white/[0.06] !text-sidebar-foreground !shadow-none hover:!bg-white/[0.14]"
+                : "h-10 shrink-0 gap-1.5 rounded-xl px-3 "
             }
             onClick={() => setMobileFiltersOpen((current) => !current)}
           >

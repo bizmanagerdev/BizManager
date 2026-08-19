@@ -80,11 +80,9 @@ export function TopBar({
   // The page's own heading wins (it's the one that can carry a live subtitle);
   // otherwise fall back to the route's name so no screen is ever nameless.
   const fallbackTitle = titleForPath(pathname);
-  // EVERY page's heading stays in the bar at every width now (user, 2026-08-18):
-  // it used to be mobile-only — desktop had the sidebar to say where you are —
-  // but the bar was otherwise empty past `lg` on every page except the dashboard,
-  // which had opted itself in. Showing it everywhere is what made that
-  // inconsistency visible in the first place.
+  // PHONE ONLY, except for pages that set `showOnDesktop` — today that's just the
+  // dashboard (user, 2026-08-19). A phone has no sidebar to say where you are;
+  // past `lg` it does, so a title in the bar repeats it. See the slot below.
   const headerTitle = pageTitle ?? (fallbackTitle ? { title: fallbackTitle, subtitle: undefined } : null);
   const headerAction = useHeaderAction();
   const { alerts, count, loading: alertsLoading, error: alertsError } = useAlerts();
@@ -162,34 +160,49 @@ export function TopBar({
   }, []);
 
   return (
-    // The top bar and the sidebar are ONE chrome surface: same background token,
-    // same foreground, same border. Two different navies meeting where they touch
-    // is exactly the mismatch this avoids. `primary` is reserved for ACTIONS
-    // (buttons, quick-action tiles) and is never used as a chrome color.
+    // THE BAR IS WHITE and the sidebar is dark (user, 2026-08-19). They used to be
+    // one dark surface with a white brand patch cut out of it; that reads as one
+    // L-shaped block of chrome wrapping the page. White above and dark beside it
+    // makes the sidebar a rail you navigate from and the bar a strip belonging to
+    // the page — and it puts the app's one dark corner (the brand) where the two
+    // meet, instead of the one light one.
     //
-    // The panels that drop OUT of the bar — inbox, profile, the + grid — stay on
-    // the normal light popover surface; only the rail itself is dark.
-    <header className="sticky top-0 z-30 flex h-[60px] shrink-0 items-center gap-2 border-b border-sidebar-border/80 bg-sidebar/95 px-4 text-sidebar-foreground backdrop-blur-xl">
-      {/* RTL: the first child sits on the RIGHT. The brand corner sits directly
-          above the sidebar and is the ONLY light patch in the dark chrome — it
-          opens up the corner where the rail meets the bar instead of leaving a
-          solid navy block there. Its width tracks the rail's so the two line up. */}
+    // Everything in here therefore takes PAGE tokens (foreground / background),
+    // not sidebar ones. The exception is the brand corner below, which is now
+    // the sidebar's.
+    //
+    // NO BORDER and no translucency: the bar should FLOW INTO the page, not sit
+    // on it (user, 2026-08-19). A rule under it drew a line across the top of
+    // every screen and put the bar back to being a separate strip; the same
+    // background as the page, with nothing between them, is what makes the two
+    // read as one surface. It stays OPAQUE (not /95) so content scrolling under
+    // it disappears cleanly instead of ghosting through.
+    <header className="sticky top-0 z-30 flex h-[60px] shrink-0 items-center gap-2 bg-background px-4 text-foreground">
+      {/* RTL: the first child sits on the RIGHT. The brand corner is the top of
+          the SIDEBAR, not part of the bar — same dark surface, so the rail reads
+          as one column from the logo down. Its width tracks the rail's so the two
+          line up. */}
       {hasSidebar ? (
         <Link
           href="/dashboard"
           aria-label={appName}
           className={cn(
-            "-my-[1px] -ms-4 me-2 hidden h-[calc(100%+2px)] shrink-0 cursor-pointer items-center gap-2.5 self-stretch bg-background text-foreground md:flex",
+            "-my-[1px] -ms-4 me-2 hidden h-[calc(100%+2px)] shrink-0 cursor-pointer items-center gap-2.5 self-stretch bg-sidebar text-sidebar-foreground md:flex",
             // Collapsed: the mark is centered so it lines up with the icon column
             // of the rail below it. Expanded: mark + name, left-aligned.
             collapsed ? `${RAIL_WIDTH.collapsed} justify-center px-0` : `${RAIL_WIDTH.expanded} px-3`
           )}
         >
-          <BrandMark size="sm" />
+          {/* WHITE on the navy, not sky (user, 2026-08-19). `text-primary-foreground`
+              rather than text-white, per the palette rule — the token IS white,
+              and it says "the readable colour on a primary surface", which is
+              what this corner is. BrandMark's own default is text-secondary, for
+              the light surfaces it sits on elsewhere (the auth screen). */}
+          <BrandMark size="sm" className="text-primary-foreground" />
           <div className={cn("min-w-0 leading-tight", collapsed ? "hidden" : "block")}>
             <div className="truncate text-sm font-bold tracking-tight">{appName}</div>
             {companyName ? (
-              <div className="truncate text-[11px] text-muted-foreground">{companyName}</div>
+              <div className="truncate text-[11px] text-sidebar-foreground/70">{companyName}</div>
             ) : null}
           </div>
         </Link>
@@ -204,9 +217,8 @@ export function TopBar({
       {pageTitle?.action ?? headerAction ? (
         <div className="shrink-0">{pageTitle?.action ?? headerAction}</div>
       ) : null}
-      {/* The bar says WHERE YOU ARE, at every width now — it used to be
-          mobile-only (a phone has no sidebar to say it instead), which is also
-          why titles are written short: "לקוחות · 571 לקוחות", not a sentence.
+      {/* The bar says WHERE YOU ARE on a phone, which is why titles are written
+          short: "לקוחות · 571 לקוחות", not a sentence.
 
           `overflow-hidden` on the slot is a GUARD, not a layout strategy. The
           title span below is `whitespace-nowrap`, so a title wider than the slot
@@ -219,31 +231,38 @@ export function TopBar({
         <div
           className={cn(
             "flex min-w-0 flex-1 flex-col justify-center overflow-hidden px-3 leading-tight",
-            // Centred on a phone like every other title; from lg up it starts at
-            // the leading edge, where a page's own heading would otherwise sit.
-            "items-center text-center lg:items-start lg:text-start"
+            // PHONE ONLY, unless the page asks otherwise (user, 2026-08-19).
+            // There's no sidebar on a phone, so the bar has to say where you are;
+            // past `lg` the sidebar says it, and repeating it in a bar that is
+            // now just a strip of the page is noise. The dashboard opts in — its
+            // heading is a GREETING, not a page name, and nothing else carries it.
+            pageTitle?.showOnDesktop
+              ? "items-center text-center lg:items-start lg:text-start"
+              : "items-center text-center lg:hidden"
           )}
         >
           {/* One line, always: the title SHRINKS to fit the middle slot rather than
               wrapping mid-word ("עובדי / ם") or clipping. clamp() scales it with the
               viewport down to a still-legible floor. */}
-          <span className="w-full whitespace-nowrap text-[clamp(0.75rem,3.4vw,1.0625rem)] font-semibold text-white">
+          <span className="w-full whitespace-nowrap text-[clamp(0.75rem,3.4vw,1.0625rem)] font-semibold text-foreground">
             {headerTitle.title}
           </span>
           {headerTitle.subtitle ? (
             // Wraps to a second line instead of clipping — record names live here
             // (e.g. a project's name) and half a name reads as a bug.
-            <span className="line-clamp-2 w-full break-words text-[12px] leading-tight text-sidebar-foreground/70">
+            <span className="line-clamp-2 w-full break-words text-[12px] leading-tight text-muted-foreground">
               {headerTitle.subtitle}
             </span>
           ) : null}
         </div>
       ) : null}
 
-      {/* Pushes the icon cluster to the far edge on desktop when there's no title
-          at all (a route missing from titleForPath) — normally the title itself
-          is flex-1 and already fills the gap. */}
-      {headerTitle ? null : <div className="hidden flex-1 lg:block" />}
+      {/* Pushes the icon cluster to the far edge. On a phone the title slot is
+          itself flex-1 and already does this; on desktop the title is hidden on
+          every page but the dashboard, so without this the cluster would slide
+          back against the brand corner. Needed whenever the slot isn't filling
+          the row: no title at all, or a title that's phone-only. */}
+      {headerTitle && pageTitle?.showOnDesktop ? null : <div className="hidden flex-1 lg:block" />}
 
       {/* ms-3 (RTL → space on the RIGHT, i.e. toward the title): the search glyph
           leads this cluster on a phone and sat flush against the page title, so
@@ -288,7 +307,7 @@ export function TopBar({
                   <InboxIcon strokeWidth={TOPBAR_ICON_STROKE} />
                   {activeAlertCount > 0 ? (
                     <span
-                      className="absolute -top-2 -end-2 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-none text-destructive-foreground ring-2 ring-sidebar"
+                      className="absolute -top-2 -end-2 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-none text-destructive-foreground ring-2 ring-background"
                       aria-hidden
                     >
                       {activeAlertCount > 99 ? "99+" : activeAlertCount}
@@ -358,7 +377,7 @@ export function TopBar({
         <PwaInstallButton />
 
       {/* Hairline between the tools and you. */}
-      <span aria-hidden className="mx-0.5 h-6 w-px shrink-0 bg-sidebar-border" />
+      <span aria-hidden className="mx-0.5 h-6 w-px shrink-0 bg-border" />
 
       {/* Hover reveals the account menu, same as the inbox and the + — and for
           the same reason those use HoverPanel rather than a real menu: a menu
@@ -372,7 +391,7 @@ export function TopBar({
           <Button
             variant="ghost"
             size="icon-sm"
-            className="h-[40px] w-[40px] rounded-full p-0 hover:bg-secondary"
+            className="h-[40px] w-[40px] rounded-full p-0 hover:bg-accent"
             type="button"
             aria-label={userName ? `החשבון שלי — ${userName}` : "החשבון שלי"}
             id="topbar-user-trigger"

@@ -1067,12 +1067,12 @@ export default function TasksPageClient(props: Props) {
   // white/10 treatment the phone header uses, so the two read as one bar.
   const desktopSearch = (
     <div className="relative w-64">
-      <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
+      <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         value={qInput}
         onChange={(e) => handleQChange(e.target.value)}
         placeholder="חיפוש..."
-        className="h-8 rounded-lg border-white/10 bg-white/[0.06] ps-9 text-sidebar-foreground shadow-none placeholder:text-sidebar-foreground/60 focus-visible:bg-white/[0.12] focus-visible:ring-1 focus-visible:ring-white/25"
+        className="h-8 rounded-lg ps-9"
       />
     </div>
   );
@@ -1101,7 +1101,7 @@ export default function TasksPageClient(props: Props) {
         <Button
           asChild
           size="icon"
-          className="h-8 w-8 shrink-0 rounded-lg !border-white/10 !bg-white/[0.06] !text-sidebar-foreground !shadow-none hover:!bg-white/[0.14]"
+          className="h-8 w-8 shrink-0 rounded-lg "
           aria-label="משימות קבועות"
           title="משימות קבועות"
         >
@@ -1133,12 +1133,12 @@ export default function TasksPageClient(props: Props) {
           {/* Same navy treatment as every other page's header strip (orders,
               customers): a recessed white/10 field on the bar, not a light one. */}
           <div className="relative w-full min-w-0">
-            <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
+            <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={qInput}
               onChange={(e) => handleQChange(e.target.value)}
               placeholder="חיפוש..."
-              className="h-10 w-full rounded-xl border-white/10 bg-white/[0.06] ps-9 text-sidebar-foreground shadow-none placeholder:text-sidebar-foreground/60 focus-visible:bg-white/[0.12] focus-visible:ring-1 focus-visible:ring-white/25"
+              className="h-10 w-full rounded-xl ps-9"
             />
           </div>
           {/* Reads as ON (sky fill) while the panel is open or a filter is set. */}
@@ -1149,7 +1149,7 @@ export default function TasksPageClient(props: Props) {
             className={
               filtersOpen || hasActiveFilter
                 ? "h-10 w-10 shrink-0 rounded-xl"
-                : "h-10 w-10 shrink-0 rounded-xl !border-white/10 !bg-white/[0.06] !text-sidebar-foreground !shadow-none hover:!bg-white/[0.14]"
+                : "h-10 w-10 shrink-0 rounded-xl "
             }
             onClick={() => setFiltersOpen((x) => !x)}
           >
@@ -1163,7 +1163,7 @@ export default function TasksPageClient(props: Props) {
             <Button
               asChild
               size="icon"
-              className="h-10 w-10 shrink-0 rounded-xl !border-white/10 !bg-white/[0.06] !text-sidebar-foreground !shadow-none hover:!bg-white/[0.14]"
+              className="h-10 w-10 shrink-0 rounded-xl "
               aria-label="משימות קבועות"
               title="משימות קבועות"
             >

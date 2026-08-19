@@ -324,7 +324,7 @@ export default function InboxClient({
         <div className="flex flex-wrap items-center gap-1.5">
           {inbox.counts.new > 0 ? (
             <Button variant="ghost" size="sm" className="text-primary hover:bg-primary/10" onClick={markAllSeen} disabled={marking}>
-              <CheckIcon className="me-1 h-4 w-4" />
+              <CheckIcon className="h-4 w-4" />
               סמן הכול כנקרא
             </Button>
           ) : null}
@@ -332,7 +332,7 @@ export default function InboxClient({
               app's one quick-create +, which is on screen on this page too. */}
           <Button asChild variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
             <Link href="/profile#notifications">
-              <SettingsIcon className="me-1 h-4 w-4" />
+              <SettingsIcon className="h-4 w-4" />
               העדפות
             </Link>
           </Button>

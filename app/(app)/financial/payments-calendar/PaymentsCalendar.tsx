@@ -708,26 +708,26 @@ function PaymentItemCard({
       <div className="mt-2 flex flex-wrap gap-2">
         {canMarkPaid && item.stage !== "posted" ? (
           <Button type="button" size="sm" variant="secondary" onClick={onMarkPaid}>
-            <CheckIcon className="ml-1 h-3.5 w-3.5" />
+            <CheckIcon className="h-3.5 w-3.5" />
             סמן כשולם
           </Button>
         ) : null}
         {canSplit && item.stage !== "posted" ? (
           <Button type="button" size="sm" variant="secondary" onClick={onSplit}>
-            <SplitIcon className="ml-1 h-3.5 w-3.5" />
+            <SplitIcon className="h-3.5 w-3.5" />
             פיצול לתשלומים
           </Button>
         ) : null}
         {item.sourceHref ? (
           <Button asChild type="button" size="sm" variant="secondary">
             <Link href={item.sourceHref}>
-              <ExternalLinkIcon className="ml-1 h-3.5 w-3.5" />
+              <ExternalLinkIcon className="h-3.5 w-3.5" />
               למקור
             </Link>
           </Button>
         ) : null}
         <Button type="button" size="sm" variant="secondary" onClick={onRemind}>
-          <AddReminderIcon className="ml-1 h-3.5 w-3.5" />
+          <AddReminderIcon className="h-3.5 w-3.5" />
           תזכורת
         </Button>
         {canDelete ? (
@@ -1009,7 +1009,7 @@ function PaymentsDayPanel({
       {/* Add — pinned to the bottom, full width */}
       <div className="mt-3">
         <Button type="button" className="w-full" onClick={() => setAddOpen(true)}>
-          <AddIcon className="ml-1 h-4 w-4" />
+          <AddIcon className="h-4 w-4" />
           הוסף תשלום ליום זה
         </Button>
         <div className="mt-2 text-center text-xs text-muted-foreground">
