@@ -14,7 +14,7 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState, type TouchEvent as ReactTouchEvent } from "react";
 import { createPortal } from "react-dom";
-import { AddIcon, AddUserIcon, CashIcon, ClockIcon, ExpenseIcon, IncomeIcon, NotificationIcon, OrderIcon, PaymentIcon, ProjectIcon, SpinnerIcon, TaskIcon, TimerIcon, TransferIcon } from "@/components/ui/icons";
+import { AddIcon, CashIcon, ClockIcon, ExpenseIcon, IncomeIcon, NotificationIcon, OrderIcon, PaymentIcon, ProjectIcon, SpinnerIcon, TaskIcon, TimerIcon, TransferIcon, UserIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { HoverPanel, HoverPanelContent, HoverPanelTrigger, useHoverPanel } from "@/components/ui/hover-panel";
@@ -66,7 +66,11 @@ const MENU_ITEMS: MenuItem[] = [
   { action: "transfer", label: "העברה בין חשבונות", icon: TransferIcon },
   { action: "project", label: "פרויקט", icon: ProjectIcon },
   { action: "order", label: "הזמנה", icon: OrderIcon },
-  { action: "customer", label: "לקוח", icon: AddUserIcon },
+  // Plain UserIcon, not AddUserIcon (user+ badge) — every other tile in this
+  // grid is a single glyph, and "+" is already the whole menu's own meaning
+  // (it's what opened this grid); a second one baked into one icon read as a
+  // mismatch, not as "add a customer".
+  { action: "customer", label: "לקוח", icon: UserIcon },
   { action: "collect", label: "קליטת תשלום", icon: PaymentIcon },
   { action: "workerPayment", label: "תשלום לעובד", icon: CashIcon },
   // A CLOSED shift, typed in after the fact — writes a session directly, unlike
