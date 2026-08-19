@@ -916,3 +916,140 @@ export async function getPaymentsDueToday(
     };
   });
 }
+
+// ── The dashboard's גבייה card ───────────────────────────────────────────────
+
+/** One customer's overdue debt, as the board's card lists it. */
+export type CollectionsDebtor = {
+  customerId: string | null;
+  customerName: string;
+  customerPhone: string | null;
+  customerWhatsapp: string | null;
+  /** Sum across this customer's sources. */
+  amount: number;
+  /** Worst days-late across them; 0 when the date isn't knowable. */
+  daysLate: number;
+  /** How many separate debts are behind the number. */
+  sources: number;
+};
+
+export type CollectionsSummary = {
+  /** Dated payments landing TODAY — the only rows with a one-click action. */
+  today: PaymentDueToday[];
+  todayTotal: number;
+  /** Money already past its date, worst first. */
+  late: CollectionsDebtor[];
+  lateCount: number;
+  lateTotal: number;
+  /** Dated money still to come — the quiet half of the switch. */
+  upcoming: CollectionsDebtor[];
+  upcomingCount: number;
+  upcomingTotal: number;
+};
+
+/** Whole days between two ISO dates, or 0 when either is missing/unparseable. */
+function daysBetween(fromIso: string | null, toIso: string): number {
+  if (!fromIso) return 0;
+  const from = Date.parse(fromIso);
+  const to = Date.parse(toIso);
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return 0;
+  return Math.max(0, Math.round((to - from) / 86_400_000));
+}
+
+/**
+ * The גבייה card's data, in ONE query.
+ *
+ * Deliberately NOT getCollectionsData(): that walks every open receivable, pages
+ * through the whole view and then resolves each source's payment term to an
+ * effective due date — the right thing for the /collections worklist, far too
+ * much for a card showing five rows. This reads only the sources that actually
+ * have money late or dated, caps them, and groups by customer.
+ *
+ * The trade: days-late here comes from the view's `next_due_date` rather than
+ * from the payment term, so a source whose term moved the date can read a few
+ * days off. The card sorts by it and prints it as "45 יום"; the page is where
+ * you go for the exact figure.
+ */
+export async function getCollectionsSummary(
+  supabase: SupabaseClient,
+  todayIso?: string,
+  { limit = 200 }: { limit?: number } = {}
+): Promise<CollectionsSummary> {
+  const today = todayIso ?? new Date().toISOString().slice(0, 10);
+  const empty: CollectionsSummary = {
+    today: [],
+    todayTotal: 0,
+    late: [],
+    lateCount: 0,
+    lateTotal: 0,
+    upcoming: [],
+    upcomingCount: 0,
+    upcomingTotal: 0,
+  };
+
+  const [dueToday, sourcesResult] = await Promise.all([
+    getPaymentsDueToday(supabase, today).catch(() => [] as PaymentDueToday[]),
+    supabase
+      .from("collections_view")
+      .select(
+        "source_id,customer_id,customer_name,customer_phone,customer_whatsapp,overdue_amount,pending_amount,outstanding_amount,next_due_date"
+      )
+      .or("overdue_amount.gt.0.009,pending_amount.gt.0.009")
+      .order("overdue_amount", { ascending: false })
+      .range(0, limit - 1),
+  ]);
+
+  if (sourcesResult.error) return { ...empty, today: dueToday, todayTotal: sum(dueToday) };
+
+  // Group by customer: one row per person to chase, not per invoice.
+  const lateBy = new Map<string, CollectionsDebtor>();
+  const soonBy = new Map<string, CollectionsDebtor>();
+
+  for (const row of (sourcesResult.data ?? []) as Row[]) {
+    const overdue = toNum(row.overdue_amount);
+    const pending = toNum(row.pending_amount);
+    const customerId = str(row, "customer_id");
+    const key = customerId ?? str(row, "customer_name") ?? str(row, "source_id") ?? "";
+    if (!key) continue;
+
+    const into = overdue > 0.009 ? lateBy : pending > 0.009 ? soonBy : null;
+    if (!into) continue;
+
+    const existing = into.get(key);
+    const debtor: CollectionsDebtor = existing ?? {
+      customerId,
+      customerName: str(row, "customer_name") ?? "לקוח",
+      customerPhone: str(row, "customer_phone"),
+      customerWhatsapp: str(row, "customer_whatsapp"),
+      amount: 0,
+      daysLate: 0,
+      sources: 0,
+    };
+    debtor.amount += overdue > 0.009 ? overdue : pending;
+    debtor.sources += 1;
+    if (overdue > 0.009) {
+      debtor.daysLate = Math.max(debtor.daysLate, daysBetween(str(row, "next_due_date"), today));
+    }
+    into.set(key, debtor);
+  }
+
+  // Worst first on both sides: the oldest debt is the one that stops being
+  // collectable, and the nearest expected payment is the one to watch.
+  const late = [...lateBy.values()].sort((a, b) => b.daysLate - a.daysLate || b.amount - a.amount);
+  const upcoming = [...soonBy.values()].sort((a, b) => b.amount - a.amount);
+
+  return {
+    today: dueToday,
+    todayTotal: sum(dueToday),
+    late,
+    lateCount: late.length,
+    lateTotal: late.reduce((total, d) => total + d.amount, 0),
+    upcoming,
+    upcomingCount: upcoming.length,
+    upcomingTotal: upcoming.reduce((total, d) => total + d.amount, 0),
+  };
+}
+
+function sum(payments: PaymentDueToday[]): number {
+  return payments.reduce((total, p) => total + p.amount, 0);
+}

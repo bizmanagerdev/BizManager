@@ -183,26 +183,15 @@ export default function UpcomingPayments({ summary }: { summary: PaymentsSummary
             )}
           </section>
 
-          {/* ── The switch: two figures, and the list follows the one you press ── */}
+          {/* ── The switch: two figures, and the list follows the one you press ──
+              Same order, same per-count gating as the collections card's
+              (CollectionsCard.tsx) — באיחור first, צפוי second, each shown only
+              when it has something. The two cards answer mirrored questions
+              side by side on the board; a reader who's learned one switch
+              shouldn't have to re-learn the other's order. */}
           {upcoming.length > 0 || lateCount > 0 ? (
             <div className="border-t border-border/50">
               <div className="flex flex-wrap items-center gap-2 px-4 py-2">
-                <button
-                  type="button"
-                  onClick={() => setTab("upcoming")}
-                  aria-pressed={tab === "upcoming"}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold transition-colors",
-                    tab === "upcoming"
-                      ? "bg-secondary/15 text-foreground ring-1 ring-secondary/40"
-                      : "bg-muted text-muted-foreground hover:bg-secondary/10"
-                  )}
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
-                  צפוי {upcoming.length}
-                  <span className="tabular-nums">· {formatCurrency(upcomingTotal)}</span>
-                </button>
-
                 {lateCount > 0 ? (
                   <button
                     type="button"
@@ -218,6 +207,24 @@ export default function UpcomingPayments({ summary }: { summary: PaymentsSummary
                     <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
                     באיחור {lateCount}
                     <span className="tabular-nums">· {formatCurrency(lateTotal)}</span>
+                  </button>
+                ) : null}
+
+                {upcoming.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setTab("upcoming")}
+                    aria-pressed={tab === "upcoming"}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold transition-colors",
+                      tab === "upcoming"
+                        ? "bg-secondary/15 text-foreground ring-1 ring-secondary/40"
+                        : "bg-muted text-muted-foreground hover:bg-secondary/10"
+                    )}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
+                    צפוי {upcoming.length}
+                    <span className="tabular-nums">· {formatCurrency(upcomingTotal)}</span>
                   </button>
                 ) : null}
               </div>

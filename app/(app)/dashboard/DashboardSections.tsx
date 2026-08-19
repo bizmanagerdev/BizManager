@@ -7,6 +7,7 @@ import UpcomingDeliveries from "@/components/dashboard/UpcomingDeliveries";
 import AttendanceApprovals from "@/components/dashboard/AttendanceApprovals";
 import WorkerShiftPanel from "@/app/(app)/dashboard/WorkerShiftPanel";
 import UpcomingPayments, { type PaymentsSummary } from "@/components/dashboard/UpcomingPayments";
+import CollectionsCard from "@/components/dashboard/CollectionsCard";
 import { getInboxView, todaySlice } from "@/lib/reminders/worklist";
 import { getScheduleEntries, type CalendarEntry } from "@/lib/projectSchedule";
 import { getMyTasks } from "@/lib/dashboard/tasks-overview";
@@ -14,25 +15,34 @@ import { subtractWorkingDays, toDateOnly } from "@/lib/dashboard/week";
 import { formatToday } from "@/lib/dashboard/greeting";
 import { loadPhoneQueueData, type PhoneQueueData } from "@/lib/attendance/phone-reports";
 import { loadPaymentCalendarItems } from "@/lib/payables";
+import { getCollectionsSummary } from "@/lib/collections";
 import { loadAttendanceSpark, loadDeliveriesSpark } from "@/lib/dashboard/sparklines";
 import { loadAttendanceClassificationOptions } from "@/lib/payroll-page-loader";
 import {
   cardTransitionName,
   sanitizePrefs,
   resolveWidgets,
-  cardSize,
-  BOARD_COLUMN_CLASS,
-  BOARD_COLUMNS_CLASS,
-  CARD_SIZE_CLASS,
+  tierCounts,
+  BOARD_GRID_CLASS,
+  CARD_FILL_CLASS,
   CARD_NATURAL_CLASS,
   DASHBOARD_BOARD_CLASS,
-  MAX_BOARD_COLUMNS,
-  type CardSize,
+  FEW_CARDS_THRESHOLD,
+  HERO_CELL_CLASS,
+  HERO_EMPHASIS_FILL_CLASS,
+  HERO_EMPHASIS_HEADER_CLASS,
+  HERO_ONLY_CLASS,
+  REST_COLUMN_BOTH_CLASS,
+  REST_COLUMN_SECONDARY_ONLY_CLASS,
+  SECONDARY_CELL_CLASS,
+  SECONDARY_EMPHASIS_CLASS,
+  TERTIARY_CELL_CLASS,
+  TERTIARY_MUTE_CLASS,
   type WidgetId,
 } from "@/lib/dashboard/widgets";
 import { cn } from "@/lib/utils";
 import { loadDeliveriesPage, type DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
-import { getDigestAnchor, getMissedDigest, groupAuditFeedItems, type AuditFeedItem } from "@/lib/audit";
+import { getDigestAnchor, getMissedDigest, type AuditFeedItem } from "@/lib/audit";
 import MissedDigestCell from "@/components/dashboard/MissedDigestCard";
 import { loadDomainCashBreakdown } from "@/lib/financial";
 import DomainChartCard from "@/components/dashboard/DomainChartCard";
@@ -47,53 +57,41 @@ import { Skeleton } from "@/components/ui/skeleton";
 // ── Suspense fallbacks (kept close to the real layout so the swap is shift-free) ──
 
 export function PanelsFallback() {
-  // The same four columns, weighted roughly like a typical board, so the swap
-  // doesn't shift the page under the reader.
-  const COLUMN_WEIGHTS = [[2, 2], [1, 3], [1, 3], [3]];
+  // Roughly the shape of a typical board — tall narrow hero, a wider rest
+  // column beside it holding secondary over tertiary — so the swap to real
+  // data doesn't shift the page under the reader. Exact counts don't matter
+  // for a skeleton; the eye reads the shape.
   return (
-    <div className={cn(DASHBOARD_BOARD_CLASS, BOARD_COLUMNS_CLASS[4])}>
-      {COLUMN_WEIGHTS.map((weights, col) => (
-        <div key={col} className={BOARD_COLUMN_CLASS}>
-          {weights.map((weight, i) => (
-            <Skeleton key={i} className={cn("h-56 w-full rounded-[1.125rem] xl:min-h-0", weight > 1 ? "xl:grow-[2] xl:basis-0" : "xl:grow xl:basis-0")} />
+    <div className={cn(DASHBOARD_BOARD_CLASS, BOARD_GRID_CLASS)}>
+      <div className={HERO_CELL_CLASS}>
+        <Skeleton className={cn("h-56 w-full rounded-[1.125rem]", CARD_FILL_CLASS)} />
+      </div>
+      <div className={REST_COLUMN_BOTH_CLASS}>
+        <div className={SECONDARY_CELL_CLASS}>
+          {[0, 1].map((i) => (
+            <Skeleton key={i} className={cn("h-40 w-full rounded-[1.125rem]", CARD_FILL_CLASS)} />
           ))}
         </div>
-      ))}
+        <div className={TERTIARY_CELL_CLASS}>
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className={cn("h-32 w-full rounded-[1.125rem]", CARD_FILL_CLASS)} />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
 
 /**
- * A card as the board handles it: the widgets, plus the activity digest, which
- * is pinned rather than arranged and so isn't a WidgetId.
+ * A card as the board handles it: the widgets, plus the two cards pinned ahead
+ * of the viewer's own order (the activity digest, and a worker's clock-in
+ * strip) — neither is a WidgetId, since neither can be hidden or reordered.
  */
 type WidgetItem = {
   id: WidgetId | "digest" | "workerShift";
-  /** Position in the viewer's order; the pinned digest sits ahead of all of it. */
+  /** Position in the viewer's order; the pinned cards sit ahead of all of it. */
   rank: number;
-  /** What it asked for: quiet / normal / tall. */
-  size: CardSize;
-  /** The class its cell wears — the size, plus any per-card floor. */
-  sizing: string;
   node: ReactNode;
-};
-
-/**
- * A per-card FLOOR, overriding the grow classes' shared `xl:min-h-[9rem]`.
- * A list card at 9rem still shows two rows and a "there's more" scrollbar, but a
- * chart squeezed to 9rem is a legend and a sliver: axis labels, no plot.
- *
- * The attendance card needs one for the opposite reason: its days start FOLDED,
- * so its content is a handful of one-line headings and — now that cards start at
- * their content's height — it collapsed to a sliver of its neighbours' size.
- *
- * Its floor is the folded card plus ONE open session — the point of the card is
- * to approve a shift, and a card that makes you scroll to see the shift you just
- * unfolded has failed at the one job. Beyond that it grows with what's open.
- */
-const MIN_HEIGHT_CLASS: Partial<Record<WidgetId, string>> = {
-  domainChart: "xl:min-h-[17rem]",
-  attendanceQueue: "xl:min-h-[15rem]",
 };
 
 /** How far ahead the payments card looks, and how many rows it will ever show. */
@@ -115,77 +113,61 @@ function isoDate(date: Date): string {
 }
 
 /**
- * How many columns to open. A column is only full if something in it can stretch,
- * so the count follows the LIST cards, not the card count: three cards of which
- * two hold lists make two columns (both full), never three with one ending in
- * white space. A board of nothing but short cards falls back to the card count
- * and lets them stretch, since something has to fill the screen.
+ * Split the board's cards into hero + secondary + tertiary, from tierCounts()
+ * (see widgets.ts for the counting rule). `items[0]` is always the hero — the
+ * board's pinning already put "היום" (then the digest, then the worker's clock)
+ * ahead of everything else, so position 0 here IS the viewer's top priority.
  */
-function boardColumnCount(items: WidgetItem[]): number {
-  const growers = items.filter((w) => w.size !== "quiet").length;
-  return Math.max(1, Math.min(MAX_BOARD_COLUMNS, growers || items.length));
+function splitTiers(items: WidgetItem[]): {
+  hero: WidgetItem | null;
+  secondary: WidgetItem[];
+  tertiary: WidgetItem[];
+} {
+  if (items.length === 0) return { hero: null, secondary: [], tertiary: [] };
+  const [hero, ...rest] = items;
+  const { secondary, tertiary } = tierCounts(rest.length);
+  return { hero, secondary: rest.slice(0, secondary), tertiary: rest.slice(secondary, secondary + tertiary) };
 }
 
 /**
- * Last resort for a column that ended up all natural cards (possible when the
- * short ones outnumber the lists): its last card stretches after all. A slightly
- * tall card reads better than a column that stops halfway down the screen.
+ * One card in its cell. `fill` picks CARD_FILL_CLASS (stretch to the hero
+ * column / band row and share it evenly with row-mates) or CARD_NATURAL_CLASS
+ * (exactly its own height — the worker's clock strip, pinned under the hero).
+ * `tier` marks the rows that get their own note beyond size: "hero-fill"
+ * (sparse board) vs "hero-header" (crowded, a dark header band + light text
+ * instead of a border) are mutually exclusive — the hero wears exactly one,
+ * never both, never neither (see FEW_CARDS_THRESHOLD); "secondary" adds
+ * SECONDARY_EMPHASIS_CLASS's tint+ring, only passed when the hero is in its
+ * "-header" state, so the colour lives on exactly one row of the board at a
+ * time; "tertiary" strips the shadow every card has by default
+ * (TERTIARY_MUTE_CLASS) unconditionally — undefined for the worker's clock
+ * strip, which carries its own bespoke treatment. `order` is what puts a
+ * PHONE back into the board's running order — every wrapper between this
+ * cell and the board is `display: contents` there, so every card ends up a
+ * sibling of every other and sorts by it. On desktop it's a no-op: position
+ * already comes from which tier the card landed in.
  */
-function fillShortColumns(columns: WidgetItem[][]): WidgetItem[][] {
-  return columns.map((column) => {
-    if (column.length === 0 || column.some((w) => w.size !== "quiet")) return column;
-    return column.map((w, i) =>
-      i === column.length - 1 ? { ...w, size: "normal" as const, sizing: CARD_SIZE_CLASS.normal } : w
-    );
-  });
-}
-
-/**
- * Lay the cards ACROSS the columns in the viewer's order — card 1 tops the first
- * column, card 2 the second, and so on, wrapping onto a second row underneath.
- * So the order they set in «התאמת לוח» decides position as much as size: the
- * first cards are the top row, where nothing can push them out of sight.
- *
- * Filling column by column instead (the obvious reading) is what buried "היום"
- * three cards down a column and let whatever came first eat that column's height.
- * Going across also spreads the short cards and the lists between the columns on
- * its own, so no column ends up all one or all the other.
- */
-function planColumns(items: WidgetItem[], columnCount: number): WidgetItem[][] {
-  const columns: WidgetItem[][] = Array.from({ length: columnCount }, () => []);
-  items.forEach((item, slot) => columns[slot % columnCount].push(item));
-  return columns;
-}
-
-/**
- * The digest's size, from the same grouping the card itself will do. Its days
- * arrive folded, so what it SHOWS is one line per topic — that's what decides
- * whether it's worth a double share, not how many records are behind them.
- */
-function digestGrouped(items: AuditFeedItem[]): CardSize {
-  const topics = new Set(groupAuditFeedItems(items).map((g) => g.header.tableName));
-  return cardSize(topics.size, { tallFrom: 5 });
-}
-
-/**
- * One widget in its column: its content's height, or a weighted share of what's
- * left. The `order` style is what puts a PHONE back into the board's running
- * order — the column wrappers are `display: contents` there, so every card is a
- * sibling and sorts by it. On desktop it's a no-op: within a column the order
- * already ascends.
- */
-function WidgetCell({ item, order }: { item: WidgetItem; order: number }) {
+function Cell({
+  item,
+  fill,
+  tier,
+  order,
+}: {
+  item: WidgetItem;
+  fill: boolean;
+  tier?: "hero-fill" | "hero-header" | "secondary" | "tertiary";
+  order: number;
+}) {
   return (
     // `empty:hidden` because a card can decide at RUNTIME that it has nothing to
     // say — the digest renders null once you dismiss it. Without this the cell
-    // survives as an empty box and its column's gap still counts it, so that
-    // column starts one gap lower than the others and the card below can't grow
-    // into the space.
+    // survives as an empty box that still claims its even share of the row, and
+    // the row-mates that DO have something can't grow into the space it leaves.
     //
     // The hover lift is a TRANSFORM, so the card grows over its neighbours
     // without moving them — `scale` doesn't touch layout, which matters on a
-    // board where the columns are measured to the viewport. `relative`+`z-10`
-    // put the growing card above the cards it overlaps.
+    // board measured to the viewport. `relative`+`z-10` put the growing card
+    // above the cards it overlaps.
     //
     // GROWING IS THE WHOLE FEEDBACK (user, 2026-08-18: "hover should only make
     // the card grow, not add colour to it"). The cards used to take a
@@ -193,15 +175,19 @@ function WidgetCell({ item, order }: { item: WidgetItem; order: number }) {
     // blue. Rows inside a card still tint — that's a different question ("which
     // row?"), asked at a different scale.
     //
-    // Desktop only: on a phone there's no pointer to hover with, and a tap that leaves a card scaled
-    // reads as broken.
+    // Desktop only: on a phone there's no pointer to hover with, and a tap that
+    // leaves a card scaled reads as broken.
     <div
       className={cn(
         "min-w-0 transition-transform duration-200 ease-out empty:hidden xl:relative xl:hover:z-10 xl:hover:scale-[1.015]",
-        item.sizing
+        fill ? CARD_FILL_CLASS : CARD_NATURAL_CLASS,
+        tier === "hero-fill" ? HERO_EMPHASIS_FILL_CLASS : null,
+        tier === "hero-header" ? HERO_EMPHASIS_HEADER_CLASS : null,
+        tier === "secondary" ? SECONDARY_EMPHASIS_CLASS : null,
+        tier === "tertiary" ? TERTIARY_MUTE_CLASS : null
       )}
       // viewTransitionName pairs this cell's before and after when the board
-      // repacks, so a card SLIDES to its new column instead of jumping there —
+      // repacks, so a card SLIDES to its new spot instead of jumping there —
       // see withViewTransition, which drives the updates that cause a repack.
       style={{ order, viewTransitionName: cardTransitionName(String(item.id)) }}
     >
@@ -268,6 +254,7 @@ export async function DashboardPanels() {
     scheduleEntries,
     myTasks,
     paymentsResult,
+    collectionsSummary,
     paymentLeadRows,
     deliveriesResult,
     deliveriesSpark,
@@ -294,6 +281,12 @@ export async function DashboardPanels() {
     // …and each bill's own heads-up ("N work-days before"), which is what decides
     // whether an upcoming payment is alerting yet. Tolerant of the column not
     // existing (pre-20260720030000) — then nothing has a custom lead.
+    // Money coming IN. Its own narrow loader rather than getCollectionsData():
+    // that one pages the whole receivables view and resolves every payment term,
+    // which is right for the worklist page and far too much for a card.
+    show("collections") && isAdminOrOffice
+      ? getCollectionsSummary(supabase, todayIso).catch(() => null)
+      : Promise.resolve(null),
     show("payments") && isAdminOrOffice
       ? supabase
           .from("recurring_expense_templates")
@@ -410,6 +403,7 @@ export async function DashboardPanels() {
     todayAlerts: alertsSlice ? <TodayAlertsCard alerts={alertsSlice.alerts} /> : null,
     myTasks: <MyTasksPanel tasks={myTasks} />,
     payments: isAdminOrOffice ? <UpcomingPayments summary={paymentsSummary} /> : null,
+    collections: collectionsSummary ? <CollectionsCard summary={collectionsSummary} /> : null,
     deliveries: (
       <UpcomingDeliveries
         deliveries={deliveriesResult}
@@ -437,84 +431,40 @@ export async function DashboardPanels() {
       ) : null,
   };
 
-  // WHAT EACH CARD DECLARES: how many rows it holds. cardSize turns that into
-  // quiet / normal / tall — the card's whole say in the layout, and a one-liner
-  // per card rather than a pixel estimate nobody can check.
-  //
-  // `tallFrom` differs per card because a "row" isn't the same height in each: an
-  // attendance report is a form with a select and three buttons, a delivery is
-  // two lines, a task is one.
-  const rowsOf: Partial<Record<WidgetId, { rows: number; tallFrom?: number }>> = {
-    // Sizing only, so the server's UTC "today" is close enough: the card itself
-    // still buckets on the VIEWER's clock, and a card one step off for the three
-    // hours around midnight is not worth a round-trip.
-    todaySchedule: {
-      rows: scheduleEntries.filter(
-        (e) => e.startDate?.slice(0, 10) === todayIso || e.endDate?.slice(0, 10) === todayIso
-      ).length,
-    },
-    todayAlerts: { rows: alertsSlice?.alerts.length ?? 0, tallFrom: 5 },
-    myTasks: { rows: myTasks.length },
-    payments: { rows: todayPayments.length + paymentsSummary.upcoming.length, tallFrom: 5 },
-    deliveries: { rows: deliveriesResult.length, tallFrom: 5 },
-    // Its days arrive folded, so a report is a heading until you open it — but
-    // opening one costs a form's worth of height, so it turns tall sooner.
-    attendanceQueue: { rows: attendanceQueue?.pending.length ?? 0, tallFrom: 3 },
-    // The chart draws at a fixed size whatever the data: stretching it only adds
-    // white space under the axis, so it never asks for a share.
-    domainChart: { rows: 0 },
-  };
-
   const present: WidgetItem[] = ordered
-    .map((w, rank) => {
-      const declared = rowsOf[w.id];
-      const size = cardSize(declared?.rows ?? 1, { tallFrom: declared?.tallFrom });
-      return {
-        id: w.id as WidgetId | "digest",
-        rank,
-        size,
-        // cn() runs tailwind-merge, so a later min-h wins over the size class's.
-        sizing: cn(CARD_SIZE_CLASS[size], MIN_HEIGHT_CLASS[w.id]),
-        node: nodes[w.id],
-      };
-    })
+    .map((w, rank) => ({ id: w.id as WidgetId | "digest", rank, node: nodes[w.id] }))
     .filter((e) => e.node != null);
 
   // ── The board's running order ──────────────────────────────────────────────
   // TWO CARDS ARE PINNED, ahead of whatever the viewer arranged:
-  //   1. "היום" — always the first card: top-right on desktop, first on a phone.
-  //      It's the card the board exists to show, and a board where the day can be
-  //      dragged into a corner is a board you have to search before you can read.
+  //   1. "היום" — always the hero: full height, on its own side of the board on
+  //      desktop, first on a phone. It's the card the board exists to show, and a
+  //      board where the day can be buried among six others is a board you have
+  //      to search before you can read.
   //   2. "פעילות חדשה" — right after it, for the same reason in reverse: what
   //      changed while you were away is only worth anything if you see it early.
-  // Everything else follows in the viewer's own order.
+  //      Landing right after the hero, it's always the first secondary card.
+  // Everything else follows in the viewer's own order, split into the secondary
+  // and tertiary rows by tierCounts() — see splitTiers below.
   //
-  // The digest is planned only when it HAS something (it renders null when empty,
-  // and a reserved-but-empty slot left a hole that pushed the first card out of
-  // the corner). It stays mounted either way — see the render below — so its
-  // realtime subscription can still bring it back without a reload.
-  const digestSize = digestGrouped(digestItems);
+  // The digest is planned only when it HAS something (it renders null when
+  // empty). Unplanned, it stays mounted purely for its realtime subscription —
+  // see the sentinel near the return, and MissedDigestCard for what happens when
+  // that subscription fires on an unplanned board.
   const digestPlanned = isAdminOrOffice && digestItems.length > 0;
   const digestCard: WidgetItem | null = digestPlanned
-    ? {
-        id: "digest",
-        rank: -1,
-        size: digestSize,
-        sizing: CARD_SIZE_CLASS[digestSize],
-        node: <MissedDigestCell initialItems={digestItems} planned />,
-      }
+    ? { id: "digest", rank: -1, node: <MissedDigestCell initialItems={digestItems} planned /> }
     : null;
 
-  // The worker's clock, as a card of the board rather than a strip above it —
-  // directly under "היום" (user, 2026-08-18: "I want the clock under today"), so
-  // his day reads as: what's on today, then punch in.
+  // The worker's clock, pinned directly under "היום" (user, 2026-08-18: "I want
+  // the clock under today") — INSIDE the hero column, not a tier of its own, so
+  // his day reads as: what's on today, then punch in. It never competes for a
+  // secondary/tertiary slot and never grows past its own content.
   const shiftCard: WidgetItem | null =
     role === "worker"
       ? {
           id: "workerShift",
           rank: -0.5,
-          size: "quiet",
-          sizing: CARD_NATURAL_CLASS,
           node: (
             <Suspense fallback={null}>
               <WorkerShiftPanel userId={profile.id} />
@@ -523,45 +473,77 @@ export async function DashboardPanels() {
         }
       : null;
 
-  const boardCards: WidgetItem[] = [
+  const rankedCards: WidgetItem[] = [
     ...present.filter((w) => w.id === "todaySchedule"),
-    ...(shiftCard ? [shiftCard] : []),
     ...(digestCard ? [digestCard] : []),
     ...present.filter((w) => w.id !== "todaySchedule"),
   ];
+  const { hero, secondary, tertiary } = splitTiers(rankedCards);
+  const hasTertiary = tertiary.length > 0;
+  const hasRest = secondary.length > 0 || hasTertiary;
+  // Sparse board → the colour moves TO the hero (as a fill) and OFF the
+  // secondary row (plain, no tint) — see FEW_CARDS_THRESHOLD and the
+  // HERO_EMPHASIS_FILL_CLASS/HERO_EMPHASIS_HEADER_CLASS pair for why.
+  // rankedCards, not present: this is about how many cards the viewer is
+  // actually looking at (hero + digest + everything after), not just their
+  // raw «התאמת לוח» count.
+  const fewCards = rankedCards.length <= FEW_CARDS_THRESHOLD;
 
-  // The running order IS the phone order: the columns are display:contents
-  // there, so every card sorts by this index rather than by its column.
-  const boardOrder = new Map(boardCards.map((card, index) => [card.id, index]));
-  const columnCount = boardColumnCount(boardCards);
-  const columns = fillShortColumns(planColumns(boardCards, columnCount));
+  // The running order IS the phone order: every wrapper between a card and the
+  // board is display:contents there, so every card ends up a flat sibling and
+  // sorts by this index — hero, then the clock (if any), then the two rows in
+  // their normal reading order.
+  const flatOrder = [hero, shiftCard, ...secondary, ...tertiary].filter((c): c is WidgetItem => c != null);
+  const boardOrder = new Map(flatOrder.map((card, index) => [card.id, index]));
 
   return (
-    // A worker's board sits UNDER his clock-in panel, so a full-viewport height
-    // would push exactly that panel's worth of page below the fold. His board is
-    // three cards — letting it size to content is what keeps his screen whole.
-    <div
-      className={cn(
-        DASHBOARD_BOARD_CLASS,
-        BOARD_COLUMNS_CLASS[columnCount],
-        role === "worker" && "xl:h-auto"
-      )}
-    >
-      {columns.map((column, i) => (
-        <div key={i} className={BOARD_COLUMN_CLASS}>
-          {column.map((w) => (
-            <WidgetCell key={w.id} item={w} order={boardOrder.get(w.id) ?? 0} />
-          ))}
-          {/* "What you missed" when the board was planned WITHOUT it — it renders
-              null while empty, so this costs nothing, but the component stays
-              mounted and its realtime subscription can still bring the card back
-              without a reload. When it does have something it's a planned cell
-              above instead, second in the running order. */}
-          {i === 0 && isAdminOrOffice && !digestPlanned ? (
-            <MissedDigestCell initialItems={digestItems} />
+    <div className={cn(DASHBOARD_BOARD_CLASS, hasRest ? BOARD_GRID_CLASS : HERO_ONLY_CLASS)}>
+      {hero ? (
+        <div className={HERO_CELL_CLASS}>
+          <Cell
+            item={hero}
+            fill
+            tier={fewCards ? "hero-fill" : "hero-header"}
+            order={boardOrder.get(hero.id) ?? 0}
+          />
+          {shiftCard ? <Cell item={shiftCard} fill={false} order={boardOrder.get(shiftCard.id) ?? 0} /> : null}
+        </div>
+      ) : null}
+
+      {hasRest ? (
+        <div className={hasTertiary ? REST_COLUMN_BOTH_CLASS : REST_COLUMN_SECONDARY_ONLY_CLASS}>
+          {secondary.length > 0 ? (
+            <div className={SECONDARY_CELL_CLASS}>
+              {secondary.map((item) => (
+                <Cell
+                  key={item.id}
+                  item={item}
+                  fill
+                  tier={fewCards ? undefined : "secondary"}
+                  order={boardOrder.get(item.id) ?? 0}
+                />
+              ))}
+            </div>
+          ) : null}
+
+          {hasTertiary ? (
+            <div className={TERTIARY_CELL_CLASS}>
+              {tertiary.map((item) => (
+                <Cell key={item.id} item={item} fill tier="tertiary" order={boardOrder.get(item.id) ?? 0} />
+              ))}
+            </div>
           ) : null}
         </div>
-      ))}
+      ) : null}
+
+      {/* "What you missed", mounted purely for its realtime subscription, when
+          the board was planned WITHOUT it (nothing missed at request time). It
+          renders null — no cell, no tier, nothing for the grid to lay out — so
+          this costs nothing visually; if activity arrives live it refreshes the
+          board itself rather than trying to draw its own cell (see
+          MissedDigestCard). When it DOES have something it's a planned cell in
+          the tree above instead, always the first secondary card. */}
+      {isAdminOrOffice && !digestPlanned ? <MissedDigestCell initialItems={digestItems} /> : null}
 
       {present.length === 0 ? (
         <Card>

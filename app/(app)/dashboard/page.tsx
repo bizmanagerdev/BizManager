@@ -3,7 +3,7 @@ import AppShell from "@/components/layout/AppShell";
 import { PageStack } from "@/components/layout/page-layout";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import DashboardGreetingTitle from "@/components/dashboard/DashboardGreetingTitle";
-import { firstNameOf, greetingForHour } from "@/lib/dashboard/greeting";
+import { firstNameOf, greetingForHour, viewerHour } from "@/lib/dashboard/greeting";
 import { DashboardPanels, PanelsFallback } from "@/app/(app)/dashboard/DashboardSections";
 
 export const revalidate = 60;
@@ -32,13 +32,21 @@ export default async function DashboardPage() {
           card is named by the date. */}
       <DashboardGreetingTitle
         name={firstNameOf(profile.full_name)}
-        initialGreeting={greetingForHour(new Date().getHours())}
+        // The server runs UTC, so the SSR snapshot reads Israel's clock; the
+        // component re-reads the viewer's own device after hydration.
+        initialGreeting={greetingForHour(viewerHour())}
       />
-      <PageStack>
-        {/* No heading here: the greeting and today's date are the "היום" card's
-            header now (they were the top bar's title/subtitle before), and
-            «התאמת לוח» lives in /profile — the board starts with the cards. */}
-
+      {/* No heading here: the greeting and today's date are the "היום" card's
+          header now (they were the top bar's title/subtitle before), and
+          «התאמת לוח» lives in /profile — the board starts with the cards.
+          The negative margin claws back roughly half of AppShell's shared
+          top padding (py-4/md:p-6/lg:p-8): that padding earns its keep on a
+          page with its own heading below the bar, but with none here it was
+          just dead air above the board (user, 2026-08-19: "start the content
+          a little higher... theres no real top bar now"). DASHBOARD_BOARD_CLASS's
+          own height calc is trimmed by the same lg amount, so the board grows
+          into the reclaimed space instead of leaving it empty at the bottom. */}
+      <PageStack className="-mt-2 md:-mt-3 lg:-mt-4">
         <Suspense fallback={<PanelsFallback />}>
           <DashboardPanels />
         </Suspense>

@@ -11,7 +11,6 @@ import DashboardCardFooter from "@/components/dashboard/DashboardCardFooter";
 import { Button } from "@/components/ui/button";
 import { formatShortDateTime } from "@/lib/date";
 import { groupAuditFeedItems, type AuditFeedItem } from "@/lib/audit";
-import { CARD_SIZE_CLASS, cardSize } from "@/lib/dashboard/widgets";
 import { cn } from "@/lib/utils";
 import { withViewTransition } from "@/lib/ui/view-transition";
 
@@ -49,15 +48,16 @@ type TypeBucket = [type: string, rows: AuditFeedItem[]];
 const CARD_TITLE = "פעילות חדשה";
 
 /**
- * The digest as ONE CELL of the dashboard's own grid: the first (rightmost, RTL)
- * quarter, as many of the board's 90px units tall as its list needs — it reads as
- * a column, not a quarter-height box, and it re-sizes itself as activity arrives
- * (the grid reflows around it). Everything else auto-places around it.
+ * The digest, always the first SECONDARY card when it has anything to show — the
+ * board pins it right after "היום" (see DashboardSections). It doesn't size
+ * itself any more: like every other card, it just fills whatever cell the board
+ * gave it (see the shared `Cell` there).
  *
- * Renders NULL when there's nothing missed (the common case) or once dismissed —
- * null, not an empty cell, so the widgets take the space back. The component
- * stays mounted either way, which is what lets its realtime subscription bring
- * the card back the moment something happens.
+ * Renders NULL when there's nothing missed (the common case) or once dismissed.
+ * The component stays mounted either way — on an unplanned board (nothing
+ * missed at request time) that's what lets its realtime subscription notice new
+ * activity and ask the board to replan itself around it (see refetch below),
+ * rather than trying to draw a card the layout never made room for.
  */
 export default function MissedDigestCell({
   initialItems,
@@ -96,11 +96,24 @@ export default function MissedDigestCell({
     try {
       const res = await fetch("/api/dashboard/digest", { cache: "no-store" });
       const json = (await res.json().catch(() => ({}))) as { items?: AuditFeedItem[] };
-      if (res.ok && Array.isArray(json.items)) setItems(json.items);
+      if (!res.ok || !Array.isArray(json.items)) return;
+      if (planned) {
+        // The board already reserved this card's tier — just refresh what it
+        // shows, in place.
+        setItems(json.items);
+        return;
+      }
+      // UNPLANNED: the board's hero/secondary/tertiary tiers were laid out
+      // assuming this card had nothing to say, so there's no cell for it to draw
+      // itself into. Rather than invent one client-side (and get it wrong —
+      // there's no telling from here whether the right slot is even still free),
+      // let the server replan the whole board with this card included. Same fix
+      // as dismiss, same reason.
+      if (json.items.length > 0) router.refresh();
     } catch {
       // ignore transient errors
     }
-  }, []);
+  }, [planned, router]);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -167,39 +180,20 @@ export default function MissedDigestCell({
     }
   }, [router]);
 
-  // Its own size, for the live case below only: when the server already knew
-  // there was something it planned this card's cell and wrapped us in it. One
-  // line per topic is what the card shows, so that's what decides.
-  const size = cardSize(typed.length, { tallFrom: 5 });
-
+  // Total===0 covers BOTH real cases: nothing missed, and — for an unplanned
+  // instance — live activity that arrived and triggered a refresh instead of
+  // being drawn here (see refetch above). Either way there's nothing to render;
+  // sizing is entirely the parent Cell's business now, not this component's.
   if (dismissed || total === 0) return null;
 
-  // `planned` is the normal path: the board gave this card a cell of its own
-  // (second slot, right after "היום"), so render just the card into it. Without
-  // a cell — activity that arrived live on a board that was planned without it —
-  // wrap ourselves, so the card can still appear without a reload.
-  if (planned) {
-    return (
-      <MissedDigestCard
-        typed={typed}
-        total={total}
-        open={openTopics}
-        onToggleTopic={toggleTopic}
-        onDismiss={dismiss}
-      />
-    );
-  }
-
   return (
-    <div className={cn("min-w-0", CARD_SIZE_CLASS[size])}>
-      <MissedDigestCard
-        typed={typed}
-        total={total}
-        open={openTopics}
-        onToggleTopic={toggleTopic}
-        onDismiss={dismiss}
-      />
-    </div>
+    <MissedDigestCard
+      typed={typed}
+      total={total}
+      open={openTopics}
+      onToggleTopic={toggleTopic}
+      onDismiss={dismiss}
+    />
   );
 }
 

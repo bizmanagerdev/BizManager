@@ -18,17 +18,10 @@ export type WidgetId =
   | "todayAlerts"
   | "myTasks"
   | "payments"
+  | "collections"
   | "deliveries"
   | "attendanceQueue"
   | "domainChart";
-
-/**
- * Width in QUARTERS of the widget grid: 1 = a quarter, 2 = a half, 4 = the full
- * row. The grid used to be two columns (half / full); it became four so the
- * "היום" pair can sit at a quarter each with a half-width widget flowing up
- * beside them instead of opening a row of its own.
- */
-export type WidgetSpan = 1 | 2 | 4;
 
 export type WidgetMeta = {
   id: WidgetId;
@@ -36,7 +29,6 @@ export type WidgetMeta = {
   label: string;
   /** Roles allowed to see this widget. */
   roles: UserRole[];
-  span: WidgetSpan;
 };
 
 const ALL: UserRole[] = ["admin", "office", "worker"];
@@ -60,55 +52,36 @@ export const DASHBOARD_WIDGETS: WidgetMeta[] = [
   // moments, so each is a card of its own rather than two sections of one card.
   // Toggling/reordering them separately falls out of that.
   //
-  // EVERY widget is a quarter (2026-08-17): the board reads as one grid of
-  // equal cards, four to a row, instead of a stack of differently-sized blocks.
-  // The cards' own contents respond to the card's width via container queries,
-  // not the viewport's — see the @container grids in the widget components.
-  // ORDER IS PRIORITY (2026-08-18), and the RIGHT is the important side: the
-  // order decides both where a card lands — the first cards are the top row,
-  // dealt right to left, the next ones on the row beneath — and how much of its
-  // column it gets. So the list runs most-important first: the day, what needs
-  // handling in it, your own work, then everyone else's, then the numbers.
-  { id: "todaySchedule", label: "היום — יומן", roles: ALL, span: 1 },
-  { id: "todayAlerts", label: "התראות", roles: ALL, span: 1 },
-  { id: "myTasks", label: "המשימות שלי", roles: ALL, span: 1 },
+  // ORDER IS PRIORITY (2026-08-18): the order below decides where a card lands
+  // AND how big it is (2026-08-19) — #1 is the hero (see HERO_GRID_CLASS), the
+  // next 2–3 are the secondary row, everything after is the small, uniform
+  // "everything else" row. So the list runs most-important first: the day, what
+  // needs handling in it, your own work, then everyone else's, then the numbers.
+  { id: "todaySchedule", label: "היום — יומן", roles: ALL },
+  { id: "todayAlerts", label: "התראות", roles: ALL },
+  { id: "myTasks", label: "המשימות שלי", roles: ALL },
   // Money that LEAVES in the next few days, off the payments calendar: what is
   // late, what is due today, what is coming. Per-row amounts, no total — the
   // board says what needs doing, not what the business is worth.
-  { id: "payments", label: "תשלומים קרובים", roles: BACK_OFFICE, span: 1 },
+  { id: "payments", label: "תשלומים קרובים", roles: BACK_OFFICE },
+  // Money that COMES IN — the mirror of the card above it, and deliberately
+  // right after it: the two answer the same question in opposite directions, so
+  // they belong together both in the order and in the reading.
+  { id: "collections", label: "גבייה", roles: BACK_OFFICE },
   // Workers see this one too — the delivery run IS their work, and /deliveries
   // is one of the four routes they can open.
-  { id: "deliveries", label: "אספקות קרובות", roles: ALL, span: 1 },
+  { id: "deliveries", label: "אספקות קרובות", roles: ALL },
   // Shift reports waiting to be approved into payroll — someone else's day is
   // blocked on it, but it's not the viewer's own work, so it sits after it.
-  { id: "attendanceQueue", label: "נוכחות עובדים לאישור", roles: BACK_OFFICE, span: 1 },
-  { id: "domainChart", label: "הכנסות והוצאות", roles: BACK_OFFICE, span: 1 },
+  { id: "attendanceQueue", label: "נוכחות עובדים לאישור", roles: BACK_OFFICE },
+  { id: "domainChart", label: "הכנסות והוצאות", roles: BACK_OFFICE },
 ];
 
 /**
- * The board is four COLUMNS, each a full-height stack of cards (not a grid of
- * row-spans: whole rows can't divide evenly, so the tallest column dictates the
- * rest and the shortest ends in a hole — which is exactly the gap that showed up
- * under "המשימות שלי"). Cards divide their column in proportion to their weight,
- * so every column ends FLUSH with the others, whatever mix of cards the day
- * brings. A card missing (nothing pending, nothing missed) just means its column
- * splits between the rest.
- *
- * The height is the viewport, because the board fits the screen with NO PAGE
- * SCROLL (user, twice) — a card whose list outgrows its share scrolls inside
- * itself rather than lengthening the page.
- *
- * The subtraction, in the units each part is actually built from — mixing them
- * is the point, not sloppiness: the top bar is 60px of fixed chrome PLUS its 1px
- * bottom border, while the page's own `lg:p-8` padding is 4rem, which stretches
- * with the viewer's font-scale (0.9–1.5×). Written as `7.75rem` it was a pixel
- * short at scale 1 and further off at every other scale — that pixel is a
- * scrollbar. Keep it in step with AppShell's content wrapper and TopBar's height.
- */
-/**
  * The board cell's view-transition name for a card — unique, and stable across
  * repacks, which is what lets the browser pair a card's before and after and
- * slide it to its new column (see lib/ui/view-transition).
+ * slide it to its new position when the tiers are replanned (see
+ * lib/ui/view-transition).
  *
  * Lives HERE, not beside withViewTransition: that module is "use client", and a
  * client module's exports can't be CALLED from a server component — the grid
@@ -118,6 +91,19 @@ export function cardTransitionName(id: string) {
   return `card-${id}`;
 }
 
+/**
+ * The board fills the viewport with NO PAGE SCROLL (user, twice) — a card whose
+ * content outgrows its cell scrolls inside itself rather than lengthening the
+ * page. The subtraction is in the units each part is actually built from, which
+ * is the point, not sloppiness: the top bar is 60px of fixed chrome plus its 1px
+ * bottom border, and the page's own `lg:p-8` padding is 4rem top+bottom — MINUS
+ * the 1rem the dashboard page claws back off the top (`lg:-mt-4` in page.tsx,
+ * see the comment there) since this page has no heading of its own to spend
+ * that padding on, leaving 3rem. Written as one rem figure this was a pixel
+ * short at scale 1 and further off at every other scale (font-scale, 0.9–1.5×)
+ * — that pixel is a scrollbar. Keep this in step with page.tsx's own margin
+ * and AppShell's content wrapper and TopBar's height.
+ */
 export const DASHBOARD_BOARD_CLASS =
   // `board-flush` is the PHONE half of this (see globals.css): below md the cards
   // stop being cards and become full-bleed sections. A card is a device for
@@ -125,91 +111,243 @@ export const DASHBOARD_BOARD_CLASS =
   // so the rounded box, the two side borders and the 12px gutter were paying for
   // a separation the single column already had, out of the width the content
   // needed. Above md they're cards again, because there they earn it.
-  "board-flush flex flex-col gap-4 xl:grid xl:h-[calc(100dvh-61px-4rem)] xl:gap-4";
+  "board-flush flex flex-col gap-4 xl:grid xl:h-[calc(100dvh-61px-3rem)] xl:gap-4";
 
 /**
- * The board uses the WHOLE width, so the column count follows the cards rather
- * than being fixed at four: three cards make three columns, not three columns
- * and a hole. Static classes — Tailwind can't see one built at runtime.
+ * THE BOARD IS A HERO PLUS A REST COLUMN (2026-08-19b) — the hero is TALL, the
+ * full height of the board, but narrow, and everything else lives in a wider
+ * column beside it: secondary cards on top, the tertiary row underneath,
+ * sharing that column's height (user, after seeing the hero share just the top
+ * row: "it should be a tall card full height but not so wide").
+ *
+ * The hero's own width is the one knob that trades against the rest column's —
+ * narrower hero, wider rest, which is what keeps the tertiary row's cards
+ * readable (an earlier cut had the hero at 40% width and the rest squeezed to
+ * 60%, with a tertiary row THEN also splitting THAT into a further sliver —
+ * "theyre all garbled"; at 25%/75% the rest column has noticeably more to work
+ * with, on top of the min-width fixes below actually being in place this time).
+ *
+ * xl only. Below it every card is full-width, in the viewer's order, one
+ * column — see DASHBOARD_BOARD_CLASS. Every cell here goes `display: contents`
+ * on a phone, so its cards fall straight into that one column instead of
+ * nesting.
  */
-export const BOARD_COLUMNS_CLASS: Record<number, string> = {
-  1: "xl:grid-cols-1",
-  2: "xl:grid-cols-2",
-  3: "xl:grid-cols-3",
-  4: "xl:grid-cols-4",
-};
 
-/** The most columns the board will ever open. */
-export const MAX_BOARD_COLUMNS = 4;
+// `minmax(0,…)` on every track, both axes, both grids (the board's own columns
+// below, and the rest column's own rows further down): a grid track's
+// automatic minimum size is its content's own natural size, not 0. One long
+// line anywhere on the board was enough to push its track past its fr share,
+// and a grid — unlike flex — does not wrap to absorb that; it just overflows.
+// `minmax(0, …)` lets the track shrink to 0 first, so the fr split actually
+// holds and long content wraps or scrolls INSIDE its card instead (every card
+// already does this — see CARD_FILL_CLASS's `min-w-0`).
+export const BOARD_GRID_CLASS =
+  "xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(0,3fr)] xl:grid-rows-1 xl:gap-4";
+/** When nothing follows the hero: it simply takes the whole board. */
+export const HERO_ONLY_CLASS = "xl:grid xl:grid-cols-1 xl:grid-rows-1";
+
+// Shared by every cell below: a grid/flex item's own default minimum size is
+// its content's natural size too (the same trap as the tracks above, one layer
+// in) — without `min-w-0`/`min-h-0` a cell refuses to shrink below its widest
+// or tallest child no matter what the track allows. `contents` on a phone, so
+// the cell disappears and its cards fall straight into the board's one column.
+const CELL_BASE = "contents xl:flex xl:min-h-0 xl:min-w-0 xl:gap-4";
 
 /**
- * A column is a full-height stack of cards on desktop — and NOTHING on a phone:
- * `display: contents` takes the wrapper out of the layout so every card becomes a
- * direct child of the board and can be ordered on its own. Without that, a phone
- * shows column 1's cards, then column 2's — and since cards are dealt ACROSS the
- * columns, that comes out as 1, 5, 2, 6, 3… rather than the viewer's order.
+ * The hero's own cell: the hero card (fills it), and — worker only — the
+ * clock-in strip UNDER it (user, 2026-08-18: "I want the clock under today").
+ * Column 1, the board's only row — always the full board height.
  */
-export const BOARD_COLUMN_CLASS = "contents xl:flex xl:min-h-0 xl:flex-col xl:gap-4";
+export const HERO_CELL_CLASS = `${CELL_BASE} xl:flex-col xl:col-start-1 xl:row-start-1`;
 
 /**
- * WHAT A CARD DOES WITH ITS COLUMN — three sizes, and a card picks its own from
- * its own content. That's the whole contract.
- *
- *   quiet  — exactly as tall as it is. The one-line QuietCard, and anything that
- *            draws at a fixed size (the chart: stretching it only adds white
- *            space under the axis).
- *   normal — takes a share of whatever the quiet cards left over.
- *   tall   — takes twice that share, for a card actually holding a long list.
- *
- * THREE, not a weight from 1 to 6. The weights were computed from a pixel
- * estimate of each card's content times a bonus for its place in the viewer's
- * order, and the result was six subtly different heights that read as accidental
- * rather than chosen — and a card could change size because a list gained one
- * row. A card is normal or tall; that's a decision you can see.
- *
- * The sizes stay CLASSES, not spans: the board is a flex column measured to the
- * viewport, so cards divide the leftover height between them. Declared spans
- * (grid-auto-rows + span N) would give each card an intrinsic height and hand
- * the page its scrollbar back — the opposite of what the board is for.
- *
- * `min-h` is a floor so a card sharing with a much bigger neighbour is still
- * usable. `basis-auto`, NOT `basis-0`: each card starts at the height its content
- * wants and the shares divide only what's LEFT. That's what lets a card react to
- * being folded — collapse a day in the attendance card and the space it gives up
- * goes to its neighbours instead of staying a hole. Content that outgrows the
- * column still shrinks (min-h-0 is on the cell) and scrolls inside its card.
- *
- * Only at xl — on a phone every card is its content's height, in one column.
+ * The rest column: secondary above tertiary, SHARING the hero's full height —
+ * its own nested grid, not a nested flex-col. `flex-grow` only means anything
+ * once every ancestor in the chain has resolved to a definite size, and this
+ * is the second cell deep; one nested grid inside another, both built from
+ * `minmax(0,…fr)` rows off the board's own `xl:h-[calc(...)]`, resolves
+ * deterministically instead of depending on that chain holding — which is the
+ * more likely reason the FIRST tall-hero attempt this session quietly
+ * collapsed to content-sized rows rather than any single class being wrong.
+ * `col-start-2`, matching BOARD_GRID_CLASS's second track; two row templates
+ * for whether a tertiary row exists, same idea as the board used to have.
  */
-export type CardSize = "quiet" | "normal" | "tall";
+// 1fr:1fr (even), not 3fr:2fr — 60/40 still read as too small on the tertiary
+// row (user: "the point was to make the bottom cards bigger", after the first
+// bump). The cards were already uniform (flex-grow + stretch guarantees that);
+// what they needed was more height, so this gives secondary and tertiary the
+// rest column's height straight down the middle instead of favoring either.
+export const REST_COLUMN_BOTH_CLASS =
+  "contents xl:grid xl:min-h-0 xl:min-w-0 xl:grid-rows-[minmax(0,1fr)_minmax(0,1fr)] xl:gap-4 xl:col-start-2 xl:row-start-1";
+export const REST_COLUMN_SECONDARY_ONLY_CLASS =
+  "contents xl:grid xl:min-h-0 xl:min-w-0 xl:grid-rows-1 xl:gap-4 xl:col-start-2 xl:row-start-1";
 
-export const CARD_SIZE_CLASS: Record<CardSize, string> = {
-  quiet: "xl:shrink-0 xl:grow-0 xl:basis-auto",
-  normal: "xl:min-h-[9rem] xl:grow xl:basis-auto",
-  tall: "xl:min-h-[9rem] xl:grow-[2] xl:basis-auto",
-};
-
-/** Kept for the cell that has nothing to stretch — same class, clearer name. */
-export const CARD_NATURAL_CLASS = CARD_SIZE_CLASS.quiet;
+/** The secondary row: a few cards, the rest column's top share. */
+export const SECONDARY_CELL_CLASS = `${CELL_BASE} xl:flex-row xl:row-start-1`;
+/** The tertiary row: everything else, the rest column's bottom share. Only
+ *  rendered when tierCounts() gives it cards; pair with REST_COLUMN_BOTH_CLASS,
+ *  not the …_SECONDARY_ONLY variant (there is no row 2 to land in otherwise). */
+export const TERTIARY_CELL_CLASS = `${CELL_BASE} xl:flex-row xl:row-start-2`;
 
 /**
- * How many rows a card has to hold before it's worth twice the room. One number,
- * one place: a card asks `cardSize(n)` and gets its size.
+ * The secondary row's own emphasis — one step down from the hero's border
+ * (TodayScheduleCard's own `border-secondary`), applied here rather than in
+ * each widget: WHICH widgets land in secondary changes with the viewer's own
+ * «התאמת לוח» order, so the treatment has to live at the CELL, not in any one
+ * card component. A `ring`, not a heavier `border`: a ring is a box-shadow,
+ * not the `border` property Card already sets, so it layers on top instead of
+ * fighting Card's own border/shadow classes for which one wins — the same
+ * cascade-order uncertainty that caused this session's earlier `contents`
+ * bugs, avoided here by not needing to win a specificity fight at all.
+ * `ring-inset`, not the default outside ring: inset hugs the card's own
+ * rounded corners exactly like a border would, so next to the hero's actual
+ * `border-2 border-secondary` this reads as the same stroke turned down a
+ * notch (ring-secondary/60), not an unrelated softer effect. xl only, like
+ * every tier class — mobile cards are flat board-flush sections with no
+ * chrome of their own to ring.
  */
-const TALL_FROM_ROWS = 6;
+// The FILL is the board's old tint, moved (user, 2026-08-19: "make the
+// background white instead of blue and use the blue in the top row of cards").
+// A tinted board under white cards spent the colour on the whole page and told
+// you nothing; the same blue on the secondary row alone says which cards those
+// are. Kept well under the row-hover inside these cards (`bg-secondary/10`, a
+// translucent overlay that stacks on top of this) so hovering a row still
+// registers as a step darker rather than landing on the same value.
+// TURNED DOWN twice over (user, 2026-08-19: "the blue is too strong"): the
+// fill is a tint, not a colour, and the RING came down with it (ring-2/60 ->
+// ring-1/25). The ring used to be this row's only marking, so it had to
+// shout; now the fill says "this row" on its own and a heavy stroke over it
+// is the same message twice.
+// `!` for the same reason TERTIARY_MUTE_CLASS needs it: Card already paints a
+// background (`surface-panel`), so this has to override rather than layer.
+// No shadow here either (user, 2026-08-19: "i dont need the shadow on the top
+// three cards") — same reasoning as tertiary's: the shadow was one more thing
+// saying "this row is different" when the tint + ring already say it, and the
+// hero is the only card that should read as visually LIFTED off the board.
+//
+// `color-mix()`, not a plain `bg-secondary/[0.04]` — an alpha colour here
+// doesn't LAYER on top of surface-panel's opaque white the way it would on a
+// transparent element: `!important` makes it WIN the background-color
+// property outright, so a 4%-alpha value made the whole card 96% see-through
+// and the board's own texture showed straight through it (user: "take the
+// texture out of the cards it effects the readability"). `color-mix` pre-
+// blends the same 4% secondary into opaque white AT THE PAINT STEP, so the
+// result is a solid near-white with a hint of blue — the intended look, just
+// actually opaque.
+export const SECONDARY_EMPHASIS_CLASS =
+  "xl:rounded-[1.125rem] xl:ring-1 xl:ring-inset xl:ring-secondary/25 xl:[&>*]:bg-[color-mix(in_srgb,rgb(var(--secondary))_4%,white)]!";
 
 /**
- * A card's size from the one thing it knows: how many rows it holds. Nothing
- * with no rows takes a share (it renders as a QuietCard), and past
- * TALL_FROM_ROWS a card is long enough that a normal share would make it a
- * keyhole to scroll through.
- *
- * `tallFrom` is per-card because a "row" isn't the same height everywhere — an
- * attendance report is a form, a delivery is two lines.
+ * The tertiary row's own note, the opposite direction from secondary's: NO
+ * shadow at all (user: "get rid of the shadow completely from the bottom
+ * ones"), against every card's default `shadow-card`. Unlike the ring above,
+ * this genuinely has to WIN a specificity fight — you can't layer your way to
+ * "no shadow," only override the one that's already there — so it's the one
+ * place in this tier system that reaches for `!important` on purpose rather
+ * than avoiding the fight. `[&>*]`, not a class on Card itself: which widgets
+ * land in tertiary changes with the viewer's own order, same reason
+ * SECONDARY_EMPHASIS_CLASS lives here and not in any one card component.
  */
-export function cardSize(rows: number, { tallFrom = TALL_FROM_ROWS } = {}): CardSize {
-  if (rows <= 0) return "quiet";
-  return rows >= tallFrom ? "tall" : "normal";
+export const TERTIARY_MUTE_CLASS = "xl:[&>*]:shadow-none!";
+
+/**
+ * "Six or less" (Sari & Faigy's own words) — the point below which the board
+ * is sparse enough that the secondary row's blue tint reads as MORE important
+ * than the hero it's supposed to defer to: with fewer cards there's less
+ * "everything else" for the tint to stand out FROM, so it started winning the
+ * eye instead of the hero (Faigy: "i feel like the light blue catches the eye
+ * more then the king"; Sari: "yeah because here they are the same [size] and
+ * they are blue"). Below the threshold the colour swaps sides instead of
+ * running on both — see HERO_EMPHASIS_FILL_CLASS/HERO_EMPHASIS_HEADER_CLASS
+ * and the `few` gate on SECONDARY_EMPHASIS_CLASS's own use in
+ * DashboardSections.tsx.
+ */
+export const FEW_CARDS_THRESHOLD = 6;
+
+/**
+ * The hero wears EXACTLY ONE of a dark header or a blue fill — never both,
+ * never neither (user: "when the card has a fill, it doesn't need the
+ * border. when the card doesn't have a fill, then it needs the border" —
+ * then, seeing the bordered version: "instead of the border I want to make
+ * this part dark and the words light", pointing at the header band). Sparse
+ * board (at/under FEW_CARDS_THRESHOLD): the blue FILL is the signal on the
+ * whole card. Crowded board: the DARK HEADER is the signal instead (the fill
+ * moved to the secondary row, see SECONDARY_EMPHASIS_CLASS) — foreground
+ * background, background-coloured text/icon, so the title band itself reads
+ * as the mark rather than an outline around the card. Shadow-2xl is the one
+ * constant either way — elevation isn't the colour argument, so it doesn't
+ * take sides.
+ *
+ * Neither lives in TodayScheduleCard's own className: that component is built
+ * before the board's final card count is known (see the comment on its Card
+ * there), so both variants live here and are picked at the CELL, in
+ * DashboardSections.tsx (`tier="hero-fill"` vs `"hero-header"`).
+ * `[&_[data-card-header]]`, not `[&>*]`: the header is nested three levels
+ * inside Card (see DASHBOARD_CARD_HEADER's own `data-card-header` hook), and
+ * a descendant selector reaches it regardless of exactly how deep.
+ *
+ * `!` throughout for the same reason TERTIARY_MUTE_CLASS needs it — each is
+ * overriding a property Card (or its header) already sets, not layering
+ * beside it. The fill is the same opaque color-mix technique as secondary's —
+ * a shade stronger (8% vs 4%) since it's now the one card meant to read as
+ * "the colour on this board."
+ */
+export const HERO_EMPHASIS_FILL_CLASS =
+  "xl:[&>*]:border-0! xl:[&>*]:shadow-2xl! xl:[&>*]:bg-[color-mix(in_srgb,rgb(var(--secondary))_8%,white)]!";
+export const HERO_EMPHASIS_HEADER_CLASS =
+  "xl:[&>*]:shadow-2xl! xl:[&_[data-card-header]]:bg-foreground! xl:[&_[data-card-header]]:border-foreground! xl:[&_[data-card-header]_h3]:text-background! xl:[&_[data-card-header]_svg]:text-background!";
+
+/**
+ * WHAT A CARD DOES WITH ITS CELL — two answers, not a weight from 1 to 6:
+ *
+ *   fill    — the hero, and every secondary/tertiary card. Stretches to fill
+ *             whatever its slot (the hero column, or a band's row) gives it, and
+ *             shares that space EVENLY with any row-mates. `min-h` is a floor so
+ *             a tertiary band on a short screen never gets so thin the card
+ *             inside it is unusable. Content past that height scrolls inside the
+ *             card (`min-h-0` is what lets the cell shrink to allow that).
+ *   natural — exactly as tall as it is: the worker's clock-in strip, and nothing
+ *             else right now. A card that stretched here would either fight the
+ *             hero for height it doesn't need or stand there full of white space.
+ *
+ * Both only at xl — on a phone every card is its own content's height, in one
+ * scrolling column.
+ */
+export const CARD_FILL_CLASS = "xl:min-h-[8rem] xl:min-w-0 xl:grow xl:basis-0";
+export const CARD_NATURAL_CLASS = "xl:shrink-0 xl:grow-0 xl:basis-auto";
+
+/**
+ * How many of the cards AFTER the hero go in the secondary band vs the tertiary
+ * band — from the one number that varies: how many are left (`remaining`).
+ * Every viewer shows a different set of widgets (role, and what they've hidden
+ * in «התאמת לוח»), so this has to hold together from 0 cards left (hero alone)
+ * to 7 (the full back-office catalog plus the digest).
+ *
+ * Secondary is capped at 3 and tertiary is nudged away from 1 (an orphan card
+ * alone in its row looks like a mistake, not a tier) — past that, more cards
+ * just means a wider tertiary row, which is exactly what "everything else" is
+ * for. See __tests__/lib/dashboardWidgets.test.ts for the table this was tuned
+ * against.
+ */
+export function tierCounts(remaining: number): { secondary: number; tertiary: number } {
+  if (remaining <= 0) return { secondary: 0, tertiary: 0 };
+  if (remaining <= 3) return { secondary: remaining, tertiary: 0 };
+
+  let secondary = 2;
+  let tertiary = remaining - secondary;
+  // An orphan tertiary card (exactly one, alone in its row) reads as a mistake —
+  // fold it into secondary instead, up to secondary's own cap of 3.
+  if (tertiary === 1) {
+    secondary = 3;
+    tertiary = remaining - secondary;
+  }
+  // A tertiary row past 4 cards is dense enough to be worth trading for a third
+  // secondary card instead, same cap.
+  if (tertiary > 4 && secondary < 3) {
+    secondary = 3;
+    tertiary = remaining - secondary;
+  }
+  return { secondary, tertiary };
 }
 
 export type DashboardPrefs = {

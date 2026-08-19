@@ -48,7 +48,14 @@ export default function DashboardCardHeader({
     // card two colours, and because it painted OVER the card's hover it also
     // meant hovering coloured the header band alone instead of the whole card.
     // The rule under it is all the separation a header needs.
-    <div className={cn("border-b border-border/50 px-4 py-3", className)}>
+    //
+    // `data-card-header`: a stable hook for the ONE place this gets overridden
+    // from outside — the hero's dark-header state (HERO_EMPHASIS_BORDER_CLASS
+    // in lib/dashboard/widgets.ts), which can't pass a className directly
+    // (TodayScheduleCard is built before the board knows which state that is —
+    // see the comment on its Card). A data attribute survives that; reaching
+    // three DOM levels deep with a positional `[&>*>*>*]` selector wouldn't.
+    <div data-card-header className={cn("border-b border-border/50 px-4 py-3", className)}>
       <div className={cn("flex items-start justify-between gap-2", nowrap ? "flex-nowrap" : "flex-wrap")}>
         <div className="flex min-w-0 items-center gap-2">
           {/* A PLAIN glyph, no tinted chip behind it (user, 2026-08-18: "drop the

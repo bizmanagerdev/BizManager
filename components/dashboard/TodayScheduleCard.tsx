@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useSyncExternalStore } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { CalendarIcon, SuccessIcon } from "@/components/ui/icons";
+import { AddIcon, CalendarIcon, SuccessIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
 import DashboardCardHeader from "@/components/dashboard/DashboardCardHeader";
 import DashboardCardFooter from "@/components/dashboard/DashboardCardFooter";
@@ -10,17 +10,22 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { buildWeekView } from "@/lib/dashboard/week";
 import { formatToday } from "@/lib/dashboard/greeting";
+import { isoLocal } from "@/components/ui/month-calendar";
 import type { CalendarEntry } from "@/lib/projectSchedule";
 
-// THE DAY — today's tasks, projects and reminders from the calendar feed, listed
-// one by one: these are the things you actually do today. Its sibling card
-// (TodayAlertsCard) carries the dated alerts; the two used to be two sections of
-// one full-width card and are now a quarter-width card each.
+// THE DAY — today's tasks, projects and reminders from the calendar feed, and
+// (2026-08-19) the same tab strip / bordered rows / "הוספה ליום זה" as the
+// calendar page's own day panel (app/(app)/calendar/CalendarView.tsx's
+// DayDetail) — this IS that panel now, not a compact preview of it, now that
+// it's the board's hero card and has the room. Its sibling card
+// (TodayAlertsCard) carries the dated alerts.
 //
-// The WHOLE card is one link to the יומן, so there's no button on it and no
-// per-row link inside it: the rows are a preview of the day, and every part of
-// the card leads to the one place that shows the day in full. (Nested <a>s
-// wouldn't be legal HTML anyway.)
+// The CARD is still one link to the יומן (a full-bleed overlay, first child,
+// BEHIND the content rather than wrapping it — every interactive piece below
+// is a sibling of that overlay, not its descendant, which is what makes
+// per-row <Link>s, the filter pills and the add button all legal HTML here:
+// none of them nest inside another <a>). Clicking empty space still opens the
+// full calendar; clicking a row, a pill, or "הוספה" does its own thing instead.
 //
 // The GREETING is this card's header (user, 2026-08-18: "move this text into the
 // היום card") — "בוקר טוב, הוכהייזר 👋" as the title, the FULL date
@@ -71,16 +76,15 @@ function foldTaskReminders(entries: CalendarEntry[]): CalendarEntry[] {
     });
 }
 
-const KIND_DOT: Record<CalendarEntry["kind"], string> = {
-  project: "bg-secondary",
-  task: "bg-warning",
-  reminder: "bg-success",
-};
-
-const KIND_LABEL: Record<CalendarEntry["kind"], string> = {
-  project: "פרויקט",
-  task: "משימה",
-  reminder: "תזכורת",
+// Same source of truth as the calendar page's own day panel (app/(app)/calendar/
+// CalendarView.tsx's KIND_META) — this card IS that panel now, so a kind can't
+// wear one color here and another there.
+type Kind = CalendarEntry["kind"];
+const KIND_ORDER: Kind[] = ["reminder", "project", "task"];
+const KIND_META: Record<Kind, { label: string; plural: string; dot: string; edge: string }> = {
+  reminder: { label: "תזכורת", plural: "תזכורות", dot: "bg-info", edge: "border-e-info" },
+  project: { label: "פרויקט", plural: "פרויקטים", dot: "bg-success", edge: "border-e-success" },
+  task: { label: "משימה", plural: "משימות", dot: "bg-warning", edge: "border-e-warning" },
 };
 
 // No reactive source — the greeting is read from the local clock on each render.
@@ -114,11 +118,36 @@ export default function TodayScheduleCard({
 
   const empty = todayEntries.length === 0 && ongoing.length === 0;
 
+  // Same "tab strip" as the calendar's day panel — filters todayEntries in
+  // place rather than navigating, since this card has room for the list now.
+  const [filter, setFilter] = useState<"all" | Kind>("all");
+  const shown = filter === "all" ? todayEntries : todayEntries.filter((entry) => entry.kind === filter);
+
+  // Same door the calendar's own "הוספה ליום זה" uses (see QuickCreateMenu's
+  // `bizh:quick-create` listener) — pre-dated to today, kind to whatever's
+  // filtered ("all" defaults to a task, same rule as the calendar page).
+  function addToday(kind: Kind) {
+    window.dispatchEvent(
+      new CustomEvent("bizh:quick-create", { detail: { action: kind, dueDate: isoLocal(new Date()) } })
+    );
+  }
+  const addAction: Kind = filter === "all" ? "task" : filter;
+  const addLabel = filter === "all" ? "הוספה ליום זה" : `הוסף ${KIND_META[filter].label}`;
+
   return (
     // The card leads to the calendar, each row to its own entry. The card's link
     // is a full-bleed overlay rather than a wrapper: a row <Link> nested inside it
     // wouldn't be legal HTML, so the content sits above it with pointer events off
     // and each row turns them back on for itself.
+    // No border/fill hardcoded here on purpose — the hero wears EXACTLY ONE of
+    // them at a time (a border when the board is crowded, a blue fill when
+    // it's sparse; never both, never neither — user: "it shouldn't have a
+    // border [with the fill]. when it has no fill, then it needs the
+    // border"), decided by FEW_CARDS_THRESHOLD, which isn't known until every
+    // OTHER widget's node has resolved too — this card is built as one of
+    // them, before that count exists. See HERO_EMPHASIS_FILL_CLASS /
+    // HERO_EMPHASIS_BORDER_CLASS in lib/dashboard/widgets.ts, applied at the
+    // Cell in DashboardSections.tsx.
     <Card className="relative flex h-full flex-col">
       <Link
         href="/calendar"
@@ -138,8 +167,24 @@ export default function TodayScheduleCard({
         {/* The board's list style: p-0 content, rows that run edge to edge and
             carry their own padding, hairlines between them — same as the
             deliveries and payments cards. Anything that ISN'T a row (the green
-            line, the running-projects chips) keeps a margin of its own. */}
-        <CardContent className="pointer-events-auto min-h-0 flex-1 overflow-y-auto p-0">
+            line, the running-projects chips) keeps a margin of its own.
+            `justify-[safe_center]`: this is the HERO cell now, forced tall to
+            match its row — a light day's two rows sat pinned to the top with a
+            wall of dead space beneath (user: "it should be centered like the
+            calender"). `safe` is what keeps a busy day safe from the opposite
+            mistake: plain `justify-center` on an overflowing flex container
+            clips equally off BOTH ends once content is taller than the box,
+            which would cut off the top of the list, not just leave less
+            padding; `safe` falls back to start-alignment (and this card's own
+            scroll) the moment there isn't room to center. */}
+        <CardContent className="pointer-events-auto flex min-h-0 flex-1 flex-col justify-[safe_center] overflow-y-auto p-0">
+          {/* CardContent's own children are now flex items (for the centering
+              above), and a flex item's default minimum WIDTH is its content's
+              own natural size, not 0 — the "sarah vort thursday night mishkan
+              esther" row was wide enough to push a horizontal scrollbar under
+              the card. One `min-w-0` wrapper is enough to let everything
+              inside shrink/wrap to the card's actual width again. */}
+          <div className="min-w-0">
           {empty ? (
             // A pill that hugs its words, not a full-width panel. Good news is
             // the smallest thing a card has to say — as a block it was the
@@ -163,39 +208,52 @@ export default function TodayScheduleCard({
             </div>
           ) : null}
 
+          {/* The calendar day panel's own tab strip (app/(app)/calendar/
+              CalendarView.tsx's FilterToolbar) — filters IN PLACE, since the
+              hero card has room for the list now instead of a one-line preview.
+              xl only: on a phone this card is back to a compact one-column
+              stack, no room to spare for a filter row (user: "the today card
+              on mobile shouldn't have the filter") — `filter` just stays "all"
+              there, so `shown` is always the full list. */}
           {todayEntries.length > 0 ? (
-            <ul className="board-list divide-y">
-              {todayEntries.map((entry) => (
-                <li
-                  key={`${entry.kind}-${entry.id}`}
-                  className="relative px-4 py-3 transition-colors hover:bg-secondary/10"
-                >
-                  {/* Covers the row, so the whole line is the target. */}
+            <div className="pointer-events-auto m-3 hidden flex-wrap items-center gap-1.5 xl:flex">
+              <FilterPill active={filter === "all"} label="הכל" count={todayEntries.length} onClick={() => setFilter("all")} />
+              {KIND_ORDER.map((kind) => (
+                <FilterPill
+                  key={kind}
+                  active={filter === kind}
+                  label={KIND_META[kind].plural}
+                  count={todayEntries.filter((entry) => entry.kind === kind).length}
+                  dot={KIND_META[kind].dot}
+                  onClick={() => setFilter(kind)}
+                />
+              ))}
+            </div>
+          ) : null}
+
+          {shown.length > 0 ? (
+            <ul className="space-y-2 px-3 pb-3">
+              {shown.map((entry) => (
+                <li key={`${entry.kind}-${entry.id}`}>
+                  {/* Bordered card per row, colored edge per kind — same shape as
+                      the calendar's own day panel, not a compact one-liner: this
+                      card has the width for it now. */}
                   <Link
                     href={entry.href}
                     aria-label={entry.title}
-                    className="absolute inset-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  />
-                  {/* ONE line per row, like "המשימות שלי": the kind chip and the
-                      subtitle ride BESIDE the title rather than under it. Stacked,
-                      an entry with a subtitle was a two-line row next to a
-                      one-line neighbour and the column came out ragged. The title
-                      takes what's left and truncates; the short parts keep their
-                      size (shrink-0). */}
-                  <div className="flex items-center gap-2">
-                    <span className={cn("h-2 w-2 shrink-0 rounded-full", KIND_DOT[entry.kind])} />
-                    <span className="truncate text-sm font-medium" title={entry.title}>
-                      {entry.title}
-                    </span>
-                    <span className="shrink-0 rounded bg-muted px-1 py-px text-xs text-muted-foreground">
-                      {KIND_LABEL[entry.kind]}
-                    </span>
+                    className={cn(
+                      "pointer-events-auto block rounded-xl border border-e-2 bg-background p-3 transition-colors hover:border-secondary/40 hover:bg-secondary/5",
+                      KIND_META[entry.kind].edge
+                    )}
+                  >
+                    <div className="flex items-start gap-2">
+                      <span className="min-w-0 flex-1 text-sm font-medium">{entry.title}</span>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">{KIND_META[entry.kind].label}</span>
+                    </div>
                     {entry.subtitle ? (
-                      <span className="max-w-[7rem] truncate text-xs text-muted-foreground">
-                        {entry.subtitle}
-                      </span>
+                      <div className="mt-0.5 text-xs text-muted-foreground">{entry.subtitle}</div>
                     ) : null}
-                  </div>
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -206,10 +264,65 @@ export default function TodayScheduleCard({
           {todayEntries.length === 0 && !empty ? (
             <p className="px-4 py-3 text-sm text-muted-foreground">אין משימות או פרויקטים להיום.</p>
           ) : null}
+
+          {/* "הוספה ליום זה" — the calendar day panel always offers this, empty
+              day or not; an empty hero card that can only ever be READ was
+              wasting the room this redesign gave it. */}
+          <button
+            type="button"
+            onClick={() => addToday(addAction)}
+            // `w-[calc(100%-1.5rem)]` + `mx-3`, not `w-full` + `mx-3` — that combo
+            // is what overflowed last time: a fixed 100% width plus margin OUTSIDE
+            // it adds up to more than the row has, off by exactly the margin. The
+            // calc subtracts the margin back out first, so the two together land
+            // on exactly the row's width, same as the bordered rows above it.
+            // Sized like the rows above it, not a CTA — beside the rest of the
+            // board's compact cards a bigger version read as a mistake, not
+            // emphasis (user: "the button is way too big").
+            className="pointer-events-auto mx-3 mb-3 flex w-[calc(100%-1.5rem)] items-center justify-center gap-1 rounded-xl border border-dashed border-secondary/40 py-2.5 text-sm font-medium text-secondary transition-colors hover:bg-secondary/5"
+          >
+            <AddIcon className="h-4 w-4" />
+            {addLabel}
+          </button>
+          </div>
         </CardContent>
         {/* "ליומן", not "כל היומן": the calendar is a place, not a list you see all of. */}
         <DashboardCardFooter href="/calendar" label="ליומן" />
       </div>
     </Card>
+  );
+}
+
+// A labeled filter pill (name + count), same as the calendar page's own —
+// an empty kind reads clearly as "0 X" instead of a bare, meaningless zero.
+function FilterPill({
+  active,
+  label,
+  count,
+  dot,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  count: number;
+  dot?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+        active
+          ? "border-secondary bg-secondary/10 text-secondary"
+          : "border-border bg-background text-muted-foreground hover:bg-secondary/5"
+      )}
+    >
+      {dot ? <span className={cn("h-2 w-2 rounded-full", dot)} /> : null}
+      <span>{label}</span>
+      <span className="font-bold">{count}</span>
+    </button>
   );
 }
