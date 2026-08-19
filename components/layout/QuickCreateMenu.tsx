@@ -344,10 +344,11 @@ export function QuickCreateMenu({
           // the height so it can never run past the viewport.
           collisionPadding={12}
           className={cn(
-            // Navy card at BOTH widths (white was tried on the phone in between
-            // and dropped): the sky tiles sit on the same chrome navy as the
-            // sidebar and top bar, so the panel reads as part of the shell.
-            "w-auto rounded-2xl border-white/15 bg-primary p-2 text-primary-foreground shadow-2xl",
+            // WHITE at BOTH widths (user, 2026-08-18) — it was navy at both. The
+            // sky tiles are the only color in the panel now, and on the phone,
+            // where the sheet sits over its own dark scrim, white is what gives
+            // it an edge instead of one navy mass.
+            "w-auto rounded-2xl border-border bg-card p-2 text-card-foreground shadow-2xl",
             // Phone: a near-full-width sheet rather than a little popover — wide
             // enough for three tiles per row so all 12 fit on one screen with
             // nothing to scroll.
@@ -373,7 +374,11 @@ export function QuickCreateMenu({
         >
           {/* The grab bar — the only thing that says "you can throw this away".
               Decorative: the whole card is the drag surface, not just this. */}
-          {isFab ? <div className="mx-auto mb-2 mt-0.5 h-1 w-10 rounded-full bg-white/30" aria-hidden /> : null}
+          {/* Muted, not white: the sheet it sits on is white now, and a white
+              grab bar on it was invisible. */}
+          {isFab ? (
+            <div className="mx-auto mb-2 mt-0.5 h-1 w-10 rounded-full bg-muted-foreground/30" aria-hidden />
+          ) : null}
           {/* Three tiles per row at every width, so the rows are the ones the
               user laid out in MENU_ITEMS on desktop as well as on the phone. */}
           <div
