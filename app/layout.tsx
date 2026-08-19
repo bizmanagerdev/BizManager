@@ -22,7 +22,14 @@ export const metadata: Metadata = {
   // Bump ?v= whenever the artwork changes (v4 = the Heller mark, was the "H").
   // Favicons are cached about as hard as anything on the web.
   icons: {
-    icon: [{ url: "/favicon.ico?v=4", sizes: "any" }],
+    icon: [
+      { url: "/favicon.ico?v=4", sizes: "any" },
+      // The vector too, so a HiDPI tab strip gets crisp edges instead of a 32px
+      // bitmap. NOTE: setting `metadata.icons` at all means Next stops emitting
+      // the <link> for the app/icon.svg file convention — this entry is what
+      // actually puts the SVG in the tab. (Both URLs resolve to app/icon.svg.)
+      { url: "/icon.svg?v=4", type: "image/svg+xml" },
+    ],
     shortcut: "/favicon.ico?v=4",
     apple: "/apple-touch-icon.png?v=2",
   },

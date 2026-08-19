@@ -1,3 +1,4 @@
+import { formatShortDate } from "@/lib/date";
 import { toHebrewError } from "@/lib/error-messages";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -922,6 +923,9 @@ function formatChangeValue(field: string, value: AuditLogValue): string {
     const n = Number(value);
     if (Number.isFinite(n)) return `₪${n.toLocaleString("he-IL")}`;
   }
+  if (field.endsWith("_date") && typeof value === "string") {
+    return formatShortDate(value, value);
+  }
   const s = String(value);
   return STATUS_VALUE_LABELS[s] ?? s;
 }
@@ -1718,6 +1722,141 @@ async function enrichLogoutDurations(
   }
 }
 
+const DOCUMENT_LINK_TYPE_LABELS: Record<string, string> = {
+  customer: "לקוח",
+  project: "פרויקט",
+  order: "הזמנה",
+  property: "נכס",
+  task: "משימה",
+  loan: "הלוואה",
+  expense: "הוצאה",
+  payment: "תשלום",
+  user: "משתמש",
+  session: "משמרת",
+};
+
+// A document row's own details would otherwise just repeat the file name (already
+// shown as the row's title) — so instead say what the upload is actually attached
+// to (an order/project/customer/…), which is stored on a separate document_links
+// row and can't be read off the document row alone. Mutates the passed items; a
+// no-op (no query) when the page has no document rows.
+export async function enrichDocumentLinks(supabase: SupabaseClient, items: AuditFeedItem[]): Promise<void> {
+  const docItems = items.filter((i) => i.tableName === "documents" && i.recordId);
+  if (docItems.length === 0) return;
+
+  const documentIds = Array.from(new Set(docItems.map((i) => i.recordId)));
+  const { data } = await supabase
+    .from("document_links")
+    .select("document_id,entity_type,entity_id")
+    .in("document_id", documentIds);
+  const links = (data ?? []) as { document_id?: string; entity_type?: string; entity_id?: string }[];
+  if (links.length === 0) return;
+
+  // One link per document is the common case; keep the first if there are several.
+  const linkByDocument = new Map<string, { type: string; id: string }>();
+  for (const l of links) {
+    if (
+      typeof l.document_id === "string" &&
+      typeof l.entity_type === "string" &&
+      typeof l.entity_id === "string" &&
+      !linkByDocument.has(l.document_id)
+    ) {
+      linkByDocument.set(l.document_id, { type: l.entity_type, id: l.entity_id });
+    }
+  }
+  if (linkByDocument.size === 0) return;
+
+  const customerIds = new Set<string>();
+  const projectIds = new Set<string>();
+  const orderIds = new Set<string>();
+  const taskIds = new Set<string>();
+  const propertyIds = new Set<string>();
+  for (const { type, id } of linkByDocument.values()) {
+    if (type === "customer") customerIds.add(id);
+    else if (type === "project") projectIds.add(id);
+    else if (type === "order") orderIds.add(id);
+    else if (type === "task") taskIds.add(id);
+    else if (type === "property") propertyIds.add(id);
+  }
+
+  // Orders don't carry a display name of their own — resolve one hop further to
+  // the buyer, same as resolveAuditTitles does for order-anchored rows.
+  const orderCustomer = new Map<string, string>();
+  if (orderIds.size > 0) {
+    const { data: orderRows } = await supabase.from("orders").select("id,customer_id").in("id", Array.from(orderIds));
+    for (const row of (orderRows ?? []) as { id?: string; customer_id?: string }[]) {
+      if (typeof row.id === "string" && typeof row.customer_id === "string") {
+        orderCustomer.set(row.id, row.customer_id);
+        customerIds.add(row.customer_id);
+      }
+    }
+  }
+
+  const [customerRes, projectRes, taskRes, propertyRes] = await Promise.all([
+    customerIds.size > 0
+      ? supabase.from("customers").select("id,name").in("id", Array.from(customerIds))
+      : Promise.resolve({ data: [] as NamedRow[] }),
+    projectIds.size > 0
+      ? supabase.from("projects").select("id,name").in("id", Array.from(projectIds))
+      : Promise.resolve({ data: [] as NamedRow[] }),
+    taskIds.size > 0
+      ? supabase.from("tasks").select("id,subject").in("id", Array.from(taskIds))
+      : Promise.resolve({ data: [] as { id?: string; subject?: string }[] }),
+    propertyIds.size > 0
+      ? supabase.from("properties").select("id,name,address").in("id", Array.from(propertyIds))
+      : Promise.resolve({ data: [] as { id?: string; name?: string; address?: string }[] }),
+  ]);
+
+  const customerName = new Map<string, string>();
+  for (const row of (customerRes.data ?? []) as NamedRow[]) {
+    if (typeof row.id === "string" && typeof row.name === "string" && row.name.trim()) {
+      customerName.set(row.id, row.name.trim());
+    }
+  }
+  const projectName = new Map<string, string>();
+  for (const row of (projectRes.data ?? []) as NamedRow[]) {
+    if (typeof row.id === "string" && typeof row.name === "string" && row.name.trim()) {
+      projectName.set(row.id, row.name.trim());
+    }
+  }
+  const taskName = new Map<string, string>();
+  for (const row of (taskRes.data ?? []) as { id?: string; subject?: string }[]) {
+    if (typeof row.id === "string" && typeof row.subject === "string" && row.subject.trim()) {
+      taskName.set(row.id, row.subject.trim());
+    }
+  }
+  const propertyName = new Map<string, string>();
+  for (const row of (propertyRes.data ?? []) as { id?: string; name?: string; address?: string }[]) {
+    if (typeof row.id !== "string") continue;
+    const label = (row.name ?? row.address ?? "").trim();
+    if (label) propertyName.set(row.id, label);
+  }
+
+  const nameFor = (type: string, id: string): string | null => {
+    switch (type) {
+      case "customer": return customerName.get(id) ?? null;
+      case "project": return projectName.get(id) ?? null;
+      case "task": return taskName.get(id) ?? null;
+      case "property": return propertyName.get(id) ?? null;
+      case "order": {
+        const c = orderCustomer.get(id);
+        return c ? customerName.get(c) ?? null : null;
+      }
+      default: return null;
+    }
+  };
+
+  for (const item of docItems) {
+    const link = linkByDocument.get(item.recordId);
+    if (!link) continue;
+    const typeLabel = DOCUMENT_LINK_TYPE_LABELS[link.type] ?? link.type;
+    const name = nameFor(link.type, link.id);
+    const label = name ? `שייך ל${typeLabel}: ${name}` : `שייך ל${typeLabel}`;
+    item.baseDetails = label;
+    item.details = label;
+  }
+}
+
 export async function getAuditFeedPaginated(
   supabase: SupabaseClient,
   {
@@ -1775,7 +1914,7 @@ export async function getAuditFeedPaginated(
   const totalPages = Math.max(1, Math.ceil(totalCount / AUDIT_PAGE_SIZE));
 
   const items = normalizeAuditRows(rows, actorInfo.names, titles, actorInfo.colors);
-  await enrichLogoutDurations(supabase, items);
+  await Promise.all([enrichLogoutDurations(supabase, items), enrichDocumentLinks(supabase, items)]);
 
   return {
     items,

@@ -13,6 +13,7 @@ import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 import {
   buildAuditFeedItem,
+  enrichDocumentLinks,
   getAuditFeedPaginated,
   groupAuditFeedItems,
   resolveAuditTitles,
@@ -493,6 +494,7 @@ export default function ActivityClient({
             }
             const titles = await resolveAuditTitles(supabase, [row]);
             const item = buildAuditFeedItem(row, actorName, titles.get(row.id) ?? null, actorColor);
+            if (item.tableName === "documents") await enrichDocumentLinks(supabase, [item]);
 
             setExtraItems((prev) => {
               if (prev.some((existing) => existing.id === item.id)) return prev;
@@ -744,7 +746,7 @@ export default function ActivityClient({
       {/* Desktop: a compact table — same data as the cards, far less vertical space. */}
       {!error && displayItems.length > 0 && (
         <div
-          className={`hidden rounded-lg border border-border/60 bg-card shadow-sm md:block ${
+          className={`hidden rounded-b-lg border border-border/60 bg-card shadow-sm md:block ${
             isPending ? "opacity-60 transition-opacity" : ""
           }`}
         >
@@ -761,16 +763,17 @@ export default function ActivityClient({
             </colgroup>
             {/* Sticky under the 60px top bar (z-20 keeps it below the bar's z-30).
                 The wrapper can't clip with overflow-hidden or the header wouldn't
-                stick, so the header cells carry the top rounding instead. */}
+                stick, so the header stays square (the card only rounds at the
+                bottom) instead of trying to match a corner it can't clip to. */}
             <thead className="sticky top-[60px] z-20">
               <tr className="border-b-2 border-border bg-[rgb(var(--secondary-10))] text-sm font-semibold text-foreground shadow-sm">
-                <th className="px-3 py-3.5 text-right rounded-tr-lg">פעולה</th>
+                <th className="px-3 py-3.5 text-right">פעולה</th>
                 <th className="px-3 py-3.5 text-right">רשומה</th>
                 <th className="px-3 py-3.5 text-right">משתמש</th>
                 <th className="px-3 py-3.5 text-right">פרטים</th>
                 <th className="px-3 py-3.5 text-right">לפני</th>
                 <th className="px-3 py-3.5 text-right">אחרי</th>
-                <th className="whitespace-nowrap px-3 py-3.5 text-right rounded-tl-lg">זמן</th>
+                <th className="whitespace-nowrap px-3 py-3.5 text-right">זמן</th>
               </tr>
             </thead>
             <tbody>
@@ -879,7 +882,7 @@ export default function ActivityClient({
                       <td className="whitespace-nowrap px-3 py-2 align-middle text-xs text-muted-foreground">
                         <ActorCell item={header} />
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2 align-middle text-xs text-foreground/70">
+                      <td className="max-w-[18rem] px-3 py-2 align-middle text-xs text-foreground/70">
                         {header.baseDetails ? (
                           <DetailsText text={header.baseDetails} className="leading-tight" />
                         ) : null}
