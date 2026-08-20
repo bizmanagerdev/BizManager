@@ -793,7 +793,14 @@ export function ExpenseDialog({
       });
       const json = (await res.json().catch(() => ({}))) as {
         error?: string;
-        user?: { id?: string; full_name?: string | null; email?: string | null; role?: UserRole };
+        user?: {
+          id?: string;
+          full_name?: string | null;
+          email?: string | null;
+          role?: UserRole;
+          payroll_worker_type?: PayrollWorkerType | null;
+          pay_tracking_mode?: string | null;
+        };
       };
       const created = json.user;
       if (!res.ok || !created?.id) {
@@ -802,7 +809,13 @@ export function ExpenseDialog({
       }
       const label = created.full_name?.trim() || created.email?.trim() || "עובד חדש";
       setLocalUsers((current) => [
-        { id: created.id ?? "", label, role: created.role ?? "worker_no_access" },
+        {
+          id: created.id ?? "",
+          label,
+          role: created.role ?? "worker_no_access",
+          payroll_worker_type: created.payroll_worker_type ?? "session_only",
+          pay_tracking_mode: created.pay_tracking_mode ?? "session",
+        },
         ...current.filter((u) => u.id !== created.id),
       ]);
       setWorkerUserId(created.id);
