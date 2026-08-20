@@ -2,12 +2,18 @@
 
 import { useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { AddIcon, CalendarIcon, SuccessIcon } from "@/components/ui/icons";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { AddIcon, CalendarIcon, CheckIcon, SuccessIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import DashboardCardHeader from "@/components/dashboard/DashboardCardHeader";
 import DashboardCardFooter from "@/components/dashboard/DashboardCardFooter";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { toHebrewError } from "@/lib/error-messages";
+import { offlineFetch } from "@/lib/offline-queue";
+import { refreshAlerts } from "@/lib/ui/alerts-store";
 import { buildWeekView } from "@/lib/dashboard/week";
 import { formatToday } from "@/lib/dashboard/greeting";
 import { isoLocal } from "@/components/ui/month-calendar";
@@ -15,6 +21,13 @@ import type { CalendarEntry } from "@/lib/projectSchedule";
 import { t } from "@/lib/i18n/t";
 import { dashboardDict } from "@/lib/i18n/dictionaries/dashboard";
 import type { Locale } from "@/lib/i18n/types";
+
+// A row can be resolved in place (task done / reminder done) without leaving
+// the card — projects can't (no single "done" for a date range), so they stay
+// navigate-only.
+function isResolvableKind(kind: CalendarEntry["kind"]): kind is "task" | "reminder" {
+  return kind === "task" || kind === "reminder";
+}
 
 // THE DAY — today's tasks, projects and reminders from the calendar feed, and
 // (2026-08-19) the same tab strip / bordered rows / "הוספה ליום זה" as the
@@ -127,8 +140,9 @@ export default function TodayScheduleCard({
   // 2026-08-18), where a greeting belongs — it greets the person, not the day.
   const todayLabel = useSyncExternalStore(subscribe, () => formatToday(new Date(), locale), () => initialDate);
   const KIND_META = kindMeta(locale);
+  const router = useRouter();
 
-  const { todayEntries, ongoing } = useMemo(() => {
+  const { todayEntries: rawTodayEntries, ongoing } = useMemo(() => {
     const now = new Date();
     const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const view = buildWeekView(entries, midnight);
@@ -138,6 +152,56 @@ export default function TodayScheduleCard({
       ongoing: view.generalEntries,
     };
   }, [entries]);
+
+  // Resolved rows (task done / reminder done) drop out instantly rather than
+  // waiting on the router.refresh() below to re-fetch the calendar feed.
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [resolvedKeys, setResolvedKeys] = useState<Set<string>>(() => new Set());
+  const rowKey = (entry: CalendarEntry) => `${entry.kind}-${entry.id}`;
+  const todayEntries = useMemo(
+    () => rawTodayEntries.filter((entry) => !resolvedKeys.has(rowKey(entry))),
+    [rawTodayEntries, resolvedKeys]
+  );
+
+  async function resolveEntry(entry: CalendarEntry) {
+    if (busyKey) return;
+    const key = rowKey(entry);
+    setBusyKey(key);
+    try {
+      if (entry.kind === "task") {
+        const result = await offlineFetch(
+          "/api/tasks/update-status",
+          { id: entry.id, status: "done" },
+          t(dashboardDict, locale, "markTaskDoneQueued")
+        );
+        if (result.queued) {
+          setResolvedKeys((prev) => new Set(prev).add(key));
+          return;
+        }
+        if (!result.ok) {
+          toast.error(toHebrewError(result.error, t(dashboardDict, locale, "actionFailed")));
+          return;
+        }
+        toast.success(t(dashboardDict, locale, "taskMarkedDone"));
+      } else {
+        const res = await fetch("/api/reminders/action", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: entry.id, action: "done" }),
+        });
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) throw new Error(json.error);
+        toast.success(t(dashboardDict, locale, "reminderMarkedDone"));
+      }
+      setResolvedKeys((prev) => new Set(prev).add(key));
+      refreshAlerts();
+      router.refresh();
+    } catch (err: unknown) {
+      toast.error(toHebrewError(err, t(dashboardDict, locale, "actionFailed")));
+    } finally {
+      setBusyKey(null);
+    }
+  }
 
   const empty = todayEntries.length === 0 && ongoing.length === 0;
 
@@ -259,29 +323,62 @@ export default function TodayScheduleCard({
 
           {shown.length > 0 ? (
             <ul className="space-y-2 px-3 pb-3">
-              {shown.map((entry) => (
-                <li key={`${entry.kind}-${entry.id}`}>
-                  {/* Bordered card per row, colored edge per kind — same shape as
-                      the calendar's own day panel, not a compact one-liner: this
-                      card has the width for it now. */}
-                  <Link
-                    href={entry.href}
-                    aria-label={entry.title}
+              {shown.map((entry) => {
+                const busy = busyKey === rowKey(entry);
+                return (
+                  <li
+                    key={rowKey(entry)}
+                    // Bordered card per row, colored edge per kind — same shape as
+                    // the calendar's own day panel, not a compact one-liner: this
+                    // card has the width for it now. The border/bg now live on the
+                    // li itself, not the Link, so the row can also carry a resolve
+                    // button beside the link without nesting a button in an <a>.
                     className={cn(
-                      "pointer-events-auto block rounded-xl border border-e-2 bg-background p-3 transition-colors hover:border-secondary/40 hover:bg-secondary/5",
+                      "relative rounded-xl border border-e-2 bg-background transition-colors hover:border-secondary/40 hover:bg-secondary/5",
                       KIND_META[entry.kind].edge
                     )}
                   >
-                    <div className="flex items-start gap-2">
-                      <span className="min-w-0 flex-1 text-sm font-medium">{entry.title}</span>
-                      <span className="shrink-0 text-[11px] text-muted-foreground">{KIND_META[entry.kind].label}</span>
+                    {/* Full-row click target, UNSTYLED (transparent) so the li's own
+                        border/bg show through — the resolve button below is lifted
+                        above it (via `relative`, later in DOM order) to catch its
+                        own clicks instead of navigating. */}
+                    <Link
+                      href={entry.href}
+                      aria-label={entry.title}
+                      className="pointer-events-auto absolute inset-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                    <div className="flex items-center gap-2 p-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start gap-2">
+                          <span className="min-w-0 flex-1 text-sm font-medium">{entry.title}</span>
+                          <span className="shrink-0 text-[11px] text-muted-foreground">{KIND_META[entry.kind].label}</span>
+                        </div>
+                        {entry.subtitle ? (
+                          <div className="mt-0.5 text-xs text-muted-foreground">{entry.subtitle}</div>
+                        ) : null}
+                      </div>
+                      {isResolvableKind(entry.kind) ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="pointer-events-auto relative h-7 shrink-0 px-2 text-xs max-md:min-h-[44px]"
+                          onClick={() => void resolveEntry(entry)}
+                          disabled={busy}
+                          title={
+                            entry.kind === "task"
+                              ? t(dashboardDict, locale, "markTaskDoneTitle")
+                              : t(dashboardDict, locale, "markReminderDoneTitle")
+                          }
+                        >
+                          {busy ? <SuccessIcon className="h-3.5 w-3.5" /> : <CheckIcon className="h-3.5 w-3.5" />}
+                          {t(dashboardDict, locale, "doneButtonLabel")}
+                        </Button>
+                      ) : null}
                     </div>
-                    {entry.subtitle ? (
-                      <div className="mt-0.5 text-xs text-muted-foreground">{entry.subtitle}</div>
-                    ) : null}
-                  </Link>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
           ) : null}
 

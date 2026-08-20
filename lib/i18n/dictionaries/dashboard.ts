@@ -19,6 +19,8 @@ export type DashboardKey =
   | "kindProjectPlural"
   | "kindTask"
   | "kindTaskPlural"
+  | "markReminderDoneTitle"
+  | "reminderMarkedDone"
   // UpcomingPayments
   | "paymentsCardTitle"
   | "paymentsEmptyNote"
@@ -118,6 +120,8 @@ export const dashboardDict: Dictionary<DashboardKey> = {
     kindProjectPlural: "פרויקטים",
     kindTask: "משימה",
     kindTaskPlural: "משימות",
+    markReminderDoneTitle: "סימון התזכורת כבוצעה",
+    reminderMarkedDone: "התזכורת סומנה כבוצעה.",
     paymentsCardTitle: "תשלומים קרובים",
     paymentsEmptyNote: "אין תשלומים בקרוב",
     paymentsAria: "ללוח התשלומים",
@@ -206,6 +210,8 @@ export const dashboardDict: Dictionary<DashboardKey> = {
     kindProjectPlural: "مشاريع",
     kindTask: "مهمة",
     kindTaskPlural: "مهام",
+    markReminderDoneTitle: "تحديد التذكير كمنجز",
+    reminderMarkedDone: "تم تحديد التذكير كمنجز.",
     paymentsCardTitle: "مدفوعات قادمة",
     paymentsEmptyNote: "لا مدفوعات قريبة",
     paymentsAria: "إلى جدول المدفوعات",
