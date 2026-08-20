@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowRightIcon, BuildingIcon, TrendDownIcon, TrendUpIcon } from "@/components/ui/icons";
+import { BuildingIcon, TrendDownIcon, TrendUpIcon } from "@/components/ui/icons";
 import AppShell from "@/components/layout/AppShell";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { Card, CardContent } from "@/components/ui/card";
@@ -64,14 +63,6 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <PageStack>
-        <Link
-          href="/properties"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"
-        >
-          <ArrowRightIcon className="h-4 w-4" />
-          חזרה לנכסים
-        </Link>
-
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold">
             <BuildingIcon className="h-6 w-6" />
