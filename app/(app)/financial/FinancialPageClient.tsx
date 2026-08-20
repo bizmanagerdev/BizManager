@@ -49,6 +49,7 @@ import type {
   FinancialEntry,
   FinancialPageData,
 } from "@/lib/financial";
+import { includePersonalRow } from "@/lib/financial/entries";
 import {
   SelectField,
   SummaryCard,
@@ -231,10 +232,12 @@ export default function FinancialPageClient({
   //  reportBasis "cash"  = money that actually ENTERED accounts this period (liquidity, by date received).
   //              "earned"= money MADE this period (booked to the month of the work/sale).
   //  includeOpen  = also count open debts owed to/by me (cash → accrual). N/A in earned mode.
-  //  includePersonal = include בית + צדקה in the numbers.
+  //  includeHomeCharity / includeProperties = two INDEPENDENT toggles for the two
+  //                     personal/off-books domain groups (see lib/financial/entries.ts).
   const [reportBasis, setReportBasis] = useState<"cash" | "earned">("earned");
   const [includeOpen, setIncludeOpen] = useState(false);
-  const [includePersonal, setIncludePersonal] = useState(false);
+  const [includeHomeCharity, setIncludeHomeCharity] = useState(false);
+  const [includeProperties, setIncludeProperties] = useState(false);
   // Global domain chips (empty = all) — live in the report control row and filter
   // the by-domain views (לפי תחום / חודשי) across every tab, not just one panel.
   const [selectedReportDomains, setSelectedReportDomains] = useState<string[]>([]);
@@ -839,9 +842,9 @@ export default function FinancialPageClient({
   // The shared report control row: month + the 3 global toggles + advanced filters.
   // These drive every report tab (סקירה / לפי תחום / חודשי / מאזן).
   // Domain chips for the report row (empty = all). Business domains present in the
-  // data, plus בית/צדקה only when "כולל בית וצדקה" is on.
+  // data, plus בית/צדקה and/or ניהול נכסים only when their own toggle is on.
   const reportDomainOptions = data.domainOptions
-    .filter((key) => includePersonal || (key !== "home" && key !== "charity"))
+    .filter((key) => includePersonalRow(key, { includeHomeCharity, includeProperties }))
     .map((key) => ({ key, label: getBusinessDomainLabel(key) }));
 
   const reportControls = (
@@ -882,10 +885,19 @@ export default function FinancialPageClient({
         <input
           type="checkbox"
           className="h-4 w-4 accent-primary"
-          checked={includePersonal}
-          onChange={(e) => setIncludePersonal(e.target.checked)}
+          checked={includeHomeCharity}
+          onChange={(e) => setIncludeHomeCharity(e.target.checked)}
         />
         <span>כולל בית וצדקה</span>
+      </label>
+      <label className="flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border bg-background px-2.5 text-sm">
+        <input
+          type="checkbox"
+          className="h-4 w-4 accent-primary"
+          checked={includeProperties}
+          onChange={(e) => setIncludeProperties(e.target.checked)}
+        />
+        <span>כולל ניהול נכסים</span>
       </label>
       {activeFilterCount > 0 ? (
         <Button type="button" variant="ghost" size="sm" onClick={resetFilters} className="ms-auto h-9">
@@ -1081,8 +1093,11 @@ export default function FinancialPageClient({
             {includeOpen && reportBasis !== "earned" ? (
               <span className="inline-flex items-center rounded-full border bg-background px-2 py-0.5 font-medium">כולל פתוחים</span>
             ) : null}
-            {includePersonal ? (
+            {includeHomeCharity ? (
               <span className="inline-flex items-center rounded-full border bg-background px-2 py-0.5 font-medium">כולל בית וצדקה</span>
+            ) : null}
+            {includeProperties ? (
+              <span className="inline-flex items-center rounded-full border bg-background px-2 py-0.5 font-medium">כולל ניהול נכסים</span>
             ) : null}
           </div>
         </div>
@@ -1199,7 +1214,8 @@ export default function FinancialPageClient({
             rows={data.profitLoss}
             earned={earnedRevenue}
             basis={plBasis}
-            includePersonal={includePersonal}
+            includeHomeCharity={includeHomeCharity}
+            includeProperties={includeProperties}
             domainProof={domainProof}
             projectBreakdown={projectBreakdown}
             profitLossProof={data.profitLossProof}
@@ -1224,7 +1240,8 @@ export default function FinancialPageClient({
             from={initialFilters.from || null}
             to={initialFilters.to || null}
             basis={plBasis}
-            includePersonal={includePersonal}
+            includeHomeCharity={includeHomeCharity}
+            includeProperties={includeProperties}
             selectedDomains={selectedReportDomains}
           />
         </TabsContent>

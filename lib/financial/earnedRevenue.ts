@@ -11,31 +11,25 @@ import { fetchAllPaged } from "@/lib/supabase/paginate";
 //     • מכירות (orders)        — whole order total in its order_date month.
 //     • פרויקטים (projects)     — gross customer price split EVENLY across every
 //                                month the project spans (start → end).
-//     • שוטף / ספייסיט / נכסים  — collected income payments tagged to that domain,
+//     • שוטף / ספייסיט         — collected income payments tagged to that domain,
 //                                by payment date (these have no booking event).
 //   EXPENSES (all business domains) — by expense_date (incurred), every expense,
 //                                PLUS worker labor cost (incurred) by the work
 //                                month, so payroll shows here exactly as it does
 //                                in the cash P&L (both tabs count wages).
 //   NET = income − expenses, per domain and per month.
-// Amounts are GROSS (incl. VAT). Personal domains (בית/צדקה) are excluded.
+// Amounts are GROSS (incl. VAT). Personal/off-books domains (בית/צדקה/ניהול
+// נכסים — see PERSONAL_DOMAINS in lib/financial/entries.ts) are excluded here
+// entirely; when the owner toggles "כולל בית, צדקה ונכסים" on, those domains
+// are spliced in from the CASH figures instead (ProfitLossPanel/BottomLinePanel),
+// since they have no "earned/booked" concept of their own.
 // ════════════════════════════════════════════════════════════════════════════
 
 // Fixed display order; only domains with activity are returned.
-const BUSINESS_DOMAIN_ORDER = [
-  "sales",
-  "logistics_projects",
-  "general_business",
-  "spaceit",
-  "property_management",
-] as const;
+const BUSINESS_DOMAIN_ORDER = ["sales", "logistics_projects", "general_business", "spaceit"] as const;
 const BUSINESS_DOMAINS = new Set<string>(BUSINESS_DOMAIN_ORDER);
 // Domains whose income comes from standalone payments (not orders/projects).
-const OTHER_INCOME_DOMAINS = new Set<string>([
-  "general_business",
-  "spaceit",
-  "property_management",
-]);
+const OTHER_INCOME_DOMAINS = new Set<string>(["general_business", "spaceit"]);
 
 const EXCLUDED_ORDER_STATUSES = new Set(["cancelled", "בוטלה"]);
 const EXCLUDED_PROJECT_STATUSES = new Set(["quote", "cancelled", "בוטל", "בוטלה"]);

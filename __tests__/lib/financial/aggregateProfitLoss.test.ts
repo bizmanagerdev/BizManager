@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { aggregateProfitLoss } from "@/lib/financial/entries";
+import { aggregateProfitLoss, includePersonalRow } from "@/lib/financial/entries";
 import type { FinancialEntry } from "@/lib/financial/types";
 
 // aggregateProfitLoss is a pure reducer over already-built FinancialEntry rows.
@@ -147,9 +147,25 @@ describe("aggregateProfitLoss — grouping, filtering & sorting", () => {
     const rows = aggregateProfitLoss([
       makeEntry({ businessDomain: "sales", domainName: "מכירות", origin: "payment", amount: 100 }),
       makeEntry({ businessDomain: "home", domainName: "בית", origin: "payment", amount: 50 }),
+      makeEntry({ businessDomain: "property_management", domainName: "ניהול נכסים", origin: "payment", amount: 50 }),
     ]);
     expect(rows.find((r) => r.domain === "sales")?.isPersonal).toBe(false);
     expect(rows.find((r) => r.domain === "home")?.isPersonal).toBe(true);
+    expect(rows.find((r) => r.domain === "property_management")?.isPersonal).toBe(true);
+  });
+
+  it("includePersonalRow toggles home/charity and property_management independently", () => {
+    const off = { includeHomeCharity: false, includeProperties: false };
+    expect(includePersonalRow("sales", off)).toBe(true); // business domains always count
+    expect(includePersonalRow("home", off)).toBe(false);
+    expect(includePersonalRow("charity", off)).toBe(false);
+    expect(includePersonalRow("property_management", off)).toBe(false);
+
+    expect(includePersonalRow("home", { includeHomeCharity: true, includeProperties: false })).toBe(true);
+    expect(includePersonalRow("property_management", { includeHomeCharity: true, includeProperties: false })).toBe(false);
+
+    expect(includePersonalRow("property_management", { includeHomeCharity: false, includeProperties: true })).toBe(true);
+    expect(includePersonalRow("home", { includeHomeCharity: false, includeProperties: true })).toBe(false);
   });
 
   it("a null domain is bucketed under __unassigned__", () => {

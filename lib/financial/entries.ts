@@ -330,12 +330,39 @@ export function buildDomainGroups(entries: FinancialEntry[], referenceDate: stri
   );
 }
 
-// Domains that are personal rather than business activity. The P&L excludes them
-// by default (the UI offers a toggle to include them).
-const PERSONAL_DOMAINS: ReadonlySet<string> = new Set(["home", "charity"]);
+// Domains that are personal/off-books rather than core business activity. The
+// P&L excludes them by default — as TWO independently toggleable groups (owner
+// request, 2026-08-20): בית/צדקה (personal life) and ניהול נכסים (its own
+// separate "bucket" — not personal money, just kept apart unless asked for).
+// Each group has its own checkbox in the Reports control row.
+const HOME_CHARITY_DOMAINS: ReadonlySet<string> = new Set(["home", "charity"]);
+const PROPERTY_PERSONAL_DOMAINS: ReadonlySet<string> = new Set(["property_management"]);
+
+export function isHomeCharityDomain(domain: string | null | undefined): boolean {
+  return domain != null && HOME_CHARITY_DOMAINS.has(domain);
+}
+
+export function isPropertyPersonalDomain(domain: string | null | undefined): boolean {
+  return domain != null && PROPERTY_PERSONAL_DOMAINS.has(domain);
+}
 
 export function isPersonalDomain(domain: string | null | undefined): boolean {
-  return domain != null && PERSONAL_DOMAINS.has(domain);
+  return isHomeCharityDomain(domain) || isPropertyPersonalDomain(domain);
+}
+
+export type PersonalDomainToggles = { includeHomeCharity: boolean; includeProperties: boolean };
+
+/**
+ * Whether a domain row should count toward the totals given the two
+ * independent include-toggles. Non-personal domains always count.
+ */
+export function includePersonalRow(
+  domain: string | null | undefined,
+  toggles: PersonalDomainToggles
+): boolean {
+  if (isPropertyPersonalDomain(domain)) return toggles.includeProperties;
+  if (isHomeCharityDomain(domain)) return toggles.includeHomeCharity;
+  return true;
 }
 
 /**
@@ -365,7 +392,7 @@ export function aggregateProfitLoss(
       row = {
         domain,
         domainName: entry.domainName || getBusinessDomainLabel(domain),
-        isPersonal: domain != null && PERSONAL_DOMAINS.has(domain),
+        isPersonal: isPersonalDomain(domain),
         cashRevenue: 0,
         cashExpense: 0,
         accrualRevenue: 0,

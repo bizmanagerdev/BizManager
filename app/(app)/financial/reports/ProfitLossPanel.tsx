@@ -13,6 +13,7 @@ import type { EarnedRevenueReport } from "@/lib/financial/earnedRevenue";
 import type { ProjectBreakdown } from "@/lib/financial/projectBreakdown";
 import type { DomainProofMap } from "@/lib/financial/domainProof";
 import { getBusinessDomainLabel } from "@/lib/expenses";
+import { includePersonalRow } from "@/lib/financial/entries";
 
 // cash = money in/out this period; accrual = + open debts; earned = booked to the
 // month made. Chosen globally (top control row) and passed in as a prop.
@@ -67,7 +68,8 @@ export default function ProfitLossPanel({
   from,
   to,
   basis,
-  includePersonal,
+  includeHomeCharity,
+  includeProperties,
   selectedDomains,
 }: {
   rows: ProfitLossDomainRow[];
@@ -80,7 +82,8 @@ export default function ProfitLossPanel({
   from: string | null;
   to: string | null;
   basis: Basis;
-  includePersonal: boolean;
+  includeHomeCharity: boolean;
+  includeProperties: boolean;
   /** Global domain chips (empty = all). Chosen in the report control row. */
   selectedDomains: string[];
 }) {
@@ -95,22 +98,21 @@ export default function ProfitLossPanel({
 
   // Normalize every domain to {domain, domainName, isPersonal, revenue, expense}
   // for the active basis. Earned pulls from the earned report (business + שוטף);
-  // personal (home/charity) always uses actual cash-out and only when toggled on.
+  // personal/off-books (home/charity/property_management) always uses actual
+  // cash figures and only when toggled on.
   const normalizedRows = useMemo(() => {
     if (isEarned && earned) {
       const biz = earned.domains.map((d) => {
         const c = earned.totals.byDomain[d.key];
         return { domain: d.key, domainName: d.label, isPersonal: false, revenue: c?.income ?? 0, expense: c?.expense ?? 0 };
       });
-      const personal = includePersonal
-        ? rows
-            .filter((r) => r.isPersonal)
-            .map((r) => ({ domain: r.domain, domainName: r.domainName, isPersonal: true, revenue: r.cashRevenue, expense: r.cashExpense }))
-        : [];
+      const personal = rows
+        .filter((r) => r.isPersonal && includePersonalRow(r.domain, { includeHomeCharity, includeProperties }))
+        .map((r) => ({ domain: r.domain, domainName: r.domainName, isPersonal: true, revenue: r.cashRevenue, expense: r.cashExpense }));
       return [...biz, ...personal];
     }
     return rows
-      .filter((r) => includePersonal || !r.isPersonal)
+      .filter((r) => !r.isPersonal || includePersonalRow(r.domain, { includeHomeCharity, includeProperties }))
       .map((r) => ({
         domain: r.domain,
         domainName: r.domainName,
@@ -118,7 +120,7 @@ export default function ProfitLossPanel({
         revenue: basis === "accrual" ? r.accrualRevenue : r.cashRevenue,
         expense: basis === "accrual" ? r.accrualExpense : r.cashExpense,
       }));
-  }, [basis, isEarned, earned, rows, includePersonal]);
+  }, [basis, isEarned, earned, rows, includeHomeCharity, includeProperties]);
 
   const visibleRows = useMemo(
     () => normalizedRows.filter((row) => domainMatchesSelection((row.domain as string | null) ?? null)),
@@ -158,7 +160,11 @@ export default function ProfitLossPanel({
   // Immediately-preceding equal-length period, for the period-over-period comparison.
   const previousTotals = useMemo(() => {
     const totals = previousRows
-      .filter((row) => (includePersonal || !row.isPersonal) && domainMatchesSelection(row.domain))
+      .filter(
+        (row) =>
+          (!row.isPersonal || includePersonalRow(row.domain, { includeHomeCharity, includeProperties })) &&
+          domainMatchesSelection(row.domain)
+      )
       .reduce(
         (acc, row) => {
           acc.revenue += basis === "cash" ? row.cashRevenue : row.accrualRevenue;
@@ -168,7 +174,7 @@ export default function ProfitLossPanel({
         { revenue: 0, expense: 0 }
       );
     return { ...totals, net: totals.revenue - totals.expense };
-  }, [previousRows, includePersonal, basis, domainMatchesSelection]);
+  }, [previousRows, includeHomeCharity, includeProperties, basis, domainMatchesSelection]);
   // Comparison + category breakdown only exist for cash/accrual (not earned).
   const hasComparison = !isEarned && previousPeriod != null && previousRows.length > 0;
 
