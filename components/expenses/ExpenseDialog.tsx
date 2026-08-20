@@ -3,7 +3,6 @@
 import { useState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { toast } from "sonner";
 import { ArrowLeftIcon, ArrowRightIcon, AttachIcon, BackspaceIcon, BankIcon, CalendarIcon, CardIcon, CashIcon, CheckIcon, ListIcon, RecurringIcon, SpinnerIcon, SplitIcon, UploadIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
-import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
@@ -19,10 +18,12 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  ResponsiveSheetContent,
 } from "@/components/ui/dialog";
 import {
   EXPENSE_BUSINESS_DOMAINS,
   EXPENSE_CATEGORY_OPTIONS,
+  EXPENSE_PROPERTY_CATEGORIES,
   EXPENSE_WORKER_WAGE_CATEGORY,
   EXPENSE_OTHER_CATEGORY,
   EXPENSE_CARS_CATEGORY,
@@ -63,7 +64,8 @@ const WORKER_WAGE_CATEGORY = EXPENSE_WORKER_WAGE_CATEGORY;
 const OTHER_CATEGORY = EXPENSE_OTHER_CATEGORY;
 const CARS_CATEGORY = EXPENSE_CARS_CATEGORY;
 const BASE_EXPENSE_CATEGORIES = [...EXPENSE_CATEGORY_OPTIONS];
-const KNOWN_CATEGORIES = new Set([WORKER_WAGE_CATEGORY, ...BASE_EXPENSE_CATEGORIES]);
+const PROPERTY_EXPENSE_CATEGORIES = [...EXPENSE_PROPERTY_CATEGORIES];
+const KNOWN_CATEGORIES = new Set([WORKER_WAGE_CATEGORY, ...BASE_EXPENSE_CATEGORIES, ...PROPERTY_EXPENSE_CATEGORIES]);
 // Domains where a worker session can be billed back to a customer/tenant, so the
 // "חיוב הלקוח" section is offered (form + express stay in sync via this list).
 const WORKER_BILLABLE_DOMAINS: readonly string[] = ["logistics_projects", "sales", "property_management"];
@@ -488,7 +490,11 @@ export function ExpenseDialog({
   const [workerPaidAmount, setWorkerPaidAmount] = useState("");
   const [workerAccountId, setWorkerAccountId] = useState("");
   const [workerPaymentMethod, setWorkerPaymentMethod] = useState("");
-  const [newWorkerOpen, setNewWorkerOpen] = useState(false);
+  // Worker step tabs, matching the existing/new pattern used to add a customer
+  // from the order/project wizards — "new" replaces the old inline reveal so
+  // the create form doesn't collapse (and lose what was typed) when a card list
+  // re-renders.
+  const [workerTab, setWorkerTab] = useState<"existing" | "new">("existing");
   const [newWorkerSubmitting, setNewWorkerSubmitting] = useState(false);
   const [newWorkerError, setNewWorkerError] = useState<string | null>(null);
   const [newWorkerName, setNewWorkerName] = useState("");
@@ -499,7 +505,6 @@ export function ExpenseDialog({
   }, [users]);
 
   const workerSupport = Array.isArray(users);
-  const categoryOptions = workerSupport ? [WORKER_WAGE_CATEGORY, ...BASE_EXPENSE_CATEGORIES] : BASE_EXPENSE_CATEGORIES;
   const finalCategory = category === OTHER_CATEGORY ? categoryOther.trim() : category;
   const canManageWorkerSessions = currentUserRole === "admin" || currentUserRole === "office";
   const isWorkerPayment = workerSupport && category === WORKER_WAGE_CATEGORY;
@@ -516,6 +521,11 @@ export function ExpenseDialog({
   const effectiveProjectId = lockedProjectId ?? (effectiveDomain === "logistics_projects" ? projectId : "");
   const effectiveOrderId = lockedOrderId ?? (effectiveDomain === "sales" ? orderId : "");
   const effectivePropertyId = lockedPropertyId ?? (effectiveDomain === "property_management" ? propertyId : "");
+  const categoryOptions = workerSupport
+    ? [WORKER_WAGE_CATEGORY, ...BASE_EXPENSE_CATEGORIES]
+    : effectiveDomain === "property_management"
+      ? [...PROPERTY_EXPENSE_CATEGORIES, ...BASE_EXPENSE_CATEGORIES]
+      : BASE_EXPENSE_CATEGORIES;
   const showBillingOptions = Boolean(effectiveProjectId);
 
   // Worker-session computed values.
@@ -746,7 +756,7 @@ export function ExpenseDialog({
       setWorkerPaidAmount("");
       originalLaborCostRef.current = "";
     }
-    setNewWorkerOpen(false);
+    setWorkerTab("existing");
     setNewWorkerError(null);
     setNewWorkerName("");
     setNewWorkerPhone("");
@@ -819,10 +829,12 @@ export function ExpenseDialog({
         ...current.filter((u) => u.id !== created.id),
       ]);
       setWorkerUserId(created.id);
-      setNewWorkerOpen(false);
+      setWorkerTab("existing");
       setNewWorkerName("");
       setNewWorkerPhone("");
       toast.success("העובד נוסף ונבחר.");
+      // Express: behave exactly like picking an existing worker card — move on.
+      if (activeMode === "express") expressAdvance();
     } catch (error) {
       setNewWorkerError(toHebrewError(error, "שגיאה ביצירת עובד."));
     } finally {
@@ -1171,12 +1183,12 @@ export function ExpenseDialog({
       return;
     }
     // When options are offered for a project/property domain, one must be chosen.
-    if (!isEditing && effectiveDomain === "logistics_projects" && recurringProjects.length > 0 && !effectiveProjectId) {
+    if (!isEditing && effectiveDomain === "logistics_projects" && !effectiveProjectId) {
       setErrorMessage("יש לבחור פרויקט.");
       toast.error("יש לבחור פרויקט");
       return;
     }
-    if (!isEditing && effectiveDomain === "property_management" && recurringProperties.length > 0 && !effectivePropertyId) {
+    if (!isEditing && effectiveDomain === "property_management" && !effectivePropertyId) {
       setErrorMessage("יש לבחור נכס.");
       toast.error("יש לבחור נכס");
       return;
@@ -1317,9 +1329,9 @@ export function ExpenseDialog({
   const needsSourcePicker =
     !isEditing &&
     !isSourceLocked &&
-    ((effectiveDomain === "logistics_projects" && recurringProjects.length > 0) ||
+    (effectiveDomain === "logistics_projects" ||
       (effectiveDomain === "sales" && recurringOrders.length > 0) ||
-      (effectiveDomain === "property_management" && recurringProperties.length > 0));
+      effectiveDomain === "property_management");
 
   // "חוזר" (recurring) is offered only for a NEW, non-worker expense. Turning it
   // on saves a recurring template instead of a one-off; it's mutually exclusive
@@ -1549,7 +1561,9 @@ export function ExpenseDialog({
       </button>
     );
   }
-  function expKeypad(setter: (updater: (c: string) => string) => void, confirmDisabled = false) {
+  // Digit grid only — the confirm action lives in the pinned nav bar at the
+  // bottom of the dialog (one "המשך" button per step, not one per widget).
+  function expKeypad(setter: (updater: (c: string) => string) => void) {
     const tap = (ch: string) => setter((c) => applyKey(c, ch));
     const digits = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
     const keyCls = "flex h-11 items-center justify-center rounded-xl border border-input bg-background text-xl font-bold tabular-nums transition-colors hover:bg-muted active:scale-95";
@@ -1561,14 +1575,6 @@ export function ExpenseDialog({
         <button type="button" onClick={() => tap(".")} className={keyCls}>.</button>
         <button type="button" onClick={() => tap("0")} className={keyCls}>0</button>
         <button type="button" onClick={() => tap("del")} className={keyCls} aria-label="מחק"><BackspaceIcon className="h-5 w-5" /></button>
-        <button
-          type="button"
-          onClick={() => expressGo(1)}
-          disabled={confirmDisabled}
-          className="col-span-3 flex h-11 items-center justify-center gap-2 rounded-xl bg-primary text-base font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
-        >
-          <ArrowLeftIcon className="h-5 w-5" />המשך
-        </button>
       </div>
     );
   }
@@ -1589,19 +1595,30 @@ export function ExpenseDialog({
       </div>
     );
   }
-  function expContinue(onClick?: () => void, label = "המשך", skip?: () => void, disabled = false) {
-    return (
-      <div className="mt-6 flex items-center justify-center gap-3">
-        <Button type="button" onClick={onClick ?? (() => expressGo(1))} disabled={disabled}>
-          <ArrowLeftIcon className="h-4 w-4" />{label}
-        </Button>
-        {skip ? (
-          <button type="button" onClick={skip} className="mr-auto text-sm font-semibold text-muted-foreground hover:text-foreground">
-            דלג
-          </button>
-        ) : null}
-      </div>
-    );
+  // One pinned nav bar handles EVERY step's forward action (see renderExpress).
+  // A step only needs an entry here when it must block/skip that default —
+  // pure-selection steps (cards that auto-advance on click) need nothing.
+  function stepNavConfig(step: string): { disabled?: boolean; skip?: () => void } {
+    switch (step) {
+      case "otherCategory":
+        return { disabled: !categoryOther.trim() };
+      case "method":
+        return { skip: () => { setPaymentMethod(""); expressGo(1); } };
+      case "worker":
+        return { disabled: workerTab === "new" || !workerUserId };
+      case "wtiming":
+        return {
+          disabled: !(Boolean(toIso(clockIn)) && Boolean(toIso(clockOut)) && new Date(toIso(clockOut)) > new Date(toIso(clockIn))),
+        };
+      case "wlabor":
+        return { disabled: sessionPriceRequired && !(Number(laborCost) > 0) };
+      case "wpayment":
+        return { disabled: workerPaymentChoice === "partial" && !(Number(workerPaidAmount) > 0) };
+      case "wmethod":
+        return { skip: () => { setWorkerPaymentMethod(""); expressGo(1); } };
+      default:
+        return {};
+    }
   }
   function shiftDate(days: number) {
     const d = new Date();
@@ -1620,7 +1637,7 @@ export function ExpenseDialog({
             {/* Allow proceeding at 0 — a recurring bill whose amount changes each
                 time (mortgage/CC) keeps this as an ESTIMATE for planning; the real
                 amount is entered when it's paid. One-offs must have a real amount. */}
-            {expKeypad(setAmount, false)}
+            {expKeypad(setAmount)}
           </>
         );
       case "domain":
@@ -1660,12 +1677,20 @@ export function ExpenseDialog({
             <>
               {expEyebrow(<ListIcon className="h-4 w-4" />, "פרויקט")}
               {expTitle("לאיזה פרויקט לשייך?")}
-              {searchBox("חיפוש פרויקט...")}
-              <div className="grid gap-2">
-                {list.map((p, i) =>
-                  expCard({ key: p.id, badge: i + 1, title: p.label, selected: projectId === p.id, onClick: () => { setProjectId(p.id); expressAdvance(); } })
-                )}
-              </div>
+              {recurringProjects.length === 0 ? (
+                <div className="rounded-xl border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                  אין פרויקטים זמינים — יש להוסיף פרויקט תחילה.
+                </div>
+              ) : (
+                <>
+                  {searchBox("חיפוש פרויקט...")}
+                  <div className="grid gap-2">
+                    {list.map((p, i) =>
+                      expCard({ key: p.id, badge: i + 1, title: p.label, selected: projectId === p.id, onClick: () => { setProjectId(p.id); expressAdvance(); } })
+                    )}
+                  </div>
+                </>
+              )}
             </>
           );
         }
@@ -1690,12 +1715,20 @@ export function ExpenseDialog({
           <>
             {expEyebrow(<ListIcon className="h-4 w-4" />, "נכס")}
             {expTitle("לאיזה נכס לשייך?")}
-            {searchBox("חיפוש נכס...")}
-            <div className="grid gap-2">
-              {list.map((p, i) =>
-                expCard({ key: p.id, badge: i + 1, title: p.label, selected: propertyId === p.id, onClick: () => { setPropertyId(p.id); expressAdvance(); } })
-              )}
-            </div>
+            {recurringProperties.length === 0 ? (
+              <div className="rounded-xl border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                אין נכסים זמינים — יש להוסיף נכס תחילה.
+              </div>
+            ) : (
+              <>
+                {searchBox("חיפוש נכס...")}
+                <div className="grid gap-2">
+                  {list.map((p, i) =>
+                    expCard({ key: p.id, badge: i + 1, title: p.label, selected: propertyId === p.id, onClick: () => { setPropertyId(p.id); expressAdvance(); } })
+                  )}
+                </div>
+              </>
+            )}
           </>
         );
       }
@@ -1729,7 +1762,6 @@ export function ExpenseDialog({
             {expEyebrow(null, "קטגוריה")}
             {expTitle("איזו קטגוריה?")}
             <Input value={categoryOther} onChange={(e) => setCategoryOther(e.target.value)} autoFocus />
-            {expContinue(undefined, "המשך", undefined, !categoryOther.trim())}
           </>
         );
       case "tags":
@@ -1832,7 +1864,6 @@ export function ExpenseDialog({
             <div className="mt-1.5 text-center text-xs text-muted-foreground">
               שם שיוצג: <span className="font-medium text-foreground">{templateName.trim() || derivedName}</span>
             </div>
-            {expContinue(undefined, "המשך", () => expressGo(1))}
           </>
         );
       }
@@ -1934,7 +1965,6 @@ export function ExpenseDialog({
                 })
               )}
             </div>
-            {expContinue(() => expressGo(1), "המשך", () => { setPaymentMethod(""); expressGo(1); })}
           </>
         );
       case "account":
@@ -2031,7 +2061,6 @@ export function ExpenseDialog({
               ))}
             </div>
             <Input value={description} onChange={(e) => setDescription(e.target.value)} />
-            {expContinue(undefined, "המשך", () => expressGo(1))}
           </>
         );
       }
@@ -2041,7 +2070,6 @@ export function ExpenseDialog({
             {expEyebrow(<AttachIcon className="h-4 w-4" />, "הערות")}
             {expTitle("הערות פנימיות?", "לא חובה")}
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
-            {expContinue(undefined, "המשך", () => expressGo(1))}
           </>
         );
       case "files":
@@ -2069,46 +2097,65 @@ export function ExpenseDialog({
           <>
             {expEyebrow(<WalletIcon className="h-4 w-4" />, "עובד")}
             {expTitle("מי העובד?")}
-            <Input
-              value={workerSearch}
-              onChange={(e) => setWorkerSearch(e.target.value)}
-              placeholder="חיפוש עובד..."
-              className="mb-2"
-            />
-            <div className="grid gap-2">
-              {workerList
-                .filter((u) => u.label.toLowerCase().includes(workerSearch.trim().toLowerCase()))
-                .map((u, i) =>
-                  expCard({
-                    key: u.id,
-                    badge: i + 1,
-                    title: u.label,
-                    selected: workerUserId === u.id,
-                    onClick: () => { setWorkerUserId(u.id); expressAdvance(); },
-                  })
+            <div className="mb-3 inline-flex self-center rounded-2xl border border-border/60 bg-background/70 p-1 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setWorkerTab("existing")}
+                className={cn(
+                  "rounded-xl px-4 py-1.5 text-sm font-medium transition-colors",
+                  workerTab === "existing" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                 )}
-            </div>
-            {!newWorkerOpen ? (
-              <button type="button" onClick={() => setNewWorkerOpen(true)} className="mt-3 text-sm font-semibold text-primary hover:underline">
-                + עובד חדש
+              >
+                עובד קיים
               </button>
-            ) : (
-              <div className="mt-3 space-y-2 rounded-xl border bg-muted/20 p-3">
-                <div className="text-sm font-medium">הוספת עובד חדש</div>
-                <Input value={newWorkerName} onChange={(e) => setNewWorkerName(e.target.value)} placeholder="שם עובד" />
+              <button
+                type="button"
+                onClick={() => setWorkerTab("new")}
+                className={cn(
+                  "rounded-xl px-4 py-1.5 text-sm font-medium transition-colors",
+                  workerTab === "new" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                עובד חדש
+              </button>
+            </div>
+            {workerTab === "new" ? (
+              <div className="space-y-2 rounded-xl border bg-muted/20 p-3">
+                <Input value={newWorkerName} onChange={(e) => setNewWorkerName(e.target.value)} placeholder="שם עובד" autoFocus />
                 <Input value={newWorkerPhone} onChange={(e) => setNewWorkerPhone(e.target.value)} placeholder="טלפון עובד" />
                 {newWorkerError ? <div className="text-sm text-destructive">{newWorkerError}</div> : null}
-                <div className="flex gap-2">
-                  <Button type="button" size="sm" onClick={() => void createWorker()} disabled={newWorkerSubmitting || !newWorkerName.trim() || !newWorkerPhone.trim()}>
-                    {newWorkerSubmitting ? "שומר..." : "הוסף עובד"}
-                  </Button>
-                  <Button type="button" variant="secondary" size="sm" disabled={newWorkerSubmitting} onClick={() => { setNewWorkerOpen(false); setNewWorkerError(null); setNewWorkerName(""); setNewWorkerPhone(""); }}>
-                    ביטול
-                  </Button>
-                </div>
+                <Button
+                  type="button"
+                  onClick={() => void createWorker()}
+                  disabled={newWorkerSubmitting || !newWorkerName.trim() || !newWorkerPhone.trim()}
+                  className="w-full"
+                >
+                  {newWorkerSubmitting ? "שומר..." : "הוסף עובד ובחר"}
+                </Button>
               </div>
+            ) : (
+              <>
+                <Input
+                  value={workerSearch}
+                  onChange={(e) => setWorkerSearch(e.target.value)}
+                  placeholder="חיפוש עובד..."
+                  className="mb-2"
+                />
+                <div className="grid gap-2">
+                  {workerList
+                    .filter((u) => u.label.toLowerCase().includes(workerSearch.trim().toLowerCase()))
+                    .map((u, i) =>
+                      expCard({
+                        key: u.id,
+                        badge: i + 1,
+                        title: u.label,
+                        selected: workerUserId === u.id,
+                        onClick: () => { setWorkerUserId(u.id); expressAdvance(); },
+                      })
+                    )}
+                </div>
+              </>
             )}
-            {workerUserId ? expContinue() : null}
           </>
         );
       case "wtiming":
@@ -2150,7 +2197,6 @@ export function ExpenseDialog({
                 <DateTimeInput value={clockOut} onChange={(e) => setClockOut(e.target.value)} />
               </div>
             </div>
-            {expContinue(undefined, "המשך", undefined, !(Boolean(toIso(clockIn)) && Boolean(toIso(clockOut)) && new Date(toIso(clockOut)) > new Date(toIso(clockIn))))}
           </>
         );
       case "wdate":
@@ -2180,7 +2226,6 @@ export function ExpenseDialog({
                 ? `סה״כ לתשלום עבור המשמרת: ${formatIls(suggestedWorkerAmount)}`
                 : "יחושב אוטומטית לפי הסכם השכר אם יישאר ריק."}
             </div>
-            {expContinue(undefined, "המשך", undefined, sessionPriceRequired && !(Number(laborCost) > 0))}
           </>
         );
       case "wbilling":
@@ -2228,12 +2273,6 @@ export function ExpenseDialog({
                     placeholder={workerPaymentChoice === "paid" ? "מחושב אוטומטית" : "למשל 300"}
                   />
                 </div>
-                {expContinue(
-                  undefined,
-                  "המשך",
-                  undefined,
-                  workerPaymentChoice === "partial" && !(Number(workerPaidAmount) > 0)
-                )}
               </div>
             ) : null}
           </>
@@ -2258,7 +2297,6 @@ export function ExpenseDialog({
                 })
               )}
             </div>
-            {expContinue(() => expressGo(1), "המשך", () => { setWorkerPaymentMethod(""); expressGo(1); })}
           </>
         );
       case "waccount":
@@ -2368,51 +2406,49 @@ export function ExpenseDialog({
                 </div>
               ))}
             </div>
-            <div className="mt-6">
-              <Button type="button" onClick={() => void handleSubmit()} disabled={saving} className="w-full">
-                {saving ? (<><SpinnerIcon className="h-4 w-4 animate-spin" />שומר...</>) : (<><CheckIcon className="h-4 w-4" />{isWorkerPayment ? "שמור משמרת" : isRecurring ? "שמור הוצאה קבועה" : "שמור הוצאה"}</>)}
-              </Button>
-            </div>
           </>
         );
       }
     }
   }
 
+  // Label for the review step's confirm action, shown in the pinned nav bar
+  // instead of the dialog body (so it sits exactly where "המשך" always is).
+  const reviewSubmitLabel = isWorkerPayment ? "שמור משמרת" : isRecurring ? "שמור הוצאה קבועה" : "שמור הוצאה";
+
   function renderExpress(): ReactNode {
+    const nav = stepNavConfig(expStep);
+    const isReviewStep = expStep === "review";
     return (
-      <form className="mt-2 flex flex-col" onSubmit={(e) => e.preventDefault()}>
-        {/* The bar alone conveys progress — back/forward live in the action
-            bar at the bottom, like every other dialog. */}
-        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-          <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${expProgress}%` }} />
+      <form className="flex min-h-0 flex-1 flex-col" onSubmit={(e) => e.preventDefault()}>
+        {/* Progress bar stays with the pinned header/footer — never scrolls
+            out of view along with the step content. */}
+        <div className="flex-none px-4 pt-3 sm:px-6">
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${expProgress}%` }} />
+          </div>
+          {presetTagLabel ? (
+            <div className="mt-2 flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-1.5 text-xs">
+              <VehicleIcon className="h-3.5 w-3.5 text-muted-foreground" />
+              <span>משויך לרכב: <span className="font-medium text-foreground">{presetTagLabel}</span></span>
+            </div>
+          ) : null}
         </div>
 
-        {/* No "משויך ל" banner here — the source is already stated on the summary
-            step, and the express flow keeps the screen as bare as possible. */}
-        {presetTagLabel ? (
-          <div className="mt-2 flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-1.5 text-xs">
-            <VehicleIcon className="h-3.5 w-3.5 text-muted-foreground" />
-            <span>משויך לרכב: <span className="font-medium text-foreground">{presetTagLabel}</span></span>
-          </div>
-        ) : null}
-
-        {/* Fixed-height stage so the dialog doesn't resize between steps; tall
-            steps (long worker/category lists) scroll inside this box. */}
-        <div key={expStep} className="mt-2 flex h-[min(25rem,64vh)] flex-col [justify-content:safe_center] overflow-y-auto">
+        {/* The ONLY scrolling region — header above and nav below stay fixed. */}
+        <div key={expStep} className="min-h-0 flex-1 overflow-y-auto px-4 py-3 [justify-content:safe_center] sm:px-6">
           {expressStageContent()}
+
+          {errorMessage ? (
+            <div role="alert" className="mt-4 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
+              {errorMessage}
+            </div>
+          ) : null}
         </div>
 
-        {errorMessage ? (
-          <div role="alert" className="mt-4 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
-            {errorMessage}
-          </div>
-        ) : null}
-
-        {/* Action bar in the same shape as the shared dialogs: a line, back at the
-            start, forward at the end. Stages with their own semantics (דלג, a
-            disabled rule, a keypad confirm) still render their own button above. */}
-        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border/70 pt-3">
+        {/* Pinned nav bar — the ONE forward control for every step (back at the
+            start, forward/save at the end), always visible without scrolling. */}
+        <div className="flex flex-none flex-wrap items-center gap-2 border-t border-border/70 px-4 py-3 sm:px-6">
           <Button
             type="button"
             variant="secondary"
@@ -2423,12 +2459,33 @@ export function ExpenseDialog({
             <ArrowRightIcon className="h-4 w-4" />
             חזרה
           </Button>
-          {expIndex < expressSteps.length - 1 ? (
-            <Button type="button" onClick={() => expressGo(1)}>
-              המשך
-              <ArrowLeftIcon className="h-4 w-4" />
+          {isReviewStep ? (
+            <Button type="button" onClick={() => void handleSubmit()} disabled={saving}>
+              {saving ? (
+                <>
+                  <SpinnerIcon className="h-4 w-4 animate-spin" />
+                  שומר...
+                </>
+              ) : (
+                <>
+                  <CheckIcon className="h-4 w-4" />
+                  {reviewSubmitLabel}
+                </>
+              )}
             </Button>
-          ) : null}
+          ) : (
+            <>
+              <Button type="button" onClick={() => expressGo(1)} disabled={nav.disabled}>
+                המשך
+                <ArrowLeftIcon className="h-4 w-4" />
+              </Button>
+              {nav.skip ? (
+                <button type="button" onClick={nav.skip} className="text-sm font-semibold text-muted-foreground hover:text-foreground">
+                  דלג
+                </button>
+              ) : null}
+            </>
+          )}
         </div>
       </form>
     );
@@ -2436,8 +2493,8 @@ export function ExpenseDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!saving) onOpenChange(o); }}>
-      <AdaptiveDialog size="formLg">
-        <DialogHeader>
+      <ResponsiveSheetContent>
+        <DialogHeader className="flex-none border-b px-4 pb-3 pt-5 sm:px-6">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <DialogTitle>
@@ -2460,26 +2517,26 @@ export function ExpenseDialog({
               </DialogDescription>
             </div>
             {showModeToggle ? (
-              <div className="flex flex-wrap items-center gap-1 self-start rounded-full border bg-muted/40 p-1 sm:flex-none">
+              <div className="inline-flex flex-none items-center gap-0.5 self-start rounded-full border bg-muted/40 p-1">
                 <button
                   type="button"
                   onClick={() => chooseMode("form")}
                   className={cn(
-                    "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors",
+                    "whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors",
                     activeMode === "form" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <ListIcon className="h-3.5 w-3.5" />מסך מלא
+                  מסך מלא
                 </button>
                 <button
                   type="button"
                   onClick={() => chooseMode("express")}
                   className={cn(
-                    "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors",
+                    "whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors",
                     activeMode === "express" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <ListIcon className="h-3.5 w-3.5" />שלב אחר שלב
+                  שלב אחר שלב
                 </button>
               </div>
             ) : null}
@@ -2488,9 +2545,10 @@ export function ExpenseDialog({
 
         {activeMode === "express" ? renderExpress() : (
         <form
-          className="mt-4 space-y-3"
+          className="flex min-h-0 flex-1 flex-col"
           onSubmit={(e) => { e.preventDefault(); void handleSubmit(); }}
         >
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 sm:px-6">
           {/* Amount hero — first, like the mockup. For a variable recurring bill this
               is the ESTIMATE (base) used for planning; the real amount is set at pay. */}
           {!isWorkerPayment ? (
@@ -2538,15 +2596,21 @@ export function ExpenseDialog({
                 />
               </div>
 
-              {!isEditing && effectiveDomain === "logistics_projects" && recurringProjects.length > 0 && (
+              {!isEditing && effectiveDomain === "logistics_projects" && (
                 <div className="space-y-1">
                   <div className="text-sm font-medium">פרויקט *</div>
-                  <ProjectPicker
-                    projects={recurringProjects}
-                    value={projectId}
-                    onChange={setProjectId}
-                    emptyLabel="בחרו פרויקט"
-                  />
+                  {recurringProjects.length > 0 ? (
+                    <ProjectPicker
+                      projects={recurringProjects}
+                      value={projectId}
+                      onChange={setProjectId}
+                      emptyLabel="בחרו פרויקט"
+                    />
+                  ) : (
+                    <div className="rounded-xl border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                      אין פרויקטים זמינים — יש להוסיף פרויקט תחילה.
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -2565,18 +2629,24 @@ export function ExpenseDialog({
                 </div>
               )}
 
-              {!isEditing && effectiveDomain === "property_management" && recurringProperties.length > 0 && (
+              {!isEditing && effectiveDomain === "property_management" && (
                 <div className="space-y-1">
                   <div className="text-sm font-medium">נכס *</div>
-                  <NativeSelect
-                    value={propertyId}
-                    onChange={(e) => setPropertyId(e.target.value)}
-                  >
-                    <option value="">בחרו נכס</option>
-                    {recurringProperties.map((p) => (
-                      <option key={p.id} value={p.id}>{p.label}</option>
-                    ))}
-                  </NativeSelect>
+                  {recurringProperties.length > 0 ? (
+                    <NativeSelect
+                      value={propertyId}
+                      onChange={(e) => setPropertyId(e.target.value)}
+                    >
+                      <option value="">בחרו נכס</option>
+                      {recurringProperties.map((p) => (
+                        <option key={p.id} value={p.id}>{p.label}</option>
+                      ))}
+                    </NativeSelect>
+                  ) : (
+                    <div className="rounded-xl border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                      אין נכסים זמינים — יש להוסיף נכס תחילה.
+                    </div>
+                  )}
                 </div>
               )}
             </>
@@ -2642,8 +2712,8 @@ export function ExpenseDialog({
               ) : null}
 
               {canManageWorkerSessions ? (
-                !newWorkerOpen ? (
-                  <Button type="button" variant="outline" size="sm" onClick={() => setNewWorkerOpen(true)}>
+                workerTab !== "new" ? (
+                  <Button type="button" variant="outline" size="sm" onClick={() => setWorkerTab("new")}>
                     עובד חדש
                   </Button>
                 ) : (
@@ -2668,7 +2738,7 @@ export function ExpenseDialog({
                         size="sm"
                         disabled={newWorkerSubmitting}
                         onClick={() => {
-                          setNewWorkerOpen(false);
+                          setWorkerTab("existing");
                           setNewWorkerError(null);
                           setNewWorkerName("");
                           setNewWorkerPhone("");
@@ -3330,8 +3400,9 @@ export function ExpenseDialog({
               {errorMessage}
             </div>
           ) : null}
+        </div>
 
-          <DialogFooter className="mt-6">
+          <DialogFooter className="flex-none border-t px-4 py-3 sm:px-6">
             {!isWorkerPayment ? (
               <div className="me-auto text-sm text-muted-foreground">
                 סה״כ: <b className="font-bold tabular-nums text-foreground">{ils(Number(amount) || 0)}</b>
@@ -3353,7 +3424,7 @@ export function ExpenseDialog({
           </DialogFooter>
         </form>
         )}
-      </AdaptiveDialog>
+      </ResponsiveSheetContent>
     </Dialog>
   );
 }

@@ -178,10 +178,13 @@ export const DateInput = React.forwardRef<HTMLInputElement, DateInputProps>(
         >
           <CalendarIcon className="h-4 w-4" />
         </button>
-        {/* Hidden native date picker — triggered by the calendar icon */}
+        {/* Hidden native date picker — triggered by the calendar icon. lang="he"
+            makes Chromium render the picker's month/day names in Hebrew instead
+            of falling back to the browser's UI language. */}
         <input
           ref={pickerRef}
           type="date"
+          lang="he"
           value={value}
           onChange={(event) => {
             const iso = event.target.value;
@@ -262,6 +265,7 @@ export const DateTimeInput = React.forwardRef<HTMLInputElement, DateTimeInputPro
         <input
           ref={pickerRef}
           type="datetime-local"
+          lang="he"
           value={value}
           onChange={(event) => {
             const iso = event.target.value;
