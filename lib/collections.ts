@@ -19,7 +19,7 @@ export type CollectionStatus =
   | "unpaid";
 
 export type CollectionSourceRow = {
-  source_type: "order" | "project" | "loan";
+  source_type: "order" | "project" | "loan" | "property";
   source_id: string;
   collection_key: string;
   customer_id: string | null;
@@ -105,7 +105,7 @@ export type ReceivablePendingPayment = {
 /** One open receivable for a customer, with its pending payments — powers the
  *  "what is owed" section inside the מעקב גבייה dialog. */
 export type CustomerReceivable = {
-  source_type: "order" | "project" | "loan";
+  source_type: "order" | "project" | "loan" | "property";
   source_id: string;
   collection_key: string;
   title: string | null;
@@ -452,6 +452,139 @@ async function buildLoanSourceRows(
   });
 }
 
+type RentLeaseCandidate = {
+  customerId: string | null;
+  customerName: string | null;
+  customerPhone: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  status: string | null;
+};
+
+/** Same "which lease is current" rule as lib/properties.ts's pickCurrentLease,
+ *  reimplemented locally on raw rows to avoid pulling in that module's full
+ *  normalization/type surface for a handful of fields. */
+function pickCurrentLeaseCandidate(candidates: RentLeaseCandidate[], today: string): RentLeaseCandidate | null {
+  if (candidates.length === 0) return null;
+  const sorted = [...candidates].sort((a, b) => (b.startDate ?? "").localeCompare(a.startDate ?? ""));
+  return sorted.find((l) => l.status === "active" && (!l.endDate || l.endDate >= today)) ?? sorted[0];
+}
+
+/**
+ * Pending/overdue rent (property_management payments, pre-scheduled per-lease
+ * checks) folded into the חייבים worklist as one row per property — coarse,
+ * like loans (no per-check inline "mark collected" here; that lives on the
+ * property's own page). Best-effort — returns [] if nothing owed or on error.
+ */
+async function buildRentSourceRows(supabase: SupabaseClient, today: string): Promise<CollectionSourceRow[]> {
+  const { data: paymentRows } = await supabase
+    .from("payments")
+    .select("property_id,amount_total,due_date,payment_status")
+    .eq("business_domain", "property_management")
+    .not("property_id", "is", null);
+  const rows = (paymentRows ?? []) as Row[];
+  if (rows.length === 0) return [];
+
+  type Agg = { collected: number; pending: number; overdue: number; nextDueDate: string | null };
+  const byProperty = new Map<string, Agg>();
+  for (const row of rows) {
+    const propertyId = str(row, "property_id");
+    if (!propertyId) continue;
+    const agg = byProperty.get(propertyId) ?? { collected: 0, pending: 0, overdue: 0, nextDueDate: null };
+    const amount = toNum(row.amount_total);
+    const status = str(row, "payment_status");
+    const dueDate = str(row, "due_date");
+    if (status === "cleared") {
+      agg.collected += amount;
+    } else if (status === "pending") {
+      if (dueDate && dueDate.slice(0, 10) < today) agg.overdue += amount;
+      else agg.pending += amount;
+      if (dueDate && (!agg.nextDueDate || dueDate < agg.nextDueDate)) agg.nextDueDate = dueDate;
+    }
+    byProperty.set(propertyId, agg);
+  }
+
+  const propertyIds = Array.from(byProperty.keys());
+  if (propertyIds.length === 0) return [];
+
+  const [{ data: propertyRows }, { data: leaseRows }] = await Promise.all([
+    supabase.from("properties").select("id,name,address").in("id", propertyIds),
+    supabase
+      .from("lease_agreements")
+      .select("property_id,customer_id,start_date,end_date,status,customer:customers(name,phone)")
+      .in("property_id", propertyIds),
+  ]);
+
+  const addressByProperty = new Map<string, string>();
+  for (const row of (propertyRows ?? []) as Row[]) {
+    const id = str(row, "id");
+    if (id) addressByProperty.set(id, str(row, "name") ?? str(row, "address") ?? "נכס");
+  }
+
+  const leasesByProperty = new Map<string, RentLeaseCandidate[]>();
+  for (const row of (leaseRows ?? []) as Row[]) {
+    const propertyId = str(row, "property_id");
+    if (!propertyId) continue;
+    const customer = (row.customer ?? {}) as Row | Row[];
+    const customerRow = Array.isArray(customer) ? customer[0] : customer;
+    const list = leasesByProperty.get(propertyId) ?? [];
+    list.push({
+      customerId: str(row, "customer_id"),
+      customerName: customerRow ? str(customerRow, "name") : null,
+      customerPhone: customerRow ? str(customerRow, "phone") : null,
+      startDate: str(row, "start_date"),
+      endDate: str(row, "end_date"),
+      status: str(row, "status"),
+    });
+    leasesByProperty.set(propertyId, list);
+  }
+
+  const out: CollectionSourceRow[] = [];
+  for (const [propertyId, agg] of byProperty) {
+    const outstanding = agg.pending + agg.overdue;
+    if (outstanding <= 0.009) continue;
+    const total = agg.collected + outstanding;
+    const lease = pickCurrentLeaseCandidate(leasesByProperty.get(propertyId) ?? [], today);
+    const sm = computeSourceCollection({
+      total,
+      collected: agg.collected,
+      pending: outstanding,
+      overdue: agg.overdue,
+      outstanding,
+      nextDueDate: agg.nextDueDate,
+      referenceDate: null,
+      dueDate: agg.nextDueDate,
+      today,
+    });
+    out.push({
+      source_type: "property",
+      source_id: propertyId,
+      collection_key: `property:${propertyId}`,
+      customer_id: lease?.customerId ?? null,
+      customer_name: lease?.customerName || "שוכר",
+      customer_phone: lease?.customerPhone ?? null,
+      customer_whatsapp: null,
+      business_domain: "property_management",
+      reference_date: lease?.startDate ?? null,
+      total_amount: total,
+      collected_amount: agg.collected,
+      pending_amount: sm.expected,
+      overdue_amount: sm.late,
+      outstanding_amount: outstanding,
+      next_due_date: agg.nextDueDate,
+      last_payment_date: null,
+      due_date: agg.nextDueDate,
+      payment_terms: null,
+      collection_status: sm.status,
+      days_late: sm.daysLate,
+      pending_payments: [],
+      title: addressByProperty.get(propertyId) ?? "נכס",
+      items: [],
+    });
+  }
+  return out;
+}
+
 export async function getCollectionsData(supabase: SupabaseClient): Promise<CollectionsData> {
   let rawRows: Row[];
   try {
@@ -548,6 +681,10 @@ export async function getCollectionsData(supabase: SupabaseClient): Promise<Coll
   // order/project enrichment so their titles aren't overwritten. Best-effort.
   const loanRows = await buildLoanSourceRows(supabase, today).catch(() => [] as CollectionSourceRow[]);
   if (loanRows.length > 0) rows.push(...loanRows);
+
+  // Fold in pending/overdue rent (pre-scheduled per-lease checks). Best-effort.
+  const rentRows = await buildRentSourceRows(supabase, today).catch(() => [] as CollectionSourceRow[]);
+  if (rentRows.length > 0) rows.push(...rentRows);
 
   // Group by customer
   const groupMap = new Map<string, CollectionCustomerGroup>();
@@ -723,6 +860,10 @@ export async function getCustomerReceivables(
   const loanRows = (await buildLoanSourceRows(supabase, today).catch(() => [] as CollectionSourceRow[]))
     .filter((r) => r.customer_id === customerId);
   if (loanRows.length > 0) sourceRows.push(...loanRows);
+
+  const rentRows = (await buildRentSourceRows(supabase, today).catch(() => [] as CollectionSourceRow[]))
+    .filter((r) => r.customer_id === customerId);
+  if (rentRows.length > 0) sourceRows.push(...rentRows);
 
   return sourceRows.map((r) => ({
     source_type: r.source_type,

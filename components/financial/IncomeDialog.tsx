@@ -56,6 +56,7 @@ export function IncomeDialog({
   orders,
   properties,
   defaultAccountId,
+  lockedPropertyId,
   onSaved,
 }: {
   open: boolean;
@@ -65,6 +66,9 @@ export function IncomeDialog({
   properties: IncomeEntityOption[];
   /** Pre-select the account the money lands in (opened from that account's page). */
   defaultAccountId?: string;
+  /** Lock to a property (e.g. opened from a property's own page) — hides the
+   *  domain + property pickers and forces business_domain=property_management. */
+  lockedPropertyId?: string | null;
   onSaved?: () => void;
 }) {
   const [accountsList, setAccountsList] = useState<Account[]>([]);
@@ -94,6 +98,10 @@ export function IncomeDialog({
   useEffect(() => {
     if (open && defaultAccountId) setAccountId(defaultAccountId);
   }, [open, defaultAccountId]);
+
+  const isSourceLocked = Boolean(lockedPropertyId);
+  const effectiveDomain: ExpenseBusinessDomain | "" = lockedPropertyId ? "property_management" : businessDomain;
+  const effectivePropertyId = lockedPropertyId ?? (effectiveDomain === "property_management" ? propertyId : "");
 
   const projectById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
   const filteredProjects = useMemo(() => {
@@ -128,12 +136,12 @@ export function IncomeDialog({
 
   async function createIncome() {
     setError(null);
-    const linkedProjectId = businessDomain === "logistics_projects" ? projectId : "";
-    const linkedOrderId = businessDomain === "sales" ? orderId : "";
-    const linkedPropertyId = businessDomain === "property_management" ? propertyId : "";
+    const linkedProjectId = effectiveDomain === "logistics_projects" ? projectId : "";
+    const linkedOrderId = effectiveDomain === "sales" ? orderId : "";
+    const linkedPropertyId = effectivePropertyId;
 
     const validationError = validateIncomeForm({
-      incomeBusinessDomain: businessDomain,
+      incomeBusinessDomain: effectiveDomain,
       linkedProjectId,
       linkedPropertyId,
       incomeDate: date,
@@ -154,7 +162,7 @@ export function IncomeDialog({
       const result = await offlineFetch(
         "/api/payments/create",
         buildIncomePayload({
-          incomeBusinessDomain: businessDomain,
+          incomeBusinessDomain: effectiveDomain,
           linkedProjectId,
           linkedOrderId,
           linkedPropertyId,
@@ -229,23 +237,30 @@ export function IncomeDialog({
           <div className="grid gap-4">
             <label className="space-y-2 text-sm">
               <span>{HEBREW.domain} *</span>
-              <DomainSelect
-                value={businessDomain}
-                onChange={(next) => {
-                  const nextDomain = next as ExpenseBusinessDomain | "";
-                  setBusinessDomain(nextDomain);
-                  if (nextDomain !== "logistics_projects") {
-                    setProjectId("");
-                    setProjectQuery("");
-                  }
-                  if (nextDomain !== "sales") setOrderId("");
-                  if (nextDomain !== "property_management") setPropertyId("");
-                  if (nextDomain !== "general_business") setTagIds([]);
-                }}
-              />
+              {isSourceLocked ? (
+                <div className="rounded-xl border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                  <div className="font-medium text-foreground">ניהול נכסים</div>
+                  <div>השיוך לנכס נשמר כמו שהוא — ניתן לעדכן רק את פרטי ההכנסה.</div>
+                </div>
+              ) : (
+                <DomainSelect
+                  value={businessDomain}
+                  onChange={(next) => {
+                    const nextDomain = next as ExpenseBusinessDomain | "";
+                    setBusinessDomain(nextDomain);
+                    if (nextDomain !== "logistics_projects") {
+                      setProjectId("");
+                      setProjectQuery("");
+                    }
+                    if (nextDomain !== "sales") setOrderId("");
+                    if (nextDomain !== "property_management") setPropertyId("");
+                    if (nextDomain !== "general_business") setTagIds([]);
+                  }}
+                />
+              )}
             </label>
 
-            {businessDomain === "logistics_projects" ? (
+            {!isSourceLocked && businessDomain === "logistics_projects" ? (
               <div className="space-y-2 text-sm">
                 <span>{HEBREW.project} *</span>
                 <Input
@@ -298,7 +313,7 @@ export function IncomeDialog({
               </div>
             ) : null}
 
-            {businessDomain === "sales" ? (
+            {!isSourceLocked && businessDomain === "sales" ? (
               <label className="space-y-2 text-sm">
                 <span>הזמנה</span>
                 <NativeSelect value={orderId} onChange={(e) => setOrderId(e.target.value)}>
@@ -313,7 +328,7 @@ export function IncomeDialog({
               </label>
             ) : null}
 
-            {businessDomain === "property_management" ? (
+            {!isSourceLocked && businessDomain === "property_management" ? (
               <label className="space-y-2 text-sm">
                 <span>נכס *</span>
                 <NativeSelect value={propertyId} onChange={(e) => setPropertyId(e.target.value)}>
@@ -328,7 +343,7 @@ export function IncomeDialog({
               </label>
             ) : null}
 
-            {businessDomain ? (
+            {effectiveDomain ? (
               <>
                 <AdaptiveGrid variant="formTwoLoose">
                   <label className="space-y-2 text-sm">

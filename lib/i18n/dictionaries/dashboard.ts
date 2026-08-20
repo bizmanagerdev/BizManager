@@ -49,6 +49,16 @@ export type DashboardKey =
   | "daysLateSuffix"
   | "sourcesCountSuffix"
   | "callPrefix"
+  // PropertiesCard
+  | "propertiesCardTitle"
+  | "propertiesEmptyNote"
+  | "propertiesAria"
+  | "vacantSectionLabel"
+  | "vacantBadgeLabel"
+  | "expiringSectionLabel"
+  | "leaseEndedLabel"
+  | "daysLeftSuffix"
+  | "propertiesFooterLabel"
   // MissedDigestCard
   | "digestTypeOrders"
   | "digestTypeProjects"
@@ -147,6 +157,15 @@ export const dashboardDict: Dictionary<DashboardKey> = {
     daysLateSuffix: "יום באיחור",
     sourcesCountSuffix: "חובות",
     callPrefix: "חיוג ל",
+    propertiesCardTitle: "נכסים",
+    propertiesEmptyNote: "אין נכסים פנויים או חוזים שמסתיימים בקרוב",
+    propertiesAria: "לנכסים",
+    vacantSectionLabel: "נכסים פנויים",
+    vacantBadgeLabel: "פנוי",
+    expiringSectionLabel: "חוזים שמסתיימים בקרוב",
+    leaseEndedLabel: "הסתיים",
+    daysLeftSuffix: "ימים לסיום החוזה",
+    propertiesFooterLabel: "כל הנכסים",
     digestTypeOrders: "הזמנות",
     digestTypeProjects: "פרויקטים",
     digestTypeCustomers: "לקוחות",
@@ -237,6 +256,15 @@ export const dashboardDict: Dictionary<DashboardKey> = {
     daysLateSuffix: "يوم تأخير",
     sourcesCountSuffix: "ديون",
     callPrefix: "اتصال بـ",
+    propertiesCardTitle: "العقارات",
+    propertiesEmptyNote: "لا عقارات شاغرة أو عقود تنتهي قريبًا",
+    propertiesAria: "إلى العقارات",
+    vacantSectionLabel: "عقارات شاغرة",
+    vacantBadgeLabel: "شاغر",
+    expiringSectionLabel: "عقود تنتهي قريبًا",
+    leaseEndedLabel: "انتهى",
+    daysLeftSuffix: "أيام لانتهاء العقد",
+    propertiesFooterLabel: "كل العقارات",
     digestTypeOrders: "طلبات",
     digestTypeProjects: "مشاريع",
     digestTypeCustomers: "عملاء",

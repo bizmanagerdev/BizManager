@@ -20,6 +20,7 @@ import {
 import { splitPaymentAmounts, paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { applyProjectVatToBase } from "@/lib/projects/vat";
 import { getCustomerReceivables } from "@/lib/collections";
+import { depositTypeLabel, leaseStatusLabel } from "@/lib/properties";
 import { withLinkColumn } from "@/lib/customers/workerLink";
 import {
   buildCounterpartyBalance,
@@ -29,7 +30,7 @@ import {
 import { paymentTermsLabel } from "@/lib/paymentTerms";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import type { MorningLocalDocument } from "@/lib/morning/types";
-import { ChatIcon, ChevronLeftIcon, ClockIcon, DocumentIcon, HistoryIcon, MailIcon, NoteIcon, OrderIcon, PaymentIcon, PhoneCallIcon, PhoneIcon, ProjectIcon, UserIcon, WarningIcon, WazeIcon } from "@/components/ui/icons";
+import { BuildingIcon, ChatIcon, ChevronLeftIcon, ClockIcon, DocumentIcon, HistoryIcon, MailIcon, NoteIcon, OrderIcon, PaymentIcon, PhoneCallIcon, PhoneIcon, ProjectIcon, UserIcon, WarningIcon, WazeIcon } from "@/components/ui/icons";
 import { getEntityAuditTrail } from "@/lib/audit";
 import EntityActivityTimeline from "@/app/(app)/activity/EntityActivityTimeline";
 import { notFound } from "next/navigation";
@@ -160,6 +161,7 @@ export default async function CustomerDetailsPage({
     { data: morningDocuments },
     { data: orderRows, error: ordersError },
     { data: projectRows, error: projectsError },
+    { data: leaseRows },
     receivables,
   ] = await Promise.all([
     withLinkColumn<Row>(
@@ -193,6 +195,14 @@ export default async function CustomerDetailsPage({
       .select("id,customer_id,name,status,start_date,end_date,agreed_base_price,actual_price,price_includes_vat,vat_rate")
       .eq("customer_id", id)
       .order("start_date", { ascending: false, nullsFirst: false }),
+    // A tenant is a customer like any other — this is their lease history.
+    supabase
+      .from("lease_agreements")
+      .select(
+        "id,property_id,start_date,end_date,monthly_rent_amount,status,deposit_type,deposit_amount,property:properties(id,name,address)"
+      )
+      .eq("customer_id", id)
+      .order("start_date", { ascending: false, nullsFirst: false }),
     // Term-aware days-late for the debt banner — same source the מעקב גבייה
     // panel uses, so the two never disagree.
     getCustomerReceivables(supabase, id).catch(() => []),
@@ -204,13 +214,32 @@ export default async function CustomerDetailsPage({
 
   const orders = (orderRows ?? []) as Row[];
   const projects = (projectRows ?? []) as Row[];
+  const leases = (leaseRows ?? []) as Row[];
   const orderIds = orders.map((row) => s(row, "order_id")).filter(Boolean);
   const projectIds = projects.map((row) => s(row, "id")).filter(Boolean);
+  const propertyIds = leases.map((row) => s(row, "property_id")).filter(Boolean);
+
+  const leaseInfos = leases.map((row) => {
+    const property = (Array.isArray(row.property) ? row.property[0] : row.property) as Row | undefined;
+    return {
+      id: s(row, "id") ?? "",
+      propertyId: s(row, "property_id") ?? "",
+      label: (property && (s(property, "name") || s(property, "address"))) || "נכס",
+      status: s(row, "status"),
+      startDate: s(row, "start_date"),
+      endDate: s(row, "end_date"),
+      monthlyRentAmount: n(row.monthly_rent_amount),
+      depositType: s(row, "deposit_type"),
+      depositAmount: row.deposit_amount == null ? null : n(row.deposit_amount),
+    };
+  });
+  const propertyNameById = new Map(leaseInfos.map((lease) => [lease.propertyId, lease.label]));
 
   const [
     { data: projectFinancialRows },
     { data: projectPaymentRows },
     { data: orderPaymentRows },
+    { data: propertyPaymentRows },
     { data: customerDocLinks },
     { data: orderDocLinks },
     { data: projectDocLinks },
@@ -240,6 +269,15 @@ export default async function CustomerDetailsPage({
           .in("order_id", orderIds)
           .order("payment_date", { ascending: false })
           .limit(60)
+      : Promise.resolve({ data: [] as Row[] }),
+    propertyIds.length > 0
+      ? supabase
+          .from("payments")
+          .select(
+            "id,property_id,amount_total,payment_date,payment_method,payment_status,due_date,check_number"
+          )
+          .in("property_id", propertyIds)
+          .order("payment_date", { ascending: false })
       : Promise.resolve({ data: [] as Row[] }),
     supabase
       .from("document_links")
@@ -365,11 +403,12 @@ export default async function CustomerDetailsPage({
   }
   const paidPct = totalSales > 0 ? Math.min((totalPaid / totalSales) * 100, 100) : 0;
 
-  // --- Recent payments feed (orders + projects merged, newest first).
+  // --- Recent payments feed (orders + projects + property rent merged, newest first).
   const projectNameById = new Map(projectInfos.map((project) => [project.id, project.name]));
   const allPayments = [
     ...((orderPaymentRows ?? []) as Row[]),
     ...((projectPaymentRows ?? []) as Row[]),
+    ...((propertyPaymentRows ?? []) as Row[]),
   ].sort((a, b) => rowDateValue(s(b, "payment_date") || null) - rowDateValue(s(a, "payment_date") || null));
 
   const lastPaymentAt = allPayments.reduce<string | null>((latest, payment) => {
@@ -976,6 +1015,49 @@ export default async function CustomerDetailsPage({
               </SectionCard>
             )}
 
+            {leaseInfos.length === 0 ? (
+              <EmptySectionRow icon={<BuildingIcon className="h-4 w-4" />} title="נכסים בשכירות" hint="הלקוח אינו שוכר נכס כלשהו" />
+            ) : (
+              <SectionCard
+                icon={<BuildingIcon className="h-4 w-4" />}
+                title="נכסים בשכירות"
+                aside={<CountPill>{leaseInfos.length} חוזים</CountPill>}
+              >
+                <div className="divide-y divide-border/60">
+                  {leaseInfos.map((lease) => (
+                    <Link
+                      key={lease.id}
+                      href={`/properties/${encodeURIComponent(lease.propertyId)}`}
+                      className="-mx-2 flex items-center justify-between gap-3 rounded-xl px-2 py-2.5 text-sm hover:bg-muted/20"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="truncate font-medium">{lease.label}</span>
+                          <Badge variant={lease.status === "active" ? "success" : "neutral"}>
+                            {leaseStatusLabel(lease.status)}
+                          </Badge>
+                        </div>
+                        <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {[
+                            formatDate(lease.startDate) && `החל מ-${formatDate(lease.startDate)}`,
+                            lease.endDate ? `עד ${formatDate(lease.endDate)}` : "ללא תאריך סיום",
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                          {lease.depositType
+                            ? ` · ${[depositTypeLabel(lease.depositType), lease.depositAmount != null ? formatCurrency(lease.depositAmount) : null].filter(Boolean).join(" ")}`
+                            : ""}
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-left font-semibold">
+                        {formatCurrency(lease.monthlyRentAmount)}/חודש
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </SectionCard>
+            )}
+
             {canManageCollections ? (
               <CustomerTasksSection
                 customerId={id}
@@ -1030,6 +1112,7 @@ export default async function CustomerDetailsPage({
                     const isRejected = status === "rejected";
                     const orderId = s(payment, "order_id");
                     const projectId = s(payment, "project_id");
+                    const propertyId = s(payment, "property_id");
                     const dueDate = s(payment, "due_date") || null;
                     const checkNumber = s(payment, "check_number");
                     const row = (
@@ -1053,6 +1136,8 @@ export default async function CustomerDetailsPage({
                               <OrderRef orderId={orderId} />
                             ) : projectId ? (
                               projectNameById.get(projectId) ?? "פרויקט"
+                            ) : propertyId ? (
+                              propertyNameById.get(propertyId) ?? "נכס"
                             ) : null}
                             {isPending && dueDate ? ` · לפירעון ${formatDate(dueDate)}` : ""}
                           </div>
@@ -1086,6 +1171,14 @@ export default async function CustomerDetailsPage({
                       <Link
                         key={key}
                         href={`/projects/${encodeURIComponent(projectId)}`}
+                        className="-mx-2 flex items-center justify-between gap-3 rounded-xl px-2 py-2.5 text-sm hover:bg-muted/20"
+                      >
+                        {row}
+                      </Link>
+                    ) : propertyId ? (
+                      <Link
+                        key={key}
+                        href={`/properties/${encodeURIComponent(propertyId)}`}
                         className="-mx-2 flex items-center justify-between gap-3 rounded-xl px-2 py-2.5 text-sm hover:bg-muted/20"
                       >
                         {row}

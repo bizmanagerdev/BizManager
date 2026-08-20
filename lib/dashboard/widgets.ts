@@ -21,6 +21,7 @@ export type WidgetId =
   | "collections"
   | "deliveries"
   | "attendanceQueue"
+  | "properties"
   | "domainChart";
 
 export type WidgetMeta = {
@@ -74,6 +75,9 @@ export const DASHBOARD_WIDGETS: WidgetMeta[] = [
   // Shift reports waiting to be approved into payroll — someone else's day is
   // blocked on it, but it's not the viewer's own work, so it sits after it.
   { id: "attendanceQueue", label: "נוכחות עובדים לאישור", roles: BACK_OFFICE },
+  // Vacancy + expiring leases — a status board, not a money card, so it sits
+  // after the money cards and attendance queue and before the pure numbers.
+  { id: "properties", label: "נכסים", roles: BACK_OFFICE },
   { id: "domainChart", label: "הכנסות והוצאות", roles: BACK_OFFICE },
 ];
 

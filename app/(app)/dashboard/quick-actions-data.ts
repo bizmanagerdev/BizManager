@@ -60,7 +60,7 @@ export async function loadQuickActionsData(
         .range(0, 99),
       supabase
         .from("properties")
-        .select("id,address,is_active")
+        .select("id,name,address,is_active")
         .eq("is_active", true)
         .order("address", { ascending: true })
         .range(0, 99),
@@ -115,7 +115,7 @@ export async function loadQuickActionsData(
       .filter((row) => row.id);
 
     const properties = ((propertyRows ?? []) as Row[])
-      .map((row) => ({ id: getString(row, "id") ?? "", name: firstString(row, ["address"], "Property"), subtitle: "" }))
+      .map((row) => ({ id: getString(row, "id") ?? "", name: firstString(row, ["name", "address"], "Property"), subtitle: "" }))
       .filter((row) => row.id);
 
     const users = ((userRows ?? []) as Row[])

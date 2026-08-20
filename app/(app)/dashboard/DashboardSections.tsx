@@ -10,6 +10,7 @@ import AttendanceApprovals from "@/components/dashboard/AttendanceApprovals";
 import WorkerShiftPanel from "@/app/(app)/dashboard/WorkerShiftPanel";
 import UpcomingPayments, { type PaymentsSummary } from "@/components/dashboard/UpcomingPayments";
 import CollectionsCard from "@/components/dashboard/CollectionsCard";
+import PropertiesCard from "@/components/dashboard/PropertiesCard";
 import { getInboxView, todaySlice } from "@/lib/reminders/worklist";
 import { translateToArabic } from "@/lib/i18n/translateToHebrew";
 import { getScheduleEntries, type CalendarEntry } from "@/lib/projectSchedule";
@@ -19,6 +20,7 @@ import { formatToday } from "@/lib/dashboard/greeting";
 import { loadPhoneQueueData, type PhoneQueueData } from "@/lib/attendance/phone-reports";
 import { loadPaymentCalendarItems } from "@/lib/payables";
 import { getCollectionsSummary } from "@/lib/collections";
+import { getPropertiesSummary } from "@/lib/properties";
 import { loadAttendanceSpark, loadDeliveriesSpark } from "@/lib/dashboard/sparklines";
 import { loadAttendanceClassificationOptions } from "@/lib/payroll-page-loader";
 import {
@@ -265,6 +267,7 @@ export async function DashboardPanels() {
     attendanceQueue,
     attendanceSpark,
     attendanceOptions,
+    propertiesSummary,
     domainBreakdown,
     domainPrevBreakdown,
     digestItems,
@@ -318,6 +321,12 @@ export async function DashboardPanels() {
     // domain / project / property — so the options ride along with the queue.
     show("attendanceQueue") && isAdminOrOffice
       ? loadAttendanceClassificationOptions(supabase).catch(() => null)
+      : Promise.resolve(null),
+    // Vacancy + expiring leases — its own narrow loader, same reasoning as
+    // getCollectionsSummary: fetchProperties() also pulls the full expense/
+    // payment rollup, which this card never shows.
+    show("properties") && isAdminOrOffice
+      ? getPropertiesSummary(supabase, todayIso).catch(() => null)
       : Promise.resolve(null),
     // Same window helper the card's month action uses, so "this month" means the
     // same thing whether it came with the page or with the picker. Two months:
@@ -439,6 +448,7 @@ export async function DashboardPanels() {
         locale={locale}
       />
     ) : null,
+    properties: propertiesSummary ? <PropertiesCard summary={propertiesSummary} locale={locale} /> : null,
     // The card owns its month from here on: it opens on `currentMonth` and its
     // header's picker fetches any other month itself. The widget still only
     // appears when THIS month has something — an empty board card is still an

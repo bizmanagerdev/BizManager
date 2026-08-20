@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { STORAGE_BUCKET } from "@/lib/storage";
+import { propertyDisplayName } from "@/lib/properties";
 import StatementDetailClient, { type StatementRowView } from "./StatementDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +48,7 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
       .order("row_index", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: true }),
     supabase.from("projects").select("id,name").order("name", { ascending: true }),
-    supabase.from("properties").select("id,name").order("name", { ascending: true }),
+    supabase.from("properties").select("id,name,address").order("address", { ascending: true }),
     // Orders for the income source picker — labeled by customer + date (orders have no number).
     supabase
       .from("orders")
@@ -59,9 +60,9 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
   const projects: Option[] = ((projectRows ?? []) as Option[]).filter(
     (r) => typeof r.id === "string" && typeof r.name === "string"
   );
-  const properties: Option[] = ((propertyRows ?? []) as Option[]).filter(
-    (r) => typeof r.id === "string" && typeof r.name === "string"
-  );
+  const properties: Option[] = ((propertyRows ?? []) as { id: string; name: string | null; address: string }[])
+    .filter((r) => typeof r.id === "string" && typeof r.address === "string")
+    .map((r) => ({ id: r.id, name: propertyDisplayName(r) }));
   const orders: Option[] = ((orderRows ?? []) as Record<string, unknown>[])
     .filter((r) => typeof r.id === "string")
     .map((r) => {

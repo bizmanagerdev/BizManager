@@ -357,6 +357,51 @@ const vehicleExpiryRule: SystemRule = {
   },
 };
 
+const leaseExpiryRule: SystemRule = {
+  key: "lease_expiry",
+  label: "חוזי שכירות — סיום קרוב",
+  async evaluate(supabase, ctx) {
+    const horizon = new Date(ctx.today);
+    horizon.setDate(horizon.getDate() + 30);
+    const horizonIso = horizon.toISOString().slice(0, 10);
+    const { data, error } = await supabase
+      .from("lease_agreements")
+      .select(
+        "id,property_id,customer_id,end_date,status,property:properties(name,address),customer:customers(name)"
+      )
+      .eq("status", "active")
+      .not("end_date", "is", null)
+      .lte("end_date", horizonIso);
+    if (error) {
+      if ((error.message ?? "").includes("public.lease_agreements")) return [];
+      throwIf(error, "lease_agreements");
+    }
+    const items: SystemReminderItem[] = [];
+    for (const row of (data ?? []) as Row[]) {
+      const id = getString(row, "id");
+      const endDate = getString(row, "end_date");
+      if (!id || !endDate) continue;
+      const propertyId = getString(row, "property_id");
+      const propertyRow = (Array.isArray(row.property) ? row.property[0] : row.property) as Row | undefined;
+      const customerRow = (Array.isArray(row.customer) ? row.customer[0] : row.customer) as Row | undefined;
+      const label = getString(propertyRow, "name") || getString(propertyRow, "address") || "נכס";
+      const tenant = getString(customerRow, "name");
+      const overdue = endDate < ctx.todayIso;
+      items.push({
+        key: id,
+        title: `חוזה שכירות מסתיים — ${label}`,
+        content: `חוזה השכירות${tenant ? ` עם ${tenant}` : ""} ${overdue ? "הסתיים" : "יסתיים"} בתאריך ${endDate}.`,
+        url: propertyId ? `/properties/${propertyId}` : "/properties",
+        severity: (overdue ? "danger" : "warning") as Severity,
+        behavior: "ping_once" as Behavior,
+        audienceRole: "office" as AudienceRole,
+        links: { property_id: propertyId, customer_id: getString(row, "customer_id") },
+      });
+    }
+    return items;
+  },
+};
+
 // --- Phase 5 coverage: payments & checks ----------------------------------
 
 const checkDepositDueRule: SystemRule = {
@@ -951,6 +996,7 @@ export const SYSTEM_RULES: SystemRule[] = [
   collectionOverdueRule,
   wageOverdueRule,
   vehicleExpiryRule,
+  leaseExpiryRule,
   // New coverage (Phase 5): payments & checks
   checkDepositDueRule,
   paymentDueTodayRule,

@@ -127,6 +127,12 @@ export async function POST(req: Request) {
     if (!isExpenseBusinessDomain(nextBusinessDomain)) {
       return NextResponse.json({ error: "יש לבחור תחום עסקי." }, { status: 400 });
     }
+    if (nextBusinessDomain === "property_management" && !effectivePropertyId) {
+      return NextResponse.json({ error: "יש לבחור נכס לתחום ניהול נכסים." }, { status: 400 });
+    }
+    if (nextBusinessDomain === "logistics_projects" && !effectiveProjectId) {
+      return NextResponse.json({ error: "יש לבחור פרויקט לתחום פרויקטים." }, { status: 400 });
+    }
 
     const rawPaymentStatus = typeof body.payment_status === "string" ? body.payment_status.trim() : null;
     const paymentStatus = rawPaymentStatus === "paid" || rawPaymentStatus === "partial" || rawPaymentStatus === "not_paid"

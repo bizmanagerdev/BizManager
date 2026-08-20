@@ -97,12 +97,14 @@ export function groupHasPendingCheck(group: CollectionCustomerGroup): boolean {
 }
 
 /** Flatten every customer's future-dated / uncleared receivables into one list,
- *  earliest due date first. Loans are repaid on the loans page, so they're skipped. */
+ *  earliest due date first. Loans are repaid on the loans page, and rent (property)
+ *  checks are managed on the property's own page — both are skipped (and both
+ *  carry an empty pending_payments list anyway, so this loop never runs for them). */
 export function flattenExpectedReceipts(customers: CollectionCustomerGroup[]): ExpectedReceipt[] {
   const out: ExpectedReceipt[] = [];
   for (const group of customers) {
     for (const source of group.sources) {
-      if (source.source_type === "loan") continue;
+      if (source.source_type === "loan" || source.source_type === "property") continue;
       for (const p of source.pending_payments) {
         out.push({
           paymentId: p.id,

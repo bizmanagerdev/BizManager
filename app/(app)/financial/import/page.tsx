@@ -3,6 +3,7 @@ import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { isOpenAIConfigured } from "@/lib/openai/config";
 import type { MerchantMemory } from "@/lib/financial/cardImport";
+import { propertyDisplayName } from "@/lib/properties";
 import CardImportClient from "./CardImportClient";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +19,7 @@ export default async function ImportExpensesPage() {
 
   const [{ data: projectRows }, { data: propertyRows }, { data: mappingRows }] = await Promise.all([
     supabase.from("projects").select("id,name").order("name", { ascending: true }),
-    supabase.from("properties").select("id,name").order("name", { ascending: true }),
+    supabase.from("properties").select("id,name,address").order("address", { ascending: true }),
     // May not exist before the migration runs — errors are tolerated (data is null).
     supabase
       .from("expense_merchant_mappings")
@@ -28,9 +29,9 @@ export default async function ImportExpensesPage() {
   const projects: Option[] = ((projectRows ?? []) as Option[]).filter(
     (r) => typeof r.id === "string" && typeof r.name === "string"
   );
-  const properties: Option[] = ((propertyRows ?? []) as Option[]).filter(
-    (r) => typeof r.id === "string" && typeof r.name === "string"
-  );
+  const properties: Option[] = ((propertyRows ?? []) as { id: string; name: string | null; address: string }[])
+    .filter((r) => typeof r.id === "string" && typeof r.address === "string")
+    .map((r) => ({ id: r.id, name: propertyDisplayName(r) }));
 
   type MappingRow = {
     merchant_key: string;
