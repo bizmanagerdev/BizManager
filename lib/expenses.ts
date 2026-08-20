@@ -74,6 +74,19 @@ export const EXPENSE_CATEGORY_OPTIONS_WITH_WAGE = [
   EXPENSE_WORKER_WAGE_CATEGORY,
   ...EXPENSE_CATEGORY_OPTIONS,
 ] as const;
+// Property-management-specific expense categories, shown IN ADDITION TO the
+// base list only when the expense's domain is property_management. Rent
+// income is NOT here — it's income (a payment), never an expense category.
+export const EXPENSE_PROPERTY_CATEGORIES = [
+  "הוצאות לשיפוץ",
+  "רכישת ציוד",
+  "משכנתא",
+  "מים",
+  "חשמל",
+  "גז",
+  "ארנונה",
+  "ועד בית",
+] as const;
 
 export function getBusinessDomainLabel(value: string | null | undefined) {
   if (value === "general_business") return "שוטף";
