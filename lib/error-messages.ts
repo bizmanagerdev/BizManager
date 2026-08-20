@@ -161,6 +161,10 @@ const PATTERN_RULES: Array<{ test: RegExp; hebrew: string }> = [
     hebrew: "החיבור פג. יש להתחבר מחדש ולנסות שוב.",
   },
   {
+    test: /email not confirmed/i,
+    hebrew: "יש לאשר את כתובת הדוא״ל לפני ההתחברות. פנו למנהל המערכת.",
+  },
+  {
     test: /for security purposes, you can only request this after (\d+) seconds?/i,
     hebrew: "בקשת יותר מדי פעמים. יש להמתין רגע ולנסות שוב.",
   },

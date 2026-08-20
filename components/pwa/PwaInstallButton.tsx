@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import { DownloadIcon, ShareIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { ViewDialog } from "@/components/ui/view-dialog";
+import { t } from "@/lib/i18n/t";
+import { topbarDict } from "@/lib/i18n/dictionaries/topbar";
+import type { Locale } from "@/lib/i18n/types";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -35,7 +38,7 @@ function isStandaloneMode() {
   );
 }
 
-export default function PwaInstallButton() {
+export default function PwaInstallButton({ locale = "he" }: { locale?: Locale }) {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(isStandaloneMode);
   const [isIos] = useState(isIosDevice);
@@ -95,7 +98,7 @@ export default function PwaInstallButton() {
         onClick={() => void handleInstall()}
       >
         <DownloadIcon className="h-4 w-4" />
-        <span className="hidden sm:inline">התקנת האפליקציה</span>
+        <span className="hidden sm:inline">{t(topbarDict, locale, "installApp")}</span>
       </Button>
     );
   }
@@ -112,20 +115,28 @@ export default function PwaInstallButton() {
         onClick={() => setHelpOpen(true)}
       >
         <DownloadIcon className="h-4 w-4" />
-        <span className="hidden sm:inline">התקנת האפליקציה</span>
+        <span className="hidden sm:inline">{t(topbarDict, locale, "installApp")}</span>
       </Button>
 
       <ViewDialog
         open={helpOpen}
         onOpenChange={setHelpOpen}
-        title="התקנת BizH"
-        description="באייפון ובאייפד, ספארי מתקין אפליקציות מתפריט השיתוף במקום להציג חלון קופץ."
+        title={t(topbarDict, locale, "installBizhTitle")}
+        description={t(topbarDict, locale, "installBizhDescription")}
         size="formSm"
       >
         <div className="space-y-3 text-sm text-muted-foreground">
-          <p>1. הקישו על כפתור השיתוף <ShareIcon className="mx-1 inline h-4 w-4 align-text-bottom" /> בספארי.</p>
-          <p>2. בחרו באפשרות <strong>הוספה למסך הבית</strong>.</p>
-          <p>3. הקישו על <strong>הוספה</strong> כדי להוסיף את BizH למסך הבית.</p>
+          <p>
+            {t(topbarDict, locale, "iosStep1Prefix")}{" "}
+            <ShareIcon className="mx-1 inline h-4 w-4 align-text-bottom" /> {t(topbarDict, locale, "iosStep1Suffix")}
+          </p>
+          <p>
+            {t(topbarDict, locale, "iosStep2Prefix")} <strong>{t(topbarDict, locale, "iosStep2Bold")}</strong>.
+          </p>
+          <p>
+            {t(topbarDict, locale, "iosStep3Prefix")} <strong>{t(topbarDict, locale, "iosStep3Bold")}</strong>{" "}
+            {t(topbarDict, locale, "iosStep3Suffix")}
+          </p>
         </div>
       </ViewDialog>
     </>

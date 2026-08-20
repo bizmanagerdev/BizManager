@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { translateToArabic } from "@/lib/i18n/translateToHebrew";
+import type { Locale } from "@/lib/i18n/types";
 
 type Row = Record<string, unknown>;
 
@@ -7,6 +9,10 @@ const OPEN_TASK_STATUSES = ["todo", "in_progress", "blocked"];
 export type DashboardTask = {
   id: string;
   subject: string;
+  /** Set only when authored by a locale=ar worker — see app/api/tasks/create. */
+  subject_he: string | null;
+  /** Lazily cached Arabic translation of a Hebrew-authored subject. */
+  subject_ar: string | null;
   due_date: string | null;
   priority: string | null;
   status: string | null;
@@ -33,7 +39,8 @@ function getString(row: Row, key: string) {
  */
 export async function getMyTasks(
   supabase: SupabaseClient,
-  userId: string
+  userId: string,
+  locale: Locale = "he"
 ): Promise<DashboardTask[]> {
   const today = new Date().toISOString().slice(0, 10);
 
@@ -51,7 +58,7 @@ export async function getMyTasks(
 
   let tasksQuery = supabase
     .from("tasks")
-    .select("id,subject,due_date,priority,status,project_id")
+    .select("id,subject,subject_he,subject_ar,due_date,priority,status,project_id")
     .in("status", OPEN_TASK_STATUSES)
     // Newest tasks first, so a task just added from the dashboard lands at the top
     // of "המשימות שלי" rather than being buried at the end.
@@ -66,6 +73,26 @@ export async function getMyTasks(
 
   if (error || !data) return [];
   const rows = data as Row[];
+
+  // An Arabic-locale viewer reading a task NOT authored by an Arabic worker
+  // (subject_he unset — see app/api/tasks/create) gets it translated here,
+  // cached back onto the row so future loads don't re-call OpenAI. Same
+  // pattern as loadTasksBoard's board-level version of this.
+  if (locale === "ar") {
+    const needsTranslation = rows.filter(
+      (r) => !getString(r, "subject_he") && !getString(r, "subject_ar") && getString(r, "subject")
+    );
+    if (needsTranslation.length > 0) {
+      await Promise.all(
+        needsTranslation.map(async (r) => {
+          const translated = await translateToArabic(getString(r, "subject") ?? "");
+          if (!translated) return;
+          r.subject_ar = translated;
+          await supabase.from("tasks").update({ subject_ar: translated }).eq("id", getString(r, "id") ?? "");
+        })
+      );
+    }
+  }
 
   const projectIds = [
     ...new Set(
@@ -87,6 +114,8 @@ export async function getMyTasks(
     return {
       id: getString(t, "id") ?? "",
       subject: getString(t, "subject") ?? "משימה",
+      subject_he: getString(t, "subject_he"),
+      subject_ar: getString(t, "subject_ar"),
       due_date: due,
       priority: getString(t, "priority"),
       status: getString(t, "status"),

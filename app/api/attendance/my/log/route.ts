@@ -6,6 +6,7 @@ import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions } from "@/l
 import { minutesBetween, WORK_SESSIONS_TABLE } from "@/lib/payroll";
 import { PHONE_ATTENDANCE_TABLE } from "@/lib/attendance/phone-reports";
 import { APP_ATTENDANCE_SOURCE, parseSelfReportedTime } from "@/lib/attendance/my-shift";
+import { translateToHebrew } from "@/lib/i18n/translateToHebrew";
 
 /**
  * "דיווח על משמרת שהסתיימה" — a whole past shift, start and end together.
@@ -105,6 +106,10 @@ export async function POST(req: Request) {
       );
     }
 
+    // Office/admin never see Arabic, so a locale=ar worker's own note is
+    // auto-translated to Hebrew here. Skipped entirely for Hebrew writers.
+    const notesHe = profile.locale === "ar" && notes ? await translateToHebrew(notes) : null;
+
     const { data: inserted, error: insertError } = await supabase
       .from(PHONE_ATTENDANCE_TABLE)
       .insert({
@@ -116,6 +121,7 @@ export async function POST(req: Request) {
         source: APP_ATTENDANCE_SOURCE,
         reported_by: profile.id,
         notes: notes || null,
+        notes_he: notesHe,
       })
       .select("id,clock_in,clock_out,worked_minutes")
       .maybeSingle();

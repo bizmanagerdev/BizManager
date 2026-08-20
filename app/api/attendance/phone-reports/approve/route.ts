@@ -63,7 +63,7 @@ export async function POST(req: Request) {
 
     const { data: report, error: reportError } = await supabase
       .from(PHONE_ATTENDANCE_TABLE)
-      .select("id,user_id,clock_in,clock_out,status,notes")
+      .select("id,user_id,clock_in,clock_out,status,notes,notes_he")
       .eq("id", reportId)
       .maybeSingle();
 
@@ -74,6 +74,7 @@ export async function POST(req: Request) {
     const clockIn = report.clock_in as string;
     const clockOut = report.clock_out as string;
     const reportNotes = (typeof report.notes === "string" && report.notes.trim() ? report.notes.trim() : "דיווח טלפוני").slice(0, 500);
+    const reportNotesHe = typeof report.notes_he === "string" && report.notes_he.trim() ? report.notes_he.trim() : null;
     const totalMinutes = minutesBetween(clockIn, clockOut);
     if (totalMinutes <= 0) return NextResponse.json({ error: "טווח הזמן של הדיווח אינו תקין." }, { status: 400 });
     if (rawParts.length > totalMinutes) {
@@ -179,6 +180,7 @@ export async function POST(req: Request) {
         // classification step, so nothing is typed here. Falls back to the origin
         // tag, which is all the row said before there was anywhere to write.
         notes: reportNotes,
+        notes_he: reportNotesHe,
         business_domain: part.domain,
         project_id: part.projectId,
         property_id: part.propertyId,

@@ -17,43 +17,65 @@ import { cn } from "@/lib/utils";
 import { formatShortDate } from "@/lib/date";
 import { offlineFetch } from "@/lib/offline-queue";
 import type { DashboardTask } from "@/lib/dashboard/tasks-overview";
+import { t } from "@/lib/i18n/t";
+import { dashboardDict } from "@/lib/i18n/dictionaries/dashboard";
+import type { Locale } from "@/lib/i18n/types";
 
 type TabKey = "all" | "today" | "overdue" | "in_progress";
 
-const TABS: { key: TabKey; label: string }[] = [
-  { key: "all", label: "הכול" },
-  { key: "today", label: "להיום" },
-  { key: "overdue", label: "באיחור" },
-  { key: "in_progress", label: "בתהליך" },
-];
+function tabs(locale: Locale): { key: TabKey; label: string }[] {
+  return [
+    { key: "all", label: t(dashboardDict, locale, "tabAll") },
+    { key: "today", label: t(dashboardDict, locale, "tabToday") },
+    { key: "overdue", label: t(dashboardDict, locale, "lateLabel") },
+    { key: "in_progress", label: t(dashboardDict, locale, "tabInProgress") },
+  ];
+}
 
 // Only the priorities worth a badge — same rule (and the same reason) as the
 // tasks board's SHOWN_PRIORITIES: "בינונית" on every row is a chip that says
 // nothing, and the badge earns its space only when the task deviates from normal.
-const PRIORITY: Record<string, { label: string; variant: "destructive" | "warning" }> = {
-  urgent: { label: "דחופה", variant: "destructive" },
-  high: { label: "גבוהה", variant: "destructive" },
-};
+function priorityMeta(locale: Locale): Record<string, { label: string; variant: "destructive" | "warning" }> {
+  return {
+    urgent: { label: t(dashboardDict, locale, "priorityUrgent"), variant: "destructive" },
+    high: { label: t(dashboardDict, locale, "priorityHigh"), variant: "destructive" },
+  };
+}
 
 // Likewise for the status a dateless task falls back to: "לביצוע" is what every
 // open task is, so only a status that says something more is printed.
-const STATUS_LABEL: Record<string, string> = {
-  in_progress: "בתהליך",
-  blocked: "תקוע",
-};
+function statusLabel(locale: Locale): Record<string, string> {
+  return {
+    in_progress: t(dashboardDict, locale, "tabInProgress"),
+    blocked: t(dashboardDict, locale, "statusBlocked"),
+  };
+}
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function MyTasksPanel({ tasks: initialTasks }: { tasks: DashboardTask[] }) {
+// Bidirectional: subject_he is only ever set when the AUTHOR's own locale was
+// 'ar' (see app/api/tasks/create) — so its presence means the original is
+// already Arabic. subject_ar is the reverse: a Hebrew-authored task's title,
+// lazily translated + cached for an Arabic viewer (see getMyTasks).
+function displaySubject(task: DashboardTask, locale: Locale) {
+  if (locale === "he") return task.subject_he || task.subject;
+  if (task.subject_he) return task.subject;
+  return task.subject_ar || task.subject;
+}
+
+export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: DashboardTask[]; locale: Locale }) {
   const router = useRouter();
   const [doneIds, setDoneIds] = useState<Set<string>>(() => new Set());
   const [busyId, setBusyId] = useState<string | null>(null);
   const [tab, setTab] = useState<TabKey>("all");
+  const TABS = tabs(locale);
+  const PRIORITY = priorityMeta(locale);
+  const STATUS_LABEL = statusLabel(locale);
 
   const tasks = useMemo(
-    () => initialTasks.filter((t) => !doneIds.has(t.id)),
+    () => initialTasks.filter((task) => !doneIds.has(task.id)),
     [initialTasks, doneIds]
   );
 
@@ -61,9 +83,9 @@ export default function MyTasksPanel({ tasks: initialTasks }: { tasks: Dashboard
   const counts = useMemo(
     () => ({
       all: tasks.length,
-      today: tasks.filter((t) => t.due_date?.slice(0, 10) === today).length,
-      overdue: tasks.filter((t) => t.overdue).length,
-      in_progress: tasks.filter((t) => t.status === "in_progress").length,
+      today: tasks.filter((task) => task.due_date?.slice(0, 10) === today).length,
+      overdue: tasks.filter((task) => task.overdue).length,
+      in_progress: tasks.filter((task) => task.status === "in_progress").length,
     }),
     [tasks, today]
   );
@@ -71,11 +93,11 @@ export default function MyTasksPanel({ tasks: initialTasks }: { tasks: Dashboard
   const visible = useMemo(() => {
     switch (tab) {
       case "today":
-        return tasks.filter((t) => t.due_date?.slice(0, 10) === today);
+        return tasks.filter((task) => task.due_date?.slice(0, 10) === today);
       case "overdue":
-        return tasks.filter((t) => t.overdue);
+        return tasks.filter((task) => task.overdue);
       case "in_progress":
-        return tasks.filter((t) => t.status === "in_progress");
+        return tasks.filter((task) => task.status === "in_progress");
       default:
         return tasks;
     }
@@ -88,29 +110,29 @@ export default function MyTasksPanel({ tasks: initialTasks }: { tasks: Dashboard
       const result = await offlineFetch(
         "/api/tasks/update-status",
         { id, status: "done" },
-        "סימון משימה כבוצעה"
+        t(dashboardDict, locale, "markTaskDoneQueued")
       );
       if (result.queued) {
         setDoneIds((prev) => new Set(prev).add(id));
         return;
       }
       if (!result.ok) {
-        toast.error(toHebrewError(result.error, "הפעולה נכשלה."));
+        toast.error(toHebrewError(result.error, t(dashboardDict, locale, "actionFailed")));
         return;
       }
       setDoneIds((prev) => new Set(prev).add(id));
-      toast.success("המשימה סומנה כבוצעה.");
+      toast.success(t(dashboardDict, locale, "taskMarkedDone"));
       router.refresh();
     } catch (err: unknown) {
-      toast.error(toHebrewError(err, "הפעולה נכשלה."));
+      toast.error(toHebrewError(err, t(dashboardDict, locale, "actionFailed")));
     } finally {
       setBusyId(null);
     }
   }
 
   function dueLabel(task: DashboardTask) {
-    if (task.overdue) return `באיחור · ${formatShortDate(task.due_date)}`;
-    if (task.due_date?.slice(0, 10) === today) return "להיום";
+    if (task.overdue) return `${t(dashboardDict, locale, "lateLabel")} · ${formatShortDate(task.due_date)}`;
+    if (task.due_date?.slice(0, 10) === today) return t(dashboardDict, locale, "tabToday");
     if (task.due_date) return formatShortDate(task.due_date);
     return STATUS_LABEL[task.status ?? ""] ?? "";
   }
@@ -118,7 +140,14 @@ export default function MyTasksPanel({ tasks: initialTasks }: { tasks: Dashboard
   // Nothing assigned at all → one quiet line. NOT hidden: a board whose cards
   // come and go with the data is a board you have to re-read every morning.
   if (initialTasks.length === 0) {
-    return <QuietCard icon={ChecklistIcon} title="המשימות שלי" note="אין משימות פתוחות" href="/tasks" />;
+    return (
+      <QuietCard
+        icon={ChecklistIcon}
+        title={t(dashboardDict, locale, "myTasksCardTitle")}
+        note={t(dashboardDict, locale, "myTasksEmptyNote")}
+        href="/tasks"
+      />
+    );
   }
 
   return (
@@ -129,12 +158,12 @@ export default function MyTasksPanel({ tasks: initialTasks }: { tasks: Dashboard
     <Card className="relative flex h-full flex-col">
       <Link
         href="/tasks"
-        aria-label="ללוח המשימות"
+        aria-label={t(dashboardDict, locale, "toTasksBoardAria")}
         className="absolute inset-0 rounded-[1.125rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
 
       <div className="pointer-events-none relative flex min-h-0 flex-1 flex-col">
-      <DashboardCardHeader icon={ChecklistIcon} title="המשימות שלי" count={tasks.length} />
+      <DashboardCardHeader icon={ChecklistIcon} title={t(dashboardDict, locale, "myTasksCardTitle")} count={tasks.length} />
 
       {/* BELOW the header, not inside it. As the header's `action` the strip
           wrapped onto its own line and dragged the header's rule down with it,
@@ -175,6 +204,7 @@ export default function MyTasksPanel({ tasks: initialTasks }: { tasks: Dashboard
             {visible.map((task) => {
               const priority = PRIORITY[task.priority ?? ""] ?? null;
               const busy = busyId === task.id;
+              const subject = displaySubject(task, locale);
               return (
                 <li
                   key={task.id}
@@ -185,7 +215,7 @@ export default function MyTasksPanel({ tasks: initialTasks }: { tasks: Dashboard
                       the button is lifted back above it by `relative`. */}
                   <Link
                     href={`/tasks/${task.id}`}
-                    aria-label={task.subject}
+                    aria-label={subject}
                     className="absolute inset-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   />
 
@@ -198,8 +228,8 @@ export default function MyTasksPanel({ tasks: initialTasks }: { tasks: Dashboard
                       short. */}
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex min-w-0 flex-1 items-center gap-1.5">
-                      <span className="truncate text-sm font-medium" title={task.subject}>
-                        {task.subject}
+                      <span className="truncate text-sm font-medium" title={subject}>
+                        {subject}
                       </span>
                       {priority ? (
                         <Badge variant={priority.variant} className="shrink-0 text-[10px]">
@@ -233,10 +263,10 @@ export default function MyTasksPanel({ tasks: initialTasks }: { tasks: Dashboard
                       className="relative h-8 shrink-0 self-center px-3 text-sm max-md:min-h-[44px]"
                       onClick={() => void markDone(task.id)}
                       disabled={busy}
-                      title="סימון המשימה כבוצעה"
+                      title={t(dashboardDict, locale, "markTaskDoneTitle")}
                     >
                       {busy ? <SuccessIcon className="h-4 w-4" /> : null}
-                      בוצע
+                      {t(dashboardDict, locale, "doneButtonLabel")}
                     </Button>
                   </div>
                 </li>
@@ -245,11 +275,11 @@ export default function MyTasksPanel({ tasks: initialTasks }: { tasks: Dashboard
           </ul>
         ) : (
           <div className="p-3">
-            <EmptyState dense>אין משימות בתצוגה זו.</EmptyState>
+            <EmptyState dense>{t(dashboardDict, locale, "noTasksInView")}</EmptyState>
           </div>
         )}
       </CardContent>
-      <DashboardCardFooter href="/tasks" label="כל המשימות" count={tasks.length} />
+      <DashboardCardFooter href="/tasks" label={t(dashboardDict, locale, "allTasksFooterLabel")} count={tasks.length} />
       </div>
     </Card>
   );

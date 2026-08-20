@@ -72,7 +72,11 @@ export default function UpcomingDeliveries({
           icon={DeliveryIcon}
           title="משלוחים קרובים"
           count={deliveries.length}
-          spark={spark ? <Sparkline points={spark} variant="bar" valueLabel="הזמנות היום" label="7 הימים האחרונים" /> : undefined}
+          spark={
+            spark ? (
+              <Sparkline points={spark} variant="bar" valueLabel="הזמנות היום" label="7 הימים האחרונים" />
+            ) : undefined
+          }
         />
 
         <CardContent className="pointer-events-auto min-h-0 flex-1 overflow-y-auto p-0">

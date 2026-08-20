@@ -12,12 +12,23 @@ import {
   type DeliveryMode,
   type NotificationPrefs as Prefs,
 } from "@/lib/notifications/prefs";
+import { t } from "@/lib/i18n/t";
+import type { Locale } from "@/lib/i18n/types";
+import { commonDict } from "@/lib/i18n/dictionaries/common";
+import { profileDict } from "@/lib/i18n/dictionaries/profile";
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
 
 // Per-user notification preferences: how much reaches the phone, when the daily
 // summary arrives, what extra (not-mine) topics to opt into, and what to mute.
-export default function NotificationPrefs({ viewerRole }: { viewerRole?: string } = {}) {
+export default function NotificationPrefs({
+  viewerRole,
+  locale = "he",
+}: {
+  viewerRole?: string;
+  /** Office/admin are always "he"; only a worker ever sees "ar". */
+  locale?: Locale;
+} = {}) {
   // A worker only ever receives his own tasks, his own reminders and the daily
   // summary, so those are the only topics worth offering him. Showing him the
   // full business list was a page of switches that changed nothing.
@@ -64,22 +75,22 @@ export default function NotificationPrefs({ viewerRole }: { viewerRole?: string 
       });
       const d = (await res.json().catch(() => ({}))) as { synced?: boolean };
       toast[d.synced === false ? "warning" : "success"](
-        d.synced === false ? "נשמר מקומית אך טרם סונכרן" : "ההעדפות נשמרו"
+        d.synced === false ? t(profileDict, locale, "savedLocallyNotSynced") : t(profileDict, locale, "prefsSavedToast")
       );
     } catch {
-      toast.error("שמירה נכשלה");
+      toast.error(t(profileDict, locale, "saveFailedNoPeriod"));
     } finally {
       setSaving(false);
     }
   }
 
-  if (!loaded) return <div className="text-sm text-muted-foreground">טוען…</div>;
+  if (!loaded) return <div className="text-sm text-muted-foreground">{t(commonDict, locale, "loading")}</div>;
 
   return (
     <div className="space-y-4">
       {/* How much reaches the phone */}
       <section className="space-y-1.5">
-        <div className="text-xs font-semibold text-muted-foreground">מה יגיע לנייד?</div>
+        <div className="text-xs font-semibold text-muted-foreground">{t(profileDict, locale, "whatReachesPhoneLabel")}</div>
         <div className="space-y-1.5">
           {DELIVERY_MODES.map((m) => (
             <label
@@ -103,14 +114,14 @@ export default function NotificationPrefs({ viewerRole }: { viewerRole?: string 
           ))}
         </div>
         <p className="text-xs text-muted-foreground">
-          תזכורת שקבעת בעצמך עם שעה — תמיד תתריע בזמן שקבעת, בכל מצב.
+          {t(profileDict, locale, "customReminderHint")}
         </p>
       </section>
 
       {/* When the summary lands */}
       {prefs.delivery !== "all" ? (
         <section className="space-y-1">
-          <div className="text-xs font-semibold text-muted-foreground">שעת הסיכום היומי</div>
+          <div className="text-xs font-semibold text-muted-foreground">{t(profileDict, locale, "dailySummaryTimeLabel")}</div>
           <NativeSelect dense
             value={String(prefs.summary_hour)}
             onChange={(e) => setPrefs((p) => ({ ...p, summary_hour: Number(e.target.value) }))}
@@ -129,10 +140,9 @@ export default function NotificationPrefs({ viewerRole }: { viewerRole?: string 
           wouldn't show him records he can't open anyway. */}
       {isWorker ? null : (
         <section className="space-y-1.5">
-          <div className="text-xs font-semibold text-muted-foreground">התראות לנייד גם על דברים שאינם שלי</div>
+          <div className="text-xs font-semibold text-muted-foreground">{t(profileDict, locale, "notMineNotificationsTitle")}</div>
           <p className="text-xs text-muted-foreground">
-            כברירת מחדל רק דברים ששייכים לך מתריעים לנייד. סמן נושאים שתרצה לקבל עליהם התראה בנוסף.
-            בכל מקרה הכול מופיע בתיבה — הסימון משפיע רק על ההתראה לנייד.
+            {t(profileDict, locale, "extraSubscribeHint")}
           </p>
           <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             {SUBSCRIBABLE_BUCKETS.map((b) => (
@@ -151,9 +161,9 @@ export default function NotificationPrefs({ viewerRole }: { viewerRole?: string 
 
       {/* Mute — the one control that hides things from view, not just from the phone. */}
       <section className="space-y-1.5">
-        <div className="text-xs font-semibold text-muted-foreground">מה להציג בתיבה</div>
+        <div className="text-xs font-semibold text-muted-foreground">{t(profileDict, locale, "whatToShowInInboxLabel")}</div>
         <p className="text-xs text-muted-foreground">
-          נושא שיוסר מהסימון ייעלם לגמרי — לא בתיבה, לא בלוח ולא בנייד.
+          {t(profileDict, locale, "muteHint")}
         </p>
         <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
           {buckets.map((b) => (
@@ -171,11 +181,11 @@ export default function NotificationPrefs({ viewerRole }: { viewerRole?: string 
           checked={prefs.push_paused}
           onChange={(e) => setPrefs((p) => ({ ...p, push_paused: e.target.checked }))}
         />
-        השהה לגמרי התראות לנייד (הכול עדיין יופיע בתיבה)
+        {t(profileDict, locale, "pausePushLabel")}
       </label>
 
       <Button size="sm" onClick={() => void save()} disabled={saving}>
-        {saving ? "שומר…" : "שמור העדפות"}
+        {saving ? t(profileDict, locale, "savingEllipsis") : t(profileDict, locale, "saveDeliveryPrefsLabel")}
       </Button>
     </div>
   );

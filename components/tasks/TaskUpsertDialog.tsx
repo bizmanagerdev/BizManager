@@ -20,6 +20,10 @@ import { ViewDialog } from "@/components/ui/view-dialog";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedLines, parseTaskLines } from "@/components/tasks/taskLines.helpers";
 import { TaskVoiceFillButton, type ParsedTaskFields } from "@/components/tasks/TaskVoiceFillButton";
+import type { Locale } from "@/lib/i18n/types";
+import { t } from "@/lib/i18n/t";
+import { tasksDict } from "@/lib/i18n/dictionaries/tasks";
+import { commonDict } from "@/lib/i18n/dictionaries/common";
 import {
   Dialog,
   DialogDescription,
@@ -77,11 +81,31 @@ export type { TaskOption, UserOption };
 
 type Mode = "create" | "edit";
 
+// Bidirectional: subject_he/description_he are only ever set when the
+// AUTHOR's own locale was 'ar' (see app/api/tasks/create), so their presence
+// means `original` is already Arabic. translatedAr is the reverse: a
+// Hebrew-authored task's text, lazily translated + cached for an Arabic
+// viewer (see app/api/tasks/get).
+function preferHe(
+  original: string,
+  translatedHe: string | null | undefined,
+  locale: Locale,
+  translatedAr?: string | null
+) {
+  if (locale === "he") return translatedHe || original;
+  if (translatedHe) return original;
+  return translatedAr || original;
+}
+
 type Props = {
   open: boolean;
   onOpenChange: (next: boolean) => void;
   mode: Mode;
   taskId?: string | null;
+  // Optional: call sites outside the worker-facing /tasks board (office/admin
+  // pages editing tasks from a customer/project/vehicle context) don't thread
+  // a locale yet — those viewers are always "he" anyway, so default to it.
+  locale?: Locale;
   users: UserOption[];
   projects?: TaskOption[];
   properties?: TaskOption[];
@@ -117,7 +141,10 @@ function newTaskIdFrom(data: unknown): string {
   return typeof id === "string" ? id : "";
 }
 
-export function TaskUpsertDialog(props: Props) {
+export function TaskUpsertDialog(rawProps: Props) {
+  // Normalized once so every other reference in this file can assume a
+  // resolved locale (see the Props comment on why the raw prop is optional).
+  const props = { ...rawProps, locale: rawProps.locale ?? "he" };
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -256,9 +283,9 @@ export function TaskUpsertDialog(props: Props) {
           body: JSON.stringify({ id: taskId }),
         });
         const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(toHebrewError(json?.error, "טעינת המשימה נכשלה."));
+        if (!res.ok) throw new Error(toHebrewError(json?.error, t(tasksDict, props.locale, "loadTaskErrorFallback")));
         const task = (json?.task ?? null) as Record<string, unknown> | null;
-        if (!task) throw new Error("המשימה לא נמצאה.");
+        if (!task) throw new Error(t(tasksDict, props.locale, "taskNotFoundError"));
 
         const domainRaw = typeof task.business_domain === "string" ? task.business_domain : null;
         const nextDomain = isExpenseBusinessDomain(domainRaw) ? domainRaw : defaultDomain;
@@ -272,8 +299,14 @@ export function TaskUpsertDialog(props: Props) {
         setPropertyId(nextProjectId ? "" : nextPropertyId);
         setCustomerId(typeof task.customer_id === "string" ? task.customer_id : "");
 
-        setSubject(typeof task.subject === "string" ? task.subject : "");
-        setDescription(typeof task.description === "string" ? task.description : "");
+        const rawSubject = typeof task.subject === "string" ? task.subject : "";
+        const rawSubjectHe = typeof task.subject_he === "string" ? task.subject_he : null;
+        const rawSubjectAr = typeof task.subject_ar === "string" ? task.subject_ar : null;
+        setSubject(preferHe(rawSubject, rawSubjectHe, props.locale, rawSubjectAr));
+        const rawDescription = typeof task.description === "string" ? task.description : "";
+        const rawDescriptionHe = typeof task.description_he === "string" ? task.description_he : null;
+        const rawDescriptionAr = typeof task.description_ar === "string" ? task.description_ar : null;
+        setDescription(preferHe(rawDescription, rawDescriptionHe, props.locale, rawDescriptionAr));
         // due_date may come back as a full timestamp — keep only the date part.
         setDueDate(typeof task.due_date === "string" ? task.due_date.slice(0, 10) : "");
         setDueTime(typeof task.due_time === "string" ? task.due_time : "");
@@ -300,7 +333,7 @@ export function TaskUpsertDialog(props: Props) {
         // Open on the description by default; the user opens one section at a time.
         setOpenSection("description");
       } catch (error: unknown) {
-        toast.error(toHebrewError(error, "טעינת המשימה נכשלה."));
+        toast.error(toHebrewError(error, t(tasksDict, props.locale, "loadTaskErrorFallback")));
         props.onOpenChange(false);
       } finally {
         setLoading(false);
@@ -447,17 +480,18 @@ export function TaskUpsertDialog(props: Props) {
       const result = await offlineFetch(
         "/api/tasks/update",
         { id: targetId, is_private: next },
-        "עדכון פרטיות"
+        t(tasksDict, props.locale, "updatePrivacyOfflineLabel")
       );
       if (!result.queued && !result.ok) {
-        toast.error("שגיאה בעדכון פרטיות", { description: toHebrewError(result.error, "") });
+        toast.error(t(tasksDict, props.locale, "toastErrorUpdatePrivacy"), { description: toHebrewError(result.error, "") });
         setIsPrivate(!next);
         return;
       }
-      if (!result.queued) toast.success(next ? "המשימה הפכה לפרטית" : "המשימה אינה פרטית יותר");
+      if (!result.queued)
+        toast.success(t(tasksDict, props.locale, next ? "toastPrivacyOn" : "toastPrivacyOff"));
       props.onSaved?.();
     } catch (error: unknown) {
-      toast.error("שגיאה בעדכון פרטיות", { description: getErrorMessage(error) });
+      toast.error(t(tasksDict, props.locale, "toastErrorUpdatePrivacy"), { description: getErrorMessage(error) });
       setIsPrivate(!next);
     } finally {
       emitProgressActivityEnd();
@@ -513,7 +547,7 @@ export function TaskUpsertDialog(props: Props) {
           const result = await offlineFetch(
             "/api/tasks/create",
             { ...base, subject: line },
-            "משימה חדשה",
+            t(tasksDict, props.locale, "newTaskLabel"),
             { idempotent: true }
           );
           if (result.queued || result.ok) created += 1;
@@ -524,16 +558,17 @@ export function TaskUpsertDialog(props: Props) {
       }
       // Partial failure is real across N writes: keep what failed on screen to
       // retry rather than silently dropping it.
-      if (created > 0) toast.success(`נוצרו ${created} משימות`);
+      if (created > 0)
+        toast.success(`${t(tasksDict, props.locale, "createdCountPrefix")} ${created} ${t(tasksDict, props.locale, "tasksWord")}`);
       if (failed.length > 0) {
         setSubject(failed.join("\n"));
-        toast.error(`${failed.length} משימות לא נוצרו — נסה שוב`);
+        toast.error(`${failed.length} ${t(tasksDict, props.locale, "tasksFailedRetrySuffix")}`);
         return;
       }
       // Which of the N tasks would the files belong to? Nobody can answer that,
       // so don't guess — the tasks are created, say the files weren't attached.
       if (pendingFiles.length > 0) {
-        toast.warning("הקבצים לא צורפו — אפשר לצרף אותם לכרטיס המתאים");
+        toast.warning(t(tasksDict, props.locale, "filesNotAttachedManual"));
         setPendingFiles([]);
       }
       clearDraft("task-create");
@@ -555,22 +590,27 @@ export function TaskUpsertDialog(props: Props) {
     try {
       if (!isEditing) {
         const payload = { ...buildPayload(), ...(override?.subject ? { subject: override.subject } : {}) };
-        const result = await offlineFetch("/api/tasks/create", payload, "משימה חדשה", { idempotent: true });
+        const result = await offlineFetch(
+          "/api/tasks/create",
+          payload,
+          t(tasksDict, props.locale, "newTaskLabel"),
+          { idempotent: true }
+        );
         if (result.queued) {
           // Queued offline → no task id yet, so staged files can't be attached.
           // Say so rather than dropping them silently.
-          if (pendingFiles.length > 0) toast.warning("הקבצים לא צורפו — המשימה תיווצר כשהחיבור יחזור");
+          if (pendingFiles.length > 0) toast.warning(t(tasksDict, props.locale, "filesNotAttachedOffline"));
           clearDraft("task-create");
           props.onSaved?.();
           props.onOpenChange(false);
           return;
         }
         if (!result.ok) {
-          toast.error("שגיאה ביצירת משימה", { description: result.error });
+          toast.error(t(tasksDict, props.locale, "toastErrorCreateTask"), { description: result.error });
           return;
         }
         clearDraft("task-create");
-        toast.success("המשימה נוצרה");
+        toast.success(t(tasksDict, props.locale, "toastTaskCreatedSingle"));
         await uploadPendingFiles(newTaskIdFrom(result.data));
         props.onSaved?.();
         // Close so the new task shows in the list (no lingering edit dialog).
@@ -583,18 +623,18 @@ export function TaskUpsertDialog(props: Props) {
       const result = await offlineFetch(
         "/api/tasks/update",
         { id: targetId, ...buildPayload() },
-        "עדכון משימה"
+        t(tasksDict, props.locale, "updateTaskOfflineLabel")
       );
       if (!result.queued && !result.ok) {
-        toast.error("שגיאה בעדכון משימה", { description: toHebrewError(result.error, "") });
+        toast.error(t(tasksDict, props.locale, "toastErrorUpdateTask"), { description: toHebrewError(result.error, "") });
         return;
       }
-      if (!result.queued) toast.success("המשימה עודכנה");
+      if (!result.queued) toast.success(t(tasksDict, props.locale, "toastTaskUpdated"));
       props.onSaved?.();
       props.onOpenChange(false);
       router.refresh();
     } catch (error: unknown) {
-      toast.error(isEditing ? "שגיאה בעדכון משימה" : "שגיאה ביצירת משימה", {
+      toast.error(t(tasksDict, props.locale, isEditing ? "toastErrorUpdateTask" : "toastErrorCreateTask"), {
         description: getErrorMessage(error),
       });
     } finally {
@@ -612,7 +652,7 @@ export function TaskUpsertDialog(props: Props) {
       const result = await offlineFetch(
         "/api/tasks/add-comment",
         { task_id: targetId, message: newComment.trim() },
-        "תגובה למשימה",
+        t(tasksDict, props.locale, "addCommentOfflineLabel"),
         { idempotent: true }
       );
       if (result.queued) {
@@ -620,7 +660,7 @@ export function TaskUpsertDialog(props: Props) {
         return;
       }
       if (!result.ok) {
-        toast.error("שגיאה בהוספת תגובה", { description: toHebrewError(result.error, "") });
+        toast.error(t(tasksDict, props.locale, "toastErrorAddComment"), { description: toHebrewError(result.error, "") });
         return;
       }
       const comment =
@@ -630,7 +670,7 @@ export function TaskUpsertDialog(props: Props) {
       if (comment) setComments((prev) => [...prev, comment]);
       setNewComment("");
     } catch (error: unknown) {
-      toast.error("שגיאה בהוספת תגובה", { description: getErrorMessage(error) });
+      toast.error(t(tasksDict, props.locale, "toastErrorAddComment"), { description: getErrorMessage(error) });
     } finally {
       emitProgressActivityEnd();
       setAddingComment(false);
@@ -647,7 +687,7 @@ export function TaskUpsertDialog(props: Props) {
       const result = await offlineFetch(
         "/api/tasks/reminders/create",
         { task_id: targetId, remind_at: remindIso, content: reminderNote.trim() || null },
-        "תזכורת למשימה",
+        t(tasksDict, props.locale, "addReminderOfflineLabel"),
         { idempotent: true }
       );
       if (result.queued) {
@@ -656,7 +696,7 @@ export function TaskUpsertDialog(props: Props) {
         return;
       }
       if (!result.ok) {
-        toast.error("שגיאה בהוספת תזכורת", { description: toHebrewError(result.error, "") });
+        toast.error(t(tasksDict, props.locale, "toastErrorAddReminder"), { description: toHebrewError(result.error, "") });
         return;
       }
       const reminder =
@@ -676,9 +716,9 @@ export function TaskUpsertDialog(props: Props) {
       ]);
       setReminderAt("");
       setReminderNote("");
-      toast.success("התזכורת נוספה");
+      toast.success(t(tasksDict, props.locale, "toastReminderAdded"));
     } catch (error: unknown) {
-      toast.error("שגיאה בהוספת תזכורת", { description: getErrorMessage(error) });
+      toast.error(t(tasksDict, props.locale, "toastErrorAddReminder"), { description: getErrorMessage(error) });
     } finally {
       emitProgressActivityEnd();
       setAddingReminder(false);
@@ -716,18 +756,18 @@ export function TaskUpsertDialog(props: Props) {
       const result = await offlineFetch(
         "/api/tasks/reminders/update",
         { id, remind_at: remindIso, content },
-        "עדכון תזכורת"
+        t(tasksDict, props.locale, "updateReminderOfflineLabel")
       );
       if (!result.queued && !result.ok) {
-        toast.error("שגיאה בעדכון תזכורת", { description: toHebrewError(result.error, "") });
+        toast.error(t(tasksDict, props.locale, "toastErrorUpdateReminder"), { description: toHebrewError(result.error, "") });
         return;
       }
       setEditingReminderId(null);
       setReminderAt("");
       setReminderNote("");
-      if (!result.queued) toast.success("התזכורת עודכנה");
+      if (!result.queued) toast.success(t(tasksDict, props.locale, "toastReminderUpdated"));
     } catch (error: unknown) {
-      toast.error("שגיאה בעדכון תזכורת", { description: getErrorMessage(error) });
+      toast.error(t(tasksDict, props.locale, "toastErrorUpdateReminder"), { description: getErrorMessage(error) });
     } finally {
       emitProgressActivityEnd();
       setAddingReminder(false);
@@ -753,13 +793,15 @@ export function TaskUpsertDialog(props: Props) {
       const result = await offlineFetch(
         "/api/tasks/reminders/update",
         { id, status: nextStatus },
-        nextStatus === "done" ? "סימון תזכורת כבוצעה" : "ביטול תזכורת"
+        nextStatus === "done"
+          ? t(tasksDict, props.locale, "markReminderDoneOfflineLabel")
+          : t(tasksDict, props.locale, "cancelReminderOfflineLabel")
       );
       if (!result.queued && !result.ok) {
-        toast.error("שגיאה בעדכון תזכורת", { description: toHebrewError(result.error, "") });
+        toast.error(t(tasksDict, props.locale, "toastErrorUpdateReminder"), { description: toHebrewError(result.error, "") });
       }
     } catch (error: unknown) {
-      toast.error("שגיאה בעדכון תזכורת", { description: getErrorMessage(error) });
+      toast.error(t(tasksDict, props.locale, "toastErrorUpdateReminder"), { description: getErrorMessage(error) });
     }
   }
 
@@ -767,7 +809,7 @@ export function TaskUpsertDialog(props: Props) {
   async function uploadPendingFiles(taskId: string) {
     if (pendingFiles.length === 0) return;
     if (!taskId) {
-      toast.error("הקבצים לא צורפו — המשימה נוצרה, אפשר לצרף אותם מהכרטיס");
+      toast.error(t(tasksDict, props.locale, "filesNotAttachedCard"));
       return;
     }
     let uploaded = 0;
@@ -785,9 +827,14 @@ export function TaskUpsertDialog(props: Props) {
         failed.push(file.name);
       }
     }
-    if (uploaded > 0) toast.success(uploaded === 1 ? "הקובץ הועלה" : `${uploaded} קבצים הועלו`);
+    if (uploaded > 0)
+      toast.success(
+        uploaded === 1
+          ? t(tasksDict, props.locale, "fileUploadedSingle")
+          : `${uploaded} ${t(tasksDict, props.locale, "filesUploadedCountSuffix")}`
+      );
     // The task itself was created — don't fail the whole save over an attachment.
-    if (failed.length > 0) toast.error("חלק מהקבצים לא הועלו", { description: failed.join(", ") });
+    if (failed.length > 0) toast.error(t(tasksDict, props.locale, "someFilesFailedUpload"), { description: failed.join(", ") });
     setPendingFiles([]);
   }
 
@@ -808,15 +855,20 @@ export function TaskUpsertDialog(props: Props) {
         });
         if (result.queued) continue;
         if (!result.ok) {
-          toast.error("שגיאה בהעלאת קובץ", { description: result.error });
+          toast.error(t(tasksDict, props.locale, "toastErrorUploadFile"), { description: result.error });
           return;
         }
         uploaded += 1;
       }
-      if (uploaded > 0) toast.success(uploaded === 1 ? "הקובץ הועלה" : "הקבצים הועלו");
+      if (uploaded > 0)
+        toast.success(
+          uploaded === 1
+            ? t(tasksDict, props.locale, "fileUploadedSingle")
+            : t(tasksDict, props.locale, "filesUploadedPlural")
+        );
       await fetchAttachments(targetId);
     } catch (error: unknown) {
-      toast.error("שגיאה בהעלאת קובץ", { description: getErrorMessage(error) });
+      toast.error(t(tasksDict, props.locale, "toastErrorUploadFile"), { description: getErrorMessage(error) });
     } finally {
       emitProgressActivityEnd();
       setUploadingFiles(false);
@@ -831,16 +883,20 @@ export function TaskUpsertDialog(props: Props) {
     setAttachments((prev) => prev.filter((a) => a.id !== target.id));
     emitProgressActivityStart();
     try {
-      const result = await offlineFetch("/api/documents/delete", { document_id: target.id }, "מחיקת קובץ");
+      const result = await offlineFetch(
+        "/api/documents/delete",
+        { document_id: target.id },
+        t(tasksDict, props.locale, "deleteFileOfflineLabel")
+      );
       if (!result.queued && !result.ok) {
-        toast.error("שגיאה במחיקת קובץ", { description: toHebrewError(result.error, "") });
+        toast.error(t(tasksDict, props.locale, "toastErrorDeleteFile"), { description: toHebrewError(result.error, "") });
         await fetchAttachments(targetId);
         return;
       }
-      if (!result.queued) toast.success("הקובץ נמחק");
+      if (!result.queued) toast.success(t(tasksDict, props.locale, "toastFileDeleted"));
       setAttachmentToDelete(null);
     } catch (error: unknown) {
-      toast.error("שגיאה במחיקת קובץ", { description: getErrorMessage(error) });
+      toast.error(t(tasksDict, props.locale, "toastErrorDeleteFile"), { description: getErrorMessage(error) });
       await fetchAttachments(targetId);
     } finally {
       emitProgressActivityEnd();
@@ -854,24 +910,28 @@ export function TaskUpsertDialog(props: Props) {
     setSaving(true);
     emitProgressActivityStart();
     try {
-      const result = await offlineFetch("/api/tasks/delete", { id: targetId }, "מחיקת משימה");
+      const result = await offlineFetch(
+        "/api/tasks/delete",
+        { id: targetId },
+        t(tasksDict, props.locale, "deleteTaskLabel")
+      );
       if (!result.queued && !result.ok) {
-        toast.error("שגיאה במחיקת משימה", { description: toHebrewError(result.error, "") });
+        toast.error(t(tasksDict, props.locale, "toastErrorDeleteTask"), { description: toHebrewError(result.error, "") });
         return;
       }
-      if (!result.queued) toast.success("המשימה נמחקה");
+      if (!result.queued) toast.success(t(tasksDict, props.locale, "toastTaskDeleted"));
       props.onSaved?.();
       props.onOpenChange(false);
       router.refresh();
     } catch (error: unknown) {
-      toast.error("שגיאה במחיקת משימה", { description: getErrorMessage(error) });
+      toast.error(t(tasksDict, props.locale, "toastErrorDeleteTask"), { description: getErrorMessage(error) });
     } finally {
       emitProgressActivityEnd();
       setSaving(false);
     }
   }
 
-  const dialogTitle = isEditing ? "כרטיס משימה" : "משימה חדשה";
+  const dialogTitle = isEditing ? t(tasksDict, props.locale, "dialogTitleEdit") : t(tasksDict, props.locale, "newTaskLabel");
   const targetTaskId = activeTaskId ?? props.taskId ?? null;
 
   // The card's sections, in order — they're the tab strip, the "הבא" order, and
@@ -880,22 +940,24 @@ export function TaskUpsertDialog(props: Props) {
   // immediate add/done/cancel.
   const sections = useMemo(
     () => [
-      { key: "description", label: "תיאור", icon: TextIcon },
-      { key: "domain", label: "תחום", icon: BusinessIcon },
-      { key: "dates", label: "תאריך", icon: ClockIcon },
-      { key: "people", label: "אחראי וחברים", icon: UsersIcon },
-      { key: "labels", label: "עדיפות וסטטוס", icon: TagIcon },
-      { key: "location", label: "מיקום", icon: LocationIcon },
+      { key: "description", label: t(tasksDict, props.locale, "sectionDescription"), icon: TextIcon },
+      { key: "domain", label: t(tasksDict, props.locale, "sectionDomain"), icon: BusinessIcon },
+      { key: "dates", label: t(tasksDict, props.locale, "sectionDates"), icon: ClockIcon },
+      { key: "people", label: t(tasksDict, props.locale, "sectionPeople"), icon: UsersIcon },
+      { key: "labels", label: t(tasksDict, props.locale, "sectionLabels"), icon: TagIcon },
+      { key: "location", label: t(tasksDict, props.locale, "sectionLocation"), icon: LocationIcon },
       // Reminders are a tab either way — staged before the task exists, live
       // (add / edit / done / cancel) once it does.
-      { key: "reminders", label: "תזכורות", icon: NotificationIcon },
+      { key: "reminders", label: t(tasksDict, props.locale, "sectionReminders"), icon: NotificationIcon },
       // Uploading needs a task id, but CHOOSING files doesn't — on a new task
       // they're staged and uploaded right after it's created.
-      { key: "files", label: "קבצים ותמונות", icon: AttachIcon },
+      { key: "files", label: t(tasksDict, props.locale, "sectionFiles"), icon: AttachIcon },
       // Comments only exist on a saved task.
-      ...(isEditing && targetTaskId ? [{ key: "comments", label: "תגובות", icon: CommentIcon }] : []),
+      ...(isEditing && targetTaskId
+        ? [{ key: "comments", label: t(tasksDict, props.locale, "sectionComments"), icon: CommentIcon }]
+        : []),
     ],
-    [isEditing, targetTaskId]
+    [isEditing, targetTaskId, props.locale]
   );
   // Tabs always have exactly one open — an unknown/cleared section falls back to
   // the first rather than showing an empty body under a strip of tabs.
@@ -1010,8 +1072,8 @@ export function TaskUpsertDialog(props: Props) {
             {isEditing ? (
               <button
                 type="button"
-                aria-label={status === "done" ? "החזרה ללביצוע" : "סימון כבוצע"}
-                title={status === "done" ? "החזרה ל'לביצוע'" : "סימון כבוצע"}
+                aria-label={t(tasksDict, props.locale, status === "done" ? "undoDoneAria" : "markDoneAria")}
+                title={t(tasksDict, props.locale, status === "done" ? "undoDoneTitle" : "markDoneAria")}
                 disabled={loading}
                 onClick={() => setStatus(status === "done" ? "todo" : "done")}
                 className="shrink-0 text-muted-foreground transition-colors hover:text-success disabled:opacity-40"
@@ -1044,7 +1106,7 @@ export function TaskUpsertDialog(props: Props) {
                     if (canSubmit && !saving && !loading) void submit();
                   }
                 }}
-                placeholder="שם המשימה"
+                placeholder={t(tasksDict, props.locale, "subjectPlaceholder")}
                 disabled={loading}
                 rows={Math.min(Math.max(subjectLines.length, 1), 8)}
                 // Bordered like any other field: without a box it read as a
@@ -1062,7 +1124,7 @@ export function TaskUpsertDialog(props: Props) {
                   setSubject((prev) => appendDictatedLines(prev, text))
                 }
                 disabled={loading}
-                title="הכתבת שם המשימה — אפשר להקריא כמה משימות ברצף"
+                title={t(tasksDict, props.locale, "dictateSubjectTitle")}
                 className="absolute bottom-1 end-1 h-8 w-8"
               />
             </div>
@@ -1076,12 +1138,8 @@ export function TaskUpsertDialog(props: Props) {
                 size="icon-sm"
                 disabled={loading}
                 onClick={() => void togglePrivate()}
-                aria-label={isPrivate ? "ביטול משימה פרטית" : "הפיכה למשימה פרטית"}
-                title={
-                  isPrivate
-                    ? "משימה פרטית — רק את/ה רואה אותה. לחצו כדי לבטל"
-                    : "הפיכה לפרטית — רק את/ה תראו את המשימה"
-                }
+                aria-label={t(tasksDict, props.locale, isPrivate ? "cancelPrivateAria" : "makePrivateAria")}
+                title={t(tasksDict, props.locale, isPrivate ? "privateActiveTitle" : "privateInactiveTitle")}
                 className="shrink-0"
               >
                 {isPrivate ? <LockIcon /> : <UnlockIcon />}
@@ -1090,27 +1148,27 @@ export function TaskUpsertDialog(props: Props) {
               // Non-creator viewing a private task they own: show a static marker.
               <span
                 className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-primary/40 bg-primary/10 text-primary"
-                title="משימה פרטית"
-                aria-label="משימה פרטית"
+                title={t(tasksDict, props.locale, "privateStaticLabel")}
+                aria-label={t(tasksDict, props.locale, "privateStaticLabel")}
               >
                 <LockIcon className="h-4 w-4" />
               </span>
             ) : null}
             {isEditing && targetTaskId ? (
               <DeleteButton
-                label="מחיקת המשימה"
+                label={t(tasksDict, props.locale, "deleteTheTaskButtonLabel")}
                 disabled={saving || loading}
                 onClick={() => setConfirmDeleteOpen(true)}
               />
             ) : null}
           </div>
-          <DialogDescription className="sr-only">פרטי המשימה</DialogDescription>
+          <DialogDescription className="sr-only">{t(tasksDict, props.locale, "dialogDescriptionSr")}</DialogDescription>
         </DialogHeader>
 
         {loading ? (
           <div className="flex items-center justify-center gap-2 px-6 py-12 text-sm text-muted-foreground">
             <SpinnerIcon className="h-5 w-5 animate-spin" />
-            טוען נתוני משימה...
+            {t(tasksDict, props.locale, "loadingTaskData")}
           </div>
         ) : (
         // The dialog is a column: header, ONE scrolling middle, and a footer that
@@ -1173,7 +1231,7 @@ export function TaskUpsertDialog(props: Props) {
           ) : null}
 
           {isOpen("description") ? (
-            <TaskDescriptionSection description={description} onChange={setDescription} />
+            <TaskDescriptionSection description={description} onChange={setDescription} locale={props.locale} />
           ) : null}
 
           {isOpen("domain") ? (
@@ -1194,6 +1252,7 @@ export function TaskUpsertDialog(props: Props) {
               customers={customers}
               customerId={customerId}
               onCustomerIdChange={setCustomerId}
+              locale={props.locale}
             />
           ) : null}
 
@@ -1203,6 +1262,7 @@ export function TaskUpsertDialog(props: Props) {
                   onDueDateChange={setDueDate}
                   dueTime={dueTime}
                   onDueTimeChange={setDueTime}
+                  locale={props.locale}
                 />
               ) : null}
 
@@ -1221,6 +1281,7 @@ export function TaskUpsertDialog(props: Props) {
                   selectedMembers={selectedMembers}
                   memberOptions={memberOptions}
                   colorIndexById={colorIndexById}
+                  locale={props.locale}
                 />
               ) : null}
 
@@ -1232,6 +1293,7 @@ export function TaskUpsertDialog(props: Props) {
                   setCityOther={setCityOther}
                   address={address}
                   onAddressChange={setAddress}
+                  locale={props.locale}
                 />
               ) : null}
 
@@ -1242,12 +1304,14 @@ export function TaskUpsertDialog(props: Props) {
                     uploadingFiles={uploadingFiles}
                     onUpload={(files) => void uploadAttachments(files)}
                     onRequestDelete={setAttachmentToDelete}
+                    locale={props.locale}
                   />
                 ) : (
                   <TaskPendingFilesSection
                     files={pendingFiles}
                     onAdd={(picked) => setPendingFiles((prev) => [...prev, ...picked])}
                     onRemove={(index) => setPendingFiles((prev) => prev.filter((_, i) => i !== index))}
+                    locale={props.locale}
                   />
                 )
               ) : null}
@@ -1258,6 +1322,7 @@ export function TaskUpsertDialog(props: Props) {
                   onPriorityChange={setPriority}
                   status={status}
                   onStatusChange={setStatus}
+                  locale={props.locale}
                 />
               ) : null}
 
@@ -1277,6 +1342,7 @@ export function TaskUpsertDialog(props: Props) {
                     onEditReminder={beginEditReminder}
                     onCancelEditReminder={cancelEditReminder}
                     onSetReminderStatus={(id, nextStatus) => void setReminderStatus(id, nextStatus)}
+                    locale={props.locale}
                   />
                 ) : (
                   <TaskRemindersStagingSection
@@ -1287,6 +1353,7 @@ export function TaskUpsertDialog(props: Props) {
                     setReminderNote={setReminderNote}
                     onStage={stageReminder}
                     onRemove={removePendingReminder}
+                    locale={props.locale}
                   />
                 )
               ) : null}
@@ -1301,6 +1368,7 @@ export function TaskUpsertDialog(props: Props) {
                   onAddComment={() => void addComment()}
                   colorIndexById={colorIndexById}
                   chosenColorById={chosenColorById}
+                  locale={props.locale}
                 />
               ) : null}
           </div>
@@ -1317,14 +1385,18 @@ export function TaskUpsertDialog(props: Props) {
                 className="me-auto"
                 onClick={() => setOpenSection(sections[activeIndex + 1].key)}
               >
-                הבא ›
+                {t(tasksDict, props.locale, "nextButton")}
               </Button>
             ) : (
               <div className="me-auto" />
             )}
             {!isEditing || dirty ? (
               <Button type="submit" disabled={!canSubmit || saving || loading}>
-                {saving ? "שומר..." : isEditing ? "שמירת שינויים" : "יצירה"}
+                {saving
+                  ? t(tasksDict, props.locale, "savingEllipsis")
+                  : isEditing
+                    ? t(tasksDict, props.locale, "saveChangesButton")
+                    : t(tasksDict, props.locale, "createButton")}
               </Button>
             ) : null}
           </div>
@@ -1339,8 +1411,8 @@ export function TaskUpsertDialog(props: Props) {
     <ViewDialog
       open={splitAsk}
       onOpenChange={setSplitAsk}
-      title={`${subjectLines.length} שורות בשם המשימה`}
-      description="ליצור משימה נפרדת לכל שורה, או משימה אחת?"
+      title={`${subjectLines.length} ${t(tasksDict, props.locale, "splitAskTitleSuffix")}`}
+      description={t(tasksDict, props.locale, "splitAskDescription")}
       size="formSm"
       footer={
         <div className="flex flex-wrap items-center justify-end gap-2">
@@ -1356,10 +1428,12 @@ export function TaskUpsertDialog(props: Props) {
               void reallySubmit({ subject: subjectLines.join(" ") });
             }}
           >
-            משימה אחת
+            {t(tasksDict, props.locale, "oneTaskButton")}
           </Button>
           <Button type="button" disabled={saving} onClick={() => void submitAsSeparateTasks()}>
-            {saving ? "יוצר…" : `צור ${subjectLines.length} משימות`}
+            {saving
+              ? t(tasksDict, props.locale, "creatingEllipsis")
+              : `${t(tasksDict, props.locale, "createCountPrefix")} ${subjectLines.length} ${t(tasksDict, props.locale, "tasksWord")}`}
           </Button>
         </div>
       }
@@ -1373,21 +1447,22 @@ export function TaskUpsertDialog(props: Props) {
         ))}
       </ul>
       <p className="text-xs text-muted-foreground">
-        כל המשימות יקבלו את אותו אחראי, תאריך ושאר הפרטים שמילאת.
+        {t(tasksDict, props.locale, "splitAskFooterNote")}
       </p>
     </ViewDialog>
 
     <ConfirmDialog
       open={confirmDeleteOpen}
       onOpenChange={setConfirmDeleteOpen}
-      title="מחיקת משימה"
+      title={t(tasksDict, props.locale, "deleteTaskLabel")}
       description={
         <>
-          למחוק את המשימה{" "}
-          <span className="font-medium">&quot;{subject.trim()}&quot;</span>? לא ניתן לשחזר משימה שנמחקה.
+          {t(tasksDict, props.locale, "confirmDeleteTaskPrefix")}{" "}
+          <span className="font-medium">&quot;{subject.trim()}&quot;</span>
+          {t(tasksDict, props.locale, "confirmDeleteTaskSuffix")}
         </>
       }
-      confirmLabel="מחיקה"
+      confirmLabel={t(commonDict, props.locale, "delete")}
       destructive
       loading={saving}
       onConfirm={() => {
@@ -1401,14 +1476,15 @@ export function TaskUpsertDialog(props: Props) {
       onOpenChange={(open) => {
         if (!open) setAttachmentToDelete(null);
       }}
-      title="מחיקת קובץ"
+      title={t(tasksDict, props.locale, "deleteFileOfflineLabel")}
       description={
         <>
-          למחוק את הקובץ{" "}
-          <span className="font-medium">&quot;{attachmentToDelete?.name ?? ""}&quot;</span>? הקובץ יוסר לצמיתות.
+          {t(tasksDict, props.locale, "confirmDeleteAttachmentPrefix")}{" "}
+          <span className="font-medium">&quot;{attachmentToDelete?.name ?? ""}&quot;</span>
+          {t(tasksDict, props.locale, "confirmDeleteAttachmentSuffix")}
         </>
       }
-      confirmLabel="מחיקה"
+      confirmLabel={t(commonDict, props.locale, "delete")}
       destructive
       loading={deletingAttachment}
       onConfirm={() => void performDeleteAttachment()}
@@ -1419,10 +1495,10 @@ export function TaskUpsertDialog(props: Props) {
       onOpenChange={(open) => {
         if (!open) setConfirmDiscardOpen(false);
       }}
-      title="יציאה בלי לשמור"
-      description="המשימה עדיין לא נשמרה. לצאת בלי לשמור?"
-      confirmLabel="יציאה בלי שמירה"
-      cancelLabel="חזרה לעריכה"
+      title={t(tasksDict, props.locale, "discardTitle")}
+      description={t(tasksDict, props.locale, "discardDescription")}
+      confirmLabel={t(tasksDict, props.locale, "discardConfirmLabel")}
+      cancelLabel={t(tasksDict, props.locale, "discardCancelLabel")}
       destructive
       onConfirm={() => {
         setConfirmDiscardOpen(false);

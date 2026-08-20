@@ -6,6 +6,9 @@ import DashboardCardFooter from "@/components/dashboard/DashboardCardFooter";
 import QuietCard from "@/components/dashboard/QuietCard";
 import { cn } from "@/lib/utils";
 import type { TodayAlert, WorklistSeverity } from "@/lib/reminders/worklist";
+import { t } from "@/lib/i18n/t";
+import { dashboardDict } from "@/lib/i18n/dictionaries/dashboard";
+import type { Locale } from "@/lib/i18n/types";
 
 // DORESH TIPUL — the dated alerts, GROUPED to one line per kind ("צ׳קים
 // להפקדה: 5"). Never itemised: five near-identical cheque rows made a quiet day
@@ -32,15 +35,24 @@ const DOT: Record<WorklistSeverity, string> = {
 
 export default function TodayAlertsCard({
   alerts,
+  locale,
 }: {
   /** Already grouped server-side to one line per rule — see todaySlice. */
   alerts: TodayAlert[];
+  locale: Locale;
 }) {
   // No "ועוד N בתיבה" tail: it counted the inbox rows this card deliberately
   // ISN'T about (the undated backlog), which reads as "10 more of these" when
   // it's really "10 of something else". The card links to the inbox anyway.
   if (alerts.length === 0) {
-    return <QuietCard icon={NotificationIcon} title="התראות" note="אין התראות להיום" href="/inbox" />;
+    return (
+      <QuietCard
+        icon={NotificationIcon}
+        title={t(dashboardDict, locale, "alertsCardTitle")}
+        note={t(dashboardDict, locale, "alertsEmptyNote")}
+        href="/inbox"
+      />
+    );
   }
 
   const total = alerts.reduce((sum, alert) => sum + alert.count, 0);
@@ -51,12 +63,12 @@ export default function TodayAlertsCard({
     <Card className="relative flex h-full flex-col">
       <Link
         href="/inbox"
-        aria-label="לתיבה"
+        aria-label={t(dashboardDict, locale, "toInboxAria")}
         className="absolute inset-0 rounded-[1.125rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
 
       <div className="pointer-events-none relative flex min-h-0 flex-1 flex-col">
-        <DashboardCardHeader icon={NotificationIcon} title="התראות" count={total} />
+        <DashboardCardHeader icon={NotificationIcon} title={t(dashboardDict, locale, "alertsCardTitle")} count={total} />
 
         {/* The board's list style: p-0 content, rows that run edge to edge and
             carry their own padding, hairlines between them — same as the
@@ -81,7 +93,7 @@ export default function TodayAlertsCard({
             ))}
           </ul>
         </CardContent>
-        <DashboardCardFooter href="/inbox" label="כל ההתראות" count={total} />
+        <DashboardCardFooter href="/inbox" label={t(dashboardDict, locale, "allAlertsFooterLabel")} count={total} />
       </div>
     </Card>
   );

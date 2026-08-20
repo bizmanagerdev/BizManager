@@ -13,6 +13,9 @@ import { formatShortDateTime } from "@/lib/date";
 import { groupAuditFeedItems, type AuditFeedItem } from "@/lib/audit";
 import { cn } from "@/lib/utils";
 import { withViewTransition } from "@/lib/ui/view-transition";
+import { t } from "@/lib/i18n/t";
+import { dashboardDict } from "@/lib/i18n/dictionaries/dashboard";
+import type { Locale } from "@/lib/i18n/types";
 
 // Tables that feed the digest — a relative realtime INSERT triggers a refetch
 // (the server re-applies role + since-anchor + exclude-self filtering).
@@ -29,23 +32,23 @@ const DIGEST_TABLES = new Set([
 ]);
 
 // Section label + display order per entity type.
-const TYPE_LABEL: Record<string, string> = {
-  orders: "הזמנות",
-  projects: "פרויקטים",
-  customers: "לקוחות",
-  payments: "תשלומים",
-  expenses: "הוצאות",
-  attendance_sessions: "שעות עבודה",
-  worker_payments: "תשלומי עובדים",
-  accounts: "חשבונות",
-  users: "משתמשים",
-};
+function typeLabel(locale: Locale): Record<string, string> {
+  return {
+    orders: t(dashboardDict, locale, "digestTypeOrders"),
+    projects: t(dashboardDict, locale, "digestTypeProjects"),
+    customers: t(dashboardDict, locale, "digestTypeCustomers"),
+    payments: t(dashboardDict, locale, "digestTypePayments"),
+    expenses: t(dashboardDict, locale, "digestTypeExpenses"),
+    attendance_sessions: t(dashboardDict, locale, "digestTypeAttendance"),
+    worker_payments: t(dashboardDict, locale, "digestTypeWorkerPayments"),
+    accounts: t(dashboardDict, locale, "digestTypeAccounts"),
+    users: t(dashboardDict, locale, "digestTypeUsers"),
+  };
+}
 const TYPE_ORDER = ["orders", "projects", "customers", "payments", "expenses", "attendance_sessions", "worker_payments", "accounts", "users"];
 
 /** One changed topic: its table name and the rows that changed under it. */
 type TypeBucket = [type: string, rows: AuditFeedItem[]];
-
-const CARD_TITLE = "פעילות חדשה";
 
 /**
  * The digest, always the first SECONDARY card when it has anything to show — the
@@ -62,10 +65,12 @@ const CARD_TITLE = "פעילות חדשה";
 export default function MissedDigestCell({
   initialItems,
   planned = false,
+  locale,
 }: {
   initialItems: AuditFeedItem[];
   /** The board already gave this card a cell — render into it, don't make one. */
   planned?: boolean;
+  locale: Locale;
 }) {
   const router = useRouter();
   const [items, setItems] = useState<AuditFeedItem[]>(initialItems);
@@ -193,6 +198,7 @@ export default function MissedDigestCell({
       open={openTopics}
       onToggleTopic={toggleTopic}
       onDismiss={dismiss}
+      locale={locale}
     />
   );
 }
@@ -215,6 +221,7 @@ function MissedDigestCard({
   open,
   onToggleTopic,
   onDismiss,
+  locale,
 }: {
   typed: TypeBucket[];
   total: number;
@@ -222,7 +229,9 @@ function MissedDigestCard({
   open: Set<string>;
   onToggleTopic: (type: string) => void;
   onDismiss: () => void;
+  locale: Locale;
 }) {
+  const TYPE_LABEL = typeLabel(locale);
   return (
     // Card → the full activity feed, each line → the record it's about. The
     // card's link is a full-bleed overlay rather than a wrapper: the lines carry
@@ -231,14 +240,14 @@ function MissedDigestCard({
     <Card className="relative flex h-full flex-col">
       <Link
         href="/activity"
-        aria-label="ליומן הפעילות"
+        aria-label={t(dashboardDict, locale, "digestAria")}
         className="absolute inset-0 rounded-[1.125rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
 
       <div className="pointer-events-none relative flex min-h-0 flex-1 flex-col">
       <DashboardCardHeader
         icon={AiIcon}
-        title={CARD_TITLE}
+        title={t(dashboardDict, locale, "digestCardTitle")}
         count={total}
         action={
           <Button
@@ -246,8 +255,8 @@ function MissedDigestCard({
             size="icon-sm"
             className="pointer-events-auto -me-1 -mt-1"
             onClick={onDismiss}
-            aria-label="סימון כנקרא"
-            title="סימון כנקרא"
+            aria-label={t(dashboardDict, locale, "markReadLabel")}
+            title={t(dashboardDict, locale, "markReadLabel")}
           >
             <CloseIcon />
           </Button>
@@ -324,7 +333,7 @@ function MissedDigestCard({
           })}
         </ul>
       </CardContent>
-      <DashboardCardFooter href="/activity" label="כל הפעילות" count={total} />
+      <DashboardCardFooter href="/activity" label={t(dashboardDict, locale, "digestFooterLabel")} count={total} />
       </div>
     </Card>
   );

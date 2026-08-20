@@ -10,6 +10,8 @@ type RouteProfile = {
   system_access: boolean;
   email: string | null;
   full_name: string | null;
+  /** UI language ('he' | 'ar'); only the worker role is ever offered a toggle. */
+  locale: "he" | "ar";
 };
 
 type RouteAccessOk = {
@@ -46,11 +48,23 @@ export async function requireRouteAccess(options?: {
     };
   }
 
-  const { data: profile, error: profileError } = await supabase
+  let { data: profile, error: profileError } = await supabase
     .from("users")
-    .select("id,auth_user_id,role,active,system_access,email,full_name")
+    .select("id,auth_user_id,role,active,system_access,email,full_name,locale")
     .eq("auth_user_id", user.id)
     .maybeSingle();
+
+  if (profileError) {
+    // Pre-migration: the `locale` column may not exist yet. Retry without it
+    // rather than locking every route out.
+    const legacy = await supabase
+      .from("users")
+      .select("id,auth_user_id,role,active,system_access,email,full_name")
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
+    profile = legacy.data as typeof profile;
+    profileError = legacy.error;
+  }
 
   if (profileError || !profile) {
     return {
@@ -59,7 +73,8 @@ export async function requireRouteAccess(options?: {
     };
   }
 
-  const typed = profile as RouteProfile;
+  const rawLocale = (profile as { locale?: unknown }).locale;
+  const typed: RouteProfile = { ...(profile as Omit<RouteProfile, "locale">), locale: rawLocale === "ar" ? "ar" : "he" };
 
   if (!typed.active || !typed.system_access || typed.role === "worker_no_access") {
     return {

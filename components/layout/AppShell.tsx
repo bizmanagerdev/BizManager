@@ -26,6 +26,8 @@ type Props = {
   companyName?: string;
   userName?: string;
   viewerRole?: string;
+  /** Signed-in worker's UI language ('he' | 'ar'); office/admin are always 'he'. */
+  viewerLocale?: string | null;
   avatarColor?: string | null;
   showSearch?: boolean;
   sidebarItems?: SidebarNavItem[];
@@ -46,6 +48,7 @@ export default function AppShell({
   companyName,
   userName,
   viewerRole,
+  viewerLocale,
   avatarColor,
   showSearch,
   sidebarItems,
@@ -53,7 +56,7 @@ export default function AppShell({
   bottomNavMoreItems,
 }: Props) {
   const isNested = useContext(NestedAppShellContext);
-  const defaults = useNavItems(viewerRole);
+  const defaults = useNavItems(viewerRole, viewerLocale);
 
   // Nested (a page rendered under the (app) layout): render content only.
   if (isNested) return <>{children}</>;
@@ -89,6 +92,7 @@ export default function AppShell({
           hasSidebar={sidebar.length > 0}
           userName={userName}
           viewerRole={viewerRole}
+          viewerLocale={viewerLocale === "ar" ? "ar" : "he"}
           initialColor={avatarColor}
           showSearch={showSearch}
         />
@@ -123,7 +127,14 @@ export default function AppShell({
                 {children}
               </div>
             </main>
-            {bottom.length > 0 && <BottomNav items={bottom} moreItems={more} viewerRole={viewerRole} />}
+            {bottom.length > 0 && (
+              <BottomNav
+                items={bottom}
+                moreItems={more}
+                viewerRole={viewerRole}
+                viewerLocale={viewerLocale === "ar" ? "ar" : "he"}
+              />
+            )}
           </div>
         </div>
 

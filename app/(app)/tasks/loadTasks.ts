@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { translateToArabic } from "@/lib/i18n/translateToHebrew";
+import type { Locale } from "@/lib/i18n/types";
 
 type Row = Record<string, unknown>;
 
@@ -7,6 +9,10 @@ export type TaskMember = { id: string; name: string; color: string | null };
 export type TaskBoardItem = {
   id: string;
   subject: string;
+  /** Hebrew translation, auto-filled when authored by a locale=ar worker. */
+  subject_he: string | null;
+  /** Arabic translation, lazily cached the first time a locale=ar viewer reads a Hebrew-authored task. */
+  subject_ar: string | null;
   status: string | null;
   priority: string | null;
   due_date: string | null;
@@ -51,7 +57,7 @@ const DONE_LIMIT = 60;
 const OPEN_LIMIT = 1000;
 
 const TASK_SELECT =
-  "id,subject,status,priority,due_date,due_time,city,business_domain,project_id,property_id,customer_id,assigned_user_id,is_private,private_owner_id";
+  "id,subject,subject_he,subject_ar,status,priority,due_date,due_time,city,business_domain,project_id,property_id,customer_id,assigned_user_id,is_private,private_owner_id";
 
 function getString(row: Row, key: string) {
   const value = row[key];
@@ -65,6 +71,8 @@ function uniqueIds(rows: Row[], key: string) {
 type TaskRow = {
   id: string;
   subject: string | null;
+  subject_he: string | null;
+  subject_ar: string | null;
   status: string | null;
   priority: string | null;
   due_date: string | null;
@@ -96,7 +104,8 @@ export async function loadTasksBoard(
     filters,
     userId,
     canSeeAll,
-  }: { filters: TasksFilters; userId: string; canSeeAll: boolean }
+    locale = "he",
+  }: { filters: TasksFilters; userId: string; canSeeAll: boolean; locale?: Locale }
 ): Promise<TasksBoardResult> {
   const { q, priority, domain, linkedId } = filters;
   const scope = canSeeAll ? filters.scope : "mine";
@@ -160,6 +169,26 @@ export async function loadTasksBoard(
     .filter((t) => !t.is_private || t.private_owner_id === userId);
 
   if (taskRows.length === 0) return { items: [], error };
+
+  // An Arabic-locale viewer reading a task NOT authored by an Arabic worker
+  // (subject_he is only ever set when the writer's own locale was 'ar' — see
+  // app/api/tasks/create — so its absence means the original is presumably
+  // Hebrew) gets it translated here, cached back onto the row so future loads
+  // don't re-call OpenAI. Best-effort: a failed translate or a blocked update
+  // (RLS) just means the Hebrew text shows again next time, not an error.
+  if (locale === "ar") {
+    const needsTranslation = taskRows.filter((row) => !row.subject_he && !row.subject_ar && row.subject);
+    if (needsTranslation.length > 0) {
+      await Promise.all(
+        needsTranslation.map(async (row) => {
+          const translated = await translateToArabic(row.subject ?? "");
+          if (!translated) return;
+          row.subject_ar = translated;
+          await supabase.from("tasks").update({ subject_ar: translated }).eq("id", row.id);
+        })
+      );
+    }
+  }
 
   const taskIds = taskRows.map((t) => t.id);
   const projectIds = uniqueIds(taskRows as unknown as Row[], "project_id");
@@ -274,6 +303,8 @@ export async function loadTasksBoard(
     return {
       id: row.id,
       subject: row.subject ?? "משימה",
+      subject_he: row.subject_he,
+      subject_ar: row.subject_ar,
       status,
       priority: row.priority,
       due_date: row.due_date,

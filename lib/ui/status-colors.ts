@@ -1,3 +1,5 @@
+import type { Locale } from "@/lib/i18n/types";
+
 export type StatusColor = "success" | "warning" | "danger" | "info" | "neutral";
 
 export type StatusBadgeType = "payment" | "project" | "task" | "priority" | "order";
@@ -154,7 +156,33 @@ export function getOrderStatusColor(status: string): StatusColor {
 export type Gender = "m" | "f";
 
 // Statuses are always masculine across the app (project-wide convention).
-export function getPaymentStatusLabel(status: string) {
+// `locale` defaults to "he" everywhere except worker-facing pages that thread
+// through the signed-in worker's own locale — office/admin call sites are
+// unaffected by passing nothing.
+export function getPaymentStatusLabel(status: string, locale: Locale = "he") {
+  if (locale === "ar") {
+    switch (normalizeValue(status)) {
+      case "paid":
+        return "مدفوع";
+      case "partial":
+        return "مدفوع جزئياً";
+      case "not_due":
+        return "لم يحن موعد الدفع بعد";
+      case "not_paid":
+      case "unpaid":
+        return "غير مدفوع";
+      case "overpaid":
+        return "مدفوع بزيادة";
+      case "pending":
+        return "دفع متوقع";
+      case "cleared":
+        return "تم الاستلام";
+      case "rejected":
+        return "مرفوض";
+      default:
+        return status || "-";
+    }
+  }
   switch (normalizeValue(status)) {
     case "paid":
       return "שולם";
@@ -178,7 +206,26 @@ export function getPaymentStatusLabel(status: string) {
   }
 }
 
-export function getProjectStatusLabel(status: string) {
+export function getProjectStatusLabel(status: string, locale: Locale = "he") {
+  if (locale === "ar") {
+    switch (normalizeValue(status)) {
+      case "quote":
+        return "عرض سعر";
+      case "planned":
+      case "planning":
+        return "مخطط";
+      case "active":
+        return "نشط";
+      case "on_hold":
+        return "متوقف مؤقتاً";
+      case "completed":
+        return "مكتمل";
+      case "cancelled":
+        return "ملغى";
+      default:
+        return status || "-";
+    }
+  }
   switch (normalizeValue(status)) {
     case "quote":
       return "הצעת מחיר";
@@ -198,7 +245,25 @@ export function getProjectStatusLabel(status: string) {
   }
 }
 
-export function getTaskStatusLabel(status: string) {
+export function getTaskStatusLabel(status: string, locale: Locale = "he") {
+  if (locale === "ar") {
+    switch (normalizeValue(status)) {
+      case "overdue":
+        return "متأخر";
+      case "todo":
+        return "للتنفيذ";
+      case "in_progress":
+        return "قيد التنفيذ";
+      case "blocked":
+        return "معلّق";
+      case "done":
+        return "منجز";
+      case "cancelled":
+        return "ملغى";
+      default:
+        return status || "-";
+    }
+  }
   switch (normalizeValue(status)) {
     case "overdue":
       return "באיחור";
@@ -217,7 +282,21 @@ export function getTaskStatusLabel(status: string) {
   }
 }
 
-export function getTaskPriorityLabel(priority: string) {
+export function getTaskPriorityLabel(priority: string, locale: Locale = "he") {
+  if (locale === "ar") {
+    switch (normalizeValue(priority)) {
+      case "low":
+        return "منخفضة";
+      case "medium":
+        return "متوسطة";
+      case "high":
+        return "عالية";
+      case "urgent":
+        return "عاجلة";
+      default:
+        return priority || "-";
+    }
+  }
   switch (normalizeValue(priority)) {
     case "low":
       return "נמוכה";
@@ -232,7 +311,25 @@ export function getTaskPriorityLabel(priority: string) {
   }
 }
 
-export function getOrderStatusLabel(status: string) {
+export function getOrderStatusLabel(status: string, locale: Locale = "he") {
+  if (locale === "ar") {
+    switch (normalizeOrderStatus(status)) {
+      case "draft":
+        return "مفتوح";
+      case "reserved":
+        return "محجوز";
+      case "partially_delivered":
+        return "تم التسليم جزئياً";
+      case "delivered":
+        return "تم التسليم";
+      case "closed":
+        return "مغلق";
+      case "cancelled":
+        return "ملغى";
+      default:
+        return status || "-";
+    }
+  }
   switch (normalizeOrderStatus(status)) {
     case "draft":
       return "פתוח";
@@ -251,18 +348,18 @@ export function getOrderStatusLabel(status: string) {
   }
 }
 
-export function getStatusLabel(type: StatusBadgeType, value: string) {
+export function getStatusLabel(type: StatusBadgeType, value: string, locale: Locale = "he") {
   switch (type) {
     case "payment":
-      return getPaymentStatusLabel(value);
+      return getPaymentStatusLabel(value, locale);
     case "project":
-      return getProjectStatusLabel(value);
+      return getProjectStatusLabel(value, locale);
     case "task":
-      return getTaskStatusLabel(value);
+      return getTaskStatusLabel(value, locale);
     case "priority":
-      return getTaskPriorityLabel(value);
+      return getTaskPriorityLabel(value, locale);
     case "order":
-      return getOrderStatusLabel(value);
+      return getOrderStatusLabel(value, locale);
   }
 }
 

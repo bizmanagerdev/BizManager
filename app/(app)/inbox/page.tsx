@@ -43,6 +43,7 @@ export default async function InboxPage() {
         assignedByMe={assignedByMe}
         canSync={canSync}
         hasPush={pushCount > 0}
+        locale={profile.locale}
       />
     </AppShell>
   );

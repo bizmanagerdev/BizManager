@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CloseIcon, WarningIcon } from "@/components/ui/icons";
 import { useAlertsVersion } from "@/lib/ui/alerts-refresh";
+import type { Locale } from "@/lib/i18n/types";
 
 type PageAlert = { id: string; title: string; href: string; severity: "danger" | "warning" | "info" };
 
@@ -27,7 +28,7 @@ function readDismissed(): Set<string> {
   }
 }
 
-export default function PageAlertBar({ keys }: { keys: string[] }) {
+export default function PageAlertBar({ keys, locale = "he" }: { keys: string[]; locale?: Locale }) {
   const [alerts, setAlerts] = useState<PageAlert[] | null>(null);
   // Lazy init from sessionStorage (readDismissed guards the SSR case → empty set).
   const [dismissed, setDismissed] = useState<Set<string>>(() => readDismissed());
@@ -88,7 +89,7 @@ export default function PageAlertBar({ keys }: { keys: string[] }) {
             type="button"
             onClick={() => dismiss(a.id)}
             className="shrink-0 rounded-md p-0.5 opacity-60 transition-opacity hover:opacity-100"
-            aria-label="סגור התראה"
+            aria-label={locale === "ar" ? "إغلاق التنبيه" : "סגור התראה"}
           >
             <CloseIcon className="h-4 w-4" />
           </button>

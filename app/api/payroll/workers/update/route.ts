@@ -17,6 +17,7 @@ type UpdateWorkerPayload = {
   system_access?: boolean;
   payroll_worker_type?: PayrollWorkerType;
   pay_tracking_mode?: "session" | "payslip";
+  locale?: "he" | "ar";
 };
 
 export async function POST(req: Request) {
@@ -41,6 +42,9 @@ export async function POST(req: Request) {
       role === "worker_no_access" ? false : body.system_access === false ? false : true;
     const payrollWorkerType = normalizePayrollWorkerType(body.payroll_worker_type, body.pay_tracking_mode);
     const payTrackingMode = getPayTrackingModeForWorkerType(payrollWorkerType);
+    // Only workers are ever offered Arabic; force office/admin back to Hebrew
+    // rather than trusting a stray client value for a role that shouldn't have one.
+    const locale = role === "worker" && body.locale === "ar" ? "ar" : "he";
 
     if (!userId) {
       return NextResponse.json({ error: "Missing user_id." }, { status: 400 });
@@ -77,6 +81,7 @@ export async function POST(req: Request) {
       p_system_access: systemAccess,
       p_payroll_worker_type: payrollWorkerType,
       p_pay_tracking_mode: payTrackingMode,
+      p_locale: locale,
     });
 
     if (rpcResult.error) {
@@ -85,7 +90,7 @@ export async function POST(req: Request) {
 
     const result = await supabase
       .from("users")
-      .select("id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode")
+      .select("id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode,locale")
       .eq("id", userId)
       .maybeSingle();
 

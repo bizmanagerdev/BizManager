@@ -19,6 +19,10 @@ import { RAIL_WIDTH, useSidebarCollapse } from "@/components/layout/sidebar-coll
 import { useHeaderAction, usePageTitle } from "@/components/layout/page-title-context";
 import { titleForPath } from "@/lib/ui/route-titles";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n/t";
+import { topbarDict } from "@/lib/i18n/dictionaries/topbar";
+import { commonDict } from "@/lib/i18n/dictionaries/common";
+import type { Locale } from "@/lib/i18n/types";
 
 // The top-bar glyph for the inbox. Most-looked-at icon in the app, so it lives
 // in one named place: swap this line + the lucide import to change it
@@ -33,24 +37,31 @@ type Me = { email: string | null; canTrackSessions: boolean; canViewSalary: bool
 let meCache: Me | null = null;
 let meInFlight: Promise<void> | null = null;
 
-const USER_MENU_LINKS: {
+function userMenuLinks(locale: Locale): {
   href: string;
   label: string;
   icon: typeof UserIcon;
   gate?: (me: Me | null) => boolean;
-}[] = [
+}[] {
   // Same four words as the tab strip they deep-link into — a menu row that says
   // "נוכחות ומשמרות" landing on a tab labelled "נוכחות" reads as two features.
-  { href: "/profile", label: "פרופיל", icon: UserIcon },
-  { href: "/profile?tab=notifications", label: "התראות", icon: NotificationIcon },
-  {
-    href: "/profile?tab=sessions",
-    label: "נוכחות",
-    icon: ClockIcon,
-    gate: (me) => me?.canTrackSessions === true,
-  },
-  { href: "/profile?tab=salary", label: "משכורת", icon: WalletIcon, gate: (me) => me?.canViewSalary === true },
-];
+  return [
+    { href: "/profile", label: t(topbarDict, locale, "profileLabel"), icon: UserIcon },
+    { href: "/profile?tab=notifications", label: t(topbarDict, locale, "notificationsLabel"), icon: NotificationIcon },
+    {
+      href: "/profile?tab=sessions",
+      label: t(topbarDict, locale, "attendanceLabel"),
+      icon: ClockIcon,
+      gate: (me) => me?.canTrackSessions === true,
+    },
+    {
+      href: "/profile?tab=salary",
+      label: t(topbarDict, locale, "salaryLabel"),
+      icon: WalletIcon,
+      gate: (me) => me?.canViewSalary === true,
+    },
+  ];
+}
 
 type Props = {
   appName?: string;
@@ -58,6 +69,8 @@ type Props = {
   hasSidebar?: boolean;
   userName?: string;
   viewerRole?: string;
+  /** Signed-in worker's UI language ('he' | 'ar'); office/admin are always 'he'. */
+  viewerLocale?: Locale;
   initialColor?: string | null;
   showSearch?: boolean;
 };
@@ -68,6 +81,7 @@ export function TopBar({
   hasSidebar = true,
   userName,
   viewerRole,
+  viewerLocale = "he",
   initialColor,
   showSearch = true,
 }: Props) {
@@ -288,7 +302,9 @@ export function TopBar({
               <Link
                 href="/inbox"
                 aria-label={
-                  activeAlertCount > 0 ? `התיבה שלי — ${activeAlertCount} ממתינים לטיפול` : "התיבה שלי"
+                  activeAlertCount > 0
+                    ? `${t(topbarDict, viewerLocale, "myInbox")} — ${activeAlertCount} ${t(topbarDict, viewerLocale, "waitingForAction")}`
+                    : t(topbarDict, viewerLocale, "myInbox")
                 }
                 {...inboxPanel.triggerProps}
                 // Click always goes to the inbox — the panel is only a peek.
@@ -323,18 +339,20 @@ export function TopBar({
             {...inboxPanel.panelProps}
           >
             <div className="px-2 py-2">
-              <div className="text-sm font-semibold">התיבה שלי</div>
+              <div className="text-sm font-semibold">{t(topbarDict, viewerLocale, "myInbox")}</div>
               <div className="text-xs text-muted-foreground">
-                {activeAlertCount > 0 ? `${activeAlertCount} ממתינים לטיפול` : "אין מה לטפל"}
+                {activeAlertCount > 0
+                  ? `${activeAlertCount} ${t(topbarDict, viewerLocale, "waitingForAction")}`
+                  : t(topbarDict, viewerLocale, "allClear")}
               </div>
             </div>
             <div className="-mx-1 my-1 h-px bg-muted" />
             {showLoadingState ? (
-              <div className="px-3 py-4 text-sm text-muted-foreground">טוען...</div>
+              <div className="px-3 py-4 text-sm text-muted-foreground">{t(commonDict, viewerLocale, "loading")}</div>
             ) : alertsError && notifItems.length === 0 ? (
               <div className="px-3 py-4 text-sm text-destructive">{alertsError}</div>
             ) : notifItems.length === 0 ? (
-              <div className="px-3 py-4 text-sm text-muted-foreground">הכול נקי.</div>
+              <div className="px-3 py-4 text-sm text-muted-foreground">{t(topbarDict, viewerLocale, "allClear")}</div>
             ) : (
               notifItems.map((n) => (
                 <Link
@@ -369,12 +387,12 @@ export function TopBar({
                 emitNavigationStart();
               }}
             >
-              פתח את התיבה
+              {t(topbarDict, viewerLocale, "openInbox")}
             </Link>
           </HoverPanelContent>
         </HoverPanel>
 
-        <PwaInstallButton />
+        <PwaInstallButton locale={viewerLocale} />
 
       {/* Hairline between the tools and you. */}
       <span aria-hidden className="mx-0.5 h-6 w-px shrink-0 bg-border" />
@@ -393,7 +411,11 @@ export function TopBar({
             size="icon-sm"
             className="h-[40px] w-[40px] rounded-full p-0 hover:bg-accent"
             type="button"
-            aria-label={userName ? `החשבון שלי — ${userName}` : "החשבון שלי"}
+            aria-label={
+              userName
+                ? `${t(topbarDict, viewerLocale, "myAccount")} — ${userName}`
+                : t(topbarDict, viewerLocale, "myAccount")
+            }
             id="topbar-user-trigger"
             {...userPanel.triggerProps}
           >
@@ -418,14 +440,14 @@ export function TopBar({
           <div className="flex items-center gap-2.5 px-2 py-2">
             {userName ? <InitialsAvatar name={userName} colorKey={userName} color={avatarColor} size="sm" /> : null}
             <div className="min-w-0">
-              <div className="truncate text-sm font-semibold">{userName ?? "משתמש"}</div>
+              <div className="truncate text-sm font-semibold">{userName ?? t(topbarDict, viewerLocale, "userFallback")}</div>
               {me?.email ? <div className="truncate text-xs text-muted-foreground">{me.email}</div> : null}
             </div>
           </div>
           <div className="-mx-1 my-1 h-px bg-muted" />
 
           {/* One entry per errand — these are the profile's tabs. */}
-          {USER_MENU_LINKS.filter((link) => !link.gate || link.gate(me)).map((link) => (
+          {userMenuLinks(viewerLocale).filter((link) => !link.gate || link.gate(me)).map((link) => (
             <Link
               key={link.href}
               href={link.href}
@@ -447,7 +469,7 @@ export function TopBar({
               className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10"
             >
               <LogoutIcon className="me-2 h-4 w-4" />
-              התנתקות
+              {t(topbarDict, viewerLocale, "logout")}
             </button>
           </form>
         </HoverPanelContent>

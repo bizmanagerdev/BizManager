@@ -24,6 +24,9 @@ import { formatShortDateTime } from "@/lib/date";
 import { getTaskPriorityLabel, getTaskStatusLabel } from "@/lib/ui/status-colors";
 import { CITY_OPTIONS } from "@/lib/ui/cities";
 import type { ExpenseBusinessDomain } from "@/lib/expenses";
+import type { Locale } from "@/lib/i18n/types";
+import { t } from "@/lib/i18n/t";
+import { tasksDict } from "@/lib/i18n/dictionaries/tasks";
 import {
   PRIORITY_OPTIONS,
   STATUS_OPTIONS,
@@ -33,6 +36,10 @@ import {
   type TaskTargetType,
 } from "@/components/tasks/TaskUpsertDialog.helpers";
 
+function preferHe(original: string, translated: string | null | undefined, locale: Locale) {
+  return locale === "he" && translated ? translated : original;
+}
+
 // Shared data shapes used by the dialog and these sections.
 export type TaskOption = { id: string; label: string };
 export type UserOption = { id: string; label: string; color?: string | null };
@@ -41,6 +48,8 @@ export type CommentItem = {
   author_id: string | null;
   author_name: string | null;
   body: string;
+  /** Hebrew translation, auto-filled when authored by a locale=ar worker. */
+  body_he?: string | null;
   created_at: string;
 };
 export type ReminderItem = {
@@ -63,9 +72,11 @@ export type AttachmentItem = {
 export function TaskDescriptionSection({
   description,
   onChange,
+  locale,
 }: {
   description: string;
   onChange: (value: string) => void;
+  locale: Locale;
 }) {
   // No panel around it and no "תיאור" heading: the tab above already says which
   // section this is, so a titled box inside a titled tab was a box in a box.
@@ -73,7 +84,7 @@ export function TaskDescriptionSection({
     <Textarea
       value={description}
       onChange={(e) => onChange(e.target.value)}
-      placeholder="הוסיפו תיאור מפורט..."
+      placeholder={t(tasksDict, locale, "descriptionPlaceholder")}
     />
   );
 }
@@ -95,6 +106,7 @@ export function TaskDomainSection({
   customers,
   customerId,
   onCustomerIdChange,
+  locale,
 }: {
   allowedDomains: ExpenseBusinessDomain[];
   effectiveDomain: ExpenseBusinessDomain | "";
@@ -112,11 +124,12 @@ export function TaskDomainSection({
   customers: TaskOption[];
   customerId: string;
   onCustomerIdChange: (id: string) => void;
+  locale: Locale;
 }) {
   return (
     <div className="space-y-3">
       <div className="space-y-1">
-        <div className="text-sm font-medium">תחום עסקי</div>
+        <div className="text-sm font-medium">{t(tasksDict, locale, "businessDomainLabel")}</div>
         <DomainSelect
           domains={allowedDomains}
           value={effectiveDomain}
@@ -130,12 +143,12 @@ export function TaskDomainSection({
 
       {showTargetPicker && derivedTargetType === "project" ? (
         <div className="space-y-1">
-          <div className="text-sm font-medium">פרויקט *</div>
+          <div className="text-sm font-medium">{t(tasksDict, locale, "chooseProjectLabel")}</div>
           <ProjectPicker
             projects={projects}
             value={projectId}
             onChange={onProjectIdChange}
-            emptyLabel="בחר פרויקט..."
+            emptyLabel={t(tasksDict, locale, "chooseProjectOption")}
             allowClear={false}
           />
         </div>
@@ -143,12 +156,12 @@ export function TaskDomainSection({
 
       {showTargetPicker && derivedTargetType === "property" ? (
         <div className="space-y-1">
-          <div className="text-sm font-medium">נכס *</div>
+          <div className="text-sm font-medium">{t(tasksDict, locale, "choosePropertyLabel")}</div>
           <NativeSelect
             value={propertyId}
             onChange={(e) => onPropertyIdChange(e.target.value)}
           >
-            <option value="">בחר נכס...</option>
+            <option value="">{t(tasksDict, locale, "choosePropertyOption")}</option>
             {properties.map((property) => (
               <option key={property.id} value={property.id}>
                 {property.label}
@@ -163,15 +176,15 @@ export function TaskDomainSection({
           Only shown where the caller supplies the customer list. */}
       {customers.length > 0 ? (
         <div className="space-y-1">
-          <div className="text-sm font-medium">לקוח מקושר</div>
+          <div className="text-sm font-medium">{t(tasksDict, locale, "linkedCustomerLabel")}</div>
           <SearchableSelect
             options={customers.map((c) => ({ value: c.id, label: c.label }))}
             value={customerId}
             onChange={onCustomerIdChange}
-            placeholder="ללא לקוח"
-            searchPlaceholder="חיפוש לקוח..."
-            emptyOptionLabel="ללא לקוח"
-            noResultsLabel="לא נמצאו לקוחות לחיפוש הזה."
+            placeholder={t(tasksDict, locale, "noCustomerLabel")}
+            searchPlaceholder={t(tasksDict, locale, "searchCustomerPlaceholder")}
+            emptyOptionLabel={t(tasksDict, locale, "noCustomerLabel")}
+            noResultsLabel={t(tasksDict, locale, "noCustomersFoundLabel")}
             maxHeightClassName="max-h-56"
             searchThreshold={0}
           />
@@ -186,23 +199,25 @@ export function TaskDatesSection({
   onDueDateChange,
   dueTime,
   onDueTimeChange,
+  locale,
 }: {
   dueDate: string;
   onDueDateChange: (value: string) => void;
   dueTime: string;
   onDueTimeChange: (value: string) => void;
+  locale: Locale;
 }) {
   return (
     <div>
       <AdaptiveGrid variant="formTwo">
         <div className="space-y-1">
-          <div className="text-sm font-medium">תאריך יעד</div>
+          <div className="text-sm font-medium">{t(tasksDict, locale, "dueDateLabel")}</div>
           <DateInput value={dueDate} onChange={(e) => onDueDateChange(e.target.value)} />
         </div>
         <div className="space-y-1">
           <div className="flex items-center gap-1 text-sm font-medium">
             <ClockIcon className="h-3.5 w-3.5 text-muted-foreground" />
-            שעה
+            {t(tasksDict, locale, "timeLabel")}
           </div>
           <Input type="time" value={dueTime} onChange={(e) => onDueTimeChange(e.target.value)} dir="ltr" />
         </div>
@@ -222,6 +237,7 @@ export function TaskPeopleSection({
   selectedMembers,
   memberOptions,
   colorIndexById,
+  locale,
 }: {
   users: UserOption[];
   assignedUserId: string;
@@ -233,16 +249,17 @@ export function TaskPeopleSection({
   selectedMembers: UserOption[];
   memberOptions: UserOption[];
   colorIndexById: Map<string, number>;
+  locale: Locale;
 }) {
   return (
     <div className="space-y-3">
       <div className="space-y-1">
-        <div className="text-sm font-medium">אחראי</div>
+        <div className="text-sm font-medium">{t(tasksDict, locale, "assignedLabel")}</div>
         <NativeSelect
           value={assignedUserId}
           onChange={(e) => onAssignedChange(e.target.value)}
         >
-          <option value="">בחר משתמש...</option>
+          <option value="">{t(tasksDict, locale, "chooseUserOption")}</option>
           {users.map((user) => (
             <option key={user.id} value={user.id}>
               {user.label}
@@ -259,12 +276,12 @@ export function TaskPeopleSection({
             checked={memberIds.includes(meId)}
             onChange={() => onToggleMember(meId)}
           />
-          הוסף גם אותי כחבר במשימה
+          {t(tasksDict, locale, "addSelfAsMemberLabel")}
         </label>
       ) : null}
 
       <div className="space-y-1">
-        <div className="text-sm font-medium">חברים נוספים</div>
+        <div className="text-sm font-medium">{t(tasksDict, locale, "additionalMembersLabel")}</div>
         {selectedMembers.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {selectedMembers.map((member) => (
@@ -278,7 +295,7 @@ export function TaskPeopleSection({
                   type="button"
                   onClick={() => onToggleMember(member.id)}
                   className="text-muted-foreground hover:text-destructive"
-                  aria-label={`הסר ${member.label}`}
+                  aria-label={`${t(tasksDict, locale, "removeMemberAriaPrefix")} ${member.label}`}
                 >
                   <CloseIcon className="h-3 w-3" />
                 </button>
@@ -289,11 +306,11 @@ export function TaskPeopleSection({
         <details className="rounded-md border bg-background">
           <summary className="cursor-pointer list-none px-3 py-2 text-sm text-muted-foreground">
             <AddIcon className="ms-0 me-1 inline h-3.5 w-3.5" />
-            הוספת חברים
+            {t(tasksDict, locale, "addMembersSummary")}
           </summary>
           <div className="max-h-40 overflow-auto border-t p-1">
             {memberOptions.length === 0 ? (
-              <div className="px-2 py-1.5 text-xs text-muted-foreground">אין משתמשים זמינים.</div>
+              <div className="px-2 py-1.5 text-xs text-muted-foreground">{t(tasksDict, locale, "noUsersAvailable")}</div>
             ) : (
               memberOptions.map((user) => {
                 const checked = memberIds.includes(user.id);
@@ -331,6 +348,7 @@ export function TaskLocationSection({
   setCityOther,
   address,
   onAddressChange,
+  locale,
 }: {
   city: string;
   setCity: (value: string) => void;
@@ -338,6 +356,7 @@ export function TaskLocationSection({
   setCityOther: (value: boolean) => void;
   address: string;
   onAddressChange: (value: string) => void;
+  locale: Locale;
 }) {
   return (
     <div className="space-y-3">
@@ -345,8 +364,10 @@ export function TaskLocationSection({
         <div className="space-y-1">
           <div className="flex items-center gap-1 text-sm font-medium">
             <LocationIcon className="h-3.5 w-3.5 text-muted-foreground" />
-            עיר
+            {t(tasksDict, locale, "cityLabel")}
           </div>
+          {/* "אחר" (Other) is a sentinel value taken from CITY_OPTIONS' own data
+              (lib/ui/cities, out of scope) — not UI chrome text, left as-is. */}
           <NativeSelect
             value={cityOther ? "אחר" : city}
             onChange={(e) => {
@@ -360,7 +381,7 @@ export function TaskLocationSection({
               }
             }}
           >
-            <option value="">בחר עיר...</option>
+            <option value="">{t(tasksDict, locale, "chooseCityOption")}</option>
             {CITY_OPTIONS.map((option) => (
               <option key={option} value={option}>
                 {option}
@@ -369,14 +390,14 @@ export function TaskLocationSection({
           </NativeSelect>
         </div>
         <div className="space-y-1">
-          <div className="text-sm font-medium">כתובת</div>
+          <div className="text-sm font-medium">{t(tasksDict, locale, "addressLabel")}</div>
           <Input value={address} onChange={(e) => onAddressChange(e.target.value)} />
         </div>
       </AdaptiveGrid>
 
       {cityOther ? (
         <div className="space-y-1">
-          <div className="text-sm font-medium">עיר (הקלדה חופשית)</div>
+          <div className="text-sm font-medium">{t(tasksDict, locale, "cityFreeTextLabel")}</div>
           <Input value={city} onChange={(e) => setCity(e.target.value)} />
         </div>
       ) : null}
@@ -396,17 +417,19 @@ export function TaskPendingFilesSection({
   files,
   onAdd,
   onRemove,
+  locale,
 }: {
   files: File[];
   onAdd: (files: File[]) => void;
   onRemove: (index: number) => void;
+  locale: Locale;
 }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-sm font-medium">
           <AttachIcon className="h-3.5 w-3.5 text-muted-foreground" />
-          קבצים ותמונות
+          {t(tasksDict, locale, "sectionFiles")}
         </div>
         <FileUploadActions
           files={[]}
@@ -414,14 +437,14 @@ export function TaskPendingFilesSection({
           multiple
           size="sm"
           onFilesSelected={(picked) => onAdd(picked)}
-          chooseLabel="צירוף קובץ"
-          takePhotoLabel="צילום"
+          chooseLabel={t(tasksDict, locale, "attachFileLabel")}
+          takePhotoLabel={t(tasksDict, locale, "takePhotoLabel")}
           showPreview={false}
           notifyOnAdd={false}
         />
       </div>
       {files.length === 0 ? (
-        <div className="text-xs text-muted-foreground">אפשר לצרף קבצים כבר עכשיו — הם יועלו עם יצירת המשימה.</div>
+        <div className="text-xs text-muted-foreground">{t(tasksDict, locale, "filesCanAttachNowNote")}</div>
       ) : (
         <div className="space-y-1.5">
           {files.map((file, index) => (
@@ -430,10 +453,12 @@ export function TaskPendingFilesSection({
               className="flex items-center justify-between gap-2 rounded-md border bg-background px-2 py-1.5"
             >
               <span className="min-w-0 truncate text-xs">{file.name}</span>
-              <DeleteButton label={`הסרת ${file.name}`} onClick={() => onRemove(index)} />
+              <DeleteButton label={`${t(tasksDict, locale, "removeFileAriaPrefix")} ${file.name}`} onClick={() => onRemove(index)} />
             </div>
           ))}
-          <div className="text-[11px] text-muted-foreground">{files.length} קבצים יועלו עם השמירה</div>
+          <div className="text-[11px] text-muted-foreground">
+            {files.length} {t(tasksDict, locale, "filesWillUploadSuffix")}
+          </div>
         </div>
       )}
     </div>
@@ -445,18 +470,20 @@ export function TaskAttachmentsSection({
   uploadingFiles,
   onUpload,
   onRequestDelete,
+  locale,
 }: {
   attachments: AttachmentItem[];
   uploadingFiles: boolean;
   onUpload: (files: File[]) => void;
   onRequestDelete: (target: { id: string; name: string | null }) => void;
+  locale: Locale;
 }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-sm font-medium">
           <AttachIcon className="h-3.5 w-3.5 text-muted-foreground" />
-          קבצים ותמונות
+          {t(tasksDict, locale, "sectionFiles")}
         </div>
         <FileUploadActions
           files={[]}
@@ -465,14 +492,14 @@ export function TaskAttachmentsSection({
           size="sm"
           disabled={uploadingFiles}
           onFilesSelected={(files) => onUpload(files)}
-          chooseLabel={uploadingFiles ? "מעלה..." : "צירוף קובץ"}
-          takePhotoLabel="צילום"
+          chooseLabel={uploadingFiles ? t(tasksDict, locale, "uploadingLabel") : t(tasksDict, locale, "attachFileLabel")}
+          takePhotoLabel={t(tasksDict, locale, "takePhotoLabel")}
           showPreview={false}
           notifyOnAdd={false}
         />
       </div>
       {attachments.length === 0 ? (
-        <div className="text-xs text-muted-foreground">אין קבצים מצורפים.</div>
+        <div className="text-xs text-muted-foreground">{t(tasksDict, locale, "noAttachmentsLabel")}</div>
       ) : (
         <div className="space-y-1.5">
           {attachments.map((attachment) => (
@@ -497,18 +524,20 @@ export function TaskAttachmentsSection({
                   />
                 ) : (
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-muted text-[10px] text-muted-foreground">
-                    {attachment.kind === "video" ? "וידאו" : "קובץ"}
+                    {attachment.kind === "video" ? t(tasksDict, locale, "videoWord") : t(tasksDict, locale, "fileWord")}
                   </span>
                 )}
                 <span className="min-w-0">
                   <span className="block truncate text-sm text-primary hover:underline">
-                    {attachment.original_name ?? "קובץ"}
+                    {attachment.original_name ?? t(tasksDict, locale, "fileWord")}
                   </span>
                   {attachment.created_at || attachment.uploader_name ? (
                     <span className="block truncate text-[11px] text-muted-foreground">
                       {[
                         attachment.created_at ? formatShortDateTime(attachment.created_at) : null,
-                        attachment.uploader_name ? `הועלה ע"י ${attachment.uploader_name}` : null,
+                        attachment.uploader_name
+                          ? `${t(tasksDict, locale, "uploadedByPrefix")} ${attachment.uploader_name}`
+                          : null,
                       ]
                         .filter(Boolean)
                         .join(" • ")}
@@ -517,7 +546,7 @@ export function TaskAttachmentsSection({
                 </span>
               </a>
               <DeleteButton
-                label="מחיקת קובץ"
+                label={t(tasksDict, locale, "deleteFileOfflineLabel")}
                 onClick={() => onRequestDelete({ id: attachment.id, name: attachment.original_name })}
               />
             </div>
@@ -533,37 +562,39 @@ export function TaskLabelsSection({
   onPriorityChange,
   status,
   onStatusChange,
+  locale,
 }: {
   priority: TaskPriority;
   onPriorityChange: (value: TaskPriority) => void;
   status: TaskStatus;
   onStatusChange: (value: TaskStatus) => void;
+  locale: Locale;
 }) {
   return (
     <div>
       <AdaptiveGrid variant="formTwo">
         <div className="space-y-1">
-          <div className="text-sm font-medium">עדיפות</div>
+          <div className="text-sm font-medium">{t(tasksDict, locale, "priorityLabel")}</div>
           <NativeSelect
             value={priority}
             onChange={(e) => onPriorityChange(e.target.value as TaskPriority)}
           >
             {PRIORITY_OPTIONS.map((option) => (
               <option key={option} value={option}>
-                {getTaskPriorityLabel(option)}
+                {getTaskPriorityLabel(option, locale)}
               </option>
             ))}
           </NativeSelect>
         </div>
         <div className="space-y-1">
-          <div className="text-sm font-medium">סטטוס</div>
+          <div className="text-sm font-medium">{t(tasksDict, locale, "statusFieldLabel")}</div>
           <NativeSelect
             value={status}
             onChange={(e) => onStatusChange(e.target.value as TaskStatus)}
           >
             {STATUS_OPTIONS.map((option) => (
               <option key={option} value={option}>
-                {getTaskStatusLabel(option)}
+                {getTaskStatusLabel(option, locale)}
               </option>
             ))}
           </NativeSelect>
@@ -581,6 +612,7 @@ export function TaskRemindersStagingSection({
   setReminderNote,
   onStage,
   onRemove,
+  locale,
 }: {
   pendingReminders: { remind_at: string; content: string }[];
   reminderAt: string;
@@ -589,12 +621,13 @@ export function TaskRemindersStagingSection({
   setReminderNote: (value: string) => void;
   onStage: () => void;
   onRemove: (index: number) => void;
+  locale: Locale;
 }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-1.5 text-sm font-medium">
         <NotificationIcon className="h-3.5 w-3.5 text-muted-foreground" />
-        תזכורות
+        {t(tasksDict, locale, "sectionReminders")}
       </div>
       {pendingReminders.length > 0 ? (
         <div className="space-y-1.5">
@@ -609,26 +642,26 @@ export function TaskRemindersStagingSection({
                   <div className="truncate text-xs text-muted-foreground">{reminder.content}</div>
                 ) : null}
               </div>
-              <DeleteButton label="הסרת תזכורת" onClick={() => onRemove(index)} />
+              <DeleteButton label={t(tasksDict, locale, "reminderDeleteLabel")} onClick={() => onRemove(index)} />
             </div>
           ))}
         </div>
       ) : (
-        <div className="text-xs text-muted-foreground">אפשר להוסיף תזכורות כבר עכשיו — הן ייווצרו עם המשימה.</div>
+        <div className="text-xs text-muted-foreground">{t(tasksDict, locale, "remindersCanAddNowNote")}</div>
       )}
       <AdaptiveGrid variant="formTwo">
         <div className="space-y-1">
-          <div className="text-xs text-muted-foreground">מועד התזכורת</div>
+          <div className="text-xs text-muted-foreground">{t(tasksDict, locale, "reminderTimeLabel")}</div>
           <DateTimeInput value={reminderAt} onChange={(e) => setReminderAt(e.target.value)} />
         </div>
         <div className="space-y-1">
-          <div className="text-xs text-muted-foreground">הערה (אופציונלי)</div>
+          <div className="text-xs text-muted-foreground">{t(tasksDict, locale, "reminderNoteLabel")}</div>
           <Input value={reminderNote} onChange={(e) => setReminderNote(e.target.value)} />
         </div>
       </AdaptiveGrid>
       <div className="flex justify-end">
         <Button type="button" size="sm" variant="secondary" disabled={!reminderAt} onClick={onStage}>
-          הוספת תזכורת
+          {t(tasksDict, locale, "addReminderButton")}
         </Button>
       </div>
     </div>
@@ -649,6 +682,7 @@ export function TaskRemindersPanel({
   onEditReminder,
   onCancelEditReminder,
   onSetReminderStatus,
+  locale,
 }: {
   reminders: ReminderItem[];
   reminderAt: string;
@@ -661,11 +695,12 @@ export function TaskRemindersPanel({
   onEditReminder: (reminder: ReminderItem) => void;
   onCancelEditReminder: () => void;
   onSetReminderStatus: (id: string, status: "done" | "cancelled") => void;
+  locale: Locale;
 }) {
   return (
       <section className="space-y-2">
         {reminders.filter((r) => r.status === "pending").length === 0 ? (
-          <div className="text-xs text-muted-foreground">אין תזכורות פעילות.</div>
+          <div className="text-xs text-muted-foreground">{t(tasksDict, locale, "noPendingRemindersLabel")}</div>
         ) : (
           <div className="space-y-1.5">
             {reminders
@@ -684,12 +719,12 @@ export function TaskRemindersPanel({
                     ) : null}
                   </div>
                   <div className="flex shrink-0 gap-1">
-                    <EditButton onClick={() => onEditReminder(reminder)} label="עריכת תזכורת" />
+                    <EditButton onClick={() => onEditReminder(reminder)} label={t(tasksDict, locale, "editReminderLabel")} />
                     <Button type="button" size="sm" variant="secondary" onClick={() => onSetReminderStatus(reminder.id, "done")}>
-                      בוצע
+                      {t(tasksDict, locale, "reminderDoneButton")}
                     </Button>
                     <Button type="button" size="sm" variant="outline" onClick={() => onSetReminderStatus(reminder.id, "cancelled")}>
-                      ביטול
+                      {t(tasksDict, locale, "reminderCancelButton")}
                     </Button>
                   </div>
                 </div>
@@ -698,22 +733,26 @@ export function TaskRemindersPanel({
         )}
         <AdaptiveGrid variant="formTwo">
           <div className="space-y-1">
-            <div className="text-xs text-muted-foreground">מועד התזכורת</div>
+            <div className="text-xs text-muted-foreground">{t(tasksDict, locale, "reminderTimeLabel")}</div>
             <DateTimeInput value={reminderAt} onChange={(e) => setReminderAt(e.target.value)} />
           </div>
           <div className="space-y-1">
-            <div className="text-xs text-muted-foreground">הערה (אופציונלי)</div>
+            <div className="text-xs text-muted-foreground">{t(tasksDict, locale, "reminderNoteLabel")}</div>
             <Input value={reminderNote} onChange={(e) => setReminderNote(e.target.value)} />
           </div>
         </AdaptiveGrid>
         <div className="flex justify-end gap-1.5">
           {editingReminderId ? (
             <Button type="button" size="sm" variant="outline" disabled={addingReminder} onClick={onCancelEditReminder}>
-              ביטול עריכה
+              {t(tasksDict, locale, "cancelEditLabel")}
             </Button>
           ) : null}
           <Button type="button" size="sm" disabled={!reminderAt || addingReminder} onClick={onAddReminder}>
-            {addingReminder ? "שומר..." : editingReminderId ? "עדכון תזכורת" : "הוספת תזכורת"}
+            {addingReminder
+              ? t(tasksDict, locale, "savingEllipsis")
+              : editingReminderId
+                ? t(tasksDict, locale, "updateReminderButton")
+                : t(tasksDict, locale, "addReminderButton")}
           </Button>
         </div>
       </section>
@@ -730,6 +769,7 @@ export function TaskCommentsPanel({
   onAddComment,
   colorIndexById,
   chosenColorById,
+  locale,
 }: {
   comments: CommentItem[];
   legacyNotes: LegacyNote[];
@@ -739,11 +779,12 @@ export function TaskCommentsPanel({
   onAddComment: () => void;
   colorIndexById: Map<string, number>;
   chosenColorById: Map<string, string>;
+  locale: Locale;
 }) {
   return (
       <section className="space-y-2">
         {comments.length === 0 && legacyNotes.length === 0 ? (
-          <div className="text-xs text-muted-foreground">אין תגובות עדיין.</div>
+          <div className="text-xs text-muted-foreground">{t(tasksDict, locale, "noCommentsLabel")}</div>
         ) : (
           <div className="space-y-2">
             {/* Legacy comments stored in tasks.notes (read-only history). */}
@@ -763,12 +804,14 @@ export function TaskCommentsPanel({
                 <InitialsAvatar name={comment.author_name} color={comment.author_id ? chosenColorById.get(comment.author_id) : undefined} colorKey={comment.author_id} colorIndex={comment.author_id ? colorIndexById.get(comment.author_id) : undefined} size="sm" />
                 <div className="min-w-0 flex-1 rounded-md border bg-muted/20 px-3 py-2">
                   <div className="flex flex-wrap items-baseline gap-x-2">
-                    <span className="text-sm font-medium">{comment.author_name ?? "משתמש"}</span>
+                    <span className="text-sm font-medium">{comment.author_name ?? t(tasksDict, locale, "unknownUserWord")}</span>
                     <span className="text-[11px] text-muted-foreground">
                       {formatShortDateTime(comment.created_at)}
                     </span>
                   </div>
-                  <div className="mt-0.5 whitespace-pre-wrap text-sm">{comment.body}</div>
+                  <div className="mt-0.5 whitespace-pre-wrap text-sm">
+                    {preferHe(comment.body, comment.body_he, locale)}
+                  </div>
                 </div>
               </div>
             ))}
@@ -777,12 +820,12 @@ export function TaskCommentsPanel({
         <Textarea
           value={newComment}
           onChange={(e) => setNewComment(e.target.value)}
-          placeholder="כתבו תגובה..."
+          placeholder={t(tasksDict, locale, "commentPlaceholder")}
           className="min-h-16"
         />
         <div className="flex justify-end">
           <Button type="button" size="sm" disabled={addingComment || !newComment.trim()} onClick={onAddComment}>
-            {addingComment ? "שומר..." : "הוספת תגובה"}
+            {addingComment ? t(tasksDict, locale, "savingEllipsis") : t(tasksDict, locale, "addCommentButton")}
           </Button>
         </div>
       </section>

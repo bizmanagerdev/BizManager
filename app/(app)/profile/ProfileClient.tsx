@@ -50,9 +50,15 @@ import MyBonusCard from "@/components/payroll/MyBonusCard";
 import SessionList from "@/components/attendance/SessionList";
 import type { PayslipItemRow as BonusItemRow } from "@/lib/payroll-bonuses";
 import type { MyShiftReport } from "@/lib/attendance/my-shift";
+import { t } from "@/lib/i18n/t";
+import type { Locale } from "@/lib/i18n/types";
+import { commonDict } from "@/lib/i18n/dictionaries/common";
+import { profileDict } from "@/lib/i18n/dictionaries/profile";
 
 type Props = {
   profile: UserProfile;
+  /** Office/admin are always "he"; only a worker ever sees "ar". */
+  locale?: Locale;
   initialFontScale: number | null;
   /** The phone's own multiplier; null = follow the desktop one. */
   initialFontScaleMobile: number | null;
@@ -150,7 +156,7 @@ function toLocalDateTimeValue(date: Date) {
 
 type ProfileTab = "profile" | "notifications" | "sessions" | "salary";
 
-export default function ProfileClient({ profile, initialFontScale, initialFontScaleMobile, initialAvatarColor, sessions, agreements, payslips, periods, monthlySummaries, projectOptions, propertyOptions, isWorker = false, dashboardCustomizer = null, openShiftReport = null, pendingShiftReports = [], myBonuses = [], payTotals = null, payBySessionId = {}, linkLabelBySessionId = {} }: Props) {
+export default function ProfileClient({ profile, locale = "he", initialFontScale, initialFontScaleMobile, initialAvatarColor, sessions, agreements, payslips, periods, monthlySummaries, projectOptions, propertyOptions, isWorker = false, dashboardCustomizer = null, openShiftReport = null, pendingShiftReports = [], myBonuses = [], payTotals = null, payBySessionId = {}, linkLabelBySessionId = {} }: Props) {
   const router = useRouter();
   // The whole page is the swipe surface, so the gesture works wherever the
   // thumb happens to be rather than only on the tab strip.
@@ -180,7 +186,7 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
   async function saveDetails() {
     const name = detailsNameDraft.trim();
     if (!name) {
-      setDetailsError("יש להזין שם.");
+      setDetailsError(t(profileDict, locale, "errNameRequired"));
       return;
     }
     setSavingDetails(true);
@@ -198,11 +204,11 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
       setDetailsNameDraft(name);
       setDetailsPhoneDraft(json.phone ?? "");
       setEditingDetails(false);
-      toast.success("הפרטים נשמרו");
+      toast.success(t(profileDict, locale, "detailsSavedToast"));
       // The name shows in the top bar / presence too — refresh the server tree.
       router.refresh();
     } catch (err) {
-      setDetailsError(toHebrewError(err, "שמירה נכשלה."));
+      setDetailsError(toHebrewError(err, t(profileDict, locale, "detailsSaveFailed")));
     } finally {
       setSavingDetails(false);
     }
@@ -218,11 +224,11 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
 
   async function savePassword() {
     if (newPassword.length < 6) {
-      setPasswordError("הסיסמה חייבת להכיל לפחות 6 תווים.");
+      setPasswordError(t(profileDict, locale, "errPasswordTooShort"));
       return;
     }
     if (newPassword !== confirmPassword) {
-      setPasswordError("הסיסמאות אינן תואמות.");
+      setPasswordError(t(profileDict, locale, "errPasswordMismatch"));
       return;
     }
     setSavingPassword(true);
@@ -237,18 +243,23 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        setPasswordError(json.error || "שינוי הסיסמה נכשל.");
+        setPasswordError(json.error || t(profileDict, locale, "passwordChangeFailed"));
         return;
       }
       setPasswordDone(true);
       setChangingPassword(false);
       setNewPassword("");
       setConfirmPassword("");
-      toast.success("הסיסמה עודכנה");
+      toast.success(t(profileDict, locale, "passwordUpdatedToast"));
     } catch (err) {
       const raw = err instanceof Error ? err.message : "";
       const hebrew = toHebrewError(err, "");
-      setPasswordError(hebrew || (raw ? `שינוי הסיסמה נכשל: ${raw}` : "שינוי הסיסמה נכשל."));
+      setPasswordError(
+        hebrew ||
+          (raw
+            ? `${t(profileDict, locale, "passwordChangeFailedPrefix")}${raw}`
+            : t(profileDict, locale, "passwordChangeFailed"))
+      );
     } finally {
       setSavingPassword(false);
     }
@@ -285,31 +296,31 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
     return [
       {
         key: currentKey,
-        label: monthLabelFromKey(currentKey),
+        label: monthLabelFromKey(currentKey, locale),
         totalMinutes: 0,
         sessionCount: 0,
         openSessionCount: 0,
       },
       ...monthlySummaries,
     ];
-  }, [monthlySummaries]);
+  }, [monthlySummaries, locale]);
 
   const [selectedMonth, setSelectedMonth] = useState(() => monthKeyFromDate(new Date()));
 
   // Global text-size multiplier. The whole UI is rem-based, so this scales
   // text, spacing and widths together (no squashing) — see app/globals.css.
   const FONT_SCALES = [
-    { label: "קטן", scale: 0.9 },
-    { label: "רגיל", scale: 1 },
-    { label: "גדול", scale: 1.15 },
-    { label: "גדול מאוד", scale: 1.3 },
-    { label: "ענק", scale: 1.5 },
+    { label: t(profileDict, locale, "fontScaleSmall"), scale: 0.9 },
+    { label: t(profileDict, locale, "fontScaleNormal"), scale: 1 },
+    { label: t(profileDict, locale, "fontScaleLarge"), scale: 1.15 },
+    { label: t(profileDict, locale, "fontScaleXLarge"), scale: 1.3 },
+    { label: t(profileDict, locale, "fontScaleHuge"), scale: 1.5 },
   ] as const;
   // Which screen each row of the chooser sets. Order matters: the device you're
   // most likely reading this on first.
   const FONT_SCALE_DEVICES = [
-    { key: "desktop" as const, label: "במחשב", icon: DesktopIcon },
-    { key: "mobile" as const, label: "בטלפון", icon: MobileIcon },
+    { key: "desktop" as const, label: t(profileDict, locale, "deviceDesktop"), icon: DesktopIcon },
+    { key: "mobile" as const, label: t(profileDict, locale, "deviceMobile"), icon: MobileIcon },
   ];
   const snapToScale = (value: number) =>
     FONT_SCALES.reduce(
@@ -463,21 +474,21 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
     if (next !== "property_management") setSessionEditPropertyId("");
   }
   function formError(requireClockOut: boolean) {
-    if (!sessionEditClockIn) return "יש להזין שעת התחלה.";
-    if (requireClockOut && !sessionEditClockOut) return "יש להזין שעת סיום.";
+    if (!sessionEditClockIn) return t(profileDict, locale, "errStartTimeRequired");
+    if (requireClockOut && !sessionEditClockOut) return t(profileDict, locale, "errEndTimeRequired");
     const clockInIso = toIso(sessionEditClockIn);
     const clockOutIso = sessionEditClockOut ? toIso(sessionEditClockOut) : "";
-    if (!clockInIso) return "שעת ההתחלה לא תקינה.";
-    if (sessionEditClockOut && !clockOutIso) return "שעת הסיום לא תקינה.";
-    if (clockOutIso && new Date(clockOutIso) <= new Date(clockInIso)) return "שעת הסיום חייבת להיות אחרי שעת ההתחלה.";
-    if (sessionEditDomain === "logistics_projects" && !sessionEditProjectId) return "יש לבחור פרויקט.";
-    if (sessionEditDomain === "property_management" && !sessionEditPropertyId) return "יש לבחור נכס.";
+    if (!clockInIso) return t(profileDict, locale, "errStartTimeInvalid");
+    if (sessionEditClockOut && !clockOutIso) return t(profileDict, locale, "errEndTimeInvalid");
+    if (clockOutIso && new Date(clockOutIso) <= new Date(clockInIso)) return t(profileDict, locale, "errEndAfterStart");
+    if (sessionEditDomain === "logistics_projects" && !sessionEditProjectId) return t(profileDict, locale, "errSelectProject");
+    if (sessionEditDomain === "property_management" && !sessionEditPropertyId) return t(profileDict, locale, "errSelectProperty");
     if (
       sessionEditDomain === "logistics_projects" &&
       sessionEditBilledToCustomer &&
       !(Number(sessionEditBillToCustomerAmount) > 0)
     ) {
-      return "יש להזין סכום לחיוב לקוח.";
+      return t(profileDict, locale, "errBillAmountRequired");
     }
     return "";
   }
@@ -495,7 +506,7 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
       try {
         const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ notes: sessionNote.trim() || null, business_domain: sessionDomain }) });
         const json = (await response.json().catch(() => ({}))) as { error?: string };
-        if (!response.ok) return setActionError(toHebrewError(json.error, "הפעולה נכשלה."));
+        if (!response.ok) return setActionError(toHebrewError(json.error, t(profileDict, locale, "actionFailed")));
         setSessionNote("");
         setSessionDomain("general_business");
         router.refresh();
@@ -514,7 +525,7 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
           body: JSON.stringify({ session_id: sessionId }),
         });
         const json = (await response.json().catch(() => ({}))) as { error?: string };
-        if (!response.ok) return setActionError(toHebrewError(json.error, "מחיקת המשמרת נכשלה."));
+        if (!response.ok) return setActionError(toHebrewError(json.error, t(profileDict, locale, "deleteSessionFailed")));
         router.refresh();
       } catch (error: unknown) {
         setActionError(toHebrewError(error, "Unknown error"));
@@ -563,14 +574,14 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
   async function saveSessionEdits(sessionId: string) {
     const error = formError(Boolean(editorSession?.clock_out));
     if (error) return setActionError(error);
-    if (!profile.id) return setActionError("לא נמצא עובד לשמירת המשמרת.");
+    if (!profile.id) return setActionError(t(profileDict, locale, "errNoWorkerForSave"));
     setActionError("");
     startTransition(async () => {
       try {
         const billToCustomer = sessionEditDomain === "logistics_projects" && sessionEditBilledToCustomer;
         const response = await fetch("/api/profile/session/update", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session_id: sessionId, user_id: profile.id, business_domain: sessionEditDomain, project_id: sessionEditProjectId || null, property_id: sessionEditPropertyId || null, notes: sessionEditNotes.trim() || null, clock_in: toIso(sessionEditClockIn), clock_out: sessionEditClockOut ? toIso(sessionEditClockOut) : null, is_billable_to_customer: billToCustomer, bill_to_customer_amount: billToCustomer && sessionEditBillToCustomerAmount.trim() ? Number(sessionEditBillToCustomerAmount) : null, billing_status: billToCustomer ? "billable" : "not_billable" }) });
         const json = (await response.json().catch(() => ({}))) as { error?: string };
-        if (!response.ok) return setActionError(toHebrewError(json.error, "עדכון המשמרת נכשל."));
+        if (!response.ok) return setActionError(toHebrewError(json.error, t(profileDict, locale, "updateSessionFailed")));
         closeEditor();
         router.refresh();
       } catch (error: unknown) {
@@ -587,7 +598,7 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
         const billToCustomer = sessionEditDomain === "logistics_projects" && sessionEditBilledToCustomer;
         const response = await fetch("/api/profile/session/create", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ user_id: profile.id, business_domain: sessionEditDomain, project_id: sessionEditProjectId || null, property_id: sessionEditPropertyId || null, notes: sessionEditNotes.trim() || null, clock_in: toIso(sessionEditClockIn), clock_out: toIso(sessionEditClockOut), is_billable_to_customer: billToCustomer, bill_to_customer_amount: billToCustomer && sessionEditBillToCustomerAmount.trim() ? Number(sessionEditBillToCustomerAmount) : null, billing_status: billToCustomer ? "billable" : "not_billable" }) });
         const json = (await response.json().catch(() => ({}))) as { error?: string };
-        if (!response.ok) return setActionError(toHebrewError(json.error, "יצירת המשמרת נכשלה."));
+        if (!response.ok) return setActionError(toHebrewError(json.error, t(profileDict, locale, "createSessionFailed")));
         closeEditor();
         router.refresh();
       } catch (error: unknown) {
@@ -659,22 +670,22 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
     const endLocal = toLocalValue(session.clock_out);
     const shiftStartMs = new Date(startLocal).getTime();
     const shiftEndMs = new Date(endLocal).getTime();
-    if (!endLocal || !Number.isFinite(shiftEndMs) || shiftEndMs <= shiftStartMs) return "צריך משמרת עם שעת התחלה וסיום כדי לפצל.";
-    if (splitParts.length < 2) return "צריך לפחות שני חלקים.";
-    if (splitParts.length > 5) return "אפשר לפצל לכל היותר לחמישה חלקים.";
+    if (!endLocal || !Number.isFinite(shiftEndMs) || shiftEndMs <= shiftStartMs) return t(profileDict, locale, "splitErrNeedShift");
+    if (splitParts.length < 2) return t(profileDict, locale, "splitErrMin2");
+    if (splitParts.length > 5) return t(profileDict, locale, "splitErrMax5");
     let prevMs = shiftStartMs;
     for (let index = 0; index < splitParts.length; index += 1) {
       const part = splitParts[index];
       const isLast = index === splitParts.length - 1;
       if (!isLast) {
         const boundaryMs = new Date(part.endTime).getTime();
-        if (!part.endTime || !Number.isFinite(boundaryMs)) return `יש להזין שעת יציאה לחלק ${index + 1}.`;
-        if (boundaryMs <= prevMs) return `שעת היציאה של חלק ${index + 1} חייבת להיות אחרי תחילת החלק.`;
-        if (boundaryMs >= shiftEndMs) return `שעת היציאה של חלק ${index + 1} חייבת להיות לפני סוף המשמרת.`;
+        if (!part.endTime || !Number.isFinite(boundaryMs)) return t(profileDict, locale, "splitErrExitTimeRequiredTemplate").replace("{n}", String(index + 1));
+        if (boundaryMs <= prevMs) return t(profileDict, locale, "splitErrExitAfterStartTemplate").replace("{n}", String(index + 1));
+        if (boundaryMs >= shiftEndMs) return t(profileDict, locale, "splitErrExitBeforeEndTemplate").replace("{n}", String(index + 1));
         prevMs = boundaryMs;
-      } else if (shiftEndMs - prevMs <= 0) return "לא נשאר זמן לחלק האחרון.";
-      if (part.domain === "logistics_projects" && !part.projectId) return `יש לבחור פרויקט בחלק ${index + 1}.`;
-      if (part.domain === "property_management" && !part.propertyId) return `יש לבחור נכס בחלק ${index + 1}.`;
+      } else if (shiftEndMs - prevMs <= 0) return t(profileDict, locale, "splitErrNoTimeLast");
+      if (part.domain === "logistics_projects" && !part.projectId) return t(profileDict, locale, "splitErrSelectProjectPartTemplate").replace("{n}", String(index + 1));
+      if (part.domain === "property_management" && !part.propertyId) return t(profileDict, locale, "splitErrSelectPropertyPartTemplate").replace("{n}", String(index + 1));
     }
     return "";
   }
@@ -689,7 +700,7 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
         const minutesByPart = computeSplitMinutes(editorSession);
         const response = await fetch("/api/profile/session/split", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session_id: sessionId, parts: splitParts.map((part, index) => ({ minutes: minutesByPart[index], business_domain: part.domain, project_id: part.projectId || null, property_id: part.propertyId || null })) }) });
         const json = (await response.json().catch(() => ({}))) as { error?: string };
-        if (!response.ok) return setActionError(toHebrewError(json.error, "פיצול המשמרת נכשל."));
+        if (!response.ok) return setActionError(toHebrewError(json.error, t(profileDict, locale, "splitSessionFailed")));
         closeEditor();
         router.refresh();
       } catch (error: unknown) {
@@ -702,7 +713,7 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
       <label className="space-y-1 text-right">
         <span className="block text-xs text-muted-foreground">{label}</span>
         <NativeSelect dense={compact} className={compact ? "w-44" : undefined} value={value} onChange={(event) => onChange(event.target.value)}>
-          <option value="">בחירה</option>
+          <option value="">{t(profileDict, locale, "selectPlaceholder")}</option>
           {options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
         </NativeSelect>
       </label>
@@ -735,16 +746,16 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
     return (
       <div dir="rtl" className="space-y-4 text-right">
         <div className="flex flex-row-reverse flex-wrap items-center justify-between gap-2">
-          <div className="font-medium">{isManual ? "משמרת ידנית" : "עריכת משמרת"}</div>
+          <div className="font-medium">{isManual ? t(profileDict, locale, "manualShiftTitle") : t(profileDict, locale, "editShiftTitle")}</div>
           <div className="flex flex-row-reverse flex-wrap gap-2">
-            <Button type="button" size="sm" disabled={isPending || Boolean(saveError)} onClick={() => isManual ? void createManualSession() : void saveSessionEdits(session.id)}>{isManual ? "שמירת משמרת" : "שמירת שינויים"}</Button>
-            <Button type="button" size="sm" variant="ghost" onClick={closeEditor}>סגור</Button>
+            <Button type="button" size="sm" disabled={isPending || Boolean(saveError)} onClick={() => isManual ? void createManualSession() : void saveSessionEdits(session.id)}>{isManual ? t(profileDict, locale, "saveShiftLabel") : t(profileDict, locale, "saveChangesLabel")}</Button>
+            <Button type="button" size="sm" variant="ghost" onClick={closeEditor}>{t(profileDict, locale, "closeShort")}</Button>
           </div>
         </div>
         {showSessionTimingForProfile ? (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <label className="space-y-1"><span className="block text-xs text-muted-foreground">שעת התחלה</span><DateTimeInput value={sessionEditClockIn} onChange={(event) => setSessionEditClockIn(event.target.value)} /></label>
-            <label className="space-y-1"><span className="block text-xs text-muted-foreground">סה״כ שעות</span><Input inputMode="decimal" className="text-right" value={editedDurationHours} onChange={(event) => {
+            <label className="space-y-1"><span className="block text-xs text-muted-foreground">{t(profileDict, locale, "startTimeLabel")}</span><DateTimeInput value={sessionEditClockIn} onChange={(event) => setSessionEditClockIn(event.target.value)} /></label>
+            <label className="space-y-1"><span className="block text-xs text-muted-foreground">{t(profileDict, locale, "totalHoursFieldLabel")}</span><Input inputMode="decimal" className="text-right" value={editedDurationHours} onChange={(event) => {
               const nextValue = event.target.value;
               if (!nextValue.trim()) {
                 setSessionEditClockOut("");
@@ -756,11 +767,11 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
               const nextClockOut = new Date(new Date(start).getTime() + parsedHours * 60 * 60 * 1000);
               if (Number.isNaN(nextClockOut.getTime())) return;
               setSessionEditClockOut(toLocalDateTimeValue(nextClockOut));
-            }} placeholder="למשל 8" /></label>
-            <label className="space-y-1"><span className="block text-xs text-muted-foreground">שעת סיום</span><DateTimeInput value={sessionEditClockOut} onChange={(event) => setSessionEditClockOut(event.target.value)} /></label>
+            }} placeholder={t(profileDict, locale, "hoursPlaceholderExample")} /></label>
+            <label className="space-y-1"><span className="block text-xs text-muted-foreground">{t(profileDict, locale, "endTimeLabel")}</span><DateTimeInput value={sessionEditClockOut} onChange={(event) => setSessionEditClockOut(event.target.value)} /></label>
           </div>
         ) : (
-          <label className="space-y-1 block"><span className="block text-xs text-muted-foreground">תאריך</span><DateInput value={sessionEditDateOnly} onChange={(event) => {
+          <label className="space-y-1 block"><span className="block text-xs text-muted-foreground">{t(profileDict, locale, "dateLabel")}</span><DateInput value={sessionEditDateOnly} onChange={(event) => {
             const next = event.target.value;
             if (!next) return;
             setSessionEditClockIn(`${next}T09:00`);
@@ -768,13 +779,13 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
           }} /></label>
         )}
         <div className="grid grid-cols-1 gap-3 md:grid-cols-[220px_220px_minmax(0,1fr)]">
-          <label className="space-y-1"><span className="block text-xs text-muted-foreground">תחום</span><DomainSelect domains={WORK_SESSION_BUSINESS_DOMAINS} value={sessionEditDomain} onChange={(value) => setEditorDomain(value as ExpenseBusinessDomain)} className="text-right" /></label>
-          {sessionEditDomain === "logistics_projects" ? linkField("פרויקט", sessionEditProjectId, setSessionEditProjectId, projectOptions) : sessionEditDomain === "property_management" ? linkField("נכס", sessionEditPropertyId, setSessionEditPropertyId, propertyOptions) : <div className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">אין צורך בבחירה נוספת.</div>}
-          <label className="space-y-1"><span className="block text-xs text-muted-foreground">הערות</span><textarea className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-right text-sm outline-none" value={sessionEditNotes} onChange={(event) => setSessionEditNotes(event.target.value)} /></label>
+          <label className="space-y-1"><span className="block text-xs text-muted-foreground">{t(profileDict, locale, "domainLabel")}</span><DomainSelect domains={WORK_SESSION_BUSINESS_DOMAINS} value={sessionEditDomain} onChange={(value) => setEditorDomain(value as ExpenseBusinessDomain)} className="text-right" /></label>
+          {sessionEditDomain === "logistics_projects" ? linkField(t(profileDict, locale, "projectLabel"), sessionEditProjectId, setSessionEditProjectId, projectOptions) : sessionEditDomain === "property_management" ? linkField(t(profileDict, locale, "propertyLabel"), sessionEditPropertyId, setSessionEditPropertyId, propertyOptions) : <div className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">{t(profileDict, locale, "noSelectionNeeded")}</div>}
+          <label className="space-y-1"><span className="block text-xs text-muted-foreground">{t(profileDict, locale, "notesLabel")}</span><textarea className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-right text-sm outline-none" value={sessionEditNotes} onChange={(event) => setSessionEditNotes(event.target.value)} /></label>
         </div>
         {sessionEditDomain === "logistics_projects" ? (
           <div className="space-y-3 rounded-xl border bg-muted/30 p-4">
-            <div className="text-sm font-semibold">חיוב הלקוח</div>
+            <div className="text-sm font-semibold">{t(profileDict, locale, "billCustomerTitle")}</div>
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -784,51 +795,51 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
                   if (!event.target.checked) setSessionEditBillToCustomerAmount("");
                 }}
               />
-              <span>לחיוב לקוח</span>
+              <span>{t(profileDict, locale, "billToCustomerLabel")}</span>
             </label>
             {sessionEditBilledToCustomer ? (
               <label className="space-y-1 block">
-                <span className="block text-xs text-muted-foreground">סכום לחיוב לקוח</span>
+                <span className="block text-xs text-muted-foreground">{t(profileDict, locale, "billAmountLabel")}</span>
                 <CurrencyInput
                   value={sessionEditBillToCustomerAmount}
                   onChange={(event) => setSessionEditBillToCustomerAmount(event.target.value)}
-                  placeholder="למשל 650"
+                  placeholder={t(profileDict, locale, "billAmountPlaceholderExample")}
                 />
               </label>
             ) : null}
           </div>
         ) : null}
-        <div className="flex flex-row-reverse flex-wrap gap-3 text-xs text-muted-foreground">{duration ? <div className="rounded-full border px-3 py-1">משך: {duration}</div> : null}{session?.clock_out ? <div className="rounded-full border px-3 py-1">משך מקורי: {formatMinutes(sessionWorkedMinutes(session))}</div> : null}{suggestedAmount !== null ? <div className="rounded-full border px-3 py-1">{`מגיע לפי המשמרת: ${formatCurrency(suggestedAmount)}`}</div> : null}</div>
+        <div className="flex flex-row-reverse flex-wrap gap-3 text-xs text-muted-foreground">{duration ? <div className="rounded-full border px-3 py-1">{t(profileDict, locale, "durationPrefix")}{duration}</div> : null}{session?.clock_out ? <div className="rounded-full border px-3 py-1">{t(profileDict, locale, "originalDurationPrefix")}{formatMinutes(sessionWorkedMinutes(session))}</div> : null}{suggestedAmount !== null ? <div className="rounded-full border px-3 py-1">{`${t(profileDict, locale, "suggestedAmountPrefix")}${formatCurrency(suggestedAmount)}`}</div> : null}</div>
         {saveError ? <div className="text-sm text-destructive">{saveError}</div> : null}
         {session?.clock_out && !isContractorWorker ? <div className="space-y-3 border-t pt-4">
           <label className="flex cursor-pointer flex-row-reverse items-center justify-end gap-3">
-            <span className="font-medium">פיצול המשמרת לחלקים</span>
+            <span className="font-medium">{t(profileDict, locale, "splitShiftLabel")}</span>
             <input type="checkbox" className="h-4 w-4 accent-primary" checked={splitEnabled} onChange={(event) => toggleSplit(session, event.target.checked)} />
           </label>
           {splitEnabled ? (
             <>
-              <p className="text-xs text-muted-foreground">כל חלק מתחיל בשעת היציאה של החלק הקודם. בחרו שעת יציאה לכל חלק — החלק האחרון נמשך עד סוף המשמרת.</p>
+              <p className="text-xs text-muted-foreground">{t(profileDict, locale, "splitHint")}</p>
               <div className="flex flex-row-reverse">
-                <Button type="button" size="sm" variant="outline" disabled={splitParts.length >= 5} onClick={() => addSplitPart(session)}>הוספת חלק</Button>
+                <Button type="button" size="sm" variant="outline" disabled={splitParts.length >= 5} onClick={() => addSplitPart(session)}>{t(profileDict, locale, "addPartLabel")}</Button>
               </div>
               <div className="space-y-3">{splitPreview(session).map((part, index) => {
                 const isLast = part.isLast;
                 return <div key={part.id} className="rounded-xl border bg-background/70 p-3">
                   <div className="mb-2 flex flex-row-reverse flex-wrap items-center justify-between gap-2">
-                    <div className="text-sm font-medium">חלק {index + 1}</div>
-                    <div className="flex flex-row-reverse flex-wrap items-center gap-2 text-xs text-muted-foreground"><span>{formatMinutes(part.minutes)}</span>{!isLast && splitParts.length > 2 ? <DeleteButton label="הסרת חלק" onClick={() => removeSplitPart(part.id)} /> : null}</div>
+                    <div className="text-sm font-medium">{t(profileDict, locale, "partLabelTemplate").replace("{n}", String(index + 1))}</div>
+                    <div className="flex flex-row-reverse flex-wrap items-center gap-2 text-xs text-muted-foreground"><span>{formatMinutes(part.minutes)}</span>{!isLast && splitParts.length > 2 ? <DeleteButton label={t(profileDict, locale, "removePartLabel")} onClick={() => removeSplitPart(part.id)} /> : null}</div>
                   </div>
                   <div className="flex flex-row-reverse flex-wrap items-end justify-end gap-2">
-                    <label className="space-y-1 text-right"><span className="block text-xs text-muted-foreground">כניסה</span><div className="flex h-9 min-w-24 items-center justify-center rounded-md border border-dashed px-3 text-sm text-muted-foreground">{splitTimeLabel(part.startLocal)}</div></label>
-                    <label className="space-y-1 text-right"><span className="block text-xs text-muted-foreground">יציאה</span>{!isLast ? <Input type="datetime-local" className="h-9 w-44 text-right" min={part.startLocal || undefined} max={toLocalValue(session.clock_out) || undefined} value={splitParts[index]?.endTime ?? ""} onChange={(event) => updateSplitEndTime(part.id, event.target.value)} /> : <div className="flex h-9 min-w-24 items-center justify-center rounded-md border border-dashed px-3 text-sm text-muted-foreground">{`עד סוף המשמרת (${splitTimeLabel(toLocalValue(session.clock_out))})`}</div>}</label>
-                    <label className="space-y-1 text-right"><span className="block text-xs text-muted-foreground">תחום</span><DomainSelect domains={WORK_SESSION_BUSINESS_DOMAINS} value={splitParts[index]?.domain ?? "general_business"} onChange={(value) => updateSplitPart(part.id, { domain: value as ExpenseBusinessDomain })} className="w-40 text-right" /></label>
-                    {splitParts[index]?.domain === "logistics_projects" ? linkField("פרויקט", splitParts[index]?.projectId ?? "", (value) => updateSplitPart(part.id, { projectId: value }), projectOptions, true) : null}
-                    {splitParts[index]?.domain === "property_management" ? linkField("נכס", splitParts[index]?.propertyId ?? "", (value) => updateSplitPart(part.id, { propertyId: value }), propertyOptions, true) : null}
+                    <label className="space-y-1 text-right"><span className="block text-xs text-muted-foreground">{t(profileDict, locale, "entryLabel")}</span><div className="flex h-9 min-w-24 items-center justify-center rounded-md border border-dashed px-3 text-sm text-muted-foreground">{splitTimeLabel(part.startLocal)}</div></label>
+                    <label className="space-y-1 text-right"><span className="block text-xs text-muted-foreground">{t(profileDict, locale, "exitLabel")}</span>{!isLast ? <Input type="datetime-local" className="h-9 w-44 text-right" min={part.startLocal || undefined} max={toLocalValue(session.clock_out) || undefined} value={splitParts[index]?.endTime ?? ""} onChange={(event) => updateSplitEndTime(part.id, event.target.value)} /> : <div className="flex h-9 min-w-24 items-center justify-center rounded-md border border-dashed px-3 text-sm text-muted-foreground">{`${t(profileDict, locale, "untilShiftEndPrefix")}${splitTimeLabel(toLocalValue(session.clock_out))})`}</div>}</label>
+                    <label className="space-y-1 text-right"><span className="block text-xs text-muted-foreground">{t(profileDict, locale, "domainLabel")}</span><DomainSelect domains={WORK_SESSION_BUSINESS_DOMAINS} value={splitParts[index]?.domain ?? "general_business"} onChange={(value) => updateSplitPart(part.id, { domain: value as ExpenseBusinessDomain })} className="w-40 text-right" /></label>
+                    {splitParts[index]?.domain === "logistics_projects" ? linkField(t(profileDict, locale, "projectLabel"), splitParts[index]?.projectId ?? "", (value) => updateSplitPart(part.id, { projectId: value }), projectOptions, true) : null}
+                    {splitParts[index]?.domain === "property_management" ? linkField(t(profileDict, locale, "propertyLabel"), splitParts[index]?.propertyId ?? "", (value) => updateSplitPart(part.id, { propertyId: value }), propertyOptions, true) : null}
                   </div>
                 </div>;
               })}</div>
               {currentSplitError ? <div className="text-sm text-destructive">{currentSplitError}</div> : null}
-              <div className="flex flex-row-reverse"><Button type="button" size="sm" disabled={isPending || Boolean(currentSplitError)} onClick={() => void splitSavedSession(session.id)}>שמירת פיצול</Button></div>
+              <div className="flex flex-row-reverse"><Button type="button" size="sm" disabled={isPending || Boolean(currentSplitError)} onClick={() => void splitSavedSession(session.id)}>{t(profileDict, locale, "saveSplitLabel")}</Button></div>
             </>
           ) : null}
         </div> : null}
@@ -839,15 +850,15 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
   // it notifies you, and your shifts. They're separate errands, so they're
   // separate tabs — and the top-bar user menu deep-links straight to each.
   const tabs: Array<{ key: ProfileTab; label: string; icon: ComponentType<{ className?: string }> }> = [
-    { key: "profile", label: "פרופיל", icon: UserIcon },
-    { key: "notifications", label: "התראות", icon: NotificationIcon },
+    { key: "profile", label: t(profileDict, locale, "tabProfile"), icon: UserIcon },
+    { key: "notifications", label: t(profileDict, locale, "tabNotifications"), icon: NotificationIcon },
     ...(canTrackSessions
-      ? [{ key: "sessions" as ProfileTab, label: "נוכחות", icon: ClockIcon }]
+      ? [{ key: "sessions" as ProfileTab, label: t(profileDict, locale, "tabAttendance"), icon: ClockIcon }]
       : []),
     // Salary stands alone: you can have payslips without punching shifts, and
     // it has nothing to do with preferences.
     ...(showSalarySection
-      ? [{ key: "salary" as ProfileTab, label: "משכורת", icon: WalletIcon }]
+      ? [{ key: "salary" as ProfileTab, label: t(profileDict, locale, "tabSalary"), icon: WalletIcon }]
       : []),
   ];
   // A stale/ineligible ?tab= falls back rather than showing an empty page.
@@ -910,18 +921,18 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
               <div className="min-w-0 text-base font-semibold">{detailsName || "—"}</div>
             </div>
             {!editingDetails ? (
-              <EditButton onClick={() => setEditingDetails(true)} label="עריכת פרטים" />
+              <EditButton onClick={() => setEditingDetails(true)} label={t(profileDict, locale, "editDetailsLabel")} />
             ) : null}
           </div>
 
           {editingDetails ? (
             <div className="space-y-3">
               <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">שם</label>
+                <label className="text-xs font-medium text-muted-foreground">{t(profileDict, locale, "nameLabel")}</label>
                 <Input value={detailsNameDraft} onChange={(e) => setDetailsNameDraft(e.target.value)} />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">טלפון</label>
+                <label className="text-xs font-medium text-muted-foreground">{t(profileDict, locale, "phoneLabel")}</label>
                 <Input
                   dir="ltr"
                   inputMode="tel"
@@ -942,17 +953,17 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
                     setDetailsError("");
                   }}
                 >
-                  ביטול
+                  {t(commonDict, locale, "cancel")}
                 </Button>
                 <Button size="sm" disabled={savingDetails} onClick={() => void saveDetails()}>
-                  {savingDetails ? "שומר…" : "שמירה"}
+                  {savingDetails ? t(profileDict, locale, "savingEllipsis") : t(commonDict, locale, "save")}
                 </Button>
               </div>
             </div>
           ) : (
             <dl className="space-y-2 text-sm">
               <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-2">
-                <dt className="text-muted-foreground">טלפון</dt>
+                <dt className="text-muted-foreground">{t(profileDict, locale, "phoneLabel")}</dt>
                 <dd dir="ltr" className="font-medium">
                   {detailsPhone ? (
                     <a href={`tel:${detailsPhone}`} className="hover:underline">
@@ -964,7 +975,7 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
                 </dd>
               </div>
               <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-2">
-                <dt className="text-muted-foreground">אימייל</dt>
+                <dt className="text-muted-foreground">{t(profileDict, locale, "emailLabel")}</dt>
                 <dd dir="ltr" className="font-medium">
                   {profile.email ?? <span className="text-muted-foreground">—</span>}
                 </dd>
@@ -981,17 +992,17 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
       <Card>
         <CardContent className="py-5">
           <div className="mb-3 flex items-center justify-between gap-2">
-            <div className="text-sm font-semibold">סיסמה</div>
+            <div className="text-sm font-semibold">{t(profileDict, locale, "passwordSectionTitle")}</div>
             {!changingPassword ? (
               <Button variant="secondary" size="sm" onClick={() => setChangingPassword(true)}>
-                שינוי סיסמה
+                {t(profileDict, locale, "changePasswordLabel")}
               </Button>
             ) : null}
           </div>
           {changingPassword ? (
             <div className="space-y-3">
               <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">סיסמה חדשה</label>
+                <label className="text-xs font-medium text-muted-foreground">{t(profileDict, locale, "newPasswordLabel")}</label>
                 <div className="relative">
                   <Input
                     type={showPasswords ? "text" : "password"}
@@ -1004,7 +1015,7 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
                     type="button"
                     onClick={() => setShowPasswords((v) => !v)}
                     className="absolute inset-y-0 end-0 flex items-center px-3 text-muted-foreground hover:text-foreground"
-                    aria-label={showPasswords ? "הסתר סיסמה" : "הצג סיסמה"}
+                    aria-label={showPasswords ? t(profileDict, locale, "hidePasswordLabel") : t(profileDict, locale, "showPasswordLabel")}
                     tabIndex={-1}
                   >
                     {showPasswords ? <HideIcon className="h-4 w-4" /> : <ShowIcon className="h-4 w-4" />}
@@ -1012,7 +1023,7 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
                 </div>
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">אימות סיסמה</label>
+                <label className="text-xs font-medium text-muted-foreground">{t(profileDict, locale, "confirmPasswordLabel")}</label>
                 <Input
                   type={showPasswords ? "text" : "password"}
                   autoComplete="new-password"
@@ -1021,7 +1032,7 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
                 />
               </div>
               {passwordError ? <div className="text-sm text-destructive">{passwordError}</div> : null}
-              {passwordDone ? <div className="text-sm text-success">הסיסמה עודכנה.</div> : null}
+              {passwordDone ? <div className="text-sm text-success">{t(profileDict, locale, "passwordUpdatedNote")}</div> : null}
               <div className="flex justify-end gap-2">
                 <Button
                   variant="secondary"
@@ -1034,16 +1045,16 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
                     setPasswordError("");
                   }}
                 >
-                  ביטול
+                  {t(commonDict, locale, "cancel")}
                 </Button>
                 <Button size="sm" disabled={savingPassword} onClick={() => void savePassword()}>
-                  {savingPassword ? "שומר…" : "שמירה"}
+                  {savingPassword ? t(profileDict, locale, "savingEllipsis") : t(commonDict, locale, "save")}
                 </Button>
               </div>
             </div>
           ) : (
             <p className="text-xs text-muted-foreground">
-              {passwordDone ? "הסיסמה עודכנה." : "מומלץ להחליף סיסמה מדי פעם."}
+              {passwordDone ? t(profileDict, locale, "passwordUpdatedNote") : t(profileDict, locale, "passwordHint")}
             </p>
           )}
         </CardContent>
@@ -1057,9 +1068,9 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
       {dashboardCustomizer ? (
         <Card>
           <CardContent className="py-5">
-            <div className="mb-1 text-sm font-semibold">התאמת לוח</div>
+            <div className="mb-1 text-sm font-semibold">{t(profileDict, locale, "dashboardCustomizerTitle")}</div>
             <div className="mb-3 text-xs text-muted-foreground">
-              בחרו אילו כרטיסים יופיעו בדשבורד וגררו לשינוי הסדר. הבחירה נשמרת בחשבון שלך.
+              {t(profileDict, locale, "dashboardCustomizerHint")}
             </div>
             {/* The list itself, open on the page — the same shape as every other
                 section here, rather than a button that slides a panel in. */}
@@ -1070,10 +1081,9 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
 
       <Card>
         <CardContent className="py-5">
-          <div className="mb-1 text-sm font-semibold">גודל טקסט</div>
+          <div className="mb-1 text-sm font-semibold">{t(profileDict, locale, "fontSizeTitle")}</div>
           <div className="mb-4 text-xs text-muted-foreground">
-            גודל נפרד למחשב ולטלפון — כל מסך מקבל את מה שנוח לקרוא בו. הבחירה נשמרת
-            בחשבון שלך ומגיעה איתך לכל מכשיר.
+            {t(profileDict, locale, "fontSizeHint")}
           </div>
           {/* Two rows, one per device class. Each applies to the screen it names,
               so changing the phone size from a desktop shows nothing here — the
@@ -1101,7 +1111,7 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
                             : "border-border bg-background text-foreground hover:border-primary/40 hover:bg-primary/5"
                         }`}
                       >
-                        <span style={{ fontSize: `${17 * option.scale}px`, lineHeight: 1 }}>א</span>
+                        <span style={{ fontSize: `${17 * option.scale}px`, lineHeight: 1 }}>{locale === "ar" ? "ا" : "א"}</span>
                         <span className="text-xs font-medium">{option.label}</span>
                       </button>
                     );
@@ -1116,11 +1126,11 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
       <Card>
         <CardContent className="py-5">
           <div className="mb-1 flex items-center gap-2 text-sm font-semibold">
-            הצבע שלי
+            {t(profileDict, locale, "avatarColorTitle")}
             <InitialsAvatar name={profileName} color={avatarColor} size="md" />
           </div>
           <div className="mb-3 text-xs text-muted-foreground">
-            הצבע של עיגול ראשי התיבות שלך בכל המערכת. הבחירה נשמרת בחשבון שלך.
+            {t(profileDict, locale, "avatarColorHint")}
           </div>
           <div className="flex flex-wrap gap-2">
             {AVATAR_COLOR_PRESETS.map((color) => {
@@ -1130,7 +1140,7 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
                   key={color}
                   type="button"
                   onClick={() => selectAvatarColor(color)}
-                  aria-label={`בחירת צבע ${color}`}
+                  aria-label={`${t(profileDict, locale, "selectColorAriaPrefix")}${color}`}
                   aria-pressed={isActive}
                   className={`h-8 w-8 rounded-full transition-transform ${
                     isActive ? "ring-2 ring-foreground ring-offset-2 ring-offset-background" : "hover:scale-110"
@@ -1146,7 +1156,7 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
                 className="h-5 w-5 rounded-full border"
                 style={{ backgroundColor: isHexColor(avatarColor) ? (avatarColor as string) : "transparent" }}
               />
-              צבע מותאם אישית
+              {t(profileDict, locale, "customColorLabel")}
               <input
                 type="color"
                 className="sr-only"
@@ -1159,7 +1169,7 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
               onClick={() => selectAvatarColor(null)}
               className="rounded-full border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/50"
             >
-              אוטומטי
+              {t(profileDict, locale, "autoColorLabel")}
             </button>
           </div>
         </CardContent>
@@ -1173,8 +1183,8 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
           <Card>
             <CardContent className="py-5">
               <div className="mb-3 text-right">
-                <div className="text-base font-semibold">התראות לטלפון</div>
-                <div className="text-sm text-muted-foreground">הפעל התראות כדי לקבל עדכונים ישירות לטלפון שלך.</div>
+                <div className="text-base font-semibold">{t(profileDict, locale, "pushTitle")}</div>
+                <div className="text-sm text-muted-foreground">{t(profileDict, locale, "pushHint")}</div>
               </div>
               <PushSubscribeButton />
             </CardContent>
@@ -1183,10 +1193,10 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
           <Card>
             <CardContent className="py-5">
               <div className="mb-3 text-right">
-                <div className="text-base font-semibold">העדפות התראות</div>
-                <div className="text-sm text-muted-foreground">כמה להתריע, מתי, ומה בכלל להציג בתיבה.</div>
+                <div className="text-base font-semibold">{t(profileDict, locale, "prefsTitle")}</div>
+                <div className="text-sm text-muted-foreground">{t(profileDict, locale, "prefsHint")}</div>
               </div>
-              <NotificationPrefs viewerRole={profile.role} />
+              <NotificationPrefs viewerRole={profile.role} locale={locale} />
             </CardContent>
           </Card>
         </>
@@ -1201,16 +1211,16 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
               labelled "this month" showing the last month that had any. */}
           {isWorker ? (
             <>
-              <MyShiftCard openShift={openShiftReport} pendingCount={pendingShiftReports.length} />
+              <MyShiftCard openShift={openShiftReport} pendingCount={pendingShiftReports.length} locale={locale} />
               {/* Right under the clock: "I marked my hours, and I also got a
                   ₪300 bonus that day" is one thought, not two screens. */}
-              <MyBonusCard bonuses={myBonuses} />
+              <MyBonusCard bonuses={myBonuses} locale={locale} />
               {pendingShiftReports.length > 0 ? (
                 <Card>
                   <CardContent className="space-y-2 py-5 text-right">
-                    <div className="text-lg font-semibold">ממתינות לאישור</div>
+                    <div className="text-lg font-semibold">{t(profileDict, locale, "pendingApprovalTitle")}</div>
                     <p className="text-sm text-muted-foreground">
-                      משמרת נכנסת לשעות ולשכר רק אחרי שהלר מאשר אותה.
+                      {t(profileDict, locale, "pendingApprovalHint")}
                     </p>
                     {pendingShiftReports.map((report) => (
                       <div
@@ -1222,7 +1232,7 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
                           {report.notes ? <div className="text-xs text-muted-foreground">{report.notes}</div> : null}
                         </div>
                         <div className="text-sm font-semibold">
-                          {report.worked_minutes ? `${formatMinutes(report.worked_minutes)} שעות` : ""}
+                          {report.worked_minutes ? `${formatMinutes(report.worked_minutes)} ${t(profileDict, locale, "hoursSuffix")}` : ""}
                         </div>
                       </div>
                     ))}
@@ -1234,13 +1244,13 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
             <Card>
               <CardContent className="space-y-4 py-5">
                 <div className="flex flex-wrap justify-center gap-3">
-                  <Button size="lg" className="min-w-40" disabled={Boolean(openSession) || isPending} onClick={() => void postSessionAction("/api/profile/session/start")}>פתיחת משמרת</Button>
-                  <Button size="lg" className="min-w-40" disabled={!openSession || isPending} onClick={() => void postSessionAction("/api/profile/session/end")}>סיום משמרת</Button>
+                  <Button size="lg" className="min-w-40" disabled={Boolean(openSession) || isPending} onClick={() => void postSessionAction("/api/profile/session/start")}>{t(profileDict, locale, "startShiftLabel")}</Button>
+                  <Button size="lg" className="min-w-40" disabled={!openSession || isPending} onClick={() => void postSessionAction("/api/profile/session/end")}>{t(profileDict, locale, "endShiftLabel")}</Button>
                 </div>
                 {openSession ? <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_220px_220px]">
-                  <Input value={sessionNote} onChange={(event) => setSessionNote(event.target.value)} placeholder="הערות למשמרת" />
+                  <Input value={sessionNote} onChange={(event) => setSessionNote(event.target.value)} placeholder={t(profileDict, locale, "shiftNotesPlaceholder")} />
                   <DomainSelect domains={WORK_SESSION_BUSINESS_DOMAINS} value={sessionDomain} onChange={(value) => setSessionDomain(value as ExpenseBusinessDomain)} />
-                  <div className="rounded-xl border bg-muted/30 px-3 py-2 text-sm">{`זמן פתיחה: ${formatDateTime(openSession.clock_in)}`}</div>
+                  <div className="rounded-xl border bg-muted/30 px-3 py-2 text-sm">{`${t(profileDict, locale, "openTimePrefix")}${formatDateTime(openSession.clock_in)}`}</div>
                 </div> : null}
                 {actionError ? <div className="text-sm text-destructive">{actionError}</div> : null}
               </CardContent>
@@ -1260,7 +1270,7 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
                 {/* Adding / editing / deleting a session outright is the boss's
                     call for a worker — his shifts arrive through the queue. */}
                 {isWorker ? null : (
-                  <Button type="button" variant="outline" onClick={openManualEditor}>הוספת משמרת ידנית</Button>
+                  <Button type="button" variant="outline" onClick={openManualEditor}>{t(profileDict, locale, "addManualShiftLabel")}</Button>
                 )}
                 <NativeSelect value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)}>
                   {monthOptions.map((summary) => <option key={summary.key} value={summary.key}>{summary.label}</option>)}
@@ -1269,10 +1279,10 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
               {/* Three numbers, one row — even on a phone. Stacked, they were
                   three full-width cards for three short figures. */}
               {selectedMonthSummary ? <div className="grid grid-cols-3 gap-2 md:gap-3">
-                <StatCard label='סה"כ שעות' value={formatMinutes(selectedMonthSummary.totalMinutes)} />
-                <StatCard label="כמות משמרות" value={`${selectedMonthSummary.sessionCount}`} />
-                <StatCard label="משמרות פתוחות" value={`${selectedMonthSummary.openSessionCount}`} />
-              </div> : <div className="text-sm text-muted-foreground">עדיין אין נתוני שעות.</div>}
+                <StatCard label={t(profileDict, locale, "totalHoursStatLabel")} value={formatMinutes(selectedMonthSummary.totalMinutes)} />
+                <StatCard label={t(profileDict, locale, "sessionCountLabel")} value={`${selectedMonthSummary.sessionCount}`} />
+                <StatCard label={t(profileDict, locale, "openSessionCountLabel")} value={`${selectedMonthSummary.openSessionCount}`} />
+              </div> : <div className="text-sm text-muted-foreground">{t(profileDict, locale, "noHoursDataYet")}</div>}
               {/* Swipeable cards on a phone, a real table from md up. A worker
                   edits through the correction flow (withdraws the shift from
                   payroll, back to the queue); staff keep the direct editor,
@@ -1285,6 +1295,7 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
                 }))}
                 showTiming={showSessionTimingForProfile}
                 canEdit={isWorker}
+                locale={locale}
                 staffActions={
                   isWorker
                     ? undefined
@@ -1304,10 +1315,10 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
         <section className="space-y-4">
           {/* A global (monthly) worker has no נוכחות tab at all — no shifts to
               punch — so his bonus card lives here instead of next to a clock. */}
-          {isWorker && !canTrackSessions ? <MyBonusCard bonuses={myBonuses} /> : null}
+          {isWorker && !canTrackSessions ? <MyBonusCard bonuses={myBonuses} locale={locale} /> : null}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <SummaryCard title="שכר נוכחי" value={currentAgreement ? currentAgreement.salary_type === "hourly" ? `${formatCurrency(currentAgreement.hourly_rate)} לשעה` : formatCurrency(currentAgreement.monthly_salary) : "-"} hint={currentAgreement ? `סוג שכר: ${getSalaryTypeLabel(currentAgreement.salary_type)}` : "אין משכורת פעילה"} />
-            <SummaryCard title="תלוש אחרון" value={latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"} hint={latestPeriod ? latestPeriod.period_month : "אין תלושים זמינים"} />
+            <SummaryCard title={t(profileDict, locale, "currentSalaryTitle")} value={currentAgreement ? currentAgreement.salary_type === "hourly" ? `${formatCurrency(currentAgreement.hourly_rate)} ${t(profileDict, locale, "hourlySuffix")}` : formatCurrency(currentAgreement.monthly_salary) : "-"} hint={currentAgreement ? `${t(profileDict, locale, "salaryTypePrefix")}${getSalaryTypeLabel(currentAgreement.salary_type)}` : t(profileDict, locale, "noActiveSalary")} />
+            <SummaryCard title={t(profileDict, locale, "lastPayslipTitle")} value={latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"} hint={latestPeriod ? latestPeriod.period_month : t(profileDict, locale, "noPayslipsAvailable")} />
           </div>
 
           {/* The bottom line, across every period: what the work came to, what
@@ -1315,17 +1326,17 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
           {payTotals ? (
             <div className="grid grid-cols-3 gap-2">
               <div className="rounded-lg border border-border/60 p-3">
-                <div className="text-xs text-muted-foreground">נצבר</div>
+                <div className="text-xs text-muted-foreground">{t(profileDict, locale, "earnedLabel")}</div>
                 <div className="text-base font-semibold">{formatCurrency(payTotals.earned)}</div>
               </div>
               <div className="rounded-lg border border-border/60 p-3">
-                <div className="text-xs text-muted-foreground">שולם</div>
+                <div className="text-xs text-muted-foreground">{t(profileDict, locale, "paidLabel")}</div>
                 <div className="text-base font-semibold text-success-soft-foreground">
                   {formatCurrency(payTotals.paid)}
                 </div>
               </div>
               <div className="rounded-lg border border-border/60 p-3">
-                <div className="text-xs text-muted-foreground">נותר לתשלום</div>
+                <div className="text-xs text-muted-foreground">{t(profileDict, locale, "owedLabel")}</div>
                 <div className="text-base font-semibold text-warning-soft-foreground">
                   {formatCurrency(payTotals.owed)}
                 </div>
@@ -1336,9 +1347,9 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
           <div className="space-y-4">
             <Card>
               <CardContent className="space-y-3 px-3 py-5 md:px-6">
-                <div className="text-lg font-semibold">היסטוריית שכר</div>
+                <div className="text-lg font-semibold">{t(profileDict, locale, "salaryHistoryTitle")}</div>
                 {agreements.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">אין היסטוריית שכר זמינה.</div>
+                  <div className="text-sm text-muted-foreground">{t(profileDict, locale, "noSalaryHistory")}</div>
                 ) : (
                   <>
                   {/* Phone: label-above-value rows. Five columns squeezed into a
@@ -1350,7 +1361,7 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
                         <div className="flex flex-wrap items-baseline justify-between gap-2">
                           <span className="font-semibold">
                             {agreement.salary_type === "hourly"
-                              ? `${formatCurrency(agreement.hourly_rate)} לשעה`
+                              ? `${formatCurrency(agreement.hourly_rate)} ${t(profileDict, locale, "hourlySuffix")}`
                               : formatCurrency(agreement.monthly_salary)}
                           </span>
                           <span className="text-xs text-muted-foreground">
@@ -1362,8 +1373,8 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
                         </div>
                         {showSessionTimingForProfile ? (
                           <div className="mt-1 text-xs text-muted-foreground">
-                            שעות תקן: {toNumber(agreement.standard_daily_hours)}
-                            {agreement.overtime_rate ? ` · נוספות: ${formatCurrency(agreement.overtime_rate)}` : ""}
+                            {t(profileDict, locale, "standardHoursPrefix")}{toNumber(agreement.standard_daily_hours)}
+                            {agreement.overtime_rate ? `${t(profileDict, locale, "overtimePrefix")}${formatCurrency(agreement.overtime_rate)}` : ""}
                           </div>
                         ) : null}
                         {agreement.notes ? (
@@ -1376,13 +1387,13 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
                     <table className="w-full text-right text-sm">
                       <thead className="border-b bg-muted text-muted-foreground">
                         <tr>
-                          <th className="px-3 py-2 font-medium">סוג</th>
-                          <th className="px-3 py-2 font-medium">בתוקף</th>
-                          <th className="px-3 py-2 font-medium">שכר</th>
+                          <th className="px-3 py-2 font-medium">{t(profileDict, locale, "typeHeader")}</th>
+                          <th className="px-3 py-2 font-medium">{t(profileDict, locale, "validHeader")}</th>
+                          <th className="px-3 py-2 font-medium">{t(profileDict, locale, "salaryHeader")}</th>
                           {showSessionTimingForProfile ? (
                             <>
-                              <th className="px-3 py-2 font-medium">שעות תקן</th>
-                              <th className="px-3 py-2 font-medium">נוספות</th>
+                              <th className="px-3 py-2 font-medium">{t(profileDict, locale, "standardHoursHeader")}</th>
+                              <th className="px-3 py-2 font-medium">{t(profileDict, locale, "overtimeHeader")}</th>
                             </>
                           ) : null}
                         </tr>
@@ -1398,7 +1409,7 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
                               {formatDate(agreement.valid_from)} - {formatDate(agreement.valid_to)}
                             </td>
                             <td className="whitespace-nowrap px-3 py-2 font-semibold">
-                              {agreement.salary_type === "hourly" ? `${formatCurrency(agreement.hourly_rate)} לשעה` : formatCurrency(agreement.monthly_salary)}
+                              {agreement.salary_type === "hourly" ? `${formatCurrency(agreement.hourly_rate)} ${t(profileDict, locale, "hourlySuffix")}` : formatCurrency(agreement.monthly_salary)}
                             </td>
                             {showSessionTimingForProfile ? (
                               <>
@@ -1417,9 +1428,9 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
             </Card>
             <Card>
               <CardContent className="space-y-3 px-3 py-5 md:px-6">
-                <div className="text-lg font-semibold">תלושי שכר</div>
+                <div className="text-lg font-semibold">{t(profileDict, locale, "payslipsTitle")}</div>
                 {payslips.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">אין תלושי שכר זמינים כרגע.</div>
+                  <div className="text-sm text-muted-foreground">{t(profileDict, locale, "noPayslipsNow")}</div>
                 ) : (
                   <>
                   {/* Phone: the amount is what you came for, so it leads; the
@@ -1432,23 +1443,23 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
                       return (
                         <div key={payslip.id} className="rounded-lg border p-3 text-sm">
                           <div className="flex flex-wrap items-baseline justify-between gap-2">
-                            <span className="font-medium">{period?.period_month ?? "תקופת שכר"}</span>
+                            <span className="font-medium">{period?.period_month ?? t(profileDict, locale, "payPeriodFallback")}</span>
                             <span className="font-semibold">{formatCurrency(payslip.gross_salary)}</span>
                           </div>
                           <div className="mt-1 text-xs text-muted-foreground">
                             {getSalaryTypeLabel(payslip.calculated_salary_type)}
-                            {showSessionTimingForProfile ? ` · ${formatMinutes(payslip.total_work_minutes)} שעות` : ""}
+                            {showSessionTimingForProfile ? ` · ${formatMinutes(payslip.total_work_minutes)} ${t(profileDict, locale, "hoursSuffix")}` : ""}
                           </div>
                           <div className="mt-1 text-xs text-muted-foreground">
-                            בסיס {formatCurrency(payslip.calculated_base_salary)}
-                            {bonusTotal > 0 ? ` · בונוסים ${formatCurrency(bonusTotal)}` : ""}
+                            {t(profileDict, locale, "baseLabelPrefix")}{formatCurrency(payslip.calculated_base_salary)}
+                            {bonusTotal > 0 ? `${t(profileDict, locale, "bonusesPrefix")}${formatCurrency(bonusTotal)}` : ""}
                             {toNumber(payslip.manual_adjustments) !== 0
-                              ? ` · התאמות ${formatCurrency(payslip.manual_adjustments)}`
+                              ? `${t(profileDict, locale, "adjustmentsPrefix")}${formatCurrency(payslip.manual_adjustments)}`
                               : ""}
                           </div>
                           {period ? (
                             <div className="mt-1 text-xs text-muted-foreground">
-                              {formatDate(period.start_date)} - {formatDate(period.end_date)} · צפי תשלום:{" "}
+                              {formatDate(period.start_date)} - {formatDate(period.end_date)} · {t(profileDict, locale, "dueDatePrefix")}
                               {getNextMonthDueText(period.end_date)}
                             </div>
                           ) : null}
@@ -1463,13 +1474,13 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
                     <table className="w-full text-right text-sm">
                       <thead className="border-b bg-muted text-muted-foreground">
                         <tr>
-                          <th className="px-3 py-2 font-medium">תקופה</th>
-                          <th className="px-3 py-2 font-medium">סוג</th>
-                          {showSessionTimingForProfile ? <th className="px-3 py-2 font-medium">שעות</th> : null}
-                          <th className="px-3 py-2 font-medium">שכר בסיס</th>
-                          <th className="px-3 py-2 font-medium">בונוסים</th>
-                          <th className="px-3 py-2 font-medium">התאמות</th>
-                          <th className="px-3 py-2 font-medium">סכום</th>
+                          <th className="px-3 py-2 font-medium">{t(profileDict, locale, "periodHeader")}</th>
+                          <th className="px-3 py-2 font-medium">{t(profileDict, locale, "typeHeader")}</th>
+                          {showSessionTimingForProfile ? <th className="px-3 py-2 font-medium">{t(profileDict, locale, "hoursHeader")}</th> : null}
+                          <th className="px-3 py-2 font-medium">{t(profileDict, locale, "baseSalaryHeader")}</th>
+                          <th className="px-3 py-2 font-medium">{t(profileDict, locale, "bonusesHeader")}</th>
+                          <th className="px-3 py-2 font-medium">{t(profileDict, locale, "adjustmentsHeader")}</th>
+                          <th className="px-3 py-2 font-medium">{t(profileDict, locale, "amountHeader")}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1479,10 +1490,10 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
                           return (
                             <tr key={payslip.id} className={`border-b align-top ${index % 2 === 0 ? "bg-muted/20" : "bg-background"}`}>
                               <td className="px-3 py-2">
-                                <div className="font-medium">{period?.period_month ?? "תקופת שכר"}</div>
+                                <div className="font-medium">{period?.period_month ?? t(profileDict, locale, "payPeriodFallback")}</div>
                                 {period ? (
                                   <div className="mt-1 text-xs text-muted-foreground">
-                                    {formatDate(period.start_date)} - {formatDate(period.end_date)} • צפי תשלום: {getNextMonthDueText(period.end_date)}
+                                    {formatDate(period.start_date)} - {formatDate(period.end_date)} • {t(profileDict, locale, "dueDatePrefix")}{getNextMonthDueText(period.end_date)}
                                   </div>
                                 ) : null}
                                 {payslip.notes ? <div className="mt-1 text-xs text-muted-foreground">{payslip.notes}</div> : null}
@@ -1516,8 +1527,8 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
         onOpenChange={(open) => {
           if (!open) closeEditor();
         }}
-        title="הוספת משמרת ידנית"
-        description="דיווח משמרת שלא נרשמה בשעון."
+        title={t(profileDict, locale, "addManualShiftLabel")}
+        description={t(profileDict, locale, "manualShiftDialogDescription")}
         size="details4xl"
       >
         {renderEditor(null)}
@@ -1528,8 +1539,8 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
         onOpenChange={(open) => {
           if (!open) closeEditor();
         }}
-        title="עריכת משמרת"
-        description="עדכון שעות, פרויקט והערות למשמרת שדיווחת."
+        title={t(profileDict, locale, "editShiftTitle")}
+        description={t(profileDict, locale, "editShiftDialogDescription")}
         size="details4xl"
       >
         {editorSession ? renderEditor(editorSession) : null}
@@ -1541,9 +1552,9 @@ export default function ProfileClient({ profile, initialFontScale, initialFontSc
           if (!next) setPendingDeleteSessionId(null);
         }}
         destructive
-        title="מחיקת משמרת"
-        description="המשמרת תימחק מהדיווח שלך."
-        confirmLabel="מחיקה"
+        title={t(profileDict, locale, "deleteShiftTitle")}
+        description={t(profileDict, locale, "deleteShiftDescription")}
+        confirmLabel={t(commonDict, locale, "delete")}
         loading={isPending}
         onConfirm={() => {
           if (pendingDeleteSessionId) void deleteSession(pendingDeleteSessionId);

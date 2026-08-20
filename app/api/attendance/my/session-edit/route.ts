@@ -4,6 +4,7 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { logAuditEvent } from "@/lib/audit";
 import { PHONE_ATTENDANCE_TABLE } from "@/lib/attendance/phone-reports";
 import { parseSelfReportedTime } from "@/lib/attendance/my-shift";
+import { translateToHebrew } from "@/lib/i18n/translateToHebrew";
 
 /**
  * Correct an already-APPROVED shift.
@@ -59,12 +60,16 @@ export async function POST(req: Request) {
     }
 
     const notes = typeof body.notes === "string" ? body.notes.trim().slice(0, 500) : "";
+    // Office/admin never see Arabic, so a locale=ar worker's own note is
+    // auto-translated to Hebrew here. Skipped entirely for Hebrew writers.
+    const notesHe = profile.locale === "ar" && notes ? await translateToHebrew(notes) : null;
 
     const { data, error } = await supabase.rpc("request_attendance_session_edit", {
       p_session_id: sessionId,
       p_clock_in: start.date.toISOString(),
       p_clock_out: end.toISOString(),
       p_notes: notes || null,
+      p_notes_he: notesHe,
     });
 
     if (error) {

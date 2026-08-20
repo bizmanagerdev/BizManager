@@ -28,6 +28,8 @@ export type QuickCreateAction = (typeof QUICK_CREATE_ACTIONS)[number];
 export type QuickCreateData = QuickActionsData & {
   currentUserId: string | null;
   role: UserRole | null;
+  /** Signed-in user's UI language; only ever "ar" for the worker role. */
+  locale: "he" | "ar";
 };
 
 export const EMPTY_QUICK_CREATE_DATA: QuickCreateData = {
@@ -42,4 +44,5 @@ export const EMPTY_QUICK_CREATE_DATA: QuickCreateData = {
   scheduleEntries: [],
   currentUserId: null,
   role: null,
+  locale: "he",
 };

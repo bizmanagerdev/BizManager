@@ -3,6 +3,8 @@ import { requireProfile } from "@/lib/auth/requireProfile";
 import { getScheduleEntries, type CalendarEntry } from "@/lib/projectSchedule";
 import { Card, CardContent } from "@/components/ui/card";
 import CalendarSection from "@/app/(app)/calendar/CalendarSection";
+import { calendarDict } from "@/lib/i18n/dictionaries/calendar";
+import { t } from "@/lib/i18n/t";
 
 export const revalidate = 60;
 
@@ -17,7 +19,10 @@ export default async function CalendarPage() {
   const safeSchedule = (p: Promise<CalendarEntry[]>) =>
     p.then(
       (entries) => ({ entries, error: null as string | null }),
-      (error: { message?: string }) => ({ entries: [] as CalendarEntry[], error: error?.message ?? "שגיאה בטעינת לוח הזמנים" })
+      (error: { message?: string }) => ({
+        entries: [] as CalendarEntry[],
+        error: error?.message ?? t(calendarDict, profile.locale, "scheduleLoadError"),
+      })
     );
 
   const [mineSchedule, allSchedule] = await Promise.all([
@@ -42,6 +47,7 @@ export default async function CalendarPage() {
           entries={mineSchedule.entries}
           allEntries={canSeeAll ? allSchedule.entries : null}
           todayIso={todayIso}
+          locale={profile.locale}
         />
       </div>
     </AppShell>

@@ -352,8 +352,10 @@ function OpenRow({ report }: { report: OpenPhoneReport }) {
         avatarColor={report.worker_avatar_color}
         clockIn={report.clock_in}
         duration={`כבר ${formatMinutes(elapsed)} שעות`}
-        meta={attendanceDetail(report.source, report.notes)}
-        metaTitle={attendanceMeta(report.source, report.notes, report.reported_by_name)}
+        // This queue is admin/office-only, who never read Arabic — prefer the
+        // Hebrew translation when one exists.
+        meta={attendanceDetail(report.source, report.notes_he ?? report.notes)}
+        metaTitle={attendanceMeta(report.source, report.notes_he ?? report.notes, report.reported_by_name)}
         chips={<Badge variant="success">נוכח</Badge>}
       />
       {!closing && !editing ? (

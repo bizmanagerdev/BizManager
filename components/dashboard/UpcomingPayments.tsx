@@ -11,6 +11,10 @@ import { formatShortDate } from "@/lib/date";
 import { formatCurrency } from "@/lib/payroll";
 import { cn } from "@/lib/utils";
 import type { PaymentCalendarItem } from "@/lib/payables";
+import { t } from "@/lib/i18n/t";
+import { dashboardDict } from "@/lib/i18n/dictionaries/dashboard";
+import { commonDict } from "@/lib/i18n/dictionaries/common";
+import type { Locale } from "@/lib/i18n/types";
 
 const CALENDAR_HREF = "/financial/payments-calendar";
 
@@ -23,10 +27,12 @@ function sameText(a: string | null | undefined, b: string | null | undefined) {
 }
 
 /** The calendar's own words for a stage — the card must not invent its own. */
-const STAGE_LABEL: Record<string, string> = {
-  pending: "ממתין",
-  scheduled: "צפוי",
-};
+function stageLabel(locale: Locale): Record<string, string> {
+  return {
+    pending: t(dashboardDict, locale, "stagePending"),
+    scheduled: t(dashboardDict, locale, "stageScheduled"),
+  };
+}
 
 /** …and its colours: status is never blue here, צפוי is slate (design rule). */
 const STAGE_DOT: Record<string, string> = {
@@ -52,8 +58,10 @@ export type PaymentsSummary = {
 };
 
 /** A variable-amount forecast has no number yet — the calendar says so in words. */
-function amountLabel(item: PaymentCalendarItem) {
-  return item.variableAmount && item.amount === 0 ? "משתנה" : formatCurrency(item.amount);
+function amountLabel(item: PaymentCalendarItem, locale: Locale) {
+  return item.variableAmount && item.amount === 0
+    ? t(dashboardDict, locale, "variableAmountLabel")
+    : formatCurrency(item.amount);
 }
 
 /**
@@ -63,11 +71,12 @@ function amountLabel(item: PaymentCalendarItem) {
  * a two-line name makes its row taller than its neighbours and a column of rows
  * that don't line up reads as broken (the full text is in the title attribute).
  */
-function PaymentRow({ item, late }: { item: PaymentCalendarItem; late?: boolean }) {
+function PaymentRow({ item, late, locale }: { item: PaymentCalendarItem; late?: boolean; locale: Locale }) {
   // Where it came from, but only when that ISN'T what the title already says. A
   // recurring expense names the row from its description and labels its source
   // with the same words, so the row read "החזר הלוואה … · החזר הלוואה …".
   const source = sameText(item.sourceLabel, item.label) ? "" : item.sourceLabel;
+  const STAGE_LABEL = stageLabel(locale);
   return (
     <li className="relative px-4 py-3 transition-colors hover:bg-secondary/10">
       {item.sourceHref ? (
@@ -91,7 +100,7 @@ function PaymentRow({ item, late }: { item: PaymentCalendarItem; late?: boolean 
               )}
             />
             <span className="truncate">
-              {late ? "באיחור" : STAGE_LABEL[item.stage] ?? ""}
+              {late ? t(dashboardDict, locale, "lateLabel") : STAGE_LABEL[item.stage] ?? ""}
               {" · "}
               {formatShortDate(item.date)}
               {source ? ` · ${source}` : ""}
@@ -104,7 +113,7 @@ function PaymentRow({ item, late }: { item: PaymentCalendarItem; late?: boolean 
             late ? "text-destructive" : "text-foreground"
           )}
         >
-          {amountLabel(item)}
+          {amountLabel(item, locale)}
         </div>
       </div>
     </li>
@@ -126,7 +135,7 @@ function PaymentRow({ item, late }: { item: PaymentCalendarItem; late?: boolean 
  * window this card picked: a bill set to warn five work-days ahead appears five
  * work-days ahead, one set to warn the day before appears the day before.
  */
-export default function UpcomingPayments({ summary }: { summary: PaymentsSummary }) {
+export default function UpcomingPayments({ summary, locale }: { summary: PaymentsSummary; locale: Locale }) {
   const { today, todayTotal, upcoming, upcomingTotal, late, lateCount, lateTotal } = summary;
   // Late is the louder of the two, so it opens on the list that has something —
   // but never jumps you to an empty tab.
@@ -134,7 +143,12 @@ export default function UpcomingPayments({ summary }: { summary: PaymentsSummary
 
   if (today.length === 0 && upcoming.length === 0 && lateCount === 0) {
     return (
-      <QuietCard icon={PaymentIcon} title="תשלומים קרובים" note="אין תשלומים בקרוב" href={CALENDAR_HREF} />
+      <QuietCard
+        icon={PaymentIcon}
+        title={t(dashboardDict, locale, "paymentsCardTitle")}
+        note={t(dashboardDict, locale, "paymentsEmptyNote")}
+        href={CALENDAR_HREF}
+      />
     );
   }
 
@@ -146,12 +160,12 @@ export default function UpcomingPayments({ summary }: { summary: PaymentsSummary
     <Card className="relative flex h-full flex-col">
       <Link
         href={CALENDAR_HREF}
-        aria-label="ללוח התשלומים"
+        aria-label={t(dashboardDict, locale, "paymentsAria")}
         className="absolute inset-0 rounded-[1.125rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
 
       <div className="pointer-events-none relative flex min-h-0 flex-1 flex-col">
-        <DashboardCardHeader icon={PaymentIcon} title="תשלומים קרובים" />
+        <DashboardCardHeader icon={PaymentIcon} title={t(dashboardDict, locale, "paymentsCardTitle")} />
 
         {/* p-0, like the deliveries card: the rows run edge to edge and carry
             their own padding, so the hairlines between them span the card. */}
@@ -163,13 +177,13 @@ export default function UpcomingPayments({ summary }: { summary: PaymentsSummary
                 Not warning-orange either: today is the subject, not an alarm. */}
             {today.length > 0 ? (
               <div className="px-4 pt-2 text-xs font-semibold text-muted-foreground">
-                היום · {formatCurrency(todayTotal)}
+                {t(commonDict, locale, "today")} · {formatCurrency(todayTotal)}
               </div>
             ) : null}
             {today.length > 0 ? (
               <ul className="divide-y">
                 {today.map((item) => (
-                  <PaymentRow key={item.id} item={item} />
+                  <PaymentRow key={item.id} item={item} locale={locale} />
                 ))}
               </ul>
             ) : (
@@ -178,7 +192,7 @@ export default function UpcomingPayments({ summary }: { summary: PaymentsSummary
               // reader shouldn't have to learn two ways of being told "nothing".
               <div className="m-3 inline-flex items-center gap-1.5 rounded-full border border-success/40 bg-success-soft px-2.5 py-1 text-xs">
                 <SuccessIcon className="h-3.5 w-3.5 shrink-0 text-success" />
-                <span className="text-success-soft-foreground">אין תשלומים להיום</span>
+                <span className="text-success-soft-foreground">{t(dashboardDict, locale, "todayNoPaymentsLabel")}</span>
               </div>
             )}
           </section>
@@ -205,7 +219,7 @@ export default function UpcomingPayments({ summary }: { summary: PaymentsSummary
                     )}
                   >
                     <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
-                    באיחור {lateCount}
+                    {t(dashboardDict, locale, "lateLabel")} {lateCount}
                     <span className="tabular-nums">· {formatCurrency(lateTotal)}</span>
                   </button>
                 ) : null}
@@ -223,7 +237,7 @@ export default function UpcomingPayments({ summary }: { summary: PaymentsSummary
                     )}
                   >
                     <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
-                    צפוי {upcoming.length}
+                    {t(dashboardDict, locale, "stageScheduled")} {upcoming.length}
                     <span className="tabular-nums">· {formatCurrency(upcomingTotal)}</span>
                   </button>
                 ) : null}
@@ -232,18 +246,20 @@ export default function UpcomingPayments({ summary }: { summary: PaymentsSummary
               {rows.length > 0 ? (
                 <ul className="divide-y border-t border-border/50">
                   {rows.map((item) => (
-                    <PaymentRow key={item.id} item={item} late={tab === "late"} />
+                    <PaymentRow key={item.id} item={item} late={tab === "late"} locale={locale} />
                   ))}
                 </ul>
               ) : (
                 <p className="px-4 pb-3 text-sm text-muted-foreground">
-                  {tab === "late" ? "אין תשלומים באיחור." : "אין תשלומים שמתריעים כעת."}
+                  {tab === "late"
+                    ? t(dashboardDict, locale, "noLatePaymentsLabel")
+                    : t(dashboardDict, locale, "noUpcomingAlertingLabel")}
                 </p>
               )}
             </div>
           ) : null}
         </CardContent>
-        <DashboardCardFooter href={CALENDAR_HREF} label="כל התשלומים" />
+        <DashboardCardFooter href={CALENDAR_HREF} label={t(dashboardDict, locale, "paymentsFooterLabel")} />
       </div>
     </Card>
   );

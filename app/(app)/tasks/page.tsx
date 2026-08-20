@@ -2,6 +2,8 @@ import AppShell from "@/components/layout/AppShell";
 import PageAlertBar from "@/components/reminders/PageAlertBar";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
+import { t } from "@/lib/i18n/t";
+import { commonDict } from "@/lib/i18n/dictionaries/common";
 import TasksPageClient from "./TasksPageClient";
 import { loadTasksBoard } from "./loadTasks";
 
@@ -50,7 +52,7 @@ export default async function TasksPage({
     : Promise.resolve(undefined);
 
   const [boardResult, projectsResult, propertiesResult, customersResult, usersResult] = await Promise.all([
-    loadTasksBoard(supabase, { filters, userId: profile.id, canSeeAll }),
+    loadTasksBoard(supabase, { filters, userId: profile.id, canSeeAll, locale: profile.locale }),
     supabase
       .from("project_dashboard_view")
       .select("id,name,customer_name")
@@ -137,14 +139,16 @@ export default async function TasksPage({
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
-        <PageAlertBar keys={["task_overdue", "task_due_soon"]} />
+        <PageAlertBar keys={["task_overdue", "task_due_soon"]} locale={profile.locale} />
         {/* The tab bar is rendered by TasksPageClient on this page — the board's
             search / filters / + ride the END of that same row on desktop, and
             they're client-owned. Phones get no tab bar at all: "משימות קבועות"
             is a button in the header strip there (the recurring page keeps its
             tabs, so there's always a way back). */}
         {boardResult.error ? (
-          <div className="text-destructive text-sm">שגיאה: {boardResult.error}</div>
+          <div className="text-destructive text-sm">
+            {t(commonDict, profile.locale, "error")}: {boardResult.error}
+          </div>
         ) : (
           <TasksPageClient
             tasks={boardResult.items}
@@ -154,6 +158,7 @@ export default async function TasksPage({
             users={userOptions}
             canSeeAll={canSeeAll}
             currentUserId={profile.id}
+            locale={profile.locale}
             initialFilters={{ q, priority: filterPriority, domain: filterDomain, linkedId: filterLinkedId, scope: filterScope }}
           />
         )}

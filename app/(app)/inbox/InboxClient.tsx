@@ -14,6 +14,10 @@ import { cn } from "@/lib/utils";
 import { NOTIF_BUCKETS } from "@/lib/notifications/categories";
 import { inboxBucket, inboxOrigin, type InboxView, type WorklistItem, type WorklistSeverity } from "@/lib/reminders/worklist";
 import { EditButton } from "@/components/ui/icon-button";
+import type { Locale } from "@/lib/i18n/types";
+import { t } from "@/lib/i18n/t";
+import { commonDict } from "@/lib/i18n/dictionaries/common";
+import { inboxDict } from "@/lib/i18n/dictionaries/inbox";
 
 // Severity paints the icon tile; the rule picks the glyph. So colour answers
 // "how bad is it" at a glance and the icon answers "what kind of thing is it".
@@ -49,48 +53,52 @@ function iconFor(item: WorklistItem) {
 }
 
 // The verb that matches the destination, so the link says what it does.
-function actionLabel(item: WorklistItem): string {
-  if (item.source === "manual") return "פתח";
+function actionLabel(item: WorklistItem, locale: Locale): string {
+  if (item.source === "manual") return t(inboxDict, locale, "actionOpen");
   const rule = (item.dedupeKey ?? "").split(":")[0];
-  if (rule.startsWith("task")) return "פתח משימה";
-  if (rule.startsWith("project") || rule === "stale_quote") return "פתח פרויקט";
-  if (rule === "check_deposit_due") return "פתח צ׳קים";
-  if (rule === "low_stock") return "הזמן מלאי";
-  if (rule === "unprocessed_items") return "פתח דף אשראי";
-  if (rule === "vehicle_expiry") return "פתח רכב";
-  if (rule === "wage_overdue") return "פתח שכר";
-  if (rule === "recurring_expense_confirm") return "פתח הוצאה";
-  return "פתח";
+  if (rule.startsWith("task")) return t(inboxDict, locale, "actionOpenTask");
+  if (rule.startsWith("project") || rule === "stale_quote") return t(inboxDict, locale, "actionOpenProject");
+  if (rule === "check_deposit_due") return t(inboxDict, locale, "actionOpenChecks");
+  if (rule === "low_stock") return t(inboxDict, locale, "actionOrderStock");
+  if (rule === "unprocessed_items") return t(inboxDict, locale, "actionOpenCreditPage");
+  if (rule === "vehicle_expiry") return t(inboxDict, locale, "actionOpenVehicle");
+  if (rule === "wage_overdue") return t(inboxDict, locale, "actionOpenPayroll");
+  if (rule === "recurring_expense_confirm") return t(inboxDict, locale, "actionOpenExpense");
+  return t(inboxDict, locale, "actionOpen");
 }
 
-function timeAgo(iso: string): string {
+function timeAgo(iso: string, locale: Locale): string {
   if (!iso) return "";
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return "";
-  const mins = Math.round((Date.now() - t) / 60000);
-  if (mins < 1) return "עכשיו";
-  if (mins < 60) return `לפני ${mins} דק׳`;
+  const ts = new Date(iso).getTime();
+  if (Number.isNaN(ts)) return "";
+  const mins = Math.round((Date.now() - ts) / 60000);
+  if (mins < 1) return t(inboxDict, locale, "timeNow");
+  if (mins < 60) return t(inboxDict, locale, "timeMinutesAgo").replace("{n}", String(mins));
   const hours = Math.round(mins / 60);
-  if (hours < 24) return `לפני ${hours} שעות`;
+  if (hours < 24) return t(inboxDict, locale, "timeHoursAgo").replace("{n}", String(hours));
   const days = Math.round(hours / 24);
-  if (days === 1) return "אתמול";
-  if (days < 30) return `לפני ${days} ימים`;
-  return new Intl.DateTimeFormat("he-IL", { day: "2-digit", month: "2-digit" }).format(t);
+  if (days === 1) return t(inboxDict, locale, "timeYesterday");
+  if (days < 30) return t(inboxDict, locale, "timeDaysAgo").replace("{n}", String(days));
+  return new Intl.DateTimeFormat(locale === "ar" ? "ar" : "he-IL", { day: "2-digit", month: "2-digit" }).format(ts);
 }
 
 // Day buckets, so the list reads as a timeline rather than one long wall.
 function dayGroup(iso: string): "today" | "yesterday" | "earlier" {
-  const t = new Date(iso);
-  if (Number.isNaN(t.getTime())) return "earlier";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "earlier";
   const start = new Date();
   start.setHours(0, 0, 0, 0);
-  if (t.getTime() >= start.getTime()) return "today";
+  if (d.getTime() >= start.getTime()) return "today";
   const y = new Date(start);
   y.setDate(y.getDate() - 1);
-  if (t.getTime() >= y.getTime()) return "yesterday";
+  if (d.getTime() >= y.getTime()) return "yesterday";
   return "earlier";
 }
-const GROUP_LABEL: Record<string, string> = { today: "היום", yesterday: "אתמול", earlier: "קודם" };
+function groupLabel(key: string, locale: Locale): string {
+  if (key === "today") return t(commonDict, locale, "today");
+  if (key === "yesterday") return t(inboxDict, locale, "timeYesterday");
+  return t(inboxDict, locale, "groupEarlier");
+}
 
 function preset(kind: "hour" | "tomorrow" | "week"): string {
   const d = new Date();
@@ -107,11 +115,13 @@ export default function InboxClient({
   assignedByMe = [],
   canSync,
   hasPush,
+  locale,
 }: {
   inbox: InboxView;
   assignedByMe?: WorklistItem[];
   canSync: boolean;
   hasPush: boolean;
+  locale: Locale;
 }) {
   const router = useRouter();
   const [bucket, setBucket] = useState<string>("all");
@@ -134,14 +144,14 @@ export default function InboxClient({
   // Only offer chips for buckets that actually have something in them.
   const chips = useMemo(
     () => [
-      { key: "all", label: "הכול", count: inbox.counts.all },
+      { key: "all", label: t(inboxDict, locale, "allChip"), count: inbox.counts.all },
       ...NOTIF_BUCKETS.filter((b) => (inbox.byBucket[b.key] ?? 0) > 0).map((b) => ({
         key: b.key,
         label: b.label,
         count: inbox.byBucket[b.key] ?? 0,
       })),
     ],
-    [inbox.byBucket, inbox.counts.all]
+    [inbox.byBucket, inbox.counts.all, locale]
   );
 
   const grouped = useMemo(() => {
@@ -166,7 +176,13 @@ export default function InboxClient({
       const json = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(json.error);
       toast.success(
-        action === "done" ? "סומן כבוצע" : action === "snooze" ? "נדחה" : action === "reopen" ? "הוחזר" : "הוסתר"
+        action === "done"
+          ? t(inboxDict, locale, "toastDone")
+          : action === "snooze"
+            ? t(inboxDict, locale, "snoozedLabel")
+            : action === "reopen"
+              ? t(inboxDict, locale, "toastReopened")
+              : t(inboxDict, locale, "toastDismissed")
       );
       refreshAlerts();
       router.refresh();
@@ -176,7 +192,7 @@ export default function InboxClient({
         next.delete(id);
         return next;
       });
-      toast.error(toHebrewError(err, "הפעולה נכשלה."));
+      toast.error(toHebrewError(err, t(inboxDict, locale, "toastActionFailed")));
     } finally {
       setBusy(null);
     }
@@ -189,7 +205,7 @@ export default function InboxClient({
       if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error);
       router.refresh();
     } catch (err) {
-      toast.error(toHebrewError(err, "הפעולה נכשלה."));
+      toast.error(toHebrewError(err, t(inboxDict, locale, "toastActionFailed")));
     } finally {
       setMarking(false);
     }
@@ -200,11 +216,11 @@ export default function InboxClient({
     try {
       const res = await fetch("/api/reminders/sync-now", { method: "POST" });
       if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error);
-      toast.success("עודכן");
+      toast.success(t(inboxDict, locale, "toastSynced"));
       refreshAlerts();
       router.refresh();
     } catch (err) {
-      toast.error(toHebrewError(err, "העדכון נכשל."));
+      toast.error(toHebrewError(err, t(inboxDict, locale, "toastSyncFailed")));
     } finally {
       setSyncing(false);
     }
@@ -231,7 +247,7 @@ export default function InboxClient({
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            {item.isNew ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-label="חדש" /> : null}
+            {item.isNew ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-label={t(inboxDict, locale, "newIndicator")} /> : null}
             <Link href={item.url} className="truncate text-sm font-semibold hover:underline">
               {item.title}
             </Link>
@@ -241,10 +257,10 @@ export default function InboxClient({
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
             <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
               <ClockIcon className="h-3 w-3 shrink-0" />
-              {timeAgo(item.remindAt)}
+              {timeAgo(item.remindAt, locale)}
               {item.customerName ? <span>· {item.customerName}</span> : null}
               {item.assignedToName && muted ? <span>· {item.assignedToName}</span> : null}
-              {mine ? <span className="rounded bg-primary/10 px-1 text-primary">שלי</span> : null}
+              {mine ? <span className="rounded bg-primary/10 px-1 text-primary">{t(inboxDict, locale, "mine")}</span> : null}
             </span>
 
             {/* The destination stays a worded link (it's the point of the card);
@@ -255,21 +271,21 @@ export default function InboxClient({
                 href={item.url}
                 className="rounded-lg px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
               >
-                {actionLabel(item)}
+                {actionLabel(item, locale)}
               </Link>
               {snoozeOpen === item.id ? (
                 <>
                   <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" onClick={() => act(item.id, "snooze", preset("hour"))} disabled={busy === item.id}>
-                    שעה
+                    {t(inboxDict, locale, "presetHour")}
                   </Button>
                   <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" onClick={() => act(item.id, "snooze", preset("tomorrow"))} disabled={busy === item.id}>
-                    מחר
+                    {t(inboxDict, locale, "presetTomorrow")}
                   </Button>
                   <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" onClick={() => act(item.id, "snooze", preset("week"))} disabled={busy === item.id}>
-                    שבוע
+                    {t(inboxDict, locale, "presetWeek")}
                   </Button>
                   <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setSnoozeOpen(null)}>
-                    ביטול
+                    {t(commonDict, locale, "cancel")}
                   </Button>
                 </>
               ) : (
@@ -277,14 +293,14 @@ export default function InboxClient({
                   {mine ? (
                     <EditButton onClick={() =>
                         setEditing({ id: item.id, remindAt: item.remindAt, content: item.content, assignedTo: item.assignedTo })
-                      } disabled={busy === item.id} label="עריכת תזכורת" />
+                      } disabled={busy === item.id} label={t(inboxDict, locale, "editReminder")} />
                   ) : null}
                   <Button
                     variant="ghost"
                     size="sm"
                     className="h-7 w-7 p-0 text-muted-foreground hover:bg-success/10 hover:text-success"
-                    title="בוצע"
-                    aria-label="סמן כבוצע"
+                    title={t(inboxDict, locale, "done")}
+                    aria-label={t(inboxDict, locale, "markDoneAria")}
                     onClick={() => act(item.id, "done")}
                     disabled={busy === item.id}
                   >
@@ -294,8 +310,8 @@ export default function InboxClient({
                     variant="ghost"
                     size="sm"
                     className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                    title="דחה"
-                    aria-label="דחיית התראה"
+                    title={t(inboxDict, locale, "snoozeTitle")}
+                    aria-label={t(inboxDict, locale, "snoozeAria")}
                     onClick={() => setSnoozeOpen(item.id)}
                     disabled={busy === item.id}
                   >
@@ -315,17 +331,17 @@ export default function InboxClient({
       {/* Header: what's here, and the two things you do to the list as a whole. */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold">התראות</h1>
+          <h1 className="text-xl font-bold">{t(inboxDict, locale, "title")}</h1>
           <p className="text-xs text-muted-foreground">
-            {inbox.counts.new > 0 ? `${inbox.counts.new} חדשות · ` : ""}
-            {inbox.counts.all} סה״כ
+            {inbox.counts.new > 0 ? `${inbox.counts.new} ${t(inboxDict, locale, "newLabel")} · ` : ""}
+            {inbox.counts.all} {t(inboxDict, locale, "totalLabel")}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           {inbox.counts.new > 0 ? (
             <Button variant="ghost" size="sm" className="text-primary hover:bg-primary/10" onClick={markAllSeen} disabled={marking}>
               <CheckIcon className="h-4 w-4" />
-              סמן הכול כנקרא
+              {t(inboxDict, locale, "markAllRead")}
             </Button>
           ) : null}
           {/* No "תזכורת" + button here — creating a reminder is a tile in the
@@ -333,7 +349,7 @@ export default function InboxClient({
           <Button asChild variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
             <Link href="/profile#notifications">
               <SettingsIcon className="h-4 w-4" />
-              העדפות
+              {t(inboxDict, locale, "preferences")}
             </Link>
           </Button>
           {canSync ? (
@@ -344,7 +360,7 @@ export default function InboxClient({
               onClick={runSync}
               disabled={syncing}
             >
-              {syncing ? "מעדכן…" : "רענן"}
+              {syncing ? t(inboxDict, locale, "syncing") : t(inboxDict, locale, "refresh")}
             </Button>
           ) : null}
           {!hasPush ? <PushSubscribeButton /> : null}
@@ -384,15 +400,15 @@ export default function InboxClient({
         <div className="flex items-center gap-3 rounded-2xl border border-success/40 bg-success-soft px-5 py-4">
           <SuccessIcon className="h-7 w-7 shrink-0 text-success" />
           <div>
-            <div className="font-semibold text-success-soft-foreground">הכול נקי</div>
-            <div className="text-sm text-muted-foreground">אין מה לטפל כרגע.</div>
+            <div className="font-semibold text-success-soft-foreground">{t(inboxDict, locale, "allCleanTitle")}</div>
+            <div className="text-sm text-muted-foreground">{t(inboxDict, locale, "allCleanSubtitle")}</div>
           </div>
         </div>
       ) : null}
 
       {grouped.map((g) => (
         <section key={g.key} className="space-y-2">
-          <h2 className="text-xs font-medium text-muted-foreground">{GROUP_LABEL[g.key]}</h2>
+          <h2 className="text-xs font-medium text-muted-foreground">{groupLabel(g.key, locale)}</h2>
           {g.items.map((item) => (
             <Card key={item.id} item={item} />
           ))}
@@ -401,7 +417,7 @@ export default function InboxClient({
 
       {visibleSummaries.length > 0 ? (
         <section className="space-y-2">
-          <h2 className="text-xs font-medium text-muted-foreground">סיכומים</h2>
+          <h2 className="text-xs font-medium text-muted-foreground">{t(inboxDict, locale, "summariesTitle")}</h2>
           {visibleSummaries.map((s) => (
             <Link
               key={s.id}
@@ -417,7 +433,7 @@ export default function InboxClient({
 
       {visibleByMe.length > 0 && bucket === "all" ? (
         <section className="space-y-2">
-          <h2 className="text-xs font-medium text-muted-foreground">תזכורות שהקצאתי לאחרים</h2>
+          <h2 className="text-xs font-medium text-muted-foreground">{t(inboxDict, locale, "assignedByMeTitle")}</h2>
           {visibleByMe.map((item) => (
             <Card key={item.id} item={item} muted />
           ))}
@@ -432,7 +448,7 @@ export default function InboxClient({
             className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
           >
             <ClockIcon className="h-3.5 w-3.5" />
-            נדחו לזמן מאוחר ({visibleSnoozed.length})
+            {t(inboxDict, locale, "snoozedToggle").replace("{n}", String(visibleSnoozed.length))}
           </button>
           {showSnoozed
             ? visibleSnoozed.map((item) => (
@@ -445,15 +461,17 @@ export default function InboxClient({
                       {item.title}
                     </Link>
                     <div className="text-[11px] text-muted-foreground">
-                      {item.snoozedUntil ? `חוזר ${timeAgo(item.snoozedUntil)}` : "נדחה"}
+                      {item.snoozedUntil
+                        ? `${t(inboxDict, locale, "snoozedReturnsPrefix")} ${timeAgo(item.snoozedUntil, locale)}`
+                        : t(inboxDict, locale, "snoozedLabel")}
                     </div>
                   </div>
                   <div className="flex gap-1">
                     <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" onClick={() => act(item.id, "reopen")} disabled={busy === item.id}>
-                      החזר
+                      {t(inboxDict, locale, "restore")}
                     </Button>
                     <Button size="sm" className="h-7 px-2 text-xs" onClick={() => act(item.id, "done")} disabled={busy === item.id}>
-                      בוצע
+                      {t(inboxDict, locale, "done")}
                     </Button>
                   </div>
                 </div>
@@ -464,7 +482,7 @@ export default function InboxClient({
 
       <div className="pt-1 text-center">
         <Link href="/notifications" className="text-xs text-muted-foreground hover:underline">
-          היסטוריית התראות שנשלחו
+          {t(inboxDict, locale, "historyLink")}
         </Link>
       </div>
 

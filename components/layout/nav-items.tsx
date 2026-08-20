@@ -135,6 +135,14 @@ const WORKER_NAV_ITEMS: SidebarNavItem[] = [
   { title: "יומן", url: "/calendar", icon: CalendarIcon },
 ];
 
+// Arabic labels for a worker who set locale='ar' — no "التوصيلات" (deliveries)
+// slot: that route stays Hebrew-only, for Hebrew-speaking drivers.
+const WORKER_NAV_ITEMS_AR: SidebarNavItem[] = [
+  { title: "الرئيسية", url: "/dashboard", icon: DashboardIcon },
+  { title: "المهام", url: "/tasks", icon: TaskIcon },
+  { title: "التقويم", url: "/calendar", icon: CalendarIcon },
+];
+
 function filterByRole(items: SidebarNavItem[], isAdmin: boolean, isOffice: boolean): SidebarNavItem[] {
   return items.flatMap((item) => {
     if (item.children) {
@@ -147,7 +155,12 @@ function filterByRole(items: SidebarNavItem[], isAdmin: boolean, isOffice: boole
   });
 }
 
-export function useNavItems(initialRole?: string | null) {
+export function useNavItems(initialRole?: string | null, initialLocale?: string | null) {
+  // No caching/fetch needed like role: AppShell mounts once per session (see its
+  // "persist across navigations" comment) and the locale toggle in /profile
+  // calls router.refresh(), which re-runs app/(app)/layout.tsx server-side and
+  // feeds a fresh prop straight through — a plain default is enough.
+  const workerNavItems = initialLocale === "ar" ? WORKER_NAV_ITEMS_AR : WORKER_NAV_ITEMS;
   const [viewerRole, setViewerRole] = useState<string | null>(() => {
     // Server-provided role takes priority; fall back to localStorage cache.
     if (initialRole) return initialRole;
@@ -206,18 +219,18 @@ export function useNavItems(initialRole?: string | null) {
   const isWorker = viewerRole === "worker";
 
   const sidebarItems = useMemo(
-    () => (isWorker ? WORKER_NAV_ITEMS : filterByRole(SIDEBAR_ITEMS, isAdmin, isOffice)),
-    [isAdmin, isOffice, isWorker]
+    () => (isWorker ? workerNavItems : filterByRole(SIDEBAR_ITEMS, isAdmin, isOffice)),
+    [isAdmin, isOffice, isWorker, workerNavItems]
   );
   // Three thumb targets + the centre "+", same as everyone else; the fourth
   // destination ("השעות שלי") sits behind עוד so the bar keeps its shape.
   const bottomNavItems = useMemo(
-    () => (isWorker ? WORKER_NAV_ITEMS.slice(0, 3) : BOTTOM_NAV_ITEMS),
-    [isWorker]
+    () => (isWorker ? workerNavItems.slice(0, 3) : BOTTOM_NAV_ITEMS),
+    [isWorker, workerNavItems]
   );
   const bottomNavMoreItems = useMemo(
-    () => (isWorker ? WORKER_NAV_ITEMS.slice(3) : filterByRole(BOTTOM_NAV_MORE_ITEMS, isAdmin, isOffice)),
-    [isAdmin, isOffice, isWorker]
+    () => (isWorker ? workerNavItems.slice(3) : filterByRole(BOTTOM_NAV_MORE_ITEMS, isAdmin, isOffice)),
+    [isAdmin, isOffice, isWorker, workerNavItems]
   );
 
   return { sidebarItems, bottomNavItems, bottomNavMoreItems };

@@ -26,6 +26,9 @@ import {
   type QuickCreateAction,
   type QuickCreateData,
 } from "@/components/layout/quick-create-types";
+import { t } from "@/lib/i18n/t";
+import { quickCreateDict } from "@/lib/i18n/dictionaries/quickCreate";
+import type { Locale } from "@/lib/i18n/types";
 
 // The dialogs (order wizard, project wizard, expense form…) are a big chunk of
 // JS. Nobody pays for it until the + menu is first opened.
@@ -54,29 +57,31 @@ type MenuItem = { action: QuickCreateAction; label: string; icon: typeof TaskIco
 // "לקוח חדש" tile. With that grid gone this is the only place left for it, so
 // it's back. מסמך stays tile-less — a document is uploaded from the record it
 // belongs to — though the ACTION still exists for the `bizh:quick-create` event.
-const MENU_ITEMS: MenuItem[] = [
-  { action: "reminder", label: "תזכורת", icon: NotificationIcon },
-  { action: "task", label: "משימה", icon: TaskIcon },
-  // Log a worker's clock in/out into the phone-attendance queue (boss classifies later).
-  { action: "attendance", label: "דיווח נוכחות", icon: ClockIcon },
-  { action: "income", label: "הכנסה", icon: IncomeIcon },
-  { action: "expense", label: "הוצאה", icon: ExpenseIcon },
-  // Not "העברה" on its own — that already means a bank-transfer payment method
-  // elsewhere in the app; this one moves money between OUR accounts.
-  { action: "transfer", label: "העברה בין חשבונות", icon: TransferIcon },
-  { action: "project", label: "פרויקט", icon: ProjectIcon },
-  { action: "order", label: "הזמנה", icon: OrderIcon },
-  // Plain UserIcon, not AddUserIcon (user+ badge) — every other tile in this
-  // grid is a single glyph, and "+" is already the whole menu's own meaning
-  // (it's what opened this grid); a second one baked into one icon read as a
-  // mismatch, not as "add a customer".
-  { action: "customer", label: "לקוח", icon: UserIcon },
-  { action: "collect", label: "קליטת תשלום", icon: PaymentIcon },
-  { action: "workerPayment", label: "תשלום לעובד", icon: CashIcon },
-  // A CLOSED shift, typed in after the fact — writes a session directly, unlike
-  // "דיווח נוכחות" above, which lands in the approval queue.
-  { action: "manualSession", label: "משמרת ידנית", icon: TimerIcon },
-];
+function menuItems(locale: Locale): MenuItem[] {
+  return [
+    { action: "reminder", label: t(quickCreateDict, locale, "reminder"), icon: NotificationIcon },
+    { action: "task", label: t(quickCreateDict, locale, "task"), icon: TaskIcon },
+    // Log a worker's clock in/out into the phone-attendance queue (boss classifies later).
+    { action: "attendance", label: t(quickCreateDict, locale, "attendance"), icon: ClockIcon },
+    { action: "income", label: t(quickCreateDict, locale, "income"), icon: IncomeIcon },
+    { action: "expense", label: t(quickCreateDict, locale, "expense"), icon: ExpenseIcon },
+    // Not "העברה" on its own — that already means a bank-transfer payment method
+    // elsewhere in the app; this one moves money between OUR accounts.
+    { action: "transfer", label: t(quickCreateDict, locale, "transfer"), icon: TransferIcon },
+    { action: "project", label: t(quickCreateDict, locale, "project"), icon: ProjectIcon },
+    { action: "order", label: t(quickCreateDict, locale, "order"), icon: OrderIcon },
+    // Plain UserIcon, not AddUserIcon (user+ badge) — every other tile in this
+    // grid is a single glyph, and "+" is already the whole menu's own meaning
+    // (it's what opened this grid); a second one baked into one icon read as a
+    // mismatch, not as "add a customer".
+    { action: "customer", label: t(quickCreateDict, locale, "customer"), icon: UserIcon },
+    { action: "collect", label: t(quickCreateDict, locale, "collect"), icon: PaymentIcon },
+    { action: "workerPayment", label: t(quickCreateDict, locale, "workerPayment"), icon: CashIcon },
+    // A CLOSED shift, typed in after the fact — writes a session directly, unlike
+    // "דיווח נוכחות" above, which lands in the approval queue.
+    { action: "manualSession", label: t(quickCreateDict, locale, "manualSession"), icon: TimerIcon },
+  ];
+}
 
 // No "פתיחת משמרת" tile. It was here for a day (2026-08-16) and the user removed
 // it: every shift a worker logs is meant to reach the approval queue through
@@ -115,6 +120,16 @@ const WORKER_ACTIONS = new Set<QuickCreateAction>(["task", "reminder", "attendan
 let dataCache: QuickCreateData | null = null;
 let inFlight: Promise<QuickCreateData | null> | null = null;
 
+// `locale` rides along in this same payload (see quick-create-types.ts) but,
+// unlike the picker lists, it can change mid-session — a worker flips the
+// toggle in /profile without a hard reload. ProfileClient calls this right
+// before router.refresh() so the next + open re-fetches instead of reusing a
+// stale language/role.
+export function invalidateQuickCreateCache() {
+  dataCache = null;
+  inFlight = null;
+}
+
 function loadQuickCreateData(): Promise<QuickCreateData | null> {
   if (dataCache) return Promise.resolve(dataCache);
   if (!inFlight) {
@@ -145,16 +160,20 @@ export function QuickCreateMenu({
   variant?: "topbar" | "fab" | "desktopFab";
 }) {
   const privileged = viewerRole === "admin" || viewerRole === "office";
-  const items = privileged
-    ? MENU_ITEMS
-    : viewerRole === "worker"
-      ? MENU_ITEMS.filter((item) => WORKER_ACTIONS.has(item.action))
-      : MENU_ITEMS.filter((item) => !ADMIN_OR_OFFICE_ACTIONS.has(item.action));
   // Hover reveals the whole grid; clicking the + still toggles it, and on touch
   // (where there is no hover) the tap is the only interaction.
   const panel = useHoverPanel();
   const [action, setAction] = useState<QuickCreateAction | null>(null);
   const [data, setData] = useState<QuickCreateData | null>(dataCache);
+  // Only ever "ar" for a worker (see quick-create-types.ts) — the tiles a
+  // worker sees (task/reminder/attendance) render in Arabic; every other
+  // viewer's locale is always "he", so this is a no-op for them.
+  const allItems = menuItems(data?.locale ?? "he");
+  const items = privileged
+    ? allItems
+    : viewerRole === "worker"
+      ? allItems.filter((item) => WORKER_ACTIONS.has(item.action))
+      : allItems.filter((item) => !ADMIN_OR_OFFICE_ACTIONS.has(item.action));
   // A due date carried in from an external trigger (the calendar's "add to this
   // day"); cleared when the dialog closes so it never leaks into the + menu.
   const [quickDate, setQuickDate] = useState<string | undefined>(undefined);

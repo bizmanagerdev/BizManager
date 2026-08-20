@@ -16,9 +16,9 @@ import { Card } from "@/components/ui/card";
 import { DELIVERY_REGIONS, formatDeliveryAddress, getCityRegion } from "@/lib/ui/cities";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { loadMoreDeliveries } from "@/app/(app)/sales/actions";
-import { paymentStatusClasses, paymentStatusLabel } from "@/lib/orders/paymentStatus";
+import { paymentStatusClasses } from "@/lib/orders/paymentStatus";
+import { getPaymentStatusLabel } from "@/lib/ui/status-colors";
 import {
-  PREPAYMENT_UNPAID_LABEL,
   prepaymentBadgeClasses,
   PREPAYMENT_ROW_CLASSES,
 } from "@/lib/orders/prepayment";
@@ -239,7 +239,9 @@ export default function SalesDeliveriesQueue({
             the pills — a whole row of screen for a number you can see by
             scrolling. Beside the pills on a wider screen it costs nothing. */}
         <span className="mr-auto hidden text-xs text-muted-foreground md:inline">
-          {regionFilter ? `${totalVisible} משלוחים באזור ${regionFilter}` : `${totalCount} משלוחים`}
+          {regionFilter
+            ? `${totalVisible} משלוחים באזור ${regionFilter}`
+            : `${totalCount} משלוחים`}
         </span>
       </div>
 
@@ -395,13 +397,13 @@ export default function SalesDeliveriesQueue({
                                     <span
                                       className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${prepaymentBadgeClasses}`}
                                     >
-                                      {PREPAYMENT_UNPAID_LABEL}
+                                      תשלום מראש — לא נגבה
                                     </span>
                                   ) : null}
                                   <span
                                     className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${paymentStatusClasses(delivery.paymentStatus)}`}
                                   >
-                                    {paymentStatusLabel(delivery.paymentStatus)}
+                                    {getPaymentStatusLabel(delivery.paymentStatus)}
                                   </span>
                                   {delivery.collectOnDelivery ? (
                                     <span className="inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-semibold text-warning-soft-foreground">
@@ -612,13 +614,13 @@ export default function SalesDeliveriesQueue({
                                       <span
                                         className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${prepaymentBadgeClasses}`}
                                       >
-                                        {PREPAYMENT_UNPAID_LABEL}
+                                        תשלום מראש — לא נגבה
                                       </span>
                                     ) : null}
                                     <span
                                       className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${paymentStatusClasses(delivery.paymentStatus)}`}
                                     >
-                                      {paymentStatusLabel(delivery.paymentStatus)}
+                                      {getPaymentStatusLabel(delivery.paymentStatus)}
                                     </span>
                                     {/* The one thing the driver must not miss. */}
                                     {delivery.collectOnDelivery ? (
@@ -744,7 +746,9 @@ export default function SalesDeliveriesQueue({
       {hasMore ? <div ref={sentinelRef} className="h-1" /> : null}
       {deliveries.length > 0 ? (
         <div className="pt-1 text-center text-xs text-muted-foreground">
-          {loadingMore ? "טוען…" : `נטענו ${deliveries.length} מתוך ${totalCount} משלוחים`}
+          {loadingMore
+            ? "טוען…"
+            : `נטענו ${deliveries.length} מתוך ${totalCount} משלוחים`}
         </div>
       ) : null}
     </div>

@@ -12,6 +12,9 @@ import { buildWeekView } from "@/lib/dashboard/week";
 import { formatToday } from "@/lib/dashboard/greeting";
 import { isoLocal } from "@/components/ui/month-calendar";
 import type { CalendarEntry } from "@/lib/projectSchedule";
+import { t } from "@/lib/i18n/t";
+import { dashboardDict } from "@/lib/i18n/dictionaries/dashboard";
+import type { Locale } from "@/lib/i18n/types";
 
 // THE DAY — today's tasks, projects and reminders from the calendar feed, and
 // (2026-08-19) the same tab strip / bordered rows / "הוספה ליום זה" as the
@@ -81,11 +84,28 @@ function foldTaskReminders(entries: CalendarEntry[]): CalendarEntry[] {
 // wear one color here and another there.
 type Kind = CalendarEntry["kind"];
 const KIND_ORDER: Kind[] = ["reminder", "project", "task"];
-const KIND_META: Record<Kind, { label: string; plural: string; dot: string; edge: string }> = {
-  reminder: { label: "תזכורת", plural: "תזכורות", dot: "bg-info", edge: "border-e-info" },
-  project: { label: "פרויקט", plural: "פרויקטים", dot: "bg-success", edge: "border-e-success" },
-  task: { label: "משימה", plural: "משימות", dot: "bg-warning", edge: "border-e-warning" },
-};
+function kindMeta(locale: Locale): Record<Kind, { label: string; plural: string; dot: string; edge: string }> {
+  return {
+    reminder: {
+      label: t(dashboardDict, locale, "kindReminder"),
+      plural: t(dashboardDict, locale, "kindReminderPlural"),
+      dot: "bg-info",
+      edge: "border-e-info",
+    },
+    project: {
+      label: t(dashboardDict, locale, "kindProject"),
+      plural: t(dashboardDict, locale, "kindProjectPlural"),
+      dot: "bg-success",
+      edge: "border-e-success",
+    },
+    task: {
+      label: t(dashboardDict, locale, "kindTask"),
+      plural: t(dashboardDict, locale, "kindTaskPlural"),
+      dot: "bg-warning",
+      edge: "border-e-warning",
+    },
+  };
+}
 
 // No reactive source — the greeting is read from the local clock on each render.
 const subscribe = () => () => {};
@@ -93,17 +113,20 @@ const subscribe = () => () => {};
 export default function TodayScheduleCard({
   entries,
   initialDate,
+  locale,
 }: {
   /** The unified calendar feed (tasks / projects / reminders), all dates. */
   entries: CalendarEntry[];
   /** SSR snapshot of today's date, from the server's clock. */
   initialDate: string;
+  locale: Locale;
 }) {
   // useSyncExternalStore returns the server snapshot during SSR/hydration and the
   // client value afterwards — no hydration mismatch and no setState-in-effect.
   // The card is named by the DATE now; the greeting moved to the top bar (user,
   // 2026-08-18), where a greeting belongs — it greets the person, not the day.
-  const todayLabel = useSyncExternalStore(subscribe, () => formatToday(new Date()), () => initialDate);
+  const todayLabel = useSyncExternalStore(subscribe, () => formatToday(new Date(), locale), () => initialDate);
+  const KIND_META = kindMeta(locale);
 
   const { todayEntries, ongoing } = useMemo(() => {
     const now = new Date();
@@ -132,7 +155,10 @@ export default function TodayScheduleCard({
     );
   }
   const addAction: Kind = filter === "all" ? "task" : filter;
-  const addLabel = filter === "all" ? "הוספה ליום זה" : `הוסף ${KIND_META[filter].label}`;
+  const addLabel =
+    filter === "all"
+      ? t(dashboardDict, locale, "addToday")
+      : `${t(dashboardDict, locale, "addKindPrefix")} ${KIND_META[filter].label}`;
 
   return (
     // The card leads to the calendar, each row to its own entry. The card's link
@@ -151,7 +177,7 @@ export default function TodayScheduleCard({
     <Card className="relative flex h-full flex-col">
       <Link
         href="/calendar"
-        aria-label="ליומן"
+        aria-label={t(dashboardDict, locale, "toCalendarLabel")}
         className="absolute inset-0 rounded-[1.125rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
 
@@ -191,7 +217,7 @@ export default function TodayScheduleCard({
             // loudest thing on a quiet day.
             <div className="m-3 inline-flex items-center gap-1.5 rounded-full border border-success/40 bg-success-soft px-2.5 py-1 text-xs">
               <SuccessIcon className="h-3.5 w-3.5 shrink-0 text-success" />
-              <span className="text-success-soft-foreground">היום פנוי</span>
+              <span className="text-success-soft-foreground">{t(dashboardDict, locale, "todayFreeLabel")}</span>
             </div>
           ) : null}
 
@@ -199,7 +225,7 @@ export default function TodayScheduleCard({
               off, so they're chips above the list, not rows in it. */}
           {ongoing.length > 0 ? (
             <div className="m-3 flex flex-wrap items-center gap-1.5 rounded-xl bg-muted/40 p-2 text-xs">
-              <span className="font-semibold text-muted-foreground">פרויקטים שוטפים:</span>
+              <span className="font-semibold text-muted-foreground">{t(dashboardDict, locale, "ongoingProjectsLabel")}</span>
               {ongoing.map((entry) => (
                 <Link key={entry.id} href={entry.href} className="pointer-events-auto">
                   <Badge variant="info-soft">{entry.title}</Badge>
@@ -217,7 +243,7 @@ export default function TodayScheduleCard({
               there, so `shown` is always the full list. */}
           {todayEntries.length > 0 ? (
             <div className="pointer-events-auto m-3 hidden flex-wrap items-center gap-1.5 xl:flex">
-              <FilterPill active={filter === "all"} label="הכל" count={todayEntries.length} onClick={() => setFilter("all")} />
+              <FilterPill active={filter === "all"} label={t(dashboardDict, locale, "filterAll")} count={todayEntries.length} onClick={() => setFilter("all")} />
               {KIND_ORDER.map((kind) => (
                 <FilterPill
                   key={kind}
@@ -262,7 +288,7 @@ export default function TodayScheduleCard({
           {/* Ongoing projects but no dated item: said plainly, since the green
               line above only shows when the card is entirely empty. */}
           {todayEntries.length === 0 && !empty ? (
-            <p className="px-4 py-3 text-sm text-muted-foreground">אין משימות או פרויקטים להיום.</p>
+            <p className="px-4 py-3 text-sm text-muted-foreground">{t(dashboardDict, locale, "emptyTodayLabel")}</p>
           ) : null}
 
           {/* "הוספה ליום זה" — the calendar day panel always offers this, empty
@@ -287,7 +313,7 @@ export default function TodayScheduleCard({
           </div>
         </CardContent>
         {/* "ליומן", not "כל היומן": the calendar is a place, not a list you see all of. */}
-        <DashboardCardFooter href="/calendar" label="ליומן" />
+        <DashboardCardFooter href="/calendar" label={t(dashboardDict, locale, "toCalendarLabel")} />
       </div>
     </Card>
   );

@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { getStatusColor, getStatusLabel, type StatusBadgeType } from "@/lib/ui/status-colors";
 import type { StatusColor } from "@/lib/ui/status-colors";
+import type { Locale } from "@/lib/i18n/types";
 
 const VARIANT_BY_COLOR: Record<StatusColor, "success" | "warning" | "destructive" | "info" | "neutral"> = {
   success: "success",
@@ -15,16 +16,18 @@ export function StatusBadge({
   value,
   type,
   className,
+  locale = "he",
 }: {
   value: string;
   type: StatusBadgeType;
   className?: string;
+  locale?: Locale;
 }) {
   const color = getStatusColor(type, value);
 
   return (
     <Badge variant={VARIANT_BY_COLOR[color]} className={cn(className)}>
-      {getStatusLabel(type, value)}
+      {getStatusLabel(type, value, locale)}
     </Badge>
   );
 }

@@ -93,17 +93,19 @@ export default function QuickCreateDialogs({
     [data.properties]
   );
   // Workers eligible for phone-attendance logging (session-logging types).
-  const attendanceWorkers = useMemo(
-    () =>
-      data.users
-        .filter(
-          (u) =>
-            (u.role === "worker" || u.role === "worker_no_access") &&
-            payrollWorkerTypeAllowsSessions(normalizePayrollWorkerType(u.payroll_worker_type, u.pay_tracking_mode))
-        )
-        .map((u) => ({ id: u.id, label: u.label })),
-    [data.users]
-  );
+  // An Arabic-locale worker may only log his OWN attendance — no colleague
+  // sign-in (user, 2026-08-20) — so the picker is narrowed to just himself.
+  const restrictAttendanceToSelf = data.role === "worker" && data.locale === "ar";
+  const attendanceWorkers = useMemo(() => {
+    const eligible = data.users
+      .filter(
+        (u) =>
+          (u.role === "worker" || u.role === "worker_no_access") &&
+          payrollWorkerTypeAllowsSessions(normalizePayrollWorkerType(u.payroll_worker_type, u.pay_tracking_mode))
+      )
+      .map((u) => ({ id: u.id, label: u.label }));
+    return restrictAttendanceToSelf ? eligible.filter((u) => u.id === data.currentUserId) : eligible;
+  }, [data.users, restrictAttendanceToSelf, data.currentUserId]);
 
   // ── "משמרת ידנית" ───────────────────────────────────────────────────────────
   // The shared payroll <SessionEditorDialog/> owns all the session / split /
@@ -123,6 +125,9 @@ export default function QuickCreateDialogs({
         system_access: true,
         payroll_worker_type: user.payroll_worker_type ?? null,
         pay_tracking_mode: (user.pay_tracking_mode as "session" | "payslip" | null) ?? null,
+        // Not carried on this lighter picker shape — irrelevant here, this list
+        // only feeds the session editor, never a locale-aware display.
+        locale: "he" as const,
       })),
     [data.users]
   );
@@ -347,6 +352,7 @@ export default function QuickCreateDialogs({
         }}
         workers={attendanceWorkers}
         onSaved={() => router.refresh()}
+        locale={data.locale}
       />
 
       {/* Pay a worker — the amount nets against their open payslips / sessions. */}

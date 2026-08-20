@@ -11,6 +11,8 @@
 // hydration, which is why these are plain functions shared by both sides rather
 // than two copies that drift apart.
 
+import type { Locale } from "@/lib/i18n/types";
+
 /** The app's default clock when the viewer's own isn't knowable — i.e. the server. */
 export const DEFAULT_TIME_ZONE = "Asia/Jerusalem";
 
@@ -20,7 +22,13 @@ export const DEFAULT_TIME_ZONE = "Asia/Jerusalem";
  * the start of a new morning, and "בוקר טוב" at that hour reads as a machine
  * that only noticed the date changed.
  */
-export function greetingForHour(hour: number): string {
+export function greetingForHour(hour: number, locale: Locale = "he"): string {
+  if (locale === "ar") {
+    if (hour < 4) return "مساء الخير";
+    if (hour < 12) return "صباح الخير";
+    if (hour < 18) return "طاب يومك";
+    return "مساء الخير";
+  }
   if (hour < 4) return "ערב טוב";
   if (hour < 12) return "בוקר טוב";
   if (hour < 18) return "צהריים טובים";
@@ -44,8 +52,8 @@ export function viewerHour(date: Date = new Date(), timeZone = DEFAULT_TIME_ZONE
  * numeric form ("יום שלישי · 18.8") existed only because the top bar's title slot
  * doesn't shrink, it spills; inside the card the line has room to wrap.
  */
-export function formatToday(date: Date): string {
-  return new Intl.DateTimeFormat("he-IL", {
+export function formatToday(date: Date, locale: Locale = "he"): string {
+  return new Intl.DateTimeFormat(locale === "ar" ? "ar" : "he-IL", {
     weekday: "long",
     day: "numeric",
     month: "long",

@@ -46,6 +46,25 @@ import { DomainSelect } from "@/components/financial/DomainSelect";
 import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { getTaskPriorityLabel, getTaskStatusLabel } from "@/lib/ui/status-colors";
+import type { Locale } from "@/lib/i18n/types";
+import { t } from "@/lib/i18n/t";
+import { commonDict } from "@/lib/i18n/dictionaries/common";
+import { tasksDict } from "@/lib/i18n/dictionaries/tasks";
+
+// Bidirectional: subject_he is only ever set when the AUTHOR's own locale was
+// 'ar' (see app/api/tasks/create) — so its presence means `original` is
+// already Arabic. subject_ar is the reverse: a Hebrew-authored task's title,
+// lazily translated + cached for an Arabic viewer (see loadTasksBoard).
+function preferHe(
+  original: string,
+  translatedHe: string | null | undefined,
+  locale: Locale,
+  translatedAr?: string | null
+) {
+  if (locale === "he") return translatedHe || original;
+  if (translatedHe) return original;
+  return translatedAr || original;
+}
 
 type Props = {
   tasks: TaskBoardItem[];
@@ -55,6 +74,7 @@ type Props = {
   users: UserOption[];
   canSeeAll?: boolean;
   currentUserId: string;
+  locale: Locale;
   initialFilters?: {
     q: string;
     priority: string;
@@ -115,6 +135,7 @@ function TaskCard({
   colorIndexById,
   longPress,
   overview,
+  locale,
 }: {
   task: TaskBoardItem;
   onOpen: (id: string) => void;
@@ -125,10 +146,12 @@ function TaskCard({
   longPress: boolean;
   /** Zoomed out: titles only — the point is to see the list, not each card. */
   overview: boolean;
+  locale: Locale;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
   const extraMembers = task.members.length > 3 ? task.members.length - 3 : 0;
   const isDone = task.status === "done";
+  const displaySubject = preferHe(task.subject, task.subject_he, locale, task.subject_ar);
   // Colour the due date by how close it is: red ≤3 days / overdue, yellow ≤1 week.
   const dueUrgency = getDueUrgency(task.due_date, { done: isDone });
   const dueChipClass = dueUrgencyChipClass(dueUrgency);
@@ -208,8 +231,8 @@ function TaskCard({
         {/* Complete circle — click to move to/from done (Trello-style). */}
         <button
           type="button"
-          aria-label={isDone ? "החזרה ללביצוע" : "סימון כבוצע"}
-          title={isDone ? "החזרה ל'לביצוע'" : "סימון כבוצע — העברה ל'בוצע'"}
+          aria-label={t(tasksDict, locale, isDone ? "undoDoneAria" : "markDoneAria")}
+          title={t(tasksDict, locale, isDone ? "undoDoneTitle" : "markDoneTitleBoard")}
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
@@ -224,10 +247,10 @@ function TaskCard({
           )}
         </button>
         <div className={`min-w-0 flex-1 font-medium leading-snug ${isDone ? "text-muted-foreground line-through" : ""}`}>
-          {task.subject}
+          {displaySubject}
         </div>
         {!overview && task.priority && SHOWN_PRIORITIES.has(task.priority) ? (
-          <StatusBadge value={task.priority} type="priority" className="shrink-0 text-[0.72em]" />
+          <StatusBadge value={task.priority} type="priority" className="shrink-0 text-[0.72em]" locale={locale} />
         ) : null}
         {!overview && task.members.length > 0 ? (
           <div className="flex shrink-0 -space-x-1.5">
@@ -288,7 +311,7 @@ function TaskCard({
             </AddressLink>
           ) : null}
           {task.is_private ? (
-            <span title="משימה פרטית — רק את/ה רואה אותה">
+            <span title={t(tasksDict, locale, "privateTaskCardTitle")}>
               <LockIcon className="h-[1.15em] w-[1.15em]" />
             </span>
           ) : null}
@@ -296,7 +319,11 @@ function TaskCard({
           {task.attachment_count > 0 ? (
             <span
               className="inline-flex items-center gap-[0.2em]"
-              title={task.attachment_count === 1 ? "קובץ אחד מצורף" : `${task.attachment_count} קבצים מצורפים`}
+              title={
+                task.attachment_count === 1
+                  ? t(tasksDict, locale, "attachmentOneTitle")
+                  : `${task.attachment_count} ${t(tasksDict, locale, "attachmentCountSuffix")}`
+              }
             >
               <AttachIcon className="h-[1.15em] w-[1.15em]" />
               {task.attachment_count}
@@ -326,6 +353,7 @@ function BoardColumn({
   onColumnRef,
   longPress,
   overview,
+  locale,
 }: {
   status: string;
   tasks: TaskBoardItem[];
@@ -339,6 +367,7 @@ function BoardColumn({
   onColumnRef: (status: string, node: HTMLElement | null) => void;
   longPress: boolean;
   overview: boolean;
+  locale: Locale;
 }) {
   const {
     setNodeRef,
@@ -378,7 +407,7 @@ function BoardColumn({
         autoFocus
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        placeholder="כותרת המשימה"
+        placeholder={t(tasksDict, locale, "quickAddPlaceholder")}
         rows={Math.min(Math.max(addLines.length, 1), 6)}
         className="min-h-0 resize-none py-2 text-sm"
         onKeyDown={(e) => {
@@ -395,20 +424,26 @@ function BoardColumn({
       />
       <div className="flex items-center gap-1.5">
         <Button type="button" size="sm" disabled={addLines.length === 0 || busy} onClick={() => void submitQuickAdd()}>
-          {busy ? "מוסיף..." : addLines.length > 1 ? `הוספת ${addLines.length}` : "הוספה"}
+          {busy
+            ? t(tasksDict, locale, "addingEllipsis")
+            : addLines.length > 1
+              ? `${t(tasksDict, locale, "addCountPrefix")} ${addLines.length}`
+              : t(commonDict, locale, "add")}
         </Button>
         <Button type="button" size="sm" variant="outline" onClick={() => { setAdding(null); setTitle(""); }}>
-          ביטול
+          {t(commonDict, locale, "cancel")}
         </Button>
         <DictateButton
           onTranscript={(text) => setTitle((prev) => appendDictatedLines(prev, text))}
           disabled={busy}
-          title="הכתבת כותרת — אפשר להקריא כמה משימות ברצף"
+          title={t(tasksDict, locale, "dictateQuickAddTitle")}
           className="ms-auto"
         />
       </div>
       {addLines.length > 1 ? (
-        <p className="text-[11px] text-muted-foreground">{addLines.length} שורות — ייווצרו {addLines.length} משימות</p>
+        <p className="text-[11px] text-muted-foreground">
+          {addLines.length} {t(tasksDict, locale, "linesCountMid")} {addLines.length} {t(tasksDict, locale, "tasksWord")}
+        </p>
       ) : null}
     </div>
   );
@@ -437,12 +472,12 @@ function BoardColumn({
             ref={setActivatorNodeRef}
             {...attributes}
             {...listeners}
-            aria-label="גרירת רשימה"
+            aria-label={t(tasksDict, locale, "dragListAria")}
             className="hidden shrink-0 cursor-grab touch-none text-muted-foreground hover:text-foreground active:cursor-grabbing md:block"
           >
             <DragIcon className="h-4 w-4" />
           </button>
-          {getTaskStatusLabel(status)}
+          {getTaskStatusLabel(status, locale)}
           <span className="shrink-0 rounded-full bg-background px-1.5 text-xs font-normal text-muted-foreground">
             {tasks.length}
           </span>
@@ -451,7 +486,7 @@ function BoardColumn({
         <button
           type="button"
           onClick={() => setAdding("top")}
-          aria-label="הוספת כרטיס"
+          aria-label={t(tasksDict, locale, "addCardLabel")}
           className="shrink-0 rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
         >
           <AddIcon className="h-4 w-4" />
@@ -479,11 +514,12 @@ function BoardColumn({
             colorIndexById={colorIndexById}
             longPress={longPress}
             overview={overview}
+            locale={locale}
           />
         ))}
 
         {tasks.length === 0 && adding === null ? (
-          <p className="px-1 py-2 text-xs text-muted-foreground">אין משימות ברשימה הזו.</p>
+          <p className="px-1 py-2 text-xs text-muted-foreground">{t(tasksDict, locale, "emptyColumnText")}</p>
         ) : null}
       </div>
 
@@ -497,7 +533,7 @@ function BoardColumn({
             className="flex w-full items-center gap-1 rounded-lg px-2 py-1.5 text-start text-sm text-muted-foreground transition-colors hover:bg-background"
           >
             <AddIcon className="h-4 w-4" />
-            הוספת כרטיס
+            {t(tasksDict, locale, "addCardLabel")}
           </button>
         )}
       </div>
@@ -831,22 +867,22 @@ export default function TasksPageClient(props: Props) {
         const result = await offlineFetch(
           "/api/tasks/update-status",
           { id: taskId, status: targetStatus },
-          "עדכון סטטוס משימה"
+          t(tasksDict, props.locale, "updateStatusOfflineLabel")
         );
         if (!result.queued && !result.ok) {
-          toast.error("שגיאה בעדכון סטטוס", { description: toHebrewError(result.error, "") });
+          toast.error(t(tasksDict, props.locale, "toastErrorUpdateStatus"), { description: toHebrewError(result.error, "") });
           setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: task.status } : t)));
           return;
         }
         if (!result.queued && successMessage) toast.success(successMessage);
       } catch (error: unknown) {
-        toast.error("שגיאה בעדכון סטטוס", { description: toHebrewError(error, "") });
+        toast.error(t(tasksDict, props.locale, "toastErrorUpdateStatus"), { description: toHebrewError(error, "") });
         setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: task.status } : t)));
       } finally {
         emitProgressActivityEnd();
       }
     },
-    [tasks]
+    [tasks, props.locale]
   );
 
   function handleDragStart(event: DragStartEvent) {
@@ -893,11 +929,14 @@ export default function TasksPageClient(props: Props) {
   }
 
   function toggleDone(id: string, done: boolean) {
-    const subject = tasks.find((t) => t.id === id)?.subject ?? "המשימה";
+    const found = tasks.find((t) => t.id === id);
+    const subject = found ? preferHe(found.subject, found.subject_he, props.locale, found.subject_ar) : t(tasksDict, props.locale, "taskFallbackWord");
     void moveTask(
       id,
       done ? "done" : "todo",
-      done ? `"${subject}" סומנה כבוצע` : `"${subject}" הוחזרה ללביצוע`
+      done
+        ? `"${subject}" ${t(tasksDict, props.locale, "markedDoneSuffix")}`
+        : `"${subject}" ${t(tasksDict, props.locale, "markedUndoneSuffix")}`
     );
   }
 
@@ -913,16 +952,16 @@ export default function TasksPageClient(props: Props) {
     setTasks((prev) => prev.filter((t) => t.id !== id));
     emitProgressActivityStart();
     try {
-      const result = await offlineFetch("/api/tasks/delete", { id }, "מחיקת משימה");
+      const result = await offlineFetch("/api/tasks/delete", { id }, t(tasksDict, props.locale, "deleteTaskLabel"));
       if (!result.queued && !result.ok) {
-        toast.error("שגיאה במחיקת משימה", { description: toHebrewError(result.error, "") });
+        toast.error(t(tasksDict, props.locale, "toastErrorDeleteTask"), { description: toHebrewError(result.error, "") });
         setTasks(previous);
         return;
       }
-      if (!result.queued) toast.success("המשימה נמחקה");
+      if (!result.queued) toast.success(t(tasksDict, props.locale, "toastTaskDeleted"));
       setDeleteTaskId(null);
     } catch (error: unknown) {
-      toast.error("שגיאה במחיקת משימה", { description: toHebrewError(error, "") });
+      toast.error(t(tasksDict, props.locale, "toastErrorDeleteTask"), { description: toHebrewError(error, "") });
       setTasks(previous);
     } finally {
       emitProgressActivityEnd();
@@ -953,7 +992,7 @@ export default function TasksPageClient(props: Props) {
               priority: "medium",
               assigned_user_id: props.currentUserId,
             },
-            "משימה חדשה",
+            t(tasksDict, props.locale, "newTaskLabel"),
             { idempotent: true }
           );
           if (result.queued) queued += 1;
@@ -964,13 +1003,18 @@ export default function TasksPageClient(props: Props) {
         }
       }
       // Report per batch, not per row — N toasts for N cards is noise.
-      if (created > 0) toast.success(created === 1 ? "המשימה נוצרה" : `נוצרו ${created} משימות`);
+      if (created > 0)
+        toast.success(
+          created === 1
+            ? t(tasksDict, props.locale, "toastTaskCreatedSingle")
+            : `${t(tasksDict, props.locale, "createdCountPrefix")} ${created} ${t(tasksDict, props.locale, "tasksWord")}`
+        );
       if (failed.length > 0) {
-        toast.error(`${failed.length} משימות לא נוצרו`, { description: failed.join(", ") });
+        toast.error(`${failed.length} ${t(tasksDict, props.locale, "tasksNotCreatedSuffix")}`, { description: failed.join(", ") });
       }
       if (created > 0 || queued > 0) router.refresh();
     } catch (error: unknown) {
-      toast.error("שגיאה ביצירת משימה", { description: toHebrewError(error, "") });
+      toast.error(t(tasksDict, props.locale, "toastErrorCreateTask"), { description: toHebrewError(error, "") });
     } finally {
       emitProgressActivityEnd();
     }
@@ -980,7 +1024,7 @@ export default function TasksPageClient(props: Props) {
   // subtitle counts what's still TO DO: the total includes everything already
   // done, which is the one number nobody needs at a glance.
   const todoCount = (tasksByStatus.get("todo") ?? []).length;
-  useSetPageTitle("משימות", `${todoCount} לביצוע`);
+  useSetPageTitle(t(tasksDict, props.locale, "pageTitle"), `${todoCount} ${t(tasksDict, props.locale, "todoSuffix")}`);
 
   // One definition of the filter controls, used by both the desktop toolbar and
   // the phone drop-down, so the two can't drift apart.
@@ -988,57 +1032,61 @@ export default function TasksPageClient(props: Props) {
     <>
       {canSeeAll ? (
         <div className="w-full space-y-1">
-          <div className="text-[11px] text-muted-foreground">היקף</div>
+          <div className="text-[11px] text-muted-foreground">{t(tasksDict, props.locale, "scopeLabel")}</div>
           <div className="flex rounded-xl border bg-secondary/10 p-0.5 text-sm">
             <button
               type="button"
               onClick={() => pushFilters({ q: urlQ, priority: urlPriority, domain: urlDomain, linkedId: urlLinkedId, scope: "mine" })}
               className={`flex-1 rounded-lg px-3 py-1.5 transition-colors ${urlScope === "mine" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
             >
-              שלי
+              {t(tasksDict, props.locale, "scopeMine")}
             </button>
             <button
               type="button"
               onClick={() => pushFilters({ q: urlQ, priority: urlPriority, domain: urlDomain, linkedId: urlLinkedId, scope: "all" })}
               className={`flex-1 rounded-lg px-3 py-1.5 transition-colors ${urlScope === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
             >
-              הכל
+              {t(tasksDict, props.locale, "allWord")}
             </button>
           </div>
         </div>
       ) : null}
       <div className="w-full space-y-1">
-        <div className="text-[11px] text-muted-foreground">עדיפות</div>
+        <div className="text-[11px] text-muted-foreground">{t(tasksDict, props.locale, "priorityLabel")}</div>
         <NativeSelect dense
           value={urlPriority}
           onChange={(e) => pushFilters({ q: urlQ, priority: e.target.value, domain: urlDomain, linkedId: urlLinkedId, scope: urlScope })}
         >
-          <option value="">הכל</option>
+          <option value="">{t(tasksDict, props.locale, "allWord")}</option>
           {PRIORITY_OPTIONS.map((priority) => (
             <option key={priority} value={priority}>
-              {getTaskPriorityLabel(priority)}
+              {getTaskPriorityLabel(priority, props.locale)}
             </option>
           ))}
         </NativeSelect>
       </div>
       <div className="w-full space-y-1">
-        <div className="text-[11px] text-muted-foreground">דומיין</div>
+        <div className="text-[11px] text-muted-foreground">{t(tasksDict, props.locale, "domainLabel")}</div>
         <DomainSelect
           value={urlDomain}
-          emptyLabel="הכל"
+          emptyLabel={t(tasksDict, props.locale, "allWord")}
           onChange={(value) => pushFilters({ q: urlQ, priority: urlPriority, domain: value, linkedId: "", scope: urlScope })}
         />
       </div>
       {linkedTarget ? (
         <div className="col-span-2 w-full space-y-1">
-          <div className="text-[11px] text-muted-foreground">{linkedTarget === "project" ? "פרויקט" : "נכס"}</div>
+          <div className="text-[11px] text-muted-foreground">
+            {linkedTarget === "project"
+              ? t(tasksDict, props.locale, "linkedProjectLabel")
+              : t(tasksDict, props.locale, "linkedPropertyLabel")}
+          </div>
           {linkedTarget === "project" ? (
             <ProjectPicker
               className="h-9"
               value={urlLinkedId}
               onChange={(linkedId) => pushFilters({ q: urlQ, priority: urlPriority, domain: urlDomain, linkedId, scope: urlScope })}
-              emptyLabel="כל הפרויקטים"
-              searchPlaceholder="חיפוש פרויקט..."
+              emptyLabel={t(tasksDict, props.locale, "allProjectsLabel")}
+              searchPlaceholder={t(tasksDict, props.locale, "searchProjectPlaceholder")}
               projects={linkedOptions.map((option) => ({ id: option.id, label: option.label }))}
             />
           ) : (
@@ -1046,9 +1094,9 @@ export default function TasksPageClient(props: Props) {
               className="h-9"
               value={urlLinkedId}
               onChange={(linkedId) => pushFilters({ q: urlQ, priority: urlPriority, domain: urlDomain, linkedId, scope: urlScope })}
-              ariaLabel="סינון לפי נכס"
-              emptyOptionLabel="כל הנכסים"
-              searchPlaceholder="חיפוש נכס..."
+              ariaLabel={t(tasksDict, props.locale, "filterByPropertyAria")}
+              emptyOptionLabel={t(tasksDict, props.locale, "allPropertiesLabel")}
+              searchPlaceholder={t(tasksDict, props.locale, "searchPropertyPlaceholder")}
               options={linkedOptions.map((option) => ({ value: option.id, label: option.label }))}
             />
           )}
@@ -1071,7 +1119,7 @@ export default function TasksPageClient(props: Props) {
       <Input
         value={qInput}
         onChange={(e) => handleQChange(e.target.value)}
-        placeholder="חיפוש..."
+        placeholder={t(tasksDict, props.locale, "searchPlaceholder")}
         className="h-8 rounded-lg ps-9"
       />
     </div>
@@ -1086,7 +1134,7 @@ export default function TasksPageClient(props: Props) {
         onClick={() => setFiltersOpen((x) => !x)}
       >
         <FilterIcon className="h-4 w-4" />
-        מסננים
+        {t(tasksDict, props.locale, "filtersLabel")}
         {activeFilterCount > 0 ? (
           <span className="rounded-full bg-white/25 px-1.5 text-[11px] leading-5">{activeFilterCount}</span>
         ) : null}
@@ -1102,8 +1150,8 @@ export default function TasksPageClient(props: Props) {
           asChild
           size="icon"
           className="h-8 w-8 shrink-0 rounded-lg "
-          aria-label="משימות קבועות"
-          title="משימות קבועות"
+          aria-label={t(tasksDict, props.locale, "recurringTasksLabel")}
+          title={t(tasksDict, props.locale, "recurringTasksLabel")}
         >
           <Link href="/tasks/recurring" onClick={() => emitNavigationStart()}>
             <RecurringIcon className="h-4 w-4" />
@@ -1137,7 +1185,7 @@ export default function TasksPageClient(props: Props) {
             <Input
               value={qInput}
               onChange={(e) => handleQChange(e.target.value)}
-              placeholder="חיפוש..."
+              placeholder={t(tasksDict, props.locale, "searchPlaceholder")}
               className="h-10 w-full rounded-xl ps-9"
             />
           </div>
@@ -1145,7 +1193,7 @@ export default function TasksPageClient(props: Props) {
           <Button
             type="button"
             size="icon"
-            aria-label={filtersOpen ? "הסתרת מסננים" : "הצגת מסננים"}
+            aria-label={t(tasksDict, props.locale, filtersOpen ? "hideFiltersAria" : "showFiltersAria")}
             className={
               filtersOpen || hasActiveFilter
                 ? "h-10 w-10 shrink-0 rounded-xl"
@@ -1164,8 +1212,8 @@ export default function TasksPageClient(props: Props) {
               asChild
               size="icon"
               className="h-10 w-10 shrink-0 rounded-xl "
-              aria-label="משימות קבועות"
-              title="משימות קבועות"
+              aria-label={t(tasksDict, props.locale, "recurringTasksLabel")}
+              title={t(tasksDict, props.locale, "recurringTasksLabel")}
             >
               <Link href="/tasks/recurring" onClick={() => emitNavigationStart()}>
                 <RecurringIcon className="h-4 w-4" />
@@ -1181,16 +1229,16 @@ export default function TasksPageClient(props: Props) {
         <>
           <button
             type="button"
-            aria-label="סגירת מסננים"
+            aria-label={t(tasksDict, props.locale, "closeFiltersAria")}
             className="fixed inset-0 top-[112px] z-20 bg-black/30 md:hidden"
             onClick={() => setFiltersOpen(false)}
           />
           <div className="fixed inset-x-0 top-[112px] z-20 border-b border-border bg-card p-3 shadow-lg md:hidden">
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-medium">מסננים</span>
+              <span className="text-sm font-medium">{t(tasksDict, props.locale, "filtersLabel")}</span>
               <button
                 type="button"
-                aria-label="סגירת מסננים"
+                aria-label={t(tasksDict, props.locale, "closeFiltersAria")}
                 className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground"
                 onClick={() => setFiltersOpen(false)}
               >
@@ -1225,16 +1273,16 @@ export default function TasksPageClient(props: Props) {
         <div className="hidden md:block">
           <button
             type="button"
-            aria-label="סגירת מסננים"
+            aria-label={t(tasksDict, props.locale, "closeFiltersAria")}
             className="fixed inset-0 z-40 bg-black/20"
             onClick={() => setFiltersOpen(false)}
           />
           <div className="fixed left-6 top-[7rem] z-50 w-[28rem] max-w-[calc(100vw-3rem)] rounded-xl border bg-card p-3 shadow-xl lg:left-8">
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-medium">מסננים</span>
+              <span className="text-sm font-medium">{t(tasksDict, props.locale, "filtersLabel")}</span>
               <button
                 type="button"
-                aria-label="סגירת מסננים"
+                aria-label={t(tasksDict, props.locale, "closeFiltersAria")}
                 className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted"
                 onClick={() => setFiltersOpen(false)}
               >
@@ -1293,6 +1341,7 @@ export default function TasksPageClient(props: Props) {
                   onColumnRef={registerColumn}
                   longPress={!touchDrag}
                   overview={isOverview}
+                  locale={props.locale}
                 />
               ))}
             </div>
@@ -1306,8 +1355,8 @@ export default function TasksPageClient(props: Props) {
             type="button"
             onClick={toggleOverview}
             aria-pressed={isOverview}
-            aria-label={isOverview ? "חזרה לתצוגה רגילה" : "הצגת כל הרשימה במסך אחד"}
-            title={isOverview ? "חזרה לתצוגה רגילה" : "הצגת כל הרשימה במסך אחד"}
+            aria-label={t(tasksDict, props.locale, isOverview ? "overviewBackAria" : "overviewShowAllAria")}
+            title={t(tasksDict, props.locale, isOverview ? "overviewBackAria" : "overviewShowAllAria")}
             className="absolute bottom-16 right-3 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-sidebar/90 text-sidebar-foreground shadow-lg ring-1 ring-white/20 backdrop-blur transition-colors hover:bg-sidebar"
           >
             {isOverview ? <ZoomInIcon className="h-5 w-5" /> : <ZoomOutIcon className="h-5 w-5" />}
@@ -1317,11 +1366,13 @@ export default function TasksPageClient(props: Props) {
         <DragOverlay>
           {activeColumnStatus ? (
             <div className="rounded-xl bg-muted px-3 py-2.5 text-sm font-semibold shadow-lg">
-              {getTaskStatusLabel(activeColumnStatus)}
+              {getTaskStatusLabel(activeColumnStatus, props.locale)}
             </div>
           ) : activeTask ? (
             <div className="rounded-lg border bg-card p-2.5 text-sm shadow-lg">
-              <div className="font-medium leading-snug">{activeTask.subject}</div>
+              <div className="font-medium leading-snug">
+                {preferHe(activeTask.subject, activeTask.subject_he, props.locale, activeTask.subject_ar)}
+              </div>
             </div>
           ) : null}
         </DragOverlay>
@@ -1367,13 +1418,13 @@ export default function TasksPageClient(props: Props) {
                   bottom nav the same way the nav's own spacer does. */}
               <div className="fixed inset-x-2 bottom-[calc(58px+env(safe-area-inset-bottom)+0.5rem)] z-[60] rounded-2xl border bg-popover p-2 shadow-xl md:hidden">
                 <div className="px-1 pb-2 pt-1 text-sm font-medium leading-snug">
-                  {menuTask?.subject ?? "משימה"}
+                  {menuTask ? preferHe(menuTask.subject, menuTask.subject_he, props.locale, menuTask.subject_ar) : t(tasksDict, props.locale, "taskWord")}
                 </div>
                 {/* Say what the row DOES — three status words on their own read
                     as a filter or a label, not as "move it there". Always
                     exactly three (the four lists minus the one it's in), so they
                     fit one row. */}
-                <div className="px-1 pb-1 text-[11px] text-muted-foreground">העברה לרשימה</div>
+                <div className="px-1 pb-1 text-[11px] text-muted-foreground">{t(tasksDict, props.locale, "moveToListLabel")}</div>
                 <div className="grid grid-cols-3 gap-1.5">
                   {moveTargets.map((target) => (
                     <button
@@ -1382,7 +1433,7 @@ export default function TasksPageClient(props: Props) {
                       onClick={() => move(target)}
                       className="rounded-xl border bg-muted/40 px-1 py-2.5 text-center text-sm font-medium transition-colors active:bg-muted"
                     >
-                      {getTaskStatusLabel(target)}
+                      {getTaskStatusLabel(target, props.locale)}
                     </button>
                   ))}
                 </div>
@@ -1392,9 +1443,9 @@ export default function TasksPageClient(props: Props) {
                     onClick={open}
                     className="flex-1 rounded-xl bg-secondary px-3 py-2.5 text-sm font-medium text-secondary-foreground"
                   >
-                    פתיחה
+                    {t(tasksDict, props.locale, "openLabel")}
                   </button>
-                  <DeleteButton label="מחיקת המשימה" size="default" onClick={remove} />
+                  <DeleteButton label={t(tasksDict, props.locale, "deleteTheTaskButtonLabel")} size="default" onClick={remove} />
                 </div>
               </div>
               {/* Desktop: at the cursor, where the right-click happened. */}
@@ -1403,10 +1454,10 @@ export default function TasksPageClient(props: Props) {
                 style={{ top: menu.y, left: menu.x }}
               >
                 <button type="button" onClick={open} className="block w-full px-3 py-1.5 text-start hover:bg-muted/50">
-                  פתיחה
+                  {t(tasksDict, props.locale, "openLabel")}
                 </button>
                 <div className="my-1 border-t" />
-                <div className="px-3 pb-0.5 text-[11px] text-muted-foreground">העברה ל…</div>
+                <div className="px-3 pb-0.5 text-[11px] text-muted-foreground">{t(tasksDict, props.locale, "moveToEllipsisLabel")}</div>
                 {moveTargets.map((target) => (
                   <button
                     key={target}
@@ -1414,7 +1465,7 @@ export default function TasksPageClient(props: Props) {
                     onClick={() => move(target)}
                     className="block w-full px-3 py-1.5 text-start hover:bg-muted/50"
                   >
-                    {getTaskStatusLabel(target)}
+                    {getTaskStatusLabel(target, props.locale)}
                   </button>
                 ))}
                 <div className="my-1 border-t" />
@@ -1423,7 +1474,7 @@ export default function TasksPageClient(props: Props) {
                   onClick={remove}
                   className="block w-full px-3 py-1.5 text-start text-destructive hover:bg-destructive/10"
                 >
-                  מחיקה
+                  {t(commonDict, props.locale, "delete")}
                 </button>
               </div>
             </>
@@ -1444,6 +1495,7 @@ export default function TasksPageClient(props: Props) {
         }}
         mode="edit"
         taskId={editId}
+        locale={props.locale}
         users={props.users}
         projects={props.projects}
         properties={props.properties}
@@ -1457,17 +1509,21 @@ export default function TasksPageClient(props: Props) {
         onOpenChange={(open) => {
           if (!open) setDeleteTaskId(null);
         }}
-        title="מחיקת משימה"
+        title={t(tasksDict, props.locale, "deleteTaskLabel")}
         description={
-          <>
-            למחוק את המשימה{" "}
-            <span className="font-medium">
-              &quot;{tasks.find((t) => t.id === deleteTaskId)?.subject ?? ""}&quot;
-            </span>
-            ? לא ניתן לשחזר משימה שנמחקה.
-          </>
+          (() => {
+            const target = tasks.find((t) => t.id === deleteTaskId);
+            const displaySubject = target ? preferHe(target.subject, target.subject_he, props.locale, target.subject_ar) : "";
+            return (
+              <>
+                {t(tasksDict, props.locale, "confirmDeleteTaskPrefix")}{" "}
+                <span className="font-medium">&quot;{displaySubject}&quot;</span>
+                {t(tasksDict, props.locale, "confirmDeleteTaskSuffix")}
+              </>
+            );
+          })()
         }
-        confirmLabel="מחיקה"
+        confirmLabel={t(commonDict, props.locale, "delete")}
         destructive
         loading={deletingTask}
         onConfirm={() => void performDeleteTask()}

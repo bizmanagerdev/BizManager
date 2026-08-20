@@ -36,6 +36,8 @@ export type SalaryCenterUserRow = {
   system_access: boolean | null;
   payroll_worker_type: PayrollWorkerType | null;
   pay_tracking_mode: "session" | "payslip" | null;
+  /** UI language ('he' | 'ar'); admin-set here, only meaningful for a worker. */
+  locale: "he" | "ar";
 };
 
 export type SalaryCenterProjectOption = {

@@ -14,6 +14,10 @@ import { formatMinutes, minutesBetween } from "@/lib/payroll";
 import { formatShortDateTime } from "@/lib/date";
 import { toHebrewError } from "@/lib/error-messages";
 import type { MyShiftReport } from "@/lib/attendance/my-shift";
+import { t } from "@/lib/i18n/t";
+import type { Locale } from "@/lib/i18n/types";
+import { commonDict } from "@/lib/i18n/dictionaries/common";
+import { profileDict } from "@/lib/i18n/dictionaries/profile";
 
 /** Now as a datetime-local value ("YYYY-MM-DDTHH:mm"), the format DateTimeInput reads. */
 function nowLocal() {
@@ -32,10 +36,13 @@ function nowLocal() {
 export default function MyShiftCard({
   openShift,
   pendingCount,
+  locale = "he",
 }: {
   openShift: MyShiftReport | null;
   /** Submitted shifts still waiting for the boss, so he knows it went through. */
   pendingCount: number;
+  /** Office/admin are always "he"; only a worker ever sees "ar". */
+  locale?: Locale;
 }) {
   const router = useRouter();
   const [note, setNote] = useState("");
@@ -78,7 +85,7 @@ export default function MyShiftCard({
       });
       const json = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
-        toast.error(toHebrewError(json.error ?? "", "הפעולה נכשלה."));
+        toast.error(toHebrewError(json.error ?? "", t(profileDict, locale, "actionFailed")));
         return;
       }
       setNote("");
@@ -91,7 +98,7 @@ export default function MyShiftCard({
       toast.success(successMessage);
       startSaving(() => router.refresh());
     } catch (error: unknown) {
-      toast.error(toHebrewError(error, "אין חיבור לשרת."));
+      toast.error(toHebrewError(error, t(profileDict, locale, "noServerConnection")));
     } finally {
       setBusy(false);
     }
@@ -99,31 +106,31 @@ export default function MyShiftCard({
 
   function openShiftNow() {
     if (startMode === "now") {
-      void call("/api/attendance/my/start", "המשמרת נפתחה.");
+      void call("/api/attendance/my/start", t(profileDict, locale, "shiftOpenedToast"));
       return;
     }
     // datetime-local carries no timezone; new Date() reads it as local, which is
     // what the worker meant, and the server stores the resulting instant.
     const parsed = startLocal ? new Date(startLocal) : null;
     if (!parsed || Number.isNaN(parsed.getTime())) {
-      toast.error("יש לבחור שעת התחלה.");
+      toast.error(t(profileDict, locale, "errSelectStartTime"));
       return;
     }
     if (startMode === "custom") {
-      void call("/api/attendance/my/start", "המשמרת נפתחה.", { clock_in: parsed.toISOString() });
+      void call("/api/attendance/my/start", t(profileDict, locale, "shiftOpenedToast"), { clock_in: parsed.toISOString() });
       return;
     }
     // A finished shift goes straight to the boss — there's nothing left to close.
     const parsedEnd = fullEndLocal ? new Date(fullEndLocal) : null;
     if (!parsedEnd || Number.isNaN(parsedEnd.getTime())) {
-      toast.error("יש לבחור שעת סיום.");
+      toast.error(t(profileDict, locale, "errSelectEndTime"));
       return;
     }
     if (parsedEnd <= parsed) {
-      toast.error("שעת הסיום חייבת להיות אחרי שעת ההתחלה.");
+      toast.error(t(profileDict, locale, "errEndAfterStart"));
       return;
     }
-    void call("/api/attendance/my/log", "המשמרת נשלחה לאישור.", {
+    void call("/api/attendance/my/log", t(profileDict, locale, "shiftSubmittedToast"), {
       clock_in: parsed.toISOString(),
       clock_out: parsedEnd.toISOString(),
     });
@@ -131,15 +138,15 @@ export default function MyShiftCard({
 
   function closeShift() {
     if (endMode === "now") {
-      void call("/api/attendance/my/close", "המשמרת נשלחה לאישור.");
+      void call("/api/attendance/my/close", t(profileDict, locale, "shiftSubmittedToast"));
       return;
     }
     const parsed = endLocal ? new Date(endLocal) : null;
     if (!parsed || Number.isNaN(parsed.getTime())) {
-      toast.error("יש לבחור שעת סיום.");
+      toast.error(t(profileDict, locale, "errSelectEndTime"));
       return;
     }
-    void call("/api/attendance/my/close", "המשמרת נשלחה לאישור.", { clock_out: parsed.toISOString() });
+    void call("/api/attendance/my/close", t(profileDict, locale, "shiftSubmittedToast"), { clock_out: parsed.toISOString() });
   }
 
   const working = busy || saving;
@@ -154,18 +161,18 @@ export default function MyShiftCard({
           <div className="flex min-w-0 items-center gap-2 text-base font-semibold">
             <ClockIcon className="h-5 w-5 shrink-0" />
             <span className="break-words">
-              {openShift ? `משמרת פתוחה מ־${formatShortDateTime(openShift.clock_in)}` : "שעון נוכחות"}
+              {openShift ? `${t(profileDict, locale, "openShiftSincePrefix")}${formatShortDateTime(openShift.clock_in)}` : t(profileDict, locale, "attendanceClockTitle")}
             </span>
           </div>
           {pendingCount > 0 ? (
-            <Badge variant="warning">{pendingCount} משמרות ממתינות לאישור</Badge>
+            <Badge variant="warning">{t(profileDict, locale, "pendingShiftsBadgeTemplate").replace("{n}", String(pendingCount))}</Badge>
           ) : null}
         </div>
 
         {/* Null until the first client tick, so the server and client render the
             same markup and the running total can't hydrate-mismatch. */}
         {openShift && elapsedMinutes !== null ? (
-          <div className="text-sm text-muted-foreground">עד עכשיו: {formatMinutes(elapsedMinutes)} שעות</div>
+          <div className="text-sm text-muted-foreground">{t(profileDict, locale, "elapsedPrefix")}{formatMinutes(elapsedMinutes)} {t(profileDict, locale, "hoursSuffix")}</div>
         ) : null}
 
         {/* While the shift just runs, the card is one line and one button. The
@@ -184,33 +191,33 @@ export default function MyShiftCard({
                 setClosing(true);
               }}
             >
-              סיום משמרת
+              {t(profileDict, locale, "endShiftLabel")}
             </Button>
           ) : (
             <div className="space-y-2">
               <NativeSelect
                 value={endMode}
                 disabled={working}
-                aria-label="שעת סיום המשמרת"
+                aria-label={t(profileDict, locale, "endTimeAriaLabel")}
                 onChange={(event) => {
                   const custom = event.target.value === "custom";
                   setEndMode(custom ? "custom" : "now");
                   if (custom && !endLocal) setEndLocal(nowLocal());
                 }}
               >
-                <option value="now">סיימתי עכשיו</option>
-                <option value="custom">סיימתי בשעה אחרת</option>
+                <option value="now">{t(profileDict, locale, "finishedNowOption")}</option>
+                <option value="custom">{t(profileDict, locale, "finishedOtherTimeOption")}</option>
               </NativeSelect>
               {endMode === "custom" ? (
                 <DateTimeInput
                   value={endLocal}
                   onChange={(event) => setEndLocal(event.target.value)}
                   disabled={working}
-                  aria-label="שעת סיום"
+                  aria-label={t(profileDict, locale, "endTimeLabel")}
                 />
               ) : null}
               <label className="block space-y-1">
-                <span className="block text-xs text-muted-foreground">מה עשית במשמרת?</span>
+                <span className="block text-xs text-muted-foreground">{t(profileDict, locale, "whatDidYouDoLabel")}</span>
                 <Textarea
                   value={note}
                   onChange={(event) => setNote(event.target.value)}
@@ -221,7 +228,7 @@ export default function MyShiftCard({
               <div className="flex gap-2">
                 <Button type="button" className="flex-1" disabled={working} onClick={closeShift}>
                   {working ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : null}
-                  שליחה לאישור
+                  {t(profileDict, locale, "submitForApprovalLabel")}
                 </Button>
                 <Button
                   type="button"
@@ -232,7 +239,7 @@ export default function MyShiftCard({
                     setNote("");
                   }}
                 >
-                  ביטול
+                  {t(commonDict, locale, "cancel")}
                 </Button>
               </div>
             </div>
@@ -242,7 +249,7 @@ export default function MyShiftCard({
             <NativeSelect
               value={startMode}
               disabled={working}
-              aria-label="שעת תחילת המשמרת"
+              aria-label={t(profileDict, locale, "startTimeAriaLabel")}
               onChange={(event) => {
                 const value = event.target.value;
                 const mode = value === "custom" || value === "full" ? value : "now";
@@ -253,36 +260,36 @@ export default function MyShiftCard({
                 if (mode === "full" && !fullEndLocal) setFullEndLocal(nowLocal());
               }}
             >
-              <option value="now">התחלתי עכשיו</option>
-              <option value="custom">התחלתי בשעה אחרת</option>
-              <option value="full">שכחתי לדווח — משמרת שהסתיימה</option>
+              <option value="now">{t(profileDict, locale, "startedNowOption")}</option>
+              <option value="custom">{t(profileDict, locale, "startedOtherTimeOption")}</option>
+              <option value="full">{t(profileDict, locale, "forgotToReportOption")}</option>
             </NativeSelect>
             {startMode !== "now" ? (
               <label className="block space-y-1">
-                <span className="block text-xs text-muted-foreground">שעת התחלה</span>
+                <span className="block text-xs text-muted-foreground">{t(profileDict, locale, "startTimeLabel")}</span>
                 <DateTimeInput
                   value={startLocal}
                   onChange={(event) => setStartLocal(event.target.value)}
                   disabled={working}
-                  aria-label="שעת התחלה"
+                  aria-label={t(profileDict, locale, "startTimeLabel")}
                 />
               </label>
             ) : null}
             {startMode === "full" ? (
               <>
                 <label className="block space-y-1">
-                  <span className="block text-xs text-muted-foreground">שעת סיום</span>
+                  <span className="block text-xs text-muted-foreground">{t(profileDict, locale, "endTimeLabel")}</span>
                   <DateTimeInput
                     value={fullEndLocal}
                     onChange={(event) => setFullEndLocal(event.target.value)}
                     disabled={working}
-                    aria-label="שעת סיום"
+                    aria-label={t(profileDict, locale, "endTimeLabel")}
                   />
                 </label>
                 {/* Worth asking here: a shift reported days later gives the boss
                     nothing else to go on when picking the business domain. */}
                 <label className="block space-y-1">
-                  <span className="block text-xs text-muted-foreground">מה עשית במשמרת?</span>
+                  <span className="block text-xs text-muted-foreground">{t(profileDict, locale, "whatDidYouDoLabel")}</span>
                   <Textarea
                     value={note}
                     onChange={(event) => setNote(event.target.value)}
@@ -294,7 +301,7 @@ export default function MyShiftCard({
             ) : null}
             <Button type="button" className="w-full" disabled={working} onClick={openShiftNow}>
               {working ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : null}
-              {startMode === "full" ? "שליחה לאישור" : "פתיחת משמרת"}
+              {startMode === "full" ? t(profileDict, locale, "submitForApprovalLabel") : t(profileDict, locale, "startShiftLabel")}
             </Button>
           </div>
         )}

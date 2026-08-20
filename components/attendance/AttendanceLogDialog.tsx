@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ClockIcon, SpinnerIcon } from "@/components/ui/icons";
@@ -12,6 +12,10 @@ import { DateTimeInput } from "@/components/ui/date-input";
 import { formatMinutes, minutesBetween } from "@/lib/payroll";
 import { formatShortDateTime } from "@/lib/date";
 import { toHebrewError } from "@/lib/error-messages";
+import { t } from "@/lib/i18n/t";
+import type { Locale } from "@/lib/i18n/types";
+import { commonDict } from "@/lib/i18n/dictionaries/common";
+import { profileDict } from "@/lib/i18n/dictionaries/profile";
 
 export type AttendanceLogWorker = { id: string; label: string };
 
@@ -43,11 +47,14 @@ export function AttendanceLogDialog({
   onOpenChange,
   workers,
   onSaved,
+  locale = "he",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   workers: AttendanceLogWorker[];
   onSaved?: () => void;
+  /** Office/admin are always "he"; only a worker ever sees "ar". */
+  locale?: Locale;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -55,12 +62,12 @@ export function AttendanceLogDialog({
         <DialogHeader className="space-y-1 text-start">
           <DialogTitle className="flex items-center gap-2">
             <ClockIcon className="h-5 w-5 text-secondary" />
-            דיווח נוכחות לעובד
+            {t(profileDict, locale, "logAttendanceTitle")}
           </DialogTitle>
-          <DialogDescription>בחרו עובד, ואז דווחו כניסה או יציאה — הדיווח ייכנס לתור לשיוך תחום ואישור.</DialogDescription>
+          <DialogDescription>{t(profileDict, locale, "logAttendanceDescription")}</DialogDescription>
         </DialogHeader>
         {/* Body unmounts on close (DialogContent unmounts), so every open starts fresh. */}
-        <AttendanceLogBody workers={workers} onSaved={onSaved} onClose={() => onOpenChange(false)} />
+        <AttendanceLogBody workers={workers} onSaved={onSaved} onClose={() => onOpenChange(false)} locale={locale} />
       </DialogContent>
     </Dialog>
   );
@@ -70,10 +77,12 @@ function AttendanceLogBody({
   workers,
   onSaved,
   onClose,
+  locale,
 }: {
   workers: AttendanceLogWorker[];
   onSaved?: () => void;
   onClose: () => void;
+  locale: Locale;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -97,8 +106,8 @@ function AttendanceLogBody({
   // confirmation has to say WHO it landed on — otherwise clocking in the wrong
   // colleague looks exactly like clocking in the right one.
   const workerLabel = useMemo(
-    () => workers.find((w) => w.id === workerId)?.label ?? "העובד",
-    [workers, workerId]
+    () => workers.find((w) => w.id === workerId)?.label ?? t(profileDict, locale, "theWorkerFallback"),
+    [workers, workerId, locale]
   );
 
   // Load the worker's current state on selection (in the event handler — not an effect).
@@ -119,9 +128,18 @@ function AttendanceLogBody({
         setState(json.open ?? null);
         setStateLoaded(true);
       })
-      .catch(() => setError("שגיאה בטעינת מצב העובד."))
+      .catch(() => setError(t(profileDict, locale, "errLoadWorkerState")))
       .finally(() => setStateLoading(false));
   }
+
+  // When the picker has been narrowed to just one worker (an Arabic-locale
+  // worker logging only his own attendance — see QuickCreateDialogs), skip the
+  // redundant "pick yourself from a list of one" step. The body remounts fresh
+  // on every dialog open, so this only ever fires once per open.
+  useEffect(() => {
+    if (workers.length === 1) selectWorker(workers[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function afterSuccess(message: string) {
     toast.success(message);
@@ -148,26 +166,26 @@ function AttendanceLogBody({
     post(
       "/api/attendance/phone-reports/manual",
       { user_id: workerId, clock_in: new Date().toISOString(), clock_out: null },
-      `נפתחה משמרת עבור ${workerLabel}.`,
-      "דיווח הכניסה נכשל."
+      t(profileDict, locale, "shiftOpenedForTemplate").replace("{name}", workerLabel),
+      t(profileDict, locale, "clockInReportFailed")
     );
   }
 
   function signOut(atLocal: string) {
     const d = new Date(atLocal);
-    if (!atLocal || Number.isNaN(d.getTime())) return setError("שעת יציאה אינה תקינה.");
+    if (!atLocal || Number.isNaN(d.getTime())) return setError(t(profileDict, locale, "errInvalidClockOutTime"));
     post(
       "/api/attendance/phone-reports/close",
       { report_id: state?.id, clock_out: d.toISOString(), notes: note.trim() || null },
-      `המשמרת של ${workerLabel} נסגרה וממתינה לאישור.`,
-      "דיווח היציאה נכשל."
+      t(profileDict, locale, "shiftClosedForTemplate").replace("{name}", workerLabel),
+      t(profileDict, locale, "clockOutReportFailed")
     );
   }
 
   function saveEntry() {
     const d = new Date(entryLocal);
-    if (!entryLocal || Number.isNaN(d.getTime())) return setError("שעת כניסה אינה תקינה.");
-    if (d.getTime() > Date.now() + 60_000) return setError("שעת הכניסה לא יכולה להיות בעתיד.");
+    if (!entryLocal || Number.isNaN(d.getTime())) return setError(t(profileDict, locale, "errInvalidClockInTime"));
+    if (d.getTime() > Date.now() + 60_000) return setError(t(profileDict, locale, "errClockInFuture"));
     setError("");
     startTransition(async () => {
       try {
@@ -177,68 +195,68 @@ function AttendanceLogBody({
           body: JSON.stringify({ report_id: state?.id, clock_in: d.toISOString() }),
         });
         const json = (await res.json().catch(() => ({}))) as { error?: string };
-        if (!res.ok) return setError(toHebrewError(json.error, "עדכון שעת הכניסה נכשל."));
-        toast.success(`שעת הכניסה של ${workerLabel} עודכנה.`);
+        if (!res.ok) return setError(toHebrewError(json.error, t(profileDict, locale, "updateClockInFailed")));
+        toast.success(t(profileDict, locale, "clockInUpdatedTemplate").replace("{name}", workerLabel));
         onSaved?.();
         router.refresh();
         setEditEntry(false);
         selectWorker(workerId); // re-load state so the shown entry time updates
       } catch (err: unknown) {
-        setError(toHebrewError(err, "עדכון שעת הכניסה נכשל."));
+        setError(toHebrewError(err, t(profileDict, locale, "updateClockInFailed")));
       }
     });
   }
 
   function submitManual() {
     const cin = new Date(startLocal);
-    if (!startLocal || Number.isNaN(cin.getTime())) return setError("שעת כניסה אינה תקינה.");
+    if (!startLocal || Number.isNaN(cin.getTime())) return setError(t(profileDict, locale, "errInvalidClockInTime"));
     let coutIso: string | null = null;
     if (endLocal) {
       const cout = new Date(endLocal);
-      if (Number.isNaN(cout.getTime())) return setError("שעת יציאה אינה תקינה.");
-      if (cout <= cin) return setError("שעת היציאה חייבת להיות אחרי הכניסה.");
+      if (Number.isNaN(cout.getTime())) return setError(t(profileDict, locale, "errInvalidClockOutTime"));
+      if (cout <= cin) return setError(t(profileDict, locale, "errClockOutAfterClockIn"));
       coutIso = cout.toISOString();
     }
     post(
       "/api/attendance/phone-reports/manual",
       { user_id: workerId, clock_in: cin.toISOString(), clock_out: coutIso, notes: note.trim() || null },
       coutIso
-        ? `המשמרת של ${workerLabel} נוספה וממתינה לאישור.`
-        : `נפתחה משמרת עבור ${workerLabel}.`,
-      "ההוספה נכשלה."
+        ? t(profileDict, locale, "shiftAddedForTemplate").replace("{name}", workerLabel)
+        : t(profileDict, locale, "shiftOpenedForTemplate").replace("{name}", workerLabel),
+      t(profileDict, locale, "addFailedGeneric")
     );
   }
 
   return (
     <div className="space-y-3">
-      <SearchableSelect options={workerOptions} value={workerId} onChange={selectWorker} placeholder="בחירת עובד" ariaLabel="עובד" />
+      <SearchableSelect options={workerOptions} value={workerId} onChange={selectWorker} placeholder={t(profileDict, locale, "selectWorkerPlaceholder")} ariaLabel={t(profileDict, locale, "workerAriaLabel")} />
 
       {workerId && stateLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <SpinnerIcon className="h-4 w-4 animate-spin" />
-          טוען מצב נוכחות...
+          {t(profileDict, locale, "loadingAttendanceState")}
         </div>
       ) : null}
 
       {workerId && stateLoaded && state ? (
         <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-3">
           <p className="text-sm">
-            <span className="font-medium text-secondary">כרגע במשמרת</span> · נכנס {formatShortDateTime(state.clock_in)} · כבר{" "}
-            {formatMinutes(minutesBetween(state.clock_in, new Date()))} ש׳
+            <span className="font-medium text-secondary">{t(profileDict, locale, "currentlyOnShiftLabel")}</span>{t(profileDict, locale, "clockedInAtPrefix")}{formatShortDateTime(state.clock_in)}{t(profileDict, locale, "alreadyPrefix")}
+            {formatMinutes(minutesBetween(state.clock_in, new Date()))} {t(profileDict, locale, "hoursShort")}
           </p>
           {/* The same question the worker answers on his own clock-out
               ("מה עשית במשמרת?"), so a shift closed for him doesn't reach the
               approval queue with nothing written on it. */}
           <label className="block space-y-1">
-            <span className="block text-xs text-muted-foreground">מה העובד עשה במשמרת?</span>
+            <span className="block text-xs text-muted-foreground">{t(profileDict, locale, "whatDidWorkerDoLabel")}</span>
             <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} disabled={isPending} />
           </label>
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" onClick={() => signOut(nowLocal())} disabled={isPending}>
-              {isPending ? "..." : "יציאה"}
+              {isPending ? t(profileDict, locale, "loadingEllipsis") : t(profileDict, locale, "exitLabel")}
             </Button>
             <Button type="button" variant="secondary" onClick={() => setCustomOut((v) => !v)} disabled={isPending}>
-              בשעה אחרת
+              {t(profileDict, locale, "atOtherTimeLabel")}
             </Button>
             <Button
               type="button"
@@ -250,7 +268,7 @@ function AttendanceLogBody({
               }}
               disabled={isPending}
             >
-              עריכת כניסה
+              {t(profileDict, locale, "editClockInLabel")}
             </Button>
           </div>
           {customOut ? (
@@ -259,18 +277,18 @@ function AttendanceLogBody({
                 <DateTimeInput value={outLocal} onChange={(e) => setOutLocal(e.target.value)} />
               </div>
               <Button type="button" onClick={() => signOut(outLocal)} disabled={isPending}>
-                סגירה
+                {t(profileDict, locale, "closeShort")}
               </Button>
             </div>
           ) : null}
           {editEntry ? (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm text-muted-foreground">שעת כניסה:</span>
+              <span className="text-sm text-muted-foreground">{t(profileDict, locale, "clockInTimeLabelColon")}</span>
               <div className="w-44">
                 <DateTimeInput value={entryLocal} onChange={(e) => setEntryLocal(e.target.value)} />
               </div>
               <Button type="button" onClick={saveEntry} disabled={isPending}>
-                שמור
+                {t(profileDict, locale, "saveShortLabel")}
               </Button>
             </div>
           ) : null}
@@ -279,34 +297,34 @@ function AttendanceLogBody({
 
       {workerId && stateLoaded && !state ? (
         <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-3">
-          <p className="text-sm text-muted-foreground">כרגע לא במשמרת.</p>
+          <p className="text-sm text-muted-foreground">{t(profileDict, locale, "notCurrentlyOnShift")}</p>
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" onClick={signInNow} disabled={isPending}>
-              {isPending ? "..." : "כניסה"}
+              {isPending ? t(profileDict, locale, "loadingEllipsis") : t(profileDict, locale, "entryLabel")}
             </Button>
             <Button type="button" variant="secondary" onClick={() => setManualMode((v) => !v)} disabled={isPending}>
-              רישום ידני
+              {t(profileDict, locale, "manualEntryLabel")}
             </Button>
           </div>
           {manualMode ? (
             <div className="space-y-2">
               <div className="grid grid-cols-2 gap-2">
                 <label className="space-y-1">
-                  <span className="text-xs text-muted-foreground">כניסה</span>
+                  <span className="text-xs text-muted-foreground">{t(profileDict, locale, "entryLabel")}</span>
                   <DateTimeInput value={startLocal} onChange={(e) => setStartLocal(e.target.value)} />
                 </label>
                 <label className="space-y-1">
-                  <span className="text-xs text-muted-foreground">יציאה (לא חובה)</span>
+                  <span className="text-xs text-muted-foreground">{t(profileDict, locale, "exitOptionalLabel")}</span>
                   <DateTimeInput value={endLocal} onChange={(e) => setEndLocal(e.target.value)} />
                 </label>
               </div>
               <label className="block space-y-1">
-                <span className="block text-xs text-muted-foreground">מה העובד עשה במשמרת?</span>
+                <span className="block text-xs text-muted-foreground">{t(profileDict, locale, "whatDidWorkerDoLabel")}</span>
                 <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} disabled={isPending} />
               </label>
               <div className="flex justify-end">
                 <Button type="button" onClick={submitManual} disabled={isPending}>
-                  {isPending ? "..." : "שמירה"}
+                  {isPending ? t(profileDict, locale, "loadingEllipsis") : t(commonDict, locale, "save")}
                 </Button>
               </div>
             </div>

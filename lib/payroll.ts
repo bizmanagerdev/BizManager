@@ -1,6 +1,7 @@
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import { formatMoney } from "@/lib/money";
 import type { FinancialAttachment } from "@/lib/payments";
+import type { Locale } from "@/lib/i18n/types";
 
 export const WORK_SESSIONS_TABLE = "attendance_sessions";
 export const PAYROLL_ADMIN_COOKIE = "payroll_admin_unlocked";
@@ -16,6 +17,8 @@ export type WorkSessionRow = {
   bill_to_customer_amount: number | string | null;
   billing_status: string | null;
   notes: string | null;
+  /** Hebrew translation, auto-filled when authored by a locale=ar worker. */
+  notes_he?: string | null;
   business_domain: string | null;
   project_id: string | null;
   property_id: string | null;
@@ -113,17 +116,17 @@ export function monthKeyFromDate(value: string | Date) {
   return `${year}-${month}`;
 }
 
-export function monthLabelFromKey(key: string) {
+export function monthLabelFromKey(key: string, locale: Locale = "he") {
   const [yearText, monthText] = key.split("-");
   const year = Number(yearText);
   const month = Number(monthText);
   if (!Number.isFinite(year) || !Number.isFinite(month)) return key;
-  return new Intl.DateTimeFormat("he-IL", { month: "long", year: "numeric" }).format(
+  return new Intl.DateTimeFormat(locale === "ar" ? "ar" : "he-IL", { month: "long", year: "numeric" }).format(
     new Date(year, month - 1, 1)
   );
 }
 
-export function buildMonthlyHoursSummary(sessions: WorkSessionRow[]) {
+export function buildMonthlyHoursSummary(sessions: WorkSessionRow[], locale: Locale = "he") {
   const byMonth = new Map<string, MonthlyHoursSummary>();
 
   sessions.forEach((session) => {
@@ -131,7 +134,7 @@ export function buildMonthlyHoursSummary(sessions: WorkSessionRow[]) {
     if (!key) return;
     const existing = byMonth.get(key) ?? {
       key,
-      label: monthLabelFromKey(key),
+      label: monthLabelFromKey(key, locale),
       totalMinutes: 0,
       sessionCount: 0,
       openSessionCount: 0,

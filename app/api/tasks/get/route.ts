@@ -2,6 +2,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { resolveUserDisplayNamesForValues } from "@/lib/audit";
+import { translateToArabic } from "@/lib/i18n/translateToHebrew";
 
 type Row = Record<string, unknown>;
 
@@ -27,14 +28,14 @@ export async function POST(req: Request) {
       supabase
         .from("tasks")
         .select(
-          "id,business_domain,project_id,property_id,customer_id,assigned_user_id,subject,description,due_date,due_time,city,address,priority,status,created_at,updated_at,notes,is_private,private_owner_id"
+          "id,business_domain,project_id,property_id,customer_id,assigned_user_id,subject,description,subject_he,description_he,subject_ar,description_ar,due_date,due_time,city,address,priority,status,created_at,updated_at,notes,is_private,private_owner_id"
         )
         .eq("id", id)
         .maybeSingle(),
       supabase.from("task_members").select("user_id").eq("task_id", id),
       supabase
         .from("task_comments")
-        .select("id,author_id,body,created_at,updated_at")
+        .select("id,author_id,body,body_he,created_at,updated_at")
         .eq("task_id", id)
         .order("created_at", { ascending: true })
         .range(0, 199),
@@ -46,9 +47,34 @@ export async function POST(req: Request) {
         .range(0, 99),
     ]);
 
-    const task = taskRes.data;
+    const task = taskRes.data as Row | null;
     if (taskRes.error) return NextResponse.json({ error: toHebrewError(taskRes.error.message) }, { status: 400 });
     if (!task) return NextResponse.json({ task: null });
+
+    // An Arabic-locale viewer opening a task NOT authored by an Arabic worker
+    // (subject_he unset — see app/api/tasks/create) gets subject/description
+    // translated here and cached back onto the row, mirroring loadTasksBoard's
+    // board-level version of the same lazy-translate-and-cache pattern.
+    if (profile.locale === "ar") {
+      const updates: Record<string, string> = {};
+      if (!str(task, "subject_he") && !str(task, "subject_ar") && str(task, "subject")) {
+        const translated = await translateToArabic(str(task, "subject") ?? "");
+        if (translated) {
+          task.subject_ar = translated;
+          updates.subject_ar = translated;
+        }
+      }
+      if (!str(task, "description_he") && !str(task, "description_ar") && str(task, "description")) {
+        const translated = await translateToArabic(str(task, "description") ?? "");
+        if (translated) {
+          task.description_ar = translated;
+          updates.description_ar = translated;
+        }
+      }
+      if (Object.keys(updates).length > 0) {
+        await supabase.from("tasks").update(updates).eq("id", id);
+      }
+    }
 
     const memberIds = ((membersRes.data ?? []) as Row[])
       .map((r) => str(r, "user_id"))
@@ -69,6 +95,7 @@ export async function POST(req: Request) {
       author_id: str(r, "author_id"),
       author_name: names[str(r, "author_id") ?? ""] ?? null,
       body: str(r, "body") ?? "",
+      body_he: str(r, "body_he"),
       created_at: str(r, "created_at") ?? "",
     }));
     const reminders = reminderRows.map((r) => ({

@@ -466,8 +466,10 @@ export default function PendingReportCard({
         clockIn={report.clock_in}
         clockOut={report.clock_out}
         duration={`${formatMinutes(totalMinutes)} שעות`}
-        meta={attendanceDetail(report.source, report.notes)}
-        metaTitle={attendanceMeta(report.source, report.notes, report.reported_by_name)}
+        // This queue is admin/office-only (see the page-level role gate), who
+        // never read Arabic — prefer the Hebrew translation when one exists.
+        meta={attendanceDetail(report.source, report.notes_he ?? report.notes)}
+        metaTitle={attendanceMeta(report.source, report.notes_he ?? report.notes, report.reported_by_name)}
         // The date, only where the list ISN'T grouped by day: on the dashboard a
         // heading above each group already says it.
         chips={

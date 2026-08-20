@@ -11,6 +11,9 @@ import { NativeSelect } from "@/components/ui/native-select";
 import DomainBarChart from "@/components/charts/DomainBarChart";
 import { loadDomainChartMonth } from "@/app/(app)/dashboard/actions";
 import { monthChoices, type DomainBar, type MonthKey } from "@/lib/dashboard/domain-chart";
+import { t } from "@/lib/i18n/t";
+import { dashboardDict } from "@/lib/i18n/dictionaries/dashboard";
+import type { Locale } from "@/lib/i18n/types";
 
 // Income vs expenses per business domain, for ONE month — with the month picker
 // at the far end of the header (the LEFT end, RTL), where the card's controls go.
@@ -28,6 +31,7 @@ export default function DomainChartCard({
   initialBars,
   initialMonth,
   todayIso,
+  locale,
 }: {
   /** The first month's bars, loaded server-side with the page. */
   initialBars: DomainBar[];
@@ -35,6 +39,7 @@ export default function DomainChartCard({
   initialMonth: MonthKey;
   /** The server's date, so the picker's list is identical on both sides. */
   todayIso: string;
+  locale: Locale;
 }) {
   const [month, setMonth] = useState<MonthKey>(initialMonth);
   const [bars, setBars] = useState<DomainBar[]>(initialBars);
@@ -65,7 +70,7 @@ export default function DomainChartCard({
     <Card className="relative flex h-full flex-col">
       <Link
         href="/financial"
-        aria-label="לניהול הכספים"
+        aria-label={t(dashboardDict, locale, "toFinancialLabel")}
         className="absolute inset-0 rounded-[1.125rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
       <div className="pointer-events-none relative flex min-h-0 flex-1 flex-col">
@@ -74,12 +79,12 @@ export default function DomainChartCard({
             is written along the chart's own axis anyway. */}
         <DashboardCardHeader
           icon={ChartIcon}
-          title="הכנסות והוצאות"
+          title={t(dashboardDict, locale, "incomeExpensesTitle")}
           nowrap
           action={
             <NativeSelect
               dense
-              aria-label="בחירת חודש"
+              aria-label={t(dashboardDict, locale, "selectMonthAria")}
               // Sized to the count badge it sits beside, not to a form field: no
               // border, no plate, no shadow — just the month in muted text with
               // the native arrow. A full-height bordered select in a header made
@@ -108,12 +113,14 @@ export default function DomainChartCard({
               <DomainBarChart data={bars} height="100%" />
             ) : (
               <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">
-                {pending ? "טוען נתונים…" : "אין תנועות כספים בחודש זה."}
+                {pending
+                  ? t(dashboardDict, locale, "loadingDataLabel")
+                  : t(dashboardDict, locale, "noCashMovementsLabel")}
               </div>
             )}
           </div>
         </CardContent>
-        <DashboardCardFooter href="/financial" label="לניהול הכספים" />
+        <DashboardCardFooter href="/financial" label={t(dashboardDict, locale, "toFinancialLabel")} />
       </div>
     </Card>
   );

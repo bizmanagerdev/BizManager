@@ -1,7 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
-import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   getPayTrackingModeForWorkerType,
   normalizePayrollWorkerType,
@@ -127,26 +127,27 @@ export async function POST(req: Request) {
       return NextResponse.json({ user: refreshedUser ?? insertedUser });
     }
 
-    const signupClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        auth: {
-          persistSession: false,
-          autoRefreshToken: false,
-          detectSessionInUrl: false,
-        },
-      }
-    );
+    // An admin creating this account on someone else's behalf, not the worker
+    // signing themselves up — the public signUp() flow requires the NEW user
+    // to click an email confirmation link before they can sign in, which an
+    // admin-provisioned worker (who was just handed a password directly, not
+    // walked through email confirmation) has no reason to expect and often
+    // can't complete. The admin API skips that with email_confirm: true.
+    const adminClient = createSupabaseAdminClient();
+    if (!adminClient) {
+      return NextResponse.json(
+        { error: toHebrewError("SUPABASE_SERVICE_ROLE_KEY not configured") },
+        { status: 500 }
+      );
+    }
 
-    const { data: signUpData, error: signUpError } = await signupClient.auth.signUp({
+    const { data: signUpData, error: signUpError } = await adminClient.auth.admin.createUser({
       email,
       password,
-      options: {
-        data: {
-          full_name: fullName || undefined,
-          phone: phone || undefined,
-        },
+      email_confirm: true,
+      user_metadata: {
+        full_name: fullName || undefined,
+        phone: phone || undefined,
       },
     });
 

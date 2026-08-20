@@ -19,17 +19,32 @@ export async function GET() {
     const authUserId = session?.user?.id;
     if (!authUserId) return NextResponse.json({ error: "לא מחובר." }, { status: 401 });
 
-    const { data: profile } = await supabase
+    let { data: profile } = await supabase
       .from("users")
-      .select("id,role,active,system_access")
+      .select("id,role,active,system_access,locale")
       .eq("auth_user_id", authUserId)
       .maybeSingle();
+    if (!profile) {
+      // Pre-migration: the `locale` column may not exist yet.
+      const legacy = await supabase
+        .from("users")
+        .select("id,role,active,system_access")
+        .eq("auth_user_id", authUserId)
+        .maybeSingle();
+      profile = legacy.data as typeof profile;
+    }
     if (!profile || !profile.active || !profile.system_access) {
       return NextResponse.json({ error: "אין הרשאה." }, { status: 403 });
     }
 
     const data = await loadQuickActionsData(supabase, { id: profile.id as string });
-    return NextResponse.json({ ...data, currentUserId: profile.id, role: profile.role ?? null });
+    const rawLocale = (profile as { locale?: unknown }).locale;
+    return NextResponse.json({
+      ...data,
+      currentUserId: profile.id,
+      role: profile.role ?? null,
+      locale: rawLocale === "ar" ? "ar" : "he",
+    });
   } catch (error: unknown) {
     return NextResponse.json({ error: toHebrewError(error, "טעינת הנתונים נכשלה.") }, { status: 500 });
   }

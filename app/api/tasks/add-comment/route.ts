@@ -2,6 +2,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
+import { translateToHebrew } from "@/lib/i18n/translateToHebrew";
 
 export async function POST(req: Request) {
   try {
@@ -18,10 +19,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing task_id or message" }, { status: 400 });
     }
 
+    // Office/admin never see Arabic, so a locale=ar worker's own comment is
+    // auto-translated to Hebrew here. Skipped entirely for Hebrew writers.
+    const bodyHe = profile.locale === "ar" ? await translateToHebrew(message) : null;
+
     const { data, error } = await supabase
       .from("task_comments")
-      .insert({ task_id: taskId, author_id: profile.id, body: message })
-      .select("id,author_id,body,created_at")
+      .insert({ task_id: taskId, author_id: profile.id, body: message, body_he: bodyHe })
+      .select("id,author_id,body,body_he,created_at")
       .maybeSingle();
 
     if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
@@ -34,6 +39,7 @@ export async function POST(req: Request) {
             author_id: data.author_id,
             author_name: profile.full_name ?? profile.email ?? null,
             body: data.body,
+            body_he: data.body_he,
             created_at: data.created_at,
           }
         : null,

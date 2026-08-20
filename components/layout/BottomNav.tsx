@@ -13,18 +13,27 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { t } from "@/lib/i18n/t";
+import { topbarDict } from "@/lib/i18n/dictionaries/topbar";
+import type { Locale } from "@/lib/i18n/types";
 
 type Props = {
   items: SidebarNavItem[];
   moreItems?: SidebarNavItem[];
   viewerRole?: string;
+  viewerLocale?: Locale;
 };
 
-export function BottomNav({ items, moreItems = [], viewerRole }: Props) {
+export function BottomNav({ items, moreItems = [], viewerRole, viewerLocale = "he" }: Props) {
   const [moreOpen, setMoreOpen] = useState(false);
 
-  // The + sits dead centre, so the tabs are dealt evenly to either side of it.
-  // "עוד" counts as a tab for that split, since it renders as one.
+  // The + sits dead centre. Each side is its own flex-1 container (see the
+  // JSX below) so the two sides always take up EXACTLY equal width — the FAB
+  // stays centred whether the split is 2/2, 2/1, or anything else. An earlier
+  // version balanced this by dealing an even COUNT of tabs to each side
+  // (counting "עוד" as one), which only centred the FAB when the total
+  // happened to be even; a worker board with an odd tab count (e.g. Arabic
+  // locale's 3-item nav, no "עוד" needed) threw it off (user, 2026-08-20).
   const tabCount = items.length + (moreItems.length > 0 ? 1 : 0);
   const leading = items.slice(0, Math.ceil(tabCount / 2));
   const trailing = items.slice(Math.ceil(tabCount / 2));
@@ -58,74 +67,78 @@ export function BottomNav({ items, moreItems = [], viewerRole }: Props) {
         className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-sidebar pb-[env(safe-area-inset-bottom)] text-sidebar-foreground md:hidden"
       >
         {/* Fixed px sizing (not rem) so the nav bar stays compact and never
-            collides/overflows when the user picks a large text size. */}
-        <div className="flex h-[58px] items-center justify-around gap-0.5 px-1">
-          {leading.map(renderTab)}
+            collides/overflows when the user picks a large text size. Each side
+            is its own flex-1 group — see the comment above `leading` — so the
+            FAB between them always sits at the true horizontal centre. */}
+        <div className="flex h-[58px] items-center gap-0.5 px-1">
+          <div className="flex flex-1 items-center justify-around gap-0.5">{leading.map(renderTab)}</div>
 
           {/* The centre + — quick-create without leaving the page. */}
           <div className="flex shrink-0 items-center justify-center px-1">
             <QuickCreateMenu viewerRole={viewerRole} variant="fab" />
           </div>
 
-          {trailing.map(renderTab)}
+          <div className="flex flex-1 items-center justify-around gap-0.5">
+            {trailing.map(renderTab)}
 
-          {moreItems.length > 0 && (
-            <ClientOnly
-              fallback={
-                <button
-                  type="button"
-                  className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-sm py-1 text-sidebar-foreground/70 transition-all duration-200"
-                >
-                  <MoreIcon className="h-[22px] w-[22px] shrink-0" />
-                  <span className="w-full truncate text-center text-[11px] font-medium leading-none">עוד</span>
-                </button>
-              }
-            >
-              <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
-              <SheetTrigger asChild>
-                <button
-                  type="button"
-                  className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-sm py-1 text-sidebar-foreground/70 transition-all duration-200 hover:bg-white/10 hover:text-white"
-                >
-                  <MoreIcon className="h-[22px] w-[22px] shrink-0" />
-                  <span className="w-full truncate text-center text-[11px] font-medium leading-none">עוד</span>
-                </button>
-              </SheetTrigger>
-              {/* Navy, so "עוד" reads as the nav bar unfolding rather than a
-                  separate panel. (It's the one sheet in the app that isn't light
-                  — deliberate: it belongs to the chrome, not to the content.)
-
-                  Height is capped and the GRID scrolls, header pinned — with ~17
-                  items the uncapped version ran straight off the bottom of the
-                  screen. svh (not vh) is the mobile-correct unit: it accounts for
-                  the browser's address bar. Safe-area padding keeps the last row
-                  clear of the home indicator. */}
-              <SheetContent
-                side="bottom"
-                className="flex max-h-[80svh] flex-col rounded-t-[2rem] border-white/10 bg-sidebar p-0 text-sidebar-foreground"
+            {moreItems.length > 0 && (
+              <ClientOnly
+                fallback={
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-sm py-1 text-sidebar-foreground/70 transition-all duration-200"
+                  >
+                    <MoreIcon className="h-[22px] w-[22px] shrink-0" />
+                    <span className="w-full truncate text-center text-[11px] font-medium leading-none">{t(topbarDict, viewerLocale, "more")}</span>
+                  </button>
+                }
               >
-                <SheetHeader className="shrink-0 border-b border-white/10 px-6 py-4">
-                  <SheetTitle className="text-sidebar-foreground">עוד</SheetTitle>
-                </SheetHeader>
-                <div className="grid grid-cols-3 gap-3 overflow-y-auto overscroll-contain px-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-4">
-                  {moreItems.map((item) => (
-                      <NavLink
-                        key={item.title}
-                        to={item.url}
-                        className="flex min-w-0 flex-col items-center gap-1.5 rounded-2xl p-3 text-sidebar-foreground/70 transition-colors hover:bg-white/10 hover:text-white"
-                        activeClassName="bg-secondary text-secondary-foreground"
-                        pendingClassName="bg-white/10 opacity-70"
-                        onClick={() => setMoreOpen(false)}
-                      >
-                        <item.icon className="h-6 w-6 shrink-0" />
-                        <span className="w-full text-center text-xs font-medium leading-tight break-words">{item.title}</span>
-                      </NavLink>
-                    ))}
-                </div>
-              </SheetContent>
-              </Sheet>
-            </ClientOnly>
-          )}
+                <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
+                <SheetTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-sm py-1 text-sidebar-foreground/70 transition-all duration-200 hover:bg-white/10 hover:text-white"
+                  >
+                    <MoreIcon className="h-[22px] w-[22px] shrink-0" />
+                    <span className="w-full truncate text-center text-[11px] font-medium leading-none">{t(topbarDict, viewerLocale, "more")}</span>
+                  </button>
+                </SheetTrigger>
+                {/* Navy, so "עוד" reads as the nav bar unfolding rather than a
+                    separate panel. (It's the one sheet in the app that isn't light
+                    — deliberate: it belongs to the chrome, not to the content.)
+
+                    Height is capped and the GRID scrolls, header pinned — with ~17
+                    items the uncapped version ran straight off the bottom of the
+                    screen. svh (not vh) is the mobile-correct unit: it accounts for
+                    the browser's address bar. Safe-area padding keeps the last row
+                    clear of the home indicator. */}
+                <SheetContent
+                  side="bottom"
+                  className="flex max-h-[80svh] flex-col rounded-t-[2rem] border-white/10 bg-sidebar p-0 text-sidebar-foreground"
+                >
+                  <SheetHeader className="shrink-0 border-b border-white/10 px-6 py-4">
+                    <SheetTitle className="text-sidebar-foreground">{t(topbarDict, viewerLocale, "more")}</SheetTitle>
+                  </SheetHeader>
+                  <div className="grid grid-cols-3 gap-3 overflow-y-auto overscroll-contain px-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-4">
+                    {moreItems.map((item) => (
+                        <NavLink
+                          key={item.title}
+                          to={item.url}
+                          className="flex min-w-0 flex-col items-center gap-1.5 rounded-2xl p-3 text-sidebar-foreground/70 transition-colors hover:bg-white/10 hover:text-white"
+                          activeClassName="bg-secondary text-secondary-foreground"
+                          pendingClassName="bg-white/10 opacity-70"
+                          onClick={() => setMoreOpen(false)}
+                        >
+                          <item.icon className="h-6 w-6 shrink-0" />
+                          <span className="w-full text-center text-xs font-medium leading-tight break-words">{item.title}</span>
+                        </NavLink>
+                      ))}
+                  </div>
+                </SheetContent>
+                </Sheet>
+              </ClientOnly>
+            )}
+          </div>
         </div>
       </nav>
 

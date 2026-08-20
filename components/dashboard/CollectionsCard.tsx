@@ -14,6 +14,9 @@ import { formatCurrency } from "@/lib/payroll";
 import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
 import type { CollectionsDebtor, CollectionsSummary } from "@/lib/collections";
+import { t } from "@/lib/i18n/t";
+import { dashboardDict } from "@/lib/i18n/dictionaries/dashboard";
+import type { Locale } from "@/lib/i18n/types";
 
 const COLLECTIONS_HREF = "/collections";
 
@@ -38,7 +41,7 @@ const SHOWN_LIMIT = 8;
  * four buckets tell you the shape of the problem, and the board's job is to tell
  * you the next move. That belongs on /collections, where it already is.
  */
-export default function CollectionsCard({ summary }: { summary: CollectionsSummary }) {
+export default function CollectionsCard({ summary, locale }: { summary: CollectionsSummary; locale: Locale }) {
   const router = useRouter();
   const [collectedIds, setCollectedIds] = useState<Set<string>>(() => new Set());
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -51,7 +54,14 @@ export default function CollectionsCard({ summary }: { summary: CollectionsSumma
   const today = summary.today.filter((p) => !collectedIds.has(p.id));
 
   if (today.length === 0 && summary.lateCount === 0 && summary.upcomingCount === 0) {
-    return <QuietCard icon={CoinsIcon} title="גבייה" note="אין חובות פתוחים" href={COLLECTIONS_HREF} />;
+    return (
+      <QuietCard
+        icon={CoinsIcon}
+        title={t(dashboardDict, locale, "collectionsCardTitle")}
+        note={t(dashboardDict, locale, "collectionsEmptyNote")}
+        href={COLLECTIONS_HREF}
+      />
+    );
   }
 
   const rows = tab === "late" ? summary.late : summary.upcoming;
@@ -67,16 +77,16 @@ export default function CollectionsCard({ summary }: { summary: CollectionsSumma
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        toast.error(toHebrewError(json.error, "סימון הגבייה נכשל."));
+        toast.error(toHebrewError(json.error, t(dashboardDict, locale, "markCollectedError")));
         return;
       }
       // Optimistic: the row leaves the card now, and the server is asked for the
       // truth in the background.
       setCollectedIds((prev) => new Set(prev).add(id));
-      toast.success("התשלום סומן כנגבה.");
+      toast.success(t(dashboardDict, locale, "markCollectedSuccess"));
       router.refresh();
     } catch (err: unknown) {
-      toast.error(toHebrewError(err, "סימון הגבייה נכשל."));
+      toast.error(toHebrewError(err, t(dashboardDict, locale, "markCollectedError")));
     } finally {
       setBusyId(null);
     }
@@ -88,12 +98,12 @@ export default function CollectionsCard({ summary }: { summary: CollectionsSumma
     <Card className="relative flex h-full flex-col">
       <Link
         href={COLLECTIONS_HREF}
-        aria-label="לגבייה"
+        aria-label={t(dashboardDict, locale, "collectionsAria")}
         className="absolute inset-0 rounded-[1.125rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
 
       <div className="pointer-events-none relative flex min-h-0 flex-1 flex-col">
-        <DashboardCardHeader icon={CoinsIcon} title="גבייה" count={summary.lateCount} />
+        <DashboardCardHeader icon={CoinsIcon} title={t(dashboardDict, locale, "collectionsCardTitle")} count={summary.lateCount} />
 
         <CardContent className="pointer-events-auto min-h-0 flex-1 overflow-y-auto p-0">
           {/* ── היום — the only rows you can finish from here ─────────────── */}
@@ -105,7 +115,7 @@ export default function CollectionsCard({ summary }: { summary: CollectionsSumma
           <section>
             {today.length > 0 ? (
               <div className="px-4 pb-1 pt-3 text-xs font-semibold text-muted-foreground">
-                לגבייה היום · {formatCurrency(summary.todayTotal)}
+                {t(dashboardDict, locale, "collectingTodayLabel")} · {formatCurrency(summary.todayTotal)}
               </div>
             ) : null}
             {today.length > 0 ? (
@@ -126,7 +136,7 @@ export default function CollectionsCard({ summary }: { summary: CollectionsSumma
                         </div>
                         <div className="truncate text-xs text-muted-foreground">
                           {formatCurrency(payment.amount)}
-                          {payment.check_number ? ` · צ׳ק ${payment.check_number}` : ""}
+                          {payment.check_number ? ` · ${t(dashboardDict, locale, "checkAbbrev")} ${payment.check_number}` : ""}
                           {payment.customer_phone ? ` · ${payment.customer_phone}` : ""}
                         </div>
                       </div>
@@ -137,10 +147,10 @@ export default function CollectionsCard({ summary }: { summary: CollectionsSumma
                         className="relative h-8 shrink-0 px-3 text-sm max-md:min-h-[44px]"
                         disabled={busyId === payment.id}
                         onClick={() => void markCollected(payment.id)}
-                        title="סימון התשלום כנגבה"
+                        title={t(dashboardDict, locale, "markCollectedTitle")}
                       >
                         {busyId === payment.id ? <SuccessIcon className="h-4 w-4" /> : null}
-                        נגבה
+                        {t(dashboardDict, locale, "collectedButtonLabel")}
                       </Button>
                     </div>
                   </li>
@@ -152,7 +162,7 @@ export default function CollectionsCard({ summary }: { summary: CollectionsSumma
               // shouldn't have to learn three ways of being told "nothing".
               <div className="m-3 inline-flex items-center gap-1.5 rounded-full border border-success/40 bg-success-soft px-2.5 py-1 text-xs">
                 <SuccessIcon className="h-3.5 w-3.5 shrink-0 text-success" />
-                <span className="text-success-soft-foreground">אין גבייה להיום</span>
+                <span className="text-success-soft-foreground">{t(dashboardDict, locale, "noCollectionsToday")}</span>
               </div>
             )}
           </section>
@@ -174,7 +184,7 @@ export default function CollectionsCard({ summary }: { summary: CollectionsSumma
                     )}
                   >
                     <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
-                    באיחור {summary.lateCount}
+                    {t(dashboardDict, locale, "lateLabel")} {summary.lateCount}
                     <span className="tabular-nums">· {formatCurrency(summary.lateTotal)}</span>
                   </button>
                 ) : null}
@@ -192,7 +202,7 @@ export default function CollectionsCard({ summary }: { summary: CollectionsSumma
                     )}
                   >
                     <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
-                    צפוי {summary.upcomingCount}
+                    {t(dashboardDict, locale, "stageScheduled")} {summary.upcomingCount}
                     <span className="tabular-nums">· {formatCurrency(summary.upcomingTotal)}</span>
                   </button>
                 ) : null}
@@ -201,7 +211,12 @@ export default function CollectionsCard({ summary }: { summary: CollectionsSumma
               {rows.length > 0 ? (
                 <ul className="board-list divide-y">
                   {rows.slice(0, SHOWN_LIMIT).map((debtor) => (
-                    <DebtorRow key={`${tab}-${debtor.customerId ?? debtor.customerName}`} debtor={debtor} late={tab === "late"} />
+                    <DebtorRow
+                      key={`${tab}-${debtor.customerId ?? debtor.customerName}`}
+                      debtor={debtor}
+                      late={tab === "late"}
+                      locale={locale}
+                    />
                   ))}
                 </ul>
               ) : null}
@@ -211,7 +226,7 @@ export default function CollectionsCard({ summary }: { summary: CollectionsSumma
 
         <DashboardCardFooter
           href={COLLECTIONS_HREF}
-          label="כל הגבייה"
+          label={t(dashboardDict, locale, "collectionsFooterLabel")}
           count={summary.lateCount + summary.upcomingCount}
         />
       </div>
@@ -224,11 +239,15 @@ export default function CollectionsCard({ summary }: { summary: CollectionsSumma
  * lines, the number in the corner — with the phone as a glyph beside it: the
  * action on a debt isn't to tick it off, it's to ring them.
  */
-function DebtorRow({ debtor, late }: { debtor: CollectionsDebtor; late: boolean }) {
+function DebtorRow({ debtor, late, locale }: { debtor: CollectionsDebtor; late: boolean; locale: Locale }) {
   const href = debtor.customerId ? `/customers/${debtor.customerId}` : COLLECTIONS_HREF;
   const meta = [
-    late && debtor.daysLate > 0 ? `${debtor.daysLate} יום באיחור` : late ? "באיחור" : "צפוי",
-    debtor.sources > 1 ? `${debtor.sources} חובות` : null,
+    late && debtor.daysLate > 0
+      ? `${debtor.daysLate} ${t(dashboardDict, locale, "daysLateSuffix")}`
+      : late
+        ? t(dashboardDict, locale, "lateLabel")
+        : t(dashboardDict, locale, "stageScheduled"),
+    debtor.sources > 1 ? `${debtor.sources} ${t(dashboardDict, locale, "sourcesCountSuffix")}` : null,
     debtor.customerPhone,
   ]
     .filter(Boolean)
@@ -258,9 +277,9 @@ function DebtorRow({ debtor, late }: { debtor: CollectionsDebtor; late: boolean 
               asChild
               variant="ghost"
               className="h-8 w-8 p-0 shadow-none max-md:min-h-[44px] max-md:min-w-[44px]"
-              title={`חיוג ל${debtor.customerName}`}
+              title={`${t(dashboardDict, locale, "callPrefix")}${debtor.customerName}`}
             >
-              <a href={`tel:${debtor.customerPhone}`} aria-label={`חיוג ל${debtor.customerName}`}>
+              <a href={`tel:${debtor.customerPhone}`} aria-label={`${t(dashboardDict, locale, "callPrefix")}${debtor.customerName}`}>
                 <PhoneIcon className="h-4 w-4" />
               </a>
             </Button>

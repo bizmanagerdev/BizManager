@@ -5,6 +5,7 @@ import { logAuditEvent } from "@/lib/audit";
 import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions } from "@/lib/payroll-worker-type";
 import { PHONE_ATTENDANCE_TABLE } from "@/lib/attendance/phone-reports";
 import { APP_ATTENDANCE_SOURCE, parseSelfReportedTime } from "@/lib/attendance/my-shift";
+import { translateToHebrew } from "@/lib/i18n/translateToHebrew";
 
 /**
  * "פתיחת משמרת" — the worker clocks himself IN.
@@ -53,6 +54,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "סוג העובד שלך לא מתעד משמרות." }, { status: 409 });
     }
 
+    // Office/admin never see Arabic, so a locale=ar worker's own note is
+    // auto-translated to Hebrew here. Skipped entirely for Hebrew writers.
+    const notesHe = profile.locale === "ar" && notes ? await translateToHebrew(notes) : null;
+
     const { data: inserted, error: insertError } = await supabase
       .from(PHONE_ATTENDANCE_TABLE)
       .insert({
@@ -63,6 +68,7 @@ export async function POST(req: Request) {
         // Self-reported: subject and reporter are the same person.
         reported_by: profile.id,
         notes: notes || null,
+        notes_he: notesHe,
       })
       .select("id,clock_in")
       .maybeSingle();

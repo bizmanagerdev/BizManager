@@ -15,6 +15,9 @@ import { cn } from "@/lib/utils";
 import { formatShortDate, hebrewWeekday } from "@/lib/date";
 import type { PendingPhoneReport, PhoneQueueData } from "@/lib/attendance/phone-reports";
 import type { SalaryCenterProjectOption } from "@/lib/payroll-center";
+import { t } from "@/lib/i18n/t";
+import { dashboardDict } from "@/lib/i18n/dictionaries/dashboard";
+import type { Locale } from "@/lib/i18n/types";
 
 /** The shift's DAY in Israel time — the grouping key, sortable as a string. */
 function dayKey(iso: string) {
@@ -68,6 +71,7 @@ export default function AttendanceApprovals({
   spark,
   projectOptions,
   propertyOptions,
+  locale,
 }: {
   data: PhoneQueueData;
   /** Shifts started per day over the last week, oldest first. */
@@ -75,6 +79,7 @@ export default function AttendanceApprovals({
   /** What an approved shift can be attributed to — the approve form needs both. */
   projectOptions: SalaryCenterProjectOption[];
   propertyOptions: SalaryCenterProjectOption[];
+  locale: Locale;
 }) {
   // Which days are UNFOLDED. Days start CLOSED: the card opens as a short list of
   // "which days have shifts waiting, and how many", and you open the one you mean
@@ -92,7 +97,14 @@ export default function AttendanceApprovals({
 
   const { pending, open } = data;
   if (pending.length === 0 && open.length === 0) {
-    return <QuietCard icon={ClockIcon} title="נוכחות עובדים" note="אין דיווחים לאישור" href={QUEUE_HREF} />;
+    return (
+      <QuietCard
+        icon={ClockIcon}
+        title={t(dashboardDict, locale, "attendanceCardTitle")}
+        note={t(dashboardDict, locale, "attendanceEmptyNote")}
+        href={QUEUE_HREF}
+      />
+    );
   }
 
   // The head of the queue; the footer's count says how many there are in all.
@@ -107,20 +119,25 @@ export default function AttendanceApprovals({
     <Card className="relative flex h-full flex-col">
       <Link
         href={QUEUE_HREF}
-        aria-label="פתיחת תור דיווחי הנוכחות"
+        aria-label={t(dashboardDict, locale, "attendanceQueueAria")}
         className="absolute inset-0 rounded-[1.125rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
 
       <div className="pointer-events-none relative flex min-h-0 flex-1 flex-col">
         <DashboardCardHeader
           icon={ClockIcon}
-          title="נוכחות עובדים"
+          title={t(dashboardDict, locale, "attendanceCardTitle")}
           count={pending.length}
           // The anchor is WHO'S ON SHIFT — the card's headline number, now beside
           // the trend instead of under it. One number, one place.
           spark={
             spark ? (
-              <Sparkline points={spark} value={open.length} valueLabel="במשמרת" label="7 הימים האחרונים" />
+              <Sparkline
+                points={spark}
+                value={open.length}
+                valueLabel={t(dashboardDict, locale, "onShiftLabel")}
+                label={t(dashboardDict, locale, "last7DaysLabel")}
+              />
             ) : undefined
           }
         />
@@ -139,14 +156,16 @@ export default function AttendanceApprovals({
                 {open.map((report) => (
                   <span key={report.id} className="inline-flex items-center gap-1">
                     <InitialsAvatar
-                      name={report.worker_name ?? "עובד"}
+                      name={report.worker_name ?? t(dashboardDict, locale, "workerFallback")}
                       color={report.worker_avatar_color}
                       colorKey={report.user_id}
                       size="sm"
                     />
-                    <span className="font-medium text-foreground">{report.worker_name ?? "עובד לא ידוע"}</span>
+                    <span className="font-medium text-foreground">
+                      {report.worker_name ?? t(dashboardDict, locale, "workerUnknownFallback")}
+                    </span>
                     <span className="tabular-nums">
-                      {formatMinutes(minutesBetween(report.clock_in, new Date()))} ש׳
+                      {formatMinutes(minutesBetween(report.clock_in, new Date()))} {t(dashboardDict, locale, "hoursAbbrev")}
                     </span>
                   </span>
                 ))}
@@ -207,7 +226,7 @@ export default function AttendanceApprovals({
             </div>
           ) : null}
         </CardContent>
-        <DashboardCardFooter href={QUEUE_HREF} label="כל הנוכחות" count={pending.length} />
+        <DashboardCardFooter href={QUEUE_HREF} label={t(dashboardDict, locale, "attendanceFooterLabel")} count={pending.length} />
       </div>
     </Card>
   );

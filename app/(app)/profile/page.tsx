@@ -14,6 +14,8 @@ import DashboardCustomizer from "@/components/dashboard/DashboardCustomizer";
 import { sanitizePrefs } from "@/lib/dashboard/widgets";
 import PageTitle from "@/components/layout/PageTitle";
 import { loadMyShiftState } from "@/lib/attendance/my-shift";
+import { t } from "@/lib/i18n/t";
+import { profileDict } from "@/lib/i18n/dictionaries/profile";
 import { loadMyPayroll } from "@/lib/my-payroll";
 import {
   BONUS_ITEM_TYPE,
@@ -50,7 +52,7 @@ export default async function ProfilePage() {
 
   const { data: sessionRows, error: sessionsError } = await supabase
     .from(WORK_SESSIONS_TABLE)
-    .select("id,user_id,clock_in,clock_out,worked_minutes,notes,business_domain,project_id,property_id")
+    .select("id,user_id,clock_in,clock_out,worked_minutes,notes,notes_he,business_domain,project_id,property_id")
     .eq("user_id", profile.id)
     .order("clock_in", { ascending: false })
     .limit(300);
@@ -194,7 +196,7 @@ export default async function ProfilePage() {
   const agreements = asAgreements(agreementRows);
   const payslips = asPayslips(payslipRows);
   const periods = asPeriods(periodRows);
-  const monthlySummaries = buildMonthlyHoursSummary(sessions);
+  const monthlySummaries = buildMonthlyHoursSummary(sessions, profile.locale);
   const projectOptions: LinkedOption[] = ((projectRows ?? []) as Row[])
     .map((row) => ({
       id: typeof row.id === "string" ? row.id : "",
@@ -211,7 +213,7 @@ export default async function ProfilePage() {
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
-        <PageTitle title="הפרופיל שלי" subtitle={profile.full_name ?? undefined} />
+        <PageTitle title={t(profileDict, profile.locale, "pageTitle")} subtitle={profile.full_name ?? undefined} />
         {/* No name/email banner above the tabs: this is YOUR profile — you know
             who you are — and the details card in the first tab is where those
             fields live anyway. (The phone's top bar still names the screen.) */}
@@ -219,12 +221,13 @@ export default async function ProfilePage() {
         {loadError ? (
           <Card>
             <CardContent className="py-6 text-sm text-destructive">
-              שגיאה בטעינת נתוני העובד: {loadError}
+              {t(profileDict, profile.locale, "loadErrorPrefix")}{loadError}
             </CardContent>
           </Card>
         ) : (
           <ProfileClient
             profile={profile}
+            locale={profile.locale}
             initialFontScale={initialFontScale}
             initialFontScaleMobile={initialFontScaleMobile}
             initialAvatarColor={initialAvatarColor}

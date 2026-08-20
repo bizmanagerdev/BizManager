@@ -5,6 +5,7 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { parseTagIds, syncEntityTags } from "@/lib/tags";
 import { notifyTaskAssignees } from "@/lib/notifications/task-assignment";
+import { translateToHebrew } from "@/lib/i18n/translateToHebrew";
 
 function normalizeId(value: unknown) {
   if (typeof value === "string") {
@@ -93,12 +94,19 @@ export async function POST(req: Request) {
       const subject = typeof body.subject === "string" ? body.subject.trim() : "";
       if (!subject) return NextResponse.json({ error: "Missing subject" }, { status: 400 });
       update.subject = subject;
+      // Office/admin never see Arabic, so a locale=ar worker's own edit is
+      // auto-translated to Hebrew here. Skipped entirely for Hebrew writers.
+      update.subject_he = profile.locale === "ar" ? await translateToHebrew(subject) : null;
     }
 
     if ("description" in body) {
       const description =
         typeof body.description === "string" ? body.description.trim() : body.description ?? null;
       update.description = description && description.trim() ? description : null;
+      update.description_he =
+        profile.locale === "ar" && update.description
+          ? await translateToHebrew(update.description as string)
+          : null;
     }
 
     if ("due_date" in body) {
@@ -230,7 +238,7 @@ export async function POST(req: Request) {
         .update(update)
         .eq("id", id)
         .select(
-          "id,business_domain,project_id,property_id,customer_id,assigned_user_id,subject,description,due_date,due_time,city,address,priority,status,created_at,updated_at"
+          "id,business_domain,project_id,property_id,customer_id,assigned_user_id,subject,description,subject_he,description_he,due_date,due_time,city,address,priority,status,created_at,updated_at"
         )
         .maybeSingle();
       if (result.error) {

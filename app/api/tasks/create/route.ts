@@ -6,6 +6,7 @@ import { withIdempotency } from "@/lib/idempotency";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { parseTagIds, syncEntityTags } from "@/lib/tags";
 import { notifyTaskAssignees } from "@/lib/notifications/task-assignment";
+import { translateToHebrew } from "@/lib/i18n/translateToHebrew";
 
 function validateTaskLinkArgs(args: {
   businessDomain: string | null;
@@ -104,6 +105,11 @@ export async function POST(req: Request) {
       );
     }
 
+    // Office/admin never see Arabic, so a locale=ar worker's own words are
+    // auto-translated to Hebrew here. Skipped entirely for Hebrew writers.
+    const subjectHe = profile.locale === "ar" ? await translateToHebrew(subject) : null;
+    const descriptionHe = profile.locale === "ar" && description ? await translateToHebrew(description) : null;
+
     const { data, error } = await supabase
       .from("tasks")
       .insert({
@@ -114,6 +120,8 @@ export async function POST(req: Request) {
         assigned_user_id: assignedUserId,
         subject,
         description,
+        subject_he: subjectHe,
+        description_he: descriptionHe,
         due_date: dueDate,
         due_time: dueTime,
         city,
@@ -126,7 +134,7 @@ export async function POST(req: Request) {
         private_owner_id: profile.id,
       })
       .select(
-        "id,business_domain,project_id,property_id,customer_id,assigned_user_id,subject,description,due_date,due_time,city,address,priority,status,created_at,updated_at"
+        "id,business_domain,project_id,property_id,customer_id,assigned_user_id,subject,description,subject_he,description_he,due_date,due_time,city,address,priority,status,created_at,updated_at"
       )
       .maybeSingle();
 

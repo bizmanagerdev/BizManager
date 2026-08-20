@@ -278,6 +278,7 @@ export default function SalaryCenterClient({
     active: true,
     system_access: true,
     payroll_worker_type: "session_only",
+    locale: "he",
   });
   const [agreementForm, setAgreementForm] = useState<AgreementFormState>(DEFAULT_AGREEMENT_FORM);
   const [overrideForm, setOverrideForm] = useState<OverrideFormState>(DEFAULT_OVERRIDE_FORM);
@@ -687,6 +688,7 @@ export default function SalaryCenterClient({
         selectedWorker.payroll_worker_type,
         selectedWorker.pay_tracking_mode
       ),
+      locale: selectedWorker.locale === "ar" ? "ar" : "he",
     });
   }, [selectedWorker]);
 
@@ -1004,6 +1006,7 @@ export default function SalaryCenterClient({
         active: workerForm.active,
         system_access: workerForm.role === "worker_no_access" ? false : workerForm.system_access,
         payroll_worker_type: workerForm.payroll_worker_type,
+        locale: workerForm.locale,
       });
       setMessage("פרטי הגישה עודכנו.");
       await refreshAll({ reloadProtected: false });
@@ -4753,6 +4756,21 @@ export default function SalaryCenterClient({
                 <option value="no">{"לא"}</option>
               </NativeSelect>
             </Field>
+            {/* Only a worker is ever offered Arabic — office/admin stay Hebrew,
+                so this field is meaningless (and hidden) for every other role. */}
+            {workerForm.role === "worker" ? (
+              <Field label="שפת תצוגה">
+                <NativeSelect
+                  value={workerForm.locale}
+                  onChange={(event) =>
+                    setWorkerForm((current) => ({ ...current, locale: event.target.value as WorkerFormState["locale"] }))
+                  }
+                >
+                  <option value="he">{"עברית"}</option>
+                  <option value="ar">{"العربية"}</option>
+                </NativeSelect>
+              </Field>
+            ) : null}
           </div>
       </FormDialog>
 

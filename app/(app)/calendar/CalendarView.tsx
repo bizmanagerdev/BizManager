@@ -34,25 +34,59 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
+import { calendarDict, type CalendarKey } from "@/lib/i18n/dictionaries/calendar";
+import { commonDict } from "@/lib/i18n/dictionaries/common";
+import { t } from "@/lib/i18n/t";
+import type { Locale } from "@/lib/i18n/types";
 
 // ── Event-kind metadata ───────────────────────────────────────────────────────
-// Single source of truth for label / plural / color per kind, so the summary
-// tiles, grid chips, filter chips and detail list all stay in lockstep. Order
-// here drives the tile + chip order (reminder → project → task).
+// Single source of truth for color per kind, so the summary tiles, grid chips,
+// filter chips and detail list all stay in lockstep. Order here drives the
+// tile + chip order (reminder → project → task). Labels are locale-dependent —
+// see kindLabel/kindPlural below.
 type Kind = CalendarEntryKind;
 
 const KIND_ORDER: Kind[] = ["reminder", "project", "task"];
 
-const KIND_META: Record<
-  Kind,
-  { label: string; plural: string; dot: string; edge: string }
-> = {
-  reminder: { label: "תזכורת", plural: "תזכורות", dot: "bg-info", edge: "border-e-info" },
-  project: { label: "פרויקט", plural: "פרויקטים", dot: "bg-success", edge: "border-e-success" },
-  task: { label: "משימה", plural: "משימות", dot: "bg-warning", edge: "border-e-warning" },
+const KIND_META: Record<Kind, { dot: string; edge: string }> = {
+  reminder: { dot: "bg-info", edge: "border-e-info" },
+  project: { dot: "bg-success", edge: "border-e-success" },
+  task: { dot: "bg-warning", edge: "border-e-warning" },
 };
 
-const WEEK_DAYS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
+const KIND_LABEL_KEY: Record<Kind, CalendarKey> = {
+  reminder: "kindReminderLabel",
+  project: "kindProjectLabel",
+  task: "kindTaskLabel",
+};
+
+const KIND_PLURAL_KEY: Record<Kind, CalendarKey> = {
+  reminder: "kindReminderPlural",
+  project: "kindProjectPlural",
+  task: "kindTaskPlural",
+};
+
+function kindLabel(locale: Locale, kind: Kind) {
+  return t(calendarDict, locale, KIND_LABEL_KEY[kind]);
+}
+
+function kindPlural(locale: Locale, kind: Kind) {
+  return t(calendarDict, locale, KIND_PLURAL_KEY[kind]);
+}
+
+const WEEK_DAY_KEYS: CalendarKey[] = [
+  "weekDaySun",
+  "weekDayMon",
+  "weekDayTue",
+  "weekDayWed",
+  "weekDayThu",
+  "weekDayFri",
+  "weekDaySat",
+];
+
+function weekDayLabels(locale: Locale) {
+  return WEEK_DAY_KEYS.map((key) => t(calendarDict, locale, key));
+}
 
 type Filter = Kind | "all";
 
@@ -82,13 +116,16 @@ export default function CalendarView({
   entries,
   allEntries = null,
   todayIso,
+  locale,
 }: {
   entries: CalendarEntry[];
   /** When provided (admin/office), the header שלי/הכל menu is shown. */
   allEntries?: CalendarEntry[] | null;
   todayIso: string;
+  locale: Locale;
 }) {
   const today = useMemo(() => toDateOnly(todayIso) ?? new Date(), [todayIso]);
+  const weekDays = useMemo(() => weekDayLabels(locale), [locale]);
   const isDesktop = useIsDesktop();
 
   // Scope (שלי/הכל) — chosen from the header ⋮ menu; only offered when the caller
@@ -345,9 +382,10 @@ export default function CalendarView({
         scope={scope}
         onScope={setScope}
         onSearch={() => setSearchOpen(true)}
+        locale={locale}
       />
     ),
-    [canToggleScope, scope]
+    [canToggleScope, scope, locale]
   );
   useSetPageTitle(gregLabel, hebMonth, headerAction);
 
@@ -374,10 +412,10 @@ export default function CalendarView({
                 className="flex shrink-0 items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-[11px] font-semibold text-secondary-foreground transition-colors hover:bg-secondary/90"
               >
                 <CalendarIcon className="h-3.5 w-3.5" />
-                היום
+                {t(commonDict, locale, "today")}
               </button>
             </div>
-            <FilterToolbar entries={selectedEntries} filter={filter} onPick={pickKind} />
+            <FilterToolbar entries={selectedEntries} filter={filter} onPick={pickKind} locale={locale} />
           </div>
 
           {/* One month at a time — a scroll / swipe steps to the next or previous
@@ -417,6 +455,7 @@ export default function CalendarView({
                   onSelect={selectDay}
                   onLongPress={openContext}
                   entriesOnDay={entriesOnDay}
+                  weekDays={weekDays}
                 />
               </div>
             </div>
@@ -436,7 +475,7 @@ export default function CalendarView({
                   {selectedHoliday ? ` · ${selectedHoliday}` : ""}
                 </div>
               </div>
-              <FilterToolbar entries={selectedEntries} filter={filter} onPick={setFilter} />
+              <FilterToolbar entries={selectedEntries} filter={filter} onPick={setFilter} locale={locale} />
             </div>
             <div className="flex-1 bg-card p-4">
               <DayDetail
@@ -447,6 +486,7 @@ export default function CalendarView({
                 onFilter={setFilter}
                 header={<></>}
                 hideFilters
+                locale={locale}
               />
             </div>
           </div>
@@ -462,6 +502,7 @@ export default function CalendarView({
         holiday={selectedHoliday}
         filter={filter}
         onFilter={setFilter}
+        locale={locale}
       />
 
       {/* Long-press / right-click a day → see details or add an event. */}
@@ -472,25 +513,25 @@ export default function CalendarView({
           </SheetHeader>
           {ctxMode === "root" ? (
             <div className="space-y-2">
-              <ContextButton onClick={contextSeeDetails}>ראה פרטים</ContextButton>
+              <ContextButton onClick={contextSeeDetails}>{t(calendarDict, locale, "viewDetails")}</ContextButton>
               <ContextButton onClick={() => setCtxMode("add")}>
                 <AddIcon className="h-4 w-4" />
-                הוסף אירוע
+                {t(calendarDict, locale, "addEvent")}
               </ContextButton>
             </div>
           ) : (
             <div className="space-y-2">
               <ContextButton onClick={() => contextAdd("task")}>
                 <span className="h-2 w-2 rounded-full bg-warning" />
-                משימה
+                {kindLabel(locale, "task")}
               </ContextButton>
               <ContextButton onClick={() => contextAdd("project")}>
                 <span className="h-2 w-2 rounded-full bg-success" />
-                פרויקט
+                {kindLabel(locale, "project")}
               </ContextButton>
               <ContextButton onClick={() => contextAdd("reminder")}>
                 <span className="h-2 w-2 rounded-full bg-info" />
-                תזכורת
+                {kindLabel(locale, "reminder")}
               </ContextButton>
             </div>
           )}
@@ -507,7 +548,7 @@ export default function CalendarView({
       >
         <SheetContent side="bottom" className="max-h-[85svh] overflow-y-auto rounded-t-[1.5rem] p-4">
           <SheetHeader className="mb-3 text-start">
-            <SheetTitle>חיפוש</SheetTitle>
+            <SheetTitle>{t(commonDict, locale, "search")}</SheetTitle>
           </SheetHeader>
           <div className="relative">
             <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -515,15 +556,19 @@ export default function CalendarView({
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="חיפוש..."
+              placeholder={t(calendarDict, locale, "searchPlaceholder")}
               className="ps-9"
             />
           </div>
           <div className="mt-3 space-y-2">
             {query.trim() === "" ? (
-              <div className="py-6 text-center text-sm text-muted-foreground">הקלד כדי לחפש ביומן</div>
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                {t(calendarDict, locale, "typeToSearchCalendar")}
+              </div>
             ) : searchResults.length === 0 ? (
-              <div className="py-6 text-center text-sm text-muted-foreground">לא נמצאו תוצאות</div>
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                {t(calendarDict, locale, "noSearchResults")}
+              </div>
             ) : (
               searchResults.map((e) => {
                 const d = toDateOnly(e.startDate);
@@ -538,7 +583,7 @@ export default function CalendarView({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium">{e.title}</span>
                       <span className="block truncate text-xs text-muted-foreground">
-                        {d ? fmtFullDay(d) : ""} · {KIND_META[e.kind].label}
+                        {d ? fmtFullDay(d) : ""} · {kindLabel(locale, e.kind)}
                         {e.subtitle ? ` · ${e.subtitle}` : ""}
                       </span>
                     </span>
@@ -571,18 +616,20 @@ function HeaderMenu({
   scope,
   onScope,
   onSearch,
+  locale,
 }: {
   canToggleScope: boolean;
   scope: "mine" | "all";
   onScope: (next: "mine" | "all") => void;
   onSearch: () => void;
+  locale: Locale;
 }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label="אפשרויות"
+          aria-label={t(calendarDict, locale, "optionsAria")}
           className="flex h-8 w-8 items-center justify-center rounded-md text-sidebar-foreground transition-colors hover:bg-white/10"
         >
           <MoreIcon className="h-5 w-5" />
@@ -591,7 +638,7 @@ function HeaderMenu({
       <DropdownMenuContent align="end" className="text-right">
         <DropdownMenuItem onSelect={onSearch} className="gap-2">
           <SearchIcon className="h-4 w-4" />
-          חיפוש
+          {t(commonDict, locale, "search")}
         </DropdownMenuItem>
         {canToggleScope ? (
           <>
@@ -608,7 +655,7 @@ function HeaderMenu({
                       : "text-muted-foreground"
                   }`}
                 >
-                  {s === "mine" ? "שלי" : "הכל"}
+                  {s === "mine" ? t(calendarDict, locale, "scopeMine") : t(calendarDict, locale, "all")}
                 </button>
               ))}
             </div>
@@ -627,6 +674,7 @@ function MonthBlock({
   onSelect,
   onLongPress,
   entriesOnDay,
+  weekDays,
 }: {
   month: Date;
   today: Date;
@@ -634,6 +682,7 @@ function MonthBlock({
   onSelect: (day: Date) => void;
   onLongPress: (day: Date) => void;
   entriesOnDay: (day: Date) => DayEntry[];
+  weekDays: string[];
 }) {
   // Long-press (or right-click) a day → context menu. One shared timer since only
   // one cell is pressed at a time.
@@ -671,7 +720,7 @@ function MonthBlock({
     // the leftover height. The month name lives in the app header (no month bar).
     <section className="flex h-full flex-col">
       <div className="grid shrink-0 grid-cols-7 border-b bg-muted text-center text-[11px] font-medium text-muted-foreground">
-        {WEEK_DAYS.map((d) => (
+        {weekDays.map((d) => (
           <div key={d} className="overflow-hidden whitespace-nowrap px-0.5 py-1">
             {d}
           </div>
@@ -790,10 +839,12 @@ function FilterToolbar({
   entries,
   filter,
   onPick,
+  locale,
 }: {
   entries: DayEntry[];
   filter: Filter;
   onPick: (filter: Filter) => void;
+  locale: Locale;
 }) {
   const counts = KIND_ORDER.map((kind) => ({
     kind,
@@ -801,12 +852,17 @@ function FilterToolbar({
   }));
   return (
     <div className="flex flex-nowrap items-center justify-between gap-1 overflow-x-auto">
-      <FilterPill active={filter === "all"} label="הכל" count={entries.length} onClick={() => onPick("all")} />
+      <FilterPill
+        active={filter === "all"}
+        label={t(calendarDict, locale, "all")}
+        count={entries.length}
+        onClick={() => onPick("all")}
+      />
       {counts.map(({ kind, count }) => (
         <FilterPill
           key={kind}
           active={filter === kind}
-          label={KIND_META[kind].plural}
+          label={kindPlural(locale, kind)}
           count={count}
           dot={KIND_META[kind].dot}
           onClick={() => onPick(kind)}
@@ -858,6 +914,7 @@ function DayDetail({
   onFilter,
   header = null,
   hideFilters = false,
+  locale,
 }: {
   day: Date;
   entries: DayEntry[];
@@ -869,13 +926,17 @@ function DayDetail({
   /** Hide the chip filter row — e.g. the desktop panel, where the header count
    *  tiles ARE the filter. */
   hideFilters?: boolean;
+  locale: Locale;
 }) {
   const shown = filter === "all" ? entries : entries.filter((e) => e.kind === filter);
 
   // The active filter decides WHAT gets created: on a specific kind, add that
   // kind; on "הכל" (the default), add a task. QuickCreateMenu handles the event.
   const addAction: Kind = filter === "all" ? "task" : filter;
-  const addLabel = filter === "all" ? "הוספה ליום זה" : `הוסף ${KIND_META[filter].label}`;
+  const addLabel =
+    filter === "all"
+      ? t(calendarDict, locale, "addToThisDay")
+      : `${t(calendarDict, locale, "addKindPrefix")} ${kindLabel(locale, filter)}`;
 
   function addToDay() {
     window.dispatchEvent(
@@ -891,7 +952,10 @@ function DayDetail({
         <div>
           <div className="font-semibold">{fmtFullDay(day)}</div>
           <div className="text-xs text-muted-foreground">
-            {hebrewFullDate(day)} · {entries.length ? `${entries.length} פריטים` : "אין פריטים"}
+            {hebrewFullDate(day)} ·{" "}
+            {entries.length
+              ? `${entries.length} ${t(calendarDict, locale, "items")}`
+              : t(calendarDict, locale, "noItems")}
             {holiday ? ` · ${holiday}` : ""}
           </div>
         </div>
@@ -901,11 +965,11 @@ function DayDetail({
       {hideFilters ? null : (
         <div className="flex flex-wrap gap-1.5">
           <FilterChip active={filter === "all"} onClick={() => onFilter("all")}>
-            הכל
+            {t(calendarDict, locale, "all")}
           </FilterChip>
           {KIND_ORDER.map((kind) => (
             <FilterChip key={kind} active={filter === kind} dot={KIND_META[kind].dot} onClick={() => onFilter(kind)}>
-              {KIND_META[kind].label}
+              {kindLabel(locale, kind)}
             </FilterChip>
           ))}
         </div>
@@ -923,7 +987,7 @@ function DayDetail({
               <div className="flex items-start gap-2">
                 <span className="min-w-0 flex-1 font-medium">{entry.title}</span>
                 <span className="shrink-0 text-[11px] text-muted-foreground">
-                  {KIND_META[entry.kind].label}
+                  {kindLabel(locale, entry.kind)}
                 </span>
               </div>
               {entry.subtitle ? (
@@ -934,7 +998,7 @@ function DayDetail({
         </div>
       ) : (
         <EmptyState>
-          {entries.length ? "אין פריטים מסוג זה" : "אין פריטים ביום זה"}
+          {entries.length ? t(calendarDict, locale, "noItemsOfKind") : t(calendarDict, locale, "noItemsThisDay")}
         </EmptyState>
       )}
 
@@ -987,6 +1051,7 @@ function DaySheet({
   holiday,
   filter,
   onFilter,
+  locale,
 }: {
   open: boolean;
   onOpenChange: (next: boolean) => void;
@@ -995,6 +1060,7 @@ function DaySheet({
   holiday: string | null;
   filter: Filter;
   onFilter: (next: Filter) => void;
+  locale: Locale;
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -1005,7 +1071,10 @@ function DaySheet({
         <SheetHeader className="mb-3 text-start">
           <SheetTitle>{fmtFullDay(day)}</SheetTitle>
           <SheetDescription>
-            {hebrewFullDate(day)} · {entries.length ? `${entries.length} פריטים` : "אין פריטים"}
+            {hebrewFullDate(day)} ·{" "}
+            {entries.length
+              ? `${entries.length} ${t(calendarDict, locale, "items")}`
+              : t(calendarDict, locale, "noItems")}
             {holiday ? ` · ${holiday}` : ""}
           </SheetDescription>
         </SheetHeader>
@@ -1016,6 +1085,7 @@ function DaySheet({
           filter={filter}
           onFilter={onFilter}
           header={<></>}
+          locale={locale}
         />
       </SheetContent>
     </Sheet>

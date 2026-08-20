@@ -26,6 +26,8 @@ type BasePhoneReport = {
   source: string;
   /** What the worker (or the person logging it) said about the shift. */
   notes: string | null;
+  /** Hebrew translation, auto-filled when authored by a locale=ar worker. */
+  notes_he: string | null;
   /**
    * Who FILED it, when that isn't the worker himself — a colleague or the office
    * clocking him in. Null for a self-report (or a row predating the column), so
@@ -71,7 +73,7 @@ export async function loadPhoneQueueData(
 ): Promise<PhoneQueueData> {
   const { data: reports, error } = await supabase
     .from(PHONE_ATTENDANCE_TABLE)
-    .select("id,user_id,clock_in,clock_out,worked_minutes,status,source,notes,reported_by,created_at")
+    .select("id,user_id,clock_in,clock_out,worked_minutes,status,source,notes,notes_he,reported_by,created_at")
     .in("status", ["open", "pending_review"])
     .order("created_at", { ascending: true })
     .range(0, 199);
@@ -130,6 +132,7 @@ export async function loadPhoneQueueData(
       created_at: row.created_at as string,
       source: typeof row.source === "string" ? row.source : "phone",
       notes: typeof row.notes === "string" ? row.notes : null,
+      notes_he: typeof row.notes_he === "string" ? row.notes_he : null,
       // Only when someone ELSE filed it — a worker reporting his own shift is the
       // norm and needs no caption.
       reported_by_name:

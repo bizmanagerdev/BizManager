@@ -10,14 +10,30 @@ import { formatMinutes, sessionWorkedMinutes, type WorkSessionRow } from "@/lib/
 import { getBusinessDomainLabel } from "@/lib/expenses";
 import { DayTile, shiftHoursText } from "@/components/attendance/DayTile";
 import { SessionEditFields, useSessionEdit } from "@/components/attendance/useSessionEdit";
+import { t } from "@/lib/i18n/t";
+import type { Locale } from "@/lib/i18n/types";
+import { commonDict } from "@/lib/i18n/dictionaries/common";
+import { profileDict, type ProfileKey } from "@/lib/i18n/dictionaries/profile";
 
-const PAY_STATUS_META: Record<string, { label: string; variant: "success" | "warning" | "destructive" | "neutral" }> = {
-  paid: { label: "שולם", variant: "success" },
-  partial: { label: "שולם חלקית", variant: "warning" },
-  unpaid: { label: "לא שולם", variant: "destructive" },
-  pending: { label: "טרם הגיע מועד", variant: "neutral" },
-  overpaid: { label: "שולם ביתר", variant: "neutral" },
+const PAY_STATUS_VARIANT: Record<string, "success" | "warning" | "destructive" | "neutral"> = {
+  paid: "success",
+  partial: "warning",
+  unpaid: "destructive",
+  pending: "neutral",
+  overpaid: "neutral",
 };
+const PAY_STATUS_LABEL_KEY: Record<string, ProfileKey> = {
+  paid: "paidStatus",
+  partial: "partialStatus",
+  unpaid: "unpaidStatus",
+  pending: "pendingStatus",
+  overpaid: "overpaidStatus",
+};
+function payStatusMeta(status: string | undefined, locale: Locale) {
+  const variant = status ? PAY_STATUS_VARIANT[status] : undefined;
+  if (!status || !variant) return undefined;
+  return { label: t(profileDict, locale, PAY_STATUS_LABEL_KEY[status]), variant };
+}
 
 export type SessionListItem = {
   session: WorkSessionRow;
@@ -56,6 +72,7 @@ export default function SessionList({
   showTiming = true,
   canEdit = false,
   staffActions,
+  locale = "he",
 }: {
   items: SessionListItem[];
   /** Session-only ("קבלנות") workers are paid per shift, not per hour. */
@@ -63,8 +80,10 @@ export default function SessionList({
   /** Worker correction flow: swipe on touch, pencil on desktop. */
   canEdit?: boolean;
   staffActions?: StaffSessionActions;
+  /** Office/admin are always "he"; only a worker ever sees "ar". */
+  locale?: Locale;
 }) {
-  if (items.length === 0) return <EmptyState dense>אין עדיין משמרות בחודש הזה.</EmptyState>;
+  if (items.length === 0) return <EmptyState dense>{t(profileDict, locale, "noSessionsThisMonth")}</EmptyState>;
 
   const hasActions = canEdit || Boolean(staffActions);
 
@@ -92,6 +111,7 @@ export default function SessionList({
             showTiming={showTiming}
             canEdit={canEdit}
             staffActions={staffActions}
+            locale={locale}
           />
         ))}
       </div>
@@ -102,15 +122,15 @@ export default function SessionList({
       <table className="w-full min-w-full text-right text-xs sm:text-sm">
         <thead>
           <tr className="border-y border-border/60 text-[0.6875rem] text-muted-foreground">
-            <th className="px-2 py-1.5 font-medium md:px-3">תאריך</th>
+            <th className="px-2 py-1.5 font-medium md:px-3">{t(profileDict, locale, "dateHeader")}</th>
             {/* Duration and the hours it ran between are ONE column, stacked —
                 two facts about the same span of time, and keeping them together
                 leaves שיוך as the third column rather than the fourth. */}
-            {showTiming ? <th className="px-1 py-1.5 font-medium md:px-3">שעות</th> : null}
+            {showTiming ? <th className="px-1 py-1.5 font-medium md:px-3">{t(profileDict, locale, "hoursHeader")}</th> : null}
             {/* w-full: this column absorbs the leftover width, so a long project
                 name wraps here rather than squeezing the numeric columns. */}
-            <th className="w-full px-2 py-1.5 font-medium md:px-3">שיוך</th>
-            <th className="px-1 py-1.5 font-medium md:px-3">תשלום</th>
+            <th className="w-full px-2 py-1.5 font-medium md:px-3">{t(profileDict, locale, "linkHeader")}</th>
+            <th className="px-1 py-1.5 font-medium md:px-3">{t(profileDict, locale, "paymentHeader")}</th>
             {hasActions ? <th className="px-1 py-1.5 md:px-3" /> : null}
           </tr>
         </thead>
@@ -122,6 +142,7 @@ export default function SessionList({
               showTiming={showTiming}
               canEdit={canEdit}
               staffActions={staffActions}
+              locale={locale}
             />
           ))}
         </tbody>
@@ -140,16 +161,18 @@ function SessionSwipeRow({
   showTiming,
   canEdit,
   staffActions,
+  locale,
 }: {
   item: SessionListItem;
   showTiming: boolean;
   canEdit: boolean;
   staffActions?: StaffSessionActions;
+  locale: Locale;
 }) {
   const { session } = item;
   const edit = useSessionEdit(session);
   const [swipeOpen, setSwipeOpen] = useState(false);
-  const payMeta = item.paymentStatus ? PAY_STATUS_META[item.paymentStatus] : undefined;
+  const payMeta = payStatusMeta(item.paymentStatus, locale);
   const editable = isEditable(item, canEdit);
 
   const row = (
@@ -164,7 +187,7 @@ function SessionSwipeRow({
         <DayTile clockIn={session.clock_in} clockOut={session.clock_out} />
         {showTiming ? (
           <div className="tabular-nums">
-            <div className="font-semibold">{formatMinutes(sessionWorkedMinutes(session))} שעות</div>
+            <div className="font-semibold">{formatMinutes(sessionWorkedMinutes(session))} {t(profileDict, locale, "hoursSuffix")}</div>
             <div className="text-muted-foreground">{shiftHours(session)}</div>
           </div>
         ) : null}
@@ -190,7 +213,7 @@ function SessionSwipeRow({
     ? [
         {
           key: "edit",
-          label: "עריכה",
+          label: t(profileDict, locale, "editActionLabel"),
           icon: <EditIcon className="h-5 w-5" />,
           className: "bg-secondary",
           onSelect: () => {
@@ -200,7 +223,7 @@ function SessionSwipeRow({
         },
         {
           key: "delete",
-          label: "מחיקה",
+          label: t(commonDict, locale, "delete"),
           icon: <DeleteIcon className="h-5 w-5" />,
           className: "bg-destructive",
           onSelect: () => {
@@ -213,7 +236,7 @@ function SessionSwipeRow({
       ? [
           {
             key: "edit",
-            label: "תיקון",
+            label: t(profileDict, locale, "correctionActionLabel"),
             icon: <EditIcon className="h-5 w-5" />,
             className: "bg-secondary",
             onSelect: () => {
@@ -245,15 +268,17 @@ function SessionTableRow({
   showTiming,
   canEdit,
   staffActions,
+  locale,
 }: {
   item: SessionListItem;
   showTiming: boolean;
   canEdit: boolean;
   staffActions?: StaffSessionActions;
+  locale: Locale;
 }) {
   const { session } = item;
   const edit = useSessionEdit(session);
-  const payMeta = item.paymentStatus ? PAY_STATUS_META[item.paymentStatus] : undefined;
+  const payMeta = payStatusMeta(item.paymentStatus, locale);
   const editable = isEditable(item, canEdit);
   const hasActions = canEdit || Boolean(staffActions);
   // date + שיוך + payment, plus the (merged) timing column and the action column
@@ -268,7 +293,7 @@ function SessionTableRow({
         </td>
         {showTiming ? (
           <td className="whitespace-nowrap px-1 py-2 tabular-nums md:px-3">
-            <div className="font-semibold">{formatMinutes(sessionWorkedMinutes(session))} שעות</div>
+            <div className="font-semibold">{formatMinutes(sessionWorkedMinutes(session))} {t(profileDict, locale, "hoursSuffix")}</div>
             <div className="text-muted-foreground">{shiftHours(session)}</div>
           </td>
         ) : null}
@@ -291,7 +316,7 @@ function SessionTableRow({
                   />
                 </>
               ) : editable && !edit.editing ? (
-                <EditButton label="תיקון" onClick={edit.openEditor} disabled={edit.working} />
+                <EditButton label={t(profileDict, locale, "correctionActionLabel")} onClick={edit.openEditor} disabled={edit.working} />
               ) : null}
             </div>
           </td>

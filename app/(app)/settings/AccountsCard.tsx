@@ -12,6 +12,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { ACCOUNT_KINDS, getAccountKindLabel, type Account } from "@/lib/accounts";
 import { toHebrewError } from "@/lib/error-messages";
+import { invalidateAccountsCache } from "@/components/financial/AccountSelect";
 
 const ils = new Intl.NumberFormat("he-IL", {
   style: "currency",
@@ -100,6 +101,7 @@ export default function AccountsCard({ initialAccounts }: { initialAccounts: Acc
       }
       toast.success(form.id ? "החשבון עודכן" : "החשבון נוצר");
       setDialogOpen(false);
+      invalidateAccountsCache();
       await refresh();
     } catch (e: unknown) {
       toast.error(toHebrewError(e, "שמירת החשבון נכשלה."));
@@ -122,6 +124,7 @@ export default function AccountsCard({ initialAccounts }: { initialAccounts: Acc
       }
       toast.success("החשבון נמחק");
       setDeleteTarget(null);
+      invalidateAccountsCache();
       await refresh();
     } catch (e: unknown) {
       toast.error(toHebrewError(e, "מחיקת החשבון נכשלה."));

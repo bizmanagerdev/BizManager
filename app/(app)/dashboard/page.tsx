@@ -34,7 +34,8 @@ export default async function DashboardPage() {
         name={firstNameOf(profile.full_name)}
         // The server runs UTC, so the SSR snapshot reads Israel's clock; the
         // component re-reads the viewer's own device after hydration.
-        initialGreeting={greetingForHour(viewerHour())}
+        initialGreeting={greetingForHour(viewerHour(), profile.locale)}
+        locale={profile.locale}
       />
       {/* No heading here: the greeting and today's date are the "היום" card's
           header now (they were the top bar's title/subtitle before), and

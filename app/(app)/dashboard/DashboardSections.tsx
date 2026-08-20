@@ -1,5 +1,7 @@
 import { Suspense, type ReactNode } from "react";
 import { requireProfile } from "@/lib/auth/requireProfile";
+import { t } from "@/lib/i18n/t";
+import { dashboardDict } from "@/lib/i18n/dictionaries/dashboard";
 import TodayScheduleCard from "@/components/dashboard/TodayScheduleCard";
 import TodayAlertsCard from "@/components/dashboard/TodayAlertsCard";
 import MyTasksPanel from "@/components/dashboard/MyTasksPanel";
@@ -9,6 +11,7 @@ import WorkerShiftPanel from "@/app/(app)/dashboard/WorkerShiftPanel";
 import UpcomingPayments, { type PaymentsSummary } from "@/components/dashboard/UpcomingPayments";
 import CollectionsCard from "@/components/dashboard/CollectionsCard";
 import { getInboxView, todaySlice } from "@/lib/reminders/worklist";
+import { translateToArabic } from "@/lib/i18n/translateToHebrew";
 import { getScheduleEntries, type CalendarEntry } from "@/lib/projectSchedule";
 import { getMyTasks } from "@/lib/dashboard/tasks-overview";
 import { subtractWorkingDays, toDateOnly } from "@/lib/dashboard/week";
@@ -208,6 +211,7 @@ function Cell({
 export async function DashboardPanels() {
   const { profile, supabase, user } = await requireProfile();
   const role = profile.role;
+  const locale = profile.locale;
   const isAdminOrOffice = role === "admin" || role === "office";
 
   // "What you missed since last here" — admin + office, role-filtered inside.
@@ -272,7 +276,7 @@ export async function DashboardPanels() {
     show("todaySchedule")
       ? getScheduleEntries(supabase, { scope: "mine", userId: profile.id }).catch(() => [] as CalendarEntry[])
       : Promise.resolve([] as CalendarEntry[]),
-    show("myTasks") ? getMyTasks(supabase, profile.id) : Promise.resolve([]),
+    show("myTasks") ? getMyTasks(supabase, profile.id, locale) : Promise.resolve([]),
     // The payments calendar, one month back so nothing that's already late is
     // missed. The card itself keeps only what's unpaid and near — see below.
     show("payments") && isAdminOrOffice
@@ -338,7 +342,16 @@ export async function DashboardPanels() {
   // The dated alerts, grouped HERE (server) because that's pure rule knowledge;
   // the card only draws them. Its sibling does the date bucketing on the client,
   // which has to happen on the viewer's clock.
-  const alertsSlice = inboxResult ? todaySlice(inboxResult) : null;
+  let alertsSlice = inboxResult ? todaySlice(inboxResult) : null;
+  // Alert titles are computed from live data in Hebrew only (not stored per
+  // locale) — translated here for an Arabic-locale worker, same as
+  // /api/reminders/page-alerts.
+  if (alertsSlice && locale === "ar" && alertsSlice.alerts.length > 0) {
+    const translatedAlerts = await Promise.all(
+      alertsSlice.alerts.map(async (a) => ({ ...a, title: (await translateToArabic(a.title)) ?? a.title }))
+    );
+    alertsSlice = { ...alertsSlice, alerts: translatedAlerts };
+  }
 
   // The payments card, in the calendar's three questions: what's late, what's due
   // today, what's expected over the next fortnight. Anything already paid
@@ -394,23 +407,27 @@ export async function DashboardPanels() {
     // The SSR snapshot comes from the server's clock and the card re-reads it on
     // the client, so a restored page can't show yesterday.
     todaySchedule: show("todaySchedule") ? (
-      <TodayScheduleCard entries={scheduleEntries} initialDate={formatToday(new Date())} />
+      <TodayScheduleCard entries={scheduleEntries} initialDate={formatToday(new Date(), locale)} locale={locale} />
     ) : null,
     // These five no longer test for emptiness HERE: each card decides for itself
     // and collapses to a one-line QuietCard when it has nothing. A card that
     // disappears takes its own explanation with it — you're left wondering
     // whether it broke, you hid it, or there's genuinely nothing.
-    todayAlerts: alertsSlice ? <TodayAlertsCard alerts={alertsSlice.alerts} /> : null,
-    myTasks: <MyTasksPanel tasks={myTasks} />,
-    payments: isAdminOrOffice ? <UpcomingPayments summary={paymentsSummary} /> : null,
-    collections: collectionsSummary ? <CollectionsCard summary={collectionsSummary} /> : null,
-    deliveries: (
-      <UpcomingDeliveries
-        deliveries={deliveriesResult}
-        spark={deliveriesSpark}
-        canOpenOrder={isAdminOrOffice}
-      />
-    ),
+    todayAlerts: alertsSlice ? <TodayAlertsCard alerts={alertsSlice.alerts} locale={locale} /> : null,
+    myTasks: <MyTasksPanel tasks={myTasks} locale={locale} />,
+    payments: isAdminOrOffice ? <UpcomingPayments summary={paymentsSummary} locale={locale} /> : null,
+    collections: collectionsSummary ? <CollectionsCard summary={collectionsSummary} locale={locale} /> : null,
+    // Deliveries is a Hebrew-only feature (user, 2026-08-19: "only Hebrew
+    // workers need deliveries") — never shown to an Arabic-locale worker,
+    // regardless of their dashboard widget prefs.
+    deliveries:
+      locale === "ar" ? null : (
+        <UpcomingDeliveries
+          deliveries={deliveriesResult}
+          spark={deliveriesSpark}
+          canOpenOrder={isAdminOrOffice}
+        />
+      ),
     attendanceQueue: attendanceQueue ? (
       <AttendanceApprovals
         data={attendanceQueue}
@@ -419,6 +436,7 @@ export async function DashboardPanels() {
         // domain needs neither (e.g. a plain office shift).
         projectOptions={attendanceOptions?.projectOptions ?? []}
         propertyOptions={attendanceOptions?.propertyOptions ?? []}
+        locale={locale}
       />
     ) : null,
     // The card owns its month from here on: it opens on `currentMonth` and its
@@ -427,7 +445,7 @@ export async function DashboardPanels() {
     // empty card, picker or not.
     domainChart:
       domainBars.length > 0 ? (
-        <DomainChartCard initialBars={domainBars} initialMonth={currentMonth} todayIso={todayIso} />
+        <DomainChartCard initialBars={domainBars} initialMonth={currentMonth} todayIso={todayIso} locale={locale} />
       ) : null,
   };
 
@@ -453,7 +471,7 @@ export async function DashboardPanels() {
   // that subscription fires on an unplanned board.
   const digestPlanned = isAdminOrOffice && digestItems.length > 0;
   const digestCard: WidgetItem | null = digestPlanned
-    ? { id: "digest", rank: -1, node: <MissedDigestCell initialItems={digestItems} planned /> }
+    ? { id: "digest", rank: -1, node: <MissedDigestCell initialItems={digestItems} planned locale={locale} /> }
     : null;
 
   // The worker's clock, pinned directly under "היום" (user, 2026-08-18: "I want
@@ -467,7 +485,7 @@ export async function DashboardPanels() {
           rank: -0.5,
           node: (
             <Suspense fallback={null}>
-              <WorkerShiftPanel userId={profile.id} />
+              <WorkerShiftPanel userId={profile.id} locale={locale} />
             </Suspense>
           ),
         }
@@ -543,12 +561,12 @@ export async function DashboardPanels() {
           board itself rather than trying to draw its own cell (see
           MissedDigestCard). When it DOES have something it's a planned cell in
           the tree above instead, always the first secondary card. */}
-      {isAdminOrOffice && !digestPlanned ? <MissedDigestCell initialItems={digestItems} /> : null}
+      {isAdminOrOffice && !digestPlanned ? <MissedDigestCell initialItems={digestItems} locale={locale} /> : null}
 
       {present.length === 0 ? (
         <Card>
           <CardContent className="p-6 text-center text-sm text-muted-foreground">
-            אין כרטיסים להצגה. ניתן להוסיף כרטיסים דרך «התאמת לוח».
+            {t(dashboardDict, locale, "noCardsMessage")}
           </CardContent>
         </Card>
       ) : null}

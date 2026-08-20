@@ -5,6 +5,7 @@ import { logAuditEvent } from "@/lib/audit";
 import { minutesBetween } from "@/lib/payroll";
 import { PHONE_ATTENDANCE_TABLE } from "@/lib/attendance/phone-reports";
 import { parseSelfReportedTime } from "@/lib/attendance/my-shift";
+import { translateToHebrew } from "@/lib/i18n/translateToHebrew";
 
 /**
  * "סיום ושליחה לאישור" — the worker clocks himself OUT and submits the shift.
@@ -55,6 +56,11 @@ export async function POST(req: Request) {
     // note, so neither one silently overwrites the other.
     const existingNotes = typeof openReport.notes === "string" ? openReport.notes.trim() : "";
     const mergedNotes = [existingNotes, notes].filter(Boolean).join(" · ") || null;
+    // Office/admin never see Arabic, so a locale=ar worker's own note is
+    // auto-translated to Hebrew here. Translating the merged text (rather than
+    // concatenating two separately-translated halves) keeps it coherent.
+    const mergedNotesHe =
+      profile.locale === "ar" && mergedNotes ? await translateToHebrew(mergedNotes) : null;
 
     // Guarded on status='open' so a double-tap (or a phone clock-out racing the
     // app) can't submit the same shift twice.
@@ -65,6 +71,7 @@ export async function POST(req: Request) {
         worked_minutes: minutesBetween(clockIn, clockOut),
         status: "pending_review",
         notes: mergedNotes,
+        notes_he: mergedNotesHe,
         // The row was touched NOW, whatever hour the shift is said to have ended.
         updated_at: now.toISOString(),
       })

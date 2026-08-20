@@ -4,6 +4,8 @@ import { PageStack } from "@/components/layout/page-layout";
 import { NotificationIcon } from "@/components/ui/icons";
 import NotificationsClient from "@/app/(app)/notifications/NotificationsClient";
 import type { NotificationItem } from "@/lib/ui/notifications-store";
+import { t } from "@/lib/i18n/t";
+import { notificationsDict } from "@/lib/i18n/dictionaries/notifications";
 
 export const revalidate = 0;
 
@@ -25,11 +27,11 @@ export default async function NotificationsPage() {
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold">
             <NotificationIcon className="h-6 w-6" />
-            התראות
+            {t(notificationsDict, profile.locale, "pageTitle")}
           </h1>
-          <p className="text-sm text-muted-foreground">כל ההתראות שקיבלת — נקראו ושלא נקראו.</p>
+          <p className="text-sm text-muted-foreground">{t(notificationsDict, profile.locale, "pageDescription")}</p>
         </div>
-        <NotificationsClient initialItems={items} initialHasMore={items.length === 40} />
+        <NotificationsClient initialItems={items} initialHasMore={items.length === 40} locale={profile.locale} />
       </PageStack>
     </AppShell>
   );

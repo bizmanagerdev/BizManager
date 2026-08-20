@@ -6,6 +6,10 @@ import { Button } from "@/components/ui/button";
 import { formatShortDateTime } from "@/lib/date";
 import { NOTIF_BUCKETS } from "@/lib/notifications/categories";
 import { refreshNotifications, type NotificationItem } from "@/lib/ui/notifications-store";
+import type { Locale } from "@/lib/i18n/types";
+import { t } from "@/lib/i18n/t";
+import { commonDict } from "@/lib/i18n/dictionaries/common";
+import { notificationsDict } from "@/lib/i18n/dictionaries/notifications";
 
 const CATEGORY_LABEL: Record<string, string> = Object.fromEntries(NOTIF_BUCKETS.map((b) => [b.key, b.label]));
 const CATEGORY_ORDER = NOTIF_BUCKETS.map((b) => b.key);
@@ -13,9 +17,11 @@ const CATEGORY_ORDER = NOTIF_BUCKETS.map((b) => b.key);
 export default function NotificationsClient({
   initialItems,
   initialHasMore,
+  locale,
 }: {
   initialItems: NotificationItem[];
   initialHasMore: boolean;
+  locale: Locale;
 }) {
   const [items, setItems] = useState<NotificationItem[]>(initialItems);
   const [hasMore, setHasMore] = useState(initialHasMore);
@@ -83,16 +89,22 @@ export default function NotificationsClient({
   }
 
   if (items.length === 0) {
-    return <div className="rounded-xl border px-4 py-10 text-center text-sm text-muted-foreground">אין התראות עדיין.</div>;
+    return (
+      <div className="rounded-xl border px-4 py-10 text-center text-sm text-muted-foreground">
+        {t(notificationsDict, locale, "emptyState")}
+      </div>
+    );
   }
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-sm text-muted-foreground">{unread > 0 ? `${unread} שלא נקראו` : "הכול נקרא"}</div>
+        <div className="text-sm text-muted-foreground">
+          {unread > 0 ? t(notificationsDict, locale, "unreadCount").replace("{n}", String(unread)) : t(notificationsDict, locale, "allRead")}
+        </div>
         {unread > 0 ? (
           <Button variant="outline" size="sm" onClick={() => void markAllRead()} disabled={busy}>
-            סמן הכל כנקרא
+            {t(notificationsDict, locale, "markAllRead")}
           </Button>
         ) : null}
       </div>
@@ -131,7 +143,7 @@ export default function NotificationsClient({
       {hasMore ? (
         <div className="flex justify-center">
           <Button variant="outline" size="sm" onClick={() => void loadMore()} disabled={loading}>
-            {loading ? "טוען…" : "טען עוד"}
+            {loading ? t(commonDict, locale, "loading") : t(notificationsDict, locale, "loadMore")}
           </Button>
         </div>
       ) : null}

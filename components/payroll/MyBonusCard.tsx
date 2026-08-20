@@ -14,6 +14,10 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatCurrency, formatDate, monthKeyFromDate, monthLabelFromKey, toNumber } from "@/lib/payroll";
 import { toHebrewError } from "@/lib/error-messages";
 import { itemMonthKey, type PayslipItemRow } from "@/lib/payroll-bonuses";
+import { t } from "@/lib/i18n/t";
+import type { Locale } from "@/lib/i18n/types";
+import { commonDict } from "@/lib/i18n/dictionaries/common";
+import { profileDict } from "@/lib/i18n/dictionaries/profile";
 
 /**
  * "בונוסים" — the worker's own.
@@ -25,7 +29,7 @@ import { itemMonthKey, type PayslipItemRow } from "@/lib/payroll-bonuses";
  * The only state worth showing is whether the month has been closed into a payslip
  * yet, because that's when he can no longer take it back himself.
  */
-export default function MyBonusCard({ bonuses }: { bonuses: PayslipItemRow[] }) {
+export default function MyBonusCard({ bonuses, locale = "he" }: { bonuses: PayslipItemRow[]; /** Office/admin are always "he"; only a worker ever sees "ar". */ locale?: Locale }) {
   const router = useRouter();
   const [saving, startSaving] = useTransition();
   const [busy, setBusy] = useState(false);
@@ -52,15 +56,15 @@ export default function MyBonusCard({ bonuses }: { bonuses: PayslipItemRow[] }) 
   async function submit() {
     const parsedAmount = Number(amount);
     if (!bonusDate) {
-      toast.error("יש לבחור תאריך.");
+      toast.error(t(profileDict, locale, "errSelectDate"));
       return;
     }
     if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      toast.error("יש להזין סכום בונוס חיובי.");
+      toast.error(t(profileDict, locale, "errPositiveBonusAmount"));
       return;
     }
     if (!notes.trim()) {
-      toast.error("יש לכתוב על מה הבונוס.");
+      toast.error(t(profileDict, locale, "errBonusReasonRequired"));
       return;
     }
 
@@ -73,17 +77,17 @@ export default function MyBonusCard({ bonuses }: { bonuses: PayslipItemRow[] }) 
       });
       const json = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
-        toast.error(toHebrewError(json.error ?? "", "השמירה נכשלה."));
+        toast.error(toHebrewError(json.error ?? "", t(profileDict, locale, "saveFailedGeneric")));
         return;
       }
       setAmount("");
       setNotes("");
       setBonusDate(new Date().toISOString().slice(0, 10));
       setOpen(false);
-      toast.success("הבונוס נוסף לשכר של החודש.");
+      toast.success(t(profileDict, locale, "bonusAddedToast"));
       startSaving(() => router.refresh());
     } catch (error: unknown) {
-      toast.error(toHebrewError(error, "אין חיבור לשרת."));
+      toast.error(toHebrewError(error, t(profileDict, locale, "noServerConnection")));
     } finally {
       setBusy(false);
     }
@@ -99,14 +103,14 @@ export default function MyBonusCard({ bonuses }: { bonuses: PayslipItemRow[] }) 
       });
       const json = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
-        toast.error(toHebrewError(json.error ?? "", "המחיקה נכשלה."));
+        toast.error(toHebrewError(json.error ?? "", t(profileDict, locale, "deleteFailedGeneric")));
         return;
       }
       setPendingDeleteId(null);
-      toast.success("הבונוס נמחק.");
+      toast.success(t(profileDict, locale, "bonusDeletedToast"));
       startSaving(() => router.refresh());
     } catch (error: unknown) {
-      toast.error(toHebrewError(error, "אין חיבור לשרת."));
+      toast.error(toHebrewError(error, t(profileDict, locale, "noServerConnection")));
     } finally {
       setBusy(false);
     }
@@ -118,18 +122,18 @@ export default function MyBonusCard({ bonuses }: { bonuses: PayslipItemRow[] }) 
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2 text-base font-semibold">
             <CoinsIcon className="h-5 w-5 shrink-0" />
-            <span className="break-words">בונוסים</span>
+            <span className="break-words">{t(profileDict, locale, "bonusesTitle")}</span>
           </div>
           {!open ? (
             <Button type="button" size="sm" disabled={working} onClick={() => setOpen(true)}>
-              הוספת בונוס
+              {t(profileDict, locale, "addBonusLabel")}
             </Button>
           ) : null}
         </div>
 
         {thisMonthTotal > 0 ? (
           <div className="text-sm text-muted-foreground">
-            {`נוסף לשכר של ${monthLabelFromKey(currentMonthKey)}: `}
+            {t(profileDict, locale, "addedToSalaryOfTemplate").replace("{month}", monthLabelFromKey(currentMonthKey, locale))}
             <span className="font-semibold text-foreground">{formatCurrency(thisMonthTotal)}</span>
           </div>
         ) : null}
@@ -138,38 +142,38 @@ export default function MyBonusCard({ bonuses }: { bonuses: PayslipItemRow[] }) 
           <div className="space-y-2">
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <label className="block space-y-1">
-                <span className="block text-xs text-muted-foreground">על איזה יום</span>
+                <span className="block text-xs text-muted-foreground">{t(profileDict, locale, "whichDayLabel")}</span>
                 <DateInput
                   value={bonusDate}
                   onChange={(event) => setBonusDate(event.target.value)}
                   disabled={working}
-                  aria-label="תאריך הבונוס"
+                  aria-label={t(profileDict, locale, "bonusDateAriaLabel")}
                 />
               </label>
               <label className="block space-y-1">
-                <span className="block text-xs text-muted-foreground">סכום</span>
+                <span className="block text-xs text-muted-foreground">{t(profileDict, locale, "amountLabel")}</span>
                 <CurrencyInput
                   inputMode="decimal"
                   value={amount}
                   onChange={(event) => setAmount(event.target.value)}
                   disabled={working}
-                  aria-label="סכום הבונוס"
+                  aria-label={t(profileDict, locale, "bonusAmountAriaLabel")}
                 />
               </label>
             </div>
             <label className="block space-y-1">
-              <span className="block text-xs text-muted-foreground">על מה הבונוס</span>
+              <span className="block text-xs text-muted-foreground">{t(profileDict, locale, "whatForLabel")}</span>
               <Input
                 value={notes}
                 onChange={(event) => setNotes(event.target.value)}
                 disabled={working}
-                aria-label="על מה הבונוס"
+                aria-label={t(profileDict, locale, "whatForLabel")}
               />
             </label>
             <div className="flex gap-2">
               <Button type="button" className="flex-1" disabled={working} onClick={() => void submit()}>
                 {working ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : null}
-                שמירה
+                {t(commonDict, locale, "save")}
               </Button>
               <Button
                 type="button"
@@ -181,7 +185,7 @@ export default function MyBonusCard({ bonuses }: { bonuses: PayslipItemRow[] }) 
                   setNotes("");
                 }}
               >
-                ביטול
+                {t(commonDict, locale, "cancel")}
               </Button>
             </div>
           </div>
@@ -189,7 +193,7 @@ export default function MyBonusCard({ bonuses }: { bonuses: PayslipItemRow[] }) 
 
         {bonuses.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            עוד לא הוספת בונוס. בונוס שתוסיף נכנס לשכר של החודש שבו התאריך נמצא.
+            {t(profileDict, locale, "noBonusesYetHint")}
           </p>
         ) : (
           <div className="space-y-2">
@@ -208,11 +212,11 @@ export default function MyBonusCard({ bonuses }: { bonuses: PayslipItemRow[] }) 
                 {/* Once the month is closed into a payslip it's payroll, and the
                     delete is the boss's. Saying so beats a button that fails. */}
                 {bonus.payslip_id ? (
-                  <span className="text-xs text-muted-foreground">נכנס לתלוש</span>
+                  <span className="text-xs text-muted-foreground">{t(profileDict, locale, "includedInPayslipLabel")}</span>
                 ) : (
                   <DeleteButton
                     onClick={() => setPendingDeleteId(bonus.id)}
-                    label="מחיקת הבונוס"
+                    label={t(profileDict, locale, "deleteBonusLabel")}
                     disabled={working}
                   />
                 )}
@@ -226,9 +230,9 @@ export default function MyBonusCard({ bonuses }: { bonuses: PayslipItemRow[] }) 
           onOpenChange={(next) => {
             if (!next) setPendingDeleteId(null);
           }}
-          title="מחיקת בונוס"
-          description="הבונוס יימחק ולא ייכנס לשכר."
-          confirmLabel="מחיקה"
+          title={t(profileDict, locale, "deleteBonusTitle")}
+          description={t(profileDict, locale, "deleteBonusDescription")}
+          confirmLabel={t(commonDict, locale, "delete")}
           loading={working}
           onConfirm={() => {
             if (pendingDeleteId) void remove(pendingDeleteId);

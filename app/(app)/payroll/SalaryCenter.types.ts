@@ -61,6 +61,8 @@ export type WorkerFormState = {
   active: boolean;
   system_access: boolean;
   payroll_worker_type: PayrollWorkerType;
+  /** UI language ('he' | 'ar'); only meaningful for role="worker". */
+  locale: "he" | "ar";
 };
 
 export type CreateUserFormState = {

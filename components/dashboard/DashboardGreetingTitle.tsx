@@ -3,6 +3,7 @@
 import { useMemo, useSyncExternalStore } from "react";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { greetingForHour } from "@/lib/dashboard/greeting";
+import type { Locale } from "@/lib/i18n/types";
 
 // No reactive source — the greeting is read from the local clock on each render.
 const subscribe = () => () => {};
@@ -23,16 +24,18 @@ const subscribe = () => () => {};
 export default function DashboardGreetingTitle({
   name,
   initialGreeting,
+  locale = "he",
 }: {
   /** The viewer's first name. */
   name: string;
   /** SSR snapshot from the server's clock. */
   initialGreeting: string;
+  locale?: Locale;
 }) {
   const greeting = useSyncExternalStore(
     subscribe,
     // The DEVICE's own hour: a viewer abroad gets their morning, not Israel's.
-    () => greetingForHour(new Date().getHours()),
+    () => greetingForHour(new Date().getHours(), locale),
     () => initialGreeting
   );
 

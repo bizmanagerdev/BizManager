@@ -21,6 +21,9 @@ export type UserProfile = {
   // "what you missed" digest anchor.
   dashboard_prefs?: unknown;
   digest_seen_at?: string | null;
+  // UI language ('he' | 'ar'). Only the worker role is ever offered a toggle for
+  // this; office/admin always stay 'he'. See lib/i18n.
+  locale: "he" | "ar";
 };
 
 export const requireProfile = cache(async () => {
@@ -34,11 +37,25 @@ export const requireProfile = cache(async () => {
 
   if (!userId) redirect("/login");
 
-  const { data: profile, error } = await supabase
+  let { data: profile, error } = await supabase
     .from("users")
-    .select("id,auth_user_id,email,full_name,phone,role,active,system_access,payroll_worker_type,dashboard_prefs,digest_seen_at")
+    .select(
+      "id,auth_user_id,email,full_name,phone,role,active,system_access,payroll_worker_type,dashboard_prefs,digest_seen_at,locale"
+    )
     .eq("auth_user_id", userId)
     .maybeSingle();
+
+  if (error) {
+    // Pre-migration: the `locale` column may not exist yet. Retry without it
+    // rather than sending every signed-in user to /login.
+    const legacy = await supabase
+      .from("users")
+      .select("id,auth_user_id,email,full_name,phone,role,active,system_access,payroll_worker_type,dashboard_prefs,digest_seen_at")
+      .eq("auth_user_id", userId)
+      .maybeSingle();
+    profile = legacy.data as typeof profile;
+    error = legacy.error;
+  }
 
   if (error) {
     // If the session is invalid/expired, Supabase/DB calls will fail.
@@ -48,9 +65,11 @@ export const requireProfile = cache(async () => {
   if (!profile) redirect("/no-access");
 
   const rawWorkerType = (profile as { payroll_worker_type?: unknown }).payroll_worker_type;
+  const rawLocale = (profile as { locale?: unknown }).locale;
   const typed: UserProfile = {
-    ...(profile as Omit<UserProfile, "payroll_worker_type">),
+    ...(profile as Omit<UserProfile, "payroll_worker_type" | "locale">),
     payroll_worker_type: isPayrollWorkerType(rawWorkerType) ? rawWorkerType : null,
+    locale: rawLocale === "ar" ? "ar" : "he",
   };
   if (!typed.active || !typed.system_access || typed.role === "worker_no_access") {
     redirect("/no-access");
