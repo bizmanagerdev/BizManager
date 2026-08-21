@@ -9,7 +9,6 @@ import { toHebrewError } from "@/lib/error-messages";
 import { formatDeliveryAddress } from "@/lib/ui/cities";
 import { paymentStatusLabel } from "@/lib/orders/paymentStatus";
 import { pinFrom, wazeLinkForPin, type DeliveryPin } from "@/lib/delivery-location";
-import { whatsappHref } from "@/lib/whatsapp";
 import type { DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
 
 function formatCurrency(value: number | null) {
@@ -27,7 +26,10 @@ function formatItem(item: DeliveryItem["items"][number]) {
   return item.notes ? `${base} (${item.notes})` : base;
 }
 
-/** Plain-text version of the slip, for when the image can't be shared as a file. */
+/** Plain-text version of the slip, for when the image can't be shared as a file.
+ *  Includes the customer's phone as reference text for the driver — this is NOT
+ *  a wa.me link and never selects a recipient; the OS share sheet still lets
+ *  the person sharing pick who it goes to. */
 function buildDeliveryShareText(delivery: DeliveryItem, address: string, pin: DeliveryPin | null): string {
   const lines: string[] = [`משלוח — ${delivery.customerName}`];
   if (delivery.customerPhone) lines.push(delivery.customerPhone);
@@ -48,7 +50,6 @@ function buildDeliveryShareText(delivery: DeliveryItem, address: string, pin: De
   }
   return lines.join("\n");
 }
-
 
 const SLIP_LABEL = "#475569";
 const SLIP_TEXT = "#1e293b";
@@ -174,8 +175,11 @@ export default function DeliveryShareActions({
           URL.revokeObjectURL(url);
         };
 
-        // Touch devices (phones, the Android app's WebView) get the real native
-        // share sheet — that opens WhatsApp directly and works reliably there.
+        // Touch devices get the REAL native OS share sheet — pick WhatsApp,
+        // email, Drive, whatever's installed, and choose the recipient there.
+        // The one thing this must never do is decide the recipient FOR the
+        // user (this slip is for the driver, not automatically the customer
+        // whose order it is) — see the bottom fallback.
         const isTouch =
           typeof window !== "undefined" &&
           window.matchMedia?.("(pointer: coarse)").matches === true &&
@@ -199,11 +203,12 @@ export default function DeliveryShareActions({
             }
           }
 
-          // File sharing wasn't available (or didn't go through) — still a phone,
-          // so give a real native share sheet instead of ever falling into the
-          // desktop "copy image + open WhatsApp Web" trick below. Text sharing is
-          // far more broadly supported across phone browsers/WebViews than file
-          // sharing, so this succeeds even where the block above can't.
+          // File sharing wasn't available (or didn't go through) — still a
+          // phone, so give a real native share sheet instead of ever falling
+          // into the desktop "copy image + open WhatsApp Web" trick below.
+          // Text sharing is far more broadly supported across phone
+          // browsers/WebViews than file sharing, so this succeeds even where
+          // the block above can't.
           const shareText = buildDeliveryShareText(current, address, slipPin);
           if (typeof navigator !== "undefined" && "share" in navigator) {
             try {
@@ -220,16 +225,12 @@ export default function DeliveryShareActions({
             }
           }
 
-          // No Web Share API at all — go straight to WhatsApp, same as the share
-          // button everywhere else in the app.
-          const waHref = whatsappHref(current.customerPhone, shareText);
-          if (waHref) {
-            window.open(waHref, "_blank", "noopener");
-            return;
-          }
-
+          // No Web Share API at all on this device — this slip is FOR THE
+          // DRIVER, not a message TO the customer, so there is no one right
+          // contact to guess and open a chat with. Save the file and let
+          // whoever clicked share pick the app and the recipient themselves.
           saveFile();
-          toast.error("השיתוף לא נתמך במכשיר זה. התמונה נשמרה בהורדות.");
+          toast.error("השיתוף לא נתמך במכשיר זה. התמונה נשמרה — אפשר לשלוח אותה מהגלריה.");
           return;
         }
 
