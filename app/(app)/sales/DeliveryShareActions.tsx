@@ -9,6 +9,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { formatDeliveryAddress } from "@/lib/ui/cities";
 import { paymentStatusLabel } from "@/lib/orders/paymentStatus";
 import { pinFrom, wazeLinkForPin, type DeliveryPin } from "@/lib/delivery-location";
+import { isNativePlatform, shareImageNative } from "@/lib/native-share";
 import type { DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
 
 function formatCurrency(value: number | null) {
@@ -186,6 +187,21 @@ export default function DeliveryShareActions({
           (navigator.maxTouchPoints ?? 0) > 0;
 
         if (isTouch) {
+          // Inside the packaged Android app, go straight to the native share
+          // bridge — the WebView's own navigator.share below is unreliable
+          // there (it can report unsupported, or silently no-op) even though
+          // the phone shares fine everywhere else. This talks to Android's
+          // real share sheet directly, so it works exactly like every other
+          // app on the device.
+          if (await isNativePlatform()) {
+            const nativeResult = await shareImageNative(
+              blob,
+              fileName,
+              `משלוח — ${current.customerName}`
+            );
+            if (nativeResult !== "unavailable") return;
+          }
+
           if (
             typeof navigator !== "undefined" &&
             "canShare" in navigator &&
