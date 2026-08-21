@@ -102,6 +102,7 @@ module.exports = {
           yellow: primitiveScale("yellow", [4, 8, 9, 10]),
           orange: primitiveScale("orange", [4, 8, 9, 10]),
           red: primitiveScale("red", [4, 8, 9, 10]),
+          purple: primitiveScale("purple", [4, 8, 9, 10]),
         },
       },
       borderRadius: {

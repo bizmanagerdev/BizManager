@@ -3,14 +3,13 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
-import { CashIcon, CheckIcon, ChevronDownIcon, LocationIcon, PhoneIcon, ShowIcon, WazeIcon } from "@/components/ui/icons";
+import { CashIcon, CheckIcon, ChevronDownIcon, LocationIcon, PhoneIcon, WazeIcon } from "@/components/ui/icons";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AddressLink } from "@/components/ui/address-link";
 import { ContactLink } from "@/components/ui/contact-link";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
 import { DELIVERY_REGIONS, formatDeliveryAddress, getCityRegion } from "@/lib/ui/cities";
@@ -22,9 +21,10 @@ import {
   prepaymentBadgeClasses,
   PREPAYMENT_ROW_CLASSES,
 } from "@/lib/orders/prepayment";
-import type { DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
+import type { DeliveryItem, DeliveryOrderItem } from "@/app/(app)/sales/loadDeliveries";
 import { pinFrom, wazeLinkForPin, type DeliveryPin } from "@/lib/delivery-location";
 import { DeliveryLocationDialog } from "@/components/orders/DeliveryLocationDialog";
+import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 
 type CustomerGroup = {
   customerId: string;
@@ -105,6 +105,15 @@ function groupDeliveries(deliveries: DeliveryItem[], regionFilter: string | null
 // Higher than the orders list's 3: this IS the packing list, so the driver should
 // see the load. The cap only exists to stop a huge order from burying the card.
 const DELIVERY_ITEMS_LIMIT = 8;
+
+/** The still-outstanding line items: drop what's already fully delivered, and
+ * show the remaining quantity rather than the original ordered quantity — this
+ * queue is what's left to load, not a record of what already went out. */
+function remainingDeliveryItems(items: DeliveryOrderItem[]) {
+  return items
+    .map((item) => ({ ...item, remaining: item.quantity - item.delivered }))
+    .filter((item) => item.remaining > 0);
+}
 
 function formatCurrency(value: number | null) {
   if (value === null) return "-";
@@ -307,7 +316,21 @@ export default function SalesDeliveriesQueue({
                             // flash it (components/layout/FocusHighlighter.tsx) —
                             // that's how the dashboard widget links through.
                             data-focus-id={delivery.id}
-                            className={`align-top ${unpaidPrepayment ? PREPAYMENT_ROW_CLASSES : ""}`}
+                            className={`align-top ${canOpenOrder ? "cursor-pointer hover:bg-muted/20 focus-visible:bg-muted/20" : ""} ${unpaidPrepayment ? PREPAYMENT_ROW_CLASSES : ""}`}
+                            tabIndex={canOpenOrder ? 0 : undefined}
+                            role={canOpenOrder ? "link" : undefined}
+                            onClick={(event) => {
+                              if (!canOpenOrder || shouldIgnoreRowNavigation(event.target)) return;
+                              emitNavigationStart();
+                              router.push(`/sales/orders/${delivery.id}`);
+                            }}
+                            onKeyDown={(event) => {
+                              if (!canOpenOrder || shouldIgnoreRowNavigation(event.target)) return;
+                              if (event.key !== "Enter" && event.key !== " ") return;
+                              event.preventDefault();
+                              emitNavigationStart();
+                              router.push(`/sales/orders/${delivery.id}`);
+                            }}
                           >
                             <td className="px-4 py-3">
                               <div className="font-medium">{group.customerName}</div>
@@ -352,41 +375,40 @@ export default function SalesDeliveriesQueue({
                                     יתרת אספקה
                                   </span>
                                 ) : null}
-                                {delivery.items.slice(0, DELIVERY_ITEMS_LIMIT).map((item, idx) => {
-                                  const partiallyDone = item.delivered > 0 && item.delivered < item.quantity;
+                                {(() => {
+                                  const pending = remainingDeliveryItems(delivery.items);
                                   return (
-                                    <span
-                                      key={`${delivery.id}-${idx}`}
-                                      className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-border/60 bg-background px-2 py-0.5 text-foreground"
-                                    >
-                                      {item.quantity > 1 ? <span className="font-semibold">{item.quantity}</span> : null}
-                                      <span>
-                                        {item.name}
-                                        {item.notes ? ` (${item.notes})` : ""}
-                                      </span>
-                                      {partiallyDone ? (
-                                        <span className="font-semibold text-warning-soft-foreground">
-                                          נמסר {item.delivered}
+                                    <>
+                                      {pending.slice(0, DELIVERY_ITEMS_LIMIT).map((item, idx) => (
+                                        <span
+                                          key={`${delivery.id}-${idx}`}
+                                          className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-border/60 bg-background px-2 py-0.5 text-foreground"
+                                        >
+                                          {item.remaining > 0 ? <span className="font-semibold">{item.remaining}</span> : null}
+                                          <span>
+                                            {item.name}
+                                            {item.notes ? ` (${item.notes})` : ""}
+                                          </span>
                                         </span>
+                                      ))}
+                                      {pending.length > DELIVERY_ITEMS_LIMIT ? (
+                                        canOpenOrder ? (
+                                          <Link
+                                            href={`/sales/orders/${delivery.id}`}
+                                            onClick={() => emitNavigationStart()}
+                                            className="inline-flex items-center whitespace-nowrap rounded-md border border-dashed border-border/60 px-2 py-0.5 text-muted-foreground hover:text-foreground"
+                                          >
+                                            +{pending.length - DELIVERY_ITEMS_LIMIT} נוספים
+                                          </Link>
+                                        ) : (
+                                          <span className="inline-flex items-center whitespace-nowrap rounded-md border border-dashed border-border/60 px-2 py-0.5 text-muted-foreground">
+                                            +{pending.length - DELIVERY_ITEMS_LIMIT} נוספים
+                                          </span>
+                                        )
                                       ) : null}
-                                    </span>
+                                    </>
                                   );
-                                })}
-                                {delivery.items.length > DELIVERY_ITEMS_LIMIT ? (
-                                  canOpenOrder ? (
-                                    <Link
-                                      href={`/sales/orders/${delivery.id}`}
-                                      onClick={() => emitNavigationStart()}
-                                      className="inline-flex items-center whitespace-nowrap rounded-md border border-dashed border-border/60 px-2 py-0.5 text-muted-foreground hover:text-foreground"
-                                    >
-                                      +{delivery.items.length - DELIVERY_ITEMS_LIMIT} נוספים
-                                    </Link>
-                                  ) : (
-                                    <span className="inline-flex items-center whitespace-nowrap rounded-md border border-dashed border-border/60 px-2 py-0.5 text-muted-foreground">
-                                      +{delivery.items.length - DELIVERY_ITEMS_LIMIT} נוספים
-                                    </span>
-                                  )
-                                ) : null}
+                                })()}
                               </div>
                             </td>
                             <td className="px-4 py-3">
@@ -419,22 +441,9 @@ export default function SalesDeliveriesQueue({
                                 <DeliveryShareActions
                                   delivery={delivery}
                                   label=""
+                                  variant="ghost"
                                   className="h-9 w-9 shrink-0 p-0"
                                 />
-                                {canOpenOrder ? (
-                                  <Button
-                                    asChild
-                                    type="button"
-                                    variant="secondary"
-                                    size="icon-sm"
-                                    aria-label="פרטי ההזמנה"
-                                    onClick={() => emitNavigationStart()}
-                                  >
-                                    <Link href={`/sales/orders/${delivery.id}`}>
-                                      <ShowIcon className="h-4 w-4" />
-                                    </Link>
-                                  </Button>
-                                ) : null}
                                 <OrderConfirmDialog
                                   orderId={delivery.id}
                                   customerName={delivery.customerName}
@@ -493,7 +502,17 @@ export default function SalesDeliveriesQueue({
 
                         return (
                           <li key={customerKey}>
-                            <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+                            <div className="relative overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+                              {/* Pinned beside the name/address heading — the card's
+                                  first (and usually only) order. A second order on the
+                                  same stop keeps its own share icon further down, since
+                                  this corner can only speak for one delivery. */}
+                              <DeliveryShareActions
+                                delivery={group.orders[0]}
+                                label=""
+                                variant="ghost"
+                                className="absolute end-2 top-2 z-10 h-8 w-8 shrink-0 p-0"
+                              />
                               {/* WHERE leads — on a delivery run the address is what
                                   you act on; the customer is how you confirm it. Waze
                                   sits opposite as the one navigation affordance. */}
@@ -520,7 +539,7 @@ export default function SalesDeliveriesQueue({
                                     <WazeIcon className="h-4 w-4" />
                                   </AddressLink>
                                 ) : null}
-                                <div className="min-w-0 flex-1">
+                                <div className="min-w-0 flex-1 pe-9">
                                   <div className="text-sm font-bold leading-snug">
                                     {group.address || group.customerName}
                                   </div>
@@ -591,7 +610,7 @@ export default function SalesDeliveriesQueue({
 
                               {/* One ruled block per order, same zone rhythm as the
                                   orders list: money, then contents, then actions. */}
-                              {group.orders.map((delivery) => {
+                              {group.orders.map((delivery, orderIndex) => {
                                 const unpaidPrepayment =
                                   delivery.requiresPrepayment && delivery.paymentStatus !== "paid";
                                 const partiallyDelivered = delivery.status === "partially_delivered";
@@ -600,11 +619,39 @@ export default function SalesDeliveriesQueue({
                                   key={delivery.id}
                                   data-focus-id={delivery.id}
                                   title={delivery.notes ?? undefined}
-                                  className={`divide-y divide-border/60 border-t border-border/60 ${
+                                  tabIndex={canOpenOrder ? 0 : undefined}
+                                  role={canOpenOrder ? "link" : undefined}
+                                  onClick={(event) => {
+                                    if (!canOpenOrder || shouldIgnoreRowNavigation(event.target)) return;
+                                    emitNavigationStart();
+                                    router.push(`/sales/orders/${delivery.id}`);
+                                  }}
+                                  onKeyDown={(event) => {
+                                    if (!canOpenOrder || shouldIgnoreRowNavigation(event.target)) return;
+                                    if (event.key !== "Enter" && event.key !== " ") return;
+                                    event.preventDefault();
+                                    emitNavigationStart();
+                                    router.push(`/sales/orders/${delivery.id}`);
+                                  }}
+                                  className={`relative border-t border-border/60 ${canOpenOrder ? "cursor-pointer" : ""} ${
                                     unpaidPrepayment ? PREPAYMENT_ROW_CLASSES : ""
                                   }`}
                                 >
-                                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 p-3">
+                                  {/* Order 0's share already sits up by the name/address
+                                      heading — only a second+ order on the same stop needs
+                                      its own corner, since the heading one can't speak for
+                                      it. Sibling of the divided rows, not a member (no
+                                      divide-y border of its own). */}
+                                  {orderIndex > 0 ? (
+                                    <DeliveryShareActions
+                                      delivery={delivery}
+                                      label=""
+                                      variant="ghost"
+                                      className="absolute end-2 top-2 z-10 h-8 w-8 shrink-0 p-0"
+                                    />
+                                  ) : null}
+                                  <div className="divide-y divide-border/60">
+                                  <div className={`flex flex-wrap items-center gap-x-2 gap-y-1.5 p-3 ${orderIndex > 0 ? "pe-12" : ""}`}>
                                     <span className="text-sm font-bold">
                                       {formatCurrency(delivery.totalAmount)}
                                     </span>
@@ -631,14 +678,15 @@ export default function SalesDeliveriesQueue({
                                     ) : null}
                                   </div>
 
-                                  {/* Same rules as the orders list: no "1×" (a quantity
-                                      of one is the default, and printing it made the
-                                      chips read as broken data), and the list is capped
-                                      so it can't dribble into lonely single-chip lines.
-                                      Unlike orders, nothing is hidden — the driver needs
-                                      the full load — so the cap only applies past a
-                                      point where the card would stop being scannable. */}
-                                  {delivery.items.length > 0 ? (
+                                  {/* Same list-cap rule as the orders list — it can't
+                                      dribble into lonely single-chip lines. Unlike orders,
+                                      nothing is hidden — the driver needs the full load —
+                                      so the cap only applies past a point where the card
+                                      would stop being scannable. */}
+                                  {(() => {
+                                    const pending = remainingDeliveryItems(delivery.items);
+                                    if (pending.length === 0) return null;
+                                    return (
                                     <div className="flex flex-wrap items-center gap-1 p-3 text-xs">
                                       {/* The remaining-delivery flag lives WITH the products —
                                           that's what it qualifies (what's still owed). */}
@@ -647,72 +695,44 @@ export default function SalesDeliveriesQueue({
                                           יתרת אספקה
                                         </span>
                                       ) : null}
-                                      {delivery.items.slice(0, DELIVERY_ITEMS_LIMIT).map((item, itemIndex) => {
-                                        const partiallyDone = item.delivered > 0 && item.delivered < item.quantity;
-                                        return (
+                                      {pending.slice(0, DELIVERY_ITEMS_LIMIT).map((item, itemIndex) => (
                                         <span
                                           key={`${delivery.id}-${itemIndex}`}
                                           className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-border/60 bg-background px-2 py-0.5 text-foreground"
                                         >
-                                          {item.quantity > 1 ? (
-                                            <span className="font-semibold">{item.quantity}</span>
+                                          {item.remaining > 0 ? (
+                                            <span className="font-semibold">{item.remaining}</span>
                                           ) : null}
                                           <span>
                                             {item.name}
                                             {item.notes ? ` (${item.notes})` : ""}
                                           </span>
-                                          {/* What's already been handed over on this line. */}
-                                          {partiallyDone ? (
-                                            <span className="font-semibold text-warning-soft-foreground">
-                                              נמסר {item.delivered}
-                                            </span>
-                                          ) : null}
                                         </span>
-                                        );
-                                      })}
-                                      {delivery.items.length > DELIVERY_ITEMS_LIMIT ? (
+                                      ))}
+                                      {pending.length > DELIVERY_ITEMS_LIMIT ? (
                                         canOpenOrder ? (
                                           <Link
                                             href={`/sales/orders/${delivery.id}`}
                                             onClick={() => emitNavigationStart()}
                                             className="inline-flex items-center whitespace-nowrap rounded-md border border-dashed border-border/60 px-2 py-0.5 text-muted-foreground hover:text-foreground"
                                           >
-                                            +{delivery.items.length - DELIVERY_ITEMS_LIMIT} נוספים
+                                            +{pending.length - DELIVERY_ITEMS_LIMIT} נוספים
                                           </Link>
                                         ) : (
                                           <span className="inline-flex items-center whitespace-nowrap rounded-md border border-dashed border-border/60 px-2 py-0.5 text-muted-foreground">
-                                            +{delivery.items.length - DELIVERY_ITEMS_LIMIT} נוספים
+                                            +{pending.length - DELIVERY_ITEMS_LIMIT} נוספים
                                           </span>
                                         )
                                       ) : null}
                                     </div>
-                                  ) : null}
+                                    );
+                                  })()}
 
-                                  {/* The delivery itself is the primary act, so it takes
-                                      the filled button and the room; look-and-share stay
-                                      as glyphs beside it. */}
+                                  {/* The delivery itself is the primary act — the whole
+                                      block is now a tap target to the order, so this row
+                                      is just the one filled action, pinned to the bottom-left
+                                      corner (ms-auto) to mirror the share icon's top-left. */}
                                   <div className="flex items-center gap-2 p-3">
-                                    {/* Glyphs, not labelled buttons: the label would
-                                        crowd out the primary action beside them. */}
-                                    <DeliveryShareActions
-                                      delivery={delivery}
-                                      label=""
-                                      className="h-9 w-9 shrink-0 p-0"
-                                    />
-                                    {canOpenOrder ? (
-                                      <Button
-                                        asChild
-                                        type="button"
-                                        variant="secondary"
-                                        size="icon-sm"
-                                        aria-label="פרטי ההזמנה"
-                                        onClick={() => emitNavigationStart()}
-                                      >
-                                        <Link href={`/sales/orders/${delivery.id}`}>
-                                          <ShowIcon className="h-4 w-4" />
-                                        </Link>
-                                      </Button>
-                                    ) : null}
                                     <OrderConfirmDialog
                                       orderId={delivery.id}
                                       customerName={delivery.customerName}
@@ -725,6 +745,7 @@ export default function SalesDeliveriesQueue({
                                         </>
                                       }
                                     />
+                                  </div>
                                   </div>
                                 </div>
                                 );

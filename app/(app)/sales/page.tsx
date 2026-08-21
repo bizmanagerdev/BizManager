@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import AppShell from "@/components/layout/AppShell";
 import SalesDeliveriesQueue from "@/app/(app)/sales/SalesDeliveriesQueue";
 import SalesInventoryClient from "@/app/(app)/sales/SalesInventoryClient";
+import InventoryRealtimeBadge from "@/app/(app)/sales/InventoryRealtimeBadge";
 import SalesOrdersClient from "@/app/(app)/sales/SalesOrdersClient";
 import PriceListClient from "@/app/(app)/sales/PriceListClient";
 import SalesTabsNav from "@/app/(app)/sales/SalesTabsNav";
@@ -287,6 +288,7 @@ export default async function SalesPage({
             {customerName ? (
               <div className="text-base font-medium sm:text-lg">לקוח: {customerName}</div>
             ) : null}
+            {activeTab === "inventory" ? <InventoryRealtimeBadge /> : null}
             {/* No "הזמנה חדשה" button — the app's one quick-create + carries it. */}
           </div>
         </div>

@@ -36,6 +36,7 @@ import { AccountTransferDialog } from "@/components/financial/AccountTransferDia
 import { CollectPaymentDialog } from "@/components/collections/CollectPaymentDialog";
 import ReminderFormDialog from "@/components/reminders/ReminderFormDialog";
 import { AttendanceLogDialog } from "@/components/attendance/AttendanceLogDialog";
+import { OrderDeliveryDateDialog } from "@/components/orders/OrderDeliveryDateDialog";
 import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions } from "@/lib/payroll-worker-type";
 import type { QuickCreateAction, QuickCreateData } from "@/components/layout/quick-create-types";
 
@@ -304,6 +305,19 @@ export default function QuickCreateDialogs({
 
       <CollectPaymentDialog
         open={action === "collect"}
+        onOpenChange={(open) => {
+          if (!open) onClose();
+        }}
+        onSaved={() => router.refresh()}
+      />
+
+      {/* Not a new record — schedules an ALREADY-EXISTING order's delivery.
+          Calendar-only entry point (no + menu tile). */}
+      <OrderDeliveryDateDialog
+        open={action === "delivery"}
+        orders={data.orders}
+        users={data.users}
+        defaultDate={quickCreateDate}
         onOpenChange={(open) => {
           if (!open) onClose();
         }}

@@ -46,24 +46,35 @@ import type { Locale } from "@/lib/i18n/types";
 // see kindLabel/kindPlural below.
 type Kind = CalendarEntryKind;
 
-const KIND_ORDER: Kind[] = ["reminder", "project", "task"];
+const KIND_ORDER: Kind[] = ["reminder", "project", "task", "delivery"];
 
-const KIND_META: Record<Kind, { dot: string; edge: string }> = {
-  reminder: { dot: "bg-info", edge: "border-e-info" },
-  project: { dot: "bg-success", edge: "border-e-success" },
-  task: { dot: "bg-warning", edge: "border-e-warning" },
+// `border` is the FULL (not edge-only) border color used by the filter chips —
+// red/destructive is reserved for urgent/danger elsewhere in the app, so
+// delivery gets purple (app/globals.css's --purple-*, the one hue not already
+// claimed by a status) instead of competing with task's warning-red urgency.
+const KIND_META: Record<Kind, { dot: string; edge: string; border: string }> = {
+  reminder: { dot: "bg-info", edge: "border-e-info", border: "border-info" },
+  project: { dot: "bg-success", edge: "border-e-success", border: "border-success" },
+  task: { dot: "bg-warning", edge: "border-e-warning", border: "border-warning" },
+  delivery: {
+    dot: "bg-palette-purple-4",
+    edge: "border-e-palette-purple-4",
+    border: "border-palette-purple-4",
+  },
 };
 
 const KIND_LABEL_KEY: Record<Kind, CalendarKey> = {
   reminder: "kindReminderLabel",
   project: "kindProjectLabel",
   task: "kindTaskLabel",
+  delivery: "kindDeliveryLabel",
 };
 
 const KIND_PLURAL_KEY: Record<Kind, CalendarKey> = {
   reminder: "kindReminderPlural",
   project: "kindProjectPlural",
   task: "kindTaskPlural",
+  delivery: "kindDeliveryPlural",
 };
 
 function kindLabel(locale: Locale, kind: Kind) {
@@ -346,7 +357,7 @@ export default function CalendarView({
     }
     setCtxDay(null);
   }
-  function contextAdd(action: "task" | "project" | "reminder") {
+  function contextAdd(action: "task" | "project" | "reminder" | "delivery") {
     if (ctxDay) {
       window.dispatchEvent(
         new CustomEvent("bizh:quick-create", { detail: { action, dueDate: isoLocal(ctxDay) } })
@@ -532,6 +543,10 @@ export default function CalendarView({
               <ContextButton onClick={() => contextAdd("reminder")}>
                 <span className="h-2 w-2 rounded-full bg-info" />
                 {kindLabel(locale, "reminder")}
+              </ContextButton>
+              <ContextButton onClick={() => contextAdd("delivery")}>
+                <span className="h-2 w-2 rounded-full bg-palette-purple-4" />
+                {kindLabel(locale, "delivery")}
               </ContextButton>
             </div>
           )}
@@ -864,7 +879,7 @@ function FilterToolbar({
           active={filter === kind}
           label={kindPlural(locale, kind)}
           count={count}
-          dot={KIND_META[kind].dot}
+          border={KIND_META[kind].border}
           onClick={() => onPick(kind)}
         />
       ))}
@@ -878,13 +893,15 @@ function FilterPill({
   active,
   label,
   count,
-  dot,
+  border,
   onClick,
 }: {
   active: boolean;
   label: string;
   count: number;
-  dot?: string;
+  /** The kind's full-border color class (KIND_META[kind].border) — replaces a
+   *  dot so more chips fit in one non-wrapping row. */
+  border?: string;
   onClick: () => void;
 }) {
   return (
@@ -892,13 +909,12 @@ function FilterPill({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`flex shrink-0 items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+      className={`flex shrink-0 items-center gap-1 rounded-full border-2 px-3 py-1 text-xs font-medium transition-colors ${
         active
           ? "border-secondary bg-secondary/10 text-secondary"
-          : "border-border bg-background text-muted-foreground hover:bg-secondary/5"
+          : `${border ?? "border-border"} bg-background text-muted-foreground hover:bg-secondary/5`
       }`}
     >
-      {dot ? <span className={`h-2 w-2 rounded-full ${dot}`} /> : null}
       <span>{label}</span>
       <span className="font-bold">{count}</span>
     </button>
@@ -961,14 +977,17 @@ function DayDetail({
         </div>
       )}
 
-      {/* Filter chips — hidden where the header count tiles act as the filter */}
+      {/* Filter chips — hidden where the header count tiles act as the filter.
+          nowrap + overflow-x-auto (not flex-wrap): a wrapped 2nd row read as
+          broken layout — this always stays one scrollable row, same as
+          FilterToolbar above. */}
       {hideFilters ? null : (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-nowrap gap-1.5 overflow-x-auto">
           <FilterChip active={filter === "all"} onClick={() => onFilter("all")}>
             {t(calendarDict, locale, "all")}
           </FilterChip>
           {KIND_ORDER.map((kind) => (
-            <FilterChip key={kind} active={filter === kind} dot={KIND_META[kind].dot} onClick={() => onFilter(kind)}>
+            <FilterChip key={kind} active={filter === kind} border={KIND_META[kind].border} onClick={() => onFilter(kind)}>
               {kindLabel(locale, kind)}
             </FilterChip>
           ))}
@@ -1017,12 +1036,14 @@ function DayDetail({
 
 function FilterChip({
   active,
-  dot,
+  border,
   onClick,
   children,
 }: {
   active: boolean;
-  dot?: string;
+  /** The kind's full-border color class (KIND_META[kind].border) — replaces a
+   *  dot so more chips fit in one row. */
+  border?: string;
   onClick: () => void;
   children: ReactNode;
 }) {
@@ -1033,10 +1054,9 @@ function FilterChip({
       className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
         active
           ? "bg-primary text-primary-foreground"
-          : "border bg-background text-muted-foreground hover:bg-secondary/10"
+          : `border-2 ${border ?? "border-border"} bg-background text-muted-foreground hover:bg-secondary/10`
       }`}
     >
-      {dot ? <span className={`h-1.5 w-1.5 rounded-full ${dot}`} /> : null}
       {children}
     </button>
   );

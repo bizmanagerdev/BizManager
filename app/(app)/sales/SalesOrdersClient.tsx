@@ -177,10 +177,8 @@ function OrderProductList({
               key={`${product.name}-${idx}`}
               className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-border/60 bg-background px-2 py-0.5 text-foreground"
             >
-              {/* A quantity of 1 is the default — printing it on every chip is noise
-                  that also made "1 שקיות" read as a data error. */}
               <span>
-                {product.quantity > 1 ? `${product.quantity} ` : ""}
+                {product.quantity > 0 ? `${product.quantity} ` : ""}
                 {product.name}
               </span>
               {/* Delivered-so-far, so the list shows what was ordered vs handed over. */}

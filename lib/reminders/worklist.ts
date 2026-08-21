@@ -534,7 +534,7 @@ export function todaySlice(inbox: InboxView): { alerts: TodayAlert[]; rest: numb
 
 // Which sidebar entry each RULE badges. Per-rule (not per-section) so nested
 // routes light up too — a section-level map could only ever badge one destination
-// per area, so /checks, /financial and /inventory silently never badged.
+// per area, so /checks, /financial and /sales silently never badged.
 // A rule with no single home is simply absent → no misleading badge.
 const RULE_NAV_URL: Record<string, string> = {
   // tasks
@@ -557,7 +557,7 @@ const RULE_NAV_URL: Record<string, string> = {
   // payroll
   wage_overdue: "/payroll",
   // ops
-  low_stock: "/inventory",
+  low_stock: "/sales",
   vehicle_expiry: "/vehicles",
 };
 

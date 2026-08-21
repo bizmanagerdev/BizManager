@@ -526,8 +526,8 @@ export function buildHref(
     case "vehicles": return `/vehicles/${recordId}`;
     case "properties": return "/properties";
     case "products":
-    case "product_categories": return buildFocusHref("/inventory", recordId);
-    case "inventory_movements": return buildFocusHref("/inventory", fk("product_id"));
+    case "product_categories": return buildFocusHref("/sales?tab=inventory", recordId);
+    case "inventory_movements": return buildFocusHref("/sales?tab=inventory", fk("product_id"));
     // The cash-flow rows are keyed "<kind>:<uuid>" (see lib/financial/entries.ts).
     case "expenses": return buildFocusHref("/financial", `expense:${recordId}`);
     case "payments": return buildFocusHref("/financial", `payment:${recordId}`);

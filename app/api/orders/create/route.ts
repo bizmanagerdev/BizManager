@@ -34,6 +34,8 @@ type CreateOrderPayload = {
   payment_status?: string;
   payment_terms?: string | null;
   due_date?: string | null;
+  /** Optional — only set when the customer asked for a specific delivery date. */
+  requested_delivery_date?: string | null;
   discount_amount?: number | string;
   needs_invoice?: boolean | null;
   collect_payment_on_delivery?: boolean | null;
@@ -176,6 +178,11 @@ export async function POST(req: Request) {
     const { collected: totalPaid } = splitPaymentAmounts(paymentInserts);
     const paymentStatus = derivePaymentStatus(totalAmount, totalPaid);
 
+    const requestedDeliveryDate =
+      typeof body.requested_delivery_date === "string" && body.requested_delivery_date.trim()
+        ? body.requested_delivery_date.trim()
+        : null;
+
     const { data, error } = await supabase.rpc("create_sales_order", {
       p_customer_id: customerId,
       p_order_date: orderDate,
@@ -190,6 +197,7 @@ export async function POST(req: Request) {
       p_payment_terms: paymentTerms,
       p_due_date: dueDate,
       p_needs_invoice: needsInvoice,
+      p_requested_delivery_date: requestedDeliveryDate,
     });
 
     if (error) {

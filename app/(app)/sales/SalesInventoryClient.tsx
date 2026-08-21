@@ -569,7 +569,7 @@ export default function SalesInventoryClient({
                       return (
                         <tr
                           key={item.productId}
-                          // Lets /inventory?focus=<productId> land on this row.
+                          // Lets /sales?tab=inventory&focus=<productId> land on this row.
                           data-focus-id={item.productId}
                           className={isLow ? "bg-destructive-soft/70 hover:bg-destructive-soft" : "hover:bg-muted/30"}
                         >

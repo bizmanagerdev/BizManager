@@ -8,7 +8,8 @@ import { cn } from "@/lib/utils";
 import { toHebrewError } from "@/lib/error-messages";
 import { formatDeliveryAddress } from "@/lib/ui/cities";
 import { paymentStatusLabel } from "@/lib/orders/paymentStatus";
-import { pinFrom, wazeLinkForPin } from "@/lib/delivery-location";
+import { pinFrom, wazeLinkForPin, type DeliveryPin } from "@/lib/delivery-location";
+import { whatsappHref } from "@/lib/whatsapp";
 import type { DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
 
 function formatCurrency(value: number | null) {
@@ -24,6 +25,28 @@ function formatCurrency(value: number | null) {
 function formatItem(item: DeliveryItem["items"][number]) {
   const base = `${item.quantity} ${item.name}`;
   return item.notes ? `${base} (${item.notes})` : base;
+}
+
+/** Plain-text version of the slip, for when the image can't be shared as a file. */
+function buildDeliveryShareText(delivery: DeliveryItem, address: string, pin: DeliveryPin | null): string {
+  const lines: string[] = [`משלוח — ${delivery.customerName}`];
+  if (delivery.customerPhone) lines.push(delivery.customerPhone);
+  if (address) lines.push(address);
+  if (delivery.deliveryInstructions) lines.push(delivery.deliveryInstructions);
+  if (pin) lines.push(wazeLinkForPin(pin));
+  lines.push("");
+  lines.push(`${formatCurrency(delivery.totalAmount)} · ${paymentStatusLabel(delivery.paymentStatus)}`);
+  if (delivery.collectOnDelivery) lines.push('גבייה ע"י הנהג');
+  if (delivery.items.length > 0) {
+    lines.push("");
+    lines.push("מוצרים:");
+    for (const item of delivery.items) lines.push(`• ${formatItem(item)}`);
+  }
+  if (delivery.notes) {
+    lines.push("");
+    lines.push(delivery.notes);
+  }
+  return lines.join("\n");
 }
 
 
@@ -158,22 +181,56 @@ export default function DeliveryShareActions({
           window.matchMedia?.("(pointer: coarse)").matches === true &&
           (navigator.maxTouchPoints ?? 0) > 0;
 
-        if (
-          isTouch &&
-          typeof navigator !== "undefined" &&
-          "canShare" in navigator &&
-          navigator.canShare(shareData)
-        ) {
-          try {
-            const HUNG = Symbol("hung");
-            const outcome = await Promise.race([
-              navigator.share(shareData).then(() => "shared" as const),
-              new Promise<typeof HUNG>((resolve) => setTimeout(() => resolve(HUNG), 6000)),
-            ]);
-            if (outcome !== HUNG) return;
-          } catch (shareError: unknown) {
-            if (shareError instanceof Error && shareError.name === "AbortError") return;
+        if (isTouch) {
+          if (
+            typeof navigator !== "undefined" &&
+            "canShare" in navigator &&
+            navigator.canShare(shareData)
+          ) {
+            try {
+              const HUNG = Symbol("hung");
+              const outcome = await Promise.race([
+                navigator.share(shareData).then(() => "shared" as const),
+                new Promise<typeof HUNG>((resolve) => setTimeout(() => resolve(HUNG), 6000)),
+              ]);
+              if (outcome !== HUNG) return;
+            } catch (shareError: unknown) {
+              if (shareError instanceof Error && shareError.name === "AbortError") return;
+            }
           }
+
+          // File sharing wasn't available (or didn't go through) — still a phone,
+          // so give a real native share sheet instead of ever falling into the
+          // desktop "copy image + open WhatsApp Web" trick below. Text sharing is
+          // far more broadly supported across phone browsers/WebViews than file
+          // sharing, so this succeeds even where the block above can't.
+          const shareText = buildDeliveryShareText(current, address, slipPin);
+          if (typeof navigator !== "undefined" && "share" in navigator) {
+            try {
+              const HUNG = Symbol("hung");
+              const outcome = await Promise.race([
+                navigator
+                  .share({ title: `משלוח — ${current.customerName}`, text: shareText })
+                  .then(() => "shared" as const),
+                new Promise<typeof HUNG>((resolve) => setTimeout(() => resolve(HUNG), 6000)),
+              ]);
+              if (outcome !== HUNG) return;
+            } catch (shareError: unknown) {
+              if (shareError instanceof Error && shareError.name === "AbortError") return;
+            }
+          }
+
+          // No Web Share API at all — go straight to WhatsApp, same as the share
+          // button everywhere else in the app.
+          const waHref = whatsappHref(current.customerPhone, shareText);
+          if (waHref) {
+            window.open(waHref, "_blank", "noopener");
+            return;
+          }
+
+          saveFile();
+          toast.error("השיתוף לא נתמך במכשיר זה. התמונה נשמרה בהורדות.");
+          return;
         }
 
         // Desktop: the OS share picker for images is broken in current Chrome (it

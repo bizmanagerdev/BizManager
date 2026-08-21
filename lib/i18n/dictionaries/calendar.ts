@@ -8,6 +8,8 @@ export type CalendarKey =
   | "kindProjectPlural"
   | "kindTaskLabel"
   | "kindTaskPlural"
+  | "kindDeliveryLabel"
+  | "kindDeliveryPlural"
   | "weekDaySun"
   | "weekDayMon"
   | "weekDayTue"
@@ -39,6 +41,8 @@ export const calendarDict: Dictionary<CalendarKey> = {
     kindProjectPlural: "פרויקטים",
     kindTaskLabel: "משימה",
     kindTaskPlural: "משימות",
+    kindDeliveryLabel: "משלוח",
+    kindDeliveryPlural: "משלוחים",
     weekDaySun: "ראשון",
     weekDayMon: "שני",
     weekDayTue: "שלישי",
@@ -69,6 +73,8 @@ export const calendarDict: Dictionary<CalendarKey> = {
     kindProjectPlural: "مشاريع",
     kindTaskLabel: "مهمة",
     kindTaskPlural: "مهام",
+    kindDeliveryLabel: "توصيل",
+    kindDeliveryPlural: "توصيلات",
     weekDaySun: "الأحد",
     weekDayMon: "الاثنين",
     weekDayTue: "الثلاثاء",

@@ -907,7 +907,7 @@ const lowStockRule: SystemRule = {
         key: "summary",
         title: `מלאי נמוך: ${count} פריטים`,
         content: "פריטים מתחת לסף המלאי המוגדר.",
-        url: "/inventory",
+        url: "/sales?tab=inventory",
         severity: "warning",
         behavior: "silent",
         audienceRole: "office",
@@ -1076,7 +1076,7 @@ async function reconcileRule(
 ): Promise<RuleSyncResult> {
   const { data: existing, error } = await supabase
     .from("reminders")
-    .select("id,dedupe_key,severity,title,content,behavior")
+    .select("id,dedupe_key,severity,title,content,behavior,url")
     .eq("source", "system")
     .eq("status", "pending")
     .like("dedupe_key", `${rule.key}:%`)
@@ -1111,9 +1111,10 @@ async function reconcileRule(
       getString(ex, "severity") !== i.severity ||
       getString(ex, "title") !== i.title ||
       getString(ex, "content") !== (i.content ?? "") ||
+      getString(ex, "url") !== i.url ||
       behaviorChanged
     ) {
-      const patch: Record<string, unknown> = { severity: i.severity, title: i.title, content: i.content ?? "", updated_at: nowIso };
+      const patch: Record<string, unknown> = { severity: i.severity, title: i.title, content: i.content ?? "", url: i.url, updated_at: nowIso };
       if (behaviorChanged) {
         patch.behavior = i.behavior;
         patch.repeat_rule = i.behavior === "ping_repeat" ? i.repeatRule ?? "daily" : null;

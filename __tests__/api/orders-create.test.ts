@@ -121,6 +121,40 @@ describe("POST /api/orders/create — RPC & persistence", () => {
     expect((await res.json()).error).toMatch(/create_sales_order_rpc\.sql/);
   });
 
+  it("passes requested_delivery_date through to the RPC when provided", async () => {
+    const rpcCalls: { name: string; params: Record<string, unknown> }[] = [];
+    const supabase = makeSupabase(
+      { customers: { data: { requires_prepayment: false }, error: null } },
+      { data: "order-1", error: null }
+    );
+    const originalRpc = supabase.rpc;
+    supabase.rpc = ((name: string, params: Record<string, unknown>) => {
+      rpcCalls.push({ name, params });
+      return originalRpc();
+    }) as typeof supabase.rpc;
+    grant(supabase);
+    const res = await post({ ...VALID, requested_delivery_date: "2024-06-01" });
+    expect(res.status).toBe(200);
+    expect(rpcCalls[0].params.p_requested_delivery_date).toBe("2024-06-01");
+  });
+
+  it("passes null for requested_delivery_date when the customer didn't ask for a date", async () => {
+    const rpcCalls: { name: string; params: Record<string, unknown> }[] = [];
+    const supabase = makeSupabase(
+      { customers: { data: { requires_prepayment: false }, error: null } },
+      { data: "order-1", error: null }
+    );
+    const originalRpc = supabase.rpc;
+    supabase.rpc = ((name: string, params: Record<string, unknown>) => {
+      rpcCalls.push({ name, params });
+      return originalRpc();
+    }) as typeof supabase.rpc;
+    grant(supabase);
+    const res = await post(VALID);
+    expect(res.status).toBe(200);
+    expect(rpcCalls[0].params.p_requested_delivery_date).toBeNull();
+  });
+
   it("maps a payment-insert DB error to Hebrew", async () => {
     grant(
       makeSupabase(

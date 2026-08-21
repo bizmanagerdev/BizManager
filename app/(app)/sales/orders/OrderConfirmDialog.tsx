@@ -333,6 +333,11 @@ export default function OrderConfirmDialog({
   const totalOrdered = lines.reduce((sum, line) => sum + line.quantity_ordered, 0);
   const totalFinalDelivered = deliveryLines.reduce((sum, d) => sum + d.finalDelivered, 0);
   const totalDeliveredNow = deliveryLines.reduce((sum, d) => sum + d.now, 0);
+  const totalAlreadyDelivered = deliveryLines.reduce((sum, d) => sum + d.already, 0);
+  // Already fully delivered before this dialog opened → nothing left to mark,
+  // so this run-through is just for adding photos/notes. Don't demand a
+  // delivered quantity that no longer exists.
+  const alreadyFullyDelivered = totalOrdered > 0 && totalAlreadyDelivered >= totalOrdered;
   // Everything owed is now delivered → close it as "delivered"; otherwise it stays
   // open as "partially_delivered" so it keeps showing in orders + the deliveries queue.
   const isFullyDelivered = totalOrdered > 0 && totalFinalDelivered + 0.0000001 >= totalOrdered;
@@ -358,7 +363,7 @@ export default function OrderConfirmDialog({
       return;
     }
 
-    if (totalDeliveredNow <= 0) {
+    if (!alreadyFullyDelivered && totalDeliveredNow <= 0) {
       setError("יש לסמן כמות שנמסרה בפריט אחד לפחות.");
       return;
     }
@@ -559,7 +564,7 @@ export default function OrderConfirmDialog({
     switch (id) {
       case "items":
         if (lines.length === 0) return "לא ניתן לאשר הזמנה ללא פריטים.";
-        if (totalDeliveredNow <= 0) return "יש לסמן כמות שנמסרה בפריט אחד לפחות.";
+        if (!alreadyFullyDelivered && totalDeliveredNow <= 0) return "יש לסמן כמות שנמסרה בפריט אחד לפחות.";
         return null;
       case "amount":
         if (!(pendingPaymentAmount > 0)) return "יש להזין סכום תשלום.";

@@ -1,9 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getOpenReminders, actionTypeLabel } from "@/lib/communications";
+import { getOrderStatusLabel } from "@/lib/ui/status-colors";
 
 type Row = Record<string, unknown>;
 
-export type CalendarEntryKind = "project" | "task" | "reminder";
+export type CalendarEntryKind = "project" | "task" | "reminder" | "delivery";
 
 export type CalendarEntry = {
   id: string;
@@ -20,6 +21,21 @@ export type CalendarEntry = {
 export type ScheduleScope = "mine" | "all";
 
 const OPEN_TASK_STATUSES = ["todo", "in_progress", "blocked"];
+
+// Same list every orders/deliveries loader duplicates locally (loadOrders.ts,
+// loadDeliveries.ts) — a requested delivery date on an order that's already
+// delivered/closed/cancelled is no longer relevant. The Hebrew values are real
+// historical status strings, not just the current English ones.
+const CLOSED_ORDER_STATUSES = [
+  "delivered",
+  "completed",
+  "closed",
+  "cancelled",
+  "סופקה",
+  "הושלמה",
+  "סגורה",
+  "בוטלה",
+];
 
 function getString(row: Row, key: string) {
   const value = row[key];
@@ -50,13 +66,16 @@ function compareNullableDates(a: string | null, b: string | null) {
 }
 
 /**
- * Unified calendar feed: open tasks (by due date), projects (by start/end) and
- * pending reminders (by remind_at). `scope` decides personal vs everything:
- *   - "mine" → tasks assigned to me, projects I manage, reminders I own/created.
+ * Unified calendar feed: open tasks (by due date), projects (by start/end),
+ * pending reminders (by remind_at) and orders with a customer-requested
+ * delivery date. `scope` decides personal vs everything:
+ *   - "mine" → tasks assigned to me, projects I manage, reminders I own/created,
+ *     orders I created.
  *   - "all"  → everything (back-office only; gated by the caller).
  * Ownership is filtered on the base tables (`tasks.assigned_user_id`,
- * `projects.project_manager_id`) since the *_view layers don't expose those
- * columns; display names are resolved with small follow-up lookups.
+ * `projects.project_manager_id`, `orders.created_by` — the closest analog,
+ * since orders have no assignee column) since the *_view layers don't expose
+ * those columns; display names are resolved with small follow-up lookups.
  */
 export async function getScheduleEntries(
   supabase: SupabaseClient,
@@ -77,26 +96,60 @@ export async function getScheduleEntries(
     .range(0, 499);
   if (scope === "mine") projectsQuery = projectsQuery.eq("project_manager_id", userId);
 
+  let deliveriesQuery = supabase
+    .from("orders")
+    .select("id,customer_id,status,requested_delivery_date,created_by")
+    .not("requested_delivery_date", "is", null)
+    .not("status", "in", `(${CLOSED_ORDER_STATUSES.join(",")})`)
+    .order("requested_delivery_date", { ascending: true })
+    .range(0, 499);
+  if (scope === "mine") {
+    // "Mine" = orders I created, PLUS orders someone explicitly picked me as a
+    // recipient for (order_delivery_recipients) — e.g. a driver who didn't
+    // create the order but was told to see it on their own calendar.
+    const { data: recipientRows } = await supabase
+      .from("order_delivery_recipients")
+      .select("order_id")
+      .eq("user_id", userId);
+    const recipientOrderIds = [
+      ...new Set(
+        ((recipientRows ?? []) as Row[])
+          .map((r) => getString(r, "order_id"))
+          .filter((id): id is string => Boolean(id))
+      ),
+    ];
+    deliveriesQuery =
+      recipientOrderIds.length > 0
+        ? deliveriesQuery.or(`created_by.eq.${userId},id.in.(${recipientOrderIds.join(",")})`)
+        : deliveriesQuery.eq("created_by", userId);
+  }
+
   const [
     { data: taskRows, error: tasksError },
     { data: projectRows, error: projectsError },
+    { data: deliveryOrderRows, error: deliveriesError },
     reminders,
   ] = await Promise.all([
     tasksQuery,
     projectsQuery,
+    deliveriesQuery,
     getOpenReminders(supabase, { scope, userId, limit: 500 }),
   ]);
 
   if (tasksError) throw tasksError;
   if (projectsError) throw projectsError;
+  if (deliveriesError) throw deliveriesError;
 
   const tasks = (taskRows ?? []) as Row[];
   const projects = (projectRows ?? []) as Row[];
+  const deliveryOrders = (deliveryOrderRows ?? []) as Row[];
 
-  // Resolve names: task→project, task→assignee, project→customer.
+  // Resolve names: task→project, task→assignee, project/order→customer.
   const taskProjectIds = uniqueIds(tasks, "project_id");
   const taskUserIds = uniqueIds(tasks, "assigned_user_id");
-  const projectCustomerIds = uniqueIds(projects, "customer_id");
+  const customerIds = [
+    ...new Set([...uniqueIds(projects, "customer_id"), ...uniqueIds(deliveryOrders, "customer_id")]),
+  ];
 
   const empty = Promise.resolve({ data: [] as Row[] });
   const [projectNamesRes, userNamesRes, customerNamesRes] = await Promise.all([
@@ -106,8 +159,8 @@ export async function getScheduleEntries(
     taskUserIds.length
       ? supabase.from("users").select("id,full_name,email").in("id", taskUserIds)
       : empty,
-    projectCustomerIds.length
-      ? supabase.from("customers").select("id,name").in("id", projectCustomerIds)
+    customerIds.length
+      ? supabase.from("customers").select("id,name").in("id", customerIds)
       : empty,
   ]);
 
@@ -214,7 +267,26 @@ export async function getScheduleEntries(
     })
     .filter((row) => row.id && row.startDate);
 
-  return [...taskEntries, ...reminderEntries, ...projectEntries].sort((a, b) => {
+  const deliveryEntries: CalendarEntry[] = deliveryOrders
+    .map((row) => {
+      const orderId = getString(row, "id") ?? "";
+      const customerId = getString(row, "customer_id");
+      const date = getString(row, "requested_delivery_date");
+      return {
+        id: orderId,
+        kind: "delivery" as const,
+        title: (customerId ? customerNameById.get(customerId) : null) ?? "לקוח",
+        subtitle: getOrderStatusLabel(getString(row, "status") ?? ""),
+        href: `/sales/orders/${orderId}`,
+        startDate: date,
+        endDate: date,
+        status: getString(row, "status"),
+        priority: null,
+      };
+    })
+    .filter((row) => row.id && row.startDate);
+
+  return [...taskEntries, ...reminderEntries, ...projectEntries, ...deliveryEntries].sort((a, b) => {
     const byStart = compareNullableDates(a.startDate, b.startDate);
     if (byStart !== 0) return byStart;
     if (a.kind !== b.kind) return a.kind === "task" ? -1 : 1;

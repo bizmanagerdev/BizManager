@@ -186,6 +186,15 @@
     --red-9: 250 200 199;        /* #FAC8C7 */
     --red-10: 252 227 227;       /* #FCE3E3 */
 
+    /* Purple — no semantic status claims it (unlike yellow/orange = warning),
+       so it's the one free hue for a category marker that ISN'T a status —
+       e.g. the calendar's "משלוחים" (delivery) kind, which explicitly must
+       not read as red/urgent. Same anchor as the purple avatar color. */
+    --purple-4: 147 51 234;      /* #9333EA  ← anchor */
+    --purple-8: 216 180 254;     /* #D8B4FE */
+    --purple-9: 233 213 255;     /* #E9D5FF */
+    --purple-10: 243 232 255;    /* #F3E8FF */
+
     /* Neutrals */
     --white: 255 255 255;
 

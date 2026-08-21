@@ -27,6 +27,13 @@ function isUserRole(value: string | null): value is UserRole {
   return value === "admin" || value === "office" || value === "worker" || value === "worker_no_access";
 }
 
+/** "DD/MM/YY" out of a YYYY-MM-DD(...) prefix — disambiguates same-customer
+ *  orders in the quick-create order picker, where status alone repeats. */
+function formatOrderDate(value: string | null) {
+  const match = value ? /^(\d{4})-(\d{2})-(\d{2})/.exec(value) : null;
+  return match ? `${match[3]}/${match[2]}/${match[1].slice(-2)}` : null;
+}
+
 /**
  * Loads the quick-action dropdown data. Resolves to EMPTY_QUICK_ACTIONS-shaped
  * data and NEVER rejects, so it can be passed unawaited from the dashboard page
@@ -107,11 +114,15 @@ export async function loadQuickActionsData(
       .filter((row) => row.id && row.customerId);
 
     const orders = ((orderRows ?? []) as Row[])
-      .map((row) => ({
-        id: getString(row, "order_id") ?? "",
-        name: firstString(row, ["customer_name"], "Order"),
-        subtitle: getString(row, "status") ?? "",
-      }))
+      .map((row) => {
+        const status = getString(row, "status") ?? "";
+        const date = formatOrderDate(getString(row, "order_date"));
+        return {
+          id: getString(row, "order_id") ?? "",
+          name: firstString(row, ["customer_name"], "Order"),
+          subtitle: [status, date].filter(Boolean).join(" · "),
+        };
+      })
       .filter((row) => row.id);
 
     const properties = ((propertyRows ?? []) as Row[])

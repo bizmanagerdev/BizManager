@@ -20,6 +20,9 @@ export const QUICK_CREATE_ACTIONS = [
   "document",
   "workerPayment",
   "manualSession",
+  // No tile in the + menu (that grid is settled at 12) — reachable only from
+  // the calendar's own add-flow, for scheduling an EXISTING order's delivery.
+  "delivery",
 ] as const;
 
 export type QuickCreateAction = (typeof QUICK_CREATE_ACTIONS)[number];

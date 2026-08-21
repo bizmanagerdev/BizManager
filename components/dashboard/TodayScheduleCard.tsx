@@ -96,26 +96,41 @@ function foldTaskReminders(entries: CalendarEntry[]): CalendarEntry[] {
 // CalendarView.tsx's KIND_META) — this card IS that panel now, so a kind can't
 // wear one color here and another there.
 type Kind = CalendarEntry["kind"];
-const KIND_ORDER: Kind[] = ["reminder", "project", "task"];
-function kindMeta(locale: Locale): Record<Kind, { label: string; plural: string; dot: string; edge: string }> {
+const KIND_ORDER: Kind[] = ["reminder", "project", "task", "delivery"];
+// `border` is the full-border color used by the filter pills — red/destructive
+// is reserved for urgent/danger elsewhere, so delivery gets purple
+// (app/globals.css's --purple-*, the one hue not already claimed by a status).
+function kindMeta(
+  locale: Locale
+): Record<Kind, { label: string; plural: string; dot: string; edge: string; border: string }> {
   return {
     reminder: {
       label: t(dashboardDict, locale, "kindReminder"),
       plural: t(dashboardDict, locale, "kindReminderPlural"),
       dot: "bg-info",
       edge: "border-e-info",
+      border: "border-info",
     },
     project: {
       label: t(dashboardDict, locale, "kindProject"),
       plural: t(dashboardDict, locale, "kindProjectPlural"),
       dot: "bg-success",
       edge: "border-e-success",
+      border: "border-success",
     },
     task: {
       label: t(dashboardDict, locale, "kindTask"),
       plural: t(dashboardDict, locale, "kindTaskPlural"),
       dot: "bg-warning",
       edge: "border-e-warning",
+      border: "border-warning",
+    },
+    delivery: {
+      label: t(dashboardDict, locale, "kindDelivery"),
+      plural: t(dashboardDict, locale, "kindDeliveryPlural"),
+      dot: "bg-palette-purple-4",
+      edge: "border-e-palette-purple-4",
+      border: "border-palette-purple-4",
     },
   };
 }
@@ -306,7 +321,7 @@ export default function TodayScheduleCard({
               on mobile shouldn't have the filter") — `filter` just stays "all"
               there, so `shown` is always the full list. */}
           {todayEntries.length > 0 ? (
-            <div className="pointer-events-auto m-3 hidden flex-wrap items-center gap-1.5 xl:flex">
+            <div className="pointer-events-auto m-3 hidden items-center gap-1.5 overflow-x-auto xl:flex xl:flex-nowrap">
               <FilterPill active={filter === "all"} label={t(dashboardDict, locale, "filterAll")} count={todayEntries.length} onClick={() => setFilter("all")} />
               {KIND_ORDER.map((kind) => (
                 <FilterPill
@@ -314,7 +329,7 @@ export default function TodayScheduleCard({
                   active={filter === kind}
                   label={KIND_META[kind].plural}
                   count={todayEntries.filter((entry) => entry.kind === kind).length}
-                  dot={KIND_META[kind].dot}
+                  border={KIND_META[kind].border}
                   onClick={() => setFilter(kind)}
                 />
               ))}
@@ -422,13 +437,15 @@ function FilterPill({
   active,
   label,
   count,
-  dot,
+  border,
   onClick,
 }: {
   active: boolean;
   label: string;
   count: number;
-  dot?: string;
+  /** The kind's full-border color class (kindMeta().border) — replaces a dot
+   *  so more chips fit in one row. */
+  border?: string;
   onClick: () => void;
 }) {
   return (
@@ -437,13 +454,12 @@ function FilterPill({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+        "flex shrink-0 items-center gap-1 rounded-full border-2 px-2.5 py-1 text-xs font-medium transition-colors",
         active
           ? "border-secondary bg-secondary/10 text-secondary"
-          : "border-border bg-background text-muted-foreground hover:bg-secondary/5"
+          : cn(border ?? "border-border", "bg-background text-muted-foreground hover:bg-secondary/5")
       )}
     >
-      {dot ? <span className={cn("h-2 w-2 rounded-full", dot)} /> : null}
       <span>{label}</span>
       <span className="font-bold">{count}</span>
     </button>

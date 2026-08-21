@@ -124,7 +124,7 @@ export default async function SalesOrderPage({
   ] = await Promise.all([
     supabase
       .from("orders")
-      .select("id,customer_id,order_date,status,payment_status,payment_terms,due_date,discount_amount,notes,needs_invoice,invoice_sent_at,delivery_confirmed_at,created_by")
+      .select("id,customer_id,order_date,status,payment_status,payment_terms,due_date,discount_amount,notes,needs_invoice,invoice_sent_at,delivery_confirmed_at,requested_delivery_date,created_by")
       .eq("id", id)
       .maybeSingle(),
     supabase
@@ -342,6 +342,7 @@ export default async function SalesOrderPage({
     typeof (order as Row)?.needs_invoice === "boolean" ? ((order as Row).needs_invoice as boolean) : null;
   const orderInvoiceSentAt = getString((order as Row) ?? {}, "invoice_sent_at");
   const orderDeliveryConfirmedAt = getString((order as Row) ?? {}, "delivery_confirmed_at");
+  const orderRequestedDeliveryDate = getString((order as Row) ?? {}, "requested_delivery_date");
 
   const subtotal = ((orderItems ?? []) as Row[]).reduce((sum, item) => {
     const quantity = getNumber(item, "quantity_ordered") ?? 0;
@@ -586,6 +587,9 @@ export default async function SalesOrderPage({
                       formatRelativeDateLabel(orderDate) ? ` (${formatRelativeDateLabel(orderDate)})` : ""
                     }`,
                   },
+                  ...(orderRequestedDeliveryDate
+                    ? [{ label: "תאריך אספקה מבוקש", value: formatDate(orderRequestedDeliveryDate) }]
+                    : []),
                   { label: "פריטים", value: `${(orderItems ?? []).length} (${totalUnits} יחידות)` },
                   ...(orderDeliveryConfirmedAt
                     ? [{ label: "אספקה אושרה", value: formatDate(orderDeliveryConfirmedAt) }]

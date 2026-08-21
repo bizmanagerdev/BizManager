@@ -41,7 +41,7 @@ export default async function EditSalesOrderPage({
   ] = await Promise.all([
     supabase
       .from("orders")
-      .select("id,customer_id,order_date,status,payment_status,discount_amount,notes")
+      .select("id,customer_id,order_date,status,payment_status,discount_amount,notes,requested_delivery_date")
       .eq("id", id)
       .maybeSingle(),
     supabase
@@ -119,6 +119,8 @@ export default async function EditSalesOrderPage({
         order_date: (getString(order as Row, ["order_date"]) ?? "").slice(0, 10),
         status: getString(order as Row, ["status"]) ?? "draft",
         payment_status: getString(order as Row, ["payment_status"]) ?? "unpaid",
+        requested_delivery_date:
+          (getString(order as Row, ["requested_delivery_date"]) ?? "").slice(0, 10) || null,
         discount_amount: getNumber(order as Row, ["discount_amount"]) ?? 0,
         notes: getString(order as Row, ["notes"]) ?? "",
         items: (orderItems ?? []).map((item) => {

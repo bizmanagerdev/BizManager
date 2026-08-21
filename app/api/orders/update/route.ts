@@ -43,6 +43,9 @@ type UpdateOrderPayload = {
   payment_terms?: string | null;
   due_date?: string | null;
   delivery_date?: string | null;
+  /** Optional — only set when the customer asked for a specific delivery date.
+   *  Distinct from `delivery_date` above, which is confirmation-only. */
+  requested_delivery_date?: string | null;
   discount_amount?: number | string;
   collect_payment_on_delivery?: boolean | null;
   notes?: string | null;
@@ -368,6 +371,10 @@ export async function POST(req: Request) {
       typeof body.delivery_date === "string" && body.delivery_date.trim()
         ? body.delivery_date.trim()
         : null;
+    const requestedDeliveryDate =
+      typeof body.requested_delivery_date === "string" && body.requested_delivery_date.trim()
+        ? body.requested_delivery_date.trim()
+        : null;
 
     const { data, error } = await supabase.rpc("update_sales_order", {
       p_order_id: orderId,
@@ -384,6 +391,7 @@ export async function POST(req: Request) {
       p_payment_terms: paymentTerms,
       p_due_date: dueDate,
       p_delivery_date: deliveryDate,
+      p_requested_delivery_date: requestedDeliveryDate,
     });
 
     if (error) {

@@ -13,7 +13,9 @@ import type { CalendarEntry } from "@/lib/projectSchedule";
 // Characterization tests for the shared week-bucketing logic (used by the inline
 // WeekOverview and the dashboard "מה קורה השבוע" quick action). Previously untested.
 
-function entry(over: Partial<CalendarEntry> & { id: string; kind: "project" | "task" }): CalendarEntry {
+function entry(
+  over: Partial<CalendarEntry> & { id: string; kind: "project" | "task" | "delivery" }
+): CalendarEntry {
   return { startDate: null, endDate: null, ...over } as unknown as CalendarEntry;
 }
 
@@ -76,6 +78,16 @@ describe("buildWeekView", () => {
   it("places a task only on its due day", () => {
     const view = buildWeekView([entry({ id: "t1", kind: "task", startDate: "2024-05-14" })], today);
     const onDay = view.days.filter((d) => d.entries.some((e) => e.id === "t1"));
+    expect(onDay).toHaveLength(1);
+    expect(onDay[0].day).toEqual(new Date(2024, 4, 14));
+  });
+
+  it("places a single-day delivery entry (start === end) only on its own day, same as a task", () => {
+    const view = buildWeekView(
+      [entry({ id: "d1", kind: "delivery", startDate: "2024-05-14", endDate: "2024-05-14" })],
+      today
+    );
+    const onDay = view.days.filter((d) => d.entries.some((e) => e.id === "d1"));
     expect(onDay).toHaveLength(1);
     expect(onDay[0].day).toEqual(new Date(2024, 4, 14));
   });

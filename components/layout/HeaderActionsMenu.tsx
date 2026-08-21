@@ -23,7 +23,10 @@ export function HeaderActionsMenu({ children }: { children: ReactNode }) {
           type="button"
           aria-label="פעולות"
           title="פעולות"
-          className="flex h-8 w-8 items-center justify-center rounded-md text-sidebar-foreground transition-colors hover:bg-white/10 lg:hidden"
+          // The bar is white (2026-08-19; see TopBar), so this took the
+          // sidebar's light sky-200 text — nearly invisible on a light bar. It
+          // needs the same secondary blue every other button in the app wears.
+          className="flex h-8 w-8 items-center justify-center rounded-md text-secondary transition-colors hover:bg-accent lg:hidden"
         >
           <MoreIcon className="h-5 w-5" />
         </button>

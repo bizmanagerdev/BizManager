@@ -82,6 +82,7 @@ type InitialOrder = {
   payment_status: string;
   payment_terms?: string | null;
   due_date?: string | null;
+  requested_delivery_date?: string | null;
   discount_amount: number;
   needs_invoice?: boolean | null;
   collect_payment_on_delivery?: boolean | null;
@@ -189,6 +190,11 @@ export default function NewOrderClient({
     initialOrder?.due_date ??
       computeDueDate(initialOrder?.order_date ?? new Date().toISOString().slice(0, 10), initialPaymentTerms) ??
       ""
+  );
+  // No default and no computed fallback (unlike dueDate) — blank means "no
+  // specific date requested," which is the normal case.
+  const [requestedDeliveryDate, setRequestedDeliveryDate] = useState(
+    initialOrder?.requested_delivery_date ?? ""
   );
   const [orderDiscount, setOrderDiscount] = useState(String(initialOrder?.discount_amount ?? 0));
   const [orderDiscountMode, setOrderDiscountMode] = useState<"amount" | "percent">("amount");
@@ -706,6 +712,7 @@ export default function NewOrderClient({
           payment_terms: paymentTerms,
           collect_payment_on_delivery: collectOnDelivery,
           due_date: dueDate || null,
+          requested_delivery_date: requestedDeliveryDate || null,
           discount_amount: Number.isFinite(orderDiscountNumber) ? orderDiscountNumber : 0,
           needs_invoice: needsInvoice,
           notes: notes.trim() || null,
@@ -1915,6 +1922,15 @@ export default function NewOrderClient({
                       ))}
                     </NativeSelect>
                   </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">תאריך אספקה מבוקש (אופציונלי)</label>
+                  <DateInput
+                    value={requestedDeliveryDate}
+                    onChange={(e) => setRequestedDeliveryDate(e.target.value)}
+                    disabled={actionLocked}
+                    placeholder="רק אם הלקוח ביקש תאריך מסוים"
+                  />
                 </div>
                 <div className="space-y-1">
                   <label className="text-sm font-medium">הערות להזמנה</label>
