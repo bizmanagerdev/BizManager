@@ -30,6 +30,17 @@ export const WORKER_ALLOWED_PREFIXES = [
   "/no-access",
 ] as const;
 
+/**
+ * Deliveries is the one route on the worker list that's ALSO gated per
+ * individual worker (`users.deliveries_access`, admin-set from the Salary
+ * Center worker-edit dialog) — staff always have it regardless of the flag.
+ * Shared by the page guard and every API route the delivery-confirm flow
+ * writes/reads through, so they can't drift.
+ */
+export function hasDeliveriesAccess(role: UserRole, deliveriesAccess: boolean): boolean {
+  return role !== "worker" || deliveriesAccess;
+}
+
 /** Roles that run the business — everything not on the worker list is theirs. */
 export const STAFF_ROLES: UserRole[] = ["admin", "office"];
 

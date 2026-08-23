@@ -63,6 +63,8 @@ export type WorkerFormState = {
   payroll_worker_type: PayrollWorkerType;
   /** UI language ('he' | 'ar'); only meaningful for role="worker". */
   locale: "he" | "ar";
+  /** Per-worker toggle for deliveries access; only meaningful for role="worker". */
+  deliveries_access: boolean;
 };
 
 export type CreateUserFormState = {

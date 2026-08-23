@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   WORKER_ALLOWED_PREFIXES,
+  hasDeliveriesAccess,
   isPathAllowedForRole,
   isStaffRole,
 } from "@/lib/auth/roleAccess";
@@ -76,5 +77,17 @@ describe("isPathAllowedForRole — worker", () => {
     for (const prefix of WORKER_ALLOWED_PREFIXES) {
       expect(isPathAllowedForRole("worker_no_access", prefix)).toBe(false);
     }
+  });
+});
+
+describe("hasDeliveriesAccess", () => {
+  it("is the admin-set per-worker flag for a worker", () => {
+    expect(hasDeliveriesAccess("worker", true)).toBe(true);
+    expect(hasDeliveriesAccess("worker", false)).toBe(false);
+  });
+
+  it("staff always have it, regardless of the flag", () => {
+    expect(hasDeliveriesAccess("admin", false)).toBe(true);
+    expect(hasDeliveriesAccess("office", false)).toBe(true);
   });
 });

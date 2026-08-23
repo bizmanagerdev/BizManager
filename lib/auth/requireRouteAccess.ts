@@ -12,6 +12,8 @@ type RouteProfile = {
   full_name: string | null;
   /** UI language ('he' | 'ar'); only the worker role is ever offered a toggle. */
   locale: "he" | "ar";
+  /** Per-worker toggle for deliveries access; admin-set, meaningless for staff. */
+  deliveries_access: boolean;
 };
 
 type RouteAccessOk = {
@@ -50,13 +52,13 @@ export async function requireRouteAccess(options?: {
 
   let { data: profile, error: profileError } = await supabase
     .from("users")
-    .select("id,auth_user_id,role,active,system_access,email,full_name,locale")
+    .select("id,auth_user_id,role,active,system_access,email,full_name,locale,deliveries_access")
     .eq("auth_user_id", user.id)
     .maybeSingle();
 
   if (profileError) {
-    // Pre-migration: the `locale` column may not exist yet. Retry without it
-    // rather than locking every route out.
+    // Pre-migration: `locale`/`deliveries_access` may not exist yet. Retry
+    // without them rather than locking every route out.
     const legacy = await supabase
       .from("users")
       .select("id,auth_user_id,role,active,system_access,email,full_name")
@@ -74,7 +76,12 @@ export async function requireRouteAccess(options?: {
   }
 
   const rawLocale = (profile as { locale?: unknown }).locale;
-  const typed: RouteProfile = { ...(profile as Omit<RouteProfile, "locale">), locale: rawLocale === "ar" ? "ar" : "he" };
+  const rawDeliveriesAccess = (profile as { deliveries_access?: unknown }).deliveries_access;
+  const typed: RouteProfile = {
+    ...(profile as Omit<RouteProfile, "locale" | "deliveries_access">),
+    locale: rawLocale === "ar" ? "ar" : "he",
+    deliveries_access: rawDeliveriesAccess !== false,
+  };
 
   if (!typed.active || !typed.system_access || typed.role === "worker_no_access") {
     return {

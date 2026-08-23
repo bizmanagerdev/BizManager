@@ -279,6 +279,7 @@ export default function SalaryCenterClient({
     system_access: true,
     payroll_worker_type: "session_only",
     locale: "he",
+    deliveries_access: true,
   });
   const [agreementForm, setAgreementForm] = useState<AgreementFormState>(DEFAULT_AGREEMENT_FORM);
   const [overrideForm, setOverrideForm] = useState<OverrideFormState>(DEFAULT_OVERRIDE_FORM);
@@ -689,6 +690,7 @@ export default function SalaryCenterClient({
         selectedWorker.pay_tracking_mode
       ),
       locale: selectedWorker.locale === "ar" ? "ar" : "he",
+      deliveries_access: selectedWorker.deliveries_access !== false,
     });
   }, [selectedWorker]);
 
@@ -1007,6 +1009,7 @@ export default function SalaryCenterClient({
         system_access: workerForm.role === "worker_no_access" ? false : workerForm.system_access,
         payroll_worker_type: workerForm.payroll_worker_type,
         locale: workerForm.locale,
+        deliveries_access: workerForm.deliveries_access,
       });
       setMessage("פרטי הגישה עודכנו.");
       await refreshAll({ reloadProtected: false });
@@ -4768,6 +4771,23 @@ export default function SalaryCenterClient({
                 >
                   <option value="he">{"עברית"}</option>
                   <option value="ar">{"العربية"}</option>
+                </NativeSelect>
+              </Field>
+            ) : null}
+            {/* Admin-set per worker (2026-08-23): every worker keeps attendance/
+                tasks/calendar/alerts/profile regardless — this is the one route
+                that's individually toggle-able. Meaningless for office/admin,
+                who always have it. */}
+            {workerForm.role === "worker" ? (
+              <Field label="גישה למשלוחים">
+                <NativeSelect
+                  value={workerForm.deliveries_access ? "yes" : "no"}
+                  onChange={(event) =>
+                    setWorkerForm((current) => ({ ...current, deliveries_access: event.target.value === "yes" }))
+                  }
+                >
+                  <option value="yes">{"כן"}</option>
+                  <option value="no">{"לא"}</option>
                 </NativeSelect>
               </Field>
             ) : null}

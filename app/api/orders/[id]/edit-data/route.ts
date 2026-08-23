@@ -1,6 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { hasDeliveriesAccess } from "@/lib/auth/roleAccess";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import { attachProductStock } from "@/lib/orders/productStock";
 
@@ -33,7 +34,10 @@ export async function GET(
   const access = await requireRouteAccess();
   if (!access.ok) return access.response;
 
-  const { supabase } = access.value;
+  const { supabase, profile } = access.value;
+  if (!hasDeliveriesAccess(profile.role, profile.deliveries_access)) {
+    return NextResponse.json({ error: "No access" }, { status: 403 });
+  }
   const { id } = await context.params;
 
   const [

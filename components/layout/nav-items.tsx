@@ -155,12 +155,21 @@ function filterByRole(items: SidebarNavItem[], isAdmin: boolean, isOffice: boole
   });
 }
 
-export function useNavItems(initialRole?: string | null, initialLocale?: string | null) {
+export function useNavItems(
+  initialRole?: string | null,
+  initialLocale?: string | null,
+  initialDeliveriesAccess = true
+) {
   // No caching/fetch needed like role: AppShell mounts once per session (see its
   // "persist across navigations" comment) and the locale toggle in /profile
   // calls router.refresh(), which re-runs app/(app)/layout.tsx server-side and
-  // feeds a fresh prop straight through — a plain default is enough.
-  const workerNavItems = initialLocale === "ar" ? WORKER_NAV_ITEMS_AR : WORKER_NAV_ITEMS;
+  // feeds a fresh prop straight through — a plain default is enough. Same story
+  // for deliveries access: it's admin-set, so there's no in-session toggle to
+  // react to either.
+  const baseWorkerNavItems = initialLocale === "ar" ? WORKER_NAV_ITEMS_AR : WORKER_NAV_ITEMS;
+  const workerNavItems = initialDeliveriesAccess
+    ? baseWorkerNavItems
+    : baseWorkerNavItems.filter((item) => item.url !== "/deliveries");
   const [viewerRole, setViewerRole] = useState<string | null>(() => {
     // Server-provided role takes priority; fall back to localStorage cache.
     if (initialRole) return initialRole;

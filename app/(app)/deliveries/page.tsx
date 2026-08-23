@@ -1,5 +1,6 @@
+import { redirect } from "next/navigation";
 import { requireProfile } from "@/lib/auth/requireProfile";
-import { isStaffRole } from "@/lib/auth/roleAccess";
+import { hasDeliveriesAccess, isStaffRole } from "@/lib/auth/roleAccess";
 import PageTitle from "@/components/layout/PageTitle";
 import SalesDeliveriesQueue from "@/app/(app)/sales/SalesDeliveriesQueue";
 import { DELIVERY_REGIONS } from "@/lib/ui/cities";
@@ -34,6 +35,7 @@ export default async function DeliveriesPage({
       : null;
 
   const { profile, supabase } = await requireProfile();
+  if (!hasDeliveriesAccess(profile.role, profile.deliveries_access)) redirect("/no-access");
   const { deliveries, totalCount, hasMore, error } = await loadDeliveriesPage(supabase, {
     page: 1,
     filters: { customerId },

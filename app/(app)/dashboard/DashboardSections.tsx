@@ -234,7 +234,7 @@ export async function DashboardPanels() {
 
   // Prefs come off the profile (loaded by requireProfile) — no extra round-trip.
   const prefs = sanitizePrefs(profile.dashboard_prefs);
-  const ordered = resolveWidgets(role, prefs);
+  const ordered = resolveWidgets(role, prefs, profile.deliveries_access);
   const visible = new Set(ordered.map((w) => w.id));
   const show = (id: WidgetId) => visible.has(id);
 

@@ -20,6 +20,7 @@ function mapUsers(rows: Row[] | null | undefined): SalaryCenterUserRow[] {
         ? row.pay_tracking_mode
         : null,
     locale: row.locale === "ar" ? "ar" : "he",
+    deliveries_access: row.deliveries_access !== false,
   }));
 }
 
@@ -117,7 +118,7 @@ export async function loadAttendanceRefData(supabase: SupabaseClient): Promise<A
   const [usersResult, options] = await Promise.all([
     supabase
       .from("users")
-      .select("id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode,locale")
+      .select("id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode,locale,deliveries_access")
       .or("role.eq.admin,role.eq.office,role.eq.worker,role.eq.worker_no_access")
       .order("full_name", { ascending: true })
       .range(0, 999),
@@ -165,7 +166,7 @@ export async function loadPayrollPageData(supabase: SupabaseClient): Promise<Pay
   ] = await Promise.all([
     supabase
       .from("users")
-      .select("id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode,locale")
+      .select("id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode,locale,deliveries_access")
       .or("role.eq.admin,role.eq.office,role.eq.worker,role.eq.worker_no_access")
       .order("full_name", { ascending: true })
       .range(0, 999),

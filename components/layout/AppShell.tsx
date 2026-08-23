@@ -28,6 +28,8 @@ type Props = {
   viewerRole?: string;
   /** Signed-in worker's UI language ('he' | 'ar'); office/admin are always 'he'. */
   viewerLocale?: string | null;
+  /** Per-worker toggle for deliveries access, admin-set; meaningless for staff. */
+  viewerDeliveriesAccess?: boolean;
   avatarColor?: string | null;
   showSearch?: boolean;
   sidebarItems?: SidebarNavItem[];
@@ -49,6 +51,7 @@ export default function AppShell({
   userName,
   viewerRole,
   viewerLocale,
+  viewerDeliveriesAccess = true,
   avatarColor,
   showSearch,
   sidebarItems,
@@ -56,7 +59,7 @@ export default function AppShell({
   bottomNavMoreItems,
 }: Props) {
   const isNested = useContext(NestedAppShellContext);
-  const defaults = useNavItems(viewerRole, viewerLocale);
+  const defaults = useNavItems(viewerRole, viewerLocale, viewerDeliveriesAccess);
 
   // Nested (a page rendered under the (app) layout): render content only.
   if (isNested) return <>{children}</>;

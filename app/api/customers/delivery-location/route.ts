@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { toHebrewError } from "@/lib/error-messages";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { hasDeliveriesAccess } from "@/lib/auth/roleAccess";
 import { logAuditEvent } from "@/lib/audit";
 
 // Save "how to actually reach this customer" — the arrival instructions and the
@@ -20,6 +21,9 @@ export async function GET(req: Request) {
 
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
+    if (!hasDeliveriesAccess(access.value.profile.role, access.value.profile.deliveries_access)) {
+      return NextResponse.json({ error: "No access" }, { status: 403 });
+    }
 
     const { data } = await access.value.supabase
       .from("customers")
@@ -54,6 +58,9 @@ export async function POST(req: Request) {
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
     const { supabase, profile } = access.value;
+    if (!hasDeliveriesAccess(profile.role, profile.deliveries_access)) {
+      return NextResponse.json({ error: "No access" }, { status: 403 });
+    }
 
     const patch: Record<string, string | number | null> = {};
 

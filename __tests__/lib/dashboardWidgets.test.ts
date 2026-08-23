@@ -28,6 +28,17 @@ describe("resolveWidgets — role is the security boundary", () => {
     expect(ids).toContain("deliveries");
     expect(ids.every((id) => catalogForRole("office").some((w) => w.id === id))).toBe(true);
   });
+
+  it("worker sees deliveries by default, but not when the admin-set toggle is off", () => {
+    expect(resolveWidgets("worker", null).map((w) => w.id)).toContain("deliveries");
+    expect(resolveWidgets("worker", null, true).map((w) => w.id)).toContain("deliveries");
+    expect(resolveWidgets("worker", null, false).map((w) => w.id)).not.toContain("deliveries");
+  });
+
+  it("the per-worker deliveries toggle never affects office/admin", () => {
+    expect(resolveWidgets("office", null, false).map((w) => w.id)).toContain("deliveries");
+    expect(resolveWidgets("admin", null, false).map((w) => w.id)).toContain("deliveries");
+  });
 });
 
 describe("resolveWidgets — order & visibility", () => {

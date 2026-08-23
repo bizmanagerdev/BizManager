@@ -3,6 +3,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { after, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { hasDeliveriesAccess } from "@/lib/auth/roleAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { buildPaymentInsert } from "@/lib/payments";
 import {
@@ -139,6 +140,9 @@ export async function POST(req: Request) {
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
     const { supabase, user, profile } = access.value;
+    if (!hasDeliveriesAccess(profile.role, profile.deliveries_access)) {
+      return NextResponse.json({ error: "No access" }, { status: 403 });
+    }
 
     return withIdempotency(req, supabase, user.id, "orders/update", async () => {
     const contentType = req.headers.get("content-type") ?? "";

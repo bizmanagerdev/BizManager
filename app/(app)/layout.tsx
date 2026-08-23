@@ -28,6 +28,7 @@ export default async function AppGroupLayout({ children }: { children: ReactNode
       userName={profile.full_name ?? profile.email ?? undefined}
       viewerRole={profile.role}
       viewerLocale={profile.locale}
+      viewerDeliveriesAccess={profile.deliveries_access}
       avatarColor={avatarColor}
     >
       <SentryUser

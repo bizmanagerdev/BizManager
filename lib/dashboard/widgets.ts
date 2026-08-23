@@ -441,9 +441,19 @@ export function orderedCatalog(role: UserRole, prefs: DashboardPrefs | null): Wi
  * filtering is intrinsic to the catalog, so prefs can only ever hide/reorder
  * widgets the role already allows — never reveal a forbidden one.
  */
-export function resolveWidgets(role: UserRole, prefs: DashboardPrefs | null): WidgetMeta[] {
+export function resolveWidgets(
+  role: UserRole,
+  prefs: DashboardPrefs | null,
+  deliveriesAccess = true
+): WidgetMeta[] {
   const hidden = new Set(prefs?.hidden ?? []);
-  const shown = orderedCatalog(role, prefs).filter((w) => !hidden.has(w.id));
+  let shown = orderedCatalog(role, prefs).filter((w) => !hidden.has(w.id));
+  // A worker without the admin-set deliveries toggle never gets the widget,
+  // regardless of his own saved prefs — same "role can't be overridden by
+  // prefs" guarantee the catalog itself already gives every other widget.
+  if (role === "worker" && !deliveriesAccess) {
+    shown = shown.filter((w) => w.id !== "deliveries");
+  }
   // A WORKER always leads with "היום", and always has it. He has no customizer
   // («התאמת לוח» is staff-only), so any saved order or hidden id on his account
   // is a leftover from some other role or an older board — it must not be what

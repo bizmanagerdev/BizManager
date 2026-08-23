@@ -127,8 +127,10 @@ export default function QuickCreateDialogs({
         payroll_worker_type: user.payroll_worker_type ?? null,
         pay_tracking_mode: (user.pay_tracking_mode as "session" | "payslip" | null) ?? null,
         // Not carried on this lighter picker shape — irrelevant here, this list
-        // only feeds the session editor, never a locale-aware display.
+        // only feeds the session editor, never a locale-aware display or a
+        // deliveries-access check.
         locale: "he" as const,
+        deliveries_access: true,
       })),
     [data.users]
   );
