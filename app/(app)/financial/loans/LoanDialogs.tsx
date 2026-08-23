@@ -388,6 +388,7 @@ export function LoanRepaymentsPanel({ loan }: { loan: Loan }) {
       });
       if (res.ok) {
         toast.success("ההחזר נרשם.");
+        setAdHocOpen(false);
         setAmount("");
         setInterest("");
         setAccountId("");
@@ -489,20 +490,24 @@ export function LoanRepaymentsPanel({ loan }: { loan: Loan }) {
         )}
       </div>
 
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-sm font-semibold">רישום החזר שלא נקבע מראש</div>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={() => setAdHocOpen((prev) => !prev)}
-          >
-            {adHocOpen ? "סגירה" : "רישום החזר"}
-          </Button>
-        </div>
-        {adHocOpen ? (
-        <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+      <div className="flex justify-end">
+        <Button type="button" variant="secondary" size="sm" onClick={() => setAdHocOpen(true)}>
+          רישום החזר
+        </Button>
+      </div>
+
+      <FormDialog
+        open={adHocOpen}
+        onOpenChange={setAdHocOpen}
+        title="רישום החזר שלא נקבע מראש"
+        size="formLg"
+        onSubmit={add}
+        submitLabel="הוסף החזר"
+        busyLabel="רושם..."
+        busy={pending}
+        showCancel
+      >
+        <div className="space-y-2">
           <AdaptiveGrid variant="formTwo">
             <Field label="תאריך">
               <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
@@ -544,14 +549,8 @@ export function LoanRepaymentsPanel({ loan }: { loan: Loan }) {
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
           />
-          <div className="flex justify-end">
-            <Button type="button" onClick={add} disabled={pending}>
-              {pending ? "רושם..." : "הוסף החזר"}
-            </Button>
-          </div>
         </div>
-        ) : null}
-      </div>
+      </FormDialog>
 
       <EditPaidRepaymentDialog
         loan={loan}
