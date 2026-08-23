@@ -180,6 +180,16 @@ export default function AttendanceQueuePanel({
               {workerFilterSelect}
             </NativeSelect>
           ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setGuideOpen(true)}
+            className="h-10 shrink-0 rounded-xl"
+            aria-label="מדריך לעובדים להדפסה"
+          >
+            <DocumentIcon className="h-4 w-4" />
+            מדריך
+          </Button>
         </div>
       </PageHeaderToolbar>
 
@@ -210,16 +220,9 @@ export default function AttendanceQueuePanel({
           )}
         </div>
 
-        {/* Printable one-pager for the workers — the number + how to report. */}
-        <div className="flex justify-end">
-          <Button type="button" variant="outline" size="sm" onClick={() => setGuideOpen(true)}>
-            <DocumentIcon className="h-4 w-4" />
-            מדריך לעובדים
-          </Button>
-        </div>
-
-        {/* Desktop only — on phones these same two controls live in the dark
-            header above (PageHeaderToolbar is md:hidden). */}
+        {/* Desktop only — on phones these same controls live in the dark header
+            above (PageHeaderToolbar is md:hidden). Adding a report itself lives in
+            the app's one quick-create + ("דיווח נוכחות"). */}
         <div className="hidden items-center gap-2 md:flex">
           {workerFilterSelect ? (
             <NativeSelect
@@ -232,8 +235,10 @@ export default function AttendanceQueuePanel({
               {workerFilterSelect}
             </NativeSelect>
           ) : null}
-          {/* Adding a report ("דיווח נוכחות" — sign a worker in/out now, or record
-              a whole past shift) lives in the app's one quick-create +. */}
+          <Button type="button" variant="outline" size="sm" onClick={() => setGuideOpen(true)}>
+            <DocumentIcon className="h-4 w-4" />
+            מדריך לעובדים
+          </Button>
         </div>
       </div>
 

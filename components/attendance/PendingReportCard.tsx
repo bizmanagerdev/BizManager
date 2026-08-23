@@ -126,7 +126,7 @@ export function WorkerHead({
     <div className="flex items-start gap-2.5">
       <InitialsAvatar name={name ?? "עובד"} color={avatarColor} colorKey={userId} size="sm" className="mt-0.5" />
       <div className="min-w-0 flex-1 space-y-0.5">
-        <div className="flex items-baseline gap-x-2">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <span className="truncate text-sm font-medium text-foreground">{name ?? "עובד לא ידוע"}</span>
           {phone ? (
             <span className="shrink-0 text-xs text-muted-foreground" dir="ltr">
