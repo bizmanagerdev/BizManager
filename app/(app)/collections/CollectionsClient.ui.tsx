@@ -287,7 +287,7 @@ function MarkCollectedButton({ paymentIds }: { paymentIds: string[] }) {
 function LoanRepaymentLink({ loanId }: { loanId: string }) {
   return (
     <Button asChild size="sm" variant="outline" className="h-7 text-xs">
-      <NavLink to={`/financial/loans?repay=${loanId}`}>רישום החזר</NavLink>
+      <NavLink to={`/financial/loans/${loanId}`}>רישום החזר</NavLink>
     </Button>
   );
 }
@@ -342,7 +342,7 @@ function SourceDetail({ source }: { source: CollectionCustomerGroup["sources"][n
   const isOrder = source.source_type === "order";
   const isLoan = source.source_type === "loan";
   const href = isLoan
-    ? "/financial/loans"
+    ? `/financial/loans/${source.source_id}`
     : isOrder
       ? `/sales/orders/${source.source_id}`
       : `/projects/${source.source_id}`;

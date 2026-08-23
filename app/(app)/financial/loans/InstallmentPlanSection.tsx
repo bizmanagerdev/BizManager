@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AddIcon, CheckIcon } from "@/components/ui/icons";
+import { AddIcon, CheckIcon, CloseIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
@@ -131,35 +131,6 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
         <div className="text-sm text-muted-foreground">לא נקבעו תאריכי החזר.</div>
       ) : null}
 
-      {editing ? (
-        <div className="space-y-3 rounded-md border bg-background p-3">
-          <RepaymentPlanPicker
-            label=""
-            state={plan}
-            amount={loan.outstanding}
-            onChange={setPlan}
-          />
-          <div className="flex flex-wrap justify-end gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setEditing(false)}
-              disabled={pending}
-            >
-              ביטול
-            </Button>
-            <Button type="button" onClick={savePlan} disabled={pending}>
-              {pending ? "שומר..." : "שמירה"}
-            </Button>
-          </div>
-          {planned.length > 0 ? (
-            <div className="text-xs text-muted-foreground">
-              השמירה מחליפה את התשלומים שעדיין לא שולמו.
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
       {planned.length > 0 ? (
         <div className="space-y-2">
           {overdueCount > 0 ? (
@@ -232,6 +203,22 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
         </div>
       ) : null}
 
+      <FormDialog
+        open={editing}
+        onOpenChange={setEditing}
+        title={planned.length > 0 ? "עריכת תשלומים" : "קביעת תשלומים"}
+        description={
+          planned.length > 0 ? "השמירה מחליפה את התשלומים שעדיין לא שולמו." : undefined
+        }
+        size="form2xl"
+        onSubmit={savePlan}
+        submitLabel="שמירה"
+        busyLabel="שומר..."
+        busy={pending}
+        showCancel
+      >
+        <RepaymentPlanPicker label="" state={plan} amount={loan.outstanding} onChange={setPlan} />
+      </FormDialog>
       <MarkPaidDialog
         loan={loan}
         installment={payTarget}
@@ -257,6 +244,34 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
 }
 
 // ── Mark a planned installment as actually paid ────────────────────────────
+// One or more PARTS — e.g. ₪1,000 cash + ₪4,000 bank transfer settling one
+// ₪5,000 due date in a single atomic action, so the split never touches the
+// NEXT installment (which used to be the only way to log a second amount).
+type PaymentPart = {
+  date: string;
+  amount: string;
+  interest: string;
+  method: string;
+  accountId: string;
+  notes: string;
+};
+
+function makePaymentPart(
+  dueDate: string | undefined,
+  seed?: Partial<Pick<PaymentPart, "amount" | "interest" | "method" | "accountId" | "notes">>
+): PaymentPart {
+  return {
+    // Defaults to the installment's OWN due date, not today — a backdated
+    // payment stays backdated unless the user actively changes it.
+    date: dueDate || todayIso(),
+    amount: seed?.amount ?? "",
+    interest: seed?.interest ?? "",
+    method: seed?.method ?? "",
+    accountId: seed?.accountId ?? "",
+    notes: seed?.notes ?? "",
+  };
+}
+
 function MarkPaidDialog({
   loan,
   installment,
@@ -269,60 +284,73 @@ function MarkPaidDialog({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [accountsList, setAccountsList] = useState<Account[]>([]);
-  const [form, setForm] = useState({
-    date: todayIso(),
-    amount: "",
-    interest: "",
-    method: "",
-    accountId: "",
-    notes: "",
-  });
+  function firstPart(target: LoanRepayment | null) {
+    return makePaymentPart(target?.repayment_date, {
+      amount: String(target?.amount ?? ""),
+      interest: target?.interest_amount ? String(target.interest_amount) : "",
+      method: target?.method ?? loan.repayment_method ?? "",
+      accountId: target?.account_id ?? loan.account_id ?? "",
+      notes: target?.notes ?? "",
+    });
+  }
+  const [parts, setParts] = useState<PaymentPart[]>(() => [firstPart(installment)]);
 
   // Re-seed the form each time the dialog opens for a different installment.
   const [seedKey, setSeedKey] = useState("");
   const key = installment?.id ?? "";
   if (key && key !== seedKey) {
     setSeedKey(key);
-    setForm({
-      date: todayIso(),
-      amount: String(installment?.amount ?? ""),
-      interest: installment?.interest_amount ? String(installment.interest_amount) : "",
-      method: installment?.method ?? loan.repayment_method ?? "",
-      accountId: installment?.account_id ?? loan.account_id ?? "",
-      notes: installment?.notes ?? "",
-    });
+    setParts([firstPart(installment)]);
   }
 
-  function set(field: keyof typeof form, value: string) {
-    setForm((prev) => ({ ...prev, [field]: value }));
+  // Parts are addressed by array index — they only ever get appended or removed
+  // (never reordered), and every field is a fully controlled input, so an index
+  // key is safe and avoids needing a ref-backed id generator during render.
+  function setPart(index: number, patch: Partial<PaymentPart>) {
+    setParts((prev) => prev.map((p, i) => (i === index ? { ...p, ...patch } : p)));
   }
+
+  function addPart() {
+    setParts((prev) => [...prev, makePaymentPart(installment?.repayment_date)]);
+  }
+
+  function removePart(index: number) {
+    setParts((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev));
+  }
+
+  const total = parts.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 
   function submit() {
     if (!installment) return;
-    const amount = Number(form.amount) || 0;
-    if (!form.date) {
-      toast.error("חובה לבחור תאריך תשלום.");
-      return;
+    for (const p of parts) {
+      if (!p.date) {
+        toast.error("חובה לבחור תאריך לכל תשלום.");
+        return;
+      }
+      if (!(Number(p.amount) > 0)) {
+        toast.error("חובה להזין סכום לכל תשלום.");
+        return;
+      }
     }
-    if (!(amount > 0)) {
-      toast.error("חובה להזין סכום.");
-      return;
-    }
-    if (accountsList.length > 0 && !form.accountId) {
-      toast.error("יש לבחור חשבון לתנועה.");
+    if (accountsList.length > 0 && parts.some((p) => !p.accountId)) {
+      toast.error("יש לבחור חשבון לכל תשלום.");
       return;
     }
     startTransition(async () => {
-      const res = await markInstallmentPaid(installment.id, loan.id, {
-        repayment_date: form.date,
-        amount,
-        interest_amount: Number(form.interest) || 0,
-        method: form.method,
-        account_id: form.accountId || null,
-        notes: form.notes,
-      });
+      const res = await markInstallmentPaid(
+        installment.id,
+        loan.id,
+        parts.map((p) => ({
+          repayment_date: p.date,
+          amount: Number(p.amount) || 0,
+          interest_amount: Number(p.interest) || 0,
+          method: p.method,
+          account_id: p.accountId || null,
+          notes: p.notes,
+        }))
+      );
       if (res.ok) {
-        toast.success("התשלום נרשם.");
+        toast.success(parts.length > 1 ? "התשלומים נרשמו." : "התשלום נרשם.");
         onOpenChange(false);
         router.refresh();
       } else {
@@ -338,7 +366,7 @@ function MarkPaidDialog({
       title="רישום תשלום"
       description={
         installment
-          ? `תשלום שנקבע ל-${formatDate(installment.repayment_date)} על ${formatIls(installment.amount)}. אפשר לשנות את הסכום והתאריך בפועל.`
+          ? `תשלום שנקבע ל-${formatDate(installment.repayment_date)} על ${formatIls(installment.amount)}. אפשר לשנות סכום ותאריך, ואם שולם בכמה אמצעים — לפצל לכמה תשלומים.`
           : undefined
       }
       onSubmit={submit}
@@ -348,56 +376,83 @@ function MarkPaidDialog({
     >
 
         <div className="space-y-3">
-          <AdaptiveGrid variant="formTwo">
-            <Field label="תאריך בפועל">
-              <Input type="date" value={form.date} onChange={(e) => set("date", e.target.value)} />
-            </Field>
-            <Field label="סכום ששולם">
-              <CurrencyInput value={form.amount} onChange={(e) => set("amount", e.target.value)} />
-            </Field>
-            <Field label="מתוכו ריבית (אם יש)">
-              <CurrencyInput
-                value={form.interest}
-                onChange={(e) => set("interest", e.target.value)}
+          {parts.map((part, index) => (
+            <div key={index} className="space-y-2 rounded-md border bg-muted/10 p-3">
+              {parts.length > 1 ? (
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-semibold text-muted-foreground">תשלום {index + 1}</div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => removePart(index)}
+                    aria-label="הסרת תשלום"
+                    title="הסרת תשלום"
+                  >
+                    <CloseIcon className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : null}
+              <AdaptiveGrid variant="formTwo">
+                <Field label="תאריך בפועל">
+                  <Input type="date" value={part.date} onChange={(e) => setPart(index, { date: e.target.value })} />
+                </Field>
+                <Field label="סכום ששולם">
+                  <CurrencyInput value={part.amount} onChange={(e) => setPart(index, { amount: e.target.value })} />
+                </Field>
+                <Field label="מתוכו ריבית (אם יש)">
+                  <CurrencyInput
+                    value={part.interest}
+                    onChange={(e) => setPart(index, { interest: e.target.value })}
+                  />
+                </Field>
+                <Field label="אופן">
+                  <NativeSelect
+                    value={part.method}
+                    onChange={(e) => {
+                      const method = e.target.value;
+                      setPart(index, {
+                        method,
+                        accountId: part.accountId || defaultAccountForMethod(accountsList, method),
+                      });
+                    }}
+                  >
+                    {METHOD_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </Field>
+                <AccountSelect
+                  required
+                  value={part.accountId}
+                  onChange={(value) => setPart(index, { accountId: value })}
+                  onLoaded={(list) => {
+                    setAccountsList(list);
+                    setPart(index, { accountId: part.accountId || defaultAccountForMethod(list, part.method) });
+                  }}
+                />
+              </AdaptiveGrid>
+              <Input
+                placeholder="הערה (לא חובה)"
+                value={part.notes}
+                onChange={(e) => setPart(index, { notes: e.target.value })}
               />
-            </Field>
-            <Field label="אופן">
-              <NativeSelect
-                value={form.method}
-                onChange={(e) => {
-                  const method = e.target.value;
-                  setForm((prev) => ({
-                    ...prev,
-                    method,
-                    accountId: prev.accountId || defaultAccountForMethod(accountsList, method),
-                  }));
-                }}
-              >
-                {METHOD_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </NativeSelect>
-            </Field>
-            <AccountSelect
-              required
-              value={form.accountId}
-              onChange={(value) => set("accountId", value)}
-              onLoaded={(list) => {
-                setAccountsList(list);
-                setForm((prev) => ({
-                  ...prev,
-                  accountId: prev.accountId || defaultAccountForMethod(list, prev.method),
-                }));
-              }}
-            />
-          </AdaptiveGrid>
-          <Input
-            placeholder="הערה (לא חובה)"
-            value={form.notes}
-            onChange={(e) => set("notes", e.target.value)}
-          />
+            </div>
+          ))}
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Button type="button" variant="secondary" size="sm" onClick={addPart}>
+              <AddIcon className="h-4 w-4" />
+              תשלום נוסף באמצעי אחר
+            </Button>
+            {parts.length > 1 ? (
+              <div className="text-xs text-muted-foreground">
+                סה&quot;כ {formatIls(total)} מתוך {formatIls(installment?.amount ?? 0)}
+              </div>
+            ) : null}
+          </div>
         </div>
     </FormDialog>
   );

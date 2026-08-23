@@ -565,8 +565,11 @@ export function buildHref(
       const e = fk("expense_id");
       return buildFocusHref("/financial/payments-calendar", e ? `expense:${e}` : null);
     }
-    case "loans": return buildFocusHref("/financial/loans", recordId);
-    case "loan_repayments": return buildFocusHref("/financial/loans", fk("loan_id"));
+    case "loans": return `/financial/loans/${recordId}`;
+    case "loan_repayments": {
+      const loanId = fk("loan_id");
+      return loanId ? `/financial/loans/${loanId}` : "/financial/loans";
+    }
     case "card_statements": return `/financial/statements/${recordId}`;
     case "worker_payments":
     case "worker_payment_allocations":

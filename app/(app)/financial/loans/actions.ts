@@ -393,11 +393,90 @@ export async function updateInstallment(
 }
 
 /**
- * Mark a planned installment as actually paid: it flips to status='paid' and
- * from that moment reduces the loan's outstanding balance and counts as cash.
- * The amount/date can differ from the plan (paid early, paid a bit less…).
+ * Mark a planned installment as actually paid. `parts` is one or more real cash
+ * movements that TOGETHER settle this one due date — e.g. ₪1,000 cash + ₪4,000
+ * bank transfer for a single ₪5,000 installment. The planned row is replaced by
+ * one 'paid' row per part (all carrying the same installment_index/count, so the
+ * paid history still shows them as one due date); no OTHER installment is
+ * touched. The combined amount/dates can differ from the plan (paid early, paid
+ * a bit less…).
  */
 export async function markInstallmentPaid(
+  id: string,
+  loanId: string,
+  parts: RepaymentInput[]
+): Promise<ActionResult> {
+  try {
+    const ctx = await getAdminContext();
+    if (!ctx.ok) return { ok: false, error: ctx.error };
+    if (!id) return { ok: false, error: "חסר מזהה תשלום." };
+    if (!Array.isArray(parts) || parts.length === 0) {
+      return { ok: false, error: "יש להזין לפחות תשלום אחד." };
+    }
+    for (const part of parts) {
+      if (!part.repayment_date) return { ok: false, error: "חובה לבחור תאריך לכל תשלום." };
+      if (!(part.amount > 0)) return { ok: false, error: "חובה להזין סכום לכל תשלום." };
+      const interest = Number.isFinite(part.interest_amount) ? Math.max(part.interest_amount, 0) : 0;
+      if (interest > part.amount + 0.009) {
+        return { ok: false, error: "הריבית לא יכולה לעלות על סכום התשלום." };
+      }
+    }
+
+    const { data: installmentRow } = await ctx.supabase
+      .from("loan_repayments")
+      .select("installment_index,installment_count")
+      .eq("id", id)
+      .eq("status", "planned")
+      .maybeSingle();
+    const position = installmentRow as { installment_index?: number; installment_count?: number } | null;
+
+    // Insert the paid rows BEFORE deleting the planned one: if the insert fails,
+    // the plan is still intact (worst case on a delete failure afterward is a
+    // harmless duplicate, never a lost installment).
+    const { error: insError } = await ctx.supabase.from("loan_repayments").insert(
+      parts.map((part) => ({
+        loan_id: loanId,
+        status: "paid",
+        repayment_date: part.repayment_date,
+        amount: part.amount,
+        interest_amount: Number.isFinite(part.interest_amount) ? Math.max(part.interest_amount, 0) : 0,
+        method: clean(part.method),
+        account_id: typeof part.account_id === "string" && part.account_id ? part.account_id : null,
+        notes: clean(part.notes),
+        installment_index: position?.installment_index ?? null,
+        installment_count: position?.installment_count ?? null,
+        created_by: ctx.profile.id,
+      }))
+    );
+    if (insError) {
+      return {
+        ok: false,
+        error: installmentSchemaError(insError.message) ?? toHebrewError(insError.message),
+      };
+    }
+
+    const { error: delError } = await ctx.supabase
+      .from("loan_repayments")
+      .delete()
+      .eq("id", id)
+      .eq("status", "planned");
+    if (delError) {
+      return {
+        ok: false,
+        error: installmentSchemaError(delError.message) ?? toHebrewError(delError.message),
+      };
+    }
+
+    if (loanId) await syncLoanStatus(ctx.supabase, loanId);
+    revalidateLoans();
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: toHebrewError(error, "שגיאה בסימון התשלום.") };
+  }
+}
+
+/** Edit an already-PAID repayment (date / amount / interest / method / account / note). */
+export async function updateRepayment(
   id: string,
   loanId: string,
   input: RepaymentInput
@@ -405,9 +484,9 @@ export async function markInstallmentPaid(
   try {
     const ctx = await getAdminContext();
     if (!ctx.ok) return { ok: false, error: ctx.error };
-    if (!id) return { ok: false, error: "חסר מזהה תשלום." };
-    if (!input.repayment_date) return { ok: false, error: "חובה לבחור תאריך תשלום." };
-    if (!(input.amount > 0)) return { ok: false, error: "חובה להזין סכום." };
+    if (!id) return { ok: false, error: "חסר מזהה החזר." };
+    if (!input.repayment_date) return { ok: false, error: "חובה לבחור תאריך החזר." };
+    if (!(input.amount > 0)) return { ok: false, error: "חובה להזין סכום החזר." };
     const interest = Number.isFinite(input.interest_amount) ? Math.max(input.interest_amount, 0) : 0;
     if (interest > input.amount + 0.009) {
       return { ok: false, error: "הריבית לא יכולה לעלות על סכום ההחזר." };
@@ -416,7 +495,6 @@ export async function markInstallmentPaid(
     const { error } = await ctx.supabase
       .from("loan_repayments")
       .update({
-        status: "paid",
         repayment_date: input.repayment_date,
         amount: input.amount,
         interest_amount: interest,
@@ -425,18 +503,15 @@ export async function markInstallmentPaid(
           typeof input.account_id === "string" && input.account_id ? input.account_id : null,
         notes: clean(input.notes),
       })
-      .eq("id", id);
-    if (error) {
-      return {
-        ok: false,
-        error: installmentSchemaError(error.message) ?? toHebrewError(error.message),
-      };
-    }
+      .eq("id", id)
+      // Editing a still-planned row belongs to updateInstallment, not here.
+      .neq("status", "planned");
+    if (error) return { ok: false, error: toHebrewError(error.message) };
     if (loanId) await syncLoanStatus(ctx.supabase, loanId);
     revalidateLoans();
     return { ok: true };
   } catch (error) {
-    return { ok: false, error: toHebrewError(error, "שגיאה בסימון התשלום.") };
+    return { ok: false, error: toHebrewError(error, "שגיאה בעדכון ההחזר.") };
   }
 }
 

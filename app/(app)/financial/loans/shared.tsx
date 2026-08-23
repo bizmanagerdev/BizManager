@@ -1,8 +1,23 @@
 "use client";
 
+import type { LoanStatus } from "@/lib/loans";
 
 // Small presentational helpers shared by the loans page and the installment-plan
 // section, so both render money, dates and form fields identically.
+
+/** Status → badge tone, used by both the loans list and the loan detail page. */
+export function statusColor(status: LoanStatus) {
+  switch (status) {
+    case "repaid":
+      return "success" as const;
+    case "partially_repaid":
+      return "info" as const;
+    case "written_off":
+      return "neutral" as const;
+    default:
+      return "warning" as const;
+  }
+}
 
 export const METHOD_OPTIONS = [
   { value: "", label: "—" },

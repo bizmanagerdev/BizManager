@@ -501,7 +501,7 @@ export default function CollectionTrackingPanel({
                   {r.source_type === "loan" ? (
                     <div className="mt-2 flex justify-end border-t border-border/50 pt-2">
                       <Button asChild size="sm" variant="outline" className="h-7 text-xs">
-                        <Link href={`/financial/loans?repay=${r.source_id}`}>רישום החזר</Link>
+                        <Link href={`/financial/loans/${r.source_id}`}>רישום החזר</Link>
                       </Button>
                     </div>
                   ) : null}
