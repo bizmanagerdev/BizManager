@@ -7,6 +7,7 @@ import {
   ClockIcon,
   CloseIcon,
   CoinsIcon,
+  DocumentIcon,
   EditIcon,
   LogoutIcon,
   PendingIcon,
@@ -24,6 +25,7 @@ import { DateTimeInput } from "@/components/ui/date-input";
 import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 // One approve/reject/split card, shared with the dashboard's נוכחות עובדים widget.
 import PendingReportCard, { WorkerHead, attendanceDetail, attendanceMeta } from "@/components/attendance/PendingReportCard";
+import { AttendanceGuideDialog } from "@/components/attendance/AttendanceGuideDialog";
 import { formatCurrency, formatMinutes, minutesBetween } from "@/lib/payroll";
 import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
@@ -123,6 +125,7 @@ export default function AttendanceQueuePanel({
   propertyOptions,
 }: Props) {
   const [workerFilter, setWorkerFilter] = useState("");
+  const [guideOpen, setGuideOpen] = useState(false);
   // Only workers who actually appear in the queue are worth filtering by.
   const filterOptions = useMemo(() => {
     const byId = new Map<string, string>();
@@ -207,6 +210,14 @@ export default function AttendanceQueuePanel({
           )}
         </div>
 
+        {/* Printable one-pager for the workers — the number + how to report. */}
+        <div className="flex justify-end">
+          <Button type="button" variant="outline" size="sm" onClick={() => setGuideOpen(true)}>
+            <DocumentIcon className="h-4 w-4" />
+            מדריך לעובדים
+          </Button>
+        </div>
+
         {/* Desktop only — on phones these same two controls live in the dark
             header above (PageHeaderToolbar is md:hidden). */}
         <div className="hidden items-center gap-2 md:flex">
@@ -275,6 +286,7 @@ export default function AttendanceQueuePanel({
         </div>
       ) : null}
 
+      <AttendanceGuideDialog open={guideOpen} onOpenChange={setGuideOpen} />
     </div>
   );
 }
