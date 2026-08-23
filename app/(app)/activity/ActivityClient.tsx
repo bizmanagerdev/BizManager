@@ -750,14 +750,19 @@ export default function ActivityClient({
             isPending ? "opacity-60 transition-opacity" : ""
           }`}
         >
-          <table className="w-full border-collapse text-sm">
+          {/* table-fixed: column widths come from this colgroup alone, computed
+              once — not from every currently-rendered row's content. Without it
+              the browser re-measures all cells on every re-render (new rows
+              arriving via infinite scroll, the 15s refresh, realtime inserts),
+              so columns — and the whole table — visibly resize/shift each time. */}
+          <table className="w-full table-fixed border-collapse text-sm">
             <colgroup>
               <col className="w-[6rem]" />
-              <col />
+              <col className="w-[13rem]" />
               <col className="w-[11rem]" />
               <col />
-              <col />
-              <col />
+              <col className="w-[9rem]" />
+              <col className="w-[9rem]" />
               {/* Wide enough for the full "09.08.26 21:54" stamp at text-xs. */}
               <col className="w-[8.5rem]" />
             </colgroup>
@@ -854,7 +859,7 @@ export default function ActivityClient({
                         </span>
                       </td>
                       <td className="px-3 py-2 align-middle">
-                        <div className="whitespace-nowrap leading-tight">
+                        <div className="break-words leading-tight">
                           <span className="font-medium text-foreground">{header.entityLabel}</span>
                           {header.title && (
                             <>

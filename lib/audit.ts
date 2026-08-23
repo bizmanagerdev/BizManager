@@ -99,6 +99,7 @@ export function entityLabel(tableName: string) {
     case "projects": return "פרויקט";
     case "tasks": return "משימה";
     case "expenses": return "הוצאה";
+    case "project_expenses": return "הוצאה בפרויקט";
     case "payments": return "תשלום";
     case "documents": return "מסמך";
     case "customers": return "לקוח";
@@ -107,6 +108,7 @@ export function entityLabel(tableName: string) {
     case "users": return "משתמש";
     case "attendance_sessions": return "שעות עבודה";
     case "worker_payments": return "תשלום לעובד";
+    case "worker_payment_allocations": return "הקצאת תשלום";
     case "salary_agreements": return "הסכם שכר";
     case "payroll_periods": return "תקופת שכר";
     case "payslips": return "תלוש שכר";
@@ -220,6 +222,17 @@ export function buildDetails(tableName: string, newData: AuditLogValue): string 
       if (amt) parts.push(amt);
       const desc = str(d.description);
       if (desc) parts.push(desc);
+      break;
+    }
+    case "project_expenses": {
+      const note = str(d.notes);
+      if (note) parts.push(note);
+      if (d.billed_to_customer === true) parts.push("חויב ללקוח");
+      break;
+    }
+    case "worker_payment_allocations": {
+      const amt = money(d.amount);
+      if (amt) parts.push(amt);
       break;
     }
     case "tasks": {
@@ -338,6 +351,7 @@ const CHILD_TABLES = new Set([
   "inventory_movements",
   "document_links",
   "worker_payment_allocations",
+  "project_expenses",
 ]);
 
 function recordData(
@@ -438,11 +452,15 @@ export function buildParentKey(
       return null;
     }
     case "worker_payments":
-    case "worker_payment_allocations":
     case "attendance_sessions": {
       const u = fk("user_id");
       return u ? `worker:${u}` : null;
     }
+    // No user_id on this table (only worker_payment_id) — resolving it to the
+    // worker would need a join we can't do in this synchronous pass, so it
+    // stands alone rather than folding under its worker_payments row. Its title
+    // (the worker's name) is still resolved async in resolveAuditTitles.
+    case "worker_payment_allocations": return null;
     case "task_comments":
     case "task_members":
     case "task_time_reports": {
@@ -457,6 +475,13 @@ export function buildParentKey(
       const c = fk("customer_id");
       if (c) return `customer:${c}`;
       return null;
+    }
+    // Shares the parent expense's parentKey (same project_id) so it folds under
+    // the "הוצאה" row it was created alongside, the same way order_items fold
+    // under their order.
+    case "project_expenses": {
+      const p = fk("project_id");
+      return p ? `project:${p}` : null;
     }
     case "contacts":
     case "communications":
@@ -544,6 +569,7 @@ export function buildHref(
     case "loan_repayments": return buildFocusHref("/financial/loans", fk("loan_id"));
     case "card_statements": return `/financial/statements/${recordId}`;
     case "worker_payments":
+    case "worker_payment_allocations":
     case "salary_agreements":
     case "payroll_periods":
     case "payslips":
@@ -703,6 +729,7 @@ export async function resolveAuditTitles(
   const projectIds = new Set<string>();
   const userIds = new Set<string>();
   const orderIds = new Set<string>(); // resolved one hop further → their customer
+  const workerPaymentIds = new Set<string>(); // resolved one hop further → their worker
 
   for (const r of rows) {
     const d = dataOf(r);
@@ -734,10 +761,22 @@ export async function resolveAuditTitles(
         break;
       }
       case "worker_payments":
-      case "worker_payment_allocations":
       case "attendance_sessions": {
         const u = fk(d, "user_id");
         if (u) userIds.add(u);
+        break;
+      }
+      // No user_id on this table — only worker_payment_id — so the worker's
+      // name needs the same one-hop resolution as order_items → orders.
+      case "worker_payment_allocations": {
+        const wp = fk(d, "worker_payment_id");
+        if (wp) workerPaymentIds.add(wp);
+        break;
+      }
+      case "expenses":
+      case "project_expenses": {
+        const p = fk(d, "project_id");
+        if (p) projectIds.add(p);
         break;
       }
       case "document_links": {
@@ -762,6 +801,21 @@ export async function resolveAuditTitles(
       if (typeof row.id === "string" && typeof row.customer_id === "string") {
         orderCustomer.set(row.id, row.customer_id);
         customerIds.add(row.customer_id);
+      }
+    }
+  }
+
+  // First hop: worker_payment_allocations → its worker_payments row → the worker.
+  const workerPaymentUser = new Map<string, string>();
+  if (workerPaymentIds.size > 0) {
+    const { data } = await supabase
+      .from("worker_payments")
+      .select("id,user_id")
+      .in("id", Array.from(workerPaymentIds));
+    for (const row of (data ?? []) as { id?: string; user_id?: string }[]) {
+      if (typeof row.id === "string" && typeof row.user_id === "string") {
+        workerPaymentUser.set(row.id, row.user_id);
+        userIds.add(row.user_id);
       }
     }
   }
@@ -841,10 +895,21 @@ export async function resolveAuditTitles(
         break;
       }
       case "worker_payments":
-      case "worker_payment_allocations":
       case "attendance_sessions": {
         const u = fk(d, "user_id");
         title = u ? userNames[u] ?? null : null;
+        break;
+      }
+      case "worker_payment_allocations": {
+        const wp = fk(d, "worker_payment_id");
+        const u = wp ? workerPaymentUser.get(wp) : null;
+        title = u ? userNames[u] ?? null : null;
+        break;
+      }
+      case "expenses":
+      case "project_expenses": {
+        const p = fk(d, "project_id");
+        title = p ? projectName.get(p) ?? null : null;
         break;
       }
     }
@@ -1236,7 +1301,10 @@ export function buildAuditFeedItem(
   title: string | null = null,
   actorColor: string | null = null
 ): AuditFeedItem {
-  const base = buildDetails(row.table_name, row.new_data ?? null);
+  // DELETE rows only ever carry old_data (see log_changes() — new_data is never
+  // written on delete), so fall back to it or a deleted row's details column
+  // would always be blank.
+  const base = buildDetails(row.table_name, row.new_data ?? row.old_data ?? null);
   const changes = isUpdateAction(row.action)
     ? buildChangeList(row.old_data ?? null, row.new_data ?? null)
     : [];
