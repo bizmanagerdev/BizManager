@@ -21,8 +21,6 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import { ViewDialog } from "@/components/ui/view-dialog";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
-import { getBusinessDomainLabel } from "@/lib/expenses";
-import { DomainSelect } from "@/components/financial/DomainSelect";
 import {
   type Loan,
   type LoanDirection,
@@ -84,7 +82,6 @@ type FormState = {
   interest_amount: string;
   loan_method: string;
   repayment_method: string;
-  business_domain: string;
   account_id: string;
   documentation: string;
   notes: string;
@@ -109,7 +106,6 @@ function loanToForm(loan: Loan | null): FormState {
     interest_amount: loan && loan.interest_amount ? String(loan.interest_amount) : "",
     loan_method: loan?.loan_method ?? "",
     repayment_method: loan?.repayment_method ?? "",
-    business_domain: loan?.business_domain ?? "general_business",
     account_id: loan?.account_id ?? "",
     documentation: loan?.documentation ?? "",
     notes: loan?.notes ?? "",
@@ -191,7 +187,8 @@ function LoanFormDialog({
       amount: loanAmount,
       due_date: planLastDate(plan, planAmount) || form.due_date,
       interest_amount: Number(form.interest_amount) || 0,
-      business_domain: form.business_domain,
+      // Loans are always general — no per-domain breakdown for them.
+      business_domain: "general_business",
       account_id: form.account_id || null,
       notes: form.notes,
     };
@@ -235,17 +232,11 @@ function LoanFormDialog({
     });
   }
 
-  const counterpartyHint =
-    form.direction === "taken"
-      ? `לקחת הלוואה — בחר/י ממי (מלווה). הצד שלנו (${BUSINESS_OWNER_NAME}) הוא הלווה.`
-      : `נתת הלוואה — בחר/י למי (לווה). הצד שלנו (${BUSINESS_OWNER_NAME}) הוא המלווה.`;
-
   return (
     <FormDialog
       open={open}
       onOpenChange={onOpenChange}
       title={loan ? "עריכת הלוואה" : "הלוואה חדשה"}
-      description={counterpartyHint}
       size="form2xl"
       onSubmit={submit}
       submitLabel={loan ? "שמירה" : "הוספה"}
@@ -257,14 +248,14 @@ function LoanFormDialog({
           <div className="grid grid-cols-2 gap-2">
             <Button
               type="button"
-              variant={form.direction === "taken" ? "default" : "secondary"}
+              variant={form.direction === "taken" ? "default" : "outline"}
               onClick={() => set("direction", "taken")}
             >
               הלוואה שלקחתי
             </Button>
             <Button
               type="button"
-              variant={form.direction === "given" ? "default" : "secondary"}
+              variant={form.direction === "given" ? "default" : "outline"}
               onClick={() => set("direction", "given")}
             >
               הלוואה שנתתי
@@ -339,12 +330,6 @@ function LoanFormDialog({
                   </option>
                 ))}
               </NativeSelect>
-            </Field>
-            <Field label="תחום">
-              <DomainSelect
-                value={form.business_domain}
-                onChange={(value) => set("business_domain", value)}
-              />
             </Field>
             <Field label="תיעוד ההלוואה">
               <Input
@@ -804,6 +789,9 @@ export default function LoansClient({ loans, summary }: { loans: Loan[]; summary
   const router = useRouter();
   const searchParams = useSearchParams();
   const [filter, setFilter] = useState<"all" | "taken" | "given">("all");
+  // Repaid / written-off loans are done business — keep them out of the list
+  // until the user actually asks to see them.
+  const [showResolved, setShowResolved] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Loan | null>(null);
   const [repayLoan, setRepayLoan] = useState<Loan | null>(null);
@@ -824,9 +812,20 @@ export default function LoansClient({ loans, summary }: { loans: Loan[]; summary
   const [deleteTarget, setDeleteTarget] = useState<Loan | null>(null);
   const [pending, startTransition] = useTransition();
 
+  const resolvedCount = useMemo(
+    () => loans.filter((l) => l.derivedStatus === "repaid" || l.derivedStatus === "written_off").length,
+    [loans]
+  );
+
   const visible = useMemo(
-    () => (filter === "all" ? loans : loans.filter((l) => l.direction === filter)),
-    [loans, filter]
+    () =>
+      loans
+        .filter((l) => filter === "all" || l.direction === filter)
+        .filter(
+          (l) =>
+            showResolved || (l.derivedStatus !== "repaid" && l.derivedStatus !== "written_off")
+        ),
+    [loans, filter, showResolved]
   );
 
   function openCreate() {
@@ -877,18 +876,30 @@ export default function LoansClient({ loans, summary }: { loans: Loan[]; summary
         />
       </AdaptiveGrid>
 
-      <div className="flex flex-wrap gap-2">
-        {filters.map((f) => (
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
+          {filters.map((f) => (
+            <Button
+              key={f.key}
+              type="button"
+              size="sm"
+              variant={filter === f.key ? "default" : "secondary"}
+              onClick={() => setFilter(f.key)}
+            >
+              {f.label}
+            </Button>
+          ))}
+        </div>
+        {resolvedCount > 0 ? (
           <Button
-            key={f.key}
             type="button"
             size="sm"
-            variant={filter === f.key ? "default" : "secondary"}
-            onClick={() => setFilter(f.key)}
+            variant={showResolved ? "default" : "secondary"}
+            onClick={() => setShowResolved((prev) => !prev)}
           >
-            {f.label}
+            {showResolved ? "הסתרת הלוואות שנפרעו" : `הצגת הלוואות שנפרעו (${resolvedCount})`}
           </Button>
-        ))}
+        ) : null}
       </div>
 
       {visible.length === 0 ? (
@@ -935,7 +946,6 @@ export default function LoansClient({ loans, summary }: { loans: Loan[]; summary
                       >
                         {loanStatusLabel(loan.derivedStatus)}
                       </span>
-                      <span className="text-xs text-muted-foreground">{getBusinessDomainLabel(loan.business_domain)}</span>
                     </div>
                     <div className="text-sm text-muted-foreground">
                       <span dir="ltr">{formatDate(loan.loan_date)}</span>

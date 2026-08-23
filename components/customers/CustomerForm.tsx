@@ -432,6 +432,12 @@ export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExi
       className="space-y-3"
       onSubmit={(e) => {
         e.preventDefault();
+        // Stop the submit from bubbling through React's synthetic tree: this form
+        // is often opened (via CustomerPicker) inside another dialog's own <form>
+        // — e.g. the loan dialog — and without this, saving the customer here also
+        // fires that outer form's onSubmit/validation even though it's portaled
+        // out of the DOM.
+        e.stopPropagation();
         void submit();
       }}
     >
