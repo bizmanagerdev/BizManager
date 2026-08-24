@@ -189,6 +189,13 @@ const PATTERN_RULES: Array<{ test: RegExp; hebrew: string }> = [
     hebrew: "לא כל השדות הדרושים מולאו כראוי.",
   },
   {
+    // Postgres 42703: the code sent a column a migration hasn't created yet on
+    // this database — a real, actionable state (not a fluke), so it gets its
+    // own message instead of falling through to the generic "try again".
+    test: /column .* does not exist/i,
+    hebrew: "עדכון במסד הנתונים טרם הופעל. יש להריץ את המיגרציה האחרונה ולנסות שוב, או לפנות למפתח.",
+  },
+  {
     test: /Inventory cannot be negative/i,
     hebrew: "אין מספיק מלאי לאחד הפריטים. צמצמו את הכמות או עדכנו את המלאי ונסו שוב.",
   },

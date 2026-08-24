@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchAllPaged } from "@/lib/supabase/paginate";
 import { STORAGE_BUCKET } from "@/lib/storage";
+import type { WorkSessionRow } from "@/lib/payroll";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Properties (נכסים) — a real estate asset with a lease history and its own
@@ -261,7 +262,7 @@ export async function fetchProperties(supabase: SupabaseClient): Promise<Propert
     const ids = properties.map((p) => p.id).filter(Boolean);
     if (ids.length === 0) return [];
 
-    const [leaseRows, expenseRows, paymentRows] = await Promise.all([
+    const [leaseRows, expenseRows, paymentRows, sessionRows] = await Promise.all([
       fetchAllPaged<Row>((lo, hi) =>
         supabase.from("lease_agreements").select(LEASE_SELECT).in("property_id", ids).range(lo, hi)
       ),
@@ -278,6 +279,9 @@ export async function fetchProperties(supabase: SupabaseClient): Promise<Propert
           .select("property_id,amount_total,payment_status")
           .in("property_id", ids)
           .range(lo, hi)
+      ),
+      fetchAllPaged<Row>((lo, hi) =>
+        supabase.from("attendance_sessions").select("property_id,labor_cost").in("property_id", ids).range(lo, hi)
       ),
     ]);
 
@@ -310,6 +314,16 @@ export async function fetchProperties(supabase: SupabaseClient): Promise<Propert
       if (!propertyId) continue;
       if (!isCollectedPaymentStatus(str(row.payment_status))) continue;
       rollupFor(propertyId).totalIncomeAmount += num(row.amount_total);
+    }
+    // Worker labor cost counts as a real expense the moment the shift happens —
+    // same unconditional rule fetchPropertyActivity uses (see its own comment).
+    for (const row of sessionRows) {
+      const propertyId = str(row.property_id);
+      if (!propertyId) continue;
+      const laborCost = Math.max(0, num(row.labor_cost));
+      const rollup = rollupFor(propertyId);
+      rollup.totalExpenseAmount += laborCost;
+      rollup.paidExpenseAmount += laborCost;
     }
 
     return properties
@@ -398,6 +412,16 @@ export type PropertyTask = {
   dueDate: string | null;
 };
 
+/**
+ * A property-linked shift IS a `WorkSessionRow` — the exact shape
+ * `ExpenseDialog`'s `editingSession` prop expects for admin edit/delete, so no
+ * lossy camelCase transform happens here (unlike the rest of this file's
+ * Property* types, which normalize snake_case DB rows into the app's own
+ * convention). Kept as its own alias so property code doesn't import
+ * `lib/payroll` directly at every call site.
+ */
+export type PropertySession = WorkSessionRow;
+
 export function taskStatusLabel(status: string | null): string {
   switch (status) {
     case "in_progress":
@@ -473,6 +497,7 @@ export type PropertyActivity = {
   documents: PropertyDocument[];
   tasks: PropertyTask[];
   recurringTemplates: PropertyRecurringTemplate[];
+  sessions: PropertySession[];
   rollup: PropertyRollup;
 };
 
@@ -492,10 +517,11 @@ export async function fetchPropertyActivity(
     documents: [],
     tasks: [],
     recurringTemplates: [],
+    sessions: [],
     rollup: EMPTY_ROLLUP,
   };
   try {
-    const [exRes, pmRes, linkRes, tkRes, rtRes] = await Promise.all([
+    const [exRes, pmRes, linkRes, tkRes, rtRes, ssRes] = await Promise.all([
       supabase
         .from("expenses")
         .select(
@@ -509,6 +535,12 @@ export async function fetchPropertyActivity(
       supabase.from("document_links").select("document_id").eq("entity_type", "property").eq("entity_id", propertyId),
       supabase.from("tasks").select("id,subject,status,due_date").eq("property_id", propertyId),
       supabase.from("recurring_expense_templates").select(RECURRING_TEMPLATE_SELECT).eq("property_id", propertyId),
+      supabase
+        .from("attendance_sessions")
+        .select(
+          "id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id"
+        )
+        .eq("property_id", propertyId),
     ]);
 
     const docIds = ((linkRes.data ?? []) as Row[])
@@ -575,26 +607,35 @@ export async function fetchPropertyActivity(
       dueDate: str(r.due_date),
     }));
     const recurringTemplates: PropertyRecurringTemplate[] = ((rtRes.data ?? []) as Row[]).map(normalizeRecurringTemplate);
+    // Kept as raw WorkSessionRow shape — see the PropertySession alias comment.
+    const sessions: PropertySession[] = (ssRes.data ?? []) as PropertySession[];
 
     expenses.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
     payments.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
     documents.sort((a, b) => (b.uploadedAt ?? "").localeCompare(a.uploadedAt ?? ""));
     tasks.sort((a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"));
     recurringTemplates.sort((a, b) => (a.templateName ?? "").localeCompare(b.templateName ?? "", "he"));
+    sessions.sort((a, b) => b.clock_in.localeCompare(a.clock_in));
 
     const paidExpenseAmount = ((exRes.data ?? []) as Row[]).reduce(
       (sum, r) => sum + (str(r.payment_status) === "paid" ? num(r.amount) : num(r.paid_amount)),
       0
     );
+    // Worker labor on this property is a real cost the moment the shift happens
+    // — counted in full here regardless of whether the worker has since been
+    // paid via payroll (that's tracked separately). Mirrors how
+    // project_financials_view folds attendance_sessions.labor_cost into
+    // total_expenses unconditionally.
+    const sessionLaborTotal = sessions.reduce((s, x) => s + Math.max(0, num(x.labor_cost)), 0);
     const rollup: PropertyRollup = {
-      totalExpenseAmount: expenses.reduce((s, e) => s + e.amount, 0),
-      paidExpenseAmount,
+      totalExpenseAmount: expenses.reduce((s, e) => s + e.amount, 0) + sessionLaborTotal,
+      paidExpenseAmount: paidExpenseAmount + sessionLaborTotal,
       totalIncomeAmount: payments
         .filter((p) => isCollectedPaymentStatus(p.paymentStatus))
         .reduce((s, p) => s + p.amount, 0),
     };
 
-    return { expenses, payments, documents, tasks, recurringTemplates, rollup };
+    return { expenses, payments, documents, tasks, recurringTemplates, sessions, rollup };
   } catch {
     return empty;
   }

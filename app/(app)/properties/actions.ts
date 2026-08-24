@@ -6,8 +6,6 @@ import { toHebrewError } from "@/lib/error-messages";
 import { buildPaymentInsert } from "@/lib/payments";
 import type { PropertyInput } from "./PropertyFormFields";
 
-export type { PropertyInput };
-
 export type ActionResult = { ok: true; id?: string } | { ok: false; error: string };
 
 export type LeaseInput = {

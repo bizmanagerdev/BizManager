@@ -16,12 +16,19 @@ import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormDialog } from "@/components/ui/form-dialog";
-import { ExpenseDialog, type EditingExpenseData, type EditingRecurringTemplateData } from "@/components/expenses/ExpenseDialog";
+import {
+  ExpenseDialog,
+  type EditingExpenseData,
+  type EditingRecurringTemplateData,
+  type ExpenseWorkerOption,
+} from "@/components/expenses/ExpenseDialog";
 import { IncomeDialog } from "@/components/financial/IncomeDialog";
 import { CustomerPicker, type PickedCustomer } from "@/components/customers/CustomerPicker";
 import { TaskUpsertDialog, type UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { DOCUMENT_CATEGORIES, inferDefaultDocumentCategory } from "@/lib/documents";
-import { formatCurrency } from "@/lib/payroll";
+import { formatCurrency, type SalaryAgreementRow } from "@/lib/payroll";
+import { shiftHoursText } from "@/components/attendance/DayTile";
+import type { UserRole } from "@/lib/auth/requireProfile";
 import {
   depositTypeLabel,
   leaseStatusLabel,
@@ -33,6 +40,7 @@ import {
   type PropertyActivity,
   type PropertyExpense,
   type PropertyRecurringTemplate,
+  type PropertySession,
   type PropertyTask,
   type PropertyWithLeases,
 } from "@/lib/properties";
@@ -128,12 +136,31 @@ function toEditingExpense(e: PropertyExpense): EditingExpenseData {
   };
 }
 
+/**
+ * A user as this page needs to know them — for the task-assignee list, the
+ * session-worker picker, AND resolving a session row's display name (which
+ * needs EVERY worker who ever clocked in here, active or not — see the
+ * unfiltered query in page.tsx). One shape, filtered differently per use in
+ * this component rather than fetched three different ways server-side.
+ */
+export type PropertyStaffUser = {
+  id: string;
+  label: string;
+  color: string | null;
+  role: string | null;
+  active: boolean;
+  payrollWorkerType: string | null;
+  payTrackingMode: string | null;
+};
+
 type Props = {
   propertyId: string;
   property: PropertyWithLeases;
   activity: PropertyActivity;
-  users: UserOption[];
+  users: PropertyStaffUser[];
+  salaryAgreements: SalaryAgreementRow[];
   currentUserId: string;
+  currentUserRole: UserRole;
 };
 
 type LeaseDocState = { documentId: string | null; documentUrl: string | null; documentFileName: string | null };
@@ -141,15 +168,42 @@ const EMPTY_LEASE_DOC: LeaseDocState = { documentId: null, documentUrl: null, do
 
 const PURCHASE_DOCUMENT_CATEGORIES = new Set(["מסמכי רכישה", "נסח טאבו"]);
 
-export default function PropertyDetailClient({ propertyId, property, activity, users, currentUserId }: Props) {
+export default function PropertyDetailClient({
+  propertyId,
+  property,
+  activity,
+  users,
+  salaryAgreements,
+  currentUserId,
+  currentUserRole,
+}: Props) {
   const router = useRouter();
   const refresh = () => router.refresh();
   const leases = property.leases;
   const address = propertyDisplayName(property);
 
+  // Task assignment stays limited to active, dashboard-having staff (unchanged
+  // behavior from before `users` widened to include everyone).
+  const taskUsers: UserOption[] = users
+    .filter((u) => u.active && u.role !== "worker_no_access")
+    .map((u) => ({ id: u.id, label: u.label, color: u.color }));
+  // The session worker picker allows session-only/קבלנות workers too (they
+  // just can't be assigned a dashboard-facing task) — same as the project page.
+  const workerOptions: ExpenseWorkerOption[] = users
+    .filter((u) => u.active)
+    .map((u) => ({
+      id: u.id,
+      label: u.label,
+      role: (u.role ?? undefined) as ExpenseWorkerOption["role"],
+      payroll_worker_type: u.payrollWorkerType as ExpenseWorkerOption["payroll_worker_type"],
+      pay_tracking_mode: u.payTrackingMode,
+    }));
+
   // expense
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<EditingExpenseData | null>(null);
+  const [editingSession, setEditingSession] = useState<PropertySession | null>(null);
+  const [expenseFilter, setExpenseFilter] = useState<"all" | "expenses" | "sessions">("all");
   // recurring template
   const [templateOpen, setTemplateOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<EditingRecurringTemplateData | null>(null);
@@ -186,7 +240,7 @@ export default function PropertyDetailClient({ propertyId, property, activity, u
   const [docCategory, setDocCategory] = useState("");
   const [docBusy, setDocBusy] = useState(false);
   // delete
-  const [del, setDel] = useState<{ kind: "expense" | "payment" | "document" | "lease" | "task" | "template"; id: string; label: string } | null>(null);
+  const [del, setDel] = useState<{ kind: "expense" | "payment" | "document" | "lease" | "task" | "template" | "session"; id: string; label: string } | null>(null);
   const [delBusy, setDelBusy] = useState(false);
 
   const currentLease = pickCurrentLease(leases);
@@ -198,12 +252,27 @@ export default function PropertyDetailClient({ propertyId, property, activity, u
   const otherDocuments = activity.documents.filter(
     (d) => !PURCHASE_DOCUMENT_CATEGORIES.has(d.documentType ?? "") && d.documentType !== "צילום"
   );
+  const userNameById = new Map(users.map((u) => [u.id, u.label]));
+  const expenseRows: Array<{ kind: "expense"; date: string | null; data: PropertyExpense } | { kind: "session"; date: string | null; data: PropertySession }> = [
+    ...activity.expenses.map((e) => ({ kind: "expense" as const, date: e.date, data: e })),
+    ...activity.sessions.map((s) => ({ kind: "session" as const, date: s.clock_in, data: s })),
+  ].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
+  const visibleExpenseRows = expenseRows.filter(
+    (row) => expenseFilter === "all" || (expenseFilter === "expenses" ? row.kind === "expense" : row.kind === "session")
+  );
   function openAddExpense() {
     setEditingExpense(null);
+    setEditingSession(null);
     setExpenseOpen(true);
   }
   function openEditExpense(e: PropertyExpense) {
     setEditingExpense(toEditingExpense(e));
+    setEditingSession(null);
+    setExpenseOpen(true);
+  }
+  function openEditSession(s: PropertySession) {
+    setEditingExpense(null);
+    setEditingSession(s);
     setExpenseOpen(true);
   }
   function openAddTemplate() {
@@ -429,7 +498,9 @@ export default function PropertyDetailClient({ propertyId, property, activity, u
               ? ["/api/tasks/delete", { id: del.id }]
               : del.kind === "template"
                 ? ["/api/recurring-expenses/delete", { id: del.id }]
-                : ["/api/documents/delete", { document_id: del.id }];
+                : del.kind === "session"
+                  ? ["/api/payroll/sessions/delete", { session_id: del.id }]
+                  : ["/api/documents/delete", { document_id: del.id }];
       const res = await fetch(endpoint[0] as string, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -534,34 +605,88 @@ export default function PropertyDetailClient({ propertyId, property, activity, u
       </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* Expenses */}
+        {/* Expenses — real cash expenses AND worker sessions allocated to this
+            property (their labor cost is a real cost the moment the shift
+            happens, same as on a project — see the rollup comment in
+            lib/properties.ts). One merged, date-sorted list; a filter lets you
+            isolate either kind when there's more than one on the property. */}
         <Card>
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
-            <CardTitle className="text-base">הוצאות ({activity.expenses.length})</CardTitle>
+            <CardTitle className="text-base">הוצאות ({activity.expenses.length + activity.sessions.length})</CardTitle>
             <Button size="sm" onClick={openAddExpense}>
               <AddIcon className="h-4 w-4" />
               הוצאה
             </Button>
           </CardHeader>
           <CardContent className="space-y-2">
-            {activity.expenses.length === 0 ? (
+            {activity.sessions.length > 0 ? (
+              <div className="flex items-center gap-1 pb-1">
+                <Button
+                  size="sm"
+                  variant={expenseFilter === "all" ? "default" : "outline"}
+                  onClick={() => setExpenseFilter("all")}
+                >
+                  הכל
+                </Button>
+                <Button
+                  size="sm"
+                  variant={expenseFilter === "expenses" ? "default" : "outline"}
+                  onClick={() => setExpenseFilter("expenses")}
+                >
+                  הוצאות ({activity.expenses.length})
+                </Button>
+                <Button
+                  size="sm"
+                  variant={expenseFilter === "sessions" ? "default" : "outline"}
+                  onClick={() => setExpenseFilter("sessions")}
+                >
+                  משמרות ({activity.sessions.length})
+                </Button>
+              </div>
+            ) : null}
+            {visibleExpenseRows.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין הוצאות לנכס זה.</p>
             ) : (
-              activity.expenses.map((e) => (
-                <div key={e.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
-                  <div className="min-w-0 text-sm">
-                    <div className="truncate font-medium">{e.description || e.category || "הוצאה"}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {[e.description ? e.category : null, fmtDate(e.date)].filter(Boolean).join(" · ") || "—"}
+              visibleExpenseRows.map((row) =>
+                row.kind === "expense" ? (
+                  <div key={`e-${row.data.id}`} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
+                    <div className="min-w-0 text-sm">
+                      <div className="truncate font-medium">{row.data.description || row.data.category || "הוצאה"}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {[row.data.description ? row.data.category : null, fmtDate(row.data.date)].filter(Boolean).join(" · ") || "—"}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <span className="font-semibold text-destructive">{formatCurrency(row.data.amount)}</span>
+                      <EditButton onClick={() => openEditExpense(row.data)} label="עריכה" />
+                      <DeleteButton
+                        onClick={() => setDel({ kind: "expense", id: row.data.id, label: row.data.category || "הוצאה" })}
+                        label="מחיקת הוצאה"
+                      />
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <span className="font-semibold text-destructive">{formatCurrency(e.amount)}</span>
-                    <EditButton onClick={() => openEditExpense(e)} label="עריכה" />
-                    <DeleteButton onClick={() => setDel({ kind: "expense", id: e.id, label: e.category || "הוצאה" })} label="מחיקת הוצאה" />
+                ) : (
+                  <div key={`s-${row.data.id}`} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
+                    <div className="min-w-0 text-sm">
+                      <div className="truncate font-medium">{userNameById.get(row.data.user_id) ?? "עובד"}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {[fmtDate(row.data.clock_in), shiftHoursText(row.data.clock_in, row.data.clock_out)]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </div>
+                      {row.data.notes ? <div className="truncate text-xs text-muted-foreground">{row.data.notes}</div> : null}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <span className="font-semibold text-destructive">{formatCurrency(row.data.labor_cost ?? 0)}</span>
+                      <EditButton onClick={() => openEditSession(row.data)} label="עריכת משמרת" />
+                      <DeleteButton
+                        onClick={() => setDel({ kind: "session", id: row.data.id, label: `משמרת (${userNameById.get(row.data.user_id) ?? "עובד"})` })}
+                        label="מחיקת משמרת"
+                      />
+                    </div>
                   </div>
-                </div>
-              ))
+                )
+              )
             )}
           </CardContent>
         </Card>
@@ -761,14 +886,23 @@ export default function PropertyDetailClient({ propertyId, property, activity, u
         </Card>
       </div>
 
-      {/* Expense dialog (add + edit) */}
+      {/* Expense dialog — add/edit an expense, or edit a worker session (both close over
+          the same open/save flow; which mode depends on which editing* prop is set). */}
       <ExpenseDialog
         open={expenseOpen}
-        onOpenChange={setExpenseOpen}
+        onOpenChange={(open) => {
+          setExpenseOpen(open);
+          if (!open) setEditingSession(null);
+        }}
         editingExpense={editingExpense}
+        editingSession={editingSession}
         lockedPropertyId={propertyId}
         editingSourceLabel={address}
         showAttachments
+        users={workerOptions}
+        salaryAgreements={salaryAgreements}
+        currentUserId={currentUserId}
+        currentUserRole={currentUserRole}
         onSaved={() => refresh()}
       />
 
@@ -789,7 +923,7 @@ export default function PropertyDetailClient({ propertyId, property, activity, u
         onOpenChange={setTaskOpen}
         mode={editTaskId ? "edit" : "create"}
         taskId={editTaskId}
-        users={users}
+        users={taskUsers}
         currentUserId={currentUserId}
         fixedTarget={{ type: "property", id: propertyId }}
         onSaved={() => refresh()}
