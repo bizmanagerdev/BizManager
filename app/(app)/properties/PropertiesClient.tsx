@@ -12,7 +12,7 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { PageStack, AdaptiveGrid } from "@/components/layout/page-layout";
 import { formatCurrency } from "@/lib/payroll";
-import { propertyDisplayName, type PropertyWithLease } from "@/lib/properties";
+import { propertyDisplayName, propertyTypeLabel, type PropertyWithLease } from "@/lib/properties";
 import AddReminderButton from "@/components/reminders/AddReminderButton";
 import { createProperty, updateProperty, deleteProperty } from "./actions";
 import { EMPTY_PROPERTY_FORM, propertyToForm, PropertyFormFields, type PropertyInput } from "./PropertyFormFields";
@@ -22,7 +22,14 @@ import { invalidateQuickCreateCache } from "@/components/layout/QuickCreateMenu"
 /** "3 חדרים · קומה 2 · 65 מ״ר · 2 חדרי רחצה" — only the parts that are set. */
 function factsLine(p: PropertyWithLease): string {
   return [
-    p.rooms != null ? `${p.rooms} חדרים` : null,
+    // A building has apartments, not a room count.
+    p.propertyType === "building"
+      ? p.apartmentsCount != null
+        ? `${p.apartmentsCount} דירות`
+        : null
+      : p.rooms != null
+        ? `${p.rooms} חדרים`
+        : null,
     p.floor != null ? `קומה ${p.floor}` : null,
     p.squareMeters != null ? `${p.squareMeters} מ״ר` : null,
     p.bathrooms != null ? `${p.bathrooms} חדרי רחצה` : null,
@@ -33,6 +40,7 @@ function factsLine(p: PropertyWithLease): string {
 
 function amenityBadges(p: PropertyWithLease) {
   const items: string[] = [];
+  if (p.propertyType) items.push(propertyTypeLabel(p.propertyType));
   if (p.hasPrivateEntrance) items.push("כניסה פרטית");
   if (p.hasStorageRoom) items.push("מחסן");
   if (p.hasParking) items.push("חניה");

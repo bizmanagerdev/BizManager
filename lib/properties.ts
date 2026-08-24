@@ -17,6 +17,10 @@ export type Property = {
   address: string;
   assetDescription: string | null;
   isActive: boolean;
+  /** 'building' | 'apartment' | 'house' | null (unset) — see propertyTypeLabel(). */
+  propertyType: string | null;
+  /** Only meaningful when propertyType === 'building' — a building has apartments, not a room count. */
+  apartmentsCount: number | null;
   rooms: number | null;
   squareMeters: number | null;
   floor: number | null;
@@ -112,6 +116,8 @@ function normalizeProperty(row: Row): Property {
     address: str(row.address) ?? "",
     assetDescription: str(row.asset_description),
     isActive: row.is_active !== false,
+    propertyType: str(row.property_type),
+    apartmentsCount: numOrNull(row.apartments_count),
     rooms: numOrNull(row.rooms),
     squareMeters: numOrNull(row.square_meters),
     floor: numOrNull(row.floor),
@@ -225,6 +231,19 @@ export function depositTypeLabel(type: string | null): string {
   }
 }
 
+export function propertyTypeLabel(type: string | null): string {
+  switch (type) {
+    case "building":
+      return "בניין";
+    case "apartment":
+      return "דירה";
+    case "house":
+      return "בית";
+    default:
+      return "";
+  }
+}
+
 /**
  * Prefer an active lease with no end_date or a future/today end_date; else the
  * most recently started lease of any status. Ties broken by start_date desc.
@@ -254,7 +273,7 @@ export async function fetchProperties(supabase: SupabaseClient): Promise<Propert
         supabase
           .from("properties")
           .select(
-        "id,name,address,asset_description,is_active,rooms,square_meters,floor,bathrooms,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,is_furnished,furniture_items,created_at,updated_at"
+        "id,name,address,asset_description,is_active,property_type,apartments_count,rooms,square_meters,floor,bathrooms,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,is_furnished,furniture_items,created_at,updated_at"
       )
           .range(lo, hi)
       )
@@ -347,7 +366,7 @@ export async function fetchProperty(
     const { data, error } = await supabase
       .from("properties")
       .select(
-        "id,name,address,asset_description,is_active,rooms,square_meters,floor,bathrooms,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,is_furnished,furniture_items,created_at,updated_at"
+        "id,name,address,asset_description,is_active,property_type,apartments_count,rooms,square_meters,floor,bathrooms,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,is_furnished,furniture_items,created_at,updated_at"
       )
       .eq("id", id)
       .maybeSingle();

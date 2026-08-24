@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { PageStack } from "@/components/layout/page-layout";
 import { formatCurrency } from "@/lib/payroll";
 import { expiryStatus, fetchVehicle, fetchVehicleActivity } from "@/lib/vehicles";
+import { propertyDisplayName } from "@/lib/properties";
 import type { UserOption } from "@/components/tasks/TaskUpsertDialog";
 import VehicleActivityClient from "./VehicleActivityClient";
 
@@ -81,7 +82,7 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
       .select("order_id,customer_name,order_date")
       .order("order_date", { ascending: false })
       .range(0, 499),
-    supabase.from("properties").select("id,address").order("address", { ascending: true }).range(0, 999),
+    supabase.from("properties").select("id,name,address").order("address", { ascending: true }).range(0, 999),
   ]);
 
   const users: UserOption[] = ((usersResult.data ?? []) as Array<Record<string, unknown>>).map((u) => ({
@@ -101,7 +102,14 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
     }))
     .filter((o) => o.id);
   const properties: Opt[] = ((propertiesResult.data ?? []) as Array<Record<string, unknown>>)
-    .map((p) => ({ id: String(p.id ?? ""), label: (typeof p.address === "string" && p.address) || "נכס" }))
+    .map((p) => ({
+      id: String(p.id ?? ""),
+      label:
+        propertyDisplayName({
+          name: typeof p.name === "string" ? p.name : null,
+          address: typeof p.address === "string" ? p.address : "",
+        }) || "נכס",
+    }))
     .filter((p) => p.id);
 
   const net = activity.rollup.totalIncomeAmount - activity.rollup.paidExpenseAmount;

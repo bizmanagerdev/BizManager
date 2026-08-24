@@ -6,6 +6,7 @@
 
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { DateInput } from "@/components/ui/date-input";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -39,6 +40,10 @@ export type PropertyInput = {
   address: string;
   asset_description: string;
   is_active: boolean;
+  /** '' | 'building' | 'apartment' | 'house' */
+  property_type: string;
+  /** Only used when property_type === 'building' */
+  apartments_count: string;
   rooms: string;
   square_meters: string;
   floor: string;
@@ -63,6 +68,8 @@ export const EMPTY_PROPERTY_FORM: PropertyInput = {
   address: "",
   asset_description: "",
   is_active: true,
+  property_type: "",
+  apartments_count: "",
   rooms: "",
   square_meters: "",
   floor: "",
@@ -88,6 +95,8 @@ export function propertyToForm(p: Property): PropertyInput {
     address: p.address ?? "",
     asset_description: p.assetDescription ?? "",
     is_active: p.isActive,
+    property_type: p.propertyType ?? "",
+    apartments_count: p.apartmentsCount != null ? String(p.apartmentsCount) : "",
     rooms: p.rooms != null ? String(p.rooms) : "",
     square_meters: p.squareMeters != null ? String(p.squareMeters) : "",
     floor: p.floor != null ? String(p.floor) : "",
@@ -196,7 +205,7 @@ export function PropertyBasicFields({ form, set }: FieldsProps) {
   return (
     <div className="space-y-3">
       <label className="block space-y-1 text-sm">
-        <span className="font-medium">שם הנכס</span>
+        <span className="font-medium">שם הנכס *</span>
         <Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="לדוגמה: דירה 3, ריבל שמח 29" />
       </label>
       <label className="block space-y-1 text-sm">
@@ -204,14 +213,30 @@ export function PropertyBasicFields({ form, set }: FieldsProps) {
         <Input value={form.address} onChange={(e) => set("address", e.target.value)} />
       </label>
       <label className="block space-y-1 text-sm">
+        <span className="font-medium">סוג נכס</span>
+        <NativeSelect value={form.property_type} onChange={(e) => set("property_type", e.target.value)}>
+          <option value="">ללא בחירה</option>
+          <option value="building">בניין</option>
+          <option value="apartment">דירה</option>
+          <option value="house">בית</option>
+        </NativeSelect>
+      </label>
+      <label className="block space-y-1 text-sm">
         <span className="font-medium">פירוט הנכס</span>
         <Textarea rows={2} value={form.asset_description} onChange={(e) => set("asset_description", e.target.value)} />
       </label>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <label className="block space-y-1 text-sm">
-          <span className="font-medium">מספר חדרים</span>
-          <Input inputMode="decimal" value={form.rooms} onChange={(e) => set("rooms", e.target.value)} />
-        </label>
+        {form.property_type === "building" ? (
+          <label className="block space-y-1 text-sm">
+            <span className="font-medium">מספר דירות בבניין</span>
+            <Input inputMode="numeric" value={form.apartments_count} onChange={(e) => set("apartments_count", e.target.value)} />
+          </label>
+        ) : (
+          <label className="block space-y-1 text-sm">
+            <span className="font-medium">מספר חדרים</span>
+            <Input inputMode="decimal" value={form.rooms} onChange={(e) => set("rooms", e.target.value)} />
+          </label>
+        )}
         <label className="block space-y-1 text-sm">
           <span className="font-medium">מ״ר</span>
           <Input inputMode="decimal" value={form.square_meters} onChange={(e) => set("square_meters", e.target.value)} />

@@ -21,6 +21,7 @@ import { loadDomainProof, type DomainProofMap } from "@/lib/financial/domainProo
 import { loadCustomerRanking, type CustomerRankingReport } from "@/lib/financial/customerRanking";
 import { ensureRecurringExpensesForDate } from "@/lib/recurring-expenses";
 import { loadProjectedOutflowEntries } from "@/lib/payables";
+import { propertyDisplayName } from "@/lib/properties";
 import PageAlertBar from "@/components/reminders/PageAlertBar";
 
 type Row = Record<string, unknown>;
@@ -157,7 +158,7 @@ export default async function CashFlowPageContent({
         .range(0, 999),
       supabase
         .from("properties")
-        .select("id,address,is_active")
+        .select("id,name,address,is_active")
         .order("address", { ascending: true })
         .range(0, 999),
       supabase
@@ -180,7 +181,7 @@ export default async function CashFlowPageContent({
       .filter((row) => row.is_active !== false)
       .map((row) => ({
         id: getString(row, "id") ?? "",
-        label: getString(row, "address") ?? "",
+        label: propertyDisplayName({ name: getString(row, "name"), address: getString(row, "address") ?? "" }),
       }))
       .filter((row) => row.id && row.label);
 

@@ -2,6 +2,7 @@ import AppShell from "@/components/layout/AppShell";
 import PageAlertBar from "@/components/reminders/PageAlertBar";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
+import { propertyDisplayName } from "@/lib/properties";
 import { t } from "@/lib/i18n/t";
 import { commonDict } from "@/lib/i18n/dictionaries/common";
 import TasksPageClient from "./TasksPageClient";
@@ -60,7 +61,7 @@ export default async function TasksPage({
       .range(0, 999),
     supabase
       .from("properties")
-      .select("id,address,is_active")
+      .select("id,name,address,is_active")
       .order("address", { ascending: true })
       .range(0, 999),
     // Active customers for the "linked customer" picker (searchable, A–Z). The card
@@ -110,7 +111,10 @@ export default async function TasksPage({
 
   const propertyOptions = propertyRows
     .filter((p) => p.is_active !== false)
-    .map((p) => ({ id: getString(p, "id") ?? "", label: getString(p, "address") ?? "" }))
+    .map((p) => ({
+      id: getString(p, "id") ?? "",
+      label: propertyDisplayName({ name: getString(p, "name"), address: getString(p, "address") ?? "" }),
+    }))
     .filter((p) => p.id && p.label);
 
   const customerOptions = customerRows

@@ -10,13 +10,15 @@ import { EditButton } from "@/components/ui/icon-button";
 import { invalidateQuickCreateCache } from "@/components/layout/QuickCreateMenu";
 import { updateProperty } from "../actions";
 import { PropertyBasicFields, propertyToForm, type PropertyInput } from "../PropertyFormFields";
-import type { Property } from "@/lib/properties";
+import { propertyTypeLabel, type Property } from "@/lib/properties";
 
 const BASIC_KEYS = [
   "name",
   "address",
   "asset_description",
   "is_active",
+  "property_type",
+  "apartments_count",
   "rooms",
   "square_meters",
   "floor",
@@ -67,6 +69,10 @@ export default function PropertyDetailsCard({ propertyId, property }: { property
       toast.error("יש להזין כתובת.");
       return;
     }
+    if (!draft.name.trim()) {
+      toast.error("יש להזין שם לנכס.");
+      return;
+    }
     setBusy(true);
     try {
       const result = await updateProperty(propertyId, { ...propertyToForm(property), ...pick(draft, BASIC_KEYS) });
@@ -114,12 +120,21 @@ export default function PropertyDetailsCard({ propertyId, property }: { property
   }
 
   const facts = [
-    property.rooms != null ? `${property.rooms} חדרים` : null,
+    // A building has apartments, not a room count — everything else keeps
+    // showing rooms exactly as before (including an unset type, unchanged behavior).
+    property.propertyType === "building"
+      ? property.apartmentsCount != null
+        ? `${property.apartmentsCount} דירות`
+        : null
+      : property.rooms != null
+        ? `${property.rooms} חדרים`
+        : null,
     property.floor != null ? `קומה ${property.floor}` : null,
     property.squareMeters != null ? `${property.squareMeters} מ״ר` : null,
     property.bathrooms != null ? `${property.bathrooms} חדרי רחצה` : null,
   ].filter(Boolean);
   const badges = [
+    property.propertyType ? { label: propertyTypeLabel(property.propertyType), variant: "outline" as const } : null,
     !property.isActive ? { label: "לא פעיל", variant: "neutral" as const } : null,
     property.hasPrivateEntrance ? { label: "כניסה פרטית", variant: "outline" as const } : null,
     property.hasStorageRoom ? { label: "מחסן", variant: "outline" as const } : null,

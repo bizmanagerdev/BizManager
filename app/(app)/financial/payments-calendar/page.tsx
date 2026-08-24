@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ensureRecurringExpensesForDate } from "@/lib/recurring-expenses";
 import { loadPaymentCalendarItems, type PaymentCalendarItem } from "@/lib/payables";
 import { loadAccounts, type Account } from "@/lib/accounts";
+import { propertyDisplayName } from "@/lib/properties";
 import type { RecurringExpenseTemplateItem } from "@/app/(app)/financial/RecurringExpensesManager";
 import PaymentsHubClient from "./PaymentsHubClient";
 
@@ -60,7 +61,7 @@ export default async function PaymentsCalendarPage() {
       .order("created_at", { ascending: true }),
     supabase.from("project_dashboard_view").select("id,name,customer_name")
       .order("updated_at", { ascending: false }).range(0, 999),
-    supabase.from("properties").select("id,address,is_active")
+    supabase.from("properties").select("id,name,address,is_active")
       .order("address", { ascending: true }).range(0, 999),
     supabase.from("order_overview_view").select("order_id,customer_name,order_date")
       .order("order_date", { ascending: false }).range(0, 499),
@@ -123,7 +124,10 @@ export default async function PaymentsCalendarPage() {
 
   const propertyOptions: Option[] = ((propertiesResult.data ?? []) as Row[])
     .filter((r) => r.is_active !== false)
-    .map((r) => ({ id: getString(r, "id") ?? "", label: getString(r, "address") ?? "" }))
+    .map((r) => ({
+      id: getString(r, "id") ?? "",
+      label: propertyDisplayName({ name: getString(r, "name"), address: getString(r, "address") ?? "" }),
+    }))
     .filter((o) => o.id && o.label);
 
   const orderOptions: Option[] = ((ordersResult.data ?? []) as Row[])

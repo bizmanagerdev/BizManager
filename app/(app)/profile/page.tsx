@@ -17,6 +17,7 @@ import { loadMyShiftState } from "@/lib/attendance/my-shift";
 import { t } from "@/lib/i18n/t";
 import { profileDict } from "@/lib/i18n/dictionaries/profile";
 import { loadMyPayroll } from "@/lib/my-payroll";
+import { propertyDisplayName } from "@/lib/properties";
 import {
   BONUS_ITEM_TYPE,
   PAYSLIP_ITEM_COLUMNS,
@@ -93,7 +94,7 @@ export default async function ProfilePage() {
         .range(0, 199),
       supabase
         .from("properties")
-        .select("id,address")
+        .select("id,name,address")
         .order("address", { ascending: true })
         .range(0, 199),
     ]);
@@ -162,7 +163,7 @@ export default async function ProfilePage() {
       ? supabase.from("projects").select("id,name").in("id", linkedProjectIds)
       : Promise.resolve({ data: [] as Row[] }),
     linkedPropertyIds.length
-      ? supabase.from("properties").select("id,address").in("id", linkedPropertyIds)
+      ? supabase.from("properties").select("id,name,address").in("id", linkedPropertyIds)
       : Promise.resolve({ data: [] as Row[] }),
   ]);
   const linkLabelById = new Map<string, string>();
@@ -173,8 +174,11 @@ export default async function ProfilePage() {
   }
   for (const row of (linkedPropertiesRes.data ?? []) as Row[]) {
     const id = typeof row.id === "string" ? row.id : "";
-    const address = typeof row.address === "string" ? row.address.trim() : "";
-    if (id && address) linkLabelById.set(id, address);
+    const label = propertyDisplayName({
+      name: typeof row.name === "string" ? row.name : null,
+      address: typeof row.address === "string" ? row.address : "",
+    });
+    if (id && label) linkLabelById.set(id, label);
   }
   const linkLabelBySessionId: Record<string, string> = {};
   for (const session of sessionRows2) {
@@ -206,7 +210,10 @@ export default async function ProfilePage() {
   const propertyOptions: LinkedOption[] = ((propertyRows ?? []) as Row[])
     .map((row) => ({
       id: typeof row.id === "string" ? row.id : "",
-      label: typeof row.address === "string" && row.address.trim() ? row.address.trim() : "",
+      label: propertyDisplayName({
+        name: typeof row.name === "string" ? row.name : null,
+        address: typeof row.address === "string" ? row.address : "",
+      }),
     }))
     .filter((row) => row.id && row.label);
 

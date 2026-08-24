@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AddIcon, DocumentIcon, TaskIcon } from "@/components/ui/icons";
+import { AddIcon, ChevronDownIcon, DocumentIcon, TaskIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -29,6 +29,9 @@ import { DOCUMENT_CATEGORIES, inferDefaultDocumentCategory } from "@/lib/documen
 import { formatCurrency, type SalaryAgreementRow } from "@/lib/payroll";
 import { shiftHoursText } from "@/components/attendance/DayTile";
 import type { UserRole } from "@/lib/auth/requireProfile";
+import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
+import { paymentRecordStatusLabel } from "@/lib/payments";
+import { cn } from "@/lib/utils";
 import {
   depositTypeLabel,
   leaseStatusLabel,
@@ -58,6 +61,90 @@ function fmtDate(value: string | null) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value.slice(0, 10);
   return new Intl.DateTimeFormat("he-IL", { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
+}
+
+type RowDetail = { label: string; value: string };
+
+/** Whatever isn't already shown inline on the row — only when actually set. */
+function expenseRowDetails(e: PropertyExpense): RowDetail[] {
+  const details: RowDetail[] = [];
+  if (e.notes) details.push({ label: "הערות", value: e.notes });
+  if (e.paymentMethod) details.push({ label: "אמצעי תשלום", value: paymentMethodLabel(e.paymentMethod) });
+  if (e.paymentStatus && e.paymentStatus !== "paid") {
+    details.push({ label: "סטטוס תשלום", value: paymentRecordStatusLabel(e.paymentStatus) });
+  }
+  if (e.paymentStatus === "partial" && e.paidAmount != null) {
+    details.push({ label: "שולם", value: formatCurrency(e.paidAmount) });
+  }
+  return details;
+}
+
+/** Notes already show inline for a session row — this is everything ELSE. */
+function sessionRowDetails(s: PropertySession): RowDetail[] {
+  const details: RowDetail[] = [];
+  if (s.is_billable_to_customer) {
+    details.push({ label: "חיוב לשוכר", value: formatCurrency(s.bill_to_customer_amount ?? 0) });
+  }
+  if (s.payment_status) {
+    details.push({ label: "תשלום לעובד", value: paymentRecordStatusLabel(s.payment_status) });
+  }
+  return details;
+}
+
+/**
+ * The row shell shared by both expense and session rows in the merged
+ * "הוצאות" list: a chevron that opens a details panel below the row when
+ * there's something not already shown inline (a plain spacer, no arrow, when
+ * there isn't — no decorative UI for an empty details list).
+ */
+function ExpandableRow({
+  rowKey,
+  details,
+  expanded,
+  onToggle,
+  trailing,
+  children,
+}: {
+  rowKey: string;
+  details: RowDetail[];
+  expanded: boolean;
+  onToggle: (key: string) => void;
+  trailing: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="border-b pb-2 last:border-0 last:pb-0">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          {details.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => onToggle(rowKey)}
+              aria-expanded={expanded}
+              aria-label={expanded ? "הסתרת פרטים" : "הצגת פרטים נוספים"}
+              className="shrink-0 text-muted-foreground"
+            >
+              <ChevronDownIcon className={cn("h-4 w-4 transition-transform", expanded ? "" : "-rotate-90")} />
+            </button>
+          ) : (
+            <span className="w-4 shrink-0" />
+          )}
+          <div className="min-w-0 flex-1">{children}</div>
+        </div>
+        {trailing}
+      </div>
+      {expanded && details.length > 0 ? (
+        <div className="me-5 mt-1 space-y-0.5 rounded-md bg-muted/30 p-2 text-xs">
+          {details.map((d) => (
+            <div key={d.label} className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">{d.label}</span>
+              <span>{d.value}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 const EMPTY_LEASE_FORM = {
@@ -204,6 +291,15 @@ export default function PropertyDetailClient({
   const [editingExpense, setEditingExpense] = useState<EditingExpenseData | null>(null);
   const [editingSession, setEditingSession] = useState<PropertySession | null>(null);
   const [expenseFilter, setExpenseFilter] = useState<"all" | "expenses" | "sessions">("all");
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  function toggleExpandedRow(key: string) {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
   // recurring template
   const [templateOpen, setTemplateOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<EditingRecurringTemplateData | null>(null);
@@ -647,46 +743,65 @@ export default function PropertyDetailClient({
             {visibleExpenseRows.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין הוצאות לנכס זה.</p>
             ) : (
-              visibleExpenseRows.map((row) =>
-                row.kind === "expense" ? (
-                  <div key={`e-${row.data.id}`} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
-                    <div className="min-w-0 text-sm">
-                      <div className="truncate font-medium">{row.data.description || row.data.category || "הוצאה"}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {[row.data.description ? row.data.category : null, fmtDate(row.data.date)].filter(Boolean).join(" · ") || "—"}
+              visibleExpenseRows.map((row) => {
+                const rowKey = row.kind === "expense" ? `e-${row.data.id}` : `s-${row.data.id}`;
+                const details = row.kind === "expense" ? expenseRowDetails(row.data) : sessionRowDetails(row.data);
+                return (
+                  <ExpandableRow
+                    key={rowKey}
+                    rowKey={rowKey}
+                    details={details}
+                    expanded={expandedRows.has(rowKey)}
+                    onToggle={toggleExpandedRow}
+                    trailing={
+                      row.kind === "expense" ? (
+                        <div className="flex shrink-0 items-center gap-1">
+                          <span className="font-semibold text-destructive">{formatCurrency(row.data.amount)}</span>
+                          <EditButton onClick={() => openEditExpense(row.data)} label="עריכה" />
+                          <DeleteButton
+                            onClick={() => setDel({ kind: "expense", id: row.data.id, label: row.data.category || "הוצאה" })}
+                            label="מחיקת הוצאה"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex shrink-0 items-center gap-1">
+                          <span className="font-semibold text-destructive">{formatCurrency(row.data.labor_cost ?? 0)}</span>
+                          <EditButton onClick={() => openEditSession(row.data)} label="עריכת משמרת" />
+                          <DeleteButton
+                            onClick={() =>
+                              setDel({
+                                kind: "session",
+                                id: row.data.id,
+                                label: `משמרת (${userNameById.get(row.data.user_id) ?? "עובד"})`,
+                              })
+                            }
+                            label="מחיקת משמרת"
+                          />
+                        </div>
+                      )
+                    }
+                  >
+                    {row.kind === "expense" ? (
+                      <div className="text-sm">
+                        <div className="truncate font-medium">{row.data.description || row.data.category || "הוצאה"}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {[row.data.description ? row.data.category : null, fmtDate(row.data.date)].filter(Boolean).join(" · ") || "—"}
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <span className="font-semibold text-destructive">{formatCurrency(row.data.amount)}</span>
-                      <EditButton onClick={() => openEditExpense(row.data)} label="עריכה" />
-                      <DeleteButton
-                        onClick={() => setDel({ kind: "expense", id: row.data.id, label: row.data.category || "הוצאה" })}
-                        label="מחיקת הוצאה"
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div key={`s-${row.data.id}`} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
-                    <div className="min-w-0 text-sm">
-                      <div className="truncate font-medium">{userNameById.get(row.data.user_id) ?? "עובד"}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {[fmtDate(row.data.clock_in), shiftHoursText(row.data.clock_in, row.data.clock_out)]
-                          .filter(Boolean)
-                          .join(" · ")}
+                    ) : (
+                      <div className="text-sm">
+                        <div className="truncate font-medium">{userNameById.get(row.data.user_id) ?? "עובד"}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {[fmtDate(row.data.clock_in), shiftHoursText(row.data.clock_in, row.data.clock_out)]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </div>
+                        {row.data.notes ? <div className="truncate text-xs text-muted-foreground">{row.data.notes}</div> : null}
                       </div>
-                      {row.data.notes ? <div className="truncate text-xs text-muted-foreground">{row.data.notes}</div> : null}
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <span className="font-semibold text-destructive">{formatCurrency(row.data.labor_cost ?? 0)}</span>
-                      <EditButton onClick={() => openEditSession(row.data)} label="עריכת משמרת" />
-                      <DeleteButton
-                        onClick={() => setDel({ kind: "session", id: row.data.id, label: `משמרת (${userNameById.get(row.data.user_id) ?? "עובד"})` })}
-                        label="מחיקת משמרת"
-                      />
-                    </div>
-                  </div>
-                )
-              )
+                    )}
+                  </ExpandableRow>
+                );
+              })
             )}
           </CardContent>
         </Card>

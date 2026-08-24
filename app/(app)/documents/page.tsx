@@ -2,6 +2,7 @@ import AppShell from "@/components/layout/AppShell";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { resolveUserDisplayNamesForValues } from "@/lib/audit";
 import { isExpenseBusinessDomain, mapProjectTypeToExpenseDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
+import { propertyDisplayName } from "@/lib/properties";
 import DocumentsArchiveClient, {
   type ArchiveTargetOption,
   type DocumentArchiveFilters,
@@ -61,6 +62,7 @@ type ProjectUploadRow = {
 
 type PropertyLookupRow = {
   id: string;
+  name: string | null;
   address: string | null;
 };
 
@@ -275,7 +277,7 @@ export default async function DocumentsPage({
       .range(0, 999),
     supabase
       .from("properties")
-      .select("id,address")
+      .select("id,name,address")
       .order("address", { ascending: true })
       .range(0, 999),
     taskIds.size > 0
@@ -339,7 +341,7 @@ export default async function DocumentsPage({
   const uploadPropertyOptions: ArchiveTargetOption[] = ((allPropertiesResult.data ?? []) as PropertyLookupRow[])
     .map((row) => ({
       id: row.id,
-      label: normalizeString(row.address) || `Property ${row.id.slice(0, 8)}`,
+      label: propertyDisplayName({ name: row.name, address: row.address ?? "" }) || `Property ${row.id.slice(0, 8)}`,
     }))
     .sort(compareByLabel);
 
@@ -403,7 +405,9 @@ export default async function DocumentsPage({
 
         if (entityType === "property") {
           const property = propertiesById.get(entityId);
-          const label = normalizeString(property?.address) || `Property ${entityId.slice(0, 8)}`;
+          const label =
+            propertyDisplayName({ name: property?.name ?? null, address: property?.address ?? "" }) ||
+            `Property ${entityId.slice(0, 8)}`;
           relatedProperties.set(entityId, { id: entityId, label });
           relatedBusinessDomains.add("property_management");
           linkedEntities.set(`${entityType}:${entityId}`, {
@@ -450,7 +454,7 @@ export default async function DocumentsPage({
             const property = propertiesById.get(propertyId);
             relatedProperties.set(propertyId, {
               id: propertyId,
-              label: normalizeString(property?.address) || "Property",
+              label: propertyDisplayName({ name: property?.name ?? null, address: property?.address ?? "" }) || "Property",
             });
             relatedBusinessDomains.add("property_management");
           }

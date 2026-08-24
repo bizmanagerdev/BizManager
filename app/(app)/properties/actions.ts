@@ -51,6 +51,8 @@ function propertyFields(input: PropertyInput) {
     address: clean(input.address) ?? "",
     asset_description: clean(input.asset_description),
     is_active: input.is_active,
+    property_type: clean(input.property_type),
+    apartments_count: numOrNull(input.apartments_count),
     rooms: numOrNull(input.rooms),
     square_meters: numOrNull(input.square_meters),
     floor: numOrNull(input.floor),
@@ -76,6 +78,7 @@ export async function createProperty(input: PropertyInput): Promise<ActionResult
     const ctx = await getStaffContext();
     if (!ctx.ok) return { ok: false, error: ctx.error };
     if (!clean(input.address)) return { ok: false, error: "יש להזין כתובת." };
+    if (!clean(input.name)) return { ok: false, error: "יש להזין שם לנכס." };
 
     const { data, error } = await ctx.supabase
       .from("properties")
@@ -98,6 +101,7 @@ export async function updateProperty(id: string, input: PropertyInput): Promise<
     if (!ctx.ok) return { ok: false, error: ctx.error };
     if (!id) return { ok: false, error: "חסר מזהה נכס." };
     if (!clean(input.address)) return { ok: false, error: "יש להזין כתובת." };
+    if (!clean(input.name)) return { ok: false, error: "יש להזין שם לנכס." };
 
     const { error } = await ctx.supabase
       .from("properties")

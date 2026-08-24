@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { collectLockedSessionIds, type SalaryCenterProjectOption, type SalaryCenterUserRow, type SessionPublicRow } from "@/lib/payroll-center";
 import type { PayrollPeriodRow } from "@/lib/payroll";
 import { isPayrollWorkerType } from "@/lib/payroll-worker-type";
+import { propertyDisplayName } from "@/lib/properties";
 
 type Row = Record<string, unknown>;
 
@@ -65,6 +66,19 @@ function mapOptions(rows: Row[] | null | undefined, labelKey: "name" | "address"
     .filter((row) => row.id && row.label);
 }
 
+/** Property options show the NAME (falling back to address) — not the raw address. */
+function mapPropertyOptions(rows: Row[] | null | undefined): SalaryCenterProjectOption[] {
+  return ((rows ?? []) as Array<Row>)
+    .map((row) => ({
+      id: typeof row.id === "string" ? row.id : "",
+      label: propertyDisplayName({
+        name: typeof row.name === "string" ? row.name : null,
+        address: typeof row.address === "string" ? row.address : "",
+      }),
+    }))
+    .filter((row) => row.id && row.label);
+}
+
 export type PayrollPageData = {
   users: SalaryCenterUserRow[];
   sessions: SessionPublicRow[];
@@ -98,12 +112,12 @@ export async function loadAttendanceClassificationOptions(
 ): Promise<AttendanceClassificationOptions> {
   const [projectsResult, propertiesResult] = await Promise.all([
     supabase.from("project_dashboard_view").select("id,name").order("name", { ascending: true }).range(0, 999),
-    supabase.from("properties").select("id,address").order("address", { ascending: true }).range(0, 999),
+    supabase.from("properties").select("id,name,address").order("address", { ascending: true }).range(0, 999),
   ]);
 
   return {
     projectOptions: mapOptions((projectsResult.data ?? []) as Row[], "name"),
-    propertyOptions: mapOptions((propertiesResult.data ?? []) as Row[], "address"),
+    propertyOptions: mapPropertyOptions((propertiesResult.data ?? []) as Row[]),
     loadError: projectsResult.error?.message ?? propertiesResult.error?.message ?? null,
   };
 }
@@ -172,7 +186,7 @@ export async function loadPayrollPageData(supabase: SupabaseClient): Promise<Pay
       .range(0, 999),
     scanSessions(),
     supabase.from("project_dashboard_view").select("id,name").order("name", { ascending: true }).range(0, 999),
-    supabase.from("properties").select("id,address").order("address", { ascending: true }).range(0, 999),
+    supabase.from("properties").select("id,name,address").order("address", { ascending: true }).range(0, 999),
     supabase.from("payroll_periods").select("id,period_month,start_date,end_date,status").range(0, 119),
   ]);
 
@@ -197,7 +211,7 @@ export async function loadPayrollPageData(supabase: SupabaseClient): Promise<Pay
     users: mapUsers((usersResult.data ?? []) as Row[]),
     sessions: mapSessions((sessionsResult.data ?? []) as Row[], lockedIds),
     projectOptions: mapOptions((projectsResult.data ?? []) as Row[], "name"),
-    propertyOptions: mapOptions((propertiesResult.data ?? []) as Row[], "address"),
+    propertyOptions: mapPropertyOptions((propertiesResult.data ?? []) as Row[]),
     periods,
     loadError,
   };
