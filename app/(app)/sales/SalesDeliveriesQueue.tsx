@@ -9,7 +9,7 @@ import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AddressLink } from "@/components/ui/address-link";
-import { ContactLink } from "@/components/ui/contact-link";
+import { ContactLink, ContactTapZone } from "@/components/ui/contact-link";
 import { Card } from "@/components/ui/card";
 
 import { DELIVERY_REGIONS, formatDeliveryAddress, getCityRegion } from "@/lib/ui/cities";
@@ -581,7 +581,11 @@ export default function SalesDeliveriesQueue({
                                   is a thumb target, not a line of text. */}
                               {group.customerPhone ? (
                                 <div className="border-t border-border/60 p-3">
-                                  <ContactLink
+                                  {/* A div, not a link: tapping anywhere still calls
+                                      (or copies, on desktop), but the name and number
+                                      stay plain text so a long-press selects and copies
+                                      them instead of opening the tel: link's own menu. */}
+                                  <ContactTapZone
                                     kind="tel"
                                     value={group.customerPhone}
                                     className="flex items-center gap-2.5 rounded-xl bg-muted/50 p-2"
@@ -604,7 +608,7 @@ export default function SalesDeliveriesQueue({
                                         {group.customerPhone}
                                       </span>
                                     </span>
-                                  </ContactLink>
+                                  </ContactTapZone>
                                 </div>
                               ) : null}
 

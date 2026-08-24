@@ -59,21 +59,14 @@ export function ContactLink({ kind, value, children, className, onClick, title, 
   const [isDesktop, setIsDesktop] = React.useState(false);
   React.useEffect(() => setIsDesktop(usesMouse()), []);
 
-  async function handleClick(event: React.MouseEvent<HTMLAnchorElement>) {
+  function handleClick(event: React.MouseEvent<HTMLAnchorElement>) {
     onClick?.(event);
     if (event.defaultPrevented) return;
     // Let the browser handle modified clicks (new tab, save, etc.) untouched.
     if (!isDesktop || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
 
     event.preventDefault();
-    try {
-      await navigator.clipboard.writeText(value);
-      toast.success(COPY_LABEL[kind]);
-    } catch {
-      // Clipboard can be blocked by permissions or a non-secure origin. Don't
-      // swallow it — the user pressed something and deserves an answer.
-      toast.error("ההעתקה נכשלה. סמנו את הטקסט והעתיקו ידנית.");
-    }
+    void copyContactValue(kind, value);
   }
 
   const defaultTitle = kind === "tel" ? "חיוג" : "שליחת מייל";
@@ -83,11 +76,66 @@ export function ContactLink({ kind, value, children, className, onClick, title, 
       href={kind === "tel" ? telHref(value) : `mailto:${value}`}
       title={title ?? (isDesktop ? `${defaultTitle} · לחיצה מעתיקה` : defaultTitle)}
       className={cn("cursor-pointer", className)}
-      onClick={(event) => void handleClick(event)}
+      onClick={handleClick}
       {...props}
     >
       {children ?? value}
     </a>
+  );
+}
+
+async function copyContactValue(kind: ContactKind, value: string) {
+  try {
+    await navigator.clipboard.writeText(value);
+    toast.success(COPY_LABEL[kind]);
+  } catch {
+    toast.error("ההעתקה נכשלה. סמנו את הטקסט והעתיקו ידנית.");
+  }
+}
+
+export interface ContactTapZoneProps extends Omit<React.HTMLAttributes<HTMLDivElement>, "onClick"> {
+  kind: ContactKind;
+  value: string;
+  children: React.ReactNode;
+}
+
+/**
+ * Same tap-to-call / click-to-copy behavior as ContactLink, but renders a
+ * div instead of an <a> — for a block that mixes the contact value with
+ * other text (e.g. a customer name) that must stay natively selectable.
+ * An <a href="tel:…"> claims long-press for the browser's own link menu
+ * over everything inside it, which blocks copying that other text.
+ */
+export function ContactTapZone({ kind, value, children, className, title, ...props }: ContactTapZoneProps) {
+  const [isDesktop, setIsDesktop] = React.useState(false);
+  React.useEffect(() => setIsDesktop(usesMouse()), []);
+
+  function handleActivate() {
+    if (isDesktop) {
+      void copyContactValue(kind, value);
+      return;
+    }
+    window.location.href = kind === "tel" ? telHref(value) : `mailto:${value}`;
+  }
+
+  const defaultTitle = kind === "tel" ? "חיוג" : "שליחת מייל";
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      title={title ?? (isDesktop ? `${defaultTitle} · לחיצה מעתיקה` : defaultTitle)}
+      className={cn("cursor-pointer", className)}
+      onClick={handleActivate}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        handleActivate();
+      }}
+      {...props}
+    >
+      {children}
+    </div>
   );
 }
 
