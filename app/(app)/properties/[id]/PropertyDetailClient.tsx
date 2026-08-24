@@ -3,7 +3,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AddIcon, ChevronDownIcon, DocumentIcon, TaskIcon } from "@/components/ui/icons";
+import { AddIcon, ChevronDownIcon, DeleteIcon, DocumentIcon, EditIcon, TaskIcon } from "@/components/ui/icons";
+import { SwipeActions } from "@/components/ui/swipe-actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -95,25 +96,42 @@ function sessionRowDetails(s: PropertySession): RowDetail[] {
  * The row shell shared by both expense and session rows in the merged
  * "הוצאות" list: a chevron that opens a details panel below the row when
  * there's something not already shown inline (a plain spacer, no arrow, when
- * there isn't — no decorative UI for an empty details list).
+ * there isn't — no decorative UI for an empty details list), and edit/delete
+ * revealed by a side swipe (mirrors components/attendance/SessionList.tsx's
+ * SessionSwipeRow) rather than sitting as permanently-visible icon buttons.
  */
 function ExpandableRow({
   rowKey,
   details,
   expanded,
   onToggle,
-  trailing,
+  amount,
+  onEdit,
+  editLabel,
+  onDelete,
+  deleteLabel,
+  isLast,
   children,
 }: {
   rowKey: string;
   details: RowDetail[];
   expanded: boolean;
   onToggle: (key: string) => void;
-  trailing: ReactNode;
+  amount: ReactNode;
+  onEdit: () => void;
+  editLabel: string;
+  onDelete: () => void;
+  deleteLabel: string;
+  /** last:border-0 doesn't work once every row is its own swipe wrapper — each
+   *  one is the sole child of ITS OWN container, so the pseudo-class would
+   *  always match. Computed explicitly by the caller instead. */
+  isLast: boolean;
   children: ReactNode;
 }) {
-  return (
-    <div className="border-b pb-2 last:border-0 last:pb-0">
+  const [swipeOpen, setSwipeOpen] = useState(false);
+
+  const row = (
+    <div className={cn("pb-2", !isLast && "border-b")}>
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           {details.length > 0 ? (
@@ -131,7 +149,7 @@ function ExpandableRow({
           )}
           <div className="min-w-0 flex-1">{children}</div>
         </div>
-        {trailing}
+        <span className="shrink-0 font-semibold text-destructive">{amount}</span>
       </div>
       {expanded && details.length > 0 ? (
         <div className="me-5 mt-1 space-y-0.5 rounded-md bg-muted/30 p-2 text-xs">
@@ -144,6 +162,38 @@ function ExpandableRow({
         </div>
       ) : null}
     </div>
+  );
+
+  return (
+    <SwipeActions
+      className="rounded-none"
+      open={swipeOpen}
+      onOpenChange={setSwipeOpen}
+      actions={[
+        {
+          key: "edit",
+          label: editLabel,
+          icon: <EditIcon className="h-5 w-5" />,
+          className: "bg-secondary",
+          onSelect: () => {
+            setSwipeOpen(false);
+            onEdit();
+          },
+        },
+        {
+          key: "delete",
+          label: deleteLabel,
+          icon: <DeleteIcon className="h-5 w-5" />,
+          className: "bg-destructive",
+          onSelect: () => {
+            setSwipeOpen(false);
+            onDelete();
+          },
+        },
+      ]}
+    >
+      {row}
+    </SwipeActions>
   );
 }
 
@@ -743,7 +793,7 @@ export default function PropertyDetailClient({
             {visibleExpenseRows.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין הוצאות לנכס זה.</p>
             ) : (
-              visibleExpenseRows.map((row) => {
+              visibleExpenseRows.map((row, index) => {
                 const rowKey = row.kind === "expense" ? `e-${row.data.id}` : `s-${row.data.id}`;
                 const details = row.kind === "expense" ? expenseRowDetails(row.data) : sessionRowDetails(row.data);
                 return (
@@ -753,32 +803,19 @@ export default function PropertyDetailClient({
                     details={details}
                     expanded={expandedRows.has(rowKey)}
                     onToggle={toggleExpandedRow}
-                    trailing={
-                      row.kind === "expense" ? (
-                        <div className="flex shrink-0 items-center gap-1">
-                          <span className="font-semibold text-destructive">{formatCurrency(row.data.amount)}</span>
-                          <EditButton onClick={() => openEditExpense(row.data)} label="עריכה" />
-                          <DeleteButton
-                            onClick={() => setDel({ kind: "expense", id: row.data.id, label: row.data.category || "הוצאה" })}
-                            label="מחיקת הוצאה"
-                          />
-                        </div>
-                      ) : (
-                        <div className="flex shrink-0 items-center gap-1">
-                          <span className="font-semibold text-destructive">{formatCurrency(row.data.labor_cost ?? 0)}</span>
-                          <EditButton onClick={() => openEditSession(row.data)} label="עריכת משמרת" />
-                          <DeleteButton
-                            onClick={() =>
-                              setDel({
-                                kind: "session",
-                                id: row.data.id,
-                                label: `משמרת (${userNameById.get(row.data.user_id) ?? "עובד"})`,
-                              })
-                            }
-                            label="מחיקת משמרת"
-                          />
-                        </div>
-                      )
+                    isLast={index === visibleExpenseRows.length - 1}
+                    amount={formatCurrency(row.kind === "expense" ? row.data.amount : row.data.labor_cost ?? 0)}
+                    editLabel={row.kind === "expense" ? "עריכה" : "עריכת משמרת"}
+                    onEdit={() => (row.kind === "expense" ? openEditExpense(row.data) : openEditSession(row.data))}
+                    deleteLabel={row.kind === "expense" ? "מחיקת הוצאה" : "מחיקת משמרת"}
+                    onDelete={() =>
+                      row.kind === "expense"
+                        ? setDel({ kind: "expense", id: row.data.id, label: row.data.category || "הוצאה" })
+                        : setDel({
+                            kind: "session",
+                            id: row.data.id,
+                            label: `משמרת (${userNameById.get(row.data.user_id) ?? "עובד"})`,
+                          })
                     }
                   >
                     {row.kind === "expense" ? (

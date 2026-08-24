@@ -25,6 +25,8 @@ export type Property = {
   squareMeters: number | null;
   floor: number | null;
   bathrooms: number | null;
+  mezuzahCount: number | null;
+  lightBulbCount: number | null;
   hasPrivateEntrance: boolean;
   hasStorageRoom: boolean;
   hasParking: boolean;
@@ -122,6 +124,8 @@ function normalizeProperty(row: Row): Property {
     squareMeters: numOrNull(row.square_meters),
     floor: numOrNull(row.floor),
     bathrooms: numOrNull(row.bathrooms),
+    mezuzahCount: numOrNull(row.mezuzah_count),
+    lightBulbCount: numOrNull(row.light_bulb_count),
     hasPrivateEntrance: row.has_private_entrance === true,
     hasStorageRoom: row.has_storage_room === true,
     hasParking: row.has_parking === true,
@@ -273,7 +277,7 @@ export async function fetchProperties(supabase: SupabaseClient): Promise<Propert
         supabase
           .from("properties")
           .select(
-        "id,name,address,asset_description,is_active,property_type,apartments_count,rooms,square_meters,floor,bathrooms,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,is_furnished,furniture_items,created_at,updated_at"
+        "id,name,address,asset_description,is_active,property_type,apartments_count,rooms,square_meters,floor,bathrooms,mezuzah_count,light_bulb_count,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,is_furnished,furniture_items,created_at,updated_at"
       )
           .range(lo, hi)
       )
@@ -366,7 +370,7 @@ export async function fetchProperty(
     const { data, error } = await supabase
       .from("properties")
       .select(
-        "id,name,address,asset_description,is_active,property_type,apartments_count,rooms,square_meters,floor,bathrooms,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,is_furnished,furniture_items,created_at,updated_at"
+        "id,name,address,asset_description,is_active,property_type,apartments_count,rooms,square_meters,floor,bathrooms,mezuzah_count,light_bulb_count,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,is_furnished,furniture_items,created_at,updated_at"
       )
       .eq("id", id)
       .maybeSingle();

@@ -48,6 +48,8 @@ export type PropertyInput = {
   square_meters: string;
   floor: string;
   bathrooms: string;
+  mezuzah_count: string;
+  light_bulb_count: string;
   has_private_entrance: boolean;
   has_storage_room: boolean;
   has_parking: boolean;
@@ -74,6 +76,8 @@ export const EMPTY_PROPERTY_FORM: PropertyInput = {
   square_meters: "",
   floor: "",
   bathrooms: "",
+  mezuzah_count: "",
+  light_bulb_count: "",
   has_private_entrance: false,
   has_storage_room: false,
   has_parking: false,
@@ -101,6 +105,8 @@ export function propertyToForm(p: Property): PropertyInput {
     square_meters: p.squareMeters != null ? String(p.squareMeters) : "",
     floor: p.floor != null ? String(p.floor) : "",
     bathrooms: p.bathrooms != null ? String(p.bathrooms) : "",
+    mezuzah_count: p.mezuzahCount != null ? String(p.mezuzahCount) : "",
+    light_bulb_count: p.lightBulbCount != null ? String(p.lightBulbCount) : "",
     has_private_entrance: p.hasPrivateEntrance,
     has_storage_room: p.hasStorageRoom,
     has_parking: p.hasParking,
@@ -248,6 +254,14 @@ export function PropertyBasicFields({ form, set }: FieldsProps) {
         <label className="block space-y-1 text-sm">
           <span className="font-medium">חדרי רחצה</span>
           <Input inputMode="numeric" value={form.bathrooms} onChange={(e) => set("bathrooms", e.target.value)} />
+        </label>
+        <label className="block space-y-1 text-sm">
+          <span className="font-medium">מספר מזוזות</span>
+          <Input inputMode="numeric" value={form.mezuzah_count} onChange={(e) => set("mezuzah_count", e.target.value)} />
+        </label>
+        <label className="block space-y-1 text-sm">
+          <span className="font-medium">מספר נורות</span>
+          <Input inputMode="numeric" value={form.light_bulb_count} onChange={(e) => set("light_bulb_count", e.target.value)} />
         </label>
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

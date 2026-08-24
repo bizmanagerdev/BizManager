@@ -23,6 +23,8 @@ const BASIC_KEYS = [
   "square_meters",
   "floor",
   "bathrooms",
+  "mezuzah_count",
+  "light_bulb_count",
   "has_private_entrance",
   "has_storage_room",
   "has_parking",
@@ -132,6 +134,8 @@ export default function PropertyDetailsCard({ propertyId, property }: { property
     property.floor != null ? `קומה ${property.floor}` : null,
     property.squareMeters != null ? `${property.squareMeters} מ״ר` : null,
     property.bathrooms != null ? `${property.bathrooms} חדרי רחצה` : null,
+    property.mezuzahCount != null ? `${property.mezuzahCount} מזוזות` : null,
+    property.lightBulbCount != null ? `${property.lightBulbCount} נורות` : null,
   ].filter(Boolean);
   const badges = [
     property.propertyType ? { label: propertyTypeLabel(property.propertyType), variant: "outline" as const } : null,

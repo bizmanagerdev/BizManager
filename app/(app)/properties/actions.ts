@@ -57,6 +57,8 @@ function propertyFields(input: PropertyInput) {
     square_meters: numOrNull(input.square_meters),
     floor: numOrNull(input.floor),
     bathrooms: numOrNull(input.bathrooms),
+    mezuzah_count: numOrNull(input.mezuzah_count),
+    light_bulb_count: numOrNull(input.light_bulb_count),
     has_private_entrance: input.has_private_entrance,
     has_storage_room: input.has_storage_room,
     has_parking: input.has_parking,

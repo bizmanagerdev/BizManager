@@ -33,6 +33,8 @@ function factsLine(p: PropertyWithLease): string {
     p.floor != null ? `קומה ${p.floor}` : null,
     p.squareMeters != null ? `${p.squareMeters} מ״ר` : null,
     p.bathrooms != null ? `${p.bathrooms} חדרי רחצה` : null,
+    p.mezuzahCount != null ? `${p.mezuzahCount} מזוזות` : null,
+    p.lightBulbCount != null ? `${p.lightBulbCount} נורות` : null,
   ]
     .filter(Boolean)
     .join(" · ");
