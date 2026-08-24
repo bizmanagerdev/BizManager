@@ -213,8 +213,8 @@ export default function OnlineUsersCard({ roster }: { roster: PresenceRosterUser
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span className="truncate text-sm font-medium">{u.name}</span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="break-words text-sm font-medium">{u.name}</span>
             {u.role && (
               <span className="shrink-0 rounded bg-muted px-1.5 py-px text-[10px] text-muted-foreground">
                 {u.role}
@@ -222,7 +222,7 @@ export default function OnlineUsersCard({ roster }: { roster: PresenceRosterUser
             )}
           </div>
           <div
-            className={`truncate text-xs tabular-nums ${
+            className={`break-words text-xs tabular-nums ${
               u.activeNow ? "text-success-soft-foreground" : "text-muted-foreground"
             }`}
           >

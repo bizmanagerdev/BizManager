@@ -1030,8 +1030,13 @@ function buildChangeList(oldData: AuditLogValue, newData: AuditLogValue): AuditC
   return out;
 }
 
+// Spelled out ("מ-X ל-Y") rather than "X → Y": a bare arrow glyph sitting in
+// Hebrew RTL text is a bidi neutral character, so browsers can mirror or
+// reorder it — the transition can end up visually pointing the wrong way.
+// Words carry the direction unambiguously regardless of font/browser bidi
+// handling.
 function changeListToString(changes: AuditChange[]): string {
-  return changes.map((c) => `${c.label}: ${c.before} → ${c.after}`).join(" · ");
+  return changes.map((c) => `${c.label}: מ-${c.before} ל-${c.after}`).join(" · ");
 }
 
 function actorDisplayName(actor: AuditActorRow) {
@@ -1740,12 +1745,20 @@ function formatDurationHe(ms: number): string {
   return rem ? `${hrs} שע' ${rem} דק'` : `${hrs} שע'`;
 }
 
-// For each 'יצא' (logout) row, fill in how long the person was actually active:
-// logout time − the most recent login before it. auth rows store the user's
-// users.id in record_id, and both sides are written app-side, so we pair by it.
-// A 'נכנס' row deliberately carries NO duration — the length belongs on the row
-// that ENDS the visit, not on the one that starts it.
+// For each 'יצא' (logout) row, fill in how long the person was actually active.
+// auth rows store the user's users.id in record_id, and both sides are written
+// app-side, so we pair by it. A 'נכנס' row deliberately carries NO duration —
+// the length belongs on the row that ENDS the visit, not on the one that starts it.
 // Mutates the passed items; a no-op (no query) when the page has no logout rows.
+//
+// The duration is NOT the raw login→logout wall-clock gap — that also counts
+// however long the app just sat open and unused (a phone left in a pocket for
+// days shows up as "was active 94h"). Instead it's built from user_sessions,
+// whose last_seen_at only advances via a heartbeat sent while the tab/screen is
+// actually visible (PresenceTracker skips the heartbeat when hidden) — so
+// started_at→last_seen_at is a real "was actually active" span. Falls back to
+// the raw login/logout gap when no session rows cover that visit (tracking
+// wasn't live yet for old rows, or the migration hasn't run).
 async function enrichLogoutDurations(
   supabase: SupabaseClient,
   items: AuditFeedItem[]
@@ -1783,11 +1796,59 @@ async function enrichLogoutDurations(
     loginsByUser.set(r.record_id, arr);
   }
 
+  const priorByLogoutId = new Map<string, number>();
+  let oldestPrior = newestLogout;
   for (const item of logouts) {
     const logoutT = new Date(item.createdAt as string).getTime();
     const prior = (loginsByUser.get(item.recordId) ?? []).find((t) => t < logoutT);
     if (prior === undefined) continue;
-    const label = `היה פעיל ${formatDurationHe(logoutT - prior)}`;
+    priorByLogoutId.set(item.id, prior);
+    if (prior < oldestPrior) oldestPrior = prior;
+  }
+
+  const { data: sessionData } = await supabase
+    .from("user_sessions")
+    .select("user_id,started_at,last_seen_at")
+    .in("user_id", userIds)
+    .gte("last_seen_at", new Date(oldestPrior).toISOString())
+    .lte("started_at", new Date(newestLogout).toISOString())
+    .range(0, 1999);
+
+  const sessionsByUser = new Map<string, Array<{ start: number; seen: number }>>();
+  for (const r of (sessionData ?? []) as unknown as Array<{
+    user_id?: string;
+    started_at?: string;
+    last_seen_at?: string;
+  }>) {
+    if (
+      typeof r.user_id !== "string" ||
+      typeof r.started_at !== "string" ||
+      typeof r.last_seen_at !== "string"
+    )
+      continue;
+    const start = new Date(r.started_at).getTime();
+    const seen = new Date(r.last_seen_at).getTime();
+    if (Number.isNaN(start) || Number.isNaN(seen)) continue;
+    const arr = sessionsByUser.get(r.user_id) ?? [];
+    arr.push({ start, seen });
+    sessionsByUser.set(r.user_id, arr);
+  }
+
+  for (const item of logouts) {
+    const prior = priorByLogoutId.get(item.id);
+    if (prior === undefined) continue;
+    const logoutT = new Date(item.createdAt as string).getTime();
+
+    // Only sessions (tabs) whose heartbeat window overlaps this visit.
+    const sessions = (sessionsByUser.get(item.recordId) ?? []).filter(
+      (s) => s.start <= logoutT && s.seen >= prior
+    );
+    const activeMs = sessions.length
+      ? Math.max(...sessions.map((s) => Math.min(s.seen, logoutT))) -
+        Math.min(...sessions.map((s) => Math.max(s.start, prior)))
+      : logoutT - prior; // no session rows for this visit — fall back to the raw gap
+
+    const label = `היה פעיל ${formatDurationHe(Math.max(activeMs, 0))}`;
     item.baseDetails = item.baseDetails ? `${label} · ${item.baseDetails}` : label;
     item.details = item.details ? `${label} · ${item.details}` : label;
   }

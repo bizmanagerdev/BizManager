@@ -148,8 +148,11 @@ function ChangeStack({ item, side }: { item: AuditFeedItem; side: "before" | "af
   return (
     <div className="flex flex-col gap-0.5 leading-tight">
       {item.changes.map((c, i) => (
-        <span key={i} className="whitespace-nowrap">
-          <span className="text-muted-foreground">{`${c.label}: `}</span>
+        // No whitespace-nowrap here: a free-text field (e.g. הערות) can be far
+        // longer than this fixed-width column, and nowrap let it spill out over
+        // the neighboring cells instead of wrapping inside its own column.
+        <span key={i} className="break-words">
+          <span className="whitespace-nowrap text-muted-foreground">{`${c.label}: `}</span>
           {side === "before" ? (
             <span className="text-foreground/80">{c.before}</span>
           ) : (
