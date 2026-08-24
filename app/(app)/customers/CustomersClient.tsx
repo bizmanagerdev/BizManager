@@ -20,7 +20,7 @@ import StaleDataBadge from "@/components/layout/StaleDataBadge";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
-import { ChevronLeftIcon, CloseIcon, EditIcon, FilterIcon, OrderIcon, ProjectIcon, SearchIcon, WazeIcon } from "@/components/ui/icons";
+import { ChevronLeftIcon, CloseIcon, DownloadIcon, EditIcon, FilterIcon, OrderIcon, ProjectIcon, SearchIcon, WazeIcon } from "@/components/ui/icons";
 import { Card } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
 import { SwipeActions } from "@/components/ui/swipe-actions";
@@ -162,6 +162,18 @@ export default function CustomersClient({
     const qs = params.toString();
     router.push(qs ? `/customers?${qs}` : "/customers", { scroll: false });
   }
+
+  // Export mirrors whatever filter is currently applied — same four params
+  // applyFilter puts on the URL — so "no filter" naturally means "all customers".
+  const exportHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (withProjects !== "all") params.set("with_projects", withProjects);
+    if (withOrders !== "all") params.set("with_orders", withOrders);
+    if (withDebt !== "all") params.set("with_debt", withDebt);
+    if (activeOnly !== "all") params.set("active_only", activeOnly);
+    const qs = params.toString();
+    return qs ? `/api/customers/export?${qs}` : "/api/customers/export";
+  }, [withProjects, withOrders, withDebt, activeOnly]);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<EditCustomerInput | null>(null);
@@ -439,6 +451,13 @@ export default function CustomersClient({
           >
             <FilterIcon className="h-4 w-4" />
           </Button>
+          {/* Follows whatever filter is applied above — no filter set exports
+              every customer, same rule the desktop button below uses. */}
+          <Button type="button" variant="outline" size="icon" className="h-10 w-10 shrink-0 rounded-xl" asChild>
+            <Link href={exportHref} aria-label="יצוא לאקסל" prefetch={false}>
+              <DownloadIcon className="h-4 w-4" />
+            </Link>
+          </Button>
         </div>
         {indexStale ? (
           <div className="mt-2 flex justify-end">
@@ -448,9 +467,7 @@ export default function CustomersClient({
       </PageHeaderToolbar>
 
       <AdaptiveGrid variant="customersToolbar" className="hidden lg:grid">
-        {/* Six of the eight columns now that the "הוספת לקוח" cell is gone — the
-            row still fills the width instead of trailing off. */}
-        <AdaptiveCell variant="customersPrimary" className="lg:col-span-6">
+        <AdaptiveCell variant="customersPrimary">
           <div className="flex items-center justify-between gap-2">
             <label className="text-sm text-muted-foreground">חיפוש לקוחות</label>
             {indexStale ? <StaleDataBadge savedAt={indexSavedAt} /> : null}
@@ -471,6 +488,17 @@ export default function CustomersClient({
             onClick={() => setFiltersOpen((x) => !x)}
           >
             {filtersOpen ? "הסתר מסננים" : "הצג מסננים"}
+          </Button>
+        </AdaptiveCell>
+        <AdaptiveCell variant="customersSecondary">
+          <label className="text-sm text-muted-foreground opacity-0">יצוא</label>
+          {/* Follows whatever filter is applied above — no filter set exports
+              every customer. */}
+          <Button type="button" variant="outline" className="h-11 w-full gap-1.5" asChild>
+            <Link href={exportHref} prefetch={false}>
+              <DownloadIcon className="h-4 w-4" />
+              יצוא לאקסל
+            </Link>
           </Button>
         </AdaptiveCell>
       </AdaptiveGrid>
