@@ -64,7 +64,7 @@ export async function GET(
       .order("payment_date", { ascending: false }),
     supabase
       .from("customers")
-      .select("id,name,phone,email,address,requires_prepayment")
+      .select("id,name,name_for_invoice,phone,whatsapp,email,address,requires_prepayment")
       .order("name", { ascending: true })
       .range(0, 49),
     supabase
@@ -115,7 +115,7 @@ export async function GET(
     selectedCustomerId
       ? supabase
           .from("customers")
-          .select("id,name,phone,email,address,requires_prepayment")
+          .select("id,name,name_for_invoice,phone,whatsapp,email,address,requires_prepayment")
           .eq("id", selectedCustomerId)
           .maybeSingle()
       : Promise.resolve({ data: null }),

@@ -198,8 +198,8 @@ export default function NewOrderClient({
   );
   const [orderDiscount, setOrderDiscount] = useState(String(initialOrder?.discount_amount ?? 0));
   const [orderDiscountMode, setOrderDiscountMode] = useState<"amount" | "percent">("amount");
-  // Single toggle: on = needs invoice, off (default) = doesn't.
-  const [needsInvoice, setNeedsInvoice] = useState<boolean>(initialOrder?.needs_invoice ?? false);
+  // Single toggle: on (default for a new order) = needs invoice, off = doesn't.
+  const [needsInvoice, setNeedsInvoice] = useState<boolean>(initialOrder?.needs_invoice ?? true);
   const [collectOnDelivery, setCollectOnDelivery] = useState<boolean>(
     initialOrder?.collect_payment_on_delivery ?? false
   );
