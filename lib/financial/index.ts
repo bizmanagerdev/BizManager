@@ -315,10 +315,23 @@ export async function loadDomainCashBreakdown(
   for (const entry of entries) {
     if (entry.stage !== "posted") continue; // real cash only
     if (entry.flowDate < from || entry.flowDate > to) continue;
-    const key = entry.businessDomain ?? "__unassigned__";
+    // Loan principal/repayments are financing cash, not business income or
+    // expense — they rarely carry their own domain, so they'd otherwise fall
+    // into the borrower's business_domain (usually general_business / "שוטף")
+    // and read as a spike in ordinary income. They get their own bar instead;
+    // the interest portion (origin "expense"/"payment") is real P&L and stays
+    // on its normal domain.
+    const isLoan = entry.origin === "loan";
+    const key = isLoan ? "__loans__" : entry.businessDomain ?? "__unassigned__";
     const point =
       byDomain.get(key) ??
-      { domain: entry.businessDomain, domainName: entry.domainName, inflow: 0, outflow: 0, net: 0 };
+      {
+        domain: isLoan ? null : entry.businessDomain,
+        domainName: isLoan ? "הלוואות" : entry.domainName,
+        inflow: 0,
+        outflow: 0,
+        net: 0,
+      };
     if (entry.type === "inflow") point.inflow += entry.amount;
     else point.outflow += entry.amount;
     point.net = point.inflow - point.outflow;
