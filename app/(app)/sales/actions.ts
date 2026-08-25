@@ -9,6 +9,7 @@ import {
   type ProductsFilters,
 } from "./loadProducts";
 import { loadDeliveriesPage, type DeliveriesFilters } from "./loadDeliveries";
+import { loadPickingListSource } from "./loadPickingList";
 
 /** Fetch the next page of orders (open or closed) for the infinite-scroll list. */
 export async function loadMoreOrders(page: number, filters: OrdersFilters) {
@@ -39,4 +40,13 @@ export async function loadMoreDeliveries(page: number, filters: DeliveriesFilter
   }
   const { deliveries, hasMore } = await loadDeliveriesPage(supabase, { page, filters });
   return { rows: deliveries, hasMore };
+}
+
+/** Every open delivery's outstanding line items, for the warehouse picking list. */
+export async function loadPickingList() {
+  const { supabase, profile } = await requireProfile();
+  if (!hasDeliveriesAccess(profile.role, profile.deliveries_access)) {
+    throw new Error("No access");
+  }
+  return loadPickingListSource(supabase);
 }

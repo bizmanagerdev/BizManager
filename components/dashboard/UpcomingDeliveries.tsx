@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { DeliveryIcon } from "@/components/ui/icons";
+import { DeliveryIcon, WarehouseIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
 import DashboardCardHeader from "@/components/dashboard/DashboardCardHeader";
 import DashboardCardFooter from "@/components/dashboard/DashboardCardFooter";
@@ -7,15 +7,17 @@ import Sparkline from "@/components/charts/Sparkline";
 import QuietCard from "@/components/dashboard/QuietCard";
 import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
+import PickingListDialog from "@/app/(app)/sales/PickingListDialog";
 import type { DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
 
 /**
  * "משלוחים קרובים" — the next open deliveries.
  *
  * Everything here is a click target, and nothing is a button to a page: the ROW
- * opens its own order, and the card around it opens the delivery queue. No
- * status badge either — this list is open deliveries by definition, so the badge
- * said "פתוח" on every line.
+ * jumps to the delivery queue focused on that one delivery (not the order
+ * screen — this card is about what's going out, not the order behind it), and
+ * the card around it opens the queue unfocused. No status badge either — this
+ * list is open deliveries by definition, so the badge said "פתוח" on every line.
  *
  * The two things you'd actually do to a delivery ride on the row: share the slip
  * (DeliveryShareActions) and confirm it (OrderConfirmDialog, "סמן כסופק"). Both
@@ -51,8 +53,11 @@ export default function UpcomingDeliveries({
   }
   const rows = deliveries.slice(0, 6);
   const allHref = canOpenOrder ? "/sales?tab=deliveries" : "/deliveries";
+  // Always the delivery queue, focused on that one row — never the order
+  // screen. This card is the delivery run, not the sale behind it; the order
+  // is still one click away from the queue for staff who need it.
   const hrefFor = (id: string) =>
-    canOpenOrder ? `/sales/orders/${id}` : `/deliveries?focus=${encodeURIComponent(id)}`;
+    `${allHref}${allHref.includes("?") ? "&" : "?"}focus=${encodeURIComponent(id)}`;
 
   return (
     // Two nested click targets, each an overlay link rather than a wrapper: the
@@ -76,6 +81,27 @@ export default function UpcomingDeliveries({
             spark ? (
               <Sparkline points={spark} variant="bar" valueLabel="הזמנות היום" label="7 הימים האחרונים" />
             ) : undefined
+          }
+          action={
+            // Opens right here on the dashboard — not a navigation. The plain
+            // <button> below carries no handler of its own (this is a server
+            // component); PickingListDialog clones it and wires up the click.
+            <PickingListDialog
+              trigger={
+                // pointer-events-auto: the header otherwise sits inside the
+                // card's pointer-events-none wrapper (see the comment at the
+                // top of this file) — same reason the row actions below carry
+                // the same class.
+                <button
+                  type="button"
+                  aria-label="רשימת ליקוט למחסן"
+                  title="רשימת ליקוט למחסן"
+                  className="pointer-events-auto flex h-8 w-8 items-center justify-center rounded-lg text-secondary hover:bg-secondary/10"
+                >
+                  <WarehouseIcon className="h-4 w-4" />
+                </button>
+              }
+            />
           }
         />
 

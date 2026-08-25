@@ -6,6 +6,7 @@ import { useCallback, useMemo, useState } from "react";
 import { CashIcon, CheckIcon, ChevronDownIcon, LocationIcon, PhoneIcon, WazeIcon } from "@/components/ui/icons";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
+import PickingListDialog from "@/app/(app)/sales/PickingListDialog";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AddressLink } from "@/components/ui/address-link";
@@ -244,6 +245,7 @@ export default function SalesDeliveriesQueue({
             {label}
           </Link>
         ))}
+        <PickingListDialog />
         {/* Desktop only: on a phone this wrapped onto a line of its own under
             the pills — a whole row of screen for a number you can see by
             scrolling. Beside the pills on a wider screen it costs nothing. */}
