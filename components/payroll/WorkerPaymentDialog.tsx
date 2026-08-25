@@ -10,31 +10,56 @@
 // dialog plus ~100 lines of state in the grid component); they're one here since
 // the grid was the only thing keeping them apart. The validation and allocation
 // MATH still lives in DashboardActions.forms, where it's unit-tested.
+//
+// Rebuilt 2026-08-25 onto the same atomic step-wizard architecture as
+// IncomeDialog/CollectPaymentDialog (one question per screen, tap-a-card-to-
+// advance) instead of a single-page FormDialog — part of converging every
+// quick-action dialog onto one shared shape.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toHebrewError } from "@/lib/error-messages";
-import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { DateInput } from "@/components/ui/date-input";
-import { SearchableSelect } from "@/components/ui/searchable-select";
-import { FormDialog } from "@/components/ui/form-dialog";
-import AccountSelect from "@/components/financial/AccountSelect";
-import { defaultAccountForMethod, type Account } from "@/lib/accounts";
+import { StepWizardDialog, useStepFlow } from "@/components/ui/step-wizard";
+import { OptionRow, DateQuickPicks, StepHeading } from "@/components/ui/option-row";
+import { SummaryRow, SummarySection } from "@/components/ui/summary";
+import { loadAccounts } from "@/components/financial/AccountSelect";
+import { BankIcon, CardIcon, CashIcon } from "@/components/ui/icons";
+import { defaultAccountForMethod, getAccountKindLabel, type Account } from "@/lib/accounts";
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
 import { formatCurrency } from "@/lib/payroll";
 import type { WorkerDebtItemRow } from "@/lib/payroll-center";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import type { UserOption } from "@/app/(app)/dashboard/quick-actions-types";
 import { HEBREW } from "@/app/(app)/dashboard/DashboardActions.constants";
-import { getTodayDate } from "@/app/(app)/dashboard/DashboardActions.helpers";
+import { getTodayDate, normalizeDateOnly } from "@/app/(app)/dashboard/DashboardActions.helpers";
 import {
   buildWorkerPaymentAllocations,
   sortOpenWorkerDebt,
   sumOpenOwed,
   validateWorkerPaymentForm,
 } from "@/app/(app)/dashboard/DashboardActions.forms";
+
+type WorkerPaymentStepId = "worker" | "amount" | "date" | "method" | "account" | "reference" | "notes" | "summary";
+
+const STEP_LABEL: Record<WorkerPaymentStepId, string> = {
+  worker: "עובד",
+  amount: "סכום",
+  date: "תאריך",
+  method: "תשלום",
+  account: "חשבון",
+  reference: "אסמכתא",
+  notes: "הערות",
+  summary: "סיכום",
+};
+
+function accountKindIcon(kind: string | null | undefined) {
+  if (kind === "bank") return BankIcon;
+  if (kind === "card") return CardIcon;
+  return CashIcon;
+}
 
 export function WorkerPaymentDialog({
   open,
@@ -49,7 +74,9 @@ export function WorkerPaymentDialog({
   currentUserRole?: UserRole;
   onSaved: () => void;
 }) {
+  const [stepId, setStepId] = useState<WorkerPaymentStepId>("worker");
   const [userId, setUserId] = useState("");
+  const [workerQuery, setWorkerQuery] = useState("");
   const [date, setDate] = useState(getTodayDate());
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("");
@@ -72,11 +99,40 @@ export function WorkerPaymentDialog({
     });
   }, [users, currentUserRole]);
 
+  const filteredWorkers = useMemo(() => {
+    const q = workerQuery.trim().toLowerCase();
+    if (!q) return payableWorkers;
+    return payableWorkers.filter((u) => u.label.toLowerCase().includes(q));
+  }, [payableWorkers, workerQuery]);
+
   const openOwed = useMemo(() => sumOpenOwed(debtItems), [debtItems]);
 
+  // Preload accounts on open so the "account" step can render one tappable
+  // card per account (same technique as Income/CollectPayment/AccountTransfer).
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    void loadAccounts().then((list) => {
+      if (active) setAccountsList(list);
+    });
+    return () => {
+      active = false;
+    };
+  }, [open]);
+
+  const stepIds = useMemo<WorkerPaymentStepId[]>(() => {
+    const ids: WorkerPaymentStepId[] = ["worker", "amount", "date", "method"];
+    if (accountsList.length > 0) ids.push("account");
+    ids.push("reference", "notes", "summary");
+    return ids;
+  }, [accountsList.length]);
+  const wizardSteps = useMemo(() => stepIds.map((id) => ({ n: id, label: STEP_LABEL[id] })), [stepIds]);
+
   function reset() {
+    setStepId("worker");
     setError(null);
     setUserId("");
+    setWorkerQuery("");
     setDate(getTodayDate());
     setAmount("");
     setMethod("");
@@ -126,6 +182,45 @@ export function WorkerPaymentDialog({
     setUserId(nextUserId);
     setAmount("");
     void loadDebt(nextUserId);
+    advanceTo("amount");
+  }
+
+  function isSatisfied(id: WorkerPaymentStepId): boolean {
+    switch (id) {
+      case "worker":
+        return Boolean(userId);
+      case "amount":
+        return Number.isFinite(Number(amount)) && Number(amount) > 0;
+      case "date":
+        return Boolean(date);
+      case "account":
+        return Boolean(accountId);
+      case "method":
+      case "reference":
+      case "notes":
+      case "summary":
+        return true;
+    }
+  }
+
+  const { stepIndex, isLastStep, canClickStep, goToStep, goBack, goNext, advanceTo } = useStepFlow<WorkerPaymentStepId>({
+    stepId,
+    setStepId,
+    steps: stepIds,
+    isSatisfied,
+  });
+
+  function pickMethod(next: string) {
+    setMethod(next);
+    setAccountId((prev) => prev || defaultAccountForMethod(accountsList, next));
+    advanceTo(accountsList.length > 0 ? "account" : "reference");
+  }
+
+  function handleOpenChange(next: boolean) {
+    // Mid-submit the request is already creating rows — closing would orphan it.
+    if (!next && submitting) return;
+    onOpenChange(next);
+    if (!next) reset();
   }
 
   async function save() {
@@ -165,8 +260,7 @@ export function WorkerPaymentDialog({
         setError(toHebrewError(json.error, "שמירת התשלום לעובד נכשלה."));
         return;
       }
-      onOpenChange(false);
-      reset();
+      handleOpenChange(false);
       onSaved();
     } catch (err: unknown) {
       setError(toHebrewError(err, HEBREW.saveErrorUnknown));
@@ -175,106 +269,144 @@ export function WorkerPaymentDialog({
     }
   }
 
+  const workerName = payableWorkers.find((u) => u.id === userId)?.label;
+  const methodLabel = PAYMENT_METHOD_OPTIONS.find((m) => m.value === method)?.label;
+  const accountName = accountsList.find((a) => a.id === accountId)?.name;
+
   return (
-    <FormDialog
+    <StepWizardDialog
       open={open}
-      onOpenChange={(next) => {
-        // Mid-submit the request is already creating rows — closing would orphan it.
-        if (!next && submitting) return;
-        onOpenChange(next);
-        if (!next) reset();
-      }}
-      title="תשלום לעובד"
-      description="רישום תשלום לעובד שעתי / חודשי / קבלן. התשלום יקוזז מהיתרה הפתוחה (תלושים / משמרות)."
-      size="form2xl"
-      onSubmit={() => void save()}
-      submitLabel="שמירת תשלום"
-      busyLabel={HEBREW.saving}
-      busy={submitting}
-      submitDisabled={debtLoading}
+      onOpenChange={handleOpenChange}
+      dialogTitle="תשלום לעובד"
+      dialogDescription="רישום תשלום לעובד"
+      size="formLg"
+      fullScreen
+      progressVariant="bar"
+      steps={wizardSteps}
+      current={stepId}
+      canClickStep={canClickStep}
+      onStepClick={goToStep}
+      closeDisabled={submitting}
+      onBack={stepIndex(stepId) > 0 ? goBack : undefined}
+      backDisabled={submitting}
+      onNext={() => (isLastStep ? void save() : goNext())}
+      nextLabel={isLastStep ? (submitting ? HEBREW.saving : "שמירת תשלום") : undefined}
+      nextDisabled={isLastStep ? submitting : debtLoading || !isSatisfied(stepId)}
+      isLastStep={isLastStep}
+      submitOnEnter
       error={error || undefined}
     >
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <label className="space-y-2 text-right text-sm md:col-span-2">
-          <span className="font-medium">{"עובד *"}</span>
-          <SearchableSelect
-            ariaLabel="בחירת עובד"
-            placeholder="בחרו עובד"
-            searchPlaceholder="חיפוש עובד..."
-            options={payableWorkers.map((user) => ({ value: user.id, label: user.label }))}
-            value={userId}
-            onChange={selectWorker}
-          />
-        </label>
-
-        {userId ? (
-          <div className="md:col-span-2 rounded-xl border bg-muted/30 p-3 text-right text-sm">
+      {stepId === "worker" ? (
+        <>
+          <StepHeading title="לאיזה עובד לשלם?" />
+          <div className="grid gap-3">
+            <Input value={workerQuery} onChange={(e) => setWorkerQuery(e.target.value)} placeholder="חיפוש עובד..." />
+            <div className="space-y-1">
+              {filteredWorkers.map((user) => (
+                <OptionRow
+                  key={user.id}
+                  label={user.label}
+                  selected={userId === user.id}
+                  onClick={() => selectWorker(user.id)}
+                />
+              ))}
+            </div>
+          </div>
+        </>
+      ) : stepId === "amount" ? (
+        <>
+          <StepHeading title="על איזה סכום?" />
+          <label className="space-y-2 text-sm">
+            <CurrencyInput autoFocus value={amount} onChange={(e) => setAmount(e.target.value)} />
             {debtLoading ? (
-              <span className="text-muted-foreground">{"טוען יתרה..."}</span>
+              <span className="block text-[11px] text-muted-foreground">טוען יתרה...</span>
             ) : openOwed > 0 ? (
-              <span>
-                {"יתרה פתוחה: "}
-                <span className="font-semibold">{formatCurrency(openOwed)}</span>
-                <span className="text-muted-foreground">{` • ${debtItems.length} פריטים פתוחים`}</span>
+              <span className="block text-[11px] text-muted-foreground">
+                יתרה פתוחה: {formatCurrency(openOwed)} • {debtItems.length} פריטים פתוחים
               </span>
             ) : (
-              <span className="text-muted-foreground">
-                {"אין יתרה פתוחה לעובד זה. תשלום שיירשם יישמר כמקדמה ללא קיזוז."}
+              <span className="block text-[11px] text-muted-foreground">
+                אין יתרה פתוחה לעובד זה. תשלום שיירשם יישמר כמקדמה ללא קיזוז.
               </span>
             )}
+          </label>
+        </>
+      ) : stepId === "date" ? (
+        <>
+          <StepHeading title="מתי שולם?" />
+          <div>
+            <DateInput value={date} onChange={(e) => setDate(e.target.value)} />
+            <DateQuickPicks
+              onPick={(d) => {
+                setDate(d);
+                advanceTo(stepIds[stepIndex("date") + 1]);
+              }}
+            />
           </div>
-        ) : null}
-
-        <label className="space-y-2 text-right text-sm">
-          <span className="font-medium">{"סכום *"}</span>
-          <CurrencyInput value={amount} onChange={(e) => setAmount(e.target.value)} />
-        </label>
-
-        <label className="space-y-2 text-right text-sm">
-          <span className="font-medium">{"תאריך תשלום *"}</span>
-          <DateInput value={date} onChange={(e) => setDate(e.target.value)} />
-        </label>
-
-        <label className="space-y-2 text-right text-sm">
-          <span className="font-medium">{HEBREW.paymentMethod}</span>
-          <NativeSelect
-            value={method}
-            onChange={(e) => {
-              const next = e.target.value;
-              setMethod(next);
-              if (!accountId) setAccountId(defaultAccountForMethod(accountsList, next));
-            }}
-          >
-            <option value=""></option>
+        </>
+      ) : stepId === "method" ? (
+        <>
+          <StepHeading title="באיזה אמצעי?" sub="לא חובה" />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <OptionRow label="ללא ציון" selected={method === ""} onClick={() => pickMethod("")} />
             {PAYMENT_METHOD_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
+              <OptionRow
+                key={option.value}
+                label={option.label}
+                selected={method === option.value}
+                onClick={() => pickMethod(option.value)}
+              />
             ))}
-          </NativeSelect>
-        </label>
-
-        <AccountSelect
-          required
-          value={accountId}
-          onChange={setAccountId}
-          onLoaded={(list) => {
-            setAccountsList(list);
-            if (!accountId) setAccountId(defaultAccountForMethod(list, method));
-          }}
-        />
-
-        <label className="space-y-2 text-right text-sm">
-          <span className="font-medium">{"אסמכתא"}</span>
-          <Input value={reference} onChange={(e) => setReference(e.target.value)} />
-        </label>
-
-        <label className="space-y-2 text-right text-sm md:col-span-2">
-          <span className="font-medium">{HEBREW.notes}</span>
-          <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
-        </label>
-      </div>
-    </FormDialog>
+          </div>
+        </>
+      ) : stepId === "account" ? (
+        <>
+          <StepHeading title="מאיזה חשבון?" />
+          <div className="grid gap-2">
+            {accountsList.map((a) => (
+              <OptionRow
+                key={a.id}
+                icon={accountKindIcon(a.kind)}
+                label={a.name}
+                sub={getAccountKindLabel(a.kind)}
+                selected={accountId === a.id}
+                onClick={() => {
+                  setAccountId(a.id);
+                  advanceTo("reference");
+                }}
+              />
+            ))}
+          </div>
+        </>
+      ) : stepId === "reference" ? (
+        <>
+          <StepHeading title="מספר אסמכתא?" sub="לא חובה" />
+          <label className="space-y-2 text-sm">
+            <Input autoFocus value={reference} onChange={(e) => setReference(e.target.value)} />
+          </label>
+        </>
+      ) : stepId === "notes" ? (
+        <>
+          <StepHeading title={HEBREW.notes} sub="לא חובה" />
+          <label className="space-y-2 text-sm">
+            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+          </label>
+        </>
+      ) : (
+        <>
+          <StepHeading title="לאשר ולשמור?" />
+          <SummarySection title="פרטי התשלום">
+            <SummaryRow label="עובד" value={workerName ?? "—"} />
+            <SummaryRow label="סכום" value={formatCurrency(Number(amount) || 0)} />
+            <SummaryRow label="תאריך" value={normalizeDateOnly(date)} />
+            <SummaryRow label={HEBREW.paymentMethod} value={methodLabel ?? "ללא ציון"} />
+            {accountId ? <SummaryRow label="חשבון" value={accountName} /> : null}
+            {reference.trim() ? <SummaryRow label="אסמכתא" value={reference} /> : null}
+            {notes.trim() ? <SummaryRow label={HEBREW.notes} value={notes} /> : null}
+          </SummarySection>
+        </>
+      )}
+    </StepWizardDialog>
   );
 }
 

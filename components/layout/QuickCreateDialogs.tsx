@@ -10,7 +10,7 @@
 // you were. Nothing navigates; saving calls router.refresh(), which re-renders the
 // current route in place (same scroll position, same open tab).
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import SessionEditorDialog from "@/app/(app)/payroll/SessionEditorDialog";
@@ -25,8 +25,9 @@ import NewProjectClient, {
   type ProjectCustomerOption,
 } from "@/app/(app)/projects/NewProjectClient";
 import { HEBREW } from "@/app/(app)/dashboard/DashboardActions.constants";
-import { AdaptiveDialog } from "@/components/layout/page-layout";
-import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AdaptivePageDialog } from "@/components/layout/page-layout";
+import { DIALOG_CHROME_CONTENT_PAGE, useSwipeToDismiss } from "@/components/ui/dialog-chrome";
+import { Dialog } from "@/components/ui/dialog";
 import { UploadDocumentDialog } from "@/components/documents/UploadDocumentDialog";
 import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
 import { TaskUpsertDialog } from "@/components/tasks/TaskUpsertDialog";
@@ -60,6 +61,27 @@ export default function QuickCreateDialogs({
   // While a wizard is mid-submit its dialog must not be dismissable — closing it
   // would orphan a request that's already creating a row.
   const [submitLocked, setSubmitLocked] = useState(false);
+
+  // Order/project wizards are full-page dialogs now — each needs its own ref to
+  // the wizard's scrollable body (owned here, handed down as `bodyRef`, so the
+  // swipe-to-dismiss gate and the wizard's own "scroll to top on step change"
+  // read/write the same node) and its own swipe handlers.
+  const orderBodyRef = useRef<HTMLDivElement>(null);
+  const orderSwipeProps = useSwipeToDismiss({
+    enabled: true,
+    bodyRef: orderBodyRef,
+    onDismiss: () => {
+      if (!submitLocked) onClose();
+    },
+  });
+  const projectBodyRef = useRef<HTMLDivElement>(null);
+  const projectSwipeProps = useSwipeToDismiss({
+    enabled: true,
+    bodyRef: projectBodyRef,
+    onDismiss: () => {
+      if (!submitLocked) onClose();
+    },
+  });
 
   const projectWizardCustomers = useMemo<ProjectCustomerOption[]>(
     () =>
@@ -241,13 +263,12 @@ export default function QuickCreateDialogs({
           if (!open) onClose();
         }}
       >
-        <AdaptiveDialog size="newOrder" hideClose className="flex flex-col gap-0 overflow-y-hidden p-0 sm:p-0">
-          {/* Screen-reader only: the wizard renders its own visible step heading. */}
-          <DialogHeader className="sr-only">
-            <DialogTitle>{HEBREW.orderNew}</DialogTitle>
-            <DialogDescription>{HEBREW.orderDialogDescription}</DialogDescription>
-          </DialogHeader>
-
+        <AdaptivePageDialog
+          size="newOrder"
+          hideClose
+          className={DIALOG_CHROME_CONTENT_PAGE}
+          {...orderSwipeProps}
+        >
           {action === "order" ? (
             <NewOrderClient
               customers={data.customers}
@@ -255,6 +276,10 @@ export default function QuickCreateDialogs({
               customersError={null}
               productsError={null}
               embedded
+              bodyRef={orderBodyRef}
+              dialogTitle={HEBREW.orderNew}
+              dialogDescription={HEBREW.orderDialogDescription}
+              draftKey="quick-create-order"
               onActionLockedChange={setSubmitLocked}
               onCancel={() => {
                 setSubmitLocked(false);
@@ -266,7 +291,7 @@ export default function QuickCreateDialogs({
               }}
             />
           ) : null}
-        </AdaptiveDialog>
+        </AdaptivePageDialog>
       </Dialog>
 
       <Dialog
@@ -276,13 +301,12 @@ export default function QuickCreateDialogs({
           if (!open) onClose();
         }}
       >
-        <AdaptiveDialog size="newOrder" hideClose className="flex flex-col gap-0 overflow-y-hidden p-0 sm:p-0">
-          {/* Screen-reader only: the wizard renders its own visible step heading. */}
-          <DialogHeader className="sr-only">
-            <DialogTitle>{HEBREW.projectNew}</DialogTitle>
-            <DialogDescription>{HEBREW.projectDialogDescription}</DialogDescription>
-          </DialogHeader>
-
+        <AdaptivePageDialog
+          size="newOrder"
+          hideClose
+          className={DIALOG_CHROME_CONTENT_PAGE}
+          {...projectSwipeProps}
+        >
           {action === "project" ? (
             <NewProjectClient
               customers={projectWizardCustomers}
@@ -291,6 +315,9 @@ export default function QuickCreateDialogs({
               defaultProjectManagerId={defaultProjectManagerId}
               defaultStartDate={quickCreateDate}
               draftKey="quick-create-project"
+              bodyRef={projectBodyRef}
+              dialogTitle={HEBREW.projectNew}
+              dialogDescription={HEBREW.projectDialogDescription}
               onActionLockedChange={setSubmitLocked}
               onCancel={() => {
                 setSubmitLocked(false);
@@ -302,7 +329,7 @@ export default function QuickCreateDialogs({
               }}
             />
           ) : null}
-        </AdaptiveDialog>
+        </AdaptivePageDialog>
       </Dialog>
 
       <CollectPaymentDialog

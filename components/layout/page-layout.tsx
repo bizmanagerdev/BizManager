@@ -62,6 +62,8 @@ export const pageDialogVariants = {
   formLg: "sm:max-w-lg",
   formXl: "sm:max-w-xl",
   form2xl: "sm:max-w-2xl",
+  details4xl: "sm:max-w-4xl",
+  newOrder: "sm:max-w-5xl",
 } as const;
 
 const cellVariants = {

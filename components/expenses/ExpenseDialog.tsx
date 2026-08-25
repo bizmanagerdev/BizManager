@@ -2,8 +2,11 @@
 
 import { useState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { toast } from "sonner";
-import { ArrowLeftIcon, ArrowRightIcon, AttachIcon, BackspaceIcon, BankIcon, CalendarIcon, CardIcon, CashIcon, CheckIcon, ListIcon, RecurringIcon, SpinnerIcon, SplitIcon, UploadIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
+import { BackspaceIcon, BankIcon, CardIcon, CashIcon, RecurringIcon, SpinnerIcon, SplitIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
+import { StepWizard, WizardTitle } from "@/components/ui/step-wizard";
+import { OptionRow, StepHeading } from "@/components/ui/option-row";
+import { DIALOG_CHROME_CONTENT_PAGE, useSwipeToDismiss } from "@/components/ui/dialog-chrome";
 import { NativeSelect } from "@/components/ui/native-select";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
@@ -18,7 +21,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  ResponsiveSheetContent,
+  FullScreenDialogContent,
 } from "@/components/ui/dialog";
 import {
   EXPENSE_BUSINESS_DOMAINS,
@@ -427,46 +430,10 @@ export function ExpenseDialog({
   const [existingAttachments, setExistingAttachments] = useState<FinancialAttachment[]>([]);
   const [tagIds, setTagIds] = useState<string[]>([]);
 
-  // ── Two input modes (A/B) ────────────────────────────────────────────────
-  // "form" = the full single-screen form; "express" = a guided one-question-per-
-  // screen flow. Both are driven by the SAME state above, so toggling between
-  // them preserves the in-progress entry with no serialization. Editing always
-  // uses the form (express is a fast-create experience). Persisted per browser.
-  const [viewMode, setViewMode] = useState<"form" | "express">("express");
   // "" is a sentinel that isn't any step id → the index clamps to 0, so the flow
   // always opens on the FIRST step of the current express list (which is no longer
   // always "amount" now that steps are grouped).
   const [expStepId, setExpStepId] = useState<string>("");
-  useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem("expenseDialogMode");
-      if (saved === "express" || saved === "form") setViewMode(saved);
-    } catch {
-      /* localStorage unavailable — stay on the form default */
-    }
-  }, []);
-  // Per-open default: EDITING a recurring template opens the full form (easier to
-  // scan/change one field); CREATING defaults to the step-by-step flow (respecting
-  // a saved preference). The toggle still lets the user switch.
-  useEffect(() => {
-    if (!open) return;
-    if (isEditingTemplate) { setViewMode("form"); return; }
-    try {
-      const saved = window.localStorage.getItem("expenseDialogMode");
-      setViewMode(saved === "form" ? "form" : "express");
-    } catch {
-      setViewMode("express");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-  function chooseMode(mode: "form" | "express") {
-    setViewMode(mode);
-    try {
-      window.localStorage.setItem("expenseDialogMode", mode);
-    } catch {
-      /* ignore persistence failures */
-    }
-  }
   // Preload accounts on open so the express flow can render one button per
   // account (the full form loads them lazily via <AccountSelect/>).
   useEffect(() => {
@@ -1317,14 +1284,13 @@ export function ExpenseDialog({
   };
 
   // ── Express mode (guided, one-question-per-screen) ───────────────────────
-  // Only offered for NEW expenses; editing an expense/session always uses the
-  // full form. Both modes share the state above, so a half-filled entry carries
-  // over when toggling. Worker-wage ("שכר עובד") hands off to the full form.
-  // Recurring templates (new AND edit) use the shared dialog's normal behavior:
-  // step-by-step by default, with the form/express toggle. Only real expense/session
-  // EDIT is form-only (express is a fast-create experience there).
-  const showModeToggle = !isEditing && !isEditingSession;
-  const activeMode: "form" | "express" = showModeToggle ? viewMode : "form";
+  // Always on for a NEW expense — the form/express toggle is gone (user request,
+  // 2026-08-25). EDITING (an expense, a session, or a recurring template) always
+  // uses the full form: express has never been exercised against an edit and is
+  // missing edit-only pieces (a category lock for session edits, plus template-only
+  // controls — active toggle, amount-propagation choice, project notes), so
+  // widening it to cover edits too is future work, not this change.
+  const activeMode: "form" | "express" = isEditing || isEditingTemplate ? "form" : "express";
 
   const needsSourcePicker =
     !isEditing &&
@@ -1437,7 +1403,8 @@ export function ExpenseDialog({
   const rawIndex = expressSteps.indexOf(expStepId);
   const expIndex = rawIndex < 0 ? 0 : rawIndex;
   const expStep = expressSteps[expIndex];
-  const expProgress = ((expIndex + 1) / expressSteps.length) * 100;
+  // Progress bar % is StepWizard's own job now (progressVariant="bar" derives
+  // it from stepNumber/steps.length) — this file no longer computes it.
 
   // Navigation reads the LATEST step list via refs, never a captured closure —
   // otherwise a step that reshapes the list (e.g. picking שכר עובד drops the
@@ -1513,52 +1480,28 @@ export function ExpenseDialog({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, activeMode, expStep, expressSteps, amount]);
 
-  function expEyebrow(icon: ReactNode, text: string) {
-    return (
-      <div className="flex items-center justify-center gap-2 text-xs font-bold text-primary">
-        {icon}
-        <span>{text}</span>
-      </div>
-    );
-  }
+  // Both delegate entirely to the same shared components Income/CollectPayment
+  // use (components/ui/option-row.tsx) — kept as thin wrappers, not re-copied
+  // markup, so this dialog's ~65 call sites didn't need to change shape.
   function expTitle(title: string, sub?: string) {
-    return (
-      <>
-        <h2 className="mt-1 text-center text-xl font-semibold leading-tight tracking-tight">{title}</h2>
-        {sub ? <p className="mt-0.5 mb-3 text-center text-sm text-muted-foreground">{sub}</p> : <div className="mb-2" />}
-      </>
-    );
+    return <StepHeading title={title} sub={sub} />;
   }
   function expCard(o: {
     key?: string; icon?: ReactNode; title: string; sub?: string; selected?: boolean;
     tone?: "brand" | "paid" | "partial" | "unpaid"; badge?: number; onClick: () => void;
   }) {
-    const tone = o.tone ?? "brand";
-    const sel = o.selected
-      ? tone === "paid" ? "border-success bg-success/10"
-        : tone === "partial" ? "border-warning bg-warning/15"
-          : tone === "unpaid" ? "border-destructive bg-destructive/10"
-            : "border-primary bg-primary/5 ring-2 ring-primary/15"
-      : "border-input bg-background hover:border-primary/60 hover:bg-primary/5";
     return (
-      <button
+      <OptionRow
         key={o.key}
-        type="button"
         data-exp-option
+        icon={o.icon}
+        label={o.title}
+        sub={o.sub}
+        selected={Boolean(o.selected)}
+        tone={o.tone}
+        badge={o.badge}
         onClick={o.onClick}
-        className={cn("flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-right transition-colors", sel)}
-      >
-        {o.icon ? (
-          <span className="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-muted text-primary">{o.icon}</span>
-        ) : null}
-        <span className="min-w-0 flex-1">
-          <span className="block font-semibold">{o.title}</span>
-          {o.sub ? <span className="block text-xs text-muted-foreground">{o.sub}</span> : null}
-        </span>
-        {o.badge != null ? (
-          <span className="flex h-5 w-5 flex-none items-center justify-center rounded border text-[11px] font-bold tabular-nums text-muted-foreground">{o.badge}</span>
-        ) : null}
-      </button>
+      />
     );
   }
   // Digit grid only — the confirm action lives in the pinned nav bar at the
@@ -1631,7 +1574,6 @@ export function ExpenseDialog({
       case "amount":
         return (
           <>
-            {expEyebrow(<WalletIcon className="h-4 w-4" />, "סכום")}
             {expTitle("כמה עלתה ההוצאה?", "אפשר להשאיר 0 ולקבוע אחר כך")}
             {expAmountHero(amount)}
             {/* Allow proceeding at 0 — a recurring bill whose amount changes each
@@ -1643,7 +1585,6 @@ export function ExpenseDialog({
       case "domain":
         return (
           <>
-            {expEyebrow(<ListIcon className="h-4 w-4" />, "סיווג")}
             {expTitle("לאיזה תחום שייכת ההוצאה?", "בחירה תעביר אותך אוטומטית לשלב הבא")}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {EXPENSE_BUSINESS_DOMAINS.map((d, i) => {
@@ -1675,7 +1616,6 @@ export function ExpenseDialog({
           const list = recurringProjects.filter((p) => p.label.toLowerCase().includes(q));
           return (
             <>
-              {expEyebrow(<ListIcon className="h-4 w-4" />, "פרויקט")}
               {expTitle("לאיזה פרויקט לשייך?")}
               {recurringProjects.length === 0 ? (
                 <div className="rounded-xl border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
@@ -1698,7 +1638,6 @@ export function ExpenseDialog({
           const list = recurringOrders.filter((o) => o.label.toLowerCase().includes(q));
           return (
             <>
-              {expEyebrow(<ListIcon className="h-4 w-4" />, "הזמנה")}
               {expTitle("לאיזו הזמנה לשייך?", "אפשר גם בלי הזמנה")}
               {searchBox("חיפוש הזמנה...")}
               <div className="grid gap-2">
@@ -1713,7 +1652,6 @@ export function ExpenseDialog({
         const list = recurringProperties.filter((p) => p.label.toLowerCase().includes(q));
         return (
           <>
-            {expEyebrow(<ListIcon className="h-4 w-4" />, "נכס")}
             {expTitle("לאיזה נכס לשייך?")}
             {recurringProperties.length === 0 ? (
               <div className="rounded-xl border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
@@ -1733,10 +1671,8 @@ export function ExpenseDialog({
         );
       }
       case "category": {
-        const domIcon = getBusinessDomainIcon(effectiveDomain);
         return (
           <>
-            {expEyebrow(domIcon ? (() => { const I = domIcon; return <I className="h-4 w-4" />; })() : null, getBusinessDomainLabel(effectiveDomain))}
             {expTitle("איזו קטגוריה?", isRecurring ? "לסיווג ולדוחות — לא השם שיוצג" : "קטגוריות מתוך התחום שבחרת")}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {categoryOptions.map((c, i) =>
@@ -1759,7 +1695,6 @@ export function ExpenseDialog({
       case "otherCategory":
         return (
           <>
-            {expEyebrow(null, "קטגוריה")}
             {expTitle("איזו קטגוריה?")}
             <Input value={categoryOther} onChange={(e) => setCategoryOther(e.target.value)} autoFocus />
           </>
@@ -1767,7 +1702,6 @@ export function ExpenseDialog({
       case "tags":
         return (
           <>
-            {expEyebrow(<VehicleIcon className="h-4 w-4" />, "רכב")}
             {expTitle("לשייך לרכב?", "אפשר לדלג")}
             <TagPicker value={tagIds} onChange={setTagIds} />
           </>
@@ -1775,7 +1709,6 @@ export function ExpenseDialog({
       case "date":
         return (
           <>
-            {expEyebrow(<CalendarIcon className="h-4 w-4" />, isRecurring ? "תאריך התחלה" : "תאריך")}
             {expTitle(isRecurring ? "ממתי מתחיל?" : "מתי בוצעה ההוצאה?", isRecurring ? "התאריך שממנו נספרים החיובים (וקובע את יום החיוב)" : undefined)}
             <DateInput value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} />
             <div className="mt-3 flex flex-wrap justify-center gap-2">
@@ -1795,7 +1728,6 @@ export function ExpenseDialog({
       case "recurrence":
         return (
           <>
-            {expEyebrow(<RecurringIcon className="h-4 w-4" />, "תדירות")}
             {expTitle("הוצאה חד-פעמית או חוזרת?", "חוזרת = תיווצר אוטומטית בכל תקופה")}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {expCard({ badge: 1, icon: <WalletIcon className="h-4 w-4" />, title: "חד-פעמי", sub: "הוצאה אחת בתאריך שנבחר", selected: !isRecurring, onClick: () => { setIsRecurring(false); expressAdvance(); } })}
@@ -1819,7 +1751,6 @@ export function ExpenseDialog({
         const currentKey = recurrenceKeyOf(recurFrequency, recurInterval);
         return (
           <>
-            {expEyebrow(<RecurringIcon className="h-4 w-4" />, "כל כמה זמן")}
             {expTitle("כל כמה זמן חוזרת ההוצאה?")}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {RECURRENCE_CHOICES.map((c, i) =>
@@ -1845,7 +1776,6 @@ export function ExpenseDialog({
       case "recurmonth":
         return (
           <>
-            {expEyebrow(<CalendarIcon className="h-4 w-4" />, "חודש")}
             {expTitle("באיזה חודש?")}
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {MONTH_OPTIONS.map((m, i) =>
@@ -1858,7 +1788,6 @@ export function ExpenseDialog({
         const derivedName = finalCategory || description.trim() || "הוצאה קבועה";
         return (
           <>
-            {expEyebrow(<AttachIcon className="h-4 w-4" />, "שם תבנית")}
             {expTitle("איך לקרוא להוצאה הקבועה?", "השם שיופיע ברשימת ההוצאות הקבועות")}
             <Input value={templateName} onChange={(e) => setTemplateName(e.target.value)} placeholder={derivedName} autoFocus />
             <div className="mt-1.5 text-center text-xs text-muted-foreground">
@@ -1870,7 +1799,6 @@ export function ExpenseDialog({
       case "recurvariable":
         return (
           <>
-            {expEyebrow(<WalletIcon className="h-4 w-4" />, "סכום")}
             {expTitle("הסכום קבוע או משתנה?", "משתנה = ייקבע בעת התשלום, כמו מס")}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {expCard({ badge: 1, title: "סכום קבוע", sub: Number(amount) > 0 ? ils(Number(amount)) : undefined, selected: !recurVariable, onClick: () => { setRecurVariable(false); expressAdvance(); } })}
@@ -1881,7 +1809,6 @@ export function ExpenseDialog({
       case "recurremind":
         return (
           <>
-            {expEyebrow(null, "תזכורת")}
             {expTitle("תזכורת חודשית לפני התשלום?", "כמה ימי עבודה לפני — שישי/שבת לא נספרים")}
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {([["ללא", ""], ["יום 1", "1"], ["2 ימים", "2"], ["3 ימים", "3"], ["5 ימים", "5"]] as const).map(([label, val]) =>
@@ -1893,7 +1820,6 @@ export function ExpenseDialog({
       case "recurpay":
         return (
           <>
-            {expEyebrow(<WalletIcon className="h-4 w-4" />, "תשלום")}
             {expTitle("איך משלמים?", "הוראת קבע = ייחשב כשולם אוטומטית ביום החיוב")}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {expCard({ badge: 1, title: "אישור ידני", sub: "יופיע ביומן לאישור תשלום", selected: !recurAutoPaid, onClick: () => { setRecurAutoPaid(false); expressAdvance(); } })}
@@ -1904,7 +1830,6 @@ export function ExpenseDialog({
       case "recurrange":
         return (
           <>
-            {expEyebrow(<CalendarIcon className="h-4 w-4" />, "טווח")}
             {expTitle("עד מתי?", "אפשר לדלג — ימשיך ללא הגבלה")}
             <div className="space-y-1">
               <div className="text-sm font-medium">תאריך סיום (לא חובה)</div>
@@ -1927,7 +1852,6 @@ export function ExpenseDialog({
       case "status":
         return (
           <>
-            {expEyebrow(<WalletIcon className="h-4 w-4" />, "סטטוס תשלום")}
             {expTitle("מה סטטוס התשלום?", `סכום ${ils(Number(amount) || 0)}`)}
             <div className="grid gap-2">
               {expCard({ badge: 1, title: "לא שולם", sub: "ההוצאה עדיין ממתינה לתשלום", tone: "unpaid", selected: paymentStatus === "not_paid", onClick: () => { setPaymentStatus("not_paid"); expressAdvance(); } })}
@@ -1939,7 +1863,6 @@ export function ExpenseDialog({
       case "paidamt":
         return (
           <>
-            {expEyebrow(<WalletIcon className="h-4 w-4" />, "תשלום חלקי")}
             {expTitle("כמה שולם עד כה?", `מתוך ${ils(Number(amount) || 0)}`)}
             {expAmountHero(paidAmount)}
             {expKeypad(setPaidAmount)}
@@ -1948,7 +1871,6 @@ export function ExpenseDialog({
       case "method":
         return (
           <>
-            {expEyebrow(<WalletIcon className="h-4 w-4" />, "אמצעי תשלום")}
             {expTitle("איך שילמת?", "לא חובה — אפשר לדלג")}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {PAYMENT_METHOD_OPTIONS.map((m, i) =>
@@ -1970,7 +1892,6 @@ export function ExpenseDialog({
       case "account":
         return (
           <>
-            {expEyebrow(<WalletIcon className="h-4 w-4" />, "חשבון")}
             {expTitle("מאיזה חשבון?")}
             {accountsList.length === 0 ? (
               <>
@@ -1996,7 +1917,6 @@ export function ExpenseDialog({
       case "installments":
         return (
           <>
-            {expEyebrow(<SplitIcon className="h-4 w-4" />, "אופן חיוב")}
             {expTitle("תשלום אחד או פריסה?")}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {expCard({ badge: 1, icon: <WalletIcon className="h-4 w-4" />, title: "תשלום אחד", selected: !installmentsMode, onClick: () => { setInstallmentsMode(false); expressAdvance(); } })}
@@ -2018,7 +1938,6 @@ export function ExpenseDialog({
       case "instcount":
         return (
           <>
-            {expEyebrow(<SplitIcon className="h-4 w-4" />, "פריסה")}
             {expTitle("לכמה תשלומים לפרוס?")}
             <InstallmentFields
               total={Number(amount) || 0}
@@ -2031,7 +1950,6 @@ export function ExpenseDialog({
       case "billing":
         return (
           <>
-            {expEyebrow(<ListIcon className="h-4 w-4" />, "חיוב לקוח")}
             {expTitle("שיוך לפרויקט")}
             <div className="grid gap-2">
               {expCard({ badge: 1, title: "לחיוב לקוח", sub: "ההוצאה תתווסף לחיוב הלקוח", selected: billedToCustomer, onClick: () => { setBilledToCustomer(true); setIncludedInBasePrice(false); expressAdvance(); } })}
@@ -2046,7 +1964,6 @@ export function ExpenseDialog({
         const sugg = isRecurring ? [] : [finalCategory || "הוצאה שוטפת", "תשלום לספק", "רכישה חד-פעמית"].filter(Boolean);
         return (
           <>
-            {expEyebrow(<AttachIcon className="h-4 w-4" />, "תיאור")}
             {expTitle(isRecurring ? "פירוט נוסף?" : "על מה ההוצאה?", isRecurring ? "לא חובה — השם כבר מזהה את התבנית" : "בחרו הצעה או כתבו חופשי")}
             <div className="mb-3 flex flex-wrap justify-center gap-2">
               {sugg.map((c) => (
@@ -2067,7 +1984,6 @@ export function ExpenseDialog({
       case "notes":
         return (
           <>
-            {expEyebrow(<AttachIcon className="h-4 w-4" />, "הערות")}
             {expTitle("הערות פנימיות?", "לא חובה")}
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
           </>
@@ -2075,7 +1991,6 @@ export function ExpenseDialog({
       case "files":
         return (
           <>
-            {expEyebrow(<UploadIcon className="h-4 w-4" />, "קבצים מצורפים")}
             {expTitle("לצרף חשבונית או קבלה?", "לא חובה")}
             <div className="flex items-center gap-2">
               <FileUploadActions
@@ -2095,7 +2010,6 @@ export function ExpenseDialog({
       case "worker":
         return (
           <>
-            {expEyebrow(<WalletIcon className="h-4 w-4" />, "עובד")}
             {expTitle("מי העובד?")}
             <div className="mb-3 inline-flex self-center rounded-2xl border border-border/60 bg-background/70 p-1 shadow-sm">
               <button
@@ -2161,7 +2075,6 @@ export function ExpenseDialog({
       case "wtiming":
         return (
           <>
-            {expEyebrow(<CalendarIcon className="h-4 w-4" />, "שעות עבודה")}
             {expTitle("מתי עבד/ה?")}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div className="space-y-1">
@@ -2202,7 +2115,6 @@ export function ExpenseDialog({
       case "wdate":
         return (
           <>
-            {expEyebrow(<CalendarIcon className="h-4 w-4" />, "תאריך")}
             {expTitle("מתי עבד/ה?")}
             <DateInput
               value={sessionDateOnly}
@@ -2218,7 +2130,6 @@ export function ExpenseDialog({
       case "wlabor":
         return (
           <>
-            {expEyebrow(<WalletIcon className="h-4 w-4" />, "עלות עבודה")}
             {expTitle(sessionPriceRequired ? "כמה מגיע לעובד?" : "עלות עבודה")}
             <CurrencyInput value={laborCost} onChange={(e) => setLaborCost(e.target.value)} />
             <div className="mt-1.5 text-xs text-muted-foreground">
@@ -2231,7 +2142,6 @@ export function ExpenseDialog({
       case "wbilling":
         return (
           <>
-            {expEyebrow(<ListIcon className="h-4 w-4" />, "חיוב לקוח")}
             {expTitle("לחייב את הלקוח?", "אפשר לדלג")}
             <label className="flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm">
               <input
@@ -2252,7 +2162,6 @@ export function ExpenseDialog({
       case "wpayment":
         return (
           <>
-            {expEyebrow(<WalletIcon className="h-4 w-4" />, "תשלום לעובד")}
             {expTitle("שולם לעובד?")}
             {isEditingSession && existingWorkerPaidAmount > 0 ? (
               <div className="mb-2 text-xs text-muted-foreground">שולם עד עכשיו: {formatIls(existingWorkerPaidAmount)} — תשלום חדש נרשם כתוספת בלבד.</div>
@@ -2280,7 +2189,6 @@ export function ExpenseDialog({
       case "wmethod":
         return (
           <>
-            {expEyebrow(<WalletIcon className="h-4 w-4" />, "אמצעי תשלום")}
             {expTitle("איך שולם לעובד?", "לא חובה — אפשר לדלג")}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {PAYMENT_METHOD_OPTIONS.map((m, i) =>
@@ -2302,7 +2210,6 @@ export function ExpenseDialog({
       case "waccount":
         return (
           <>
-            {expEyebrow(<WalletIcon className="h-4 w-4" />, "חשבון")}
             {expTitle("מאיזה חשבון שולם לעובד?")}
             {accountsList.length === 0 ? (
               <>
@@ -2396,7 +2303,6 @@ export function ExpenseDialog({
               ];
         return (
           <>
-            {expEyebrow(<CheckIcon className="h-4 w-4" />, "סיכום")}
             {expTitle("הכול מוכן?", "אפשר לחזור אחורה לתקן")}
             <div className="divide-y rounded-xl border">
               {rows.map(([k, v]) => (
@@ -2415,140 +2321,110 @@ export function ExpenseDialog({
   // Label for the review step's confirm action, shown in the pinned nav bar
   // instead of the dialog body (so it sits exactly where "המשך" always is).
   const reviewSubmitLabel = isWorkerPayment ? "שמור משמרת" : isRecurring ? "שמור הוצאה קבועה" : "שמור הוצאה";
+  const expNav = stepNavConfig(expStep);
+  const isReviewStep = expStep === "review";
+  const dialogTitleText = isEditingTemplate
+    ? "עריכת הוצאה קבועה"
+    : isEditingSession
+      ? "עריכת שכר עובד"
+      : isEditing
+        ? "עריכת הוצאה"
+        : "הוצאה חדשה";
+  const dialogDescriptionText = isEditingTemplate
+    ? "עדכון תבנית ההוצאה הקבועה."
+    : isEditingSession
+      ? "עדכון פרטי משמרת העובד."
+      : isEditing
+        ? "עדכון פרטי הוצאה קיימת."
+        : "יצירת הוצאה חדשה.";
 
-  function renderExpress(): ReactNode {
-    const nav = stepNavConfig(expStep);
-    const isReviewStep = expStep === "review";
-    return (
-      <form className="flex min-h-0 flex-1 flex-col" onSubmit={(e) => e.preventDefault()}>
-        {/* Progress bar stays with the pinned header/footer — never scrolls
-            out of view along with the step content. */}
-        <div className="flex-none px-4 pt-3 sm:px-6">
-          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${expProgress}%` }} />
-          </div>
-          {presetTagLabel ? (
-            <div className="mt-2 flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-1.5 text-xs">
-              <VehicleIcon className="h-3.5 w-3.5 text-muted-foreground" />
-              <span>משויך לרכב: <span className="font-medium text-foreground">{presetTagLabel}</span></span>
-            </div>
-          ) : null}
-        </div>
-
-        {/* The ONLY scrolling region — header above and nav below stay fixed. */}
-        <div key={expStep} className="min-h-0 flex-1 overflow-y-auto px-4 py-3 [justify-content:safe_center] sm:px-6">
-          {expressStageContent()}
-
-          {errorMessage ? (
-            <div role="alert" className="mt-4 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
-              {errorMessage}
-            </div>
-          ) : null}
-        </div>
-
-        {/* Pinned nav bar — the ONE forward control for every step (back at the
-            start, forward/save at the end), always visible without scrolling. */}
-        <div className="flex flex-none flex-wrap items-center gap-2 border-t border-border/70 px-4 py-3 sm:px-6">
-          <Button
-            type="button"
-            variant="secondary"
-            className="me-auto min-w-0"
-            onClick={() => expressGo(-1)}
-            disabled={expIndex === 0}
-          >
-            <ArrowRightIcon className="h-4 w-4" />
-            חזרה
-          </Button>
-          {isReviewStep ? (
-            <Button type="button" onClick={() => void handleSubmit()} disabled={saving}>
-              {saving ? (
-                <>
-                  <SpinnerIcon className="h-4 w-4 animate-spin" />
-                  שומר...
-                </>
-              ) : (
-                <>
-                  <CheckIcon className="h-4 w-4" />
-                  {reviewSubmitLabel}
-                </>
-              )}
-            </Button>
-          ) : (
-            <>
-              <Button type="button" onClick={() => expressGo(1)} disabled={nav.disabled}>
-                המשך
-                <ArrowLeftIcon className="h-4 w-4" />
-              </Button>
-              {nav.skip ? (
-                <button type="button" onClick={nav.skip} className="text-sm font-semibold text-muted-foreground hover:text-foreground">
-                  דלג
-                </button>
-              ) : null}
-            </>
-          )}
-        </div>
-      </form>
-    );
-  }
+  // Shared between both render modes — express's StepWizard body and the full
+  // form's own scrolling div — so ONE swipe-to-dismiss (see FormDialog/
+  // StepWizardDialog for the same mechanism) covers whichever is mounted.
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const swipeProps = useSwipeToDismiss({
+    enabled: true,
+    bodyRef,
+    onDismiss: () => {
+      if (!saving) onOpenChange(false);
+    },
+  });
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!saving) onOpenChange(o); }}>
-      <ResponsiveSheetContent>
+      {/* hideClose only for express: StepWizard renders its own X there. Full-form
+          edit mode has no header X of its own, so it keeps the primitive's default.
+          className is the same flex-column shell every other full-screen dialog gets
+          via StepWizardDialog/AdaptivePageDialog — without it the header/body/footer
+          just stack in normal flow instead of the footer pinning to the bottom. */}
+      <FullScreenDialogContent
+        hideClose={activeMode === "express"}
+        className={DIALOG_CHROME_CONTENT_PAGE}
+        {...swipeProps}
+      >
+        {activeMode === "express" ? (
+          <StepWizard
+            variant="dialog"
+            progressVariant="bar"
+            showStepCounter={false}
+            grabber
+            bodyRef={bodyRef}
+            title={<WizardTitle title={dialogTitleText} description={dialogDescriptionText} />}
+            onClose={() => {
+              if (!saving) onOpenChange(false);
+            }}
+            closeDisabled={saving}
+            onBack={expIndex > 0 ? () => expressGo(-1) : undefined}
+            onNext={() => (isReviewStep ? void handleSubmit() : expressGo(1))}
+            nextLabel={isReviewStep ? (saving ? "שומר..." : reviewSubmitLabel) : "המשך"}
+            nextDisabled={isReviewStep ? saving : expNav.disabled}
+            isLastStep={isReviewStep}
+            footerCenter={
+              expNav.skip ? (
+                <button
+                  type="button"
+                  onClick={expNav.skip}
+                  className="text-sm font-semibold text-muted-foreground hover:text-foreground"
+                >
+                  דלג
+                </button>
+              ) : undefined
+            }
+            error={errorMessage || undefined}
+            steps={expressSteps.map((id) => ({ n: id, label: id }))}
+            current={expStep}
+            // Not used in "bar" mode (no clickable circles render), but the
+            // prop is required regardless.
+            canClickStep={() => false}
+            onStepClick={() => {}}
+          >
+            {presetTagLabel ? (
+              <div className="mb-3 flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-1.5 text-xs">
+                <VehicleIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                <span>
+                  משויך לרכב: <span className="font-medium text-foreground">{presetTagLabel}</span>
+                </span>
+              </div>
+            ) : null}
+            <div key={expStep}>{expressStageContent()}</div>
+          </StepWizard>
+        ) : (
+        <>
+        <div className="mx-auto -mt-1 mb-1 h-1 w-10 shrink-0 rounded-full bg-muted-foreground/30 sm:hidden" aria-hidden />
         <DialogHeader className="flex-none border-b px-4 pb-3 pt-5 sm:px-6">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <DialogTitle>
-                {isEditingTemplate
-                  ? "עריכת הוצאה קבועה"
-                  : isEditingSession
-                    ? "עריכת שכר עובד"
-                    : isEditing
-                      ? "עריכת הוצאה"
-                      : "הוספת הוצאה"}
-              </DialogTitle>
-              <DialogDescription className={activeMode === "express" ? "sr-only" : undefined}>
-                {isEditingTemplate
-                  ? "עדכון תבנית ההוצאה הקבועה."
-                  : isEditingSession
-                    ? "עדכון פרטי משמרת העובד."
-                    : isEditing
-                      ? "עדכון פרטי הוצאה קיימת."
-                      : "יצירת הוצאה חדשה."}
-              </DialogDescription>
+              <DialogTitle>{dialogTitleText}</DialogTitle>
+              <DialogDescription>{dialogDescriptionText}</DialogDescription>
             </div>
-            {showModeToggle ? (
-              <div className="inline-flex flex-none items-center gap-0.5 self-start rounded-full border bg-muted/40 p-1">
-                <button
-                  type="button"
-                  onClick={() => chooseMode("form")}
-                  className={cn(
-                    "whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors",
-                    activeMode === "form" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  מסך מלא
-                </button>
-                <button
-                  type="button"
-                  onClick={() => chooseMode("express")}
-                  className={cn(
-                    "whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors",
-                    activeMode === "express" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  שלב אחר שלב
-                </button>
-              </div>
-            ) : null}
           </div>
         </DialogHeader>
 
-        {activeMode === "express" ? renderExpress() : (
         <form
           className="flex min-h-0 flex-1 flex-col"
           onSubmit={(e) => { e.preventDefault(); void handleSubmit(); }}
         >
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 sm:px-6">
+        <div ref={bodyRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 sm:px-6">
           {/* Amount hero — first, like the mockup. For a variable recurring bill this
               is the ESTIMATE (base) used for planning; the real amount is set at pay. */}
           {!isWorkerPayment ? (
@@ -3423,8 +3299,9 @@ export function ExpenseDialog({
             </Button>
           </DialogFooter>
         </form>
+        </>
         )}
-      </ResponsiveSheetContent>
+      </FullScreenDialogContent>
     </Dialog>
   );
 }

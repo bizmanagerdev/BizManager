@@ -12,12 +12,13 @@
 // answer on every screen.
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useRef, useState, type TouchEvent as ReactTouchEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AddIcon, CashIcon, ClockIcon, ExpenseIcon, IncomeIcon, NotificationIcon, OrderIcon, PaymentIcon, ProjectIcon, SpinnerIcon, TaskIcon, TimerIcon, TransferIcon, UserIcon } from "@/components/ui/icons";
+import { AddIcon, CashIcon, ClockIcon, CloseIcon, ExpenseIcon, IncomeIcon, NotificationIcon, OrderIcon, PaymentIcon, ProjectIcon, SpinnerIcon, TaskIcon, TimerIcon, TransferIcon, UserIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { HoverPanel, HoverPanelContent, HoverPanelTrigger, useHoverPanel } from "@/components/ui/hover-panel";
+import { useSwipeToDismiss } from "@/components/ui/dialog-chrome";
 import { ViewDialog } from "@/components/ui/view-dialog";
 import { TOPBAR_ICON_BUTTON, TOPBAR_ICON_STROKE } from "@/components/layout/topbar-icon";
 import { QUICK_TILE_CLASS_SM, QuickTileContent } from "@/components/ui/quick-tile";
@@ -183,10 +184,6 @@ export function QuickCreateMenu({
   // Once mounted, keep the dialog host mounted — remounting it would reset any
   // in-progress wizard draft state the user might reopen to.
   const [dialogsMounted, setDialogsMounted] = useState(false);
-  // Swipe-down-to-close on the phone panel: how far the card has been dragged,
-  // and where the finger started. Only downward drags count.
-  const [dragY, setDragY] = useState(0);
-  const dragStartY = useRef<number | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef(true);
   useEffect(() => {
@@ -255,36 +252,16 @@ export function QuickCreateMenu({
   // also keeps it correct at any --font-scale, which a hard height would not.
   const isFab = variant === "fab";
 
-  // Swipe the phone card down to dismiss it, the way the sheets elsewhere in the
-  // app behave. Touch events, not pointer events: the card sits on top of a
-  // scrollable grid, and starting a drag only when that grid is scrolled to the
-  // top is what keeps a swipe from fighting a scroll. Nothing here calls
-  // preventDefault, so if the grid IS scrolled the browser just scrolls it.
-  const swipeProps = isFab
-    ? {
-        onTouchStart: (event: ReactTouchEvent) => {
-          if ((gridRef.current?.scrollTop ?? 0) > 0) return;
-          dragStartY.current = event.touches[0]?.clientY ?? null;
-        },
-        onTouchMove: (event: ReactTouchEvent) => {
-          if (dragStartY.current === null) return;
-          const delta = (event.touches[0]?.clientY ?? 0) - dragStartY.current;
-          // Downward only — dragging up shouldn't lift the card off its anchor.
-          setDragY(delta > 0 ? delta : 0);
-        },
-        onTouchEnd: () => {
-          // ~4.5rem of travel: far enough not to fire on a stray tap-drag, close
-          // enough that a flick clears it.
-          if (dragY > 72) panel.hide();
-          dragStartY.current = null;
-          setDragY(0);
-        },
-        onTouchCancel: () => {
-          dragStartY.current = null;
-          setDragY(0);
-        },
-      }
-    : {};
+  // Swipe the phone card down to dismiss it, the way the full-page quick-action
+  // dialogs it opens now do too (components/ui/dialog-chrome.tsx's shared
+  // useSwipeToDismiss — this used to be its own hand-rolled, React-state-driven
+  // copy, which was the exact "jump instead of tracking the finger" bug fixed
+  // there; sharing the hook keeps this panel from drifting back into it).
+  const swipeProps = useSwipeToDismiss({
+    enabled: isFab,
+    bodyRef: gridRef,
+    onDismiss: () => panel.hide(),
+  });
 
   const tiles = items.map((item) => (
     <Button
@@ -324,25 +301,41 @@ export function QuickCreateMenu({
             type="button"
             variant="ghost"
             size="icon-sm"
-            className={
+            className={cn(
+              // Shrinks and swaps to an X while the panel is open — the same
+              // trigger both opens and closes it, so it should read as "tap to
+              // close" rather than stay a big + sitting uselessly over its own
+              // open panel.
+              "transition-all duration-200",
               variant === "fab"
-                ? // The one filled, raised control in the bottom bar — it's the
-                  // primary action on mobile, so it reads as a button, not a glyph.
-                  "h-[52px] w-[52px] -translate-y-3 rounded-2xl bg-secondary text-secondary-foreground shadow-lg shadow-secondary/30 ring-4 ring-sidebar hover:bg-secondary hover:text-secondary-foreground [&_svg]:!size-7"
+                ? cn(
+                    // The one filled, raised control in the bottom bar — it's the
+                    // primary action on mobile, so it reads as a button, not a glyph.
+                    // Only raised while CLOSED: open, it settles flush into the bar
+                    // instead (no translate) so the whole trigger sits within the
+                    // bar's own 58px, not poking above it — that's what lets the
+                    // mobile scrim's cutoff below be one flat line at the bar's
+                    // real top edge instead of an arbitrary buffer above it.
+                    "rounded-2xl bg-secondary text-secondary-foreground shadow-lg shadow-secondary/30 ring-4 ring-sidebar hover:bg-secondary hover:text-secondary-foreground",
+                    panel.open ? "h-10 w-10 translate-y-0 [&_svg]:!size-5" : "h-[52px] w-[52px] -translate-y-3 [&_svg]:!size-7"
+                  )
                 : variant === "desktopFab"
-                  ? // The same raised rounded square as the mobile FAB — not a
-                    // circle — but a size up (60px) with a heavier shadow: on a
-                    // phone the + sits in the nav bar where you expect it, while
-                    // on desktop it floats over an empty corner and has to be
-                    // found. The bottom bar's lift and ring are dropped — this
-                    // one has nothing to sit in.
-                    "h-[60px] w-[60px] rounded-2xl bg-secondary text-secondary-foreground shadow-xl shadow-secondary/40 hover:bg-secondary hover:text-secondary-foreground [&_svg]:!size-8"
+                  ? cn(
+                      // The same raised rounded square as the mobile FAB — not a
+                      // circle — but a size up (60px) with a heavier shadow: on a
+                      // phone the + sits in the nav bar where you expect it, while
+                      // on desktop it floats over an empty corner and has to be
+                      // found. The bottom bar's lift and ring are dropped — this
+                      // one has nothing to sit in.
+                      "rounded-2xl bg-secondary text-secondary-foreground shadow-xl shadow-secondary/40 hover:bg-secondary hover:text-secondary-foreground",
+                      panel.open ? "h-11 w-11 [&_svg]:!size-5" : "h-[60px] w-[60px] [&_svg]:!size-8"
+                    )
                   : // Same transparent glyph treatment as its neighbours (no fill — the
                     // user vetoed a colored blob up here); only the size is bumped, since
                     // it's the one button you act with rather than glance at.
                     `${TOPBAR_ICON_BUTTON} [&_svg]:!size-5`
-            }
-            aria-label="הוספה מהירה"
+            )}
+            aria-label={panel.open ? "סגירת הוספה מהירה" : "הוספה מהירה"}
             id={variant === "fab" ? "bottomnav-quick-create-trigger" : "topbar-quick-create-trigger"}
             // Hover-to-open only makes sense with a real pointer. On the touch FAB
             // it raced the trigger's click-toggle, so the panel flashed open and
@@ -357,7 +350,11 @@ export function QuickCreateMenu({
                   },
                 })}
           >
-            <AddIcon strokeWidth={TOPBAR_ICON_STROKE} />
+            {panel.open ? (
+              <CloseIcon strokeWidth={TOPBAR_ICON_STROKE} />
+            ) : (
+              <AddIcon strokeWidth={TOPBAR_ICON_STROKE} />
+            )}
           </Button>
         </HoverPanelTrigger>
         <HoverPanelContent
@@ -380,17 +377,6 @@ export function QuickCreateMenu({
               // has nothing to shift and the card stays centred under the FAB.
               "z-[70] w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] rounded-[1.125rem]"
           )}
-          // Follow the finger while it drags, then settle back (or close).
-          style={
-            isFab
-              ? {
-                  transform: dragY ? `translateY(${dragY}px)` : undefined,
-                  // No transition mid-drag (the card must track the finger);
-                  // once dragY is back to 0 it's a release, so ease it home.
-                  transition: dragY ? "none" : "transform 150ms ease-out",
-                }
-              : undefined
-          }
           {...swipeProps}
           // No mouse-leave close on the FAB: on touch that fires while scrolling.
           {...(variant === "fab" ? {} : panel.panelProps)}
@@ -419,16 +405,30 @@ export function QuickCreateMenu({
         </HoverPanelContent>
       </HoverPanel>
 
-      {/* Mobile only: dim + blur everything behind the panel, including the nav
-          bar it opens out of. Portaled to <body> because the bottom nav is a
-          backdrop-filter ancestor, which would otherwise become the containing
-          block for a `fixed` child and pin the scrim inside the 58px bar.
-          Sits above the nav's z-50 and below the panel's z-[70]. Desktop keeps
-          its bare popover — the user does not want a scrim there. */}
+      {/* Mobile only: dim + blur everything ABOVE the nav bar — not the bar
+          itself (so the trigger, now the X that closes this same panel, and
+          every other tab in it stay crisp and tappable instead of dimmed like
+          they're inert). A `mask-image` circular hole around just the trigger
+          was tried first, so the rest of the bar could stay dimmed like the
+          original design — dropped: it fought with `backdrop-blur` (produced
+          a hazy light patch right at the hole, user-visible) and was more
+          fragile than it needed to be for what's really a simple case, now
+          that the trigger button itself doesn't poke above the bar's own top
+          edge anymore (it no longer raises while OPEN — see its className
+          above) — so a flat cutoff at that edge is genuinely correct, not an
+          approximation. `bottom-[calc(58px+env(safe-area-inset-bottom))]`
+          matches the bar's real rendered height (58px content row) plus the
+          safe-area padding it adds below that on notched phones — without
+          the safe-area term this would sit UNDER the bar on those phones,
+          clipping its bottom edge. Portaled to <body> because the bottom nav
+          is a backdrop-filter ancestor, which would otherwise become the
+          containing block for a `fixed` child and pin the scrim inside the
+          bar. Sits above the nav's z-50 and below the panel's z-[70]. Desktop
+          keeps its bare popover — the user does not want a scrim there. */}
       {isFab && panel.open && typeof document !== "undefined"
         ? createPortal(
             <div
-              className="fixed inset-0 z-[60] bg-primary/60 backdrop-blur-[2px] animate-in fade-in-0 md:hidden"
+              className="fixed inset-x-0 top-0 bottom-[calc(58px+env(safe-area-inset-bottom))] z-[60] bg-primary/60 backdrop-blur-[2px] animate-in fade-in-0 md:hidden"
               // Radix closes on outside pointer-down anyway; this keeps the tap
               // from reaching whatever is under the scrim.
               onPointerDown={() => panel.hide()}

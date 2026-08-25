@@ -148,6 +148,7 @@ export default async function NewSalesOrderPage({
           productsError={productsError?.message ?? null}
           mode="create"
           initialOrder={duplicateInitialOrder}
+          draftKey="order-create"
         />
       </div>
     </AppShell>

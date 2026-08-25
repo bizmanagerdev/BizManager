@@ -14,8 +14,7 @@
 // crowded the bar next to the action that matters. Pass showCancel for the rare
 // flow where walking away needs to be as loud as saving.
 
-import { useRef, useState, type ReactNode } from "react";
-import type { TouchEvent as ReactTouchEvent } from "react";
+import { useRef, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -29,13 +28,10 @@ import {
   DialogChromeBody,
   DialogChromeFooter,
   DialogChromeHeader,
+  useSwipeToDismiss,
 } from "@/components/ui/dialog-chrome";
 import { AdaptiveDialog, AdaptivePageDialog, dialogVariants } from "@/components/layout/page-layout";
 import { cn } from "@/lib/utils";
-
-// A full page needs a bigger drag before it counts as "throw this away" than a
-// small popover would — there's much more room to graze the header by accident.
-const FULL_SCREEN_DISMISS_THRESHOLD = 120;
 
 export function FormDialog({
   open,
@@ -83,12 +79,6 @@ export function FormDialog({
   children: ReactNode;
 }) {
   const bodyRef = useRef<HTMLDivElement>(null);
-  // Swipe-down-to-close on the full-page mobile layout: how far it's been
-  // dragged, and where the finger started. Only counts as a drag when it
-  // begins with the body scrolled to the top, so it never fights a scroll —
-  // same gating QuickCreateMenu's phone sheet uses.
-  const [dragY, setDragY] = useState(0);
-  const dragStartY = useRef<number | null>(null);
 
   function handleOpenChange(next: boolean) {
     // Never vanish mid-save — the user would have no idea whether it landed.
@@ -96,28 +86,11 @@ export function FormDialog({
     onOpenChange(next);
   }
 
-  const swipeProps = fullScreen
-    ? {
-        onTouchStart: (event: ReactTouchEvent) => {
-          if ((bodyRef.current?.scrollTop ?? 0) > 0) return;
-          dragStartY.current = event.touches[0]?.clientY ?? null;
-        },
-        onTouchMove: (event: ReactTouchEvent) => {
-          if (dragStartY.current === null) return;
-          const delta = (event.touches[0]?.clientY ?? 0) - dragStartY.current;
-          setDragY(delta > 0 ? delta : 0);
-        },
-        onTouchEnd: () => {
-          if (dragY > FULL_SCREEN_DISMISS_THRESHOLD) handleOpenChange(false);
-          dragStartY.current = null;
-          setDragY(0);
-        },
-        onTouchCancel: () => {
-          dragStartY.current = null;
-          setDragY(0);
-        },
-      }
-    : {};
+  const swipeProps = useSwipeToDismiss({
+    enabled: fullScreen,
+    bodyRef,
+    onDismiss: () => handleOpenChange(false),
+  });
 
   const content = (
     <>
@@ -126,7 +99,7 @@ export function FormDialog({
           <DialogTitle>{title}</DialogTitle>
           {/* Always rendered: Radix warns without a description, and screen
               readers announce the dialog's purpose from it. */}
-          <DialogDescription className={cn("text-xs", !description && "sr-only")}>
+          <DialogDescription className={cn("text-[11px] leading-snug", !description && "sr-only")}>
             {description ?? title}
           </DialogDescription>
         </DialogHeader>
@@ -179,10 +152,6 @@ export function FormDialog({
           size={size}
           hideClose
           className={cn(DIALOG_CHROME_CONTENT_PAGE, className)}
-          style={{
-            transform: dragY ? `translateY(${dragY}px)` : undefined,
-            transition: dragY ? "none" : "transform 150ms ease-out",
-          }}
           {...swipeProps}
         >
           {content}

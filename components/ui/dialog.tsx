@@ -106,15 +106,19 @@ export const ResponsiveSheetContent = React.forwardRef<
 ));
 ResponsiveSheetContent.displayName = "ResponsiveSheetContent";
 
-// Mobile: a true full page — inset-0, no margin, no rounded corners — instead
-// of a vertically-centred box. A centred dialog loses most of its usable
-// height the moment the on-screen keyboard opens (it shrinks the box AND
-// leaves dead space above/below it); a full page gives the form every pixel
-// the viewport has above the keyboard. Desktop (sm+) is untouched: same
-// centered-box treatment as DialogContent. Built directly on the primitive,
-// not on DialogContent, for the same reason as ResponsiveSheetContent above —
-// DialogContent's centered positioning can't be reliably overridden per
-// breakpoint through twMerge.
+// Mobile: near-full page — inset except a small gap at the TOP, rounded top
+// corners — instead of a vertically-centred box OR a literal edge-to-edge
+// page. A centred dialog loses most of its usable height the moment the
+// on-screen keyboard opens (it shrinks the box AND leaves dead space above/
+// below it); this gives the form nearly every pixel of that. Edge-to-edge
+// (the original version of this) read as a full navigation, not an overlay —
+// the small top gap (revealing a sliver of the dimmed page behind) plus
+// rounded top corners is what sells "something opened ON TOP of where you
+// were", not "you left the page" (user request, 2026-08-25). Desktop (sm+) is
+// untouched: same centered-box treatment as DialogContent. Built directly on
+// the primitive, not on DialogContent, for the same reason as
+// ResponsiveSheetContent above — DialogContent's centered positioning can't
+// be reliably overridden per breakpoint through twMerge.
 export const FullScreenDialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { hideClose?: boolean }
@@ -124,7 +128,7 @@ export const FullScreenDialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed inset-0 z-50 w-full rounded-none border-0 bg-background shadow-none duration-200",
+        "fixed inset-x-0 bottom-0 top-3 z-50 w-full overflow-hidden rounded-t-2xl border-0 bg-background shadow-2xl duration-200",
         "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
         "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
         "sm:inset-auto sm:left-1/2 sm:top-1/2 sm:w-[calc(100%-1rem)] sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border sm:shadow-lg",

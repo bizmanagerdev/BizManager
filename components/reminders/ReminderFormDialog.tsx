@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { DateTimeInput } from "@/components/ui/date-input";
-import { FormDialog } from "@/components/ui/form-dialog";
+import { StepWizardDialog, useStepFlow } from "@/components/ui/step-wizard";
+import { StepHeading } from "@/components/ui/option-row";
+import { SummaryRow, SummarySection } from "@/components/ui/summary";
 import { AssigneeSelect } from "@/components/collections/AssigneeSelect";
 import { useAssignableUsers } from "@/hooks/useAssignableUsers";
 import { toHebrewError } from "@/lib/error-messages";
@@ -12,11 +14,25 @@ import { toHebrewError } from "@/lib/error-messages";
 // One dialog for BOTH creating and editing a reminder — reused across the order
 // panel, the worklist, and anywhere else. Create posts to /api/reminders/create
 // with the entity links; edit posts to /api/reminders/update by id.
+//
+// Rebuilt 2026-08-25 onto the same atomic step-wizard architecture as
+// IncomeDialog/CollectPaymentDialog/ExpenseDialog (one question per screen)
+// instead of a single-page FormDialog — part of converging every quick-action
+// dialog onto one shared shape.
 export type ReminderFormValue = {
   id: string;
   remindAt: string | null;
   content: string | null;
   assignedTo: string | null;
+};
+
+type ReminderStepId = "when" | "note" | "assignee" | "summary";
+
+const STEP_LABEL: Record<ReminderStepId, string> = {
+  when: "מועד",
+  note: "פרטים",
+  assignee: "אחראי",
+  summary: "סיכום",
 };
 
 // ISO → value for <input type="datetime-local"> in the viewer's local time.
@@ -26,6 +42,14 @@ function isoToLocalInput(iso?: string | null): string {
   if (Number.isNaN(d.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatLocalDateTime(value: string): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export default function ReminderFormDialog({
@@ -60,22 +84,21 @@ export default function ReminderFormDialog({
    */
   canAssignOthers?: boolean;
 }) {
-  const { currentUserId } = useAssignableUsers();
+  const { users, currentUserId } = useAssignableUsers();
+  const [stepId, setStepId] = useState<ReminderStepId>("when");
   const [remindAt, setRemindAt] = useState("");
   const [note, setNote] = useState("");
   const [assignee, setAssignee] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const noteRef = useRef<HTMLInputElement>(null);
 
-  // When the date is already chosen (opened from the calendar), land on the note
-  // field so the user just types what to be reminded about.
-  useEffect(() => {
-    if (open && mode === "create" && defaultRemindAt) {
-      const t = setTimeout(() => noteRef.current?.focus(), 60);
-      return () => clearTimeout(t);
-    }
-  }, [open, mode, defaultRemindAt]);
+  const stepIds = useMemo<ReminderStepId[]>(() => {
+    const ids: ReminderStepId[] = ["when", "note"];
+    if (canAssignOthers) ids.push("assignee");
+    ids.push("summary");
+    return ids;
+  }, [canAssignOthers]);
+  const wizardSteps = useMemo(() => stepIds.map((id) => ({ n: id, label: STEP_LABEL[id] })), [stepIds]);
 
   useEffect(() => {
     if (!open) return;
@@ -89,6 +112,9 @@ export default function ReminderFormDialog({
       setAssignee(currentUserId ?? "");
     }
     setError(null);
+    // When the date is already chosen (opened from the calendar), land on the
+    // note field so the user just types what to be reminded about.
+    setStepId(mode === "create" && defaultRemindAt ? "note" : "when");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -96,6 +122,30 @@ export default function ReminderFormDialog({
   useEffect(() => {
     if (open && mode === "create" && currentUserId) setAssignee((prev) => prev || currentUserId);
   }, [open, mode, currentUserId]);
+
+  function isSatisfied(id: ReminderStepId): boolean {
+    switch (id) {
+      case "when":
+        return Boolean(remindAt);
+      case "note":
+        return Boolean(note.trim());
+      case "assignee":
+      case "summary":
+        return true;
+    }
+  }
+
+  const { stepIndex, isLastStep, canClickStep, goToStep, goBack, goNext } = useStepFlow<ReminderStepId>({
+    stepId,
+    setStepId,
+    steps: stepIds,
+    isSatisfied,
+  });
+
+  function handleOpenChange(next: boolean) {
+    if (!next && submitting) return;
+    onOpenChange(next);
+  }
 
   async function submit() {
     if (submitting) return;
@@ -132,7 +182,7 @@ export default function ReminderFormDialog({
       if (!res.ok) throw new Error(json.error);
       toast.success(mode === "edit" ? "התזכורת עודכנה." : "התזכורת נוספה.");
       onSaved?.();
-      onOpenChange(false);
+      handleOpenChange(false);
     } catch (err: unknown) {
       setError(toHebrewError(err, "שמירה נכשלה."));
     } finally {
@@ -140,36 +190,56 @@ export default function ReminderFormDialog({
     }
   }
 
+  const assigneeName = users.find((u) => u.id === assignee)?.label;
+
   return (
-    <FormDialog
+    <StepWizardDialog
       open={open}
-      onOpenChange={onOpenChange}
-      title={mode === "edit" ? "עריכת תזכורת" : "תזכורת חדשה"}
-      description={mode === "edit" ? "עדכון מועד, פרטים או אחראי." : undefined}
+      onOpenChange={handleOpenChange}
+      dialogTitle={mode === "edit" ? "עריכת תזכורת" : "תזכורת חדשה"}
+      dialogDescription={mode === "edit" ? "עדכון פרטי התזכורת" : "יצירת תזכורת חדשה"}
       size="formMd"
-      onSubmit={() => void submit()}
-      submitLabel={mode === "edit" ? "שמירה" : "הוספת תזכורת"}
-      busyLabel="שומר..."
-      busy={submitting}
+      fullScreen
+      progressVariant="bar"
+      steps={wizardSteps}
+      current={stepId}
+      canClickStep={canClickStep}
+      onStepClick={goToStep}
+      closeDisabled={submitting}
+      onBack={stepIndex(stepId) > 0 ? goBack : undefined}
+      backDisabled={submitting}
+      onNext={() => (isLastStep ? void submit() : goNext())}
+      nextLabel={isLastStep ? (submitting ? "שומר..." : mode === "edit" ? "שמירה" : "הוספת תזכורת") : undefined}
+      nextDisabled={isLastStep ? submitting : !isSatisfied(stepId)}
+      isLastStep={isLastStep}
+      submitOnEnter
       error={error || undefined}
     >
-
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <label className="text-sm font-medium">מתי להזכיר? *</label>
-            <DateTimeInput value={remindAt} onChange={(e) => setRemindAt(e.target.value)} />
-          </div>
-          <div className="space-y-1">
-            <label className="text-sm font-medium">על מה להזכיר? *</label>
-            <Input ref={noteRef} value={note} onChange={(e) => setNote(e.target.value)} />
-          </div>
-          {canAssignOthers ? (
-            <div className="space-y-1">
-              <label className="text-sm font-medium">אחראי</label>
-              <AssigneeSelect value={assignee} onChange={setAssignee} includeMeDefault />
-            </div>
-          ) : null}
-        </div>
-    </FormDialog>
+      {stepId === "when" ? (
+        <>
+          <StepHeading title="מתי להזכיר?" />
+          <DateTimeInput value={remindAt} onChange={(e) => setRemindAt(e.target.value)} />
+        </>
+      ) : stepId === "note" ? (
+        <>
+          <StepHeading title="על מה להזכיר?" />
+          <Input autoFocus value={note} onChange={(e) => setNote(e.target.value)} />
+        </>
+      ) : stepId === "assignee" ? (
+        <>
+          <StepHeading title="מי אחראי?" sub="לא חובה" />
+          <AssigneeSelect value={assignee} onChange={setAssignee} includeMeDefault />
+        </>
+      ) : (
+        <>
+          <StepHeading title="לאשר ולשמור?" />
+          <SummarySection title="פרטי התזכורת">
+            <SummaryRow label="מועד" value={formatLocalDateTime(remindAt)} />
+            <SummaryRow label="פרטים" value={note} />
+            {canAssignOthers ? <SummaryRow label="אחראי" value={assigneeName ?? "—"} /> : null}
+          </SummarySection>
+        </>
+      )}
+    </StepWizardDialog>
   );
 }

@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AddUserIcon, AiIcon, CardIcon, CheckIcon, CloseIcon, DocumentIcon, EditIcon, SearchIcon, UserIcon, WazeIcon } from "@/components/ui/icons";
-import { StepWizard } from "@/components/ui/step-wizard";
+import { StepWizard, WizardTitle, useStepFlow } from "@/components/ui/step-wizard";
+import { OptionRow, StepHeading } from "@/components/ui/option-row";
 import { SummaryRow, SummarySection } from "@/components/ui/summary";
-import { NativeSelect } from "@/components/ui/native-select";
 import { cn } from "@/lib/utils";
 import { offlineFetch, saveDraft, loadDraft, clearDraft } from "@/lib/offline-queue";
 import { toHebrewError } from "@/lib/error-messages";
@@ -25,13 +25,44 @@ import {
   boolToElevator,
   type MovingEndpointValue,
 } from "@/components/projects/MovingAddressFields";
-import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
+import { useCustomerPicker } from "@/hooks/useCustomerPicker";
 import { PAYMENT_TERMS_OPTIONS, computeDueDate } from "@/lib/paymentTerms";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import { omitUnknownPlace } from "@/lib/ui/cities";
 
 type Row = Record<string, unknown>;
-type Step = 1 | 2 | 3 | 4;
+type Step =
+  | "customer"
+  | "name"
+  | "projectType"
+  | "status"
+  | "dates"
+  | "manager"
+  | "moving"
+  | "notes"
+  | "attachments"
+  | "price"
+  | "paymentTerms"
+  | "dueDate"
+  | "expensesSeparately"
+  | "summary";
+
+const STEP_LABEL: Record<Step, string> = {
+  customer: "לקוח",
+  name: "שם",
+  projectType: "סוג",
+  status: "סטטוס",
+  dates: "תאריכים",
+  manager: "מנהל",
+  moving: "כתובות",
+  notes: "הערות",
+  attachments: "קבצים",
+  price: "מחיר",
+  paymentTerms: "תשלום",
+  dueDate: "פירעון",
+  expensesSeparately: "הוצאות",
+  summary: "סיכום",
+};
 
 /** Serialisable in-progress form, persisted to localStorage so a create draft
  *  survives going offline / leaving the app / a reload (attachments excluded —
@@ -199,12 +230,14 @@ async function uploadProjectDocument(projectId: string, file: File) {
   }
 }
 
-const WIZARD_STEPS: { n: Step; label: string }[] = [
-  { n: 1, label: "לקוח" },
-  { n: 2, label: "פרטים" },
-  { n: 3, label: "תשלום" },
-  { n: 4, label: "סיכום" },
-];
+const KNOWN_STEPS = new Set<string>(Object.keys(STEP_LABEL));
+/** A draft saved before this wizard went atomic stored `step` as 1|2|3|4 — a
+ *  stale one restored now would set the string-keyed state to a raw number,
+ *  matching no step and rendering a blank body. Unknown values fall back to
+ *  the first step instead of trusting old localStorage data blindly. */
+function normalizeRestoredStep(value: unknown): Step {
+  return typeof value === "string" && KNOWN_STEPS.has(value) ? (value as Step) : "customer";
+}
 
 export default function NewProjectClient({
   customers,
@@ -222,6 +255,9 @@ export default function NewProjectClient({
   onCancel,
   onSubmitted,
   onActionLockedChange,
+  bodyRef: externalBodyRef,
+  dialogTitle,
+  dialogDescription,
 }: {
   customers: ProjectCustomerOption[];
   managers: ProjectManagerOption[];
@@ -244,6 +280,15 @@ export default function NewProjectClient({
   /** Called with the saved project row after a successful create/update. */
   onSubmitted: (project: Row) => void;
   onActionLockedChange?: (locked: boolean) => void;
+  /** The embedding dialog's own ref to the scrollable body — so IT can gate a
+   *  swipe-to-dismiss on "scrolled to top" too (this wizard is always embedded
+   *  in a dialog, unlike NewOrderClient which also has a standalone page). */
+  bodyRef?: { current: HTMLDivElement | null };
+  /** Visible title above the stepper — this wizard is always embedded, so
+   *  unlike NewOrderClient there's no standalone-page case to worry about
+   *  duplicating a page heading. */
+  dialogTitle?: string;
+  dialogDescription?: string;
 }) {
   const isEditMode = mode === "edit" && initialProject !== null;
 
@@ -256,64 +301,45 @@ export default function NewProjectClient({
     canDraft ? loadDraft<ProjectDraft>(draftKey!) : null
   );
 
-  const [step, setStep] = useState<Step>(restoredDraft?.step ?? 1);
+  const [step, setStep] = useState<Step>(normalizeRestoredStep(restoredDraft?.step));
   // The middle section scrolls (top/bottom bars are pinned); reset it on step change.
-  const bodyRef = useRef<HTMLDivElement>(null);
+  const internalBodyRef = useRef<HTMLDivElement>(null);
+  const bodyRef = externalBodyRef ?? internalBodyRef;
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: 0 });
-  }, [step]);
+  }, [step, bodyRef]);
 
   // ---- Customer selection ------------------------------------------------------
   const preselectedCustomerId = initialProject?.customer_id ?? initialCustomerId ?? restoredDraft?.customerId ?? "";
-  const [customerId, setCustomerId] = useState(preselectedCustomerId);
-  const [customerQuery, setCustomerQuery] = useState("");
-  const [customerTab, setCustomerTab] = useState<"existing" | "new">("existing");
-  const [editingCustomer, setEditingCustomer] = useState(false);
-  // Mobile master→detail, same as the order wizard: after a customer is picked
-  // the results list collapses so the detail/edit card is not buried under a
-  // long list. lg keeps both columns visible.
-  const [mobileListCollapsed, setMobileListCollapsed] = useState(false);
-  // Hold the chosen customer independently of the search list so searching again
-  // doesn't drop the selection.
-  const [pickedCustomer, setPickedCustomer] = useState<ProjectCustomerOption | null>(
-    preselectedCustomerId ? customers.find((c) => c.id === preselectedCustomerId) ?? null : null
-  );
-  const [customerOptions, setCustomerOptions] = useState<ProjectCustomerOption[]>(customers);
-  const [customerSearchError, setCustomerSearchError] = useState<string | null>(null);
-  const [customerSearchLoading, setCustomerSearchLoading] = useState(false);
-  const { search: searchCustomerIndex, loading: customerIndexLoading } = useCustomerSearchIndex();
-
-  useEffect(() => {
-    setCustomerOptions(customers);
-  }, [customers]);
-
-  // Instant in-memory search over the cached customer index — no per-keystroke
-  // network round-trip. Falls back to the server-seeded list while it loads.
-  useEffect(() => {
-    setCustomerSearchError(null);
-    if (customerIndexLoading) {
-      setCustomerSearchLoading(true);
-      if (!customerQuery.trim()) setCustomerOptions(customers);
-      return;
-    }
-    setCustomerSearchLoading(false);
-    const results = searchCustomerIndex(customerQuery, 50)
-      .map((entry) => mapProjectCustomer(entry as Row))
-      .filter((row): row is ProjectCustomerOption => Boolean(row));
-    setCustomerOptions(results.length === 0 && !customerQuery.trim() ? customers : results);
-  }, [customerQuery, searchCustomerIndex, customerIndexLoading, customers]);
-
-  const filteredCustomers = useMemo(() => customerOptions.slice(0, 50), [customerOptions]);
-  const selectedCustomer =
-    pickedCustomer && pickedCustomer.id === customerId
-      ? pickedCustomer
-      : customerOptions.find((c) => c.id === customerId) ?? null;
+  const {
+    customerId,
+    setCustomerId,
+    customerQuery,
+    setCustomerQuery,
+    customerTab,
+    setCustomerTab,
+    editingCustomer,
+    setEditingCustomer,
+    mobileListCollapsed,
+    setMobileListCollapsed,
+    pickedCustomer,
+    setPickedCustomer,
+    customerSearchError,
+    customerSearchLoading,
+    filteredCustomers,
+    selectedCustomer,
+    mergeSavedCustomer,
+  } = useCustomerPicker<ProjectCustomerOption>({
+    initial: customers,
+    preselectedId: preselectedCustomerId,
+    mapSearchResult: (entry) => mapProjectCustomer(entry as Row),
+  });
 
   // ---- Project details ---------------------------------------------------------
   const initialDue = initialProject?.due_date ? initialProject.due_date.slice(0, 10) : null;
   const [name, setName] = useState(initialProject?.name ?? restoredDraft?.name ?? "");
   const [projectType, setProjectType] = useState(
-    initialProject?.project_type ?? restoredDraft?.projectType ?? ""
+    initialProject?.project_type ?? restoredDraft?.projectType ?? projectTypeOptions[0] ?? ""
   );
   const [status, setStatus] = useState(
     initialProject?.status ?? restoredDraft?.status ?? initialStatus ?? statusOptions[0]
@@ -337,6 +363,7 @@ export default function NewProjectClient({
   const [projectManagerId, setProjectManagerId] = useState(
     initialProject?.project_manager_id ?? restoredDraft?.projectManagerId ?? defaultProjectManagerId ?? currentUserId ?? ""
   );
+  const [managerQuery, setManagerQuery] = useState("");
   const [startDate, setStartDate] = useState(
     initialProject?.start_date ?? defaultStartDate ?? restoredDraft?.startDate ?? todayIso()
   );
@@ -433,31 +460,80 @@ export default function NewProjectClient({
   }, [submitting, onActionLockedChange]);
 
   // ---- Step navigation ---------------------------------------------------------
-  // While the inline create/edit customer form is open the user must save or
-  // cancel first — otherwise the in-progress edit would be abandoned.
-  const customerFormOpen = step === 1 && (editingCustomer || customerTab === "new");
-  function stepUnlocked(n: Step) {
-    if (n >= 2 && !customerId) return false;
-    if (n >= 3 && !name.trim()) return false;
-    return true;
+  const stepIds = useMemo<Step[]>(() => {
+    const ids: Step[] = ["customer", "name", "projectType", "status", "dates", "manager"];
+    if (isMovingProjectType(projectType)) ids.push("moving");
+    ids.push("notes", "attachments", "price", "paymentTerms", "dueDate", "expensesSeparately", "summary");
+    return ids;
+  }, [projectType]);
+  const wizardSteps = useMemo(() => stepIds.map((id) => ({ n: id, label: STEP_LABEL[id] })), [stepIds]);
+  // The manager step pins this one at the top, above the search — the common
+  // case (assign it to yourself) shouldn't need typing anything.
+  const defaultManagerId = defaultProjectManagerId ?? currentUserId ?? "";
+  const defaultManager = managers.find((m) => m.id === defaultManagerId);
+  const filteredManagers = useMemo(() => {
+    const q = managerQuery.trim().toLowerCase();
+    const rest = managers.filter((m) => m.id !== defaultManager?.id);
+    if (!q) return rest;
+    return rest.filter((m) => m.label.toLowerCase().includes(q));
+  }, [managers, managerQuery, defaultManager?.id]);
+
+  function isSatisfied(id: Step): boolean {
+    switch (id) {
+      case "customer":
+        return Boolean(customerId);
+      case "name":
+        return Boolean(name.trim());
+      case "dates":
+        return Boolean(startDate);
+      case "projectType":
+      case "status":
+      case "manager":
+      case "moving":
+      case "notes":
+      case "attachments":
+      case "price":
+      case "paymentTerms":
+      case "dueDate":
+      case "expensesSeparately":
+      case "summary":
+        return true;
+    }
   }
-  const canClickStep = (n: Step) => {
-    if (customerFormOpen && n > step) return false;
-    return n <= step || stepUnlocked(n);
-  };
-  function goToStep(n: Step) {
-    if (!stepUnlocked(n)) return;
-    setStep(n);
+  const {
+    stepIndex,
+    isLastStep,
+    stepUnlocked,
+    canClickStep: canClickStepUnblocked,
+    advanceTo,
+  } = useStepFlow<Step>({ stepId: step, setStepId: setStep, steps: stepIds, isSatisfied });
+
+  // While the inline create/edit customer form is open the user must save or
+  // cancel first — otherwise the in-progress edit would be abandoned. Wrapped
+  // externally rather than passed into useStepFlow: it reads `step`, which
+  // doesn't exist yet at the point that hook is called.
+  const customerFormOpen = step === "customer" && (editingCustomer || customerTab === "new");
+  function canClickStep(id: Step) {
+    if (customerFormOpen && stepIndex(id) > stepIndex(step)) return false;
+    return canClickStepUnblocked(id);
+  }
+  function goToStep(id: Step) {
+    if (!stepUnlocked(id)) return;
+    setStep(id);
     setEditingCustomer(false);
   }
   function goBack() {
-    if (step === 1) return;
-    goToStep((step - 1) as Step);
+    const prev = stepIds[stepIndex(step) - 1];
+    if (prev) goToStep(prev);
+  }
+  function goNext() {
+    const next = stepIds[stepIndex(step) + 1];
+    if (next) goToStep(next);
   }
 
   // Add or update a customer in the local list and select it (inline create/edit form).
   function handleCustomerSaved(customer: CustomerRecord) {
-    const option: ProjectCustomerOption = {
+    mergeSavedCustomer({
       id: customer.id,
       name: customer.name,
       nameForInvoice: customer.name_for_invoice ?? null,
@@ -466,17 +542,8 @@ export default function NewProjectClient({
       email: customer.email,
       address: customer.address,
       city: extractCityFromAddress(customer.address),
-    };
-    setCustomerOptions((prev) => {
-      if (prev.some((c) => c.id === option.id)) {
-        return prev.map((c) => (c.id === option.id ? { ...option, contacts: c.contacts } : c));
-      }
-      return [option, ...prev];
     });
-    setPickedCustomer((prev) => (prev && prev.id === option.id ? { ...option, contacts: prev.contacts } : option));
-    setCustomerId(option.id);
     setCustomerQuery("");
-    setEditingCustomer(false);
     setCustomerTab("existing");
   }
 
@@ -487,11 +554,12 @@ export default function NewProjectClient({
     const trimmedName = name.trim();
     if (!trimmedName) {
       setError("שם פרויקט הוא שדה חובה.");
+      setStep("name");
       return;
     }
     if (!customerId) {
       setError("לקוח הוא שדה חובה.");
-      setStep(1);
+      setStep("customer");
       return;
     }
     const agreed = agreedBasePrice.trim() ? Number(agreedBasePrice) : 0;
@@ -579,16 +647,23 @@ export default function NewProjectClient({
 
   return (
     <StepWizard
-      steps={WIZARD_STEPS}
+      title={
+        dialogTitle ? <WizardTitle title={dialogTitle} description={dialogDescription ?? dialogTitle} /> : undefined
+      }
+      progressVariant="bar"
+      steps={wizardSteps}
       current={step}
       canClickStep={canClickStep}
       onStepClick={goToStep}
       onClose={handleCancel}
-      onBack={step > 1 ? goBack : undefined}
+      // Always embedded in a full-page mobile dialog now — the grab-bar
+      // affordance for its swipe-to-dismiss (see ProjectsClient).
+      grabber
+      onBack={stepIndex(step) > 0 ? goBack : undefined}
       backDisabled={actionLocked}
-      onNext={() => (step === 4 ? void submit() : goToStep((step + 1) as Step))}
+      onNext={() => (isLastStep ? void submit() : goNext())}
       nextLabel={
-        step === 4
+        isLastStep
           ? submitting
             ? isEditMode
               ? "שומר..."
@@ -599,11 +674,11 @@ export default function NewProjectClient({
           : undefined
       }
       nextDisabled={
-        step === 4
+        isLastStep
           ? submitting
-          : actionLocked || (step === 1 ? customerFormOpen || !customerId : !name.trim())
+          : actionLocked || (step === "customer" ? customerFormOpen || !customerId : !isSatisfied(step))
       }
-      isLastStep={step === 4}
+      isLastStep={isLastStep}
       error={error || undefined}
       bodyRef={bodyRef}
     >
@@ -611,9 +686,10 @@ export default function NewProjectClient({
           <p className="text-sm text-destructive">שגיאת חיפוש לקוחות: {customerSearchError}</p>
         ) : null}
 
-      {/* ---------------------------------------------------------------- STEP 1 */}
-      {step === 1 ? (
+      {/* --------------------------------------------------------------- CUSTOMER */}
+      {step === "customer" ? (
         <div className="space-y-4">
+          <StepHeading title="איזה לקוח?" />
           <div className="inline-flex rounded-2xl border border-border/60 bg-background/70 p-1 shadow-sm">
             <button
               type="button"
@@ -859,206 +935,244 @@ export default function NewProjectClient({
         </div>
       ) : null}
 
-      {/* ---------------------------------------------------------------- STEP 2 */}
-      {step === 2 ? (
+      {/* ------------------------------------------------------------------ NAME */}
+      {step === "name" ? (
         <fieldset disabled={submitting} className="contents">
-          <div className="grid gap-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <label className="space-y-1.5 text-sm sm:col-span-2">
-                <span className="font-medium">שם פרויקט *</span>
-                <Input value={name} onChange={(e) => setName(e.target.value)} />
-              </label>
-
-              <label className="space-y-1.5 text-sm">
-                <span className="font-medium">סוג פרויקט *</span>
-                <NativeSelect value={projectType} onChange={(e) => setProjectType(e.target.value)}>
-                  {projectTypeOptions.map((v) => (
-                    <option key={v} value={v}>
-                      {projectTypeLabel(v)}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </label>
-
-              <label className="space-y-1.5 text-sm">
-                <span className="font-medium">סטטוס *</span>
-                <NativeSelect value={status} onChange={(e) => setStatus(e.target.value)}>
-                  {statusOptions.map((v) => (
-                    <option key={v} value={v}>
-                      {statusLabel(v)}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </label>
-
-              <label className="space-y-1.5 text-sm">
-                <span className="font-medium">תאריך התחלה</span>
-                <DateInput
-                  value={startDate}
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    setStartDate(next);
-                    // Most projects start and finish the same day, so mirror it —
-                    // the end date stays editable afterwards.
-                    setEndDate(next);
-                    const computed = computeDueDate(next, paymentTerms);
-                    if (computed) setDueDate(computed);
-                  }}
-                />
-              </label>
-
-              <label className="space-y-1.5 text-sm">
-                <span className="font-medium">תאריך סיום (אופציונלי)</span>
-                <DateInput value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-              </label>
-
-              <label className="space-y-1.5 text-sm sm:col-span-2">
-                <span className="font-medium">מנהל פרויקט</span>
-                <NativeSelect
-                  value={projectManagerId}
-                  onChange={(e) => setProjectManagerId(e.target.value)}
-                >
-                  <option value="">ללא שיוך</option>
-                  {managers.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.label}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </label>
-
-              <label className="space-y-1.5 text-sm sm:col-span-2">
-                <span className="font-medium">תיאור / הערות</span>
-                <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
-              </label>
-
-              {isMovingProjectType(projectType) ? (
-                <div className="space-y-2 text-sm sm:col-span-2">
-                  <span className="font-medium">כתובות ההובלה</span>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <MovingEndpointFields title="מוצא (מאיפה)" value={origin} onChange={setOrigin} />
-                    <MovingEndpointFields title="יעד (לאן)" value={destination} onChange={setDestination} />
-                  </div>
-                </div>
-              ) : null}
-
-              {isMovingProjectType(projectType) ? (
-                <div className="space-y-1.5 text-sm sm:col-span-2">
-                  <span className="font-medium">פריטים להעברה</span>
-                  <Textarea
-                    value={itemsToMove}
-                    onChange={(e) => setItemsToMove(e.target.value)}
-                    rows={5}
-                    placeholder="כל פריט בשורה נפרדת"
-                  />
-                  <p className="text-xs text-muted-foreground">אפשר להשאיר ריק. כל שורה תישמר כפריט נפרד.</p>
-                </div>
-              ) : null}
-
-              <div className="space-y-2 text-sm sm:col-span-2">
-                <span className="font-medium">תמונות / מסמכים</span>
-                <div className="flex flex-wrap items-center gap-2">
-                  <FileUploadActions
-                    files={attachmentFiles}
-                    multiple
-                    onFilesSelected={setAttachmentFiles}
-                    chooseLabel={attachmentFiles.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
-                    chooseVariant="outline"
-                    size="sm"
-                  />
-                  {attachmentFiles.length > 0 ? (
-                    <Button type="button" variant="secondary" size="sm" onClick={() => setAttachmentFiles([])}>
-                      נקה בחירה
-                    </Button>
-                  ) : null}
-                </div>
-                {attachmentFiles.length === 0 ? (
-                  <div className="text-xs text-muted-foreground">
-                    אפשר להעלות קבצים או לצלם תמונה ישירות מהמכשיר.
-                  </div>
-                ) : null}
-              </div>
-            </div>
+          <StepHeading title="מה שם הפרויקט?" />
+          <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+        </fieldset>
+      ) : step === "projectType" ? (
+        <fieldset disabled={submitting} className="contents">
+          <StepHeading title="איזה סוג פרויקט?" />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {projectTypeOptions.map((v) => (
+              <OptionRow
+                key={v}
+                label={projectTypeLabel(v)}
+                selected={projectType === v}
+                onClick={() => {
+                  setProjectType(v);
+                  advanceTo("status");
+                }}
+              />
+            ))}
           </div>
         </fieldset>
-      ) : null}
-
-      {/* ---------------------------------------------------------------- STEP 3 */}
-      {step === 3 ? (
+      ) : step === "status" ? (
         <fieldset disabled={submitting} className="contents">
-          <div className="grid gap-4">
-            <div className="space-y-1.5 text-sm">
-              <span className="font-medium">מחיר בסיס מוסכם</span>
-              <CurrencyInput
-                value={noCharge ? "0" : agreedBasePrice}
-                onChange={(e) => setAgreedBasePrice(e.target.value)}
-                disabled={noCharge}
+          <StepHeading title="מה הסטטוס?" />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {statusOptions.map((v) => (
+              <OptionRow
+                key={v}
+                label={statusLabel(v)}
+                selected={status === v}
+                onClick={() => {
+                  setStatus(v);
+                  advanceTo("dates");
+                }}
               />
-              <label className="flex items-start gap-2.5 pt-1 text-sm font-normal">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 h-4 w-4 shrink-0"
-                  checked={priceIncludesVat}
-                  disabled={noCharge}
-                  onChange={(e) => setPriceIncludesVat(e.target.checked)}
-                />
-                <span>הוסף מע״מ מעל מחיר הבסיס (הלקוח משלם בסיס + מע״מ)</span>
-              </label>
-              <label className="flex items-start gap-2.5 pt-1 text-sm font-normal">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 h-4 w-4 shrink-0"
-                  checked={noCharge}
-                  onChange={(e) => {
-                    setNoCharge(e.target.checked);
-                    if (e.target.checked) setPriceIncludesVat(false);
-                  }}
-                />
-                <span>ללא חיוב — תרומה / טובה / ללא תשלום (המחיר יישאר 0)</span>
-              </label>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <label className="space-y-1.5 text-sm">
-                <span className="font-medium">צורת תשלום</span>
-                <NativeSelect
-                  value={paymentTerms}
-                  onChange={(e) => {
-                    const t = e.target.value;
-                    setPaymentTerms(t);
-                    const computed = computeDueDate(startDate, t);
-                    if (computed) setDueDate(computed);
-                  }}
-                >
-                  {PAYMENT_TERMS_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </label>
-
-              <label className="space-y-1.5 text-sm">
-                <span className="font-medium">תאריך פירעון</span>
-                <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-              </label>
-            </div>
-
-            <label className="flex items-start gap-2.5 text-sm">
-              <input
-                type="checkbox"
-                className="mt-0.5 h-4 w-4 shrink-0"
-                checked={expensesSeparately}
-                onChange={(e) => setExpensesSeparately(e.target.checked)}
+            ))}
+          </div>
+        </fieldset>
+      ) : step === "dates" ? (
+        <fieldset disabled={submitting} className="contents">
+          <StepHeading title="מתי הפרויקט?" />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <label className="space-y-1.5 text-sm">
+              <span className="font-medium">תאריך התחלה</span>
+              <DateInput
+                value={startDate}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setStartDate(next);
+                  // Most projects start and finish the same day, so mirror it —
+                  // the end date stays editable afterwards.
+                  setEndDate(next);
+                  const computed = computeDueDate(next, paymentTerms);
+                  if (computed) setDueDate(computed);
+                }}
               />
-              <span>חיוב הוצאות בנפרד</span>
+            </label>
+            <label className="space-y-1.5 text-sm">
+              <span className="font-medium">תאריך סיום (אופציונלי)</span>
+              <DateInput value={endDate} onChange={(e) => setEndDate(e.target.value)} />
             </label>
           </div>
         </fieldset>
+      ) : step === "manager" ? (
+        <fieldset disabled={submitting} className="contents">
+          <StepHeading title="מי מנהל הפרויקט?" sub="לא חובה" />
+          <div className="grid gap-3">
+            {defaultManager ? (
+              <OptionRow
+                label={defaultManager.label}
+                selected={projectManagerId === defaultManager.id}
+                onClick={() => {
+                  setProjectManagerId(defaultManager.id);
+                  advanceTo(stepIds[stepIndex("manager") + 1]);
+                }}
+              />
+            ) : null}
+            <Input value={managerQuery} onChange={(e) => setManagerQuery(e.target.value)} placeholder="חיפוש מנהל..." />
+            <div className="space-y-1">
+              <OptionRow
+                label="ללא שיוך"
+                selected={!projectManagerId}
+                onClick={() => {
+                  setProjectManagerId("");
+                  advanceTo(stepIds[stepIndex("manager") + 1]);
+                }}
+              />
+              {filteredManagers.map((m) => (
+                <OptionRow
+                  key={m.id}
+                  label={m.label}
+                  selected={projectManagerId === m.id}
+                  onClick={() => {
+                    setProjectManagerId(m.id);
+                    advanceTo(stepIds[stepIndex("manager") + 1]);
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        </fieldset>
+      ) : step === "moving" ? (
+        <fieldset disabled={submitting} className="contents">
+          <StepHeading title="כתובות ההובלה" sub="לא חובה" />
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <MovingEndpointFields title="מוצא (מאיפה)" value={origin} onChange={setOrigin} />
+              <MovingEndpointFields title="יעד (לאן)" value={destination} onChange={setDestination} />
+            </div>
+            <div className="space-y-1.5 text-sm">
+              <span className="font-medium">פריטים להעברה</span>
+              <Textarea
+                value={itemsToMove}
+                onChange={(e) => setItemsToMove(e.target.value)}
+                rows={5}
+                placeholder="כל פריט בשורה נפרדת"
+              />
+              <p className="text-xs text-muted-foreground">אפשר להשאיר ריק. כל שורה תישמר כפריט נפרד.</p>
+            </div>
+          </div>
+        </fieldset>
+      ) : step === "notes" ? (
+        <fieldset disabled={submitting} className="contents">
+          <StepHeading title="תיאור / הערות?" sub="לא חובה" />
+          <Textarea autoFocus value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+        </fieldset>
+      ) : step === "attachments" ? (
+        <fieldset disabled={submitting} className="contents">
+          <StepHeading title="תמונות / מסמכים?" sub="לא חובה" />
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <FileUploadActions
+                files={attachmentFiles}
+                multiple
+                onFilesSelected={setAttachmentFiles}
+                chooseLabel={attachmentFiles.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
+                chooseVariant="outline"
+                size="sm"
+              />
+              {attachmentFiles.length > 0 ? (
+                <Button type="button" variant="secondary" size="sm" onClick={() => setAttachmentFiles([])}>
+                  נקה בחירה
+                </Button>
+              ) : null}
+            </div>
+            {attachmentFiles.length === 0 ? (
+              <div className="text-xs text-muted-foreground">
+                אפשר להעלות קבצים או לצלם תמונה ישירות מהמכשיר.
+              </div>
+            ) : null}
+          </div>
+        </fieldset>
+      ) : step === "price" ? (
+        <fieldset disabled={submitting} className="contents">
+          <StepHeading title="מחיר בסיס מוסכם?" />
+          <div className="space-y-1.5 text-sm">
+            <CurrencyInput
+              autoFocus
+              value={noCharge ? "0" : agreedBasePrice}
+              onChange={(e) => setAgreedBasePrice(e.target.value)}
+              disabled={noCharge}
+            />
+            <label className="flex items-start gap-2.5 pt-1 text-sm font-normal">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 shrink-0"
+                checked={priceIncludesVat}
+                disabled={noCharge}
+                onChange={(e) => setPriceIncludesVat(e.target.checked)}
+              />
+              <span>הוסף מע״מ מעל מחיר הבסיס (הלקוח משלם בסיס + מע״מ)</span>
+            </label>
+            <label className="flex items-start gap-2.5 pt-1 text-sm font-normal">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 shrink-0"
+                checked={noCharge}
+                onChange={(e) => {
+                  setNoCharge(e.target.checked);
+                  if (e.target.checked) setPriceIncludesVat(false);
+                }}
+              />
+              <span>ללא חיוב — תרומה / טובה / ללא תשלום (המחיר יישאר 0)</span>
+            </label>
+          </div>
+        </fieldset>
+      ) : step === "paymentTerms" ? (
+        <fieldset disabled={submitting} className="contents">
+          <StepHeading title="מהי צורת התשלום?" />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {PAYMENT_TERMS_OPTIONS.map((option) => (
+              <OptionRow
+                key={option.value}
+                label={option.label}
+                selected={paymentTerms === option.value}
+                onClick={() => {
+                  setPaymentTerms(option.value);
+                  const computed = computeDueDate(startDate, option.value);
+                  if (computed) setDueDate(computed);
+                  advanceTo("dueDate");
+                }}
+              />
+            ))}
+          </div>
+        </fieldset>
+      ) : step === "dueDate" ? (
+        <fieldset disabled={submitting} className="contents">
+          <StepHeading title="תאריך פירעון?" />
+          <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+        </fieldset>
+      ) : step === "expensesSeparately" ? (
+        <fieldset disabled={submitting} className="contents">
+          <StepHeading title="חיוב הוצאות בנפרד?" />
+          <div className="grid grid-cols-2 gap-2">
+            <OptionRow
+              label="כן"
+              selected={expensesSeparately}
+              onClick={() => {
+                setExpensesSeparately(true);
+                advanceTo("summary");
+              }}
+            />
+            <OptionRow
+              label="לא"
+              selected={!expensesSeparately}
+              onClick={() => {
+                setExpensesSeparately(false);
+                advanceTo("summary");
+              }}
+            />
+          </div>
+        </fieldset>
       ) : null}
 
-      {/* ------------------------------------------------------------- STEP 4 */}
-      {step === 4 ? (
+      {/* --------------------------------------------------------------- SUMMARY */}
+      {step === "summary" ? (
         <div className="space-y-4">
           <div className="flex items-center gap-2 rounded-md border border-secondary/35 bg-secondary/10 px-3 py-2.5 text-sm text-foreground">
             <AiIcon className="h-4 w-4 shrink-0 text-secondary" />
@@ -1067,12 +1181,12 @@ export default function NewProjectClient({
             </span>
           </div>
 
-          <SummarySection icon={<UserIcon className="h-4 w-4" />} title="לקוח" onEdit={() => goToStep(1)} editDisabled={actionLocked}>
+          <SummarySection icon={<UserIcon className="h-4 w-4" />} title="לקוח" onEdit={() => goToStep("customer")} editDisabled={actionLocked}>
             <SummaryRow label="לקוח" value={pickedCustomer?.name ?? ""} />
             <SummaryRow label="טלפון" value={pickedCustomer?.phone ?? ""} />
           </SummarySection>
 
-          <SummarySection icon={<DocumentIcon className="h-4 w-4" />} title="פרטי הפרויקט" onEdit={() => goToStep(2)} editDisabled={actionLocked}>
+          <SummarySection icon={<DocumentIcon className="h-4 w-4" />} title="פרטי הפרויקט" onEdit={() => goToStep("name")} editDisabled={actionLocked}>
             <SummaryRow label="שם הפרויקט" value={name.trim()} />
             <SummaryRow label="סוג" value={projectTypeLabel(projectType)} />
             <SummaryRow label="סטטוס" value={statusLabel(status)} />
@@ -1081,7 +1195,7 @@ export default function NewProjectClient({
             {notes.trim() ? <SummaryRow label="הערות" value={notes.trim()} /> : null}
           </SummarySection>
 
-          <SummarySection icon={<CardIcon className="h-4 w-4" />} title="תשלום וחיוב" onEdit={() => goToStep(3)} editDisabled={actionLocked}>
+          <SummarySection icon={<CardIcon className="h-4 w-4" />} title="תשלום וחיוב" onEdit={() => goToStep("price")} editDisabled={actionLocked}>
             <SummaryRow
               label="מחיר מוסכם"
               value={noCharge ? "ללא חיוב" : agreedBasePrice ? `₪${agreedBasePrice}` : ""}

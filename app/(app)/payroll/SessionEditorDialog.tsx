@@ -1,24 +1,42 @@
 "use client";
 
+// Rebuilt 2026-08-25 onto the same atomic step-wizard architecture as
+// IncomeDialog/CollectPaymentDialog (one question per screen, tap-a-card-to-
+// advance for the simple enum fields) instead of a single-page FormDialog —
+// part of converging every quick-action dialog onto one shared shape. The
+// split-parts editor (up to 5 parts, each with its own amount/domain/link/
+// billing) stays a single grouped step, same as how other wizards keep a
+// specialized multi-field widget (CheckDetailsFields, TagPicker) as ONE step
+// rather than atomizing every nested field — atomizing a repeating list like
+// this would mean MORE taps for an admin power-user tool, not fewer.
+//
+// All of the session/split MATH and save logic below is untouched from the
+// original FormDialog version — only the outer chrome and how the fields are
+// grouped into screens changed.
+
 import { useEffect, useMemo, useState, useTransition } from "react";
 import type { ReactNode } from "react";
 import SalaryProtected from "@/components/payroll/SalaryProtected";
 import { Button } from "@/components/ui/button";
 import { DeleteButton } from "@/components/ui/icon-button";
 import { NativeSelect } from "@/components/ui/native-select";
-import { FormDialog } from "@/components/ui/form-dialog";
-import { DateInput, DateTimeInput } from "@/components/ui/date-input";
+import { StepWizardDialog, useStepFlow } from "@/components/ui/step-wizard";
+import { OptionRow, StepHeading } from "@/components/ui/option-row";
+import { SummaryRow, SummarySection } from "@/components/ui/summary";
 import { Input } from "@/components/ui/input";
+import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   WORK_SESSION_BUSINESS_DOMAINS,
   isExpenseBusinessDomain,
+  getBusinessDomainLabel,
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
-import { DomainSelect } from "@/components/financial/DomainSelect";
-import AccountSelect from "@/components/financial/AccountSelect";
-import type { Account } from "@/lib/accounts";
+import { DomainSelect, getBusinessDomainIcon } from "@/components/financial/DomainSelect";
+import { loadAccounts } from "@/components/financial/AccountSelect";
+import { BankIcon, CardIcon, CashIcon } from "@/components/ui/icons";
+import { getAccountKindLabel, type Account } from "@/lib/accounts";
 import {
   normalizePayrollWorkerType,
   payrollWorkerTypeAllowsSessions,
@@ -43,6 +61,39 @@ import type {
 import { toHebrewError } from "@/lib/error-messages";
 import type { SessionFormState, SplitPartDraft } from "./SalaryCenter.types";
 import { Field, toDateTimeLocalValue } from "./SalaryCenterUi";
+
+type SessionStepId =
+  | "worker"
+  | "domain"
+  | "project"
+  | "property"
+  | "timing"
+  | "split"
+  | "price"
+  | "billing"
+  | "markPaid"
+  | "notes"
+  | "summary";
+
+const STEP_LABEL: Record<SessionStepId, string> = {
+  worker: "עובד",
+  domain: "תחום",
+  project: "פרויקט",
+  property: "נכס",
+  timing: "זמן",
+  split: "פיצול",
+  price: "מחיר",
+  billing: "חיוב לקוח",
+  markPaid: "תשלום",
+  notes: "הערות",
+  summary: "סיכום",
+};
+
+function accountKindIcon(kind: string | null | undefined) {
+  if (kind === "bank") return BankIcon;
+  if (kind === "card") return CardIcon;
+  return CashIcon;
+}
 
 function createSessionSplitPart(
   domain: ExpenseBusinessDomain,
@@ -108,11 +159,15 @@ export default function SessionEditorDialog({
   editExtras,
 }: SessionEditorDialogProps) {
   const [isPending, startTransition] = useTransition();
+  const [stepId, setStepId] = useState<SessionStepId>("worker");
   const [sessionForm, setSessionForm] = useState<SessionFormState>(initialForm);
   const [sessionMode, setSessionMode] = useState<"create" | "edit">(mode);
   const [sessionSplitParts, setSessionSplitParts] = useState<SplitPartDraft[]>([]);
   const [sessionSplitEnabled, setSessionSplitEnabled] = useState(false);
   const [sessionError, setSessionError] = useState("");
+  const [workerQuery, setWorkerQuery] = useState("");
+  const [projectQuery, setProjectQuery] = useState("");
+  const [propertyQuery, setPropertyQuery] = useState("");
   // True once the user hand-edits the single (non-split) customer charge, which stops it from
   // auto-tracking the shift's labor cost.
   const [billAmountDirty, setBillAmountDirty] = useState(false);
@@ -130,17 +185,34 @@ export default function SessionEditorDialog({
       setBillAmountDirty(false);
       return;
     }
+    setStepId("worker");
     setSessionMode(mode);
     setSessionError("");
     setSessionSplitParts([]);
     setSessionSplitEnabled(false);
     setPaymentAccountId("");
+    setWorkerQuery("");
+    setProjectQuery("");
+    setPropertyQuery("");
     // Preserve an already-saved customer charge (edit mode) instead of overwriting it with the cost;
     // a fresh shift starts un-touched so the amount tracks the cost until the user edits it.
     setBillAmountDirty(Boolean(initialForm.is_billable_to_customer && initialForm.bill_to_customer_amount.trim()));
     setSessionForm(initialForm);
     // initialForm/mode are the "open request" snapshot — re-run only on open transitions.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // Preload accounts on open so the "markPaid" step can render one tappable
+  // card per account (same technique as Income/CollectPayment/WorkerPayment).
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    void loadAccounts().then((list) => {
+      if (active) setAccountsList(list);
+    });
+    return () => {
+      active = false;
+    };
   }, [open]);
 
   async function postJson(path: string, payload: Record<string, unknown>) {
@@ -628,106 +700,229 @@ export default function SessionEditorDialog({
     sessionSplitParts,
   ]);
 
+  // ── Wizard scaffold ─────────────────────────────────────────────────────
+  const needsProject = sessionForm.business_domain === "logistics_projects";
+  const needsProperty = sessionForm.business_domain === "property_management";
+  const splitAvailable = Boolean(
+    sessionForm.clock_out && sessionDialogWorkerType && payrollWorkerTypeAllowsSessions(sessionDialogWorkerType)
+  );
+  const priceEditable = shouldShowSessionPrice(sessionDialogWorkerType) && !(sessionSplitEnabled && isMoneySplit);
+  const showMarkPaid = sessionDialogWorkerType === "session_only";
+
+  const stepIds = useMemo<SessionStepId[]>(() => {
+    const ids: SessionStepId[] = ["worker", "domain"];
+    if (needsProject) ids.push("project");
+    if (needsProperty) ids.push("property");
+    ids.push("timing");
+    if (splitAvailable) ids.push("split");
+    if (priceEditable) ids.push("price");
+    if (!sessionSplitEnabled) ids.push("billing");
+    if (showMarkPaid) ids.push("markPaid");
+    ids.push("notes", "summary");
+    return ids;
+  }, [needsProject, needsProperty, splitAvailable, priceEditable, sessionSplitEnabled, showMarkPaid]);
+  const wizardSteps = useMemo(() => stepIds.map((id) => ({ n: id, label: STEP_LABEL[id] })), [stepIds]);
+
+  const sessionWorkerOptions = useMemo(
+    () =>
+      workers.filter(
+        (user) =>
+          (user.role === "worker" || user.role === "worker_no_access") &&
+          payrollWorkerTypeAllowsSessions(
+            normalizePayrollWorkerType(user.payroll_worker_type, user.pay_tracking_mode)
+          )
+      ),
+    [workers]
+  );
+  const filteredWorkers = useMemo(() => {
+    const q = workerQuery.trim().toLowerCase();
+    if (!q) return sessionWorkerOptions;
+    return sessionWorkerOptions.filter((u) => (u.full_name ?? u.email ?? "").toLowerCase().includes(q));
+  }, [sessionWorkerOptions, workerQuery]);
+  const filteredProjects = useMemo(() => {
+    const q = projectQuery.trim().toLowerCase();
+    if (!q) return projectOptions;
+    return projectOptions.filter((p) => p.label.toLowerCase().includes(q));
+  }, [projectQuery, projectOptions]);
+  const filteredProperties = useMemo(() => {
+    const q = propertyQuery.trim().toLowerCase();
+    if (!q) return propertyOptions;
+    return propertyOptions.filter((p) => p.label.toLowerCase().includes(q));
+  }, [propertyQuery, propertyOptions]);
+
+  function isSatisfied(id: SessionStepId): boolean {
+    switch (id) {
+      case "worker":
+        return Boolean(sessionForm.user_id);
+      case "domain":
+        return Boolean(sessionForm.business_domain);
+      case "project":
+        return Boolean(sessionForm.project_id);
+      case "property":
+        return Boolean(sessionForm.property_id);
+      case "timing":
+        return Boolean(sessionForm.clock_in);
+      case "split":
+        return !sessionSplitEnabled || !sessionDialogSplitError;
+      case "price":
+        return sessionDialogWorkerType !== "session_only" || sessionSplitEnabled || Boolean(sessionForm.labor_cost.trim());
+      case "billing":
+        return !sessionForm.is_billable_to_customer || Boolean(sessionForm.bill_to_customer_amount.trim());
+      case "markPaid":
+        return !sessionForm.mark_paid_now || accountsList.length === 0 || Boolean(paymentAccountId);
+      case "notes":
+      case "summary":
+        return true;
+    }
+  }
+
+  const { stepIndex, isLastStep, canClickStep, goToStep, goBack, goNext, advanceTo } = useStepFlow<SessionStepId>({
+    stepId,
+    setStepId,
+    steps: stepIds,
+    isSatisfied,
+  });
+
+  function pickWorker(nextUserId: string) {
+    // A new worker is a new cost context — clear the worker-specific price and customer
+    // charge so nothing stale from the previous worker lingers. They re-sync once the new
+    // price/hours are entered (hourly workers recompute from their own rate immediately).
+    setBillAmountDirty(false);
+    setSessionSplitParts((parts) => parts.map((part) => ({ ...part, amount: "", billAmount: "", billAmountDirty: false })));
+    setSessionForm((current) => ({ ...current, user_id: nextUserId, labor_cost: "", bill_to_customer_amount: "" }));
+    advanceTo("domain");
+  }
+
+  function pickSessionDomain(value: string) {
+    setSessionForm((current) => ({
+      ...current,
+      business_domain: value,
+      project_id: value === "logistics_projects" ? current.project_id : "",
+      property_id: value === "property_management" ? current.property_id : "",
+    }));
+    advanceTo(value === "logistics_projects" ? "project" : value === "property_management" ? "property" : "timing");
+  }
+
+  function pickBilling(yes: boolean) {
+    // Toggling billing resets "touched" so the amount re-syncs to the current cost.
+    setBillAmountDirty(false);
+    setSessionForm((current) => ({ ...current, is_billable_to_customer: yes }));
+    if (!yes) advanceTo(stepIds[stepIndex("billing") + 1]);
+  }
+
+  function pickMarkPaid(yes: boolean) {
+    setSessionForm((current) => ({ ...current, mark_paid_now: yes }));
+    if (!yes) advanceTo(stepIds[stepIndex("markPaid") + 1]);
+  }
+
+  const workerLabel = sessionDialogWorker?.full_name ?? sessionDialogWorker?.email ?? "—";
+  const projectLabel = projectOptions.find((p) => p.id === sessionForm.project_id)?.label;
+  const propertyLabel = propertyOptions.find((p) => p.id === sessionForm.property_id)?.label;
+  const accountName = accountsList.find((a) => a.id === paymentAccountId)?.name;
+
   return (
-    <FormDialog
+    <StepWizardDialog
       open={open}
       onOpenChange={(next) => {
         if (!next) setSessionSplitParts([]);
         onOpenChange(next);
       }}
-      title={sessionMode === "create" ? "הוספת משמרת" : "עריכת משמרת"}
-      description="מנהלים ומשרד יכולים ליצור ולעדכן משמרות לשני סוגי העובדים, כל עוד התקופה לא נעולה."
-      size="details4xl"
-      onSubmit={() => saveSession()}
-      submitLabel="שמירה"
-      busyLabel="שומר..."
-      busy={isPending}
-      submitDisabled={sessionSplitEnabled && Boolean(sessionDialogSplitError)}
+      dialogTitle={sessionMode === "create" ? "משמרת חדשה" : "עריכת משמרת"}
+      dialogDescription={sessionMode === "create" ? "רישום משמרת עבודה חדשה" : "עדכון פרטי המשמרת"}
+      size="formXl"
+      fullScreen
+      progressVariant="bar"
+      steps={wizardSteps}
+      current={stepId}
+      canClickStep={canClickStep}
+      onStepClick={goToStep}
+      closeDisabled={isPending}
+      onBack={stepIndex(stepId) > 0 ? goBack : undefined}
+      backDisabled={isPending}
+      onNext={() => (isLastStep ? saveSession() : goNext())}
+      nextLabel={isLastStep ? (isPending ? "שומר..." : "שמירה") : undefined}
+      nextDisabled={isLastStep ? isPending || (sessionSplitEnabled && Boolean(sessionDialogSplitError)) : !isSatisfied(stepId)}
+      isLastStep={isLastStep}
+      submitOnEnter
+      error={sessionError || undefined}
     >
-
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <Field label="עובד">
-            <NativeSelect
-              value={sessionForm.user_id}
-              onChange={(event) => {
-                const nextUserId = event.target.value;
-                // A new worker is a new cost context — clear the worker-specific price and customer
-                // charge so nothing stale from the previous worker lingers. They re-sync once the new
-                // price/hours are entered (hourly workers recompute from their own rate immediately).
-                setBillAmountDirty(false);
-                setSessionSplitParts((parts) =>
-                  parts.map((part) => ({ ...part, amount: "", billAmount: "", billAmountDirty: false }))
-                );
-                setSessionForm((current) => ({
-                  ...current,
-                  user_id: nextUserId,
-                  labor_cost: "",
-                  bill_to_customer_amount: "",
-                }));
-              }}
-            >
-              <option value="">{"בחירה"}</option>
-              {workers
-                .filter(
-                  (user) =>
-                    (user.role === "worker" || user.role === "worker_no_access") &&
-                    payrollWorkerTypeAllowsSessions(
-                      normalizePayrollWorkerType(user.payroll_worker_type, user.pay_tracking_mode)
-                    )
-                )
-                .map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.full_name ?? user.email ?? "עובד"}
-                  </option>
-                ))}
-            </NativeSelect>
-          </Field>
-          <Field label="תחום">
-            <DomainSelect
-              domains={WORK_SESSION_BUSINESS_DOMAINS}
-              value={sessionForm.business_domain}
-              onChange={(value) =>
-                setSessionForm((current) => ({
-                  ...current,
-                  business_domain: value,
-                  project_id: value === "logistics_projects" ? current.project_id : "",
-                  property_id: value === "property_management" ? current.property_id : "",
-                }))
-              }
-            />
-          </Field>
-          {sessionForm.business_domain === "logistics_projects" ? (
-            <Field label="פרויקט">
-              <NativeSelect
-                value={sessionForm.project_id}
-                onChange={(event) => setSessionForm((current) => ({ ...current, project_id: event.target.value }))}
-              >
-                <option value="">{"בחירה"}</option>
-                {projectOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </NativeSelect>
-            </Field>
-          ) : null}
-          {sessionForm.business_domain === "property_management" ? (
-            <Field label="נכס">
-              <NativeSelect
-                value={sessionForm.property_id}
-                onChange={(event) => setSessionForm((current) => ({ ...current, property_id: event.target.value }))}
-              >
-                <option value="">{"בחירה"}</option>
-                {propertyOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </NativeSelect>
-            </Field>
-          ) : null}
+      {stepId === "worker" ? (
+        <>
+          <StepHeading title="לאיזה עובד?" />
+          <div className="grid gap-3">
+            <Input value={workerQuery} onChange={(e) => setWorkerQuery(e.target.value)} placeholder="חיפוש עובד..." />
+            <div className="space-y-1">
+              {filteredWorkers.map((user) => (
+                <OptionRow
+                  key={user.id}
+                  label={user.full_name ?? user.email ?? "עובד"}
+                  selected={sessionForm.user_id === user.id}
+                  onClick={() => pickWorker(user.id)}
+                />
+              ))}
+            </div>
+          </div>
+        </>
+      ) : stepId === "domain" ? (
+        <>
+          <StepHeading title="לאיזה תחום?" />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {WORK_SESSION_BUSINESS_DOMAINS.map((domain) => (
+              <OptionRow
+                key={domain}
+                icon={getBusinessDomainIcon(domain) ?? undefined}
+                label={getBusinessDomainLabel(domain)}
+                selected={sessionForm.business_domain === domain}
+                onClick={() => pickSessionDomain(domain)}
+              />
+            ))}
+          </div>
+        </>
+      ) : stepId === "project" ? (
+        <>
+          <StepHeading title="לאיזה פרויקט לשייך?" />
+          <div className="grid gap-3">
+            <Input value={projectQuery} onChange={(e) => setProjectQuery(e.target.value)} placeholder="חיפוש פרויקט..." />
+            <div className="space-y-1">
+              {filteredProjects.map((project) => (
+                <OptionRow
+                  key={project.id}
+                  label={project.label}
+                  selected={sessionForm.project_id === project.id}
+                  onClick={() => {
+                    setSessionForm((current) => ({ ...current, project_id: project.id }));
+                    advanceTo("timing");
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        </>
+      ) : stepId === "property" ? (
+        <>
+          <StepHeading title="לאיזה נכס לשייך?" />
+          <div className="grid gap-3">
+            <Input value={propertyQuery} onChange={(e) => setPropertyQuery(e.target.value)} placeholder="חיפוש נכס..." />
+            <div className="space-y-1">
+              {filteredProperties.map((property) => (
+                <OptionRow
+                  key={property.id}
+                  label={property.label}
+                  selected={sessionForm.property_id === property.id}
+                  onClick={() => {
+                    setSessionForm((current) => ({ ...current, property_id: property.id }));
+                    advanceTo("timing");
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        </>
+      ) : stepId === "timing" ? (
+        <>
+          <StepHeading title="מתי?" />
           {shouldShowSessionHours(sessionDialogWorkerType) ? (
-            <div className="md:col-span-2 grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               <Field label="כניסה">
                 <DateTimeInput
                   value={sessionForm.clock_in}
@@ -780,144 +975,11 @@ export default function SessionEditorDialog({
               />
             </Field>
           )}
-          {/* When money-split is on, each part defines its own price + customer billing,
-              so the single session-level price / bill fields are hidden. */}
-          {sessionSplitEnabled && isMoneySplit ? null : shouldShowSessionPrice(sessionDialogWorkerType) ? (
-            <SalaryProtected
-              unlocked={salaryUnlocked}
-              hasPasswordConfigured={hasPasswordConfigured}
-              canUnlock={canViewSalary}
-              onUnlockSuccess={onUnlockSuccess}
-            >
-              <Field label={sessionDialogWorkerType === "session_only" ? "מחיר (חובה)" : "מחיר"}>
-                <CurrencyInput
-                  inputMode="decimal"
-                  value={sessionForm.labor_cost}
-                  onChange={(event) =>
-                    setSessionForm((current) => ({ ...current, labor_cost: event.target.value }))
-                  }
-                  placeholder={sessionDialogWorkerType === "session_only" ? "חובה" : "אופציונלי"}
-                />
-                <div className="mt-1 text-xs text-muted-foreground">
-                  {sessionDialogSuggestedAmount !== null
-                    ? `סה״כ לתשלום עבור המשמרת: ${formatCurrency(sessionDialogSuggestedAmount)}`
-                    : "הסכום שמגיע לעובד יוצג כאן אחרי הזנת שעות תקינות או עלות עבודה."}
-                </div>
-              </Field>
-            </SalaryProtected>
-          ) : (
-            <Field label="עלות חישוב אוטומטי">
-              <div className="text-xs text-muted-foreground">
-                {sessionDialogSuggestedAmount !== null
-                  ? `סה״כ לתשלום עבור המשמרת: ${formatCurrency(sessionDialogSuggestedAmount)}`
-                  : "העלות תחושב אוטומטית לפי הסכם השכר לאחר שמירה."}
-              </div>
-            </Field>
-          )}
-          {sessionSplitEnabled ? null : (
-            <>
-              <Field label="חיוב לקוח">
-                <NativeSelect
-                  value={sessionForm.is_billable_to_customer ? "yes" : "no"}
-                  onChange={(event) => {
-                    // Toggling billing resets "touched" so the amount re-syncs to the current cost.
-                    setBillAmountDirty(false);
-                    setSessionForm((current) => ({
-                      ...current,
-                      is_billable_to_customer: event.target.value === "yes",
-                    }));
-                  }}
-                >
-                  <option value="no">{"לא"}</option>
-                  <option value="yes">{"כן"}</option>
-                </NativeSelect>
-              </Field>
-              {sessionForm.is_billable_to_customer ? (
-                <Field label="סכום לחיוב">
-                  <CurrencyInput
-                    inputMode="decimal"
-                    value={sessionForm.bill_to_customer_amount}
-                    onChange={(event) => {
-                      setBillAmountDirty(true);
-                      setSessionForm((current) => ({ ...current, bill_to_customer_amount: event.target.value }));
-                    }}
-                  />
-                </Field>
-              ) : null}
-            </>
-          )}
-          {sessionDialogWorkerType === "session_only" ? (
-            <SalaryProtected
-              unlocked={salaryUnlocked}
-              hasPasswordConfigured={hasPasswordConfigured}
-              canUnlock={canViewSalary}
-              onUnlockSuccess={onUnlockSuccess}
-            >
-              <Field label="שולם עכשיו">
-                <NativeSelect
-                  value={sessionForm.mark_paid_now ? "yes" : "no"}
-                  onChange={(event) =>
-                    setSessionForm((current) => ({
-                      ...current,
-                      mark_paid_now: event.target.value === "yes",
-                    }))
-                  }
-                >
-                  <option value="no">{"לא"}</option>
-                  <option value="yes">{"כן"}</option>
-                </NativeSelect>
-              </Field>
-              {sessionForm.mark_paid_now ? (
-                <>
-                  <Field label="כמה שולם">
-                    <CurrencyInput
-                      inputMode="decimal"
-                      value={sessionForm.paid_amount_now}
-                      onChange={(event) =>
-                        setSessionForm((current) => ({ ...current, paid_amount_now: event.target.value }))
-                      }
-                      placeholder="אם ריק, יירשם הסכום המלא"
-                    />
-                    {sessionSplitEnabled ? (
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        {`סכום מלא לכל החלקים: ${formatCurrency(
-                          sessionSplitParts.reduce((sum, part) => sum + (Number(part.amount) || 0), 0)
-                        )}. סכום קטן יותר יחולק בין החלקים לפי הסדר.`}
-                      </div>
-                    ) : null}
-                  </Field>
-                  {/* Which bank/cash account this payment leaves from. Required when accounts exist. */}
-                  <AccountSelect
-                    required
-                    value={paymentAccountId}
-                    onChange={setPaymentAccountId}
-                    onLoaded={setAccountsList}
-                  />
-                </>
-              ) : null}
-            </SalaryProtected>
-          ) : null}
-          <div className="md:col-span-2">
-            <Field label="הערות">
-              <Textarea
-                rows={3}
-                value={sessionForm.notes}
-                onChange={(event) => setSessionForm((current) => ({ ...current, notes: event.target.value }))}
-              />
-            </Field>
-          </div>
-          {sessionError ? (
-            <div
-              role="alert"
-              className="md:col-span-2 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive"
-            >
-              {sessionError}
-            </div>
-          ) : null}
-        </div>
-
-        {sessionForm.clock_out && sessionDialogWorkerType && payrollWorkerTypeAllowsSessions(sessionDialogWorkerType) ? (
-          <div className="space-y-3 border-t pt-4">
+        </>
+      ) : stepId === "split" ? (
+        <>
+          <StepHeading title="לפצל את המשמרת?" sub="לא חובה" />
+          <div className="space-y-3">
             <label className="flex cursor-pointer items-center gap-3">
               <input
                 type="checkbox"
@@ -1148,10 +1210,135 @@ export default function SessionEditorDialog({
               )
             ) : null}
           </div>
-        ) : null}
-
-        {sessionMode === "edit" ? editExtras : null}
-
-    </FormDialog>
+        </>
+      ) : stepId === "price" ? (
+        <SalaryProtected
+          unlocked={salaryUnlocked}
+          hasPasswordConfigured={hasPasswordConfigured}
+          canUnlock={canViewSalary}
+          onUnlockSuccess={onUnlockSuccess}
+        >
+          <StepHeading
+            title="מה המחיר?"
+            sub={sessionDialogWorkerType === "session_only" ? undefined : "לא חובה — יחושב אוטומטית לפי הסכם השכר"}
+          />
+          <CurrencyInput
+            autoFocus
+            inputMode="decimal"
+            value={sessionForm.labor_cost}
+            onChange={(event) => setSessionForm((current) => ({ ...current, labor_cost: event.target.value }))}
+            placeholder={sessionDialogWorkerType === "session_only" ? "חובה" : "אופציונלי"}
+          />
+          <div className="mt-1 text-xs text-muted-foreground">
+            {sessionDialogSuggestedAmount !== null
+              ? `סה״כ לתשלום עבור המשמרת: ${formatCurrency(sessionDialogSuggestedAmount)}`
+              : "הסכום שמגיע לעובד יוצג כאן אחרי הזנת שעות תקינות או עלות עבודה."}
+          </div>
+        </SalaryProtected>
+      ) : stepId === "billing" ? (
+        <>
+          <StepHeading title="לחייב לקוח?" sub="לא חובה" />
+          <div className="grid grid-cols-2 gap-2">
+            <OptionRow label="כן" selected={sessionForm.is_billable_to_customer} onClick={() => pickBilling(true)} />
+            <OptionRow label="לא" selected={!sessionForm.is_billable_to_customer} onClick={() => pickBilling(false)} />
+          </div>
+          {sessionForm.is_billable_to_customer ? (
+            <label className="mt-3 block space-y-2 text-sm">
+              <span className="font-medium">{"סכום לחיוב"}</span>
+              <CurrencyInput
+                inputMode="decimal"
+                autoFocus
+                value={sessionForm.bill_to_customer_amount}
+                onChange={(event) => {
+                  setBillAmountDirty(true);
+                  setSessionForm((current) => ({ ...current, bill_to_customer_amount: event.target.value }));
+                }}
+              />
+            </label>
+          ) : null}
+        </>
+      ) : stepId === "markPaid" ? (
+        <SalaryProtected
+          unlocked={salaryUnlocked}
+          hasPasswordConfigured={hasPasswordConfigured}
+          canUnlock={canViewSalary}
+          onUnlockSuccess={onUnlockSuccess}
+        >
+          <StepHeading title="שולם עכשיו?" sub="לא חובה" />
+          <div className="grid grid-cols-2 gap-2">
+            <OptionRow label="כן" selected={sessionForm.mark_paid_now} onClick={() => pickMarkPaid(true)} />
+            <OptionRow label="לא" selected={!sessionForm.mark_paid_now} onClick={() => pickMarkPaid(false)} />
+          </div>
+          {sessionForm.mark_paid_now ? (
+            <div className="mt-3 space-y-3">
+              <label className="block space-y-2 text-sm">
+                <span className="font-medium">{"כמה שולם"}</span>
+                <CurrencyInput
+                  inputMode="decimal"
+                  value={sessionForm.paid_amount_now}
+                  onChange={(event) =>
+                    setSessionForm((current) => ({ ...current, paid_amount_now: event.target.value }))
+                  }
+                  placeholder="אם ריק, יירשם הסכום המלא"
+                />
+                {sessionSplitEnabled ? (
+                  <span className="block text-xs text-muted-foreground">
+                    {`סכום מלא לכל החלקים: ${formatCurrency(
+                      sessionSplitParts.reduce((sum, part) => sum + (Number(part.amount) || 0), 0)
+                    )}. סכום קטן יותר יחולק בין החלקים לפי הסדר.`}
+                  </span>
+                ) : null}
+              </label>
+              {accountsList.length > 0 ? (
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">{"מאיזה חשבון"}</div>
+                  {accountsList.map((a) => (
+                    <OptionRow
+                      key={a.id}
+                      icon={accountKindIcon(a.kind)}
+                      label={a.name}
+                      sub={getAccountKindLabel(a.kind)}
+                      selected={paymentAccountId === a.id}
+                      onClick={() => setPaymentAccountId(a.id)}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </SalaryProtected>
+      ) : stepId === "notes" ? (
+        <>
+          <StepHeading title="הערות?" sub="לא חובה" />
+          <Textarea
+            rows={3}
+            autoFocus
+            value={sessionForm.notes}
+            onChange={(event) => setSessionForm((current) => ({ ...current, notes: event.target.value }))}
+          />
+        </>
+      ) : (
+        <>
+          <StepHeading title="לאשר ולשמור?" />
+          <SummarySection title="פרטי המשמרת">
+            <SummaryRow label="עובד" value={workerLabel} />
+            <SummaryRow label="תחום" value={getBusinessDomainLabel(sessionForm.business_domain)} />
+            {needsProject ? <SummaryRow label="פרויקט" value={projectLabel ?? "—"} /> : null}
+            {needsProperty ? <SummaryRow label="נכס" value={propertyLabel ?? "—"} /> : null}
+            <SummaryRow label="כניסה" value={formatDate(sessionForm.clock_in)} />
+            {sessionForm.clock_out ? <SummaryRow label="יציאה" value={formatDate(sessionForm.clock_out)} /> : null}
+            {sessionSplitEnabled ? <SummaryRow label="פיצול" value={`${sessionSplitParts.length} חלקים`} /> : null}
+            {sessionDialogSuggestedAmount !== null ? (
+              <SummaryRow label="עלות משמרת" value={formatCurrency(sessionDialogSuggestedAmount)} />
+            ) : null}
+            <SummaryRow label="חיוב לקוח" value={sessionForm.is_billable_to_customer ? "כן" : "לא"} />
+            {showMarkPaid ? <SummaryRow label="שולם עכשיו" value={sessionForm.mark_paid_now ? "כן" : "לא"} /> : null}
+            {sessionForm.mark_paid_now && paymentAccountId ? <SummaryRow label="חשבון" value={accountName} /> : null}
+            {sessionForm.notes.trim() ? <SummaryRow label="הערות" value={sessionForm.notes} /> : null}
+          </SummarySection>
+          {sessionMode === "edit" ? editExtras : null}
+        </>
+      )}
+    </StepWizardDialog>
   );
 }

@@ -1,19 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
 import { offlineUpload } from "@/lib/offline-upload";
 import { toHebrewError } from "@/lib/error-messages";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { AttachIcon, BusinessIcon, ClockIcon, CommentIcon, LocationIcon, LockIcon, NotificationIcon, SpinnerIcon, SuccessIcon, TagIcon, TextIcon, UncheckedIcon, UnlockIcon, UsersIcon } from "@/components/ui/icons";
+import { AttachIcon, BusinessIcon, ChevronDownIcon, ClockIcon, CommentIcon, LocationIcon, LockIcon, NotificationIcon, SpinnerIcon, SuccessIcon, TagIcon, TextIcon, UncheckedIcon, UnlockIcon, UsersIcon } from "@/components/ui/icons";
 import { DeleteButton } from "@/components/ui/icon-button";
+import { cn } from "@/lib/utils";
 import {
   emitProgressActivityEnd,
   emitProgressActivityStart,
 } from "@/components/layout/TopNavigationProgress";
-import { AdaptiveDialog } from "@/components/layout/page-layout";
+import { AdaptivePageDialog } from "@/components/layout/page-layout";
+import { DIALOG_CHROME_CONTENT_PAGE, useSwipeToDismiss } from "@/components/ui/dialog-chrome";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ViewDialog } from "@/components/ui/view-dialog";
@@ -132,6 +134,49 @@ function getErrorMessage(err: unknown) {
   return toHebrewError(err, "Unknown error");
 }
 
+/**
+ * One row of the vertical section accordion (2026-08-25, user request — was a
+ * horizontal tab strip with a single shared content pane below it; that's now
+ * "sections one on top of the other that open"). Exactly one is ever open —
+ * `active` is driven by the same `openSection`/`activeSection` state the tabs
+ * used, so opening one is still what closes whichever was open before, not an
+ * independent per-row toggle like components/ui/collapsible-section.tsx (that
+ * one allows several open at once, which doesn't fit a single-active-step form).
+ */
+function TaskSection({
+  icon: Icon,
+  label,
+  active,
+  onToggle,
+  rowRef,
+  children,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  active: boolean;
+  onToggle: () => void;
+  rowRef: (node: HTMLDivElement | null) => void;
+  children: ReactNode;
+}) {
+  return (
+    <div ref={rowRef} className="scroll-mt-2 border-b border-border/70 last:border-b-0">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={active}
+        className="flex w-full items-center gap-2 px-3 py-2.5 text-start"
+      >
+        <Icon className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-muted-foreground")} />
+        <span className={cn("flex-1 text-sm", active ? "font-bold text-primary" : "font-medium")}>{label}</span>
+        <ChevronDownIcon
+          className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", active && "rotate-180")}
+        />
+      </button>
+      {active ? <div className="border-t border-border/70 px-3 py-3">{children}</div> : null}
+    </div>
+  );
+}
+
 /** The id of the task /api/tasks/create just returned ({ task: { id } }), or "". */
 function newTaskIdFrom(data: unknown): string {
   if (!data || typeof data !== "object" || !("task" in data)) return "";
@@ -148,9 +193,10 @@ export function TaskUpsertDialog(rawProps: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  // Only one section open at a time (accordion). Description is the default-open one.
+  // At most one section open at a time (accordion) — none forced open by
+  // default; the user picks what to look at.
   const wizard = props.wizard ?? false;
-  const [openSection, setOpenSection] = useState<string | null>("description");
+  const [openSection, setOpenSection] = useState<string | null>(null);
 
   const defaultDomain = useMemo<ExpenseBusinessDomain>(() => {
     if (props.defaultProjectType) return mapProjectTypeToExpenseDomain(props.defaultProjectType);
@@ -330,8 +376,8 @@ export function TaskUpsertDialog(rawProps: Props) {
         setReminders(Array.isArray(json?.reminders) ? (json.reminders as ReminderItem[]) : []);
         void fetchAttachments(taskId);
 
-        // Open on the description by default; the user opens one section at a time.
-        setOpenSection("description");
+        // Nothing forced open — the user opens whichever section they want.
+        setOpenSection(null);
       } catch (error: unknown) {
         toast.error(toHebrewError(error, t(tasksDict, props.locale, "loadTaskErrorFallback")));
         props.onOpenChange(false);
@@ -394,7 +440,7 @@ export function TaskUpsertDialog(rawProps: Props) {
     // Creating → the current user is the creator, so the privacy toggle is theirs.
     setViewerIsCreator(true);
 
-    setOpenSection("description");
+    setOpenSection(null);
   }
 
   useEffect(() => {
@@ -463,7 +509,6 @@ export function TaskUpsertDialog(rawProps: Props) {
       setCity(f.city);
       setCityOther(!(CITY_OPTIONS as readonly string[]).includes(f.city));
     }
-    setOpenSection("description");
   }
 
   // Privacy is a one-click action, not a staged field: persist it immediately when
@@ -959,34 +1004,38 @@ export function TaskUpsertDialog(rawProps: Props) {
     ],
     [isEditing, targetTaskId, props.locale]
   );
-  // Tabs always have exactly one open — an unknown/cleared section falls back to
-  // the first rather than showing an empty body under a strip of tabs.
-  const activeIndex = Math.max(
-    0,
-    sections.findIndex((section) => section.key === openSection)
-  );
-  const activeSection = sections[activeIndex].key;
-  // Bodies key off the RESOLVED section, not the raw state — otherwise a stale
-  // key (e.g. "reminders" on a card that's since been saved) shows a tab strip
-  // with nothing under it.
+  // At most one section open — an unknown/cleared key (including the initial
+  // "nothing yet" state) means NONE is open, not a fallback to the first one.
+  const activeIndex = sections.findIndex((section) => section.key === openSection);
+  const activeSection = activeIndex >= 0 ? sections[activeIndex].key : null;
   const isOpen = (key: string) => activeSection === key;
+  // Tapping an open section's own header closes it; tapping a closed one opens
+  // it (and closes whatever else was open — still an exclusive accordion).
+  function toggleSection(key: string) {
+    setOpenSection((prev) => (prev === key ? null : key));
+  }
+  // Icon/label lookup for each <TaskSection> row, without re-deriving them —
+  // `sections` already built them once.
+  const sectionByKey = useMemo(() => new Map(sections.map((s) => [s.key, s])), [sections]);
 
-  // Whichever section is open, its tab has to be ON SCREEN — pressing "הבא"
-  // used to advance to a tab that was still off the end of the strip, so the
-  // form changed under you with nothing to show which step you'd reached.
-  const tabStripRef = useRef<HTMLDivElement | null>(null);
-  const tabRefs = useRef(new Map<string, HTMLButtonElement>());
+  // Whichever section is open, it has to be ON SCREEN — pressing "הבא" used to
+  // advance to a section still below the fold, so the form changed under you
+  // with nothing to show which step you'd reached. Vertical scrollIntoView
+  // (not a manual delta, unlike the old horizontal tab-strip version) needs no
+  // RTL-origin math.
+  const sectionRowRefs = useRef(new Map<string, HTMLDivElement>());
   useEffect(() => {
-    const strip = tabStripRef.current;
-    const tab = tabRefs.current.get(activeSection);
-    if (!strip || !tab) return;
-    const stripBox = strip.getBoundingClientRect();
-    const tabBox = tab.getBoundingClientRect();
-    // scrollBy with a delta: RTL scroll origins differ between engines.
-    const delta = tabBox.left + tabBox.width / 2 - (stripBox.left + stripBox.width / 2);
-    if (Math.abs(delta) < 1) return;
-    strip.scrollBy({ left: delta, behavior: "smooth" });
+    if (!activeSection) return;
+    const row = sectionRowRefs.current.get(activeSection);
+    row?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [activeSection]);
+  const rowRefFor = useCallback(
+    (key: string) => (node: HTMLDivElement | null) => {
+      if (node) sectionRowRefs.current.set(key, node);
+      else sectionRowRefs.current.delete(key);
+    },
+    []
+  );
 
   // Swipe the panel sideways to move between sections.
   const sectionsRef = useRef<HTMLDivElement | null>(null);
@@ -1041,6 +1090,16 @@ export function TaskUpsertDialog(rawProps: Props) {
     doClose();
   }
 
+  // Full-page mobile swipe-down — gated on sectionsRef (the same scrollable
+  // area useSwipeNavigation's horizontal tab-swipe uses), and routed through
+  // attemptClose so a swipe on an unsaved new task gets the same discard
+  // confirmation the X and Escape already do.
+  const swipeProps = useSwipeToDismiss({
+    enabled: true,
+    bodyRef: sectionsRef,
+    onDismiss: attemptClose,
+  });
+
   return (
     <>
     <Dialog
@@ -1055,15 +1114,20 @@ export function TaskUpsertDialog(rawProps: Props) {
     >
       {/* A column, not a scrolling block: header and action bar are pinned and
           only the sections between them scroll (see dialog-chrome for the same
-          shape). p-0 because each band brings its own padding. */}
+          shape). p-0 because each band brings its own padding. Full mobile page
+          + swipe-down now, like the other quick-action dialogs — gated on the
+          SAME sectionsRef the horizontal tab-swipe (useSwipeNavigation) already
+          uses, so it only arms once that scroll area is at the top. */}
       {/* One width for both modes now that everything is tabbed — the wide
           `details4xl` existed for the old two-column edit layout. */}
-      <AdaptiveDialog
+      <AdaptivePageDialog
         size="form2xl"
-        className="flex flex-col gap-0 overflow-y-hidden p-0 sm:p-0"
+        className={DIALOG_CHROME_CONTENT_PAGE}
+        {...swipeProps}
       >
         {/* A line under the name block, so the header reads as a pinned bar like
             every other dialog even though this one owns its own layout. */}
+        <div className="mx-auto mt-2 mb-1 h-1 w-10 shrink-0 rounded-full bg-muted-foreground/30 sm:hidden" aria-hidden />
         <DialogHeader className="shrink-0 border-b border-border/70 px-4 pb-3 pt-4 sm:px-6">
           <DialogTitle className="sr-only">{subject.trim() ? subject : dialogTitle}</DialogTitle>
           {/* pe-8 keeps the end button clear of the dialog's close X (top-left in RTL). */}
@@ -1181,46 +1245,15 @@ export function TaskUpsertDialog(rawProps: Props) {
             void submit();
           }}
         >
-          {/* The section tabs — one row, always exactly one open, scrollable
-              sideways when they don't fit. Swipe the panel below to step through
-              them (see useSwipeNavigation: right = forward, matching the rest of
-              the app's RTL paging). */}
-          <div className="shrink-0 border-b border-border/70 px-4 sm:px-6">
-            <div
-              ref={tabStripRef}
-              dir="rtl"
-              className="flex min-w-0 items-center gap-2 overflow-x-auto overflow-y-hidden sm:gap-3"
-            >
-              {sections.map((section) => {
-                const active = section.key === activeSection;
-                const Icon = section.icon;
-                return (
-                  <button
-                    key={section.key}
-                    ref={(node) => {
-                      if (node) tabRefs.current.set(section.key, node);
-                      else tabRefs.current.delete(section.key);
-                    }}
-                    type="button"
-                    aria-current={active ? "true" : undefined}
-                    onClick={() => setOpenSection(section.key)}
-                    className={`-mb-px inline-flex shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-t-md border-b-[3px] px-2 pb-2 pt-1 text-sm leading-tight transition-colors hover:bg-muted/60 ${
-                      active
-                        ? "border-primary font-bold text-primary"
-                        : "border-transparent font-medium text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" />
-                    {section.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
+          {/* Sections stack vertically now — one card per section, exactly one
+              open at a time (2026-08-25, user request: was a horizontal tab
+              strip with a shared content pane below it). Swipe still steps
+              through them (see useSwipeNavigation: right = forward, matching
+              the rest of the app's RTL paging) — it just changes which card is
+              open instead of which tab is selected. */}
           <div ref={sectionsRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
-          <div className="space-y-3">
-          {/* Voice fill — a button like any other, above the open section. */}
+          <div className="space-y-2">
+          {/* Voice fill — a button like any other, above the sections. */}
           {!isEditing ? (
             <TaskVoiceFillButton
               users={props.users.map((u) => ({ id: u.id, label: u.label }))}
@@ -1230,11 +1263,27 @@ export function TaskUpsertDialog(rawProps: Props) {
             />
           ) : null}
 
-          {isOpen("description") ? (
+          {/* One rounded card holding every section as a flat, divided row —
+              not a bordered box per section (2026-08-25 user request: match
+              Trello's card-detail layout, not a stack of separate cards). */}
+          <div className="overflow-hidden rounded-xl border border-border/70">
+          <TaskSection
+            icon={sectionByKey.get("description")!.icon}
+            label={sectionByKey.get("description")!.label}
+            active={isOpen("description")}
+            onToggle={() => toggleSection("description")}
+            rowRef={rowRefFor("description")}
+          >
             <TaskDescriptionSection description={description} onChange={setDescription} locale={props.locale} />
-          ) : null}
+          </TaskSection>
 
-          {isOpen("domain") ? (
+          <TaskSection
+            icon={sectionByKey.get("domain")!.icon}
+            label={sectionByKey.get("domain")!.label}
+            active={isOpen("domain")}
+            onToggle={() => toggleSection("domain")}
+            rowRef={rowRefFor("domain")}
+          >
             <TaskDomainSection
               allowedDomains={allowedDomains}
               effectiveDomain={effectiveDomain}
@@ -1254,123 +1303,167 @@ export function TaskUpsertDialog(rawProps: Props) {
               onCustomerIdChange={setCustomerId}
               locale={props.locale}
             />
+          </TaskSection>
+
+          <TaskSection
+            icon={sectionByKey.get("dates")!.icon}
+            label={sectionByKey.get("dates")!.label}
+            active={isOpen("dates")}
+            onToggle={() => toggleSection("dates")}
+            rowRef={rowRefFor("dates")}
+          >
+            <TaskDatesSection
+              dueDate={dueDate}
+              onDueDateChange={setDueDate}
+              dueTime={dueTime}
+              onDueTimeChange={setDueTime}
+              locale={props.locale}
+            />
+          </TaskSection>
+
+          <TaskSection
+            icon={sectionByKey.get("people")!.icon}
+            label={sectionByKey.get("people")!.label}
+            active={isOpen("people")}
+            onToggle={() => toggleSection("people")}
+            rowRef={rowRefFor("people")}
+          >
+            <TaskPeopleSection
+              users={props.users}
+              assignedUserId={assignedUserId}
+              onAssignedChange={(id) => {
+                setAssignedUserId(id);
+                setMemberIds((prev) => prev.filter((m) => m !== id));
+              }}
+              canAddSelf={canAddSelf}
+              meId={meId}
+              memberIds={memberIds}
+              onToggleMember={toggleMember}
+              selectedMembers={selectedMembers}
+              memberOptions={memberOptions}
+              colorIndexById={colorIndexById}
+              locale={props.locale}
+            />
+          </TaskSection>
+
+          <TaskSection
+            icon={sectionByKey.get("labels")!.icon}
+            label={sectionByKey.get("labels")!.label}
+            active={isOpen("labels")}
+            onToggle={() => toggleSection("labels")}
+            rowRef={rowRefFor("labels")}
+          >
+            <TaskLabelsSection
+              priority={priority}
+              onPriorityChange={setPriority}
+              status={status}
+              onStatusChange={setStatus}
+              locale={props.locale}
+            />
+          </TaskSection>
+
+          <TaskSection
+            icon={sectionByKey.get("location")!.icon}
+            label={sectionByKey.get("location")!.label}
+            active={isOpen("location")}
+            onToggle={() => toggleSection("location")}
+            rowRef={rowRefFor("location")}
+          >
+            <TaskLocationSection
+              city={city}
+              setCity={setCity}
+              cityOther={cityOther}
+              setCityOther={setCityOther}
+              address={address}
+              onAddressChange={setAddress}
+              locale={props.locale}
+            />
+          </TaskSection>
+
+          {/* Reminders: staged locally before the task exists, live once it does. */}
+          <TaskSection
+            icon={sectionByKey.get("reminders")!.icon}
+            label={sectionByKey.get("reminders")!.label}
+            active={isOpen("reminders")}
+            onToggle={() => toggleSection("reminders")}
+            rowRef={rowRefFor("reminders")}
+          >
+            {isEditing && targetTaskId ? (
+              <TaskRemindersPanel
+                reminders={reminders}
+                reminderAt={reminderAt}
+                setReminderAt={setReminderAt}
+                reminderNote={reminderNote}
+                setReminderNote={setReminderNote}
+                addingReminder={addingReminder}
+                editingReminderId={editingReminderId}
+                onAddReminder={() => void (editingReminderId ? saveReminderEdit() : addReminder())}
+                onEditReminder={beginEditReminder}
+                onCancelEditReminder={cancelEditReminder}
+                onSetReminderStatus={(id, nextStatus) => void setReminderStatus(id, nextStatus)}
+                locale={props.locale}
+              />
+            ) : (
+              <TaskRemindersStagingSection
+                pendingReminders={pendingReminders}
+                reminderAt={reminderAt}
+                setReminderAt={setReminderAt}
+                reminderNote={reminderNote}
+                setReminderNote={setReminderNote}
+                onStage={stageReminder}
+                onRemove={removePendingReminder}
+                locale={props.locale}
+              />
+            )}
+          </TaskSection>
+
+          <TaskSection
+            icon={sectionByKey.get("files")!.icon}
+            label={sectionByKey.get("files")!.label}
+            active={isOpen("files")}
+            onToggle={() => toggleSection("files")}
+            rowRef={rowRefFor("files")}
+          >
+            {targetTaskId ? (
+              <TaskAttachmentsSection
+                attachments={attachments}
+                uploadingFiles={uploadingFiles}
+                onUpload={(files) => void uploadAttachments(files)}
+                onRequestDelete={setAttachmentToDelete}
+                locale={props.locale}
+              />
+            ) : (
+              <TaskPendingFilesSection
+                files={pendingFiles}
+                onAdd={(picked) => setPendingFiles((prev) => [...prev, ...picked])}
+                onRemove={(index) => setPendingFiles((prev) => prev.filter((_, i) => i !== index))}
+                locale={props.locale}
+              />
+            )}
+          </TaskSection>
+
+          {isEditing && targetTaskId ? (
+            <TaskSection
+              icon={sectionByKey.get("comments")!.icon}
+              label={sectionByKey.get("comments")!.label}
+              active={isOpen("comments")}
+              onToggle={() => toggleSection("comments")}
+              rowRef={rowRefFor("comments")}
+            >
+              <TaskCommentsPanel
+                comments={comments}
+                legacyNotes={legacyNotes}
+                newComment={newComment}
+                setNewComment={setNewComment}
+                addingComment={addingComment}
+                onAddComment={() => void addComment()}
+                colorIndexById={colorIndexById}
+                chosenColorById={chosenColorById}
+                locale={props.locale}
+              />
+            </TaskSection>
           ) : null}
-
-              {isOpen("dates") ? (
-                <TaskDatesSection
-                  dueDate={dueDate}
-                  onDueDateChange={setDueDate}
-                  dueTime={dueTime}
-                  onDueTimeChange={setDueTime}
-                  locale={props.locale}
-                />
-              ) : null}
-
-              {isOpen("people") ? (
-                <TaskPeopleSection
-                  users={props.users}
-                  assignedUserId={assignedUserId}
-                  onAssignedChange={(id) => {
-                    setAssignedUserId(id);
-                    setMemberIds((prev) => prev.filter((m) => m !== id));
-                  }}
-                  canAddSelf={canAddSelf}
-                  meId={meId}
-                  memberIds={memberIds}
-                  onToggleMember={toggleMember}
-                  selectedMembers={selectedMembers}
-                  memberOptions={memberOptions}
-                  colorIndexById={colorIndexById}
-                  locale={props.locale}
-                />
-              ) : null}
-
-              {isOpen("location") ? (
-                <TaskLocationSection
-                  city={city}
-                  setCity={setCity}
-                  cityOther={cityOther}
-                  setCityOther={setCityOther}
-                  address={address}
-                  onAddressChange={setAddress}
-                  locale={props.locale}
-                />
-              ) : null}
-
-              {isOpen("files") ? (
-                targetTaskId ? (
-                  <TaskAttachmentsSection
-                    attachments={attachments}
-                    uploadingFiles={uploadingFiles}
-                    onUpload={(files) => void uploadAttachments(files)}
-                    onRequestDelete={setAttachmentToDelete}
-                    locale={props.locale}
-                  />
-                ) : (
-                  <TaskPendingFilesSection
-                    files={pendingFiles}
-                    onAdd={(picked) => setPendingFiles((prev) => [...prev, ...picked])}
-                    onRemove={(index) => setPendingFiles((prev) => prev.filter((_, i) => i !== index))}
-                    locale={props.locale}
-                  />
-                )
-              ) : null}
-
-              {isOpen("labels") ? (
-                <TaskLabelsSection
-                  priority={priority}
-                  onPriorityChange={setPriority}
-                  status={status}
-                  onStatusChange={setStatus}
-                  locale={props.locale}
-                />
-              ) : null}
-
-              {/* Reminders: staged locally before the task exists, live once it
-                  does — one tab, either way. */}
-              {isOpen("reminders") ? (
-                isEditing && targetTaskId ? (
-                  <TaskRemindersPanel
-                    reminders={reminders}
-                    reminderAt={reminderAt}
-                    setReminderAt={setReminderAt}
-                    reminderNote={reminderNote}
-                    setReminderNote={setReminderNote}
-                    addingReminder={addingReminder}
-                    editingReminderId={editingReminderId}
-                    onAddReminder={() => void (editingReminderId ? saveReminderEdit() : addReminder())}
-                    onEditReminder={beginEditReminder}
-                    onCancelEditReminder={cancelEditReminder}
-                    onSetReminderStatus={(id, nextStatus) => void setReminderStatus(id, nextStatus)}
-                    locale={props.locale}
-                  />
-                ) : (
-                  <TaskRemindersStagingSection
-                    pendingReminders={pendingReminders}
-                    reminderAt={reminderAt}
-                    setReminderAt={setReminderAt}
-                    reminderNote={reminderNote}
-                    setReminderNote={setReminderNote}
-                    onStage={stageReminder}
-                    onRemove={removePendingReminder}
-                    locale={props.locale}
-                  />
-                )
-              ) : null}
-
-              {isOpen("comments") && isEditing && targetTaskId ? (
-                <TaskCommentsPanel
-                  comments={comments}
-                  legacyNotes={legacyNotes}
-                  newComment={newComment}
-                  setNewComment={setNewComment}
-                  addingComment={addingComment}
-                  onAddComment={() => void addComment()}
-                  colorIndexById={colorIndexById}
-                  chosenColorById={chosenColorById}
-                  locale={props.locale}
-                />
-              ) : null}
+          </div>
           </div>
           </div>
 
@@ -1402,7 +1495,7 @@ export function TaskUpsertDialog(rawProps: Props) {
           </div>
         </form>
         )}
-      </AdaptiveDialog>
+      </AdaptivePageDialog>
     </Dialog>
 
     {/* The name has several lines — is it a list, or one long name? Only the

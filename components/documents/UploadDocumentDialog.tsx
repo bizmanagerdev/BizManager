@@ -1,6 +1,6 @@
 "use client";
 
-// "העלאת מסמך" — the ONE upload form. Lifted out of DocumentsArchiveClient so the
+// "העלאת קבצים" — the ONE upload form. Lifted out of DocumentsArchiveClient so the
 // archive page and the top-bar + menu share it: same domains, same categories,
 // same project/property linking, same offline-queued upload. Changing the form
 // once changes it in both places.
@@ -8,23 +8,40 @@
 // Owns its own state; the caller supplies the target lists and (optionally) the
 // defaults its own context implies — the archive page seeds them from its active
 // filters so uploading from a filtered view lands the file where you're looking.
+//
+// Rebuilt 2026-08-25 onto the same atomic step-wizard architecture as
+// IncomeDialog/CollectPaymentDialog/ExpenseDialog (one question per screen,
+// tap-a-card-to-advance) instead of a single-page FormDialog — part of
+// converging every quick-action dialog onto one shared shape.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { FormDialog } from "@/components/ui/form-dialog";
-import { NativeSelect } from "@/components/ui/native-select";
+import { StepWizardDialog, useStepFlow } from "@/components/ui/step-wizard";
+import { OptionRow, StepHeading } from "@/components/ui/option-row";
+import { SummaryRow, SummarySection } from "@/components/ui/summary";
 import { Input } from "@/components/ui/input";
-import { SearchableSelect } from "@/components/ui/searchable-select";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
-import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { TagPicker } from "@/components/tags/TagPicker";
-import { DomainSelect } from "@/components/financial/DomainSelect";
+import { getBusinessDomainIcon } from "@/components/financial/DomainSelect";
 import { DOCUMENT_CATEGORIES, inferDefaultDocumentCategory } from "@/lib/documents";
-import { EXPENSE_BUSINESS_DOMAINS } from "@/lib/expenses";
+import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel } from "@/lib/expenses";
 import { offlineUpload } from "@/lib/offline-upload";
 import { toHebrewError } from "@/lib/error-messages";
 
 export type UploadTargetOption = { id: string; label: string };
+
+type UploadStepId = "domain" | "project" | "property" | "category" | "tags" | "refYear" | "files" | "summary";
+
+const STEP_LABEL: Record<UploadStepId, string> = {
+  domain: "תחום",
+  project: "פרויקט",
+  property: "נכס",
+  category: "קטגוריה",
+  tags: "תגיות",
+  refYear: "שנה",
+  files: "קבצים",
+  summary: "סיכום",
+};
 
 function normalizeDomain(value: string | undefined) {
   return value && (EXPENSE_BUSINESS_DOMAINS as readonly string[]).includes(value)
@@ -52,14 +69,18 @@ export function UploadDocumentDialog({
   defaultPropertyId?: string;
   onUploaded?: () => void;
 }) {
+  const [stepId, setStepId] = useState<UploadStepId>("domain");
   const [businessDomain, setBusinessDomain] = useState(() => normalizeDomain(defaultDomain));
   const [category, setCategory] = useState("");
   const [projectId, setProjectId] = useState(defaultProjectId);
+  const [projectQuery, setProjectQuery] = useState("");
   const [propertyId, setPropertyId] = useState(defaultPropertyId);
+  const [propertyQuery, setPropertyQuery] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [tagIds, setTagIds] = useState<string[]>([]);
   const [refYear, setRefYear] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const needsProject = businessDomain === "logistics_projects";
   const needsProperty = businessDomain === "property_management";
@@ -68,9 +89,11 @@ export function UploadDocumentDialog({
   // filters may have changed since the last upload).
   useEffect(() => {
     if (!open) return;
+    setStepId("domain");
     setBusinessDomain(normalizeDomain(defaultDomain));
     setProjectId(defaultProjectId);
     setPropertyId(defaultPropertyId);
+    setError(null);
   }, [open, defaultDomain, defaultProjectId, defaultPropertyId]);
 
   // A target that doesn't apply to the chosen domain must not ride along on the upload.
@@ -79,24 +102,102 @@ export function UploadDocumentDialog({
     if (!needsProperty && propertyId) setPropertyId("");
   }, [needsProject, needsProperty, projectId, propertyId]);
 
+  const stepIds = useMemo<UploadStepId[]>(() => {
+    const ids: UploadStepId[] = ["domain"];
+    if (needsProject) ids.push("project");
+    if (needsProperty) ids.push("property");
+    ids.push("category");
+    if (businessDomain === "general_business") {
+      ids.push("tags");
+      if (tagIds.length > 0) ids.push("refYear");
+    }
+    ids.push("files", "summary");
+    return ids;
+  }, [needsProject, needsProperty, businessDomain, tagIds.length]);
+  const wizardSteps = useMemo(() => stepIds.map((id) => ({ n: id, label: STEP_LABEL[id] })), [stepIds]);
+
+  const filteredProjects = useMemo(() => {
+    const q = projectQuery.trim().toLowerCase();
+    if (!q) return projects;
+    return projects.filter((p) => p.label.toLowerCase().includes(q));
+  }, [projectQuery, projects]);
+  const filteredProperties = useMemo(() => {
+    const q = propertyQuery.trim().toLowerCase();
+    if (!q) return properties;
+    return properties.filter((p) => p.label.toLowerCase().includes(q));
+  }, [propertyQuery, properties]);
+
+  function isSatisfied(id: UploadStepId): boolean {
+    switch (id) {
+      case "project":
+        return Boolean(projectId.trim());
+      case "property":
+        return Boolean(propertyId.trim());
+      case "files":
+        return files.length > 0;
+      case "domain":
+      case "category":
+      case "tags":
+      case "refYear":
+      case "summary":
+        return true;
+    }
+  }
+
+  const { stepIndex, isLastStep, canClickStep, goToStep, goBack, goNext, advanceTo } = useStepFlow<UploadStepId>({
+    stepId,
+    setStepId,
+    steps: stepIds,
+    isSatisfied,
+  });
+
+  function pickDomain(domain: string) {
+    setBusinessDomain(domain);
+    if (domain !== "logistics_projects") setProjectId("");
+    if (domain !== "property_management") setPropertyId("");
+    if (domain !== "general_business") {
+      setTagIds([]);
+      setRefYear("");
+    }
+    advanceTo(
+      domain === "logistics_projects" ? "project" : domain === "property_management" ? "property" : "category"
+    );
+  }
+
+  function pickCategory(next: string) {
+    setCategory(next);
+    advanceTo(businessDomain === "general_business" ? "tags" : "files");
+  }
+
   function reset() {
+    setStepId("domain");
     setBusinessDomain(normalizeDomain(defaultDomain));
     setCategory("");
     setProjectId(defaultProjectId);
+    setProjectQuery("");
     setPropertyId(defaultPropertyId);
+    setPropertyQuery("");
     setFiles([]);
     setTagIds([]);
     setRefYear("");
+    setError(null);
+  }
+
+  function handleOpenChange(next: boolean) {
+    if (!next && uploading) return;
+    onOpenChange(next);
+    if (!next) reset();
   }
 
   async function startUpload() {
     if (uploading || files.length === 0) return;
+    setError(null);
     if (needsProject && !projectId.trim()) {
-      toast.error("יש לבחור פרויקט");
+      setError("יש לבחור פרויקט");
       return;
     }
     if (needsProperty && !propertyId.trim()) {
-      toast.error("יש לבחור נכס");
+      setError("יש לבחור נכס");
       return;
     }
 
@@ -134,138 +235,163 @@ export function UploadDocumentDialog({
         // Everything was queued — the global connection toast covers it.
         toast.dismiss(toastId);
       }
-      onOpenChange(false);
-      reset();
+      handleOpenChange(false);
       onUploaded?.();
-    } catch (error: unknown) {
-      toast.error("שגיאה בהעלאת קובץ", { id: toastId, description: toHebrewError(error) });
+    } catch (err: unknown) {
+      toast.error("שגיאה בהעלאת קובץ", { id: toastId, description: toHebrewError(err) });
     } finally {
       setUploading(false);
     }
   }
 
+  const projectName = projects.find((p) => p.id === projectId)?.label;
+  const propertyName = properties.find((p) => p.id === propertyId)?.label;
+
   return (
-    <FormDialog
+    <StepWizardDialog
       open={open}
-      onOpenChange={(next) => {
-        onOpenChange(next);
-        if (!next) reset();
-      }}
-      title="העלאת קבצים"
-      description="בחירת קבצים להוספה לארכיון המסמכים המרכזי."
+      onOpenChange={handleOpenChange}
+      dialogTitle="העלאת קבצים"
+      dialogDescription="העלאת מסמך לארכיון"
       size="formMd"
-      onSubmit={() => void startUpload()}
-      submitLabel="העלאה"
-      busyLabel="מעלה..."
-      busy={uploading}
-      submitDisabled={
-        files.length === 0 ||
-        (needsProject && !projectId.trim()) ||
-        (needsProperty && !propertyId.trim())
-      }
+      fullScreen
+      progressVariant="bar"
+      steps={wizardSteps}
+      current={stepId}
+      canClickStep={canClickStep}
+      onStepClick={goToStep}
+      closeDisabled={uploading}
+      onBack={stepIndex(stepId) > 0 ? goBack : undefined}
+      backDisabled={uploading}
+      onNext={() => (isLastStep ? void startUpload() : goNext())}
+      nextLabel={isLastStep ? (uploading ? "מעלה..." : "העלאה") : undefined}
+      nextDisabled={isLastStep ? uploading : !isSatisfied(stepId)}
+      isLastStep={isLastStep}
+      submitOnEnter
+      error={error || undefined}
     >
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <div className="text-sm font-medium">תחום</div>
-              <DomainSelect
-                value={businessDomain}
-                onChange={(value) => {
-                  setBusinessDomain(value);
-                  if (value !== "general_business") {
-                    setTagIds([]);
-                    setRefYear("");
-                  }
-                }}
-                ariaLabel="תחום למסמך חדש"
+      {stepId === "domain" ? (
+        <>
+          <StepHeading title="לאיזה תחום שייך המסמך?" />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
+              <OptionRow
+                key={domain}
+                icon={getBusinessDomainIcon(domain) ?? undefined}
+                label={getBusinessDomainLabel(domain)}
+                selected={businessDomain === domain}
+                onClick={() => pickDomain(domain)}
               />
-            </div>
-
-            {needsProject ? (
-              <div className="space-y-1">
-                <div className="text-sm font-medium">פרויקט</div>
-                <ProjectPicker
-                  value={projectId}
-                  onChange={setProjectId}
-                  allowClear={false}
-                  placeholder="בחר פרויקט"
-                  searchPlaceholder="חיפוש פרויקט..."
-                  projects={projects}
-                />
-                {!projectId.trim() ? (
-                  <div className="text-xs text-destructive">יש לבחור פרויקט לקישור הקבצים</div>
-                ) : null}
-              </div>
-            ) : null}
-
-            {needsProperty ? (
-              <div className="space-y-1">
-                <div className="text-sm font-medium">נכס</div>
-                <SearchableSelect
-                  value={propertyId}
-                  onChange={setPropertyId}
-                  ariaLabel="בחירת נכס"
-                  placeholder="בחר נכס"
-                  searchPlaceholder="חיפוש נכס..."
-                  options={properties.map((option) => ({ value: option.id, label: option.label }))}
-                />
-                {!propertyId.trim() ? (
-                  <div className="text-xs text-destructive">יש לבחור נכס לקישור הקבצים</div>
-                ) : null}
-              </div>
-            ) : null}
-
+            ))}
+          </div>
+        </>
+      ) : stepId === "project" ? (
+        <>
+          <StepHeading title="לאיזה פרויקט לשייך?" />
+          <div className="grid gap-3">
+            <Input value={projectQuery} onChange={(e) => setProjectQuery(e.target.value)} placeholder="חיפוש פרויקט..." />
             <div className="space-y-1">
-              <div className="text-sm font-medium">קטגוריה</div>
-              <NativeSelect
-                aria-label="קטגוריית מסמך"
-                value={category}
-                onChange={(event) => setCategory(event.target.value)}
-              >
-                <option value="">ללא קטגוריה</option>
-                {DOCUMENT_CATEGORIES.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </NativeSelect>
-            </div>
-
-            {businessDomain === "general_business" ? <TagPicker value={tagIds} onChange={setTagIds} /> : null}
-
-            {businessDomain === "general_business" && tagIds.length > 0 ? (
-              <div className="space-y-1">
-                <div className="text-sm font-medium">שנת המסמך (לחיפוש לפי שנה)</div>
-                <Input inputMode="numeric" value={refYear} onChange={(event) => setRefYear(event.target.value)} />
-              </div>
-            ) : null}
-
-            <div className="space-y-1">
-              <div className="text-sm font-medium">קבצים</div>
-              <div className="flex items-center justify-between gap-2">
-                <FileUploadActions
-                  files={files}
-                  multiple
-                  onFilesSelected={(next) => {
-                    setFiles(next);
-                    if (next.length > 0 && !category) {
-                      setCategory(inferDefaultDocumentCategory(next[0]?.name));
-                    }
+              {filteredProjects.map((project) => (
+                <OptionRow
+                  key={project.id}
+                  label={project.label}
+                  selected={projectId === project.id}
+                  onClick={() => {
+                    setProjectId(project.id);
+                    advanceTo("category");
                   }}
-                  chooseLabel="בחר קבצים"
                 />
-                <div className="text-xs text-muted-foreground">{files.length} קבצים</div>
-              </div>
-              {files.length > 0 ? (
-                <div className="truncate text-xs text-muted-foreground">
-                  {files.slice(0, 3).map((file) => file.name).join(", ")}
-                  {files.length > 3 ? ` +${files.length - 3}` : ""}
-                </div>
-              ) : (
-                <div className="text-xs text-destructive">בחר לפחות קובץ אחד</div>
-              )}
+              ))}
             </div>
           </div>
-    </FormDialog>
+        </>
+      ) : stepId === "property" ? (
+        <>
+          <StepHeading title="לאיזה נכס לשייך?" />
+          <div className="grid gap-3">
+            <Input value={propertyQuery} onChange={(e) => setPropertyQuery(e.target.value)} placeholder="חיפוש נכס..." />
+            <div className="space-y-1">
+              {filteredProperties.map((property) => (
+                <OptionRow
+                  key={property.id}
+                  label={property.label}
+                  selected={propertyId === property.id}
+                  onClick={() => {
+                    setPropertyId(property.id);
+                    advanceTo("category");
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        </>
+      ) : stepId === "category" ? (
+        <>
+          <StepHeading title="איזו קטגוריה?" sub="לא חובה" />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <OptionRow label="ללא קטגוריה" selected={category === ""} onClick={() => pickCategory("")} />
+            {DOCUMENT_CATEGORIES.map((option) => (
+              <OptionRow
+                key={option}
+                label={option}
+                selected={category === option}
+                onClick={() => pickCategory(option)}
+              />
+            ))}
+          </div>
+        </>
+      ) : stepId === "tags" ? (
+        <>
+          <StepHeading title="לשייך תגיות?" sub="לא חובה" />
+          <TagPicker value={tagIds} onChange={setTagIds} />
+        </>
+      ) : stepId === "refYear" ? (
+        <>
+          <StepHeading title="שנת המסמך?" sub="לחיפוש לפי שנה — לא חובה" />
+          <label className="space-y-2 text-sm">
+            <Input inputMode="numeric" autoFocus value={refYear} onChange={(e) => setRefYear(e.target.value)} />
+          </label>
+        </>
+      ) : stepId === "files" ? (
+        <>
+          <StepHeading title="אילו קבצים להעלות?" />
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <FileUploadActions
+                files={files}
+                multiple
+                onFilesSelected={(next) => {
+                  setFiles(next);
+                  if (next.length > 0 && !category) setCategory(inferDefaultDocumentCategory(next[0]?.name));
+                }}
+                chooseLabel="בחר קבצים"
+              />
+              <div className="text-xs text-muted-foreground">{files.length} קבצים</div>
+            </div>
+            {files.length > 0 ? (
+              <div className="break-words text-xs text-muted-foreground">
+                {files.map((file) => file.name).join(", ")}
+              </div>
+            ) : (
+              <div className="text-xs text-destructive">בחר לפחות קובץ אחד</div>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          <StepHeading title="לאשר ולהעלות?" />
+          <SummarySection title="פרטי ההעלאה">
+            <SummaryRow label="תחום" value={getBusinessDomainLabel(businessDomain)} />
+            {needsProject ? <SummaryRow label="פרויקט" value={projectName ?? "—"} /> : null}
+            {needsProperty ? <SummaryRow label="נכס" value={propertyName ?? "—"} /> : null}
+            <SummaryRow label="קטגוריה" value={category || "ללא קטגוריה"} />
+            {refYear.trim() ? <SummaryRow label="שנה" value={refYear} /> : null}
+            {tagIds.length > 0 ? <SummaryRow label="תגיות" value={tagIds.length} /> : null}
+            <SummaryRow label="קבצים" value={files.length} />
+          </SummarySection>
+        </>
+      )}
+    </StepWizardDialog>
   );
 }
 

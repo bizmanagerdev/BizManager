@@ -10,11 +10,11 @@ import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import { DeleteButton } from "@/components/ui/icon-button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { NativeSelect } from "@/components/ui/native-select";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { SummaryRow, SummarySection } from "@/components/ui/summary";
-import { StepWizardDialog } from "@/components/ui/step-wizard";
+import { StepWizardDialog, useStepFlow } from "@/components/ui/step-wizard";
+import { OptionRow, StepHeading } from "@/components/ui/option-row";
 import { Textarea } from "@/components/ui/textarea";
 import { WorkerLinkField } from "@/components/customers/WorkerLinkField";
 import { offlineFetch } from "@/lib/offline-queue";
@@ -57,14 +57,34 @@ import { CITY_OPTIONS } from "@/lib/ui/cities";
 
 export const CREATE_CUSTOMER_CITY_OPTIONS = CITY_OPTIONS;
 
-type WizardStep = 1 | 2 | 3 | 4;
+type WizardStep =
+  | "name"
+  | "contact"
+  | "email"
+  | "city"
+  | "cityOther"
+  | "nameForInvoice"
+  | "regNumber"
+  | "address"
+  | "prepayment"
+  | "notes"
+  | "contacts"
+  | "summary";
 
-const WIZARD_STEPS: { n: WizardStep; label: string }[] = [
-  { n: 1, label: "פרטים בסיסיים" },
-  { n: 2, label: "חיוב וכתובת" },
-  { n: 3, label: "אנשי קשר" },
-  { n: 4, label: "סיכום" },
-];
+const STEP_LABEL: Record<WizardStep, string> = {
+  name: "שם",
+  contact: "פרטי קשר",
+  email: "אימייל",
+  city: "עיר",
+  cityOther: "עיר",
+  nameForInvoice: "חשבונית",
+  regNumber: "ח.פ/ת.ז",
+  address: "כתובת",
+  prepayment: "תשלום מראש",
+  notes: "הערות",
+  contacts: "אנשי קשר",
+  summary: "סיכום",
+};
 
 function makeEmptyContact(): ContactDraft {
   return {
@@ -93,7 +113,8 @@ export function CreateCustomerDialog({
   description = "שדות חובה: שם, טלפון ועיר.",
 }: CreateCustomerDialogProps) {
   const router = useRouter();
-  const [step, setStep] = useState<WizardStep>(1);
+  const [cityQuery, setCityQuery] = useState("");
+  const [stepId, setStepId] = useState<WizardStep>("name");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
@@ -199,7 +220,8 @@ export function CreateCustomerDialog({
   }
 
   function reset() {
-    setStep(1);
+    setStepId("name");
+    setCityQuery("");
     setName("");
     setPhone("");
     setWhatsapp("");
@@ -257,60 +279,95 @@ export function CreateCustomerDialog({
 
   const finalCity = city === "אחר" ? cityOther.trim() : city.trim();
 
-  function stepError(n: WizardStep): string | null {
-    if (n === 1) {
-      if (!name.trim()) return "יש להזין שם לקוח.";
-      if (!phone.trim()) return "יש להזין מספר טלפון.";
-      if (!finalCity) return "יש לבחור עיר.";
-      return null;
+  const stepIds = useMemo<WizardStep[]>(() => {
+    const ids: WizardStep[] = ["name", "contact", "email", "city"];
+    if (city === "אחר") ids.push("cityOther");
+    ids.push("nameForInvoice", "regNumber", "address", "prepayment", "notes", "contacts", "summary");
+    return ids;
+  }, [city]);
+  const wizardSteps = useMemo(() => stepIds.map((id) => ({ n: id, label: STEP_LABEL[id] })), [stepIds]);
+
+  const filteredCities = useMemo(() => {
+    const q = cityQuery.trim().toLowerCase();
+    if (!q) return CREATE_CUSTOMER_CITY_OPTIONS;
+    return CREATE_CUSTOMER_CITY_OPTIONS.filter((c) => c.toLowerCase().includes(q));
+  }, [cityQuery]);
+
+  const incompleteContactIndex = contacts.findIndex(
+    (c) =>
+      !c.full_name.trim() &&
+      (c.role.trim() || c.phone.trim() || c.email.trim() || c.whatsapp.trim() || c.notes.trim())
+  );
+
+  function isSatisfied(id: WizardStep): boolean {
+    switch (id) {
+      case "name":
+        return Boolean(name.trim());
+      case "contact":
+        return Boolean(phone.trim());
+      case "city":
+        return Boolean(city);
+      case "cityOther":
+        return Boolean(cityOther.trim());
+      case "contacts":
+        return incompleteContactIndex < 0;
+      case "email":
+      case "nameForInvoice":
+      case "regNumber":
+      case "address":
+      case "prepayment":
+      case "notes":
+      case "summary":
+        return true;
     }
-    if (n === 3) {
-      const badIdx = contacts.findIndex(
-        (c) =>
-          !c.full_name.trim() &&
-          (c.role.trim() || c.phone.trim() || c.email.trim() || c.whatsapp.trim() || c.notes.trim())
-      );
-      if (badIdx >= 0) return `איש קשר ${badIdx + 1} חייב לכלול שם מלא.`;
-      return null;
-    }
-    return null;
   }
 
-  function canClickStep(n: WizardStep): boolean {
+  const flow = useStepFlow<WizardStep>({ stepId, setStepId, steps: stepIds, isSatisfied });
+  const { stepIndex, isLastStep } = flow;
+
+  function canClickStep(id: WizardStep): boolean {
     if (submitting) return false;
-    if (n <= step) return true;
-    for (const s of WIZARD_STEPS) {
-      if (s.n >= n) break;
-      if (stepError(s.n)) return false;
-    }
-    return true;
+    return flow.canClickStep(id);
   }
-
-  function goToStep(n: WizardStep) {
-    if (!canClickStep(n)) return;
+  function advanceTo(id: WizardStep) {
     setError(null);
-    setStep(n);
+    flow.advanceTo(id);
   }
-
+  function goToStep(id: WizardStep) {
+    if (!canClickStep(id)) return;
+    setError(null);
+    setStepId(id);
+  }
   function goBack() {
-    if (step > 1) {
-      setError(null);
-      setStep((step - 1) as WizardStep);
-    }
+    setError(null);
+    flow.goBack();
   }
-
   function goNext() {
-    if (step === 4) {
+    if (isLastStep) {
       void submit();
       return;
     }
-    const validation = stepError(step);
-    if (validation) {
-      setError(validation);
+    if (!isSatisfied(stepId)) {
+      setError(
+        stepId === "name"
+          ? "יש להזין שם לקוח."
+          : stepId === "contact"
+            ? "יש להזין מספר טלפון."
+            : stepId === "city"
+              ? "יש לבחור עיר."
+              : stepId === "cityOther"
+                ? "יש לבחור עיר."
+                : `איש קשר ${incompleteContactIndex + 1} חייב לכלול שם מלא.`
+      );
       return;
     }
     setError(null);
-    setStep((step + 1) as WizardStep);
+    flow.goNext();
+  }
+
+  function pickCity(value: string) {
+    setCity(value);
+    advanceTo(value === "אחר" ? "cityOther" : "nameForInvoice");
   }
 
   async function submit() {
@@ -320,10 +377,24 @@ export function CreateCustomerDialog({
     const trimName = name.trim();
     const trimPhone = phone.trim();
 
-    const firstInvalid = WIZARD_STEPS.map((s) => ({ n: s.n, error: stepError(s.n) })).find((s) => s.error);
-    if (firstInvalid?.error) {
-      setStep(firstInvalid.n);
-      setError(firstInvalid.error);
+    if (!trimName) {
+      setStepId("name");
+      setError("יש להזין שם לקוח.");
+      return;
+    }
+    if (!trimPhone) {
+      setStepId("contact");
+      setError("יש להזין מספר טלפון.");
+      return;
+    }
+    if (!finalCity) {
+      setStepId("city");
+      setError("יש לבחור עיר.");
+      return;
+    }
+    if (incompleteContactIndex >= 0) {
+      setStepId("contacts");
+      setError(`איש קשר ${incompleteContactIndex + 1} חייב לכלול שם מלא.`);
       return;
     }
 
@@ -447,19 +518,21 @@ export function CreateCustomerDialog({
     <StepWizardDialog
       open={open}
       onOpenChange={handleOpenChange}
-      dialogTitle="הוספת לקוח חדש"
+      dialogTitle="לקוח חדש"
       dialogDescription={description}
-      steps={WIZARD_STEPS}
-      current={step}
+      fullScreen
+      progressVariant="bar"
+      steps={wizardSteps}
+      current={stepId}
       canClickStep={canClickStep}
       onStepClick={goToStep}
       closeDisabled={submitting}
-      onBack={step > 1 ? goBack : undefined}
+      onBack={stepIndex(stepId) > 0 ? goBack : undefined}
       backDisabled={submitting}
       onNext={goNext}
-      nextLabel={step === 4 ? (submitting ? "יוצר..." : "יצירת לקוח") : undefined}
-      nextDisabled={submitting}
-      isLastStep={step === 4}
+      nextLabel={isLastStep ? (submitting ? "יוצר..." : "יצירת לקוח") : undefined}
+      nextDisabled={submitting || (!isLastStep && !isSatisfied(stepId))}
+      isLastStep={isLastStep}
       submitOnEnter
       error={error ?? undefined}
       note={submitting ? "יוצר לקוח חדש, נא להמתין..." : undefined}
@@ -560,17 +633,19 @@ export function CreateCustomerDialog({
         ) : null}
 
           <fieldset disabled={submitting} className="space-y-3">
-            {step === 1 ? (
-              <div className="space-y-3">
-                <Field label="שם לקוח" required>
-                  <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
-                </Field>
-
-                <AdaptiveGrid variant="formTwo">
+            {stepId === "name" ? (
+              <>
+                <StepHeading title="מה שם הלקוח?" />
+                <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+              </>
+            ) : stepId === "contact" ? (
+              <>
+                <StepHeading title="פרטי טלפון" />
+                <div className="space-y-3">
                   <Field label="טלפון" required>
-                    <Input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" />
+                    <Input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" autoFocus />
                   </Field>
-                  <Field label="וואטסאפ" hint="רשות">
+                  <Field label="וואטסאפ" hint="רשות, אם שונה מהטלפון">
                     <Input
                       value={whatsapp}
                       onChange={(e) => setWhatsapp(e.target.value)}
@@ -578,88 +653,93 @@ export function CreateCustomerDialog({
                       placeholder="אם שונה מהטלפון"
                     />
                   </Field>
-                </AdaptiveGrid>
-
-                <Field label="אימייל" hint="רשות">
-                  <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-                </Field>
-
-                <Field label="עיר" required>
-                  <NativeSelect
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                  >
-                    <option value=""></option>
-                    {CREATE_CUSTOMER_CITY_OPTIONS.map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </NativeSelect>
-                </Field>
-
-                {city === "אחר" ? (
-                  <Field label="עיר (הקלדה חופשית)" required>
-                    <Input value={cityOther} onChange={(e) => setCityOther(e.target.value)} />
-                  </Field>
-                ) : null}
-
-                {/* Sits on the phone step on purpose: this is where the "that
-                    number belongs to a worker" catch has to happen, before a
-                    second row for the same person exists. */}
-                <WorkerLinkField
-                  value={linkedUserId}
-                  onChange={(next, worker) => {
-                    setLinkedUserId(next);
-                    setLinkedUserName(worker?.label ?? "");
-                  }}
-                  phones={[phone, whatsapp]}
-                  disabled={submitting}
-                />
-              </div>
-            ) : null}
-
-            {step === 2 ? (
-              <div className="space-y-3">
-                <Field label="שם לחשבונית" hint="אם שונה משם הלקוח">
-                  <Input value={nameForInvoice} onChange={(e) => setNameForInvoice(e.target.value)} />
-                </Field>
-
-                <Field label="ח.פ / ת.ז" hint="רשות">
-                  <Input value={regNumber} onChange={(e) => setRegNumber(e.target.value)} inputMode="numeric" />
-                </Field>
-
-                <Field label="כתובת" hint="רשות">
-                  <Input
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                    placeholder="רחוב, מספר, שכונה"
+                  {/* Sits on the same step on purpose: this is where the "that
+                      number belongs to a worker" catch has to happen, before a
+                      second row for the same person exists. */}
+                  <WorkerLinkField
+                    value={linkedUserId}
+                    onChange={(next, worker) => {
+                      setLinkedUserId(next);
+                      setLinkedUserName(worker?.label ?? "");
+                    }}
+                    phones={[phone, whatsapp]}
+                    disabled={submitting}
                   />
-                </Field>
-
-                <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border/70 bg-background/70 px-4 py-3">
-                  <div>
-                    <div className="text-sm font-medium">לקוח ברשימת תשלום מראש</div>
-                    <div className="text-xs text-muted-foreground">חיוב מתבצע לפני אספקה</div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    className="h-5 w-5 shrink-0"
-                    checked={requiresPrepayment}
-                    onChange={(e) => setRequiresPrepayment(e.target.checked)}
-                  />
-                </label>
-
-                <Field label="הערות" hint="רשות">
-                  <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
-                </Field>
-              </div>
-            ) : null}
-
-            {step === 3 ? (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <UsersIcon className="h-4 w-4 text-muted-foreground" />
-                  אנשי קשר
                 </div>
+              </>
+            ) : stepId === "email" ? (
+              <>
+                <StepHeading title="אימייל?" sub="לא חובה" />
+                <Input type="email" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} />
+              </>
+            ) : stepId === "city" ? (
+              <>
+                <StepHeading title="באיזו עיר?" />
+                <div className="grid gap-3">
+                  <Input value={cityQuery} onChange={(e) => setCityQuery(e.target.value)} placeholder="חיפוש עיר..." />
+                  <div className="space-y-1">
+                    {filteredCities.map((c) => (
+                      <OptionRow key={c} label={c} selected={city === c} onClick={() => pickCity(c)} />
+                    ))}
+                    <OptionRow label="אחר" selected={city === "אחר"} onClick={() => pickCity("אחר")} />
+                  </div>
+                </div>
+              </>
+            ) : stepId === "cityOther" ? (
+              <>
+                <StepHeading title="שם העיר?" />
+                <Input value={cityOther} onChange={(e) => setCityOther(e.target.value)} autoFocus />
+              </>
+            ) : stepId === "nameForInvoice" ? (
+              <>
+                <StepHeading title="שם לחשבונית?" sub="אם שונה משם הלקוח — לא חובה" />
+                <Input autoFocus value={nameForInvoice} onChange={(e) => setNameForInvoice(e.target.value)} />
+              </>
+            ) : stepId === "regNumber" ? (
+              <>
+                <StepHeading title="ח.פ / ת.ז?" sub="לא חובה" />
+                <Input autoFocus value={regNumber} onChange={(e) => setRegNumber(e.target.value)} inputMode="numeric" />
+              </>
+            ) : stepId === "address" ? (
+              <>
+                <StepHeading title="כתובת?" sub="לא חובה" />
+                <Input
+                  autoFocus
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="רחוב, מספר, שכונה"
+                />
+              </>
+            ) : stepId === "prepayment" ? (
+              <>
+                <StepHeading title="לקוח ברשימת תשלום מראש?" sub="חיוב מתבצע לפני אספקה" />
+                <div className="grid grid-cols-2 gap-2">
+                  <OptionRow
+                    label="כן"
+                    selected={requiresPrepayment}
+                    onClick={() => {
+                      setRequiresPrepayment(true);
+                      advanceTo("notes");
+                    }}
+                  />
+                  <OptionRow
+                    label="לא"
+                    selected={!requiresPrepayment}
+                    onClick={() => {
+                      setRequiresPrepayment(false);
+                      advanceTo("notes");
+                    }}
+                  />
+                </div>
+              </>
+            ) : stepId === "notes" ? (
+              <>
+                <StepHeading title="הערות?" sub="לא חובה" />
+                <Textarea autoFocus value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+              </>
+            ) : stepId === "contacts" ? (
+              <div className="space-y-3">
+                <StepHeading title="אנשי קשר נוספים?" sub="לא חובה" />
 
                 {contacts.length === 0 ? (
                   <EmptyState>
@@ -748,10 +828,9 @@ export function CreateCustomerDialog({
                   </Button>
                 </div>
               </div>
-            ) : null}
-
-            {step === 4 ? (
+            ) : (
               <div className="space-y-3">
+                <StepHeading title="לאשר וליצור?" />
                 <div className="flex items-center gap-2 rounded-md border border-secondary/35 bg-secondary/10 px-3 py-2.5 text-sm text-foreground">
                   <AiIcon className="h-4 w-4 shrink-0 text-secondary" />
                   <span>
@@ -759,7 +838,7 @@ export function CreateCustomerDialog({
                   </span>
                 </div>
 
-                <SummarySection icon={<UserIcon className="h-4 w-4" />} title="פרטי הלקוח" onEdit={() => goToStep(1)} editDisabled={submitting}>
+                <SummarySection icon={<UserIcon className="h-4 w-4" />} title="פרטי הלקוח" onEdit={() => goToStep("name")} editDisabled={submitting}>
                   <SummaryRow label="שם לקוח" value={name.trim()} />
                   <SummaryRow label="טלפון" value={phone.trim()} />
                   <SummaryRow label="וואטסאפ" value={whatsapp.trim()} />
@@ -770,7 +849,7 @@ export function CreateCustomerDialog({
                   ) : null}
                 </SummarySection>
 
-                <SummarySection icon={<CardIcon className="h-4 w-4" />} title="חיוב וכתובת" onEdit={() => goToStep(2)} editDisabled={submitting}>
+                <SummarySection icon={<CardIcon className="h-4 w-4" />} title="חיוב וכתובת" onEdit={() => goToStep("nameForInvoice")} editDisabled={submitting}>
                   <SummaryRow label="שם לחשבונית" value={nameForInvoice.trim()} />
                   <SummaryRow label="ח.פ / ת.ז" value={regNumber.trim()} />
                   <SummaryRow label="כתובת" value={address.trim()} />
@@ -781,7 +860,7 @@ export function CreateCustomerDialog({
                   {notes.trim() ? <SummaryRow label="הערות" value={notes.trim()} /> : null}
                 </SummarySection>
 
-                <SummarySection icon={<UsersIcon className="h-4 w-4" />} title="אנשי קשר" onEdit={() => goToStep(3)} editDisabled={submitting}>
+                <SummarySection icon={<UsersIcon className="h-4 w-4" />} title="אנשי קשר" onEdit={() => goToStep("contacts")} editDisabled={submitting}>
                   {visibleContactsCount === 0 ? (
                     <div className="px-3 py-2.5 text-sm text-muted-foreground">לא נוספו אנשי קשר.</div>
                   ) : (
@@ -795,7 +874,7 @@ export function CreateCustomerDialog({
                   )}
                 </SummarySection>
               </div>
-            ) : null}
+            )}
           </fieldset>
     </StepWizardDialog>
   );

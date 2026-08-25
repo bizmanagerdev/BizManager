@@ -21,11 +21,12 @@ import { paymentStatusClasses, collectionStatusClasses, collectionStatusLabel } 
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import { cn } from "@/lib/utils";
 import {
-  AdaptiveDialog,
+  AdaptivePageDialog,
   AdaptiveGrid,
   AdaptiveStack,
   PageStack,
 } from "@/components/layout/page-layout";
+import { DIALOG_CHROME_CONTENT_PAGE, useSwipeToDismiss } from "@/components/ui/dialog-chrome";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Card } from "@/components/ui/card";
@@ -34,12 +35,7 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Dialog,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog } from "@/components/ui/dialog";
 import DeleteProjectButton from "@/app/(app)/projects/DeleteProjectButton";
 import AddReminderButton from "@/components/reminders/AddReminderButton";
 import LogCommunicationButton from "@/components/communications/LogCommunicationButton";
@@ -387,6 +383,26 @@ export default function ProjectsClient({
   const [editOpen, setEditOpen] = useState(false);
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editProject, setEditProject] = useState<ProjectRow | null>(null);
+
+  // Full-page dialogs now — each wizard's own ref to its scrollable body,
+  // shared with the swipe-to-dismiss gate (see QuickCreateDialogs for the
+  // same pattern on the quick-create versions of these same two dialogs).
+  const createBodyRef = useRef<HTMLDivElement>(null);
+  const createSwipeProps = useSwipeToDismiss({
+    enabled: true,
+    bodyRef: createBodyRef,
+    onDismiss: () => {
+      if (!createSubmitting) setCreateOpen(false);
+    },
+  });
+  const editBodyRef = useRef<HTMLDivElement>(null);
+  const editSwipeProps = useSwipeToDismiss({
+    enabled: true,
+    bodyRef: editBodyRef,
+    onDismiss: () => {
+      if (!editSubmitting) setEditOpen(false);
+    },
+  });
 
   // Customers mapped into the shape the project wizard renders.
   const wizardCustomers = useMemo<ProjectCustomerOption[]>(
@@ -1202,18 +1218,12 @@ export default function ProjectsClient({
           setCreateOpen(open);
         }}
       >
-        <AdaptiveDialog size="newOrder" hideClose className="flex flex-col gap-0 overflow-y-hidden p-0 sm:p-0">
-          {/* Title/description kept for screen readers only — the wizard renders its
-              own visible per-step heading, so showing them here would duplicate it. */}
-          <DialogHeader className="sr-only">
-            <DialogTitle>{createStatus === "quote" ? "הצעת מחיר חדשה" : "הוספת פרויקט חדש"}</DialogTitle>
-            <DialogDescription>
-              {createStatus === "quote"
-                ? "בוחרים לקוח וממלאים את פרטי הצעת המחיר."
-                : "בוחרים לקוח וממלאים את פרטי הפרויקט."}
-            </DialogDescription>
-          </DialogHeader>
-
+        <AdaptivePageDialog
+          size="newOrder"
+          hideClose
+          className={DIALOG_CHROME_CONTENT_PAGE}
+          {...createSwipeProps}
+        >
           {createOpen ? (
             <NewProjectClient
               customers={wizardCustomers}
@@ -1224,6 +1234,13 @@ export default function ProjectsClient({
               initialCustomerId={createPrefillCustomerId}
               draftKey="project-create"
               projectTypeOptions={projectTypeOptions}
+              bodyRef={createBodyRef}
+              dialogTitle={createStatus === "quote" ? "הצעת מחיר חדשה" : "הוספת פרויקט חדש"}
+              dialogDescription={
+                createStatus === "quote"
+                  ? "בוחרים לקוח וממלאים את פרטי הצעת המחיר."
+                  : "בוחרים לקוח וממלאים את פרטי הפרויקט."
+              }
               onActionLockedChange={setCreateSubmitting}
               onCancel={() => setCreateOpen(false)}
               onSubmitted={(project) => {
@@ -1241,7 +1258,7 @@ export default function ProjectsClient({
               }}
             />
           ) : null}
-        </AdaptiveDialog>
+        </AdaptivePageDialog>
       </Dialog>
 
       <Dialog
@@ -1251,13 +1268,12 @@ export default function ProjectsClient({
           setEditOpen(open);
         }}
       >
-        <AdaptiveDialog size="newOrder" hideClose className="flex flex-col gap-0 overflow-y-hidden p-0 sm:p-0">
-          {/* Header for screen readers only — the wizard shows its own visible heading. */}
-          <DialogHeader className="sr-only">
-            <DialogTitle>עריכת פרויקט</DialogTitle>
-            <DialogDescription>עדכון פרטי פרויקט קיים.</DialogDescription>
-          </DialogHeader>
-
+        <AdaptivePageDialog
+          size="newOrder"
+          hideClose
+          className={DIALOG_CHROME_CONTENT_PAGE}
+          {...editSwipeProps}
+        >
           {editOpen && editProject ? (
             <NewProjectClient
               key={getString(editProject, "id") ?? "edit"}
@@ -1268,6 +1284,9 @@ export default function ProjectsClient({
               defaultProjectManagerId={defaultProjectManagerId}
               initialProject={toInitialProject(editProject)}
               projectTypeOptions={projectTypeOptions}
+              bodyRef={editBodyRef}
+              dialogTitle="עריכת פרויקט"
+              dialogDescription="עדכון פרטי פרויקט קיים."
               onActionLockedChange={setEditSubmitting}
               onCancel={() => setEditOpen(false)}
               onSubmitted={(project) => {
@@ -1283,7 +1302,7 @@ export default function ProjectsClient({
               }}
             />
           ) : null}
-        </AdaptiveDialog>
+        </AdaptivePageDialog>
       </Dialog>
 
     </PageStack>

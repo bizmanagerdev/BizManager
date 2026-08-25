@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ClockIcon, SpinnerIcon } from "@/components/ui/icons";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { SpinnerIcon } from "@/components/ui/icons";
+import { Dialog, DialogDescription, DialogHeader, DialogTitle, FullScreenDialogContent } from "@/components/ui/dialog";
+import { useSwipeToDismiss } from "@/components/ui/dialog-chrome";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
@@ -56,19 +57,42 @@ export function AttendanceLogDialog({
   /** Office/admin are always "he"; only a worker ever sees "ar". */
   locale?: Locale;
 }) {
+  // This dialog has no separate DialogChromeBody — the whole box scrolls as
+  // one, so the swipe-to-dismiss gate reads scrollTop off the SAME node the
+  // touch handlers are on (see FullScreenDialogContent's ref, not a nested
+  // body ref like FormDialog/StepWizardDialog use).
+  const contentRef = useRef<HTMLDivElement>(null);
+  const swipeProps = useSwipeToDismiss({
+    enabled: true,
+    bodyRef: contentRef,
+    onDismiss: () => onOpenChange(false),
+  });
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader className="space-y-1 text-start">
-          <DialogTitle className="flex items-center gap-2">
-            <ClockIcon className="h-5 w-5 text-secondary" />
+      {/* FullScreenDialogContent carries no default padding (unlike the old
+          DialogContent's p-6) since FormDialog/StepWizard put padding on their
+          own inner header/body/footer bands instead — this dialog has no such
+          bands, so it has to bring its own. */}
+      <FullScreenDialogContent
+        ref={contentRef}
+        className="overflow-y-auto p-4 sm:max-h-[90vh] sm:max-w-md sm:p-6"
+        {...swipeProps}
+      >
+        <div className="mx-auto -mt-1 mb-1 h-1 w-10 rounded-full bg-muted-foreground/30 sm:hidden" aria-hidden />
+        {/* Centered plain, no WizardTitle spacer trick — this dialog's close X is
+            absolutely positioned (FullScreenDialogContent's own default), not an
+            inline flex sibling like DialogChromeHeader's, so there's no reserved
+            width to compensate for; a full-width text-center already lands true. */}
+        <DialogHeader className="space-y-0.5">
+          <DialogTitle className="text-center text-base font-semibold">
             {t(profileDict, locale, "logAttendanceTitle")}
           </DialogTitle>
-          <DialogDescription>{t(profileDict, locale, "logAttendanceDescription")}</DialogDescription>
+          <DialogDescription className="sr-only">{t(profileDict, locale, "logAttendanceDescription")}</DialogDescription>
         </DialogHeader>
         {/* Body unmounts on close (DialogContent unmounts), so every open starts fresh. */}
         <AttendanceLogBody workers={workers} onSaved={onSaved} onClose={() => onOpenChange(false)} locale={locale} />
-      </DialogContent>
+      </FullScreenDialogContent>
     </Dialog>
   );
 }

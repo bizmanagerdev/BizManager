@@ -5,7 +5,7 @@
 // the close X can only be changed in one place, and a wizard can't drift away
 // from an edit dialog again.
 
-import type { ReactNode, Ref } from "react";
+import { useRef, type ReactNode, type Ref, type TouchEvent as ReactTouchEvent } from "react";
 import { CloseIcon } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +23,84 @@ export const DIALOG_CHROME_CONTENT =
  *  explicit cap. */
 export const DIALOG_CHROME_CONTENT_PAGE =
   "flex flex-col gap-0 overflow-y-hidden p-0 sm:max-h-[90vh] sm:p-0";
+
+/** Drag distance (px) past which a full-page dialog's swipe-down counts as
+ *  "dismiss it" rather than a stray touch — bigger than the quick-create FAB
+ *  panel's 72px since a full page gives far more surface to graze by accident. */
+export const FULL_SCREEN_DISMISS_THRESHOLD = 120;
+
+/**
+ * Swipe-down-to-close for a full-page mobile dialog. Shared by FormDialog,
+ * StepWizardDialog and any bespoke dialog (TaskUpsertDialog, the order/project
+ * wizard hosts in QuickCreateDialogs.tsx) that builds its own chrome instead
+ * of going through one of those — three sites doing this by hand was the
+ * threshold for pulling it out.
+ *
+ * Deliberately NOT React state for the drag distance: driving the translateY
+ * through a re-render on every touchmove was the cause of a visible "jump" on
+ * a form with a lot of fields (a fresh render can't keep up with 60fps of
+ * touch events). Mutate the dragged element's style directly instead — grabbed
+ * via `event.currentTarget` on touchstart, which is reliable via React's
+ * synthetic-event delegation regardless of what descendant the touch actually
+ * started on. Gated on the body being scrolled to the top so it never fights
+ * a normal scroll (same trick the quick-create FAB panel's phone sheet uses).
+ */
+export function useSwipeToDismiss({
+  enabled,
+  bodyRef,
+  onDismiss,
+}: {
+  enabled: boolean;
+  /** The scrollable body — read-only here, just to gate the drag start. */
+  bodyRef: { current: HTMLElement | null };
+  onDismiss: () => void;
+}) {
+  const dragStartY = useRef<number | null>(null);
+  const dragDistanceRef = useRef(0);
+  const dragNodeRef = useRef<HTMLElement | null>(null);
+
+  function resetDragStyle() {
+    const node = dragNodeRef.current;
+    if (node) {
+      node.style.transition = "transform 150ms ease-out";
+      node.style.transform = "";
+    }
+    dragNodeRef.current = null;
+  }
+
+  if (!enabled) return {};
+
+  return {
+    onTouchStart: (event: ReactTouchEvent) => {
+      if ((bodyRef.current?.scrollTop ?? 0) > 0) return;
+      dragStartY.current = event.touches[0]?.clientY ?? null;
+      dragNodeRef.current = event.currentTarget as HTMLElement;
+    },
+    onTouchMove: (event: ReactTouchEvent) => {
+      if (dragStartY.current === null) return;
+      const delta = (event.touches[0]?.clientY ?? 0) - dragStartY.current;
+      const next = delta > 0 ? delta : 0;
+      dragDistanceRef.current = next;
+      const node = dragNodeRef.current;
+      if (node) {
+        node.style.transition = "none";
+        node.style.transform = next ? `translateY(${next}px)` : "";
+      }
+    },
+    onTouchEnd: () => {
+      const shouldClose = dragDistanceRef.current > FULL_SCREEN_DISMISS_THRESHOLD;
+      dragStartY.current = null;
+      dragDistanceRef.current = 0;
+      resetDragStyle();
+      if (shouldClose) onDismiss();
+    },
+    onTouchCancel: () => {
+      dragStartY.current = null;
+      dragDistanceRef.current = 0;
+      resetDragStyle();
+    },
+  };
+}
 
 /**
  * Pinned top bar. `children` is the title block (or a stepper); the X lives
@@ -69,20 +147,15 @@ export function DialogChromeHeader({
         <div className="min-w-0 flex-1 overflow-hidden">{children}</div>
         {end ? <div className="shrink-0">{end}</div> : null}
         {onClose ? (
-          <>
-            {/* A rule before the X: beside a numbered stepper the bare icon reads
-                as one more step circle. */}
-            <div className="h-7 w-px shrink-0 self-start bg-border/70" />
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={closeDisabled}
-              aria-label={closeLabel}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-            >
-              <CloseIcon className="h-5 w-5" />
-            </button>
-          </>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={closeDisabled}
+            aria-label={closeLabel}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+          >
+            <CloseIcon className="h-5 w-5" />
+          </button>
         ) : null}
       </div>
       {below}

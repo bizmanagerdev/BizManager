@@ -8,6 +8,7 @@ import { DeleteButton } from "@/components/ui/icon-button";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { cn } from "@/lib/utils";
 import { toHebrewError } from "@/lib/error-messages";
+import { saveDraft, loadDraft, clearDraft } from "@/lib/offline-queue";
 import { EmptyState } from "@/components/ui/empty-state";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,7 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
 import { CustomerForm } from "@/components/customers/CustomerForm";
 import type { CustomerRecord } from "@/components/customers/CustomerForm";
-import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
+import { useCustomerPicker } from "@/hooks/useCustomerPicker";
 import {
   ORDER_PAYMENT_METHOD_OPTIONS,
   derivePaymentStatus,
@@ -34,12 +35,13 @@ import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
 import { PAYMENT_TERMS_OPTIONS, computeDueDate } from "@/lib/paymentTerms";
 import { SummaryRow, SummarySection } from "@/components/ui/summary";
-import { StepWizard } from "@/components/ui/step-wizard";
+import { StepWizard, WizardTitle, useStepFlow } from "@/components/ui/step-wizard";
+import { OptionRow, StepHeading } from "@/components/ui/option-row";
 import {
   type CustomerOption,
   type Step,
   ORDER_STATUS_OPTIONS,
-  WIZARD_STEPS,
+  STEP_LABEL,
   extractCityFromAddress,
   formatCurrency,
   getNumber,
@@ -111,6 +113,27 @@ type PaymentDraft = {
   notes: string;
 };
 
+/** Serialisable in-progress form, persisted to localStorage so a create draft
+ *  survives going offline / leaving the app / a reload (check photos excluded
+ *  — File objects can't be serialised and must be re-attached). */
+type OrderDraft = {
+  step: Step;
+  customerId: string;
+  orderDate: string;
+  orderStatus: string;
+  paymentTerms: string;
+  dueDate: string;
+  requestedDeliveryDate: string;
+  orderDiscount: string;
+  orderDiscountMode: "amount" | "percent";
+  needsInvoice: boolean;
+  collectOnDelivery: boolean;
+  notes: string;
+  lineDiscountModes: Record<string, "amount" | "percent">;
+  lines: OrderLine[];
+  newPayments: Omit<PaymentDraft, "check_photo_files">[];
+};
+
 
 export default function NewOrderClient({
   customers,
@@ -125,6 +148,10 @@ export default function NewOrderClient({
   onSubmitted,
   onActionLockedChange,
   initialStatusOverride,
+  bodyRef: externalBodyRef,
+  dialogTitle,
+  dialogDescription,
+  draftKey,
 }: {
   customers: Row[];
   products: Row[];
@@ -139,6 +166,18 @@ export default function NewOrderClient({
   onActionLockedChange?: (locked: boolean) => void;
   initialStatusOverride?: string;
   allowOrderStatusEdit?: boolean;
+  /** The embedding dialog's own ref to the scrollable body — so IT can gate a
+   *  swipe-to-dismiss on "scrolled to top" too. Falls back to an internal ref
+   *  when standalone (no wrapper dialog to coordinate with). */
+  bodyRef?: { current: HTMLDivElement | null };
+  /** Visible title above the stepper, embedded only — the standalone page
+   *  callers don't pass this (they have their own page-level heading, and a
+   *  second one inside the wizard's sticky header would duplicate it). */
+  dialogTitle?: string;
+  dialogDescription?: string;
+  /** Create mode: persist the in-progress form under this localStorage key so
+   *  it survives going offline / leaving the app / a reload. Omit to disable. */
+  draftKey?: string;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -146,12 +185,20 @@ export default function NewOrderClient({
   const isEditMode = mode === "edit" && initialOrder !== null;
   const cancelHref = isEditMode ? `/sales/orders/${initialOrder.id}` : "/sales";
 
-  const [step, setStep] = useState<Step>(1);
+  // Restore an in-progress create draft (offline / app-left / reload). Loaded
+  // once on mount; never in edit mode (a stale draft must not clobber the row).
+  const canDraft = Boolean(draftKey) && !isEditMode;
+  const [restoredDraft] = useState<OrderDraft | null>(() =>
+    canDraft ? loadDraft<OrderDraft>(draftKey!) : null
+  );
+
+  const [step, setStep] = useState<Step>(restoredDraft?.step ?? "customer");
   const topRef = useRef<HTMLDivElement>(null);
   // Embedded (dialog) mode is a fixed-height column: the step bar and the action
   // bar are pinned and only this middle section scrolls, so a step change resets
   // *it* rather than the dialog/page.
-  const bodyRef = useRef<HTMLDivElement>(null);
+  const internalBodyRef = useRef<HTMLDivElement>(null);
+  const bodyRef = externalBodyRef ?? internalBodyRef;
   const customerDetailRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (embedded) {
@@ -166,46 +213,46 @@ export default function NewOrderClient({
     } else {
       window.scrollTo({ top: 0 });
     }
-  }, [step, embedded]);
-  const [customerId, setCustomerId] = useState(initialOrder?.customer_id ?? "");
-  const [customerQuery, setCustomerQuery] = useState("");
-  const [customerTab, setCustomerTab] = useState<"existing" | "new">("existing");
-  const [editingCustomer, setEditingCustomer] = useState(false);
-  // Mobile master→detail: after a customer is picked the results list collapses
-  // so the detail/edit card isn't buried under a long list (lg shows both).
-  const [mobileListCollapsed, setMobileListCollapsed] = useState(false);
-  // The chosen customer is held independently of the search results, so searching to
-  // switch shows pure results (the previously-selected one is not pinned into the list).
-  const [pickedCustomer, setPickedCustomer] = useState<CustomerOption | null>(null);
+  }, [step, embedded, bodyRef]);
   const [orderDate, setOrderDate] = useState(
-    initialOrder?.order_date ?? new Date().toISOString().slice(0, 10)
+    initialOrder?.order_date ?? restoredDraft?.orderDate ?? new Date().toISOString().slice(0, 10)
   );
   const [orderStatus, setOrderStatus] = useState(
-    initialStatusOverride ?? initialOrder?.status ?? "draft"
+    initialStatusOverride ?? initialOrder?.status ?? restoredDraft?.orderStatus ?? "draft"
   );
   // New orders default to "שוטף" (eom); edits keep the stored term (null → immediate).
-  const initialPaymentTerms = initialOrder?.payment_terms ?? (initialOrder ? "immediate" : "eom");
+  const initialPaymentTerms =
+    initialOrder?.payment_terms ?? restoredDraft?.paymentTerms ?? (initialOrder ? "immediate" : "eom");
   const [paymentTerms, setPaymentTerms] = useState(initialPaymentTerms);
   const [dueDate, setDueDate] = useState(
     initialOrder?.due_date ??
+      restoredDraft?.dueDate ??
       computeDueDate(initialOrder?.order_date ?? new Date().toISOString().slice(0, 10), initialPaymentTerms) ??
       ""
   );
   // No default and no computed fallback (unlike dueDate) — blank means "no
   // specific date requested," which is the normal case.
   const [requestedDeliveryDate, setRequestedDeliveryDate] = useState(
-    initialOrder?.requested_delivery_date ?? ""
+    initialOrder?.requested_delivery_date ?? restoredDraft?.requestedDeliveryDate ?? ""
   );
-  const [orderDiscount, setOrderDiscount] = useState(String(initialOrder?.discount_amount ?? 0));
-  const [orderDiscountMode, setOrderDiscountMode] = useState<"amount" | "percent">("amount");
+  const [orderDiscount, setOrderDiscount] = useState(
+    String(initialOrder?.discount_amount ?? restoredDraft?.orderDiscount ?? 0)
+  );
+  const [orderDiscountMode, setOrderDiscountMode] = useState<"amount" | "percent">(
+    restoredDraft?.orderDiscountMode ?? "amount"
+  );
   // Single toggle: on (default for a new order) = needs invoice, off = doesn't.
-  const [needsInvoice, setNeedsInvoice] = useState<boolean>(initialOrder?.needs_invoice ?? true);
-  const [collectOnDelivery, setCollectOnDelivery] = useState<boolean>(
-    initialOrder?.collect_payment_on_delivery ?? false
+  const [needsInvoice, setNeedsInvoice] = useState<boolean>(
+    initialOrder?.needs_invoice ?? restoredDraft?.needsInvoice ?? true
   );
-  const [notes, setNotes] = useState(initialOrder?.notes ?? "");
+  const [collectOnDelivery, setCollectOnDelivery] = useState<boolean>(
+    initialOrder?.collect_payment_on_delivery ?? restoredDraft?.collectOnDelivery ?? false
+  );
+  const [notes, setNotes] = useState(initialOrder?.notes ?? restoredDraft?.notes ?? "");
   // Per-line discount input mode (₪ vs %); the stored value is always an absolute amount.
-  const [lineDiscountModes, setLineDiscountModes] = useState<Record<string, "amount" | "percent">>({});
+  const [lineDiscountModes, setLineDiscountModes] = useState<Record<string, "amount" | "percent">>(
+    restoredDraft?.lineDiscountModes ?? {}
+  );
 
   // When the term or order date changes, refresh the suggested due date (still editable).
   function applyOrderDate(value: string) {
@@ -222,18 +269,25 @@ export default function NewOrderClient({
   const [productQuery, setProductQuery] = useState("");
   // Off-catalog lines arrive from the server with an empty product_id; give each a
   // synthetic `custom:<uuid>` id so they don't collide on "" (discount mode, keys).
-  const [lines, setLines] = useState<OrderLine[]>(() =>
-    (initialOrder?.items ?? []).map((line) =>
-      !line.product_id
-        ? {
-            ...line,
-            product_id: `custom:${crypto.randomUUID()}`,
-            description: line.description || line.product_name,
-          }
-        : line
-    )
+  const [lines, setLines] = useState<OrderLine[]>(() => {
+    if (initialOrder) {
+      return initialOrder.items.map((line) =>
+        !line.product_id
+          ? {
+              ...line,
+              product_id: `custom:${crypto.randomUUID()}`,
+              description: line.description || line.product_name,
+            }
+          : line
+      );
+    }
+    return restoredDraft?.lines ?? [];
+  });
+  // Restored payment drafts never carry check photos (Files can't be
+  // serialised) — the user re-attaches those if the draft had any.
+  const [newPayments, setNewPayments] = useState<PaymentDraft[]>(() =>
+    (restoredDraft?.newPayments ?? []).map((payment) => ({ ...payment, check_photo_files: [] }))
   );
-  const [newPayments, setNewPayments] = useState<PaymentDraft[]>([]);
   const [paymentAccountsList, setPaymentAccountsList] = useState<Account[]>([]);
   // Editable notes for already-saved payments (edit mode). Keyed by payment id,
   // seeded from the loaded values; changed entries are sent back on save.
@@ -272,14 +326,28 @@ export default function NewOrderClient({
     [customers]
   );
 
-  const [customerOptions, setCustomerOptions] = useState<CustomerOption[]>(initialCustomerOptions);
-  const [customerSearchError, setCustomerSearchError] = useState<string | null>(null);
-  const [customerSearchLoading, setCustomerSearchLoading] = useState(false);
-  const { search: searchCustomerIndex, loading: customerIndexLoading } = useCustomerSearchIndex();
-
-  useEffect(() => {
-    setCustomerOptions(initialCustomerOptions);
-  }, [initialCustomerOptions]);
+  const {
+    customerId,
+    setCustomerId,
+    customerQuery,
+    setCustomerQuery,
+    customerTab,
+    setCustomerTab,
+    editingCustomer,
+    setEditingCustomer,
+    mobileListCollapsed,
+    setMobileListCollapsed,
+    setPickedCustomer,
+    customerSearchError,
+    customerSearchLoading,
+    filteredCustomers,
+    selectedCustomer,
+    mergeSavedCustomer,
+  } = useCustomerPicker<CustomerOption>({
+    initial: initialCustomerOptions,
+    preselectedId: initialOrder?.customer_id ?? restoredDraft?.customerId ?? "",
+    mapSearchResult: (entry) => mapCustomerSearchResult(entry as Record<string, unknown>),
+  });
 
   useEffect(() => {
     if (prefillHandled.current && !isEditMode) return;
@@ -309,11 +377,56 @@ export default function NewOrderClient({
       setCustomerId(matched.id);
       setCustomerQuery(matched.name);
       setPickedCustomer(matched);
-      setStep(2);
+      setStep("items");
     }
 
     prefillHandled.current = true;
+    // setCustomerId/setCustomerQuery/setPickedCustomer are stable setters from
+    // useCustomerPicker — omitted deliberately, not missed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialCustomerOptions, initialOrder?.customer_id, isEditMode, searchParams]);
+
+  // Autosave the in-progress create form so it survives offline / leaving the app
+  // / a reload. Runs on every change; the wizard only mounts while its dialog is
+  // open, so there's no "is open" guard to add.
+  useEffect(() => {
+    if (!canDraft) return;
+    saveDraft(draftKey!, {
+      step,
+      customerId,
+      orderDate,
+      orderStatus,
+      paymentTerms,
+      dueDate,
+      requestedDeliveryDate,
+      orderDiscount,
+      orderDiscountMode,
+      needsInvoice,
+      collectOnDelivery,
+      notes,
+      lineDiscountModes,
+      lines,
+      newPayments: newPayments.map(({ check_photo_files: _checkPhotoFiles, ...rest }) => rest),
+    } satisfies OrderDraft);
+  }, [
+    canDraft,
+    draftKey,
+    step,
+    customerId,
+    orderDate,
+    orderStatus,
+    paymentTerms,
+    dueDate,
+    requestedDeliveryDate,
+    orderDiscount,
+    orderDiscountMode,
+    needsInvoice,
+    collectOnDelivery,
+    notes,
+    lineDiscountModes,
+    lines,
+    newPayments,
+  ]);
 
   const initialProductOptions = useMemo(
     () =>
@@ -337,22 +450,6 @@ export default function NewOrderClient({
   useEffect(() => {
     setProductOptions(initialProductOptions);
   }, [initialProductOptions]);
-
-  useEffect(() => {
-    setCustomerSearchError(null);
-    // The index is still loading on first open — show the server-seeded list.
-    if (customerIndexLoading) {
-      setCustomerSearchLoading(true);
-      if (!customerQuery.trim()) setCustomerOptions(initialCustomerOptions);
-      return;
-    }
-    setCustomerSearchLoading(false);
-    // Instant, in-memory filtering — no network round-trip per keystroke.
-    const results = searchCustomerIndex(customerQuery, 50)
-      .map((entry) => mapCustomerSearchResult(entry as Record<string, unknown>))
-      .filter((row): row is CustomerOption => Boolean(row));
-    setCustomerOptions(results.length === 0 && !customerQuery.trim() ? initialCustomerOptions : results);
-  }, [customerQuery, searchCustomerIndex, customerIndexLoading, initialCustomerOptions]);
 
   useEffect(() => {
     const q = productQuery.trim();
@@ -439,10 +536,6 @@ export default function NewOrderClient({
     [productOptions]
   );
 
-  // The API already filters by name/email/phone/address/contacts — return results directly.
-  // Local re-filtering would incorrectly exclude contact-matched customers (whose customer fields don't contain the query).
-  const filteredCustomers = useMemo(() => customerOptions.slice(0, 50), [customerOptions]);
-
   const subtotal = useMemo(
     () =>
       lines.reduce(
@@ -472,11 +565,6 @@ export default function NewOrderClient({
   const combinedPaidTotal = existingPaidTotal + newPaidTotal;
   const remainingBalance = Math.max(totalAmount - combinedPaidTotal, 0);
   const paymentStatus = derivePaymentStatus(totalAmount, combinedPaidTotal);
-
-  const selectedCustomer =
-    pickedCustomer && pickedCustomer.id === customerId
-      ? pickedCustomer
-      : customerOptions.find((c) => c.id === customerId) ?? null;
 
   function addProduct(productId: string) {
     const product = productOptions.find((p) => p.id === productId);
@@ -773,6 +861,7 @@ export default function NewOrderClient({
         await uploadCheckPhotos(paymentId, payment.check_photo_files);
       }
 
+      if (canDraft) clearDraft(draftKey!);
       if (embedded) {
         onSubmitted?.(json.order_id);
         router.refresh();
@@ -791,57 +880,76 @@ export default function NewOrderClient({
 
   // ---- Step navigation / gating -------------------------------------------------
 
-  // While the inline create/edit customer form is open the user must save or cancel
-  // before they can advance — otherwise the in-progress customer edit would be abandoned.
-  const customerFormOpen = step === 1 && (editingCustomer || customerTab === "new");
+  const stepIds = useMemo<Step[]>(() => {
+    const ids: Step[] = ["customer", "items", "invoice", "collection", "paymentTerms"];
+    if (paymentTerms !== "immediate") ids.push("dueDate");
+    ids.push("payments", "orderDate", "orderStatus", "deliveryDate", "notes", "summary");
+    return ids;
+  }, [paymentTerms]);
+  const wizardSteps = useMemo(() => stepIds.map((id) => ({ n: id, label: STEP_LABEL[id] })), [stepIds]);
 
   // A step is "unlocked" only when every prerequisite up to it is satisfied.
-  function stepUnlocked(n: Step) {
-    if (n >= 2 && !customerId) return false;
-    if (n >= 3 && lines.length === 0) return false;
+  function isSatisfied(id: Step): boolean {
+    if (id === "customer") return Boolean(customerId);
+    if (id === "items") return lines.length > 0;
     return true;
   }
-  const canClickStep = (n: Step) => {
-    if (customerFormOpen && n > step) return false;
-    return n <= step || stepUnlocked(n);
-  };
+  const {
+    stepIndex,
+    isLastStep,
+    stepUnlocked,
+    canClickStep: canClickStepUnblocked,
+    advanceTo,
+  } = useStepFlow<Step>({ stepId: step, setStepId: setStep, steps: stepIds, isSatisfied });
 
-  function goToStep(n: Step) {
-    if (!stepUnlocked(n)) return;
-    setStep(n);
+  // While the inline create/edit customer form is open the user must save or cancel
+  // before they can advance — otherwise the in-progress customer edit would be abandoned.
+  // Wrapped externally (reads `step`, which doesn't exist yet at the point
+  // useStepFlow is called — same reasoning as NewProjectClient's own version).
+  const customerFormOpen = step === "customer" && (editingCustomer || customerTab === "new");
+  function canClickStep(id: Step) {
+    if (customerFormOpen && stepIndex(id) > stepIndex(step)) return false;
+    return canClickStepUnblocked(id);
+  }
+
+  function goToStep(id: Step) {
+    if (!stepUnlocked(id)) return;
+    setStep(id);
     setEditingCustomer(false);
   }
   function goNext() {
-    if (step === 4) {
+    if (isLastStep) {
       void submitOrder();
       return;
     }
-    goToStep((step + 1) as Step);
+    const next = stepIds[stepIndex(step) + 1];
+    if (next) goToStep(next);
   }
   function goBack() {
-    if (step === 1) return;
-    setStep((step - 1) as Step);
+    const prev = stepIds[stepIndex(step) - 1];
+    if (!prev) return;
+    setStep(prev);
     setEditingCustomer(false);
   }
 
-  const nextDisabled =
-    actionLocked || customerFormOpen || (step < 4 ? !stepUnlocked((step + 1) as Step) : submitting);
+  const nextDisabled = isLastStep
+    ? submitting
+    : actionLocked || customerFormOpen || !isSatisfied(step);
   // Only the final action is spelled out here — the wizard labels the
   // intermediate steps from the step list itself.
-  const nextLabel =
-    step === 4
-      ? submitting
-        ? isEditMode
-          ? "שומר..."
-          : "יוצר..."
-        : isEditMode
-          ? "שמירת שינויים"
-          : "יצירת הזמנה"
-      : undefined;
+  const nextLabel = isLastStep
+    ? submitting
+      ? isEditMode
+        ? "שומר..."
+        : "יוצר..."
+      : isEditMode
+        ? "שמירת שינויים"
+        : "יצירת הזמנה"
+    : undefined;
 
   // Add or update a customer in the local list and select it (used by the inline create/edit form).
   function handleCustomerSaved(customer: CustomerRecord) {
-    const option: CustomerOption = {
+    mergeSavedCustomer({
       id: customer.id,
       name: customer.name,
       nameForInvoice: customer.name_for_invoice ?? null,
@@ -851,17 +959,16 @@ export default function NewOrderClient({
       address: customer.address,
       city: extractCityFromAddress(customer.address),
       requiresPrepayment: customer.requires_prepayment,
-    };
-    setCustomerOptions((prev) => {
-      if (prev.some((c) => c.id === option.id)) {
-        return prev.map((c) => (c.id === option.id ? { ...option, contacts: c.contacts } : c));
-      }
-      return [option, ...prev];
     });
-    setPickedCustomer((prev) => (prev && prev.id === option.id ? { ...option, contacts: prev.contacts } : option));
-    setCustomerId(option.id);
-    setCustomerQuery(option.name);
-    setEditingCustomer(false);
+    setCustomerQuery(customer.name);
+  }
+
+  // Explicit dismiss (the X / the standalone page's cancel link) discards the
+  // saved draft so reopening starts fresh. Passively leaving the app (reload /
+  // navigate away / background) keeps it — that's what the autosave is for.
+  function handleCancel() {
+    if (canDraft) clearDraft(draftKey!);
+    onCancel?.();
   }
 
   return (
@@ -884,23 +991,30 @@ export default function NewOrderClient({
         variant={embedded ? "dialog" : "page"}
         rootRef={topRef}
         bodyRef={bodyRef}
-        steps={WIZARD_STEPS}
+        title={
+          dialogTitle ? <WizardTitle title={dialogTitle} description={dialogDescription ?? dialogTitle} /> : undefined
+        }
+        progressVariant="bar"
+        steps={wizardSteps}
         current={step}
         canClickStep={canClickStep}
         onStepClick={goToStep}
         // Embedded, the X in the step bar is the single way out. Standalone there
         // is no X, so the action bar keeps an explicit cancel link instead.
-        onClose={embedded ? onCancel : undefined}
+        onClose={embedded ? handleCancel : undefined}
+        // Embedded is always a full-page mobile dialog now (see QuickCreateDialogs
+        // / OrderEditDialog) — the grab-bar affordance for its swipe-to-dismiss.
+        grabber={embedded}
         closeDisabled={actionLocked}
-        onBack={step > 1 ? goBack : undefined}
+        onBack={stepIndex(step) > 0 ? goBack : undefined}
         backDisabled={actionLocked}
         onNext={goNext}
         nextLabel={nextLabel}
         nextDisabled={nextDisabled}
-        isLastStep={step === 4}
+        isLastStep={isLastStep}
         footerStart={
           embedded ? undefined : (
-            <Button type="button" variant="secondary" asChild disabled={actionLocked} className="me-auto">
+            <Button type="button" variant="secondary" asChild disabled={actionLocked} className="me-auto" onClick={handleCancel}>
               <Link href={cancelHref}>ביטול</Link>
             </Button>
           )
@@ -918,16 +1032,19 @@ export default function NewOrderClient({
           ) : null
         }
       >
-      {/* No step heading here — the stepper above already names the step, and on
-          a phone the heading was two lines of vertical room saying it twice. */}
+      {/* Every step opens with a StepHeading now — bar mode (progressVariant="bar",
+          matching every other converged wizard) shows "שלב X מתוך Y" instead of
+          named circles, so the old "the stepper already names it" reasoning for
+          skipping a heading no longer holds now that the step names aren't visible. */}
       {customersError ? <p className="text-sm text-destructive">שגיאת לקוחות: {customersError}</p> : null}
       {productsError ? <p className="text-sm text-destructive">שגיאת מוצרים: {productsError}</p> : null}
       {customerSearchError ? <p className="text-sm text-destructive">שגיאת חיפוש לקוחות: {customerSearchError}</p> : null}
       {productSearchError ? <p className="text-sm text-destructive">שגיאת חיפוש מוצרים: {productSearchError}</p> : null}
 
-      {/* ---------------------------------------------------------------- STEP 1 */}
-      {step === 1 ? (
+      {/* --------------------------------------------------------------- CUSTOMER */}
+      {step === "customer" ? (
         <div className="space-y-4">
+          <StepHeading title="איזה לקוח?" />
           <div className="inline-flex rounded-2xl border border-border/60 bg-background/70 p-1 shadow-sm">
             <button
               type="button"
@@ -1195,8 +1312,10 @@ export default function NewOrderClient({
         </div>
       ) : null}
 
-      {/* ---------------------------------------------------------------- STEP 2 */}
-      {step === 2 ? (
+      {/* ------------------------------------------------------------------ ITEMS */}
+      {step === "items" ? (
+        <div className="space-y-4">
+        <StepHeading title="אילו מוצרים?" />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_24rem]">
           {/* Product picker — deliberately NOT wrapped in a Card. The products
               are cards themselves, and a card-in-a-card cost ~70px of width on a
@@ -1540,281 +1659,303 @@ export default function NewOrderClient({
             </div>
           </div>
         </div>
-      ) : null}
-
-      {/* ---------------------------------------------------------------- STEP 3 */}
-      {step === 3 ? (
-        <div className="space-y-4">
-          {/* Payment — invoice, terms, due date and the payments themselves.
-              No Card wrapper: its padding cost width the fields needed. */}
-          <div className="space-y-3">
-            <div className="space-y-4">
-              {/* Invoice toggle + payment terms — one compact row */}
-              <div className="flex flex-wrap items-end gap-3">
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={needsInvoice}
-                  disabled={actionLocked}
-                  onClick={() => setNeedsInvoice((v) => !v)}
-                  className="inline-flex h-10 items-center gap-2.5 rounded-xl border border-input bg-background px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted/40 disabled:opacity-50"
-                >
-                  <span
-                    className={cn(
-                      "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
-                      needsInvoice ? "bg-primary" : "bg-muted-foreground/30"
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "absolute left-0.5 top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-white shadow transition-transform",
-                        needsInvoice ? "translate-x-0" : "translate-x-4"
-                      )}
-                    />
-                  </span>
-                  <span>{needsInvoice ? "צריך חשבונית" : "לא צריך חשבונית"}</span>
-                </button>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground">גבייה</label>
-                  <div className="flex h-10 overflow-hidden rounded-xl border border-input shadow-sm">
-                    <button
-                      type="button"
-                      disabled={actionLocked}
-                      onClick={() => setCollectOnDelivery(false)}
-                      className={cn(
-                        "px-3 text-sm font-medium transition-colors disabled:opacity-50",
-                        !collectOnDelivery
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-background text-foreground hover:bg-muted/40"
-                      )}
-                    >
-                      תשלום למשרד
-                    </button>
-                    <button
-                      type="button"
-                      disabled={actionLocked}
-                      onClick={() => setCollectOnDelivery(true)}
-                      className={cn(
-                        "border-r border-input px-3 text-sm font-medium transition-colors disabled:opacity-50",
-                        collectOnDelivery
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-background text-foreground hover:bg-muted/40"
-                      )}
-                    >
-                      הנהג גובה תשלום
-                    </button>
-                  </div>
-                </div>
-
-                <div className="w-full space-y-1 sm:w-44">
-                  <label className="text-xs font-medium text-muted-foreground">צורת תשלום</label>
-                  <NativeSelect
-                    value={paymentTerms}
-                    onChange={(e) => applyPaymentTerms(e.target.value)}
-                    disabled={actionLocked}
-                  >
-                    {PAYMENT_TERMS_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </NativeSelect>
-                </div>
-
-                {paymentTerms !== "immediate" ? (
-                  <div className="w-full space-y-1 sm:w-44">
-                    <label className="text-xs font-medium text-muted-foreground">תאריך פירעון</label>
-                    <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} placeholder="מחושב מצורת התשלום" />
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="flex items-center justify-between gap-2 border-t border-border/70 pt-4">
-                <div>
-                  <p className="text-sm font-medium text-foreground">תשלומים</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">אפשר לפצל לכמה תשלומים ובכמה אמצעים שונים.</p>
-                </div>
-                <Button type="button" variant="secondary" size="sm" onClick={addPaymentDraft} disabled={actionLocked}>
-                  <AddIcon className="h-4 w-4" /> תשלום
-                </Button>
-              </div>
-
-              {initialPayments.length > 0 ? (
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">תשלומים קיימים</p>
-                  {initialPayments.map((payment) => (
-                    <div key={payment.id} className="space-y-2 rounded-xl border bg-muted/20 p-3 text-sm">
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
-                        <div>
-                          <div className="text-xs text-muted-foreground">תאריך</div>
-                          <div>{payment.payment_date || "-"}</div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-muted-foreground">אמצעי</div>
-                          <div>{paymentMethodLabel(payment.payment_method)}</div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-muted-foreground">סכום</div>
-                          <div>{formatCurrency(payment.amount_total)}</div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-muted-foreground">אסמכתא</div>
-                          <div>{payment.reference_number || "-"}</div>
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground">הערות</label>
-                        <Input
-                          value={existingPaymentNotes[payment.id] ?? ""}
-                          disabled={actionLocked}
-                          onChange={(e) =>
-                            setExistingPaymentNotes((prev) => ({ ...prev, [payment.id]: e.target.value }))
-                          }
-                          placeholder="אופציונלי"
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              {newPayments.length === 0 ? (
-                <EmptyState dense>
-                  עדיין לא הוזנו תשלומים חדשים.
-                </EmptyState>
-              ) : null}
-
-              {newPayments.map((payment, index) => (
-                <div key={index} className="space-y-3 rounded-xl border p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium">תשלום חדש #{index + 1}</p>
-                    <DeleteButton onClick={() => removePaymentDraft(index)} disabled={actionLocked} label="הסרת תשלום" />
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">סכום *</label>
-                      <CurrencyInput
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={payment.amount_total}
-                        disabled={actionLocked}
-                        onChange={(e) => updatePaymentDraft(index, { amount_total: e.target.value })}
-                        placeholder="0.00"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">תאריך *</label>
-                      <DateInput
-                        value={payment.payment_date}
-                        disabled={actionLocked}
-                        onChange={(e) => updatePaymentDraft(index, { payment_date: e.target.value })}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">אמצעי תשלום *</label>
-                      <NativeSelect
-                        value={payment.payment_method}
-                        disabled={actionLocked}
-                        onChange={(e) => {
-                          const m = e.target.value;
-                          updatePaymentDraft(index, {
-                            payment_method: m,
-                            account_id: payment.account_id || defaultAccountForMethod(paymentAccountsList, m),
-                          });
-                        }}
-                      >
-                        <option value="">בחר אמצעי תשלום...</option>
-                        {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </NativeSelect>
-                    </div>
-                    <AccountSelect
-                      required
-                      value={payment.account_id}
-                      disabled={actionLocked}
-                      onChange={(accountId) => updatePaymentDraft(index, { account_id: accountId })}
-                      onLoaded={(list) => {
-                        setPaymentAccountsList(list);
-                        if (!payment.account_id) {
-                          updatePaymentDraft(index, { account_id: defaultAccountForMethod(list, payment.payment_method) });
-                        }
-                      }}
-                    />
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">
-                        {payment.payment_method === "check" ? "תאריך פירעון *" : "תאריך פירעון צפוי (אופציונלי)"}
-                      </label>
-                      <DateInput
-                        value={payment.due_date}
-                        disabled={actionLocked}
-                        onChange={(e) => updatePaymentDraft(index, { due_date: e.target.value })}
-                      />
-                      {payment.payment_method !== "check" ? (
-                        <p className="text-[11px] text-muted-foreground">
-                          לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  {payment.payment_method === "check" ? (
-                    <CheckDetailsFields
-                      checkNumber={payment.check_number}
-                      onCheckNumberChange={(value) => updatePaymentDraft(index, { check_number: value })}
-                      photoFiles={payment.check_photo_files}
-                      onPhotoFilesChange={(files) => updatePaymentDraft(index, { check_photo_files: files })}
-                      disabled={actionLocked}
-                    />
-                  ) : null}
-
-                  <details className="rounded-xl border border-dashed p-3" open={Boolean(payment.reference_number || payment.notes)}>
-                    <summary className="cursor-pointer text-xs font-medium text-muted-foreground">פרטי תשלום נוספים</summary>
-                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground">מספר אסמכתא</label>
-                        <Input
-                          value={payment.reference_number}
-                          disabled={actionLocked}
-                          onChange={(e) => updatePaymentDraft(index, { reference_number: e.target.value })}
-                          placeholder="אופציונלי"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground">הערות לתשלום</label>
-                        <Input
-                          value={payment.notes}
-                          disabled={actionLocked}
-                          onChange={(e) => updatePaymentDraft(index, { notes: e.target.value })}
-                          placeholder="אופציונלי"
-                        />
-                      </div>
-                    </div>
-                  </details>
-                </div>
-              ))}
-
-{selectedCustomer?.requiresPrepayment ? (
-                <div className="rounded-xl border border-destructive bg-destructive-soft p-3 text-sm text-destructive-soft-foreground">
-                  {PREPAYMENT_WIZARD_WARNING}
-                </div>
-              ) : null}
-            </div>
-          </div>
         </div>
       ) : null}
 
-      {/* ---------------------------------------------------------------- STEP 4 */}
-      {step === 4 ? (
+      {/* ---------------------------------------------------------------- INVOICE */}
+      {step === "invoice" ? (
+        <>
+          <StepHeading title="צריך חשבונית?" />
+          <div className="grid grid-cols-2 gap-2">
+            <OptionRow
+              label="צריך חשבונית"
+              selected={needsInvoice}
+              onClick={() => {
+                setNeedsInvoice(true);
+                advanceTo("collection");
+              }}
+            />
+            <OptionRow
+              label="לא צריך חשבונית"
+              selected={!needsInvoice}
+              onClick={() => {
+                setNeedsInvoice(false);
+                advanceTo("collection");
+              }}
+            />
+          </div>
+        </>
+      ) : step === "collection" ? (
+        <>
+          <StepHeading title="איך נגבה התשלום?" />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <OptionRow
+              label="תשלום למשרד"
+              selected={!collectOnDelivery}
+              onClick={() => {
+                setCollectOnDelivery(false);
+                advanceTo("paymentTerms");
+              }}
+            />
+            <OptionRow
+              label="הנהג גובה תשלום במסירה"
+              selected={collectOnDelivery}
+              onClick={() => {
+                setCollectOnDelivery(true);
+                advanceTo("paymentTerms");
+              }}
+            />
+          </div>
+        </>
+      ) : step === "paymentTerms" ? (
+        <>
+          <StepHeading title="מהי צורת התשלום?" />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {PAYMENT_TERMS_OPTIONS.map((option) => (
+              <OptionRow
+                key={option.value}
+                label={option.label}
+                selected={paymentTerms === option.value}
+                onClick={() => {
+                  applyPaymentTerms(option.value);
+                  advanceTo(option.value === "immediate" ? "payments" : "dueDate");
+                }}
+              />
+            ))}
+          </div>
+        </>
+      ) : step === "dueDate" ? (
+        <>
+          <StepHeading title="תאריך פירעון?" />
+          <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} placeholder="מחושב מצורת התשלום" />
+        </>
+      ) : step === "payments" ? (
+        <>
+          <StepHeading title="תשלומים" sub="אפשר לפצל לכמה תשלומים ובכמה אמצעים שונים" />
+          <div className="space-y-4">
+            <div className="flex justify-end">
+              <Button type="button" variant="secondary" size="sm" onClick={addPaymentDraft} disabled={actionLocked}>
+                <AddIcon className="h-4 w-4" /> תשלום
+              </Button>
+            </div>
+
+            {initialPayments.length > 0 ? (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">תשלומים קיימים</p>
+                {initialPayments.map((payment) => (
+                  <div key={payment.id} className="space-y-2 rounded-xl border bg-muted/20 p-3 text-sm">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
+                      <div>
+                        <div className="text-xs text-muted-foreground">תאריך</div>
+                        <div>{payment.payment_date || "-"}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">אמצעי</div>
+                        <div>{paymentMethodLabel(payment.payment_method)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">סכום</div>
+                        <div>{formatCurrency(payment.amount_total)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">אסמכתא</div>
+                        <div>{payment.reference_number || "-"}</div>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">הערות</label>
+                      <Input
+                        value={existingPaymentNotes[payment.id] ?? ""}
+                        disabled={actionLocked}
+                        onChange={(e) =>
+                          setExistingPaymentNotes((prev) => ({ ...prev, [payment.id]: e.target.value }))
+                        }
+                        placeholder="אופציונלי"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {newPayments.length === 0 ? (
+              <EmptyState dense>
+                עדיין לא הוזנו תשלומים חדשים.
+              </EmptyState>
+            ) : null}
+
+            {newPayments.map((payment, index) => (
+              <div key={index} className="space-y-3 rounded-xl border p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">תשלום חדש #{index + 1}</p>
+                  <DeleteButton onClick={() => removePaymentDraft(index)} disabled={actionLocked} label="הסרת תשלום" />
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">סכום *</label>
+                    <CurrencyInput
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={payment.amount_total}
+                      disabled={actionLocked}
+                      onChange={(e) => updatePaymentDraft(index, { amount_total: e.target.value })}
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">תאריך *</label>
+                    <DateInput
+                      value={payment.payment_date}
+                      disabled={actionLocked}
+                      onChange={(e) => updatePaymentDraft(index, { payment_date: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">אמצעי תשלום *</label>
+                    <NativeSelect
+                      value={payment.payment_method}
+                      disabled={actionLocked}
+                      onChange={(e) => {
+                        const m = e.target.value;
+                        updatePaymentDraft(index, {
+                          payment_method: m,
+                          account_id: payment.account_id || defaultAccountForMethod(paymentAccountsList, m),
+                        });
+                      }}
+                    >
+                      <option value="">בחר אמצעי תשלום...</option>
+                      {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </div>
+                  <AccountSelect
+                    required
+                    value={payment.account_id}
+                    disabled={actionLocked}
+                    onChange={(accountId) => updatePaymentDraft(index, { account_id: accountId })}
+                    onLoaded={(list) => {
+                      setPaymentAccountsList(list);
+                      if (!payment.account_id) {
+                        updatePaymentDraft(index, { account_id: defaultAccountForMethod(list, payment.payment_method) });
+                      }
+                    }}
+                  />
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">
+                      {payment.payment_method === "check" ? "תאריך פירעון *" : "תאריך פירעון צפוי (אופציונלי)"}
+                    </label>
+                    <DateInput
+                      value={payment.due_date}
+                      disabled={actionLocked}
+                      onChange={(e) => updatePaymentDraft(index, { due_date: e.target.value })}
+                    />
+                    {payment.payment_method !== "check" ? (
+                      <p className="text-[11px] text-muted-foreground">
+                        לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+
+                {payment.payment_method === "check" ? (
+                  <CheckDetailsFields
+                    checkNumber={payment.check_number}
+                    onCheckNumberChange={(value) => updatePaymentDraft(index, { check_number: value })}
+                    photoFiles={payment.check_photo_files}
+                    onPhotoFilesChange={(files) => updatePaymentDraft(index, { check_photo_files: files })}
+                    disabled={actionLocked}
+                  />
+                ) : null}
+
+                <details className="rounded-xl border border-dashed p-3" open={Boolean(payment.reference_number || payment.notes)}>
+                  <summary className="cursor-pointer text-xs font-medium text-muted-foreground">פרטי תשלום נוספים</summary>
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">מספר אסמכתא</label>
+                      <Input
+                        value={payment.reference_number}
+                        disabled={actionLocked}
+                        onChange={(e) => updatePaymentDraft(index, { reference_number: e.target.value })}
+                        placeholder="אופציונלי"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">הערות לתשלום</label>
+                      <Input
+                        value={payment.notes}
+                        disabled={actionLocked}
+                        onChange={(e) => updatePaymentDraft(index, { notes: e.target.value })}
+                        placeholder="אופציונלי"
+                      />
+                    </div>
+                  </div>
+                </details>
+              </div>
+            ))}
+
+            {selectedCustomer?.requiresPrepayment ? (
+              <div className="rounded-xl border border-destructive bg-destructive-soft p-3 text-sm text-destructive-soft-foreground">
+                {PREPAYMENT_WIZARD_WARNING}
+              </div>
+            ) : null}
+          </div>
+        </>
+      ) : step === "orderDate" ? (
+        <>
+          <StepHeading title="מתי בוצעה ההזמנה?" />
+          <DateInput value={orderDate} onChange={(e) => applyOrderDate(e.target.value)} placeholder="בחר תאריך הזמנה" />
+        </>
+      ) : step === "orderStatus" ? (
+        <>
+          <StepHeading title="מה סטטוס ההזמנה?" />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {ORDER_STATUS_OPTIONS.map((option) => (
+              <OptionRow
+                key={option.value}
+                label={option.label}
+                selected={orderStatus === option.value}
+                onClick={() => {
+                  setOrderStatus(option.value);
+                  advanceTo("deliveryDate");
+                }}
+              />
+            ))}
+          </div>
+        </>
+      ) : step === "deliveryDate" ? (
+        <>
+          <StepHeading title="תאריך אספקה מבוקש?" sub="רק אם הלקוח ביקש תאריך מסוים — לא חובה" />
+          <DateInput
+            value={requestedDeliveryDate}
+            onChange={(e) => setRequestedDeliveryDate(e.target.value)}
+            disabled={actionLocked}
+          />
+        </>
+      ) : step === "notes" ? (
+        <>
+          <StepHeading title="הערות להזמנה?" sub="לא חובה" />
+          <Textarea
+            value={notes}
+            disabled={actionLocked}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+            autoFocus
+          />
+        </>
+      ) : null}
+
+      {/* -------------------------------------------------------------- SUMMARY */}
+      {step === "summary" ? (
         <div className="space-y-4">
+          <StepHeading title="לאשר ולשמור?" />
           <div className="flex items-center gap-2 rounded-md border border-secondary/35 bg-secondary/10 px-3 py-2.5 text-sm text-foreground">
             <AiIcon className="h-4 w-4 shrink-0 text-secondary" />
             <span>
@@ -1827,7 +1968,7 @@ export default function NewOrderClient({
             <SummarySection
               icon={<UserIcon className="h-4 w-4" />}
               title="לקוח"
-              onEdit={() => goToStep(1)}
+              onEdit={() => goToStep("customer")}
               editDisabled={actionLocked}
             >
                 <SummaryRow label="שם" value={selectedCustomer?.name || "-"} />
@@ -1857,14 +1998,14 @@ export default function NewOrderClient({
                     <Badge variant="warning">תשלום מראש</Badge>
                   </div>
                 ) : null}
-              
+
             </SummarySection>
 
             {/* Items */}
             <SummarySection
               icon={<OrderIcon className="h-4 w-4" />}
               title={`פריטים (${lines.length})`}
-              onEdit={() => goToStep(2)}
+              onEdit={() => goToStep("items")}
               editDisabled={actionLocked}
             >
                 {lines.map((line, index) => {
@@ -1887,69 +2028,31 @@ export default function NewOrderClient({
                     <span className="text-lg font-bold text-foreground">{formatCurrency(totalAmount)}</span>
                   </div>
                 </div>
-              
+
             </SummarySection>
           </div>
 
           <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0">
-            {/* Not a SummarySection: these fields are editable right here, so
-                there is nothing to send you back a step for. Same heading and
-                same bordered box as the summary sections beside it. */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <span className="text-muted-foreground">
-                  <DocumentIcon className="h-4 w-4" />
-                </span>
-                פרטי הזמנה
-              </div>
-              <div className="space-y-3 rounded-xl border p-3">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">תאריך הזמנה *</label>
-                    <DateInput value={orderDate} onChange={(e) => applyOrderDate(e.target.value)} placeholder="בחר תאריך הזמנה" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">סטטוס הזמנה</label>
-                    <NativeSelect
-                      value={orderStatus}
-                      onChange={(e) => setOrderStatus(e.target.value)}
-                      disabled={actionLocked}
-                    >
-                      {ORDER_STATUS_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </NativeSelect>
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">תאריך אספקה מבוקש (אופציונלי)</label>
-                  <DateInput
-                    value={requestedDeliveryDate}
-                    onChange={(e) => setRequestedDeliveryDate(e.target.value)}
-                    disabled={actionLocked}
-                    placeholder="רק אם הלקוח ביקש תאריך מסוים"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">הערות להזמנה</label>
-                  <Textarea
-                    value={notes}
-                    disabled={actionLocked}
-                    onChange={(e) => setNotes(e.target.value)}
-                    rows={3}
-                    placeholder="הערות להזמנה (אופציונלי)"
-                  />
-                </div>
-              </div>
-            </div>
+            {/* Order details — now real steps of their own (orderDate/orderStatus/
+                deliveryDate/notes), so this is read-only like every other summary
+                section here, not live-editable in place as it used to be. */}
+            <SummarySection
+              icon={<DocumentIcon className="h-4 w-4" />}
+              title="פרטי הזמנה"
+              onEdit={() => goToStep("orderDate")}
+              editDisabled={actionLocked}
+            >
+                <SummaryRow label="תאריך הזמנה" value={orderDate} />
+                <SummaryRow label="סטטוס הזמנה" value={ORDER_STATUS_OPTIONS.find((o) => o.value === orderStatus)?.label ?? orderStatus} />
+                {requestedDeliveryDate ? <SummaryRow label="תאריך אספקה מבוקש" value={requestedDeliveryDate} /> : null}
+                {notes.trim() ? <SummaryRow label="הערות" value={notes.trim()} /> : null}
+            </SummarySection>
 
             {/* Payment summary — read-only; edit jumps back to the payment step */}
             <SummarySection
               icon={<CardIcon className="h-4 w-4" />}
               title="תשלום"
-              onEdit={() => goToStep(3)}
+              onEdit={() => goToStep("invoice")}
               editDisabled={actionLocked}
             >
                 <SummaryRow label="חשבונית" value={needsInvoice ? "צריך חשבונית" : "לא צריך חשבונית"} />
@@ -1959,7 +2062,7 @@ export default function NewOrderClient({
                 <SummaryRow label="סטטוס תשלום" value={paymentStatusLabel(paymentStatus)} />
                 <SummaryRow label="שולם / יוזן" value={formatCurrency(combinedPaidTotal)} />
                 <SummaryRow label="יתרה אחרי שמירה" value={formatCurrency(remainingBalance)} />
-              
+
             </SummarySection>
           </div>
 
@@ -1973,7 +2076,7 @@ export default function NewOrderClient({
       ) : null}
 
       {/* Inline submit error for steps before review */}
-      {submitError && step !== 4 ? <p className="text-sm text-destructive">{submitError}</p> : null}
+      {submitError && step !== "summary" ? <p className="text-sm text-destructive">{submitError}</p> : null}
       </StepWizard>
     </>
   );

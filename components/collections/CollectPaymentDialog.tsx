@@ -8,22 +8,26 @@
 // for, and the payment closes (or reduces) that specific receivable. The customer
 // picker only lists customers with something outstanding, because those are the
 // only ones a collection call is ever about.
+//
+// One-question-per-stage (2026-08-25, user request: match IncomeDialog/
+// ExpenseDialog's step-by-step flow, no dropdowns) — customer and payment
+// method are now tappable cards instead of <select>s, and every field that
+// used to share one grouped screen gets its own step.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { SpinnerIcon } from "@/components/ui/icons";
-import { AdaptiveGrid } from "@/components/layout/page-layout";
-import { FormDialog } from "@/components/ui/form-dialog";
-import { NativeSelect } from "@/components/ui/native-select";
+import { SpinnerIcon, BankIcon, CardIcon, CashIcon } from "@/components/ui/icons";
+import { StepWizardDialog, useStepFlow } from "@/components/ui/step-wizard";
+import { OptionRow, DateQuickPicks, StepHeading } from "@/components/ui/option-row";
+import { SummaryRow, SummarySection } from "@/components/ui/summary";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { DateInput } from "@/components/ui/date-input";
 import { Textarea } from "@/components/ui/textarea";
-import { SearchableSelect } from "@/components/ui/searchable-select";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
-import AccountSelect from "@/components/financial/AccountSelect";
-import { defaultAccountForMethod, type Account } from "@/lib/accounts";
+import { loadAccounts } from "@/components/financial/AccountSelect";
+import { defaultAccountForMethod, getAccountKindLabel, type Account } from "@/lib/accounts";
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
 import { formatCurrency } from "@/lib/payroll";
 import type { CustomerReceivable } from "@/lib/collections";
@@ -38,6 +42,27 @@ type Debtor = {
   outstanding_amount: number;
   overdue_amount: number;
 };
+
+type CollectStepId = "customer" | "receivable" | "amount" | "method" | "account" | "date" | "check" | "reference" | "notes" | "summary";
+
+const STEP_LABEL: Record<CollectStepId, string> = {
+  customer: "לקוח",
+  receivable: "חוב",
+  amount: "סכום",
+  method: "תשלום",
+  account: "חשבון",
+  date: "תאריך",
+  check: "צ'ק",
+  reference: "אסמכתא",
+  notes: "הערות",
+  summary: "סיכום",
+};
+
+function accountKindIcon(kind: string | null | undefined) {
+  if (kind === "bank") return BankIcon;
+  if (kind === "card") return CardIcon;
+  return CashIcon;
+}
 
 function receivableTitle(receivable: CustomerReceivable) {
   if (receivable.title && receivable.title.trim()) return receivable.title;
@@ -57,6 +82,7 @@ export function CollectPaymentDialog({
 }) {
   const [debtors, setDebtors] = useState<Debtor[] | null>(null);
   const [debtorsError, setDebtorsError] = useState<string | null>(null);
+  const [debtorQuery, setDebtorQuery] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [receivables, setReceivables] = useState<CustomerReceivable[] | null>(null);
   const [receivablesLoading, setReceivablesLoading] = useState(false);
@@ -74,21 +100,6 @@ export function CollectPaymentDialog({
   const [submitting, setSubmitting] = useState(false);
   const [clearingId, setClearingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const reset = useCallback(() => {
-    setCustomerId("");
-    setReceivables(null);
-    setSourceKey("");
-    setAmount("");
-    setDate(getTodayDate());
-    setMethod("");
-    setAccountId("");
-    setReference("");
-    setCheckNumber("");
-    setCheckPhotoFiles([]);
-    setNotes("");
-    setError(null);
-  }, []);
 
   // Who owes money — loaded once per open (amounts move, so don't cache it).
   useEffect(() => {
@@ -118,10 +129,31 @@ export function CollectPaymentDialog({
     };
   }, [open]);
 
+  // Preload accounts on open so the "account" step can render one tappable
+  // card per account (same reasoning as ExpenseDialog/IncomeDialog).
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    void loadAccounts().then((list) => {
+      if (active) setAccountsList(list);
+    });
+    return () => {
+      active = false;
+    };
+  }, [open]);
+
   const selectedReceivable = useMemo(
     () => (receivables ?? []).find((r) => r.collection_key === sourceKey) ?? null,
     [receivables, sourceKey]
   );
+
+  const filteredDebtors = useMemo(() => {
+    const q = debtorQuery.trim().toLowerCase();
+    if (!q) return debtors ?? [];
+    return (debtors ?? []).filter(
+      (d) => d.customer_name.toLowerCase().includes(q) || (d.customer_phone ?? "").includes(q)
+    );
+  }, [debtorQuery, debtors]);
 
   async function loadReceivables(nextCustomerId: string) {
     setCustomerId(nextCustomerId);
@@ -145,10 +177,10 @@ export function CollectPaymentDialog({
         setReceivables([]);
         return;
       }
-      const open = (json.receivables ?? []).filter((r) => r.outstanding_amount > 0);
-      setReceivables(open);
-      // Only one open debt? Then there's nothing to choose — pick it.
-      const only = open.filter((r) => r.source_type !== "loan");
+      const openReceivables = (json.receivables ?? []).filter((r) => r.outstanding_amount > 0);
+      setReceivables(openReceivables);
+      // Only one open debt? Then there's nothing to choose — pick it and move on.
+      const only = openReceivables.filter((r) => r.source_type !== "loan");
       if (only.length === 1) selectReceivable(only[0]);
     } catch {
       setError("טעינת החובות נכשלה.");
@@ -162,6 +194,7 @@ export function CollectPaymentDialog({
     setSourceKey(receivable.collection_key);
     // Default to paying the whole thing off — the common case on a collection call.
     setAmount(String(Math.round(receivable.outstanding_amount * 100) / 100));
+    setStepId("amount");
   }
 
   // A pending payment (an uncleared check, a future-dated transfer) isn't a new
@@ -188,6 +221,77 @@ export function CollectPaymentDialog({
     } finally {
       setClearingId(null);
     }
+  }
+
+  // ── Dynamic step list ────────────────────────────────────────────────────
+  const stepIds = useMemo<CollectStepId[]>(() => {
+    const ids: CollectStepId[] = ["customer"];
+    if (customerId) ids.push("receivable");
+    ids.push("amount", "method");
+    if (accountsList.length > 0) ids.push("account");
+    ids.push("date");
+    if (method === "check") ids.push("check");
+    ids.push("reference", "notes", "summary");
+    return ids;
+  }, [customerId, accountsList.length, method]);
+  const wizardSteps = useMemo(() => stepIds.map((id) => ({ n: id, label: STEP_LABEL[id] })), [stepIds]);
+
+  const amountValid = Number.isFinite(Number(amount)) && Number(amount) > 0;
+  const debtorName = debtors?.find((d) => d.customer_id === customerId)?.customer_name;
+  const summaryMethodLabel = PAYMENT_METHOD_OPTIONS.find((m) => m.value === method)?.label;
+  const summaryAccountName = accountsList.find((a) => a.id === accountId)?.name;
+
+  function isSatisfied(id: CollectStepId): boolean {
+    switch (id) {
+      case "customer":
+        return Boolean(customerId);
+      case "receivable":
+        return Boolean(selectedReceivable);
+      case "amount":
+        return amountValid;
+      case "method":
+        return Boolean(method);
+      case "account":
+        return Boolean(accountId);
+      case "date":
+        return Boolean(date);
+      case "check":
+      case "reference":
+      case "notes":
+      case "summary":
+        return true;
+    }
+  }
+
+  const [stepId, setStepId] = useState<CollectStepId>("customer");
+  const { stepIndex, isLastStep, canClickStep, goToStep, goBack, goNext, advanceTo } = useStepFlow<CollectStepId>({
+    stepId,
+    setStepId,
+    steps: stepIds,
+    isSatisfied,
+  });
+
+  const reset = useCallback(() => {
+    setStepId("customer");
+    setDebtorQuery("");
+    setCustomerId("");
+    setReceivables(null);
+    setSourceKey("");
+    setAmount("");
+    setDate(getTodayDate());
+    setMethod("");
+    setAccountId("");
+    setReference("");
+    setCheckNumber("");
+    setCheckPhotoFiles([]);
+    setNotes("");
+    setError(null);
+  }, [setStepId]);
+
+  function pickMethod(next: string) {
+    setMethod(next);
+    setAccountId((prev) => prev || defaultAccountForMethod(accountsList, next));
+    advanceTo(accountsList.length > 0 ? "account" : "date");
   }
 
   async function save() {
@@ -257,214 +361,260 @@ export function CollectPaymentDialog({
     }
   }
 
-  const debtorOptions = useMemo(
-    () =>
-      (debtors ?? []).map((debtor) => ({
-        value: debtor.customer_id,
-        // Phone next to the name in every customer list, and the open balance so
-        // you can find the right person by what they owe.
-        label: `${debtor.customer_name}${debtor.customer_phone ? ` · ${debtor.customer_phone}` : ""} — ${formatCurrency(debtor.outstanding_amount)}`,
-      })),
-    [debtors]
-  );
-
   const payableReceivables = (receivables ?? []).filter((r) => r.source_type !== "loan");
   const loanReceivables = (receivables ?? []).filter((r) => r.source_type === "loan");
 
   return (
-    <FormDialog
+    <StepWizardDialog
       open={open}
       onOpenChange={(next) => {
         onOpenChange(next);
         if (!next) reset();
       }}
-      title="קליטת תשלום"
-      description="רישום כסף שהתקבל מלקוח וזיכוי החוב הפתוח שלו — בלי לצאת מהמסך הנוכחי."
+      dialogTitle="קליטת תשלום"
+      dialogDescription="רישום כסף שהתקבל מלקוח וזיכוי החוב הפתוח שלו."
       size="form2xl"
-      onSubmit={() => void save()}
-      submitLabel="שמירת תשלום"
-      busyLabel="שומר..."
-      busy={submitting}
-      submitDisabled={!selectedReceivable}
+      fullScreen
+      progressVariant="bar"
+      steps={wizardSteps}
+      current={stepId}
+      canClickStep={canClickStep}
+      onStepClick={goToStep}
+      closeDisabled={submitting}
+      onBack={stepIndex(stepId) > 0 ? goBack : undefined}
+      backDisabled={submitting}
+      onNext={() => (isLastStep ? void save() : goNext())}
+      nextLabel={isLastStep ? (submitting ? "שומר..." : "שמירת תשלום") : undefined}
+      nextDisabled={isLastStep ? submitting : !isSatisfied(stepId)}
+      isLastStep={isLastStep}
+      submitOnEnter
       error={error || undefined}
     >
-          <div className="space-y-4">
-            <div className="space-y-2 text-right text-sm">
-              <span className="font-medium">לקוח *</span>
-              {debtors === null ? (
-                <div className="flex h-11 items-center gap-2 rounded-xl border border-input px-4 text-muted-foreground">
-                  <SpinnerIcon className="h-4 w-4 animate-spin" />
-                  <span>טוען חייבים...</span>
-                </div>
-              ) : debtors.length === 0 ? (
-                <div className="rounded-xl border bg-muted/30 p-3 text-muted-foreground">
-                  {debtorsError ?? "אין כרגע לקוחות עם חוב פתוח."}
-                </div>
-              ) : (
-                <SearchableSelect
-                  ariaLabel="בחירת לקוח"
-                  placeholder="בחרו לקוח"
-                  searchPlaceholder="חיפוש לפי שם או טלפון..."
-                  options={debtorOptions}
-                  value={customerId}
-                  onChange={(next) => void loadReceivables(next)}
-                />
-              )}
+      {stepId === "customer" ? (
+        <>
+          <StepHeading title="מי הלקוח שמשלם?" />
+          <div className="grid gap-3">
+          {debtors === null ? (
+            <div className="flex h-11 items-center gap-2 rounded-xl border border-input px-4 text-muted-foreground">
+              <SpinnerIcon className="h-4 w-4 animate-spin" />
+              <span>טוען חייבים...</span>
             </div>
-
-            {customerId ? (
-              <div className="space-y-2 text-right text-sm">
-                <span className="font-medium">על מה התשלום *</span>
-                {receivablesLoading ? (
-                  <div className="flex items-center gap-2 rounded-xl border p-3 text-muted-foreground">
-                    <SpinnerIcon className="h-4 w-4 animate-spin" />
-                    <span>טוען חובות...</span>
-                  </div>
-                ) : payableReceivables.length === 0 ? (
-                  <div className="rounded-xl border bg-muted/30 p-3 text-muted-foreground">
-                    אין ללקוח הזה חוב פתוח על הזמנה או פרויקט.
-                  </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    {payableReceivables.map((receivable) => {
-                      const selected = receivable.collection_key === sourceKey;
-                      return (
-                        <div key={receivable.collection_key} className="space-y-1">
-                          <button
-                            type="button"
-                            onClick={() => selectReceivable(receivable)}
-                            className={`w-full rounded-xl border px-3 py-2.5 text-right transition-all ${
-                              selected
-                                ? "border-primary/30 bg-primary/10"
-                                : "border-border bg-accent/30 hover:bg-accent"
-                            }`}
-                          >
-                            <div className="flex flex-wrap items-baseline justify-between gap-2">
-                              <span className="font-medium">{receivableTitle(receivable)}</span>
-                              <span className="font-semibold">
-                                {formatCurrency(receivable.outstanding_amount)}
-                              </span>
-                            </div>
-                            <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
-                              <span>{receivable.source_type === "project" ? "פרויקט" : "הזמנה"}</span>
-                              {receivable.due_date || receivable.next_due_date ? (
-                                <span>לתשלום עד {receivable.due_date ?? receivable.next_due_date}</span>
-                              ) : null}
-                              {receivable.days_late > 0 ? (
-                                <span className="text-destructive">{receivable.days_late} ימי פיגור</span>
-                              ) : null}
-                            </div>
-                          </button>
-
-                          {/* Pending rows (uncleared check / future transfer) —
-                              the money already has a row, so clear it instead of
-                              creating a duplicate payment. */}
-                          {selected && receivable.pending_payments.length > 0
-                            ? receivable.pending_payments.map((pending) => (
-                                <div
-                                  key={pending.id}
-                                  className="me-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed bg-background px-3 py-2 text-xs"
-                                >
-                                  <span>
-                                    ממתין: {formatCurrency(pending.amount)}
-                                    {pending.check_number ? ` · צ'ק ${pending.check_number}` : ""}
-                                    {pending.due_date ? ` · לפירעון ${pending.due_date}` : ""}
-                                  </span>
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="secondary"
-                                    className="h-7 text-xs"
-                                    disabled={clearingId !== null}
-                                    onClick={() => void markPendingCollected(pending.id)}
-                                  >
-                                    {clearingId === pending.id ? "מסמן..." : "סמן כנגבה"}
-                                  </Button>
-                                </div>
-                              ))
-                            : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-                {loanReceivables.length > 0 ? (
-                  <p className="text-xs text-muted-foreground">
-                    ללקוח יש גם הלוואה פתוחה — החזרי הלוואה נרשמים בעמוד ההלוואות (ריבית וקרן בנפרד).
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-
-            {selectedReceivable ? (
-              <>
-                <AdaptiveGrid variant="formTwoLoose">
-                  <label className="space-y-2 text-right text-sm">
-                    <span className="font-medium">סכום שהתקבל *</span>
-                    <CurrencyInput value={amount} onChange={(e) => setAmount(e.target.value)} />
-                    <span className="block text-[11px] text-muted-foreground">
-                      החוב הפתוח: {formatCurrency(selectedReceivable.outstanding_amount)}
-                    </span>
-                  </label>
-
-                  <label className="space-y-2 text-right text-sm">
-                    <span className="font-medium">תאריך *</span>
-                    <DateInput value={date} onChange={(e) => setDate(e.target.value)} />
-                  </label>
-
-                  <label className="space-y-2 text-right text-sm">
-                    <span className="font-medium">אמצעי תשלום *</span>
-                    <NativeSelect 
-                      value={method}
-                      onChange={(e) => {
-                        const next = e.target.value;
-                        setMethod(next);
-                        setAccountId((prev) => prev || defaultAccountForMethod(accountsList, next));
-                      }}
-                    >
-                      <option value=""></option>
-                      {PAYMENT_METHOD_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </NativeSelect>
-                  </label>
-
-                  <AccountSelect
-                    required
-                    value={accountId}
-                    onChange={setAccountId}
-                    onLoaded={(list) => {
-                      setAccountsList(list);
-                      setAccountId((prev) => prev || defaultAccountForMethod(list, method));
+          ) : debtors.length === 0 ? (
+            <div className="rounded-xl border bg-muted/30 p-3 text-muted-foreground">
+              {debtorsError ?? "אין כרגע לקוחות עם חוב פתוח."}
+            </div>
+          ) : (
+            <>
+              <Input
+                value={debtorQuery}
+                onChange={(e) => setDebtorQuery(e.target.value)}
+                placeholder="חיפוש לפי שם או טלפון..."
+              />
+              <div className="space-y-1.5">
+                {filteredDebtors.map((debtor) => (
+                  <OptionRow
+                    key={debtor.customer_id}
+                    label={debtor.customer_name}
+                    sub={`${debtor.customer_phone ? `${debtor.customer_phone} · ` : ""}${formatCurrency(debtor.outstanding_amount)}`}
+                    selected={customerId === debtor.customer_id}
+                    onClick={() => {
+                      void loadReceivables(debtor.customer_id);
+                      advanceTo("receivable");
                     }}
                   />
-
-                  <label className="space-y-2 text-right text-sm">
-                    <span className="font-medium">אסמכתא</span>
-                    <Input value={reference} onChange={(e) => setReference(e.target.value)} />
-                  </label>
-                </AdaptiveGrid>
-
-                {method === "check" ? (
-                  <CheckDetailsFields
-                    checkNumber={checkNumber}
-                    onCheckNumberChange={setCheckNumber}
-                    photoFiles={checkPhotoFiles}
-                    onPhotoFilesChange={setCheckPhotoFiles}
-                    disabled={submitting}
-                  />
+                ))}
+                {filteredDebtors.length === 0 ? (
+                  <div className="p-2 text-sm text-muted-foreground">לא נמצאו לקוחות לחיפוש הזה.</div>
                 ) : null}
-
-                <label className="space-y-2 text-right text-sm">
-                  <span className="font-medium">הערות</span>
-                  <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
-                </label>
-              </>
-            ) : null}
+              </div>
+            </>
+          )}
           </div>
-    </FormDialog>
+        </>
+      ) : stepId === "receivable" ? (
+        <>
+          <StepHeading title="על מה התשלום?" />
+          <div className="space-y-2">
+          {receivablesLoading ? (
+            <div className="flex items-center gap-2 rounded-xl border p-3 text-muted-foreground">
+              <SpinnerIcon className="h-4 w-4 animate-spin" />
+              <span>טוען חובות...</span>
+            </div>
+          ) : payableReceivables.length === 0 ? (
+            <div className="rounded-xl border bg-muted/30 p-3 text-muted-foreground">
+              אין ללקוח הזה חוב פתוח על הזמנה או פרויקט.
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {payableReceivables.map((receivable) => {
+                const selected = receivable.collection_key === sourceKey;
+                return (
+                  <div key={receivable.collection_key} className="space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => selectReceivable(receivable)}
+                      className={`w-full rounded-xl border px-3 py-2.5 text-right transition-all ${
+                        selected
+                          ? "border-primary/30 bg-primary/10"
+                          : "border-border bg-accent/30 hover:bg-accent"
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <span className="font-medium">{receivableTitle(receivable)}</span>
+                        <span className="font-semibold">{formatCurrency(receivable.outstanding_amount)}</span>
+                      </div>
+                      <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                        <span>{receivable.source_type === "project" ? "פרויקט" : "הזמנה"}</span>
+                        {receivable.due_date || receivable.next_due_date ? (
+                          <span>לתשלום עד {receivable.due_date ?? receivable.next_due_date}</span>
+                        ) : null}
+                        {receivable.days_late > 0 ? (
+                          <span className="text-destructive">{receivable.days_late} ימי פיגור</span>
+                        ) : null}
+                      </div>
+                    </button>
+
+                    {/* Pending rows (uncleared check / future transfer) — the
+                        money already has a row, so clear it instead of creating
+                        a duplicate payment. */}
+                    {selected && receivable.pending_payments.length > 0
+                      ? receivable.pending_payments.map((pending) => (
+                          <div
+                            key={pending.id}
+                            className="me-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed bg-background px-3 py-2 text-xs"
+                          >
+                            <span>
+                              ממתין: {formatCurrency(pending.amount)}
+                              {pending.check_number ? ` · צ'ק ${pending.check_number}` : ""}
+                              {pending.due_date ? ` · לפירעון ${pending.due_date}` : ""}
+                            </span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              className="h-7 text-xs"
+                              disabled={clearingId !== null}
+                              onClick={() => void markPendingCollected(pending.id)}
+                            >
+                              {clearingId === pending.id ? "מסמן..." : "סמן כנגבה"}
+                            </Button>
+                          </div>
+                        ))
+                      : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {loanReceivables.length > 0 ? (
+            <p className="text-xs text-muted-foreground">
+              ללקוח יש גם הלוואה פתוחה — החזרי הלוואה נרשמים בעמוד ההלוואות (ריבית וקרן בנפרד).
+            </p>
+          ) : null}
+          </div>
+        </>
+      ) : stepId === "amount" ? (
+        <>
+          <StepHeading title="כמה התקבל?" />
+          <label className="space-y-2 text-sm">
+          <CurrencyInput value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
+          {selectedReceivable ? (
+            <span className="block text-[11px] text-muted-foreground">
+              החוב הפתוח: {formatCurrency(selectedReceivable.outstanding_amount)}
+            </span>
+          ) : null}
+          </label>
+        </>
+      ) : stepId === "method" ? (
+        <>
+          <StepHeading title="איך שולם?" />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {PAYMENT_METHOD_OPTIONS.map((option) => (
+            <OptionRow
+              key={option.value}
+              label={option.label}
+              selected={method === option.value}
+              onClick={() => pickMethod(option.value)}
+            />
+          ))}
+          </div>
+        </>
+      ) : stepId === "account" ? (
+        <>
+          <StepHeading title="לאיזה חשבון?" />
+          <div className="grid gap-2">
+          {accountsList.map((a) => (
+            <OptionRow
+              key={a.id}
+              icon={accountKindIcon(a.kind)}
+              label={a.name}
+              sub={getAccountKindLabel(a.kind)}
+              selected={accountId === a.id}
+              onClick={() => {
+                setAccountId(a.id);
+                advanceTo("date");
+              }}
+            />
+          ))}
+          </div>
+        </>
+      ) : stepId === "date" ? (
+        <>
+          <StepHeading title="מתי התקבל התשלום?" />
+          <div>
+          <label className="space-y-2 text-sm">
+            <DateInput value={date} onChange={(e) => setDate(e.target.value)} />
+          </label>
+          <DateQuickPicks
+            onPick={(d) => {
+              setDate(d);
+              advanceTo(stepIds[stepIndex("date") + 1]);
+            }}
+          />
+          </div>
+        </>
+      ) : stepId === "check" ? (
+        <>
+          <StepHeading title="פרטי הצ'ק" sub="לא חובה" />
+          <CheckDetailsFields
+            checkNumber={checkNumber}
+            onCheckNumberChange={setCheckNumber}
+            photoFiles={checkPhotoFiles}
+            onPhotoFilesChange={setCheckPhotoFiles}
+            disabled={submitting}
+          />
+        </>
+      ) : stepId === "reference" ? (
+        <>
+          <StepHeading title="מספר אסמכתא?" sub="לא חובה" />
+          <label className="space-y-2 text-sm">
+          <Input value={reference} onChange={(e) => setReference(e.target.value)} autoFocus />
+          </label>
+        </>
+      ) : stepId === "notes" ? (
+        <>
+          <StepHeading title="הערות פנימיות?" sub="לא חובה" />
+          <label className="space-y-2 text-sm">
+          <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} autoFocus />
+          </label>
+        </>
+      ) : (
+        <>
+          <StepHeading title="לאשר ולשמור?" />
+          <SummarySection title="פרטי התשלום">
+            <SummaryRow label="לקוח" value={debtorName} />
+            {selectedReceivable ? <SummaryRow label="חוב" value={receivableTitle(selectedReceivable)} /> : null}
+            <SummaryRow label="סכום" value={formatCurrency(Number(amount) || 0)} />
+            <SummaryRow label="אמצעי תשלום" value={summaryMethodLabel} />
+            <SummaryRow label="חשבון" value={summaryAccountName} />
+            <SummaryRow label="תאריך" value={date} />
+            {method === "check" && checkNumber.trim() ? <SummaryRow label="מספר צ'ק" value={checkNumber} /> : null}
+            {reference.trim() ? <SummaryRow label="אסמכתא" value={reference} /> : null}
+            {notes.trim() ? <SummaryRow label="הערות" value={notes} /> : null}
+          </SummarySection>
+        </>
+      )}
+    </StepWizardDialog>
   );
 }
 

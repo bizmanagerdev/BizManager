@@ -7,7 +7,19 @@ import { omitUnknownPlace } from "@/lib/ui/cities";
 // components/ui/step-wizard.tsx and components/ui/summary.tsx, shared with the
 // customer and project wizards.
 
-export type Step = 1 | 2 | 3 | 4;
+export type Step =
+  | "customer"
+  | "items"
+  | "invoice"
+  | "collection"
+  | "paymentTerms"
+  | "dueDate"
+  | "payments"
+  | "orderDate"
+  | "orderStatus"
+  | "deliveryDate"
+  | "notes"
+  | "summary";
 
 export type CustomerOption = {
   id: string;
@@ -111,12 +123,20 @@ export const ORDER_STATUS_OPTIONS = [
   { value: "cancelled", label: "בוטל" },
 ] as const;
 
-export const WIZARD_STEPS: { n: Step; label: string }[] = [
-  { n: 1, label: "לקוח" },
-  { n: 2, label: "מוצרים" },
-  { n: 3, label: "תשלום ופרטים" },
-  { n: 4, label: "סיכום" },
-];
+export const STEP_LABEL: Record<Step, string> = {
+  customer: "לקוח",
+  items: "מוצרים",
+  invoice: "חשבונית",
+  collection: "גבייה",
+  paymentTerms: "תשלום",
+  dueDate: "פירעון",
+  payments: "תשלומים",
+  orderDate: "תאריך",
+  orderStatus: "סטטוס",
+  deliveryDate: "אספקה",
+  notes: "הערות",
+  summary: "סיכום",
+};
 
 export function termsLabel(value: string) {
   return PAYMENT_TERMS_OPTIONS.find((option) => option.value === value)?.label ?? value;

@@ -10,7 +10,7 @@
 // content, and what "next" means. Anything visual that a wizard wants to differ
 // on is a prop here, never a re-implementation in the wizard.
 
-import { Fragment, type ReactNode, type Ref } from "react";
+import { Fragment, useRef, type ReactNode, type Ref } from "react";
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,17 +21,138 @@ import {
 } from "@/components/ui/dialog";
 import {
   DIALOG_CHROME_CONTENT,
+  DIALOG_CHROME_CONTENT_PAGE,
   DialogChromeBody,
   DialogChromeFooter,
   DialogChromeHeader,
+  useSwipeToDismiss,
 } from "@/components/ui/dialog-chrome";
-import { AdaptiveDialog, dialogVariants } from "@/components/layout/page-layout";
+import { AdaptiveDialog, AdaptivePageDialog, dialogVariants } from "@/components/layout/page-layout";
 import { cn } from "@/lib/utils";
 
-export type WizardStepDef<TStep extends number = number> = {
+export type WizardStepDef<TStep extends string | number = number> = {
   n: TStep;
   label: string;
 };
+
+/**
+ * The step-navigation LOGIC every atomic wizard in the app was hand-rolling
+ * separately: whether a given step can be jumped to (every step before it
+ * must already be satisfied), and back/next/direct-jump movement. Eleven
+ * dialogs (Income, CollectPayment, Expense, AccountTransfer, UploadDocument,
+ * ReminderForm, WorkerPayment, SessionEditor, CreateCustomer, NewProject,
+ * NewOrder) each carried their own copy of this exact same ~7-function shape
+ * — same names, same logic, found only by literally reading all eleven side
+ * by side. Extracted here so a fix (like the `advanceTo` vs. `goToStep`
+ * gating subtlety below) only has to happen once.
+ *
+ * Deliberately does NOT own the `stepId` state itself (an earlier version
+ * did, via its own `useState`) — some wizards read the current step to derive
+ * an EXTRA gate (e.g. "an inline sub-form is open, block jumping forward"),
+ * and that gate is usually computed before this hook would otherwise be
+ * called; a hook that owns its own state can't have an input depend on its
+ * own output. Caller keeps its own `useState<TStep>`, positioned wherever
+ * that wizard already needs it (some need it declared very early, before
+ * `steps`/`isSatisfied` are even computable) — this hook is just the
+ * behavior layer on top.
+ *
+ * `steps` is expected to be a dynamically-computed array (most wizards' step
+ * lists depend on runtime choices — a domain, a payment method, a project
+ * type) — pass the caller's own `useMemo`'d array; this hook doesn't memoize
+ * it itself, just reads whatever was passed on the latest render.
+ */
+export function useStepFlow<TStep extends string>({
+  stepId,
+  setStepId,
+  steps,
+  isSatisfied,
+}: {
+  stepId: TStep;
+  setStepId: (id: TStep) => void;
+  /** The current step order — recompute with your own useMemo when it can change. */
+  steps: TStep[];
+  /** Whether a step's own requirement is met. Gates every step AFTER it, not itself. */
+  isSatisfied: (step: TStep) => boolean;
+}) {
+  const stepIndex = (id: TStep) => steps.indexOf(id);
+  const isLastStep = steps.length > 0 && stepId === steps[steps.length - 1];
+
+  function stepUnlocked(id: TStep) {
+    const idx = stepIndex(id);
+    for (let i = 0; i < idx; i++) {
+      if (!isSatisfied(steps[i])) return false;
+    }
+    return true;
+  }
+  function canClickStep(id: TStep) {
+    return stepIndex(id) <= stepIndex(stepId) || stepUnlocked(id);
+  }
+  function goToStep(id: TStep) {
+    if (!stepUnlocked(id)) return;
+    setStepId(id);
+  }
+  // Tapping an option card advances directly — no re-validation through the
+  // gate below, since the tap itself is what makes the target reachable (and
+  // `steps` may not have caught up yet: it can depend on state a `set...` call
+  // in the SAME handler hasn't applied until the next render).
+  function advanceTo(id: TStep) {
+    setStepId(id);
+  }
+  function goBack() {
+    const prev = steps[stepIndex(stepId) - 1];
+    if (prev) setStepId(prev);
+  }
+  function goNext() {
+    const next = steps[stepIndex(stepId) + 1];
+    if (next) goToStep(next);
+  }
+
+  return {
+    stepIndex,
+    isLastStep,
+    stepUnlocked,
+    canClickStep,
+    goToStep,
+    goBack,
+    goNext,
+    advanceTo,
+  };
+}
+
+/**
+ * A wizard's visible title, centered against the WHOLE header — not just
+ * within its own slot, which is narrower than the header by the close X's
+ * width (X + divider + gaps, ≈44px). Centering plain text there alone would
+ * sit it visibly off-center toward the start. The single start-side spacer
+ * below is sized to roughly match that, re-balancing it — approximate, not
+ * pixel-exact, but reads as centered next to the X (user request, 2026-08-25:
+ * "center the title like the x"). Shared by every StepWizard-family title:
+ * StepWizardDialog, NewOrderClient, NewProjectClient, ExpenseDialog's express
+ * header — "they need to all be the same" (same request).
+ */
+export function WizardTitle({
+  title,
+  description,
+  kicker,
+}: {
+  title: string;
+  /** Screen-reader only — the steps already say what the wizard does. */
+  description: string;
+  kicker?: string;
+}) {
+  return (
+    <DialogHeader className="space-y-0.5">
+      <div className="flex items-center gap-2">
+        <div className="w-11 shrink-0" aria-hidden />
+        <div className="min-w-0 flex-1 text-center">
+          {kicker ? <div className="text-xs font-medium text-muted-foreground">{kicker}</div> : null}
+          <DialogTitle className="truncate text-base font-semibold">{title}</DialogTitle>
+        </div>
+      </div>
+      <DialogDescription className="sr-only">{description}</DialogDescription>
+    </DialogHeader>
+  );
+}
 
 /**
  * Numbered steps with labels, connected by a track. RTL-aware (flex flows with
@@ -40,8 +161,14 @@ export type WizardStepDef<TStep extends number = number> = {
  * Deliberately one-tone: the current step is an outlined navy circle, passed
  * steps are filled navy with a check, and the track behind them turns navy. A
  * second colour for "done" read as a status badge rather than as progress.
+ *
+ * Position-based, not value-based: `done`/the circle's number both come from
+ * the step's INDEX in `steps`, not from comparing `s.n` to `current` — a step
+ * list built from string IDs (e.g. IncomeDialog's domain-dependent flow) has
+ * no ordering to compare with `<`, and even a numbered wizard is really asking
+ * "is this step behind where I am", which is a position question.
  */
-export function WizardStepper<TStep extends number>({
+export function WizardStepper<TStep extends string | number>({
   steps,
   current,
   canClick,
@@ -54,10 +181,17 @@ export function WizardStepper<TStep extends number>({
   onStepClick: (n: TStep) => void;
   className?: string;
 }) {
+  const currentIndex = steps.findIndex((s) => s.n === current);
   return (
-    <div className={cn("flex w-full min-w-0 items-start", className)}>
+    // overflow-x-auto: IncomeDialog/CollectPaymentDialog can run to a dozen-plus
+    // steps now that they're fully one-question-per-stage, and that many labels
+    // never fits a phone width — it needs to scroll INSIDE the stepper, not push
+    // the whole page sideways (same overflow-x-auto/overflow-y-hidden pairing
+    // the underline tabs use, for the same stray-vertical-scrollbar reason).
+    // No-op for a short (≤4 step) wizard like order/project/customer.
+    <div className={cn("flex w-full min-w-0 items-start overflow-x-auto overflow-y-hidden", className)}>
       {steps.map((s, i) => {
-        const done = s.n < current;
+        const done = currentIndex >= 0 && i < currentIndex;
         const active = s.n === current;
         const clickable = canClick(s.n);
         return (
@@ -69,14 +203,14 @@ export function WizardStepper<TStep extends number>({
                 disabled={!clickable}
                 onClick={() => clickable && onStepClick(s.n)}
                 className={cn(
-                  "flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-semibold transition-colors",
+                  "flex h-5 w-5 items-center justify-center rounded-full border-2 text-[10px] font-semibold transition-colors",
                   active && "border-primary text-primary",
                   done && "border-primary bg-primary text-primary-foreground",
                   !active && !done && "border-border text-muted-foreground",
                   clickable && !active ? "cursor-pointer hover:border-primary/60" : "cursor-default"
                 )}
               >
-                {done ? <CheckIcon className="h-3.5 w-3.5" /> : s.n}
+                {done ? <CheckIcon className="h-2.5 w-2.5" /> : i + 1}
               </button>
               <div
                 className={cn(
@@ -91,7 +225,10 @@ export function WizardStepper<TStep extends number>({
             {i < steps.length - 1 ? (
               <div
                 className={cn(
-                  "mx-0.5 mt-[14px] h-0.5 min-w-0 flex-1 rounded-full sm:mx-2",
+                  // min-w-3 (not min-w-0): a floor so the track actually forces
+                  // the row to overflow (and scroll) once there are enough steps,
+                  // instead of flex-shrinking every track down to nothing first.
+                  "mx-0.5 mt-[9px] h-0.5 min-w-3 flex-1 rounded-full sm:mx-2",
                   done ? "bg-primary" : "bg-border"
                 )}
               />
@@ -103,7 +240,7 @@ export function WizardStepper<TStep extends number>({
   );
 }
 
-export type StepWizardProps<TStep extends number> = {
+export type StepWizardProps<TStep extends string | number> = {
   /**
    * "dialog" — a fixed-height column inside a dialog: pinned bars, scrolling
    * middle. "page" — a standalone page: the step bar is a sticky card, the
@@ -128,6 +265,8 @@ export type StepWizardProps<TStep extends number> = {
   onClose?: () => void;
   closeDisabled?: boolean;
   closeLabel?: string;
+  /** A full-page mobile dialog's swipe-down affordance bar, in dialog mode only. */
+  grabber?: boolean;
 
   /** Omit on the first step — the back button then disappears. */
   onBack?: () => void;
@@ -167,7 +306,7 @@ export type StepWizardProps<TStep extends number> = {
   children: ReactNode;
 };
 
-export function StepWizard<TStep extends number>({
+export function StepWizard<TStep extends string | number>({
   variant = "dialog",
   steps,
   current,
@@ -178,6 +317,7 @@ export function StepWizard<TStep extends number>({
   onClose,
   closeDisabled = false,
   closeLabel = "סגירה",
+  grabber = false,
   onBack,
   backLabel = "חזרה",
   backDisabled = false,
@@ -226,15 +366,23 @@ export function StepWizard<TStep extends number>({
           onStepClick={onStepClick}
         />
       ) : (
-        <div className="space-y-1.5">
-          <div className="text-xs font-medium text-muted-foreground">
-            שלב {stepNumber} מתוך {steps.length}
-          </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-primary transition-all"
-              style={{ width: `${(stepNumber / steps.length) * 100}%` }}
-            />
+        // Same w-11 start-spacer as WizardTitle, and for the same reason: this
+        // sits in the header's flex-1 slot, which is narrower than the full
+        // header by the close X's footprint — centering text/bar plainly inside
+        // it lands visibly off-true-center. The title compensates for itself;
+        // this block is separate JSX and needs its own copy of the same fix.
+        <div className="flex items-center gap-2">
+          <div className="w-11 shrink-0" aria-hidden />
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <div className="text-center text-xs font-medium text-muted-foreground">
+              שלב {stepNumber} מתוך {steps.length}
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary transition-all"
+                style={{ width: `${(stepNumber / steps.length) * 100}%` }}
+              />
+            </div>
           </div>
         </div>
       )}
@@ -242,7 +390,12 @@ export function StepWizard<TStep extends number>({
   );
 
   const header = inDialog ? (
-    <DialogChromeHeader onClose={onClose} closeDisabled={closeDisabled} closeLabel={closeLabel}>
+    <DialogChromeHeader
+      onClose={onClose}
+      closeDisabled={closeDisabled}
+      closeLabel={closeLabel}
+      grabber={grabber}
+    >
       {headerContent}
     </DialogChromeHeader>
   ) : (
@@ -288,7 +441,10 @@ export function StepWizard<TStep extends number>({
 
         {showStepCounter ? (
           <span className="hidden whitespace-nowrap text-xs text-muted-foreground sm:inline">
-            שלב {current} מתוך {steps.length}
+            {/* stepNumber (position), not `current` — current can be a string
+                id (IncomeDialog/CollectPaymentDialog/ExpenseDialog's express
+                mode), which would print literally ("שלב amount מתוך 13"). */}
+            שלב {stepNumber} מתוך {steps.length}
           </span>
         ) : null}
 
@@ -352,13 +508,14 @@ export function StepWizard<TStep extends number>({
  * Wizards that are already hosted in a caller's dialog (order, project) render
  * <StepWizard> directly instead.
  */
-export function StepWizardDialog<TStep extends number>({
+export function StepWizardDialog<TStep extends string | number>({
   open,
   onOpenChange,
   size = "formLg",
   dialogTitle,
   dialogDescription,
   kicker,
+  fullScreen = false,
   ...wizard
 }: Omit<StepWizardProps<TStep>, "variant" | "title" | "onClose"> & {
   open: boolean;
@@ -369,32 +526,48 @@ export function StepWizardDialog<TStep extends number>({
   dialogDescription: string;
   /** Small muted line above the title ("לקוחות"), if the flow wants one. */
   kicker?: string;
+  /** Render as a full mobile page (swipe down or X to close) instead of a
+   *  centered box — desktop is unchanged either way. Same mechanism as
+   *  FormDialog's `fullScreen`. */
+  fullScreen?: boolean;
 }) {
+  // No current caller passes its own `bodyRef` through StepWizardDialog (only
+  // direct <StepWizard> use does, e.g. NewProjectClient), so this one just
+  // wins outright when fullScreen is on — nothing to merge.
+  const dragBodyRef = useRef<HTMLDivElement>(null);
+  const swipeProps = useSwipeToDismiss({
+    enabled: fullScreen,
+    bodyRef: dragBodyRef,
+    onDismiss: () => onOpenChange(false),
+  });
+
+  const stepWizard = (
+    <StepWizard
+      {...wizard}
+      bodyRef={fullScreen ? dragBodyRef : wizard.bodyRef}
+      grabber={fullScreen}
+      onClose={() => onOpenChange(false)}
+      title={<WizardTitle title={dialogTitle} description={dialogDescription} kicker={kicker} />}
+    />
+  );
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* hideClose: the wizard's own X is the single way out. */}
-      <AdaptiveDialog
-        size={size}
-        hideClose
-        className={DIALOG_CHROME_CONTENT}
-      >
-        <StepWizard
-          {...wizard}
-          onClose={() => onOpenChange(false)}
-          title={
-            // sr-only: the stepper below already names where you are, so a
-            // visible title said it twice and cost a row. Radix still needs the
-            // title/description for screen readers.
-            <DialogHeader className="sr-only space-y-1 text-start">
-              {kicker ? (
-                <div className="text-xs font-medium text-muted-foreground">{kicker}</div>
-              ) : null}
-              <DialogTitle>{dialogTitle}</DialogTitle>
-              <DialogDescription>{dialogDescription}</DialogDescription>
-            </DialogHeader>
-          }
-        />
-      </AdaptiveDialog>
+      {fullScreen ? (
+        <AdaptivePageDialog
+          size={size}
+          hideClose
+          className={DIALOG_CHROME_CONTENT_PAGE}
+          {...swipeProps}
+        >
+          {stepWizard}
+        </AdaptivePageDialog>
+      ) : (
+        <AdaptiveDialog size={size} hideClose className={DIALOG_CHROME_CONTENT}>
+          {stepWizard}
+        </AdaptiveDialog>
+      )}
     </Dialog>
   );
 }

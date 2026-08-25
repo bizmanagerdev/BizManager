@@ -1,16 +1,18 @@
 "use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { EditButton } from "@/components/ui/icon-button";
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  FullScreenDialogContent,
 } from "@/components/ui/dialog";
+import { DIALOG_CHROME_CONTENT_PAGE, useSwipeToDismiss } from "@/components/ui/dialog-chrome";
+import { cn } from "@/lib/utils";
 import LoadingDots from "@/app/(app)/sales/orders/LoadingDots";
 import NewOrderClient from "@/app/(app)/sales/orders/new/NewOrderClient";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
@@ -84,6 +86,12 @@ export default function OrderEditDialog({
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<EditPayload | null>(null);
   const shouldUseConfirmDialog = allowOrderStatusEdit || initialStatusOverride === "delivered";
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const swipeProps = useSwipeToDismiss({
+    enabled: true,
+    bodyRef,
+    onDismiss: () => setOpen(false),
+  });
 
   useEffect(() => {
     if (shouldUseConfirmDialog) return;
@@ -128,15 +136,23 @@ export default function OrderEditDialog({
       {/* Once the wizard is up it owns the frame: pinned step bar (with its own
           close button, hence hideClose), scrolling middle, pinned action bar.
           While loading there's no wizard yet, so the dialog keeps its own X. */}
-      <DialogContent
+      <FullScreenDialogContent
         hideClose={Boolean(data)}
-        className="flex max-h-[92svh] w-[calc(100%-1rem)] max-w-5xl flex-col gap-0 overflow-y-hidden p-0 sm:p-0"
+        className={cn(DIALOG_CHROME_CONTENT_PAGE, "sm:max-w-5xl")}
+        {...swipeProps}
       >
-        {/* Visible only before the wizard mounts — it renders its own step heading. */}
-        <DialogHeader className={data ? "sr-only" : "p-4 pb-0 sm:p-6 sm:pb-0"}>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
+        {/* Visible only before the wizard mounts — once it does, it renders its
+            own visible step heading (see NewOrderClient's dialogTitle prop
+            below), so this header would just duplicate it. */}
+        {!data ? (
+          <>
+            <div className="mx-auto -mt-1 mb-1 h-1 w-10 shrink-0 rounded-full bg-muted-foreground/30 sm:hidden" aria-hidden />
+            <DialogHeader className="p-4 pb-0 sm:p-6 sm:pb-0">
+              <DialogTitle>{title}</DialogTitle>
+              <DialogDescription>{description}</DialogDescription>
+            </DialogHeader>
+          </>
+        ) : null}
 
         {loading ? (
           <div className="p-4 sm:p-6">
@@ -160,6 +176,9 @@ export default function OrderEditDialog({
             initialStatusOverride={initialStatusOverride}
             allowOrderStatusEdit={allowOrderStatusEdit}
             embedded
+            bodyRef={bodyRef}
+            dialogTitle={title}
+            dialogDescription={description}
             onCancel={() => setOpen(false)}
             onSubmitted={() => {
               setOpen(false);
@@ -167,7 +186,7 @@ export default function OrderEditDialog({
             }}
           />
         ) : null}
-      </DialogContent>
+      </FullScreenDialogContent>
     </Dialog>
   );
 }
