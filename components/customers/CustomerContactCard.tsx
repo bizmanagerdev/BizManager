@@ -2,7 +2,7 @@ import * as React from "react";
 import Link from "next/link";
 import { UserIcon, WazeIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
-import { ContactLink } from "@/components/ui/contact-link";
+import { ContactTapZone } from "@/components/ui/contact-link";
 import { AddressLink } from "@/components/ui/address-link";
 import { StatActionCard } from "@/components/ui/stat-action-card";
 
@@ -67,9 +67,14 @@ export function CustomerContactCard({
     details.push({
       label: "טלפון",
       value: (
-        <ContactLink kind="tel" value={phone} className="hover:text-secondary hover:underline">
+        // A <div> (ContactTapZone), not an <a href="tel:…"> — a real tel: link
+        // claims the long-press gesture for the browser's own menu, which
+        // doesn't surface a copy option everywhere this app runs. Plain text
+        // long-presses into normal selection instead; tapping still calls
+        // (mobile) or copies (desktop) via the same click handler either way.
+        <ContactTapZone kind="tel" value={phone} className="inline-block hover:text-secondary hover:underline">
           <span dir="ltr">{phone}</span>
-        </ContactLink>
+        </ContactTapZone>
       ),
     });
   }
@@ -95,11 +100,11 @@ export function CustomerContactCard({
     details.push({
       label: "אימייל",
       value: (
-        <ContactLink kind="mailto" value={email} className="hover:text-secondary hover:underline">
+        <ContactTapZone kind="mailto" value={email} className="inline-block hover:text-secondary hover:underline">
           <span dir="ltr" className="break-all">
             {email}
           </span>
-        </ContactLink>
+        </ContactTapZone>
       ),
     });
   }
