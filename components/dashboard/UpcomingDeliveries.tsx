@@ -8,7 +8,7 @@ import DashboardCardHeader from "@/components/dashboard/DashboardCardHeader";
 import DashboardCardFooter from "@/components/dashboard/DashboardCardFooter";
 import Sparkline from "@/components/charts/Sparkline";
 import QuietCard from "@/components/dashboard/QuietCard";
-import { ContactLink } from "@/components/ui/contact-link";
+import { ContactTapZone } from "@/components/ui/contact-link";
 import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import PickingListDialog from "@/app/(app)/sales/PickingListDialog";
@@ -152,16 +152,26 @@ export default function UpcomingDeliveries({
                       {delivery.customerPhone ? (
                         <>
                           {" · "}
-                          {/* A real tel: link, not plain text — long-press on a
-                              phone gives the native copy menu (and a desktop
-                              click copies it), same as everywhere else phone
-                              numbers show up in the app. */}
-                          <ContactLink
-                            kind="tel"
-                            value={delivery.customerPhone}
-                            dir="ltr"
-                            className="inline-block tabular-nums hover:underline"
-                          />
+                          {/* A <div>, not an <a href="tel:…"> — an actual tel:
+                              link claims long-press for the browser's OWN menu,
+                              which on this row wasn't surfacing a copy option at
+                              all. Plain text long-presses into normal selection
+                              instead (same as the name beside it), and tapping
+                              still calls/copies via JS. The wrapping span stops
+                              that tap/Enter from also bubbling into the row's
+                              own navigate handler — ContactTapZone doesn't take
+                              an onClick override of its own to do this itself. */}
+                          <span
+                            className="inline-block"
+                            onClick={(event) => event.stopPropagation()}
+                            onKeyDown={(event) => event.stopPropagation()}
+                          >
+                            <ContactTapZone kind="tel" value={delivery.customerPhone} className="inline-block">
+                              <span dir="ltr" className="tabular-nums">
+                                {delivery.customerPhone}
+                              </span>
+                            </ContactTapZone>
+                          </span>
                         </>
                       ) : null}
                     </div>
