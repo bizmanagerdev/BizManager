@@ -166,16 +166,30 @@ function ChangeStack({ item, side }: { item: AuditFeedItem; side: "before" | "af
 
 // Renders a details string so it wraps at spaces only — each token (a date like
 // "2026-09-09", a "₪680" amount, the "→" arrow) stays whole and never splits
-// across two rows. The line still wraps between tokens when it's too long.
+// across two rows. The line still wraps between tokens when it's too long —
+// the card has no fixed height, so wrapping just makes it a line taller; the
+// card growing to fit is the point, not a compromise.
+// The trailing space used to be rendered INSIDE the nowrap span together with
+// the token, which made the space itself non-breaking too — with no break
+// opportunity left ANYWHERE (nowrap suppresses it at the space, and there's no
+// space between two adjacent spans), the whole line became one solid
+// unbreakable run and just ran off the card's edge instead of wrapping between
+// words. Fixed by moving the space OUTSIDE the span, as a plain sibling text
+// node the (non-nowrap) container is free to break at, same as normal text.
+// EXCEPTION: a token longer than a card is ever going to be (a UUID-based file
+// name, a long code with no spaces) has no space to break at in the first
+// place — past a length threshold it falls back to break-words so it wraps
+// inside itself as a last resort instead of overflowing.
+const NOWRAP_TOKEN_MAX = 28;
 function DetailsText({ text, className }: { text: string; className: string }) {
   const tokens = text.split(" ");
   return (
     <div className={className}>
       {tokens.map((tok, i) => (
-        <span key={i} className="whitespace-nowrap">
-          {tok}
+        <Fragment key={i}>
+          <span className={tok.length > NOWRAP_TOKEN_MAX ? "break-words" : "whitespace-nowrap"}>{tok}</span>
           {i < tokens.length - 1 ? " " : ""}
-        </span>
+        </Fragment>
       ))}
     </div>
   );

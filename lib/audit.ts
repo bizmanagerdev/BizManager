@@ -120,6 +120,19 @@ export function entityLabel(tableName: string) {
     case "inquiries": return "פנייה";
     case "recurring_expense_templates": return "הוצאה קבועה";
     case "recurring_task_templates": return "משימה קבועה";
+    case "recurring_task_template_assignees": return "משתתף במשימה קבועה";
+    case "phone_attendance_reports": return "דיווח נוכחות טלפוני";
+    case "worker_absences": return "יום חופש";
+    case "payslip_items": return "רכיב תלוש";
+    case "property_expenses": return "הוצאת נכס";
+    case "lease_agreements": return "הסכם שכירות";
+    case "payment_promises": return "הבטחת תשלום";
+    case "hourly_salary_overrides": return "התאמת שכר שעתי";
+    case "dunning_stages": return "שלב תזכורת גבייה";
+    // Denylisted from auditing going forward (see migration
+    // 20260825120000_close_audit_coverage_drift.sql) — kept here only so any
+    // rows already logged before that don't read in raw English.
+    case "notifications": return "התראה";
     case "communications": return "תקשורת";
     case "communication_logs": return "תקשורת";
     case "task_comments": return "תגובה";
@@ -206,7 +219,20 @@ export function buildDetails(tableName: string, newData: AuditLogValue): string 
   const parts: string[] = [];
 
   switch (tableName) {
-    case "payments":
+    // payments' amount column is amount_total (gross — see [[vat-tax-model]]:
+    // income is never netted), NOT `amount` — that name only exists on
+    // worker_payments/account_transfers below. This was silently reading a
+    // field that doesn't exist on this table, so every payment row showed no
+    // amount at all.
+    case "payments": {
+      const amt = money(d.amount_total);
+      if (amt) parts.push(amt);
+      const method = str(d.payment_method);
+      if (method) parts.push(STATUS_VALUE_LABELS[method] ?? method);
+      const note = str(d.notes);
+      if (note) parts.push(note);
+      break;
+    }
     case "worker_payments":
     // account_transfers only stores account IDs, so the feed shows the amount
     // and the note; which accounts is visible in the register itself.
@@ -240,6 +266,11 @@ export function buildDetails(tableName: string, newData: AuditLogValue): string 
       if (subj) parts.push(subj);
       break;
     }
+    case "recurring_task_templates": {
+      const subj = str(d.subject_template);
+      if (subj) parts.push(subj);
+      break;
+    }
     case "projects": {
       const name = str(d.name);
       if (name) parts.push(name);
@@ -248,13 +279,30 @@ export function buildDetails(tableName: string, newData: AuditLogValue): string 
     case "customers": {
       const name = str(d.full_name) ?? str(d.name);
       if (name) parts.push(name);
-      const phone = str(d.phone);
-      if (phone) parts.push(phone);
       break;
     }
     case "orders": {
       const amt = money(d.total_price) ?? money(d.total_amount);
       if (amt) parts.push(amt);
+      break;
+    }
+    case "loans": {
+      const direction = str(d.direction);
+      if (direction === "given") parts.push("הלוואה שניתנה");
+      else if (direction === "taken") parts.push("הלוואה שנלקחה");
+      const amt = money(d.amount);
+      if (amt) parts.push(amt);
+      const dueDate = str(d.due_date);
+      if (dueDate) parts.push(`לפירעון: ${formatShortDate(dueDate, dueDate)}`);
+      break;
+    }
+    case "loan_repayments": {
+      const amt = money(d.amount);
+      if (amt) parts.push(amt);
+      const interest = money(d.interest_amount);
+      if (interest) parts.push(`ריבית ${interest}`);
+      const dateStr = str(d.repayment_date);
+      if (dateStr) parts.push(formatShortDate(dateStr, dateStr));
       break;
     }
     case "attendance_sessions": {
@@ -272,6 +320,62 @@ export function buildDetails(tableName: string, newData: AuditLogValue): string 
           );
         }
       }
+      break;
+    }
+    case "phone_attendance_reports": {
+      const clockIn = str(d.clock_in);
+      if (clockIn) {
+        const date = new Date(clockIn);
+        if (!Number.isNaN(date.getTime())) {
+          parts.push(
+            date.toLocaleString("he-IL", {
+              day: "numeric",
+              month: "short",
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          );
+        }
+      }
+      const status = str(d.status);
+      if (status) parts.push(STATUS_VALUE_LABELS[status] ?? status);
+      break;
+    }
+    case "worker_absences": {
+      const dateStr = str(d.absence_date);
+      if (dateStr) parts.push(formatShortDate(dateStr, dateStr));
+      const type = str(d.absence_type);
+      if (type) parts.push(ABSENCE_TYPE_LABELS[type] ?? type);
+      break;
+    }
+    case "hourly_salary_overrides": {
+      const rate = money(d.override_hourly_rate);
+      if (rate) parts.push(`${rate}/שעה`);
+      const reason = str(d.reason);
+      if (reason) parts.push(reason);
+      break;
+    }
+    case "payment_promises": {
+      const amt = money(d.amount);
+      if (amt) parts.push(amt);
+      const dateStr = str(d.promised_date);
+      if (dateStr) parts.push(formatShortDate(dateStr, dateStr));
+      const status = str(d.status);
+      if (status) parts.push(STATUS_VALUE_LABELS[status] ?? status);
+      break;
+    }
+    case "lease_agreements": {
+      const rent = money(d.monthly_rent_amount);
+      if (rent) parts.push(`${rent}/חודש`);
+      const dateStr = str(d.start_date);
+      if (dateStr) parts.push(formatShortDate(dateStr, dateStr));
+      break;
+    }
+    case "dunning_stages": {
+      const label = str(d.label);
+      if (label) parts.push(label);
+      const offset = Number(d.day_offset);
+      if (Number.isFinite(offset)) parts.push(`יום ${offset} מהמועד`);
       break;
     }
     case "documents": {
@@ -352,6 +456,7 @@ const CHILD_TABLES = new Set([
   "document_links",
   "worker_payment_allocations",
   "project_expenses",
+  "recurring_task_template_assignees",
 ]);
 
 function recordData(
@@ -380,7 +485,9 @@ function hrefFromParentKey(parentKey: string | null): string | null {
     case "customer": return `/customers/${id}`;
     case "worker": return `/payroll/workers/${id}`;
     case "task": return `/tasks/${id}`;
+    case "recurring_task_template": return "/tasks/recurring";
     case "vehicle": return `/vehicles/${id}`;
+    case "property": return `/properties/${id}`;
     case "document": return buildFocusHref("/documents", id);
     case "expense": return buildFocusHref("/financial", `expense:${id}`);
     default: return null;
@@ -406,6 +513,11 @@ export function buildParentKey(
     case "order_items": {
       const o = fk("order_id");
       return o ? `order:${o}` : null;
+    }
+    case "recurring_task_templates": return `recurring_task_template:${recordId}`;
+    case "recurring_task_template_assignees": {
+      const t = fk("recurring_task_template_id");
+      return t ? `recurring_task_template:${t}` : null;
     }
     case "inventory_movements": {
       if (d?.source_type === "order") {
@@ -467,7 +579,8 @@ export function buildParentKey(
       const t = fk("task_id");
       return t ? `task:${t}` : null;
     }
-    case "expenses": {
+    case "expenses":
+    case "payment_promises": {
       const o = fk("order_id");
       if (o) return `order:${o}`;
       const p = fk("project_id");
@@ -475,6 +588,11 @@ export function buildParentKey(
       const c = fk("customer_id");
       if (c) return `customer:${c}`;
       return null;
+    }
+    case "lease_agreements":
+    case "property_expenses": {
+      const p = fk("property_id");
+      return p ? `property:${p}` : null;
     }
     // Shares the parent expense's parentKey (same project_id) so it folds under
     // the "הוצאה" row it was created alongside, the same way order_items fold
@@ -576,7 +694,19 @@ export function buildHref(
     case "salary_agreements":
     case "payroll_periods":
     case "payslips":
-    case "payslip_items": return "/payroll";
+    case "payslip_items":
+    case "worker_absences":
+    case "hourly_salary_overrides": return "/payroll";
+    case "phone_attendance_reports": return "/payroll/attendance";
+    case "recurring_task_templates":
+    case "recurring_task_template_assignees": return "/tasks/recurring";
+    case "payment_promises":
+    case "dunning_stages": return "/collections";
+    case "lease_agreements":
+    case "property_expenses": {
+      const p = fk("property_id");
+      return p ? `/properties/${p}` : "/properties";
+    }
     // No page of their own, but a row should never be a dead end — send it to
     // the screen that owns the record.
     case "tags": return "/vehicles";
@@ -730,9 +860,11 @@ export async function resolveAuditTitles(
 
   const customerIds = new Set<string>();
   const projectIds = new Set<string>();
+  const propertyIds = new Set<string>();
   const userIds = new Set<string>();
   const orderIds = new Set<string>(); // resolved one hop further → their customer
   const workerPaymentIds = new Set<string>(); // resolved one hop further → their worker
+  const loanIds = new Set<string>(); // resolved one hop further → their counterparty
 
   for (const r of rows) {
     const d = dataOf(r);
@@ -740,6 +872,31 @@ export async function resolveAuditTitles(
       case "orders": {
         const c = fk(d, "customer_id");
         if (c) customerIds.add(c);
+        break;
+      }
+      case "loans": {
+        const c = fk(d, "counterparty_customer_id");
+        if (c) customerIds.add(c);
+        break;
+      }
+      case "loan_repayments": {
+        const l = fk(d, "loan_id");
+        if (l) loanIds.add(l);
+        break;
+      }
+      case "payment_promises": {
+        const c = fk(d, "customer_id");
+        if (c) customerIds.add(c);
+        const p = fk(d, "project_id");
+        if (p) projectIds.add(p);
+        const o = fk(d, "order_id");
+        if (o) orderIds.add(o);
+        break;
+      }
+      case "lease_agreements":
+      case "property_expenses": {
+        const p = fk(d, "property_id");
+        if (p) propertyIds.add(p);
         break;
       }
       case "order_items": {
@@ -764,7 +921,10 @@ export async function resolveAuditTitles(
         break;
       }
       case "worker_payments":
-      case "attendance_sessions": {
+      case "attendance_sessions":
+      case "phone_attendance_reports":
+      case "worker_absences":
+      case "recurring_task_template_assignees": {
         const u = fk(d, "user_id");
         if (u) userIds.add(u);
         break;
@@ -808,6 +968,28 @@ export async function resolveAuditTitles(
     }
   }
 
+  // First hop: loan_repayments → its loan → who the loan is with (customer, or
+  // just the free-text lender/borrower field if it isn't linked to a customer).
+  const loanCounterparty = new Map<string, { customerId: string | null; text: string | null }>();
+  if (loanIds.size > 0) {
+    const { data } = await supabase
+      .from("loans")
+      .select("id,counterparty_customer_id,lender,borrower")
+      .in("id", Array.from(loanIds));
+    for (const row of (data ?? []) as {
+      id?: string;
+      counterparty_customer_id?: string;
+      lender?: string;
+      borrower?: string;
+    }[]) {
+      if (typeof row.id !== "string") continue;
+      const customerId = typeof row.counterparty_customer_id === "string" ? row.counterparty_customer_id : null;
+      if (customerId) customerIds.add(customerId);
+      const text = (row.lender || row.borrower || "").trim() || null;
+      loanCounterparty.set(row.id, { customerId, text });
+    }
+  }
+
   // First hop: worker_payment_allocations → its worker_payments row → the worker.
   const workerPaymentUser = new Map<string, string>();
   if (workerPaymentIds.size > 0) {
@@ -823,13 +1005,16 @@ export async function resolveAuditTitles(
     }
   }
 
-  const [customerRes, projectRes, userNames] = await Promise.all([
+  const [customerRes, projectRes, propertyRes, userNames] = await Promise.all([
     customerIds.size > 0
       ? supabase.from("customers").select("id,name").in("id", Array.from(customerIds))
       : Promise.resolve({ data: [] as NamedRow[] }),
     projectIds.size > 0
       ? supabase.from("projects").select("id,name").in("id", Array.from(projectIds))
       : Promise.resolve({ data: [] as NamedRow[] }),
+    propertyIds.size > 0
+      ? supabase.from("properties").select("id,name,address").in("id", Array.from(propertyIds))
+      : Promise.resolve({ data: [] as { id?: string; name?: string; address?: string }[] }),
     userIds.size > 0
       ? resolveUserDisplayNamesForValues(supabase, Array.from(userIds))
       : Promise.resolve({} as Record<string, string>),
@@ -846,6 +1031,12 @@ export async function resolveAuditTitles(
     if (typeof row.id === "string" && typeof row.name === "string" && row.name.trim()) {
       projectName.set(row.id, row.name.trim());
     }
+  }
+  const propertyName = new Map<string, string>();
+  for (const row of (propertyRes.data ?? []) as { id?: string; name?: string; address?: string }[]) {
+    if (typeof row.id !== "string") continue;
+    const label = (row.name ?? row.address ?? "").trim();
+    if (label) propertyName.set(row.id, label);
   }
 
   const customerOfOrder = (orderId: string | null) => {
@@ -867,6 +1058,9 @@ export async function resolveAuditTitles(
       case "tasks":
         title = inline(d, "subject") ?? inline(d, "title");
         break;
+      case "recurring_task_templates":
+        title = inline(d, "subject_template");
+        break;
       case "documents":
         title = inline(d, "file_name") ?? inline(d, "name");
         break;
@@ -876,6 +1070,20 @@ export async function resolveAuditTitles(
       case "orders": {
         const c = fk(d, "customer_id");
         title = c ? customerName.get(c) ?? null : null;
+        break;
+      }
+      case "loans": {
+        const c = fk(d, "counterparty_customer_id");
+        title = (c ? customerName.get(c) ?? null : null) ?? inline(d, "lender") ?? inline(d, "borrower");
+        break;
+      }
+      case "loan_repayments": {
+        const l = fk(d, "loan_id");
+        const counterparty = l ? loanCounterparty.get(l) : null;
+        title =
+          (counterparty?.customerId ? customerName.get(counterparty.customerId) ?? null : null) ??
+          counterparty?.text ??
+          null;
         break;
       }
       case "order_items":
@@ -898,7 +1106,10 @@ export async function resolveAuditTitles(
         break;
       }
       case "worker_payments":
-      case "attendance_sessions": {
+      case "attendance_sessions":
+      case "phone_attendance_reports":
+      case "worker_absences":
+      case "recurring_task_template_assignees": {
         const u = fk(d, "user_id");
         title = u ? userNames[u] ?? null : null;
         break;
@@ -913,6 +1124,23 @@ export async function resolveAuditTitles(
       case "project_expenses": {
         const p = fk(d, "project_id");
         title = p ? projectName.get(p) ?? null : null;
+        break;
+      }
+      case "payment_promises": {
+        const c = fk(d, "customer_id");
+        title =
+          (c ? customerName.get(c) ?? null : null) ??
+          customerOfOrder(fk(d, "order_id")) ??
+          (() => {
+            const p = fk(d, "project_id");
+            return p ? projectName.get(p) ?? null : null;
+          })();
+        break;
+      }
+      case "lease_agreements":
+      case "property_expenses": {
+        const p = fk(d, "property_id");
+        title = p ? propertyName.get(p) ?? null : null;
         break;
       }
     }
@@ -939,7 +1167,6 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
   payment_method: "אמצעי תשלום",
   name: "שם",
   full_name: "שם",
-  phone: "טלפון",
   email: "אימייל",
   subject: "נושא",
   title: "נושא",
@@ -974,7 +1201,7 @@ const STATUS_VALUE_LABELS: Record<string, string> = {
   delivered: "נמסר", shipped: "נשלח", collected: "נאסף", ready: "מוכן",
   processing: "בעיבוד", confirmed: "אושר", in_transit: "במשלוח",
   returned: "הוחזר", refunded: "זוכה", not_paid: "לא שולם",
-  approved: "אושר", rejected: "נדחה", sent: "נשלח", overdue: "באיחור",
+  approved: "אושר", rejected: "נדחה", sent: "נשלח", overdue: "באיחור", pending_review: "ממתין לאישור",
   issued: "הונפק", needs_invoice: "דורש חשבונית", scheduled: "מתוזמן",
   failed: "נכשל", success: "הצליח", contacted: "נוצר קשר", promised: "הובטח",
   // payment methods
@@ -983,6 +1210,11 @@ const STATUS_VALUE_LABELS: Record<string, string> = {
   bit: "ביט", paybox: "פייבוקס", other: "אחר",
   // booleans (needs_invoice, is_official, …)
   true: "כן", false: "לא",
+};
+
+const ABSENCE_TYPE_LABELS: Record<string, string> = {
+  day_off: "יום חופש", vacation: "חופשה", sick: "מחלה",
+  holiday: "חג", unpaid: "ללא תשלום", other: "אחר",
 };
 
 function formatChangeValue(field: string, value: AuditLogValue): string {
@@ -1721,6 +1953,11 @@ export const AUDIT_TABLE_OPTIONS = [
   { value: "documents", label: "מסמכים" },
   { value: "attendance_sessions", label: "שעות עבודה" },
   { value: "worker_payments", label: "תשלומי עובדים" },
+  { value: "phone_attendance_reports", label: "דיווחי נוכחות טלפוניים" },
+  { value: "worker_absences", label: "ימי חופש" },
+  { value: "recurring_task_templates", label: "משימות קבועות" },
+  { value: "payment_promises", label: "הבטחות תשלום" },
+  { value: "lease_agreements", label: "הסכמי שכירות" },
   { value: "users", label: "משתמשים" },
   { value: "auth", label: "כניסות למערכת" },
 ] as const;
@@ -1896,6 +2133,41 @@ export async function enrichDocumentLinks(supabase: SupabaseClient, items: Audit
       linkByDocument.set(l.document_id, { type: l.entity_type, id: l.entity_id });
     }
   }
+
+  // A deleted document's document_links row is gone too (ON DELETE CASCADE), so
+  // the live-table lookup above finds nothing for it — a deleted document would
+  // otherwise show only its bare file name with no "what was it attached to"
+  // context. The cascade delete still logged its OWN audit_logs row (old_data
+  // has the entity it pointed at) — recover the link from there.
+  const deletedDocIds = docItems
+    .filter((i) => (i.action === "delete" || i.action === "DELETE") && !linkByDocument.has(i.recordId))
+    .map((i) => i.recordId)
+    .filter((id) => /^[0-9a-f-]{36}$/i.test(id));
+  if (deletedDocIds.length > 0) {
+    const { data: histData } = await supabase
+      .from("audit_logs")
+      .select("old_data")
+      .eq("table_name", "document_links")
+      .in("action", ["delete", "DELETE"])
+      .in("old_data->>document_id", Array.from(new Set(deletedDocIds)))
+      .order("created_at", { ascending: false })
+      .range(0, 999);
+    for (const row of (histData ?? []) as { old_data?: Record<string, unknown> }[]) {
+      const od = row.old_data;
+      const docId = od?.document_id;
+      const entityType = od?.entity_type;
+      const entityId = od?.entity_id;
+      if (
+        typeof docId === "string" &&
+        typeof entityType === "string" &&
+        typeof entityId === "string" &&
+        !linkByDocument.has(docId)
+      ) {
+        linkByDocument.set(docId, { type: entityType, id: entityId });
+      }
+    }
+  }
+
   if (linkByDocument.size === 0) return;
 
   const customerIds = new Set<string>();
