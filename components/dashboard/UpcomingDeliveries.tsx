@@ -1,13 +1,18 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { DeliveryIcon, WarehouseIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
 import DashboardCardHeader from "@/components/dashboard/DashboardCardHeader";
 import DashboardCardFooter from "@/components/dashboard/DashboardCardFooter";
 import Sparkline from "@/components/charts/Sparkline";
 import QuietCard from "@/components/dashboard/QuietCard";
+import { ContactLink } from "@/components/ui/contact-link";
 import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import PickingListDialog from "@/app/(app)/sales/PickingListDialog";
+import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import type { DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
 
 /**
@@ -39,6 +44,8 @@ export default function UpcomingDeliveries({
   /** False for a worker: /sales is staff-only, so the row would dead-end. */
   canOpenOrder?: boolean;
 }) {
+  const router = useRouter();
+
   // Nothing open → one quiet line rather than a card that disappears. See
   // QuietCard for why an absent card is worse than an empty one.
   if (deliveries.length === 0) {
@@ -60,11 +67,12 @@ export default function UpcomingDeliveries({
     `${allHref}${allHref.includes("?") ? "&" : "?"}focus=${encodeURIComponent(id)}`;
 
   return (
-    // Two nested click targets, each an overlay link rather than a wrapper: the
-    // rows hold buttons, and a <button> inside an <a> isn't legal HTML. The card's
-    // link sits under `pointer-events-none` content; each row re-enables pointer
-    // events and lays its own link over its text, with the action buttons stacked
-    // above that link so they keep their own clicks.
+    // The card itself is one big overlay link (it sits under `pointer-events-none`
+    // content, and each row re-enables pointer events to opt back in). A row is
+    // NOT a second overlay link, though — that would sit on top of the customer
+    // name/phone and block native long-press-to-copy. Instead each row navigates
+    // via its own onClick/onKeyDown, skipping the interactive bits inside it
+    // (shouldIgnoreRowNavigation) — same pattern the deliveries queue itself uses.
     <Card className="relative flex h-full flex-col">
       <Link
         href={allHref}
@@ -84,8 +92,8 @@ export default function UpcomingDeliveries({
           }
           action={
             // Opens right here on the dashboard — not a navigation. The plain
-            // <button> below carries no handler of its own (this is a server
-            // component); PickingListDialog clones it and wires up the click.
+            // <button> below carries no handler of its own; PickingListDialog
+            // clones it and wires up the click.
             <PickingListDialog
               trigger={
                 // pointer-events-auto: the header otherwise sits inside the
@@ -110,16 +118,21 @@ export default function UpcomingDeliveries({
             {rows.map((delivery) => (
               <li
                 key={delivery.id}
-                className="pointer-events-auto relative px-4 py-3 transition-colors hover:bg-secondary/10"
+                role="link"
+                tabIndex={0}
+                aria-label={`פרטי המשלוח — ${delivery.customerName}`}
+                onClick={(event) => {
+                  if (shouldIgnoreRowNavigation(event.target)) return;
+                  router.push(hrefFor(delivery.id));
+                }}
+                onKeyDown={(event) => {
+                  if (shouldIgnoreRowNavigation(event.target)) return;
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  router.push(hrefFor(delivery.id));
+                }}
+                className="pointer-events-auto relative cursor-pointer px-4 py-3 transition-colors hover:bg-secondary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                {/* Covers the row. The text block below is deliberately NOT
-                    positioned, so this link paints over it and takes its clicks. */}
-                <Link
-                  href={hrefFor(delivery.id)}
-                  aria-label={`פרטי המשלוח — ${delivery.customerName}`}
-                  className="absolute inset-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                />
-
                 {/* items-center: the action reads as belonging to the whole row,
                     not to its first line. */}
                 <div className="flex items-center justify-between gap-3">
@@ -139,17 +152,23 @@ export default function UpcomingDeliveries({
                       {delivery.customerPhone ? (
                         <>
                           {" · "}
-                          <span dir="ltr" className="inline-block tabular-nums">
-                            {delivery.customerPhone}
-                          </span>
+                          {/* A real tel: link, not plain text — long-press on a
+                              phone gives the native copy menu (and a desktop
+                              click copies it), same as everywhere else phone
+                              numbers show up in the app. */}
+                          <ContactLink
+                            kind="tel"
+                            value={delivery.customerPhone}
+                            dir="ltr"
+                            className="inline-block tabular-nums hover:underline"
+                          />
                         </>
                       ) : null}
                     </div>
                   </div>
                   {/* Both actions ride in the corner the status badge used to
-                      occupy, on the customer's line. `relative` lifts them over
-                      the row link so their own clicks still land. */}
-                  <div className="relative flex shrink-0 items-center gap-1.5">
+                      occupy, on the customer's line. */}
+                  <div className="flex shrink-0 items-center gap-1.5">
                     {/* A bare glyph, no button plate — an icon-only control, which
                         is the one thing exempt from "every button gets a fill". */}
                     <DeliveryShareActions
