@@ -172,21 +172,23 @@ export default function PropertiesClient({ properties }: { properties: PropertyW
                   </div>
 
                   <div className="mt-auto grid grid-cols-3 gap-2 text-center text-sm">
-                    <div>
+                    <div className="min-w-0">
                       <div className="text-xs text-muted-foreground">הוצאות</div>
-                      <div className="font-semibold text-destructive">
+                      <div className="whitespace-nowrap text-xs font-semibold tabular-nums text-destructive">
                         {formatCurrency(p.rollup.paidExpenseAmount)}
                       </div>
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <div className="text-xs text-muted-foreground">הכנסות</div>
-                      <div className="font-semibold text-emerald-600">
+                      <div className="whitespace-nowrap text-xs font-semibold tabular-nums text-emerald-600">
                         {formatCurrency(p.rollup.totalIncomeAmount)}
                       </div>
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <div className="text-xs text-muted-foreground">נטו</div>
-                      <div className={`font-semibold ${net >= 0 ? "text-emerald-600" : "text-destructive"}`}>
+                      <div
+                        className={`whitespace-nowrap text-xs font-semibold tabular-nums ${net >= 0 ? "text-emerald-600" : "text-destructive"}`}
+                      >
                         {formatCurrency(net)}
                       </div>
                     </div>
