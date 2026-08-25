@@ -196,6 +196,7 @@ export function WorkerPaymentDialog({
       case "account":
         return Boolean(accountId);
       case "method":
+        return Boolean(method);
       case "reference":
       case "notes":
       case "summary":
@@ -346,9 +347,8 @@ export function WorkerPaymentDialog({
         </>
       ) : stepId === "method" ? (
         <>
-          <StepHeading title="באיזה אמצעי?" sub="לא חובה" />
+          <StepHeading title="באיזה אמצעי?" />
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <OptionRow label="ללא ציון" selected={method === ""} onClick={() => pickMethod("")} />
             {PAYMENT_METHOD_OPTIONS.map((option) => (
               <OptionRow
                 key={option.value}
