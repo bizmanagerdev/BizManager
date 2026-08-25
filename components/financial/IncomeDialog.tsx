@@ -228,6 +228,7 @@ export function IncomeDialog({
       title={HEBREW.incomeNew}
       description={HEBREW.incomeDialogDescription}
       size="formXl"
+      fullScreen
       onSubmit={() => void createIncome()}
       submitLabel={HEBREW.saveIncome}
       busyLabel={HEBREW.saving}

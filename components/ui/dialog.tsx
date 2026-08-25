@@ -106,6 +106,50 @@ export const ResponsiveSheetContent = React.forwardRef<
 ));
 ResponsiveSheetContent.displayName = "ResponsiveSheetContent";
 
+// Mobile: a true full page — inset-0, no margin, no rounded corners — instead
+// of a vertically-centred box. A centred dialog loses most of its usable
+// height the moment the on-screen keyboard opens (it shrinks the box AND
+// leaves dead space above/below it); a full page gives the form every pixel
+// the viewport has above the keyboard. Desktop (sm+) is untouched: same
+// centered-box treatment as DialogContent. Built directly on the primitive,
+// not on DialogContent, for the same reason as ResponsiveSheetContent above —
+// DialogContent's centered positioning can't be reliably overridden per
+// breakpoint through twMerge.
+export const FullScreenDialogContent = React.forwardRef<
+  React.ElementRef<typeof DialogPrimitive.Content>,
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { hideClose?: boolean }
+>(({ className, children, onClick, hideClose = false, ...props }, ref) => (
+  <DialogPortal>
+    <DialogOverlay />
+    <DialogPrimitive.Content
+      ref={ref}
+      className={cn(
+        "fixed inset-0 z-50 w-full rounded-none border-0 bg-background shadow-none duration-200",
+        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+        "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
+        "sm:inset-auto sm:left-1/2 sm:top-1/2 sm:w-[calc(100%-1rem)] sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border sm:shadow-lg",
+        "sm:data-[state=closed]:slide-out-to-bottom-0 sm:data-[state=open]:slide-in-from-bottom-0",
+        "sm:data-[state=closed]:zoom-out-95 sm:data-[state=open]:zoom-in-95",
+        className
+      )}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick?.(event);
+      }}
+      {...props}
+    >
+      {children}
+      {hideClose ? null : (
+        <DialogPrimitive.Close className="absolute left-4 top-4 z-10 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
+          <CloseIcon className="h-4 w-4" />
+          <span className="sr-only">סגור</span>
+        </DialogPrimitive.Close>
+      )}
+    </DialogPrimitive.Content>
+  </DialogPortal>
+));
+FullScreenDialogContent.displayName = "FullScreenDialogContent";
+
 export const DialogHeader = ({
   className,
   ...props

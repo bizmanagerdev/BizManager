@@ -14,6 +14,16 @@ import { cn } from "@/lib/utils";
 export const DIALOG_CHROME_CONTENT =
   "flex max-h-[92svh] flex-col gap-0 overflow-y-hidden p-0 sm:p-0";
 
+/** Same shape, for a full-page dialog (AdaptivePageDialog). No explicit
+ *  height on mobile — FullScreenDialogContent's `inset-0` already stretches
+ *  the box to the viewport via top+bottom, which tracks the on-screen
+ *  keyboard more reliably than any `dvh` unit does across browsers; setting
+ *  a height here would override that stretch instead of matching it. Only
+ *  the sm+ box (which drops inset-0 for centered positioning) needs an
+ *  explicit cap. */
+export const DIALOG_CHROME_CONTENT_PAGE =
+  "flex flex-col gap-0 overflow-y-hidden p-0 sm:max-h-[90vh] sm:p-0";
+
 /**
  * Pinned top bar. `children` is the title block (or a stepper); the X lives
  * here rather than floating in the corner, so it lines up with the title and
@@ -27,6 +37,7 @@ export function DialogChromeHeader({
   end,
   below,
   className,
+  grabber = false,
 }: {
   children: ReactNode;
   onClose?: () => void;
@@ -37,6 +48,10 @@ export function DialogChromeHeader({
   /** Pinned under the title — a search field, filters. */
   below?: ReactNode;
   className?: string;
+  /** A full-page mobile dialog's swipe-down affordance — decorative, the whole
+   *  header is the drag surface. Hidden again at sm (the desktop box doesn't
+   *  swipe). */
+  grabber?: boolean;
 }) {
   return (
     <div
@@ -45,6 +60,9 @@ export function DialogChromeHeader({
         className
       )}
     >
+      {grabber ? (
+        <div className="mx-auto -mt-1 mb-1 h-1 w-10 rounded-full bg-muted-foreground/30 sm:hidden" aria-hidden />
+      ) : null}
       <div className="flex items-start gap-3">
         {/* overflow-hidden so a wide header (a 4-step stepper on a phone) can't
             push the X off the edge or force the dialog to scroll sideways. */}

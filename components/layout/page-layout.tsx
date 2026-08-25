@@ -6,7 +6,7 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
   ReactNode,
 } from "react";
-import { DialogContent } from "@/components/ui/dialog";
+import { DialogContent, FullScreenDialogContent } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 type DivProps = ComponentPropsWithoutRef<"div">;
@@ -50,6 +50,18 @@ export const dialogVariants = {
   formXl: "max-h-[90svh] w-[calc(100%-1rem)] overflow-y-auto sm:max-w-xl",
   form2xl: "max-h-[90vh] w-[calc(100%-1rem)] overflow-y-auto sm:max-w-2xl",
   details4xl: "max-h-[90vh] w-[calc(100%-1rem)] overflow-y-auto sm:max-w-4xl",
+} as const;
+
+// Desktop-only width for a full-page dialog (see AdaptivePageDialog below) —
+// deliberately its OWN map, not a slice of dialogVariants: those entries carry
+// unprefixed (mobile-affecting) width/height/overflow classes that would clobber
+// the full-bleed mobile layout once merged after FullScreenDialogContent's base.
+export const pageDialogVariants = {
+  formSm: "sm:max-w-sm",
+  formMd: "sm:max-w-md",
+  formLg: "sm:max-w-lg",
+  formXl: "sm:max-w-xl",
+  form2xl: "sm:max-w-2xl",
 } as const;
 
 const cellVariants = {
@@ -195,6 +207,36 @@ export function AdaptiveDialog({
   return (
     <DialogContent
       className={cn(dialogVariants[size], className)}
+      onKeyDown={(event) => {
+        handleAdaptiveDialogKeyDown(event);
+        if (!event.defaultPrevented) onKeyDown?.(event);
+      }}
+      onChange={(event) => {
+        handleAdaptiveDialogChange(event);
+        onChange?.(event);
+      }}
+      {...props}
+    />
+  );
+}
+
+/** Same API as AdaptiveDialog, but renders as a full mobile page (see
+ *  FullScreenDialogContent) instead of a centered box below `sm`. `size` only
+ *  controls the desktop max-width here — mobile is always full-bleed. */
+export function AdaptivePageDialog({
+  size,
+  className,
+  onKeyDown,
+  onChange,
+  ...props
+}: ComponentPropsWithoutRef<typeof FullScreenDialogContent> & {
+  size: keyof typeof dialogVariants;
+}) {
+  const desktopWidth =
+    pageDialogVariants[size as keyof typeof pageDialogVariants] ?? pageDialogVariants.formLg;
+  return (
+    <FullScreenDialogContent
+      className={cn(desktopWidth, className)}
       onKeyDown={(event) => {
         handleAdaptiveDialogKeyDown(event);
         if (!event.defaultPrevented) onKeyDown?.(event);
