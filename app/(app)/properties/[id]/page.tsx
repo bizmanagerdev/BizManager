@@ -19,10 +19,11 @@ function StatCard({
 }: {
   label: string;
   value: string;
-  tone?: "income" | "expense" | "neutral";
+  tone?: "income" | "expense" | "warning" | "neutral";
   icon?: React.ReactNode;
 }) {
-  const color = tone === "income" ? "text-emerald-600" : tone === "expense" ? "text-destructive" : "";
+  const color =
+    tone === "income" ? "text-emerald-600" : tone === "expense" ? "text-destructive" : tone === "warning" ? "text-warning-strong" : "";
   return (
     <Card>
       <CardContent className="p-4">
@@ -92,11 +93,17 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
           {property.name ? <p className="text-sm text-muted-foreground">{property.address}</p> : null}
         </div>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatCard
             label="הוצאות ששולמו"
             value={formatCurrency(activity.rollup.paidExpenseAmount)}
             tone="expense"
+            icon={<TrendDownIcon className="h-3.5 w-3.5" />}
+          />
+          <StatCard
+            label="הוצאות צפויות"
+            value={formatCurrency(activity.rollup.expectedExpenseAmount)}
+            tone="warning"
             icon={<TrendDownIcon className="h-3.5 w-3.5" />}
           />
           <StatCard

@@ -72,10 +72,17 @@ export type LeaseAgreement = {
 export type PropertyRollup = {
   totalExpenseAmount: number;
   paidExpenseAmount: number;
+  /** totalExpenseAmount - paidExpenseAmount: expenses booked but not (fully) paid yet — the "צפוי" amount. */
+  expectedExpenseAmount: number;
   totalIncomeAmount: number;
 };
 
-const EMPTY_ROLLUP: PropertyRollup = { totalExpenseAmount: 0, paidExpenseAmount: 0, totalIncomeAmount: 0 };
+const EMPTY_ROLLUP: PropertyRollup = {
+  totalExpenseAmount: 0,
+  paidExpenseAmount: 0,
+  expectedExpenseAmount: 0,
+  totalIncomeAmount: 0,
+};
 
 export type PropertyWithLease = Property & {
   currentLease: LeaseAgreement | null;
@@ -321,7 +328,7 @@ export async function fetchProperties(supabase: SupabaseClient): Promise<Propert
     function rollupFor(propertyId: string) {
       const existing = rollupByProperty.get(propertyId);
       if (existing) return existing;
-      const created = { totalExpenseAmount: 0, paidExpenseAmount: 0, totalIncomeAmount: 0 };
+      const created = { totalExpenseAmount: 0, paidExpenseAmount: 0, expectedExpenseAmount: 0, totalIncomeAmount: 0 };
       rollupByProperty.set(propertyId, created);
       return created;
     }
@@ -347,6 +354,9 @@ export async function fetchProperties(supabase: SupabaseClient): Promise<Propert
       const rollup = rollupFor(propertyId);
       rollup.totalExpenseAmount += laborCost;
       rollup.paidExpenseAmount += laborCost;
+    }
+    for (const rollup of rollupByProperty.values()) {
+      rollup.expectedExpenseAmount = rollup.totalExpenseAmount - rollup.paidExpenseAmount;
     }
 
     return properties
@@ -650,9 +660,15 @@ export async function fetchPropertyActivity(
     // project_financials_view folds attendance_sessions.labor_cost into
     // total_expenses unconditionally.
     const sessionLaborTotal = sessions.reduce((s, x) => s + Math.max(0, num(x.labor_cost)), 0);
+    const totalExpenseAmount = expenses.reduce((s, e) => s + e.amount, 0) + sessionLaborTotal;
+    const paidExpenseAmountWithLabor = paidExpenseAmount + sessionLaborTotal;
     const rollup: PropertyRollup = {
-      totalExpenseAmount: expenses.reduce((s, e) => s + e.amount, 0) + sessionLaborTotal,
-      paidExpenseAmount: paidExpenseAmount + sessionLaborTotal,
+      totalExpenseAmount,
+      paidExpenseAmount: paidExpenseAmountWithLabor,
+      // Session labor cost is counted equally in both totals above, so it
+      // always nets to zero here — this is only ever the still-unpaid slice
+      // of the property's own expenses (partial/not_paid rows).
+      expectedExpenseAmount: totalExpenseAmount - paidExpenseAmountWithLabor,
       totalIncomeAmount: payments
         .filter((p) => isCollectedPaymentStatus(p.paymentStatus))
         .reduce((s, p) => s + p.amount, 0),

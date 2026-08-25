@@ -64,12 +64,20 @@ function fmtDate(value: string | null) {
   return new Intl.DateTimeFormat("he-IL", { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
 }
 
-type RowDetail = { label: string; value: string };
+/** `long` = free text (description/notes) — rendered label-above-value, wrapping
+ *  in full, instead of squeezed into the compact label/value row short facts use. */
+type RowDetail = { label: string; value: string; long?: boolean };
 
-/** Whatever isn't already shown inline on the row — only when actually set. */
+/**
+ * Whatever isn't already shown inline on the row — only when actually set.
+ * The row's own title is `truncate`d (a long description gets cut with "…"),
+ * so the FULL text goes here too — expanding the row is the only way to read
+ * a long description/comment in full, and it must actually be complete there.
+ */
 function expenseRowDetails(e: PropertyExpense): RowDetail[] {
   const details: RowDetail[] = [];
-  if (e.notes) details.push({ label: "הערות", value: e.notes });
+  if (e.description) details.push({ label: "תיאור", value: e.description, long: true });
+  if (e.notes) details.push({ label: "הערות", value: e.notes, long: true });
   if (e.paymentMethod) details.push({ label: "אמצעי תשלום", value: paymentMethodLabel(e.paymentMethod) });
   if (e.paymentStatus && e.paymentStatus !== "paid") {
     details.push({ label: "סטטוס תשלום", value: paymentRecordStatusLabel(e.paymentStatus) });
@@ -80,9 +88,14 @@ function expenseRowDetails(e: PropertyExpense): RowDetail[] {
   return details;
 }
 
-/** Notes already show inline for a session row — this is everything ELSE. */
+/**
+ * The inline notes preview on a session row is ALSO `truncate`d — same reason
+ * as expenseRowDetails above, the full text has to live here too, not just a
+ * shorter duplicate of what's already visible.
+ */
 function sessionRowDetails(s: PropertySession): RowDetail[] {
   const details: RowDetail[] = [];
+  if (s.notes) details.push({ label: "הערות", value: s.notes, long: true });
   if (s.is_billable_to_customer) {
     details.push({ label: "חיוב לשוכר", value: formatCurrency(s.bill_to_customer_amount ?? 0) });
   }
@@ -94,13 +107,107 @@ function sessionRowDetails(s: PropertySession): RowDetail[] {
 
 /**
  * The row shell shared by both expense and session rows in the merged
- * "הוצאות" list: a chevron that opens a details panel below the row when
- * there's something not already shown inline (a plain spacer, no arrow, when
- * there isn't — no decorative UI for an empty details list), and edit/delete
- * revealed by a side swipe (mirrors components/attendance/SessionList.tsx's
- * SessionSwipeRow) rather than sitting as permanently-visible icon buttons.
+ * "הוצאות" list. Two full render paths, matching
+ * components/attendance/SessionList.tsx's SessionSwipeRow/SessionTableRow
+ * split — a side swipe (mobile pattern) doesn't survive the wider desktop
+ * layout, so desktop gets its edit/delete from the SAME chevron that already
+ * opens the details panel instead.
  */
-function ExpandableRow({
+function ExpandableRow(props: {
+  rowKey: string;
+  details: RowDetail[];
+  expanded: boolean;
+  onToggle: (key: string) => void;
+  amount: ReactNode;
+  onEdit: () => void;
+  editLabel: string;
+  onDelete: () => void;
+  deleteLabel: string;
+  /** last:border-0 doesn't work once every row is its own swipe wrapper — each
+   *  one is the sole child of ITS OWN container, so the pseudo-class would
+   *  always match. Computed explicitly by the caller instead. */
+  isLast: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <>
+      <div className="md:hidden">
+        <ExpandableRowMobile {...props} />
+      </div>
+      <div className="hidden md:block">
+        <ExpandableRowDesktop {...props} />
+      </div>
+    </>
+  );
+}
+
+function RowBody({
+  details,
+  expanded,
+  onToggle,
+  rowKey,
+  amount,
+  isLast,
+  children,
+  showChevron,
+  panelFooter,
+}: {
+  details: RowDetail[];
+  expanded: boolean;
+  onToggle: (key: string) => void;
+  rowKey: string;
+  amount: ReactNode;
+  isLast: boolean;
+  children: ReactNode;
+  showChevron: boolean;
+  /** Desktop-only edit/delete buttons, appended inside the details panel. */
+  panelFooter?: ReactNode;
+}) {
+  return (
+    <div className={cn("pb-2", !isLast && "border-b")}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          {showChevron ? (
+            <button
+              type="button"
+              onClick={() => onToggle(rowKey)}
+              aria-expanded={expanded}
+              aria-label={expanded ? "הסתרת פרטים" : "הצגת פרטים נוספים"}
+              className="shrink-0 text-muted-foreground"
+            >
+              <ChevronDownIcon className={cn("h-4 w-4 transition-transform", expanded ? "" : "-rotate-90")} />
+            </button>
+          ) : (
+            <span className="w-4 shrink-0" />
+          )}
+          <div className="min-w-0 flex-1">{children}</div>
+        </div>
+        <span className="shrink-0 font-semibold text-destructive">{amount}</span>
+      </div>
+      {expanded && (details.length > 0 || panelFooter) ? (
+        <div className="me-5 mt-1 space-y-1.5 rounded-md bg-muted/30 p-2 text-xs">
+          {details.map((d) =>
+            d.long ? (
+              <div key={d.label}>
+                <div className="text-muted-foreground">{d.label}</div>
+                <div className="whitespace-pre-wrap break-words">{d.value}</div>
+              </div>
+            ) : (
+              <div key={d.label} className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">{d.label}</span>
+                <span>{d.value}</span>
+              </div>
+            )
+          )}
+          {panelFooter}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Mobile: chevron only for details (when there are any); edit/delete via side swipe. */
+function ExpandableRowMobile({
   rowKey,
   details,
   expanded,
@@ -122,46 +229,23 @@ function ExpandableRow({
   editLabel: string;
   onDelete: () => void;
   deleteLabel: string;
-  /** last:border-0 doesn't work once every row is its own swipe wrapper — each
-   *  one is the sole child of ITS OWN container, so the pseudo-class would
-   *  always match. Computed explicitly by the caller instead. */
   isLast: boolean;
   children: ReactNode;
 }) {
   const [swipeOpen, setSwipeOpen] = useState(false);
 
   const row = (
-    <div className={cn("pb-2", !isLast && "border-b")}>
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          {details.length > 0 ? (
-            <button
-              type="button"
-              onClick={() => onToggle(rowKey)}
-              aria-expanded={expanded}
-              aria-label={expanded ? "הסתרת פרטים" : "הצגת פרטים נוספים"}
-              className="shrink-0 text-muted-foreground"
-            >
-              <ChevronDownIcon className={cn("h-4 w-4 transition-transform", expanded ? "" : "-rotate-90")} />
-            </button>
-          ) : (
-            <span className="w-4 shrink-0" />
-          )}
-          <div className="min-w-0 flex-1">{children}</div>
-        </div>
-        <span className="shrink-0 font-semibold text-destructive">{amount}</span>
-      </div>
-      {expanded && details.length > 0 ? (
-        <div className="me-5 mt-1 space-y-0.5 rounded-md bg-muted/30 p-2 text-xs">
-          {details.map((d) => (
-            <div key={d.label} className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">{d.label}</span>
-              <span>{d.value}</span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </div>
+    <RowBody
+      details={details}
+      expanded={expanded}
+      onToggle={onToggle}
+      rowKey={rowKey}
+      amount={amount}
+      isLast={isLast}
+      showChevron={details.length > 0}
+    >
+      {children}
+    </RowBody>
   );
 
   return (
@@ -194,6 +278,54 @@ function ExpandableRow({
     >
       {row}
     </SwipeActions>
+  );
+}
+
+/** Desktop: no swipe — the chevron always opens a panel that carries the
+ *  details (when there are any) and the edit/delete buttons. */
+function ExpandableRowDesktop({
+  rowKey,
+  details,
+  expanded,
+  onToggle,
+  amount,
+  onEdit,
+  editLabel,
+  onDelete,
+  deleteLabel,
+  isLast,
+  children,
+}: {
+  rowKey: string;
+  details: RowDetail[];
+  expanded: boolean;
+  onToggle: (key: string) => void;
+  amount: ReactNode;
+  onEdit: () => void;
+  editLabel: string;
+  onDelete: () => void;
+  deleteLabel: string;
+  isLast: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <RowBody
+      details={details}
+      expanded={expanded}
+      onToggle={onToggle}
+      rowKey={rowKey}
+      amount={amount}
+      isLast={isLast}
+      showChevron
+      panelFooter={
+        <div className="flex items-center gap-2 pt-1">
+          <EditButton label={editLabel} onClick={onEdit} />
+          <DeleteButton label={deleteLabel} onClick={onDelete} />
+        </div>
+      }
+    >
+      {children}
+    </RowBody>
   );
 }
 
@@ -824,6 +956,11 @@ export default function PropertyDetailClient({
                         <div className="text-xs text-muted-foreground">
                           {[row.data.description ? row.data.category : null, fmtDate(row.data.date)].filter(Boolean).join(" · ") || "—"}
                         </div>
+                        {row.data.paymentStatus && row.data.paymentStatus !== "paid" ? (
+                          <span className="mt-1 inline-block rounded-full border border-warning/40 bg-warning/15 px-2 py-0.5 text-[10px] font-medium text-warning-strong">
+                            צפוי
+                          </span>
+                        ) : null}
                       </div>
                     ) : (
                       <div className="text-sm">
