@@ -449,17 +449,27 @@ export async function loadProjectedOutflowEntries(
  * Load all outgoing payments for the calendar. `monthsBack` widens the scan
  * window so unpaid items from earlier still show (default 13 months, matching the
  * financial page); future-dated scheduled items are always included.
+ *
+ * `preloaded` lets a caller that already ran `loadFinancialEntries` over an
+ * equal-or-wider window (e.g. the dashboard, sharing one scan across the
+ * payments card and the domain chart) skip a second full scan.
  */
 export async function loadPaymentCalendarItems(
   supabase: SupabaseClient,
-  { monthsBack = 13 }: { monthsBack?: number } = {}
+  {
+    monthsBack = 13,
+    preloaded,
+  }: { monthsBack?: number; preloaded?: { entries: FinancialEntry[]; referenceDate: string } } = {}
 ): Promise<{ items: PaymentCalendarItem[]; todayIso: string }> {
-  const since = (() => {
-    const d = new Date();
-    d.setMonth(d.getMonth() - monthsBack);
-    return d.toISOString().slice(0, 10);
-  })();
-  const { entries, referenceDate } = await loadFinancialEntries(supabase, { from: since });
+  const { entries, referenceDate } = preloaded
+    ? preloaded
+    : await loadFinancialEntries(supabase, {
+        from: (() => {
+          const d = new Date();
+          d.setMonth(d.getMonth() - monthsBack);
+          return d.toISOString().slice(0, 10);
+        })(),
+      });
   const items = toPaymentCalendarItems(entries, referenceDate);
   // Forecast upcoming monthly salaries + recurring bills onto the calendar
   // (calendar-only; never breaks the page if a source is unreadable).

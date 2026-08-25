@@ -305,12 +305,18 @@ export type DomainCashPoint = {
  * scheduled (future) entries are excluded, so this agrees with the financial page
  * instead of the old dashboard scan that counted every recorded expense as cash out.
  * Powers the dashboard's per-domain chart.
+ *
+ * `preloadedEntries` lets a caller that already scanned a wider (or equal)
+ * window — e.g. the dashboard computing this month AND last month's bars from
+ * one shared scan — skip a second full `loadFinancialEntries` round trip.
+ * Omitted, this scans `from` itself exactly like before.
  */
 export async function loadDomainCashBreakdown(
   supabase: SupabaseClient,
-  { from, to }: { from: string; to: string }
+  { from, to }: { from: string; to: string },
+  preloadedEntries?: FinancialEntry[]
 ): Promise<DomainCashPoint[]> {
-  const { entries } = await loadFinancialEntries(supabase, { from });
+  const entries = preloadedEntries ?? (await loadFinancialEntries(supabase, { from })).entries;
   const byDomain = new Map<string, DomainCashPoint>();
   for (const entry of entries) {
     if (entry.stage !== "posted") continue; // real cash only

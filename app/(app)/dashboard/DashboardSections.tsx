@@ -49,7 +49,7 @@ import { cn } from "@/lib/utils";
 import { loadDeliveriesPage, type DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
 import { getDigestAnchor, getMissedDigest, type AuditFeedItem } from "@/lib/audit";
 import MissedDigestCell from "@/components/dashboard/MissedDigestCard";
-import { loadDomainCashBreakdown } from "@/lib/financial";
+import { loadDomainCashBreakdown, loadFinancialEntries, type FinancialEntry } from "@/lib/financial";
 import DomainChartCard from "@/components/dashboard/DomainChartCard";
 import { monthWindow, previousMonth, toBars } from "@/lib/dashboard/domain-chart";
 
@@ -253,6 +253,50 @@ export async function DashboardPanels() {
   // from here without a page load.
   const currentMonth = todayIso.slice(0, 7);
 
+  // The payments card and both domain-chart bars each need their own read of
+  // the SAME financial engine (loadFinancialEntries scans payments, expenses,
+  // worker pay, receivables, loans...) over nearly the same recent window — as
+  // three separate calls that was three near-duplicate full scans. One shared
+  // scan, over the widest window any of them needs, replaces all three; each
+  // then just filters/maps the same in-memory entries (cheap, no round trip).
+  const needPayments = show("payments") && isAdminOrOffice;
+  const needDomainChart = show("domainChart") && isAdminOrOffice;
+  const currentMonthWindow = monthWindow(currentMonth, todayIso);
+  const previousMonthWindow = monthWindow(previousMonth(currentMonth), todayIso);
+  const paymentsScanSince = (() => {
+    const d = new Date(today);
+    d.setMonth(d.getMonth() - 1);
+    return d.toISOString().slice(0, 10);
+  })();
+  const sharedFinancialFrom = [
+    needPayments ? paymentsScanSince : null,
+    needDomainChart ? currentMonthWindow.from : null,
+    needDomainChart ? previousMonthWindow.from : null,
+  ]
+    .filter((v): v is string => v != null)
+    .sort()[0];
+  const financialEntriesPromise: Promise<{ entries: FinancialEntry[]; referenceDate: string } | null> =
+    sharedFinancialFrom
+      ? loadFinancialEntries(supabase, { from: sharedFinancialFrom }).catch(() => null)
+      : Promise.resolve(null);
+  // Each falls back to its own independent (narrower) scan if the shared one
+  // failed, rather than losing the widget over an unrelated table's error.
+  const paymentsPromise = needPayments
+    ? financialEntriesPromise
+        .then((shared) => loadPaymentCalendarItems(supabase, { monthsBack: 1, preloaded: shared ?? undefined }))
+        .catch(() => null)
+    : Promise.resolve(null);
+  const domainBreakdownPromise = needDomainChart
+    ? financialEntriesPromise
+        .then((shared) => loadDomainCashBreakdown(supabase, currentMonthWindow, shared?.entries))
+        .catch(() => [] as CashPoint[])
+    : Promise.resolve([] as CashPoint[]);
+  const domainPrevBreakdownPromise = needDomainChart
+    ? financialEntriesPromise
+        .then((shared) => loadDomainCashBreakdown(supabase, previousMonthWindow, shared?.entries))
+        .catch(() => [] as CashPoint[])
+    : Promise.resolve([] as CashPoint[]);
+
   // `workerOwed` is gated on role rather than a widget toggle because it feeds
   // the finance strip's payroll count, which is admin-only inside that widget.
   const [
@@ -282,9 +326,7 @@ export async function DashboardPanels() {
     show("myTasks") ? getMyTasks(supabase, profile.id, locale) : Promise.resolve([]),
     // The payments calendar, one month back so nothing that's already late is
     // missed. The card itself keeps only what's unpaid and near — see below.
-    show("payments") && isAdminOrOffice
-      ? loadPaymentCalendarItems(supabase, { monthsBack: 1 }).catch(() => null)
-      : Promise.resolve(null),
+    paymentsPromise,
     // …and each bill's own heads-up ("N work-days before"), which is what decides
     // whether an upcoming payment is alerting yet. Tolerant of the column not
     // existing (pre-20260720030000) — then nothing has a custom lead.
@@ -331,14 +373,8 @@ export async function DashboardPanels() {
     // Same window helper the card's month action uses, so "this month" means the
     // same thing whether it came with the page or with the picker. Two months:
     // the one on show, and the one before it as the chart's ghost baseline.
-    show("domainChart") && isAdminOrOffice
-      ? loadDomainCashBreakdown(supabase, monthWindow(currentMonth, todayIso)).catch(() => [] as CashPoint[])
-      : Promise.resolve([] as CashPoint[]),
-    show("domainChart") && isAdminOrOffice
-      ? loadDomainCashBreakdown(supabase, monthWindow(previousMonth(currentMonth), todayIso)).catch(
-          () => [] as CashPoint[]
-        )
-      : Promise.resolve([] as CashPoint[]),
+    domainBreakdownPromise,
+    domainPrevBreakdownPromise,
     digestPromise,
   ]);
 

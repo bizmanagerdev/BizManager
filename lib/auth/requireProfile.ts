@@ -17,10 +17,11 @@ export type UserProfile = {
   system_access: boolean;
   payroll_worker_type: PayrollWorkerType | null;
   // Carried on the profile so pages that need them don't fire a second `users`
-  // round-trip: dashboard layout prefs (raw jsonb — sanitize before use) and the
-  // "what you missed" digest anchor.
+  // round-trip: dashboard layout prefs (raw jsonb — sanitize before use), the
+  // "what you missed" digest anchor, and the top-bar avatar's persisted color.
   dashboard_prefs?: unknown;
   digest_seen_at?: string | null;
+  avatar_color: string | null;
   // UI language ('he' | 'ar'). Only the worker role is ever offered a toggle for
   // this; office/admin always stay 'he'. See lib/i18n.
   locale: "he" | "ar";
@@ -44,14 +45,14 @@ export const requireProfile = cache(async () => {
   let { data: profile, error } = await supabase
     .from("users")
     .select(
-      "id,auth_user_id,email,full_name,phone,role,active,system_access,payroll_worker_type,dashboard_prefs,digest_seen_at,locale,deliveries_access"
+      "id,auth_user_id,email,full_name,phone,role,active,system_access,payroll_worker_type,dashboard_prefs,digest_seen_at,locale,deliveries_access,avatar_color"
     )
     .eq("auth_user_id", userId)
     .maybeSingle();
 
   if (error) {
-    // Pre-migration: `locale`/`deliveries_access` may not exist yet. Retry
-    // without them rather than sending every signed-in user to /login.
+    // Pre-migration: `locale`/`deliveries_access`/`avatar_color` may not exist
+    // yet. Retry without them rather than sending every signed-in user to /login.
     const legacy = await supabase
       .from("users")
       .select("id,auth_user_id,email,full_name,phone,role,active,system_access,payroll_worker_type,dashboard_prefs,digest_seen_at")
@@ -71,11 +72,13 @@ export const requireProfile = cache(async () => {
   const rawWorkerType = (profile as { payroll_worker_type?: unknown }).payroll_worker_type;
   const rawLocale = (profile as { locale?: unknown }).locale;
   const rawDeliveriesAccess = (profile as { deliveries_access?: unknown }).deliveries_access;
+  const rawAvatarColor = (profile as { avatar_color?: unknown }).avatar_color;
   const typed: UserProfile = {
-    ...(profile as Omit<UserProfile, "payroll_worker_type" | "locale" | "deliveries_access">),
+    ...(profile as Omit<UserProfile, "payroll_worker_type" | "locale" | "deliveries_access" | "avatar_color">),
     payroll_worker_type: isPayrollWorkerType(rawWorkerType) ? rawWorkerType : null,
     locale: rawLocale === "ar" ? "ar" : "he",
     deliveries_access: rawDeliveriesAccess !== false,
+    avatar_color: typeof rawAvatarColor === "string" ? rawAvatarColor : null,
   };
   if (!typed.active || !typed.system_access || typed.role === "worker_no_access") {
     redirect("/no-access");

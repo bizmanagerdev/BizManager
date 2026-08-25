@@ -1,7 +1,7 @@
 "use server";
 
 import { requireProfile } from "@/lib/auth/requireProfile";
-import { loadDomainCashBreakdown } from "@/lib/financial";
+import { loadDomainCashBreakdown, loadFinancialEntries } from "@/lib/financial";
 import {
   isMonthKey,
   monthWindow,
@@ -35,11 +35,16 @@ export async function loadDomainChartMonth(month: MonthKey): Promise<DomainChart
   const todayIso = new Date().toISOString().slice(0, 10);
 
   try {
-    // Both months in one round trip — the ghost baseline is the point of the
-    // chart, so it can't be a second request that may or may not arrive.
+    // Both months share one financial-entry scan — the previous month's window
+    // always starts earlier, so scanning from there covers both, and each
+    // month is then just an in-memory filter over the same entries instead of
+    // its own full round trip.
+    const currentWindow = monthWindow(month, todayIso);
+    const previousWindow = monthWindow(previousMonth(month), todayIso);
+    const { entries } = await loadFinancialEntries(supabase, { from: previousWindow.from });
     const [points, previous] = await Promise.all([
-      loadDomainCashBreakdown(supabase, monthWindow(month, todayIso)),
-      loadDomainCashBreakdown(supabase, monthWindow(previousMonth(month), todayIso)),
+      loadDomainCashBreakdown(supabase, currentWindow, entries),
+      loadDomainCashBreakdown(supabase, previousWindow, entries),
     ]);
     return { ok: true, bars: toBars(points, previous) };
   } catch {

@@ -9,19 +9,15 @@ import { requireProfile } from "@/lib/auth/requireProfile";
 // <AppShell>, but those nested instances pass through (see AppShell), so there's
 // no duplicate chrome. requireProfile() is cache()-wrapped, so this layout and
 // the pages share a single profile fetch per request.
+//
+// This layout sits ABOVE every route's loading.tsx (Next only wraps page.tsx
+// and below in that Suspense boundary), so anything awaited here blocks the
+// shell — and every navigation in the app — before any skeleton can even show.
+// avatar_color used to be its own sequential `users` round-trip after this;
+// it now rides along in requireProfile's single query instead.
 export default async function AppGroupLayout({ children }: { children: ReactNode }) {
-  const { profile, supabase } = await requireProfile();
-
-  // Tolerant: the column may not exist before db/sql/add_user_avatar_color.sql
-  // runs. Passing the value here lets the top-bar avatar paint the right color
-  // on the first render — no client fetch, no flash.
-  const { data } = await supabase
-    .from("users")
-    .select("avatar_color")
-    .eq("id", profile.id)
-    .maybeSingle();
-  const raw = (data as { avatar_color?: unknown } | null)?.avatar_color;
-  const avatarColor = typeof raw === "string" ? raw : null;
+  const { profile } = await requireProfile();
+  const avatarColor = profile.avatar_color;
 
   return (
     <AppShell
