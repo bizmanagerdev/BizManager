@@ -25,13 +25,13 @@ function StatCard({
   const color =
     tone === "income" ? "text-emerald-600" : tone === "expense" ? "text-destructive" : tone === "warning" ? "text-warning-strong" : "";
   return (
-    <Card>
-      <CardContent className="p-4">
+    <Card className="min-w-0">
+      <CardContent className="p-3">
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
           {icon}
           {label}
         </div>
-        <div className={`mt-1 text-xl font-semibold ${color}`}>{value}</div>
+        <div className={`mt-1 whitespace-nowrap text-lg font-semibold tabular-nums ${color}`}>{value}</div>
       </CardContent>
     </Card>
   );
