@@ -20,7 +20,7 @@ import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ContactLink } from "@/components/ui/contact-link";
+import { ContactTapZone } from "@/components/ui/contact-link";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -936,16 +936,15 @@ export default function SalesOrdersClient({
                         ) : null}
                         {row.customerPhone || row.customerCity ? (
                           <div className="text-xs text-muted-foreground">
-                            {/* Tappable, like the phone on a project card — on a
-                                delivery or collection you call from the list, not
-                                after opening the order. */}
+                            {/* A <div> (ContactTapZone), not an <a href="tel:…"> — a
+                                real tel: link claims the long-press gesture for the
+                                browser's own menu, which doesn't surface a copy option
+                                everywhere this app runs. Plain text long-presses into
+                                normal selection instead — see contact-link.tsx. */}
                             {row.customerPhone ? (
-                              <ContactLink
-                                kind="tel"
-                                value={row.customerPhone}
-                                onClick={(e) => e.stopPropagation()}
-                                className="hover:underline"
-                              />
+                              <ContactTapZone kind="tel" value={row.customerPhone} className="inline-block hover:underline">
+                                <span dir="ltr">{row.customerPhone}</span>
+                              </ContactTapZone>
                             ) : null}
                             {row.customerPhone && row.customerCity ? " · " : null}
                             {row.customerCity}
@@ -982,9 +981,9 @@ export default function SalesOrdersClient({
                         equal to the total would just print the same number twice;
                         "נותר" only earns its place on a genuinely PART-paid order. */}
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-                      <span className="text-sm font-bold">{formatCurrency(row.totalAmount)}</span>
+                      <span className="whitespace-nowrap text-sm font-bold tabular-nums">{formatCurrency(row.totalAmount)}</span>
                       {row.totalPaid > 0.009 && row.remainingBalance > 0.009 ? (
-                        <span className="text-xs font-semibold text-destructive">
+                        <span className="whitespace-nowrap text-xs font-semibold tabular-nums text-destructive">
                           נותר {formatCurrency(row.remainingBalance)}
                         </span>
                       ) : null}

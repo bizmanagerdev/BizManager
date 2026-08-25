@@ -27,6 +27,7 @@ import { SwipeActions } from "@/components/ui/swipe-actions";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 import { AddressLink } from "@/components/ui/address-link";
+import { ContactTapZone } from "@/components/ui/contact-link";
 import { Button } from "@/components/ui/button";
 import { EditButton } from "@/components/ui/icon-button";
 import { Field } from "@/components/ui/field";
@@ -602,14 +603,35 @@ export default function CustomersClient({
                 },
               ]}
             >
-              <button
-                type="button"
-                onClick={() => openCustomerDetails(id)}
-                className="flex w-full min-w-0 items-center gap-3 p-3 text-right"
+              <div
+                role="link"
+                tabIndex={0}
+                onClick={(event) => {
+                  if (shouldIgnoreRowNavigation(event.target)) return;
+                  openCustomerDetails(id);
+                }}
+                onKeyDown={(event) => {
+                  if (shouldIgnoreRowNavigation(event.target)) return;
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  openCustomerDetails(id);
+                }}
+                className="flex w-full min-w-0 cursor-pointer items-center gap-3 p-3 text-right"
               >
                 <div className="min-w-0 flex-1 space-y-1">
                   <div className="text-sm font-semibold leading-snug">{customerName}</div>
-                  {phone ? <div className="text-xs text-muted-foreground">{phone}</div> : null}
+                  {phone ? (
+                    // A <div> (ContactTapZone), not an <a href="tel:…"> — see its own
+                    // comment: a real tel: link claims the long-press gesture for the
+                    // browser's own menu instead of leaving the number selectable/copyable.
+                    <ContactTapZone
+                      kind="tel"
+                      value={phone}
+                      className="inline-block text-xs text-muted-foreground hover:text-secondary hover:underline"
+                    >
+                      <span dir="ltr">{phone}</span>
+                    </ContactTapZone>
+                  ) : null}
                   <div className="flex flex-wrap items-center gap-1.5">
                     {ordersCount > 0 ? (
                       <Badge variant="outline" className="px-1.5 py-0 text-[10px]">{ordersCount} הזמנות</Badge>
@@ -632,13 +654,15 @@ export default function CustomersClient({
                   </div>
                 </div>
                 <div className="shrink-0 text-left">
-                  <div className={`text-sm font-semibold ${openBalance > 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                  <div
+                    className={`whitespace-nowrap text-sm font-semibold tabular-nums ${openBalance > 0 ? "text-destructive" : "text-muted-foreground"}`}
+                  >
                     {ils(openBalance)}
                   </div>
                   <div className="text-[10px] text-muted-foreground">{openBalance > 0 ? "יתרה" : "אין יתרה"}</div>
                 </div>
                 <ChevronLeftIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-              </button>
+              </div>
             </SwipeActions>
           );
         })}

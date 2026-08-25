@@ -2,7 +2,7 @@ import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import MorningCustomerCard from "@/components/morning/MorningCustomerCard";
 import { AddressLink } from "@/components/ui/address-link";
-import { ContactLink } from "@/components/ui/contact-link";
+import { ContactTapZone } from "@/components/ui/contact-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CustomerDeliveryDetails } from "./CustomerDeliveryDetails";
@@ -653,12 +653,13 @@ export default async function CustomerDetailsPage({
             <p className="text-xs text-muted-foreground">
               {customerPhone ? (
                 <>
-                  <ContactLink
+                  <ContactTapZone
                     kind="tel"
                     value={customerPhone}
-                    dir="ltr"
                     className="font-medium text-foreground hover:underline"
-                  />
+                  >
+                    <span dir="ltr">{customerPhone}</span>
+                  </ContactTapZone>
                   {" · "}
                 </>
               ) : null}
@@ -1253,14 +1254,14 @@ export default async function CustomerDetailsPage({
                   glyph sitting next to the link is a miss waiting to happen. */}
               <div className="space-y-1.5 text-xs">
                 {customerPhone ? (
-                  <ContactLink
+                  <ContactTapZone
                     kind="tel"
                     value={customerPhone}
                     className="flex items-center gap-1.5 py-0.5 hover:text-primary"
                   >
                     <PhoneIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span dir="ltr" className="font-medium">{customerPhone}</span>
-                  </ContactLink>
+                  </ContactTapZone>
                 ) : (
                   <div className="flex items-center gap-1.5 py-0.5">
                     <PhoneIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -1287,14 +1288,14 @@ export default async function CustomerDetailsPage({
                 )}
 
                 {customerEmail ? (
-                  <ContactLink
+                  <ContactTapZone
                     kind="mailto"
                     value={customerEmail}
                     className="flex items-center gap-1.5 py-0.5 hover:text-primary"
                   >
                     <MailIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span dir="ltr" className="truncate font-medium">{customerEmail}</span>
-                  </ContactLink>
+                  </ContactTapZone>
                 ) : (
                   <div className="flex items-center gap-1.5 py-0.5">
                     <MailIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />

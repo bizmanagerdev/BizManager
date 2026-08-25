@@ -9,7 +9,7 @@ import { AttachIcon, ChevronLeftIcon, PhoneIcon, ReceiptIcon, UserIcon } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { ContactLink } from "@/components/ui/contact-link";
+import { ContactTapZone } from "@/components/ui/contact-link";
 import { SectionCard } from "@/components/ui/section-card";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { type Loan, loanStatusLabel } from "@/lib/loans";
@@ -105,15 +105,14 @@ export default function LoanDetailClient({ loan }: { loan: Loan }) {
             <InfoRow
               label="טלפון"
               value={
-                <ContactLink
+                <ContactTapZone
                   kind="tel"
                   value={loan.counterparty_phone}
-                  dir="ltr"
                   className="inline-flex items-center gap-1 hover:text-primary"
                 >
                   <PhoneIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  {loan.counterparty_phone}
-                </ContactLink>
+                  <span dir="ltr">{loan.counterparty_phone}</span>
+                </ContactTapZone>
               }
             />
           ) : null}

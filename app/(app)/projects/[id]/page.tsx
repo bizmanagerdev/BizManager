@@ -33,7 +33,7 @@ import type { MorningLocalDocument } from "@/lib/morning/types";
 import type { WorkSessionRow } from "@/lib/payroll";
 import { getCurrentVatRate } from "@/lib/settings/vat";
 import { Badge } from "@/components/ui/badge";
-import { ContactLink } from "@/components/ui/contact-link";
+import { ContactTapZone } from "@/components/ui/contact-link";
 import { CustomerContactCard } from "@/components/customers/CustomerContactCard";
 import { formatShortDate } from "@/lib/date";
 import { STORAGE_BUCKET } from "@/lib/storage";
@@ -1230,13 +1230,13 @@ export default async function ProjectPage({
                 {customerPhone ? (
                   <>
                     <span>·</span>
-                    <ContactLink
+                    <ContactTapZone
                       kind={customerPhone.includes("@") ? "mailto" : "tel"}
                       value={customerPhone}
                       className="hover:text-foreground hover:underline"
                     >
                       <span dir="ltr">{customerPhone}</span>
-                    </ContactLink>
+                    </ContactTapZone>
                   </>
                 ) : null}
               </nav>
