@@ -111,6 +111,49 @@ function emptyContactDraft(makePrimary: boolean): EditContactDraft {
   };
 }
 
+// A customer that orders for several of its own locations (e.g. a chain) can
+// carry multiple branches, each with its own delivery address/phone — same
+// one-to-many-off-customers pattern as contacts above.
+type EditBranchDraft = {
+  key: string;
+  id: string | null;
+  name: string;
+  address: string;
+  phone: string;
+  active: boolean;
+  _deleted: boolean;
+};
+
+let editBranchKeyCounter = 0;
+function nextBranchKey() {
+  editBranchKeyCounter += 1;
+  return `b${editBranchKeyCounter}`;
+}
+
+function branchRowToDraft(row: Row): EditBranchDraft {
+  return {
+    key: nextBranchKey(),
+    id: typeof row.id === "string" && row.id ? row.id : null,
+    name: s(row, "name"),
+    address: s(row, "address"),
+    phone: s(row, "phone"),
+    active: row.active !== false,
+    _deleted: false,
+  };
+}
+
+function emptyBranchDraft(): EditBranchDraft {
+  return {
+    key: nextBranchKey(),
+    id: null,
+    name: "",
+    address: "",
+    phone: "",
+    active: true,
+    _deleted: false,
+  };
+}
+
 export interface EditCustomerDialogProps {
   open: boolean;
   onOpenChange: (next: boolean) => void;
@@ -144,6 +187,8 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
 
   const [contactsLoading, setContactsLoading] = useState(false);
   const [contacts, setContacts] = useState<EditContactDraft[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
+  const [branches, setBranches] = useState<EditBranchDraft[]>([]);
 
   useEffect(() => {
     if (!open || !customer) return;
@@ -172,6 +217,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
     setLinkedUserId(customer.linked_user_id ?? "");
     setLinkLoaded(customer.linked_user_id !== undefined);
     setContacts((customer.contacts ?? []).map(contactRowToDraft));
+    setBranches([]);
     setTagIds([]);
 
     if (!customer.id) return;
@@ -196,6 +242,15 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
       })
       .catch(() => { /* ignore */ })
       .finally(() => setContactsLoading(false));
+    setBranchesLoading(true);
+    void fetch(`/api/customer-branches/list?customer_id=${encodeURIComponent(customer.id)}`)
+      .then(async (res) => {
+        if (!res.ok) return;
+        const json = (await res.json().catch(() => ({}))) as { branches?: Row[] };
+        setBranches((json.branches ?? []).map(branchRowToDraft));
+      })
+      .catch(() => { /* ignore */ })
+      .finally(() => setBranchesLoading(false));
   }, [open, customer]);
 
   function updateContact(key: string, patch: Partial<EditContactDraft>) {
@@ -227,6 +282,22 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
     );
   }
 
+  function addBranch() {
+    setBranches((prev) => [...prev, emptyBranchDraft()]);
+  }
+
+  function updateBranch(key: string, patch: Partial<EditBranchDraft>) {
+    setBranches((prev) => prev.map((b) => (b.key === key ? { ...b, ...patch } : b)));
+  }
+
+  function removeBranch(key: string) {
+    setBranches((prev) =>
+      prev
+        .map((b) => (b.key === key ? { ...b, _deleted: true } : b))
+        .filter((b) => b.id !== null || !b._deleted)
+    );
+  }
+
   async function save() {
     if (loading || !customer) return;
     setErr("");
@@ -238,6 +309,10 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
     if (missing) return setErr("יש למלא שם מלא בכל איש קשר.");
     const primaries = visible.filter((c) => c.is_primary && c.active);
     if (primaries.length > 1) return setErr("ניתן לסמן רק איש קשר ראשי אחד.");
+
+    const visibleBranches = branches.filter((b) => !b._deleted);
+    const missingBranchName = visibleBranches.find((b) => !b.name.trim());
+    if (missingBranchName) return setErr("יש למלא שם בכל סניף.");
 
     const finalCity = city === "אחר" ? cityOther.trim() : city.trim();
     const trimmedStreet = address.trim();
@@ -322,6 +397,51 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
             return setErr(toHebrewError(crJson.error, `יצירת איש קשר נכשלה (${payload.full_name}).`));
           }
           savedContacts.push(crJson.contact);
+        }
+      }
+
+      for (const branch of branches) {
+        if (branch._deleted) {
+          if (!branch.id) continue;
+          const delRes = await fetch("/api/customer-branches/update", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ id: branch.id, active: false }),
+          });
+          if (!delRes.ok) {
+            const delJson = (await delRes.json().catch(() => ({}))) as { error?: string };
+            return setErr(toHebrewError(delJson.error, `הסרת סניף נכשלה (${branch.name || branch.id}).`));
+          }
+          continue;
+        }
+
+        const branchPayload = {
+          name: branch.name.trim(),
+          address: branch.address.trim() || null,
+          phone: branch.phone.trim() || null,
+          active: branch.active,
+        };
+
+        if (branch.id) {
+          const upRes = await fetch("/api/customer-branches/update", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ id: branch.id, ...branchPayload }),
+          });
+          if (!upRes.ok) {
+            const upJson = (await upRes.json().catch(() => ({}))) as { error?: string };
+            return setErr(toHebrewError(upJson.error, `עדכון סניף נכשל (${branchPayload.name}).`));
+          }
+        } else {
+          const crRes = await fetch("/api/customer-branches/create", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ customer_id: customer.id, ...branchPayload }),
+          });
+          if (!crRes.ok) {
+            const crJson = (await crRes.json().catch(() => ({}))) as { error?: string };
+            return setErr(toHebrewError(crJson.error, `יצירת סניף נכשלה (${branchPayload.name}).`));
+          }
         }
       }
 
@@ -510,6 +630,63 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
                         type="checkbox"
                         checked={contact.active}
                         onChange={(e) => updateContact(contact.key, { active: e.target.checked })}
+                      />
+                      <span>פעיל</span>
+                    </label>
+                  </div>
+                ))}
+            </div>
+
+            <div className="space-y-3 rounded-md border p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm font-medium">סניפים</div>
+                  <div className="text-xs text-muted-foreground">
+                    {branchesLoading
+                      ? "טוען סניפים..."
+                      : "לקוח שמזמין עבור כמה סניפים (למשל רשת) — כל סניף עם כתובת/טלפון משלו."}
+                  </div>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={addBranch}>
+                  הוספת סניף
+                </Button>
+              </div>
+              {branches.filter((b) => !b._deleted).length === 0 && !branchesLoading ? (
+                <p className="text-xs text-muted-foreground">עדיין לא נוספו סניפים.</p>
+              ) : null}
+              {branches
+                .filter((b) => !b._deleted)
+                .map((branch, index) => (
+                  <div key={branch.key} className="space-y-3 rounded-md border bg-background p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm font-medium">
+                        {branch.id ? `סניף ${index + 1}` : `סניף חדש ${index + 1}`}
+                      </div>
+                      <DeleteButton label="הסרת סניף" onClick={() => removeBranch(branch.key)} />
+                    </div>
+                    <Field label="שם הסניף *">
+                      <Input
+                        value={branch.name}
+                        onChange={(e) => updateBranch(branch.key, { name: e.target.value })}
+                      />
+                    </Field>
+                    <Field label="כתובת">
+                      <Input
+                        value={branch.address}
+                        onChange={(e) => updateBranch(branch.key, { address: e.target.value })}
+                      />
+                    </Field>
+                    <Field label="טלפון">
+                      <Input
+                        value={branch.phone}
+                        onChange={(e) => updateBranch(branch.key, { phone: e.target.value })}
+                      />
+                    </Field>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={branch.active}
+                        onChange={(e) => updateBranch(branch.key, { active: e.target.checked })}
                       />
                       <span>פעיל</span>
                     </label>

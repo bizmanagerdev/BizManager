@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { invalidateCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
-import { AddIcon, AiIcon, CardIcon, UserIcon, UsersIcon } from "@/components/ui/icons";
+import { AddIcon, AiIcon, CardIcon, StoreIcon, UserIcon, UsersIcon } from "@/components/ui/icons";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import { DeleteButton } from "@/components/ui/icon-button";
@@ -53,6 +53,15 @@ type ContactDraft = {
   active: boolean;
 };
 
+// A customer that orders for several of its own locations (e.g. a chain) can
+// carry multiple branches, each with its own delivery address/phone.
+type BranchDraft = {
+  name: string;
+  address: string;
+  phone: string;
+  active: boolean;
+};
+
 import { CITY_OPTIONS } from "@/lib/ui/cities";
 
 export const CREATE_CUSTOMER_CITY_OPTIONS = CITY_OPTIONS;
@@ -69,6 +78,7 @@ type WizardStep =
   | "prepayment"
   | "notes"
   | "contacts"
+  | "branches"
   | "summary";
 
 const STEP_LABEL: Record<WizardStep, string> = {
@@ -83,6 +93,7 @@ const STEP_LABEL: Record<WizardStep, string> = {
   prepayment: "תשלום מראש",
   notes: "הערות",
   contacts: "אנשי קשר",
+  branches: "סניפים",
   summary: "סיכום",
 };
 
@@ -97,6 +108,10 @@ function makeEmptyContact(): ContactDraft {
     is_primary: false,
     active: true,
   };
+}
+
+function makeEmptyBranch(): BranchDraft {
+  return { name: "", address: "", phone: "", active: true };
 }
 
 export interface CreateCustomerDialogProps {
@@ -129,6 +144,7 @@ export function CreateCustomerDialog({
   const [linkedUserId, setLinkedUserId] = useState("");
   const [linkedUserName, setLinkedUserName] = useState("");
   const [contacts, setContacts] = useState<ContactDraft[]>([]);
+  const [branches, setBranches] = useState<BranchDraft[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [similar, setSimilar] = useState<SimilarCustomer[]>([]);
@@ -236,6 +252,7 @@ export function CreateCustomerDialog({
     setLinkedUserId("");
     setLinkedUserName("");
     setContacts([]);
+    setBranches([]);
     setError(null);
     setSimilar([]);
     setSimilarDismissed(false);
@@ -277,12 +294,24 @@ export function CreateCustomerDialog({
     });
   }
 
+  function addBranch() {
+    setBranches((prev) => [...prev, makeEmptyBranch()]);
+  }
+
+  function updateBranch(index: number, patch: Partial<BranchDraft>) {
+    setBranches((prev) => prev.map((b, i) => (i === index ? { ...b, ...patch } : b)));
+  }
+
+  function removeBranch(index: number) {
+    setBranches((prev) => prev.filter((_, i) => i !== index));
+  }
+
   const finalCity = city === "אחר" ? cityOther.trim() : city.trim();
 
   const stepIds = useMemo<WizardStep[]>(() => {
     const ids: WizardStep[] = ["name", "contact", "email", "city"];
     if (city === "אחר") ids.push("cityOther");
-    ids.push("nameForInvoice", "regNumber", "address", "prepayment", "notes", "contacts", "summary");
+    ids.push("nameForInvoice", "regNumber", "address", "prepayment", "notes", "contacts", "branches", "summary");
     return ids;
   }, [city]);
   const wizardSteps = useMemo(() => stepIds.map((id) => ({ n: id, label: STEP_LABEL[id] })), [stepIds]);
@@ -298,6 +327,9 @@ export function CreateCustomerDialog({
       !c.full_name.trim() &&
       (c.role.trim() || c.phone.trim() || c.email.trim() || c.whatsapp.trim() || c.notes.trim())
   );
+  const incompleteBranchIndex = branches.findIndex(
+    (b) => !b.name.trim() && (b.address.trim() || b.phone.trim())
+  );
 
   function isSatisfied(id: WizardStep): boolean {
     switch (id) {
@@ -311,6 +343,8 @@ export function CreateCustomerDialog({
         return Boolean(cityOther.trim());
       case "contacts":
         return incompleteContactIndex < 0;
+      case "branches":
+        return incompleteBranchIndex < 0;
       case "email":
       case "nameForInvoice":
       case "regNumber":
@@ -357,7 +391,9 @@ export function CreateCustomerDialog({
               ? "יש לבחור עיר."
               : stepId === "cityOther"
                 ? "יש לבחור עיר."
-                : `איש קשר ${incompleteContactIndex + 1} חייב לכלול שם מלא.`
+                : stepId === "branches"
+                  ? `סניף ${incompleteBranchIndex + 1} חייב לכלול שם.`
+                  : `איש קשר ${incompleteContactIndex + 1} חייב לכלול שם מלא.`
       );
       return;
     }
@@ -397,6 +433,20 @@ export function CreateCustomerDialog({
       setError(`איש קשר ${incompleteContactIndex + 1} חייב לכלול שם מלא.`);
       return;
     }
+    if (incompleteBranchIndex >= 0) {
+      setStepId("branches");
+      setError(`סניף ${incompleteBranchIndex + 1} חייב לכלול שם.`);
+      return;
+    }
+
+    const preparedBranches = branches
+      .map((b) => ({
+        name: b.name.trim(),
+        address: b.address.trim() || null,
+        phone: b.phone.trim() || null,
+        active: b.active,
+      }))
+      .filter((b) => b.name);
 
     const prepared = contacts
       .map((c) => ({
@@ -485,6 +535,23 @@ export function CreateCustomerDialog({
           break;
         }
         createdContacts.push(contactJson.contact);
+      }
+
+      for (const [idx, branch] of preparedBranches.entries()) {
+        const branchResult = await offlineFetch(
+          "/api/customer-branches/create",
+          { customer_id: customerId, ...branch },
+          "סניף חדש",
+          { idempotent: true }
+        );
+        if (branchResult.queued) continue;
+        if (!branchResult.ok) {
+          const detail = branch.name || `#${idx + 1}`;
+          // The customer itself saved — this is a partial failure, so it's a
+          // toast, not a native alert box the user has to dismiss.
+          toast.error(toHebrewError(branchResult.error, `הלקוח נוצר, אבל הסניף ${detail} לא נוצר בהצלחה.`));
+          break;
+        }
       }
 
       const customer: CreatedCustomer = {
@@ -828,6 +895,57 @@ export function CreateCustomerDialog({
                   </Button>
                 </div>
               </div>
+            ) : stepId === "branches" ? (
+              <div className="space-y-3">
+                <StepHeading
+                  title="סניפים נוספים?"
+                  sub="לא חובה — לקוח שמזמין עבור כמה סניפים (למשל רשת) יכול לקבל כמה, כל אחד עם כתובת/טלפון משלו."
+                />
+
+                {branches.length === 0 ? (
+                  <EmptyState>
+                    עדיין לא נוספו סניפים.
+                  </EmptyState>
+                ) : null}
+
+                {branches.map((branch, index) => (
+                  <div
+                    key={`new-branch-${index}`}
+                    className="space-y-3 rounded-md border bg-background p-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm font-medium">סניף {index + 1}</div>
+                      <DeleteButton label="הסרת סניף" onClick={() => removeBranch(index)} />
+                    </div>
+                    <Field label="שם הסניף" required>
+                      <Input
+                        value={branch.name}
+                        onChange={(e) => updateBranch(index, { name: e.target.value })}
+                      />
+                    </Field>
+                    <Field label="כתובת" hint="רשות">
+                      <Input
+                        value={branch.address}
+                        onChange={(e) => updateBranch(index, { address: e.target.value })}
+                      />
+                    </Field>
+                    <Field label="טלפון" hint="רשות">
+                      <Input
+                        value={branch.phone}
+                        onChange={(e) => updateBranch(index, { phone: e.target.value })}
+                        inputMode="tel"
+                      />
+                    </Field>
+                  </div>
+                ))}
+
+                <div className="flex justify-end">
+                  <Button type="button" variant="secondary" size="sm" onClick={addBranch}>
+                    <AddIcon className="h-4 w-4" />
+                    הוספת סניף
+                  </Button>
+                </div>
+              </div>
             ) : (
               <div className="space-y-3">
                 <StepHeading title="לאשר וליצור?" />
@@ -869,6 +987,20 @@ export function CreateCustomerDialog({
                         key={`summary-contact-${i}`}
                         label={c.is_primary ? "איש קשר ראשי" : `איש קשר ${i + 1}`}
                         value={[c.full_name.trim(), c.phone.trim()].filter(Boolean).join(" · ")}
+                      />
+                    ))
+                  )}
+                </SummarySection>
+
+                <SummarySection icon={<StoreIcon className="h-4 w-4" />} title="סניפים" onEdit={() => goToStep("branches")} editDisabled={submitting}>
+                  {branches.length === 0 ? (
+                    <div className="px-3 py-2.5 text-sm text-muted-foreground">לא נוספו סניפים.</div>
+                  ) : (
+                    branches.map((b, i) => (
+                      <SummaryRow
+                        key={`summary-branch-${i}`}
+                        label={`סניף ${i + 1}`}
+                        value={[b.name.trim(), b.address.trim()].filter(Boolean).join(" · ")}
                       />
                     ))
                   )}
