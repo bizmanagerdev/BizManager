@@ -257,7 +257,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       scan("loans", (from, to) =>
         supabase
           .from("loans")
-          .select("id,account_id,direction,loan_date,amount")
+          .select("id,account_id,direction,loan_date,amount,lender,borrower")
           .not("account_id", "is", null)
           .gte("loan_date", earliestOpening)
           .range(from, to)
@@ -566,13 +566,28 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     });
   }
 
+  // Who the loan is with. The counterparty is the OTHER side: on a taken loan
+  // that's the lender, on a given loan the borrower — our own side sits in the
+  // opposite column (see LoanDialogs). Same rule the loans list and the financial
+  // ledger use, so one loan reads the same name wherever it appears.
+  const loanCounterparty = (row: Row) => {
+    const taken = (str(row.direction) ?? "taken") === "taken";
+    const name = (taken ? str(row.lender) : str(row.borrower))?.trim() || null;
+    return name ? `${taken ? "מלווה" : "לווה"}: ${name}` : null;
+  };
+
   // Resolve loan direction for every repayment's parent loan (the repayment's own
   // loan may be older than the scan window / unassigned, so fetch directions by id).
   const loanDirectionById = new Map<string, string>();
-  for (const row of loanRows) {
+  const loanSublabelById = new Map<string, string>();
+  const rememberLoan = (row: Row) => {
     const id = str(row.id);
-    if (id) loanDirectionById.set(id, str(row.direction) ?? "taken");
-  }
+    if (!id) return;
+    loanDirectionById.set(id, str(row.direction) ?? "taken");
+    const sublabel = loanCounterparty(row);
+    if (sublabel) loanSublabelById.set(id, sublabel);
+  };
+  for (const row of loanRows) rememberLoan(row);
   const repayLoanIds = Array.from(
     new Set(
       (loanRepaymentRows)
@@ -584,12 +599,9 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
   if (repayLoanIds.length > 0) {
     const { data: extraLoans } = await supabase
       .from("loans")
-      .select("id,direction")
+      .select("id,direction,lender,borrower")
       .in("id", repayLoanIds);
-    for (const row of (extraLoans ?? []) as Row[]) {
-      const id = str(row.id);
-      if (id) loanDirectionById.set(id, str(row.direction) ?? "taken");
-    }
+    for (const row of (extraLoans ?? []) as Row[]) rememberLoan(row);
   }
 
   // ── Loan principal: taken = cash IN, given = cash OUT ───────────────────────
@@ -608,7 +620,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       id: `l:${str(row.id) ?? ""}`,
       date,
       label: taken ? "הלוואה שהתקבלה" : "הלוואה שניתנה",
-      sublabel: null,
+      sublabel: loanCounterparty(row),
       href: `/financial/loans/${str(row.id) ?? ""}`,
       type: taken ? "in" : "out",
       amount,
@@ -634,7 +646,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       id: `lr:${str(row.id) ?? ""}`,
       date,
       label: taken ? "החזר הלוואה" : "החזר שהתקבל",
-      sublabel: null,
+      sublabel: loanSublabelById.get(str(row.loan_id) ?? "") ?? null,
       href: `/financial/loans/${str(row.loan_id) ?? ""}`,
       type: taken ? "out" : "in",
       amount,
