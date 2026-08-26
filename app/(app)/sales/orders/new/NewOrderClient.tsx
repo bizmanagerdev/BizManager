@@ -1074,12 +1074,6 @@ export default function NewOrderClient({
 
           {customerTab === "new" ? (
             <div className="space-y-3">
-              <div className="space-y-1">
-                <h3 className="flex items-center gap-2 text-base font-semibold">
-                  <AddUserIcon className="h-5 w-5 text-primary" /> לקוח חדש
-                </h3>
-                <p className="text-xs text-muted-foreground">בסיום הלקוח ייבחר אוטומטית להזמנה.</p>
-              </div>
               <div>
                 <div className="mx-auto max-w-lg">
                   <CustomerForm
