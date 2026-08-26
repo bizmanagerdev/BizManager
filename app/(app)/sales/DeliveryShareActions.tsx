@@ -115,6 +115,18 @@ export default function DeliveryShareActions({
 }) {
   const slipRef = useRef<HTMLDivElement>(null);
   const [renderingImage, setRenderingImage] = useState(false);
+  // Guaranteed last-resort fallback (see the touch-path comment below): an
+  // object URL for the captured slip, shown full-screen so the user can
+  // long-press it to save/copy — doesn't depend on trusting any JS API.
+  const [fallbackImageUrl, setFallbackImageUrl] = useState<string | null>(null);
+
+  // Revoke the object URL whenever it's replaced or the component unmounts —
+  // it's only ever needed while the fallback overlay is on screen.
+  useEffect(() => {
+    return () => {
+      if (fallbackImageUrl) URL.revokeObjectURL(fallbackImageUrl);
+    };
+  }, [fallbackImageUrl]);
 
   // The latest delivery, read inside the capture WITHOUT making it an effect
   // dependency. Depending on `delivery` (a fresh object on every list re-render)
@@ -259,22 +271,22 @@ export default function DeliveryShareActions({
             }
           }
 
-          // No Web Share API at all on this device (or a packaged-app WebView
-          // with neither the native share bridge nor a working share sheet) —
-          // this slip is FOR THE DRIVER, not a message TO the customer, so
-          // there is no one right contact to guess and open a chat with.
-          // Clipboard image-copy needs no native plugin (unlike shareImageNative,
-          // it works via the Async Clipboard API alone, so it isn't blocked on
-          // a fresh native build) — try it before falling back to a plain file
-          // download, which silently does nothing in a WebView with no
-          // download handler wired up.
-          const copied = await copyImageToClipboard(blob);
+          // Nothing else worked. Neither of these can be TRUSTED as proof of
+          // success on this device's WebView — clipboard.write can resolve
+          // without throwing while not actually placing anything on the
+          // system clipboard, and the anchor-download trick needs a download
+          // handler the app's shell doesn't have — confirmed by direct
+          // on-device testing (both silently no-op here). Attempt them anyway
+          // as a bonus in case they DO work on this particular device, but
+          // don't claim success either way — instead fall back to something
+          // that doesn't depend on trusting a JS API at all: show the image
+          // on screen so the driver can long-press it. Android's native
+          // "save image" / "copy image" context menu on an <img> is baked
+          // into the WebView widget itself, independent of any Capacitor
+          // plugin or Clipboard API support.
+          void copyImageToClipboard(blob);
           saveFile();
-          if (copied) {
-            toast.success("התמונה הועתקה — אפשר להדביק אותה בוואטסאפ.");
-          } else {
-            toast.error("השיתוף לא נתמך במכשיר זה. התמונה הורדה — אפשר לשלוח אותה מהגלריה.");
-          }
+          setFallbackImageUrl(URL.createObjectURL(blob));
           return;
         }
 
@@ -329,6 +341,41 @@ export default function DeliveryShareActions({
         )}
         <span>{label}</span>
       </Button>
+
+      {/* Guaranteed manual fallback — see the touch-path comment above. A
+          plain fixed overlay (not the app's own Dialog) on purpose: it must
+          keep working even if something about the WebView's JS environment
+          is what's misbehaving elsewhere in this flow. */}
+      {fallbackImageUrl ? (
+        <div
+          className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-4 bg-black/85 p-4"
+          onClick={() => setFallbackImageUrl(null)}
+        >
+          <p
+            className="max-w-xs text-center text-sm font-medium text-white"
+            onClick={(e) => e.stopPropagation()}
+          >
+            השיתוף האוטומטי לא עבד במכשיר זה. החזיקו לחיצה ארוכה על התמונה כדי לשמור או להעתיק אותה.
+          </p>
+          {/* eslint-disable-next-line @next/next/no-img-element -- a plain
+              <img> is required here: this is exactly what puts Android's
+              native long-press "save image / copy image" menu on the
+              element, which next/image's wrapper markup can interfere with. */}
+          <img
+            src={fallbackImageUrl}
+            alt="משלוח"
+            className="max-h-[70vh] max-w-full rounded-lg shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            type="button"
+            className="rounded-full bg-white px-5 py-2 text-sm font-medium text-black"
+            onClick={() => setFallbackImageUrl(null)}
+          >
+            סגירה
+          </button>
+        </div>
+      ) : null}
 
       {/* Clean slip rendered only while capturing. It sits at the origin inside a
           zero-size, invisible clip wrapper (NOT off-screen) so html-to-image's
