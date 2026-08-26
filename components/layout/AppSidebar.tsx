@@ -230,6 +230,10 @@ function NavGroup({
                   : child.url
               }
               end={EXACT_MATCH_CHILDREN.has(child.url)}
+              // Icons-only mode hides the label below, so a sub-tab needs the same
+              // hover flyout a top-level tab gets — otherwise an expanded group's
+              // children are bare icons with no way to tell them apart.
+              {...hover(child)}
               className={cn(subLinkBase, collapsed && "justify-center px-0")}
               activeClassName="bg-secondary text-secondary-foreground font-medium"
               pendingClassName={linkPending}
