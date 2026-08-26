@@ -27,6 +27,24 @@ function formatItem(item: DeliveryItem["items"][number]) {
   return item.notes ? `${base} (${item.notes})` : base;
 }
 
+/** Best-effort image clipboard copy — works via the Async Clipboard API alone,
+ *  no native plugin required, so (unlike shareImageNative) it doesn't need a
+ *  fresh native build to take effect inside the packaged app. Used as the
+ *  last-resort fallback on BOTH the phone and desktop paths, once every real
+ *  share mechanism has been tried and failed. */
+async function copyImageToClipboard(blob: Blob): Promise<boolean> {
+  try {
+    if (navigator.clipboard && "ClipboardItem" in window) {
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      return true;
+    }
+  } catch {
+    // Clipboard blocked (unfocused tab / no permission) or unsupported — the
+    // caller falls back to a file download either way.
+  }
+  return false;
+}
+
 /** Plain-text version of the slip, for when the image can't be shared as a file.
  *  Includes the customer's phone as reference text for the driver — this is NOT
  *  a wa.me link and never selects a recipient; the OS share sheet still lets
@@ -241,12 +259,22 @@ export default function DeliveryShareActions({
             }
           }
 
-          // No Web Share API at all on this device — this slip is FOR THE
-          // DRIVER, not a message TO the customer, so there is no one right
-          // contact to guess and open a chat with. Save the file and let
-          // whoever clicked share pick the app and the recipient themselves.
+          // No Web Share API at all on this device (or a packaged-app WebView
+          // with neither the native share bridge nor a working share sheet) —
+          // this slip is FOR THE DRIVER, not a message TO the customer, so
+          // there is no one right contact to guess and open a chat with.
+          // Clipboard image-copy needs no native plugin (unlike shareImageNative,
+          // it works via the Async Clipboard API alone, so it isn't blocked on
+          // a fresh native build) — try it before falling back to a plain file
+          // download, which silently does nothing in a WebView with no
+          // download handler wired up.
+          const copied = await copyImageToClipboard(blob);
           saveFile();
-          toast.error("השיתוף לא נתמך במכשיר זה. התמונה נשמרה — אפשר לשלוח אותה מהגלריה.");
+          if (copied) {
+            toast.success("התמונה הועתקה — אפשר להדביק אותה בוואטסאפ.");
+          } else {
+            toast.error("השיתוף לא נתמך במכשיר זה. התמונה הורדה — אפשר לשלוח אותה מהגלריה.");
+          }
           return;
         }
 
@@ -254,15 +282,7 @@ export default function DeliveryShareActions({
         // hangs), so don't call it. Copy the image to the clipboard and open WhatsApp
         // Web — paste it into a chat with Ctrl+V. The image also downloads as a
         // backup for anyone whose browser can't copy images.
-        let copied = false;
-        try {
-          if (navigator.clipboard && "ClipboardItem" in window) {
-            await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-            copied = true;
-          }
-        } catch {
-          // Clipboard blocked (tab not focused / no permission) — download covers it.
-        }
+        const copied = await copyImageToClipboard(blob);
         saveFile();
         toast.success(
           copied
