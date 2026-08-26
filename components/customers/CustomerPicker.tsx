@@ -160,6 +160,7 @@ export function CustomerPicker({
       >
           <CustomerForm
             mode="create"
+            initialName={query.trim()}
             onCancel={() => setCreateOpen(false)}
             onSaved={({ customer }) => {
               invalidateCustomerSearchIndex();

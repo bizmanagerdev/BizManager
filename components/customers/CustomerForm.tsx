@@ -126,6 +126,9 @@ function splitAddress(address: string | null): { city: string; street: string } 
 export interface CustomerFormProps {
   mode: "create" | "edit";
   initial?: CustomerFormInitial | null;
+  /** Create mode only: seeds the name field (e.g. a search term that came up
+   *  empty, so the customer doesn't have to retype what they already typed). */
+  initialName?: string;
   onSaved: (result: CustomerFormResult) => void;
   onCancel?: () => void;
   /** Create mode: pick an existing similar customer instead of creating a duplicate. */
@@ -136,10 +139,10 @@ export interface CustomerFormProps {
  * Full customer form (all fields + contacts), rendered inline — no dialog chrome.
  * Used directly in the order wizard and wrapped by CreateCustomerDialog / EditCustomerDialog.
  */
-export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExisting }: CustomerFormProps) {
+export function CustomerForm({ mode, initial = null, initialName, onSaved, onCancel, onUseExisting }: CustomerFormProps) {
   const isEdit = mode === "edit";
 
-  const [name, setName] = useState(initial?.name ?? "");
+  const [name, setName] = useState(initial?.name ?? initialName ?? "");
   const [phone, setPhone] = useState(initial?.phone ?? "");
   const [whatsapp, setWhatsapp] = useState(initial?.whatsapp ?? "");
   const [email, setEmail] = useState(initial?.email ?? "");

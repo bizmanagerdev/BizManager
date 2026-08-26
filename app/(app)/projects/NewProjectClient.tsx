@@ -729,6 +729,7 @@ export default function NewProjectClient({
                 <div className="mx-auto max-w-lg">
                   <CustomerForm
                     mode="create"
+                    initialName={customerQuery.trim()}
                     onCancel={() => setCustomerTab("existing")}
                     onSaved={({ customer }) => handleCustomerSaved(customer)}
                   />
