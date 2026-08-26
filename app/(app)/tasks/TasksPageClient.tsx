@@ -1294,7 +1294,14 @@ export default function TasksPageClient(props: Props) {
         </div>
       ) : null}
 
-      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      {/* key remounts the whole subtree when the sensor SET changes shape (mouse-only
+          vs mouse+touch) — @dnd-kit's internal bookkeeping assumes a fixed-length
+          sensor list for the lifetime of one DndContext instance; toggling touchDrag
+          mid-lifecycle (the matchMedia listener firing after a resize) otherwise trips
+          React's "final argument to useEffect changed size" error inside dnd-kit's own
+          hooks. A resize across the 768px breakpoint is rare enough that a remount
+          here is unnoticeable, and it's not expected to happen mid-drag. */}
+      <DndContext key={touchDrag ? "touch" : "mouse"} sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         {/* The board is a dark surface (like Trello's): it's what makes the light
             lists and white cards pop, and it marks where the page stops and the
             board begins. Flat navy — the same primary as the chrome above it, so

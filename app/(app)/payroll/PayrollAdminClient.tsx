@@ -10,6 +10,7 @@ import { DeleteButton } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { NativeSelect } from "@/components/ui/native-select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormDialog } from "@/components/ui/form-dialog";
@@ -1411,36 +1412,30 @@ export default function PayrollAdminClient({
             </div>
             {createSessionForm.business_domain === "logistics_projects" ? (
               <Field label="פרויקט">
-                <NativeSelect
+                <SearchableSelect
+                  ariaLabel="בחירת פרויקט"
                   value={createSessionForm.project_id}
-                  onChange={(event) =>
-                    setCreateSessionForm((current) => ({ ...current, project_id: event.target.value }))
+                  onChange={(next) =>
+                    setCreateSessionForm((current) => ({ ...current, project_id: next }))
                   }
-                >
-                  <option value="">בחירה</option>
-                  {projectOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </NativeSelect>
+                  options={projectOptions.map((option) => ({ value: option.id, label: option.label }))}
+                  placeholder="בחירה"
+                  searchPlaceholder="חיפוש פרויקט..."
+                />
               </Field>
             ) : null}
             {createSessionForm.business_domain === "property_management" ? (
               <Field label="נכס">
-                <NativeSelect
+                <SearchableSelect
+                  ariaLabel="בחירת נכס"
                   value={createSessionForm.property_id}
-                  onChange={(event) =>
-                    setCreateSessionForm((current) => ({ ...current, property_id: event.target.value }))
+                  onChange={(next) =>
+                    setCreateSessionForm((current) => ({ ...current, property_id: next }))
                   }
-                >
-                  <option value="">בחירה</option>
-                  {propertyOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </NativeSelect>
+                  options={propertyOptions.map((option) => ({ value: option.id, label: option.label }))}
+                  placeholder="בחירה"
+                  searchPlaceholder="חיפוש נכס..."
+                />
               </Field>
             ) : null}
             {canViewSalary ? (

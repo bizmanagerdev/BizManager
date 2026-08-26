@@ -11,10 +11,17 @@ type PageAlert = { id: string; title: string; href: string; severity: "danger" |
 // A dismissible contextual banner for the top of a page — the viewer's open
 // alerts for the given rule keys (e.g. <PageAlertBar keys={["low_stock"]} /> on
 // /sales). Renders nothing when there's nothing to show. Dismissal is per view.
+//
+// Floats OVER the page instead of sitting in normal flow: the outer wrapper is
+// zero-height (`h-0`), so whatever the page renders next starts exactly where
+// it always would; the actual banners are `absolute`-positioned inside it and
+// visually overlap that content instead of shoving it down. Dismissing one
+// just removes it — nothing underneath ever moved, so nothing needs to
+// "settle back" (user report: alerts were pushing the page's own content down).
 const TONE: Record<string, string> = {
-  danger: "border-destructive/30 bg-destructive-soft/40 text-destructive",
-  warning: "border-warning/30 bg-warning-soft/40 text-warning-strong",
-  info: "border-info/30 bg-info-soft/40 text-info-soft-foreground",
+  danger: "border-destructive/30 bg-destructive-soft text-destructive shadow-md",
+  warning: "border-warning/30 bg-warning-soft text-warning-strong shadow-md",
+  info: "border-info/30 bg-info-soft text-info-soft-foreground shadow-md",
 };
 
 // Dismissals persist for the session (sessionStorage) so a closed banner doesn't
@@ -72,29 +79,28 @@ export default function PageAlertBar({ keys, locale = "he" }: { keys: string[]; 
   if (shown.length === 0) return null;
 
   return (
-    <div className="mb-4 space-y-2">
-      {shown.map((a) => (
-        <div
-          key={a.id}
-          className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 text-[13px] sm:text-sm ${TONE[a.severity] ?? TONE.warning}`}
-        >
-          <WarningIcon className="h-4 w-4 shrink-0" />
-          {/* One line, always: the banner is a nudge, and a wrapped two-line strip
-              pushes the page content down. The full text is on the target page (and
-              in the tooltip), so clipping the tail costs nothing. */}
-          <Link href={a.href} title={a.title} className="min-w-0 flex-1 truncate font-medium hover:underline">
-            {a.title}
-          </Link>
-          <button
-            type="button"
-            onClick={() => dismiss(a.id)}
-            className="shrink-0 rounded-md p-0.5 opacity-60 transition-opacity hover:opacity-100"
-            aria-label={locale === "ar" ? "إغلاق التنبيه" : "סגור התראה"}
+    <div className="relative z-20 h-0 overflow-visible">
+      <div className="absolute inset-x-0 top-0 space-y-2 pb-2">
+        {shown.map((a) => (
+          <div
+            key={a.id}
+            className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 text-[13px] sm:text-sm ${TONE[a.severity] ?? TONE.warning}`}
           >
-            <CloseIcon className="h-4 w-4" />
-          </button>
-        </div>
-      ))}
+            <WarningIcon className="h-4 w-4 shrink-0" />
+            <Link href={a.href} title={a.title} className="min-w-0 flex-1 font-medium hover:underline">
+              {a.title}
+            </Link>
+            <button
+              type="button"
+              onClick={() => dismiss(a.id)}
+              className="shrink-0 rounded-md p-0.5 opacity-60 transition-opacity hover:opacity-100"
+              aria-label={locale === "ar" ? "إغلاق التنبيه" : "סגור התראה"}
+            >
+              <CloseIcon className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
