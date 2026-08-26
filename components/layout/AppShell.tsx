@@ -2,7 +2,7 @@
 
 import { createContext, Suspense, useContext, type ReactNode } from "react";
 import { AppSidebar } from "@/components/layout/AppSidebar";
-import { TopBar } from "@/components/layout/TopBar";
+import { TopBar, type Me } from "@/components/layout/TopBar";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { DesktopQuickCreateFab } from "@/components/layout/DesktopQuickCreateFab";
 import { TopNavigationProgress } from "@/components/layout/TopNavigationProgress";
@@ -31,6 +31,8 @@ type Props = {
   /** Per-worker toggle for deliveries access, admin-set; meaningless for staff. */
   viewerDeliveriesAccess?: boolean;
   avatarColor?: string | null;
+  /** Server-resolved top-bar user-menu data — see the `Me` comment in TopBar. */
+  initialMe?: Me;
   showSearch?: boolean;
   sidebarItems?: SidebarNavItem[];
   bottomNavItems?: SidebarNavItem[];
@@ -53,6 +55,7 @@ export default function AppShell({
   viewerLocale,
   viewerDeliveriesAccess = true,
   avatarColor,
+  initialMe,
   showSearch,
   sidebarItems,
   bottomNavItems,
@@ -97,6 +100,7 @@ export default function AppShell({
           viewerRole={viewerRole}
           viewerLocale={viewerLocale === "ar" ? "ar" : "he"}
           initialColor={avatarColor}
+          initialMe={initialMe}
           showSearch={showSearch}
         />
         {/* Slot for a page's own search/filter row, directly under the bar and on

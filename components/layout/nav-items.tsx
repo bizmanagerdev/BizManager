@@ -192,6 +192,11 @@ export function useNavItems(
   useEffect(() => {
     if (fetchedRef.current) return;
     fetchedRef.current = true;
+    // app/(app)/layout.tsx always resolves the role server-side (requireProfile)
+    // and passes it as initialRole — the normal signed-in path never needs this
+    // fetch at all. It only earns its keep as a fallback for whatever renders
+    // this hook WITHOUT that prop (if anything currently does).
+    if (initialRole) return;
 
     const cached = readCachedRole();
 
@@ -221,6 +226,10 @@ export function useNavItems(
     return () => {
       active = false;
     };
+    // fetchedRef makes this run at most once per mount; initialRole is read
+    // once at that point (it doesn't change through a session — see the
+    // comment above this hook).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const isAdmin = viewerRole === "admin";

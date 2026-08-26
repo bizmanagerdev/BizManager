@@ -86,32 +86,39 @@ export async function loadPhoneQueueData(
   const lookupIds = Array.from(
     new Set([...userIds, ...reports.map((row) => row.reported_by as string | null).filter(Boolean)])
   ) as string[];
+  // Names/avatars and salary agreements are two independent lookups off the same
+  // `reports` batch (neither reads the other's result) — run them concurrently
+  // instead of back-to-back round-trips.
+  const wantsCost = Boolean(opts?.includeCost && userIds.length);
+  const [usersResult, agreementsResult] = await Promise.all([
+    lookupIds.length
+      ? supabase.from("users").select("id,full_name,phone,avatar_color").in("id", lookupIds)
+      : Promise.resolve({ data: null as Array<{ id: string; full_name: string | null; phone: string | null; avatar_color: string | null }> | null }),
+    wantsCost
+      ? supabase
+          .from("salary_agreements")
+          .select("id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id")
+          .in("user_id", userIds)
+          .order("valid_from", { ascending: false })
+      : Promise.resolve({ data: null as SalaryAgreementRow[] | null }),
+  ]);
+
   const nameById = new Map<string, { name: string | null; phone: string | null; avatarColor: string | null }>();
-  if (lookupIds.length) {
-    const { data: users } = await supabase.from("users").select("id,full_name,phone,avatar_color").in("id", lookupIds);
-    for (const user of users ?? []) {
-      const color = typeof user.avatar_color === "string" ? user.avatar_color.trim() : "";
-      nameById.set(user.id as string, {
-        name: (user.full_name as string) ?? null,
-        phone: (user.phone as string) ?? null,
-        avatarColor: color || null,
-      });
-    }
+  for (const user of usersResult.data ?? []) {
+    const color = typeof user.avatar_color === "string" ? user.avatar_color.trim() : "";
+    nameById.set(user.id as string, {
+      name: (user.full_name as string) ?? null,
+      phone: (user.phone as string) ?? null,
+      avatarColor: color || null,
+    });
   }
 
   // Salary agreements → per-shift cost. Only fetched when the viewer may see salary.
   const agreementsByUser = new Map<string, SalaryAgreementRow[]>();
-  if (opts?.includeCost && userIds.length) {
-    const { data: agreements } = await supabase
-      .from("salary_agreements")
-      .select("id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id")
-      .in("user_id", userIds)
-      .order("valid_from", { ascending: false });
-    for (const agreement of (agreements ?? []) as SalaryAgreementRow[]) {
-      const list = agreementsByUser.get(agreement.user_id) ?? [];
-      list.push(agreement);
-      agreementsByUser.set(agreement.user_id, list);
-    }
+  for (const agreement of (agreementsResult.data ?? []) as SalaryAgreementRow[]) {
+    const list = agreementsByUser.get(agreement.user_id) ?? [];
+    list.push(agreement);
+    agreementsByUser.set(agreement.user_id, list);
   }
 
   const costFor = (userId: string, clockIn: string, minutes: number | null): number | null => {

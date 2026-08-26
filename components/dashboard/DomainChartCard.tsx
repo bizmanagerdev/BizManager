@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { toast } from "sonner";
 import { ChartIcon } from "@/components/ui/icons";
@@ -8,12 +9,25 @@ import { Card, CardContent } from "@/components/ui/card";
 import DashboardCardHeader from "@/components/dashboard/DashboardCardHeader";
 import DashboardCardFooter from "@/components/dashboard/DashboardCardFooter";
 import { NativeSelect } from "@/components/ui/native-select";
-import DomainBarChart from "@/components/charts/DomainBarChart";
+import { Skeleton } from "@/components/ui/skeleton";
 import { loadDomainChartMonth } from "@/app/(app)/dashboard/actions";
 import { monthChoices, type DomainBar, type MonthKey } from "@/lib/dashboard/domain-chart";
 import { t } from "@/lib/i18n/t";
 import { dashboardDict } from "@/lib/i18n/dictionaries/dashboard";
 import type { Locale } from "@/lib/i18n/types";
+
+// recharts (+ its d3 submodules) is one of the heaviest client dependencies in
+// the app — easily 80-150kb of JS — and this card is the ONLY thing that needs
+// it. Loaded eagerly it shipped in every admin/office dashboard visit's initial
+// bundle even on a role/board where this widget ends up hidden or empty, and
+// that cost lands hardest on the underpowered CPUs of the packaged Android
+// WebView build. `ssr: false` also drops it from the server-rendered HTML —
+// nothing above the fold needs a chart, so there's nothing lost by only
+// fetching+running this chunk once the card actually mounts on the client.
+const DomainBarChart = dynamic(() => import("@/components/charts/DomainBarChart"), {
+  ssr: false,
+  loading: () => <Skeleton className="h-full w-full rounded-lg" />,
+});
 
 // Income vs expenses per business domain, for ONE month — with the month picker
 // at the far end of the header (the LEFT end, RTL), where the card's controls go.

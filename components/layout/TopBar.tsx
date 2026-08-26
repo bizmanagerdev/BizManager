@@ -30,10 +30,13 @@ import type { Locale } from "@/lib/i18n/types";
 const InboxIcon = NotificationIcon;
 
 // The signed-in user's email + whether they punch shifts — for the user menu.
-// Fetched once per page load and cached at module scope (TopBar remounts on every
-// navigation, so component state would refetch each time). Nothing here is
-// sensitive enough to warrant threading props through ~40 AppShell call sites.
-type Me = { email: string | null; canTrackSessions: boolean; canViewSalary: boolean };
+// app/(app)/layout.tsx computes this server-side (requireProfile already loads
+// payroll_worker_type/email in its one `users` query) and passes it as
+// `initialMe`, same as avatarColor below — no fetch needed on the normal
+// signed-in path. Still cached at module scope as a fallback for any other
+// AppShell instance that doesn't have it to pass (TopBar remounts on every
+// navigation, so component state alone would refetch each time).
+export type Me = { email: string | null; canTrackSessions: boolean; canViewSalary: boolean };
 let meCache: Me | null = null;
 let meInFlight: Promise<void> | null = null;
 
@@ -72,6 +75,8 @@ type Props = {
   /** Signed-in worker's UI language ('he' | 'ar'); office/admin are always 'he'. */
   viewerLocale?: Locale;
   initialColor?: string | null;
+  /** Server-resolved user-menu data — see the `Me` comment above. */
+  initialMe?: Me;
   showSearch?: boolean;
 };
 
@@ -83,6 +88,7 @@ export function TopBar({
   viewerRole,
   viewerLocale = "he",
   initialColor,
+  initialMe,
   showSearch = true,
 }: Props) {
   const { collapsed } = useSidebarCollapse();
@@ -144,8 +150,26 @@ export function TopBar({
   const inboxPanel = useHoverPanel();
   const userPanel = useHoverPanel();
 
-  const [me, setMe] = useState<Me | null>(meCache);
+  const [me, setMe] = useState<Me | null>(initialMe ?? meCache);
+  // Mirror a fresh `initialMe` into state right away if it ever changes after
+  // mount (e.g. a profile edit elsewhere calls router.refresh(), re-running
+  // the server layout with updated data) — React's documented "adjust state
+  // during render" pattern rather than an effect, so there's no stale-frame
+  // flash while an effect callback catches up on the next tick.
+  const [prevInitialMe, setPrevInitialMe] = useState(initialMe);
+  if (initialMe && initialMe !== prevInitialMe) {
+    setPrevInitialMe(initialMe);
+    setMe(initialMe);
+  }
   useEffect(() => {
+    // The normal signed-in path: the server already resolved this in
+    // app/(app)/layout.tsx (the render-time sync above keeps `me` current).
+    // Just keep the module cache in step, so a TopBar instance that ever
+    // mounts without the prop still has something to read.
+    if (initialMe) {
+      meCache = initialMe;
+      return;
+    }
     if (meCache) return;
     if (!meInFlight) {
       meInFlight = fetch("/api/profile/me", { cache: "no-store" })
@@ -171,7 +195,7 @@ export function TopBar({
     return () => {
       active = false;
     };
-  }, []);
+  }, [initialMe]);
 
   return (
     // THE BAR IS WHITE and the sidebar is dark (user, 2026-08-19). They used to be

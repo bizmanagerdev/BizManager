@@ -39,7 +39,7 @@ import {
   sortEntries,
   summarizeEntries,
 } from "./entries";
-import { fetchLoans, summarizeLoans, type LoansSummary } from "@/lib/loans";
+import { fetchLoans, summarizeLoans, type Loan, type LoansSummary } from "@/lib/loans";
 import {
   type FinancialEntry,
   type FinancialPageData,
@@ -112,6 +112,12 @@ export async function loadFinancialEntries(
   })();
   const customerProjectIds = await resolveCustomerProjectIds(supabase, customerId);
   const customerProjectSet = new Set(customerProjectIds);
+
+  // Loans are business-wide (not customer-scoped) and have no dependency on any
+  // id resolved below — kicked off here so its round trips overlap the whole
+  // scan instead of adding their own latency at the very end (it used to be
+  // `await`ed after everything else had already resolved).
+  const loansPromise = customerId ? Promise.resolve([] as Loan[]) : fetchLoans(supabase);
 
   const [paymentRows, expenseRows, workerPaymentsResult, projectRows, orderRows] = await Promise.all([
     scanPaymentRows(supabase, scanSince),
@@ -274,8 +280,7 @@ export async function loadFinancialEntries(
     orderRows, ordersById, orderFinancialsById, paidByOrderId, pendingByOrderId, customerId, customerProjectSet, referenceDate,
   });
 
-  // Loans are business-wide (not customer-scoped), so skip them on a customer view.
-  const loans = customerId ? [] : await fetchLoans(supabase);
+  const loans = await loansPromise;
   const loanEntries = buildLoanEntries(loans, referenceDate);
 
   const entries = sortEntries([

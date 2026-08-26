@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { usePathname, useSearchParams } from "next/navigation";
 import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon } from "@/components/ui/icons";
@@ -35,6 +35,22 @@ const EXACT_MATCH_CHILDREN = new Set(["/financial", "/payroll"]);
 
 // Lower = more urgent, for picking a group's roll-up tone.
 const SEVERITY_ORDER: Record<NavCount["severity"], number> = { danger: 0, warning: 1, info: 2 };
+
+const noopSubscribe = () => () => {};
+
+/**
+ * "Has this component reached the client?" without an effect — the portal below
+ * needs this because `document.body` isn't safe to target during SSR, but a
+ * plain `useState(false) + useEffect(() => setState(true), [])` is exactly the
+ * setState-in-effect pattern React (and this repo's lint rule) flags: it forces
+ * an extra render for what's really just "which environment am I in right
+ * now." `useSyncExternalStore`'s two snapshots say that directly — the server
+ * snapshot is always false, the client snapshot is always true, and there's
+ * nothing to subscribe to since it never changes after mount.
+ */
+function useIsMounted() {
+  return useSyncExternalStore(noopSubscribe, () => true, () => false);
+}
 
 type FlyoutState = {
   item: SidebarNavItem;
@@ -76,8 +92,7 @@ function NavFlyout({
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useIsMounted();
   if (!mounted) return null;
 
   const sharedQuery = FILTER_SHARED_ROUTES.has(pathname) ? searchParams.toString() : "";
@@ -286,6 +301,20 @@ export function AppSidebar({ items }: Props) {
   // Hover flyout for the collapsed rail. The small close delay lets the pointer
   // travel from the icon into the panel without it vanishing underneath.
   const [flyout, setFlyout] = useState<FlyoutState | null>(null);
+  // The flyout only ever makes sense on the collapsed rail — closing it the
+  // instant the sidebar expands is a case of "reset state when some other
+  // value changed," which React's own docs single out as better done DURING
+  // RENDER than in an effect (an effect here would still show the stale
+  // flyout for one extra frame before its cleanup fires). `prevCollapsed`
+  // tracked in state (not a ref) matches React's documented version of this
+  // pattern exactly: both updates below fire in the same pass and batch
+  // together before anything commits to the screen, including under
+  // StrictMode's double-render.
+  const [prevCollapsed, setPrevCollapsed] = useState(collapsed);
+  if (prevCollapsed !== collapsed) {
+    setPrevCollapsed(collapsed);
+    if (!collapsed && flyout !== null) setFlyout(null);
+  }
   const closeTimer = useRef<number | null>(null);
   const cancelClose = useCallback(() => {
     if (closeTimer.current !== null) {
@@ -298,9 +327,6 @@ export function AppSidebar({ items }: Props) {
     closeTimer.current = window.setTimeout(() => setFlyout(null), 140);
   }, [cancelClose]);
   useEffect(() => cancelClose, [cancelClose]);
-  useEffect(() => {
-    if (!collapsed) setFlyout(null);
-  }, [collapsed]);
 
   const hover = useCallback(
     (item: SidebarNavItem): HoverHandlers => ({

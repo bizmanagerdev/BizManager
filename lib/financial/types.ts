@@ -341,7 +341,10 @@ export type FinancialPageData = {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-export const SCAN_CHUNK_SIZE = 500;
+// 1000 (not higher) because Supabase's PostgREST "max rows" project setting
+// commonly defaults to 1000 — a bigger chunk would just get silently capped
+// there, losing the round-trip savings without any error to notice it by.
+export const SCAN_CHUNK_SIZE = 1000;
 export const ID_CHUNK_SIZE = 200;
 export const LEDGER_PAGE_SIZE = 25;
 export const UPCOMING_PAGE_SIZE = 15;

@@ -953,55 +953,57 @@ export async function resolveAuditTitles(
     }
   }
 
+  // Three one-hop lookups, each keyed off ids gathered from the original `rows`
+  // pass above and none reading the others' output — run them concurrently
+  // instead of one after another.
+  const [orderHopRes, loanHopRes, workerPaymentHopRes] = await Promise.all([
+    orderIds.size > 0
+      ? supabase.from("orders").select("id,customer_id").in("id", Array.from(orderIds))
+      : Promise.resolve({ data: [] as { id?: string; customer_id?: string }[] }),
+    loanIds.size > 0
+      ? supabase
+          .from("loans")
+          .select("id,counterparty_customer_id,lender,borrower")
+          .in("id", Array.from(loanIds))
+      : Promise.resolve({
+          data: [] as { id?: string; counterparty_customer_id?: string; lender?: string; borrower?: string }[],
+        }),
+    workerPaymentIds.size > 0
+      ? supabase.from("worker_payments").select("id,user_id").in("id", Array.from(workerPaymentIds))
+      : Promise.resolve({ data: [] as { id?: string; user_id?: string }[] }),
+  ]);
+
   // First hop: order → its customer (so an order/payment shows the buyer's name).
   const orderCustomer = new Map<string, string>();
-  if (orderIds.size > 0) {
-    const { data } = await supabase
-      .from("orders")
-      .select("id,customer_id")
-      .in("id", Array.from(orderIds));
-    for (const row of (data ?? []) as { id?: string; customer_id?: string }[]) {
-      if (typeof row.id === "string" && typeof row.customer_id === "string") {
-        orderCustomer.set(row.id, row.customer_id);
-        customerIds.add(row.customer_id);
-      }
+  for (const row of (orderHopRes.data ?? []) as { id?: string; customer_id?: string }[]) {
+    if (typeof row.id === "string" && typeof row.customer_id === "string") {
+      orderCustomer.set(row.id, row.customer_id);
+      customerIds.add(row.customer_id);
     }
   }
 
   // First hop: loan_repayments → its loan → who the loan is with (customer, or
   // just the free-text lender/borrower field if it isn't linked to a customer).
   const loanCounterparty = new Map<string, { customerId: string | null; text: string | null }>();
-  if (loanIds.size > 0) {
-    const { data } = await supabase
-      .from("loans")
-      .select("id,counterparty_customer_id,lender,borrower")
-      .in("id", Array.from(loanIds));
-    for (const row of (data ?? []) as {
-      id?: string;
-      counterparty_customer_id?: string;
-      lender?: string;
-      borrower?: string;
-    }[]) {
-      if (typeof row.id !== "string") continue;
-      const customerId = typeof row.counterparty_customer_id === "string" ? row.counterparty_customer_id : null;
-      if (customerId) customerIds.add(customerId);
-      const text = (row.lender || row.borrower || "").trim() || null;
-      loanCounterparty.set(row.id, { customerId, text });
-    }
+  for (const row of (loanHopRes.data ?? []) as {
+    id?: string;
+    counterparty_customer_id?: string;
+    lender?: string;
+    borrower?: string;
+  }[]) {
+    if (typeof row.id !== "string") continue;
+    const customerId = typeof row.counterparty_customer_id === "string" ? row.counterparty_customer_id : null;
+    if (customerId) customerIds.add(customerId);
+    const text = (row.lender || row.borrower || "").trim() || null;
+    loanCounterparty.set(row.id, { customerId, text });
   }
 
   // First hop: worker_payment_allocations → its worker_payments row → the worker.
   const workerPaymentUser = new Map<string, string>();
-  if (workerPaymentIds.size > 0) {
-    const { data } = await supabase
-      .from("worker_payments")
-      .select("id,user_id")
-      .in("id", Array.from(workerPaymentIds));
-    for (const row of (data ?? []) as { id?: string; user_id?: string }[]) {
-      if (typeof row.id === "string" && typeof row.user_id === "string") {
-        workerPaymentUser.set(row.id, row.user_id);
-        userIds.add(row.user_id);
-      }
+  for (const row of (workerPaymentHopRes.data ?? []) as { id?: string; user_id?: string }[]) {
+    if (typeof row.id === "string" && typeof row.user_id === "string") {
+      workerPaymentUser.set(row.id, row.user_id);
+      userIds.add(row.user_id);
     }
   }
 

@@ -180,12 +180,15 @@ export async function getWorklist(
         return Number.isNaN(t) || t <= nowMs;
       });
 
-  const items = await enrichRows(supabase, rows);
-
+  // enrichRows (reads `rows`) and the prefs lookup (reads `userId`) don't depend
+  // on each other's output — run them concurrently rather than one after another.
   // The one visibility choice the USER owns: topics they've muted are hidden
   // everywhere they'd otherwise appear (inbox, dashboard, badges, page bars).
   // Default is nothing muted → you see everything your role permits.
-  const prefs = options.prefs ?? (await loadPrefs(supabase, userId));
+  const [items, prefs] = await Promise.all([
+    enrichRows(supabase, rows),
+    options.prefs ? Promise.resolve(options.prefs) : loadPrefs(supabase, userId),
+  ]);
   const visible = prefs.muted.length
     ? items.filter((i) => !prefs.muted.includes(inboxBucket(i)))
     : items;

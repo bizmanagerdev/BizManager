@@ -17,6 +17,12 @@ async function translate(text: string, systemPrompt: string, label: string): Pro
           { role: "user", content: trimmed },
         ],
       }),
+      // This is awaited directly on the dashboard's render path for an
+      // Arabic-locale viewer (today's alerts) with no fallback timer of its
+      // own — an unbounded hang here would hang the whole page. A bounded
+      // timeout keeps the "best-effort, never block" contract this module
+      // documents true for SLOWNESS, not just outright failure.
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!res.ok) {

@@ -66,20 +66,33 @@ export function PanelsFallback() {
   // column beside it holding secondary over tertiary — so the swap to real
   // data doesn't shift the page under the reader. Exact counts don't matter
   // for a skeleton; the eye reads the shape.
+  //
+  // The xl: heights below are desktop-only and stay exactly as tuned — the
+  // board is viewport-locked there (DASHBOARD_BOARD_CLASS's xl:h-[calc(...)]),
+  // so every cell is stretched to fill its slot regardless of the skeleton's
+  // own height and this shape can't cause a shift. Below xl there is no such
+  // grid: DASHBOARD_BOARD_CLASS degrades to a plain flex-col stack and every
+  // card is its own natural content height (see board-flush in globals.css),
+  // so a skeleton that commits to h-56/h-40/h-32 here almost never matches the
+  // real card that replaces it — usually overshooting it, so the page visibly
+  // SHRINKS once data lands. The smaller bare heights below are a closer,
+  // still-generic guess at a phone card's real height, chosen so the more
+  // common miss is the page growing (adding content below the fold) rather
+  // than shrinking (content the reader was looking at jumping away).
   return (
     <div className={cn(DASHBOARD_BOARD_CLASS, BOARD_GRID_CLASS)}>
       <div className={HERO_CELL_CLASS}>
-        <Skeleton className={cn("h-56 w-full rounded-[1.125rem]", CARD_FILL_CLASS)} />
+        <Skeleton className={cn("h-28 w-full rounded-[1.125rem] xl:h-56", CARD_FILL_CLASS)} />
       </div>
       <div className={REST_COLUMN_BOTH_CLASS}>
         <div className={SECONDARY_CELL_CLASS}>
           {[0, 1].map((i) => (
-            <Skeleton key={i} className={cn("h-40 w-full rounded-[1.125rem]", CARD_FILL_CLASS)} />
+            <Skeleton key={i} className={cn("h-20 w-full rounded-[1.125rem] xl:h-40", CARD_FILL_CLASS)} />
           ))}
         </div>
         <div className={TERTIARY_CELL_CLASS}>
           {[0, 1, 2].map((i) => (
-            <Skeleton key={i} className={cn("h-32 w-full rounded-[1.125rem]", CARD_FILL_CLASS)} />
+            <Skeleton key={i} className={cn("h-16 w-full rounded-[1.125rem] xl:h-32", CARD_FILL_CLASS)} />
           ))}
         </div>
       </div>

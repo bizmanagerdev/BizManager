@@ -103,26 +103,32 @@ export async function getScheduleEntries(
     .not("status", "in", `(${CLOSED_ORDER_STATUSES.join(",")})`)
     .order("requested_delivery_date", { ascending: true })
     .range(0, 499);
-  if (scope === "mine") {
-    // "Mine" = orders I created, PLUS orders someone explicitly picked me as a
-    // recipient for (order_delivery_recipients) — e.g. a driver who didn't
-    // create the order but was told to see it on their own calendar.
-    const { data: recipientRows } = await supabase
-      .from("order_delivery_recipients")
-      .select("order_id")
-      .eq("user_id", userId);
-    const recipientOrderIds = [
-      ...new Set(
-        ((recipientRows ?? []) as Row[])
-          .map((r) => getString(r, "order_id"))
-          .filter((id): id is string => Boolean(id))
-      ),
-    ];
-    deliveriesQuery =
-      recipientOrderIds.length > 0
-        ? deliveriesQuery.or(`created_by.eq.${userId},id.in.(${recipientOrderIds.join(",")})`)
-        : deliveriesQuery.eq("created_by", userId);
-  }
+  // "Mine" = orders I created, PLUS orders someone explicitly picked me as a
+  // recipient for (order_delivery_recipients) — e.g. a driver who didn't
+  // create the order but was told to see it on their own calendar. That lookup
+  // only gates deliveriesQuery's filter, so it must not block tasksQuery /
+  // projectsQuery / reminders from firing at the same time — folded into one
+  // async step below that runs concurrently with the other three.
+  const deliveriesPromise = (async () => {
+    if (scope === "mine") {
+      const { data: recipientRows } = await supabase
+        .from("order_delivery_recipients")
+        .select("order_id")
+        .eq("user_id", userId);
+      const recipientOrderIds = [
+        ...new Set(
+          ((recipientRows ?? []) as Row[])
+            .map((r) => getString(r, "order_id"))
+            .filter((id): id is string => Boolean(id))
+        ),
+      ];
+      deliveriesQuery =
+        recipientOrderIds.length > 0
+          ? deliveriesQuery.or(`created_by.eq.${userId},id.in.(${recipientOrderIds.join(",")})`)
+          : deliveriesQuery.eq("created_by", userId);
+    }
+    return deliveriesQuery;
+  })();
 
   const [
     { data: taskRows, error: tasksError },
@@ -132,7 +138,7 @@ export async function getScheduleEntries(
   ] = await Promise.all([
     tasksQuery,
     projectsQuery,
-    deliveriesQuery,
+    deliveriesPromise,
     getOpenReminders(supabase, { scope, userId, limit: 500 }),
   ]);
 
