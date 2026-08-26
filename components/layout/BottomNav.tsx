@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { MoreIcon } from "@/components/ui/icons";
 import { NavLink } from "@/components/NavLink";
 import { ClientOnly } from "@/components/ClientOnly";
@@ -13,6 +13,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { useSwipeToDismiss } from "@/components/ui/dialog-chrome";
 import { t } from "@/lib/i18n/t";
 import { topbarDict } from "@/lib/i18n/dictionaries/topbar";
 import type { Locale } from "@/lib/i18n/types";
@@ -26,6 +27,12 @@ type Props = {
 
 export function BottomNav({ items, moreItems = [], viewerRole, viewerLocale = "he" }: Props) {
   const [moreOpen, setMoreOpen] = useState(false);
+  const moreBodyRef = useRef<HTMLDivElement>(null);
+  const moreSwipeProps = useSwipeToDismiss({
+    enabled: moreOpen,
+    bodyRef: moreBodyRef,
+    onDismiss: () => setMoreOpen(false),
+  });
 
   // The + sits dead centre. Each side is its own flex-1 container (see the
   // JSX below) so the two sides always take up EXACTLY equal width — the FAB
@@ -115,11 +122,16 @@ export function BottomNav({ items, moreItems = [], viewerRole, viewerLocale = "h
                 <SheetContent
                   side="bottom"
                   className="flex max-h-[80svh] flex-col rounded-t-[2rem] border-white/10 bg-sidebar p-0 text-sidebar-foreground"
+                  {...moreSwipeProps}
                 >
+                  <div className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-white/25" aria-hidden />
                   <SheetHeader className="shrink-0 border-b border-white/10 px-6 py-4">
                     <SheetTitle className="text-sidebar-foreground">{t(topbarDict, viewerLocale, "more")}</SheetTitle>
                   </SheetHeader>
-                  <div className="grid grid-cols-3 gap-3 overflow-y-auto overscroll-contain px-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-4">
+                  <div
+                    ref={moreBodyRef}
+                    className="grid grid-cols-3 gap-3 overflow-y-auto overscroll-contain px-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-4"
+                  >
                     {moreItems.map((item) => (
                         <NavLink
                           key={item.title}

@@ -89,10 +89,26 @@ export function useSwipeToDismiss({
     },
     onTouchEnd: () => {
       const shouldClose = dragDistanceRef.current > FULL_SCREEN_DISMISS_THRESHOLD;
+      const node = dragNodeRef.current;
       dragStartY.current = null;
       dragDistanceRef.current = 0;
+
+      if (shouldClose && node) {
+        // Continue the slide off-screen from wherever the finger let go,
+        // instead of resetDragStyle's snap-back-to-0 — the dialog's own
+        // data-state="closed" exit animation always starts from translateY(0),
+        // so resetting the drag first made the panel visibly snap back into
+        // place for a frame before sliding back out (the reported "jump").
+        // This inline transform overrides that CSS animation (same property,
+        // inline wins) until the dialog unmounts, so it never shows.
+        node.style.transition = "transform 180ms ease-in";
+        node.style.transform = `translateY(${node.offsetHeight || window.innerHeight}px)`;
+        dragNodeRef.current = null;
+        onDismiss();
+        return;
+      }
+
       resetDragStyle();
-      if (shouldClose) onDismiss();
     },
     onTouchCancel: () => {
       dragStartY.current = null;
