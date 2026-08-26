@@ -100,6 +100,9 @@ export type TasksKey =
   | "sectionReminders"
   | "sectionFiles"
   | "sectionComments"
+  | "sectionHistory"
+  | "createdAtLabel"
+  | "updatedAtLabel"
   | "subjectPlaceholder"
   | "dictateSubjectTitle"
   | "cancelPrivateAria"
@@ -350,6 +353,9 @@ export const tasksDict: Dictionary<TasksKey> = {
     unknownUserWord: "משתמש",
     commentPlaceholder: "כתבו תגובה...",
     addCommentButton: "הוספת תגובה",
+    sectionHistory: "היסטוריה",
+    createdAtLabel: "נוצר",
+    updatedAtLabel: "עודכן",
   },
   ar: {
     pageTitle: "المهام",
@@ -525,5 +531,8 @@ export const tasksDict: Dictionary<TasksKey> = {
     unknownUserWord: "مستخدم",
     commentPlaceholder: "اكتب تعليقاً...",
     addCommentButton: "إضافة تعليق",
+    sectionHistory: "السجل",
+    createdAtLabel: "أُنشئ",
+    updatedAtLabel: "آخر تحديث",
   },
 };

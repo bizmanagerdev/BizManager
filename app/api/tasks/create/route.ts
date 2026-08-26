@@ -7,6 +7,7 @@ import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { parseTagIds, syncEntityTags } from "@/lib/tags";
 import { notifyTaskAssignees } from "@/lib/notifications/task-assignment";
 import { translateToHebrew } from "@/lib/i18n/translateToHebrew";
+import { computeDefaultSortOrder } from "@/lib/tasks/sortOrder";
 
 function validateTaskLinkArgs(args: {
   businessDomain: string | null;
@@ -109,6 +110,19 @@ export async function POST(req: Request) {
     // auto-translated to Hebrew here. Skipped entirely for Hebrew writers.
     const subjectHe = profile.locale === "ar" ? await translateToHebrew(subject) : null;
     const descriptionHe = profile.locale === "ar" && description ? await translateToHebrew(description) : null;
+    const now = new Date();
+    // "Order added" = newest at the very top of its column — need to know
+    // what's currently topmost there to land above it (null status is legacy
+    // for "todo", same convention loadTasksBoard uses).
+    let minQuery = supabase
+      .from("tasks")
+      .select("sort_order")
+      .order("sort_order", { ascending: true, nullsFirst: false })
+      .limit(1);
+    minQuery = status === "todo" ? minQuery.or("status.eq.todo,status.is.null") : minQuery.eq("status", status);
+    const { data: minRow } = await minQuery.maybeSingle();
+    const currentMinInColumn = typeof minRow?.sort_order === "number" ? minRow.sort_order : null;
+    const sortOrder = computeDefaultSortOrder({ status, dueDate, currentMinInColumn, now });
 
     const { data, error } = await supabase
       .from("tasks")
@@ -132,9 +146,10 @@ export async function POST(req: Request) {
         // private_owner_id doubles as the creator/owner: always the creator, set at
         // creation. Only this user may later toggle the task's privacy.
         private_owner_id: profile.id,
+        sort_order: sortOrder,
       })
       .select(
-        "id,business_domain,project_id,property_id,customer_id,assigned_user_id,subject,description,subject_he,description_he,due_date,due_time,city,address,priority,status,created_at,updated_at"
+        "id,business_domain,project_id,property_id,customer_id,assigned_user_id,subject,description,subject_he,description_he,due_date,due_time,city,address,priority,status,created_at,updated_at,sort_order"
       )
       .maybeSingle();
 

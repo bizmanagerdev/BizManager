@@ -8,9 +8,13 @@ const CLOSED_TASK_STATUSES = new Set(["done", "cancelled"]);
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as { id?: string; status?: string };
+    const body = (await req.json()) as { id?: string; status?: string; sort_order?: number };
     const id = typeof body.id === "string" ? body.id : "";
     const status = typeof body.status === "string" ? body.status : "";
+    // Optional: a drag can move a card AND place it at a specific position within
+    // its (possibly new) column in one write — computed client-side via
+    // lib/tasks/sortOrder.ts's fractional indexing.
+    const sortOrder = typeof body.sort_order === "number" && Number.isFinite(body.sort_order) ? body.sort_order : null;
 
     if (!id || !status) {
       return NextResponse.json({ error: "Missing id or status" }, { status: 400 });
@@ -20,14 +24,42 @@ export async function POST(req: Request) {
     if (!access.ok) return access.response;
     const { supabase, profile } = access.value;
 
-    const { data, error } = await supabase
-      .from("tasks")
-      .update({ status })
-      .eq("id", id)
-      .select("id,status,updated_at")
-      .maybeSingle();
+    const { data: current } = await supabase.from("tasks").select("status").eq("id", id).maybeSingle();
+    const priorStatus = typeof current?.status === "string" ? current.status : null;
+    const statusChanged = priorStatus !== null && priorStatus !== status;
 
-    if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
+    let data: Record<string, unknown> | null = null;
+    let writeError: { message: string } | null = null;
+
+    if (!statusChanged && sortOrder !== null) {
+      // Pure reorder within the same column — routed through a helper that opts
+      // this write out of the audit log (see migration
+      // add_tasks_sort_order.sql), so dragging a card doesn't spam its history
+      // with content-free "עודכן" rows.
+      const rpc = await supabase.rpc("set_task_sort_order", { p_task_id: id, p_sort_order: sortOrder });
+      writeError = rpc.error;
+      if (!writeError) {
+        const reselect = await supabase
+          .from("tasks")
+          .select("id,status,sort_order,updated_at")
+          .eq("id", id)
+          .maybeSingle();
+        data = reselect.data as Record<string, unknown> | null;
+      }
+    } else {
+      const update: Record<string, unknown> = { status };
+      if (sortOrder !== null) update.sort_order = sortOrder;
+      const result = await supabase
+        .from("tasks")
+        .update(update)
+        .eq("id", id)
+        .select("id,status,sort_order,updated_at")
+        .maybeSingle();
+      writeError = result.error;
+      data = result.data as Record<string, unknown> | null;
+    }
+
+    if (writeError) return NextResponse.json({ error: toHebrewError(writeError.message) }, { status: 400 });
 
     // A reminder to do a task you've just done is noise, and it outlived the
     // task everywhere the two are listed side by side: the dashboard's "היום"
@@ -50,11 +82,11 @@ export async function POST(req: Request) {
       closedReminders = closed?.length ?? 0;
     }
 
-    if (data?.id) {
+    if (data?.id && statusChanged) {
       await logAuditEvent({
         supabase,
         tableName: "tasks",
-        recordId: data.id,
+        recordId: id,
         action: "status_changed",
         changedBy: profile.id,
         userRole: profile.role,

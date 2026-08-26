@@ -11,17 +11,18 @@ import {
   TouchSensor,
   useSensor,
   useSensors,
-  useDraggable,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
   horizontalListSortingStrategy,
+  verticalListSortingStrategy,
   useSortable,
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { computeInsertSortOrder } from "@/lib/tasks/sortOrder";
 import { AddIcon, AttachIcon, BuildingIcon, ClockIcon, CloseIcon, CommentIcon, DragIcon, FilterIcon, LockIcon, NotificationIcon, ProjectIcon, RecurringIcon, SearchIcon, SuccessIcon, UncheckedIcon, UserIcon, WazeIcon, ZoomInIcon, ZoomOutIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { offlineFetch } from "@/lib/offline-queue";
@@ -126,6 +127,63 @@ function columnSortableId(status: string) {
   return `${COLUMN_PREFIX}${status}`;
 }
 
+/**
+ * A card for the board's local state before the server round trip confirms
+ * it — used so a just-created task appears instantly instead of waiting on a
+ * toast-then-refresh. Fields the create response doesn't carry (joined
+ * project/customer names, members, counts) default to "unknown yet";
+ * router.refresh() replaces this row with the authoritative one moments later.
+ */
+function buildOptimisticTask(fields: {
+  id: string;
+  subject: string;
+  status: string;
+  priority?: string | null;
+  due_date?: string | null;
+  due_time?: string | null;
+  city?: string | null;
+  business_domain?: string | null;
+  project_id?: string | null;
+  property_id?: string | null;
+  customer_id?: string | null;
+  assigned_user_id?: string | null;
+  assigned_user_name?: string | null;
+  is_private?: boolean | null;
+  sort_order: number;
+}): TaskBoardItem {
+  const dueDate = fields.due_date ?? null;
+  const status = fields.status;
+  const todayIso = new Date().toISOString().slice(0, 10);
+  return {
+    id: fields.id,
+    subject: fields.subject,
+    subject_he: null,
+    subject_ar: null,
+    status,
+    priority: fields.priority ?? "medium",
+    due_date: dueDate,
+    due_time: fields.due_time ?? null,
+    city: fields.city ?? null,
+    business_domain: fields.business_domain ?? null,
+    project_id: fields.project_id ?? null,
+    property_id: fields.property_id ?? null,
+    customer_id: fields.customer_id ?? null,
+    project_name: null,
+    property_name: null,
+    customer_name: null,
+    customer_phone: null,
+    assigned_user_id: fields.assigned_user_id ?? null,
+    assigned_user_name: fields.assigned_user_name ?? null,
+    members: [],
+    comment_count: 0,
+    attachment_count: 0,
+    has_open_reminder: false,
+    is_overdue: status !== "done" && status !== "cancelled" && dueDate !== null && dueDate.slice(0, 10) < todayIso,
+    is_private: fields.is_private === true,
+    sort_order: fields.sort_order,
+  };
+}
+
 // ─── Card ──────────────────────────────────────────────────────────────────────
 function TaskCard({
   task,
@@ -148,7 +206,8 @@ function TaskCard({
   overview: boolean;
   locale: Locale;
 }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
+  const { attributes, listeners, setNodeRef, isDragging, transform, transition } = useSortable({ id: task.id });
+  const style = { transform: CSS.Transform.toString(transform), transition };
   const extraMembers = task.members.length > 3 ? task.members.length - 3 : 0;
   const isDone = task.status === "done";
   const displaySubject = preferHe(task.subject, task.subject_he, locale, task.subject_ar);
@@ -187,6 +246,7 @@ function TaskCard({
   return (
     <div
       ref={setNodeRef}
+      style={style}
       {...listeners}
       {...attributes}
       onClick={() => {
@@ -221,8 +281,8 @@ function TaskCard({
       }}
       onPointerUp={cancelPress}
       onPointerCancel={cancelPress}
-      className={`cursor-pointer select-none rounded-lg border bg-card p-[0.55em] text-[1em] shadow-sm transition hover:border-primary/40 ${
-        isDragging ? "opacity-40" : ""
+      className={`group cursor-pointer select-none rounded-lg border bg-card p-[0.55em] text-[1em] shadow-card transition duration-150 ease-out hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-elevated active:translate-y-0 active:shadow-card ${
+        isDragging ? "opacity-40 shadow-elevated" : ""
       }`}
     >
       {/* Title line carries the badge and the faces too — they used to cost a row
@@ -238,7 +298,7 @@ function TaskCard({
             e.stopPropagation();
             onToggleDone(task.id, !isDone);
           }}
-          className="mt-[0.15em] shrink-0 text-muted-foreground transition-colors hover:text-success"
+          className="mt-[0.15em] shrink-0 text-muted-foreground transition duration-150 hover:text-success group-hover:scale-110"
         >
           {isDone ? (
             <SuccessIcon className="h-[1.15em] w-[1.15em] text-success" />
@@ -504,19 +564,23 @@ function BoardColumn({
       <div data-cards className="min-h-0 flex-1 space-y-[0.4em] overflow-y-auto overscroll-y-contain px-1.5 py-1.5">
         {adding === "top" ? addBox : null}
 
-        {tasks.map((task) => (
-          <TaskCard
-            key={task.id}
-            task={task}
-            onOpen={onOpen}
-            onToggleDone={onToggleDone}
-            onContextMenu={onContextMenu}
-            colorIndexById={colorIndexById}
-            longPress={longPress}
-            overview={overview}
-            locale={locale}
-          />
-        ))}
+        {/* Vertical sortable list — lets a card be dragged up/down within this
+            list (persisted via sort_order) in addition to across columns. */}
+        <SortableContext items={tasks.map((task) => task.id)} strategy={verticalListSortingStrategy}>
+          {tasks.map((task) => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              onOpen={onOpen}
+              onToggleDone={onToggleDone}
+              onContextMenu={onContextMenu}
+              colorIndexById={colorIndexById}
+              longPress={longPress}
+              overview={overview}
+              locale={locale}
+            />
+          ))}
+        </SortableContext>
 
         {tasks.length === 0 && adding === null ? (
           <p className="px-1 py-2 text-xs text-muted-foreground">{t(tasksDict, locale, "emptyColumnText")}</p>
@@ -824,6 +888,11 @@ export default function TasksPageClient(props: Props) {
       const status = task.status && map.has(task.status) ? task.status : "todo";
       map.get(status)!.push(task);
     }
+    // Display order = sort_order (drag-reorder persists there), not insertion
+    // order — otherwise a freshly-dragged card wouldn't visibly move.
+    for (const list of map.values()) {
+      list.sort((a, b) => (a.sort_order ?? Number.MAX_SAFE_INTEGER) - (b.sort_order ?? Number.MAX_SAFE_INTEGER));
+    }
     return map;
   }, [tasks]);
 
@@ -851,14 +920,19 @@ export default function TasksPageClient(props: Props) {
   const moveTask = useCallback(
     // No message, no toast: dragging a card to another list IS the feedback, and
     // a toast for something you just watched happen is noise. Callers that move
-    // a card you can't see (the tick, the card menu) pass what to say.
+    // a card you can't see (the tick, the card menu) pass what to say. Always
+    // lands at the TOP of the target column ("order added" = newest on top;
+    // there's no drop position to honor here — see handleDragEnd for the
+    // position-aware drag path).
     async (taskId: string, targetStatus: string, successMessage?: string) => {
       const task = tasks.find((t) => t.id === taskId);
       if (!task || (task.status ?? "todo") === targetStatus) return;
+      const targetList = (tasksByStatus.get(targetStatus) ?? []).filter((t) => t.id !== taskId);
+      const newSortOrder = computeInsertSortOrder(null, targetList[0]?.sort_order ?? null);
       setTasks((prev) =>
         prev.map((t) =>
           t.id === taskId
-            ? { ...t, status: targetStatus, is_overdue: targetStatus === "done" ? false : t.is_overdue }
+            ? { ...t, status: targetStatus, sort_order: newSortOrder, is_overdue: targetStatus === "done" ? false : t.is_overdue }
             : t
         )
       );
@@ -866,23 +940,23 @@ export default function TasksPageClient(props: Props) {
       try {
         const result = await offlineFetch(
           "/api/tasks/update-status",
-          { id: taskId, status: targetStatus },
+          { id: taskId, status: targetStatus, sort_order: newSortOrder },
           t(tasksDict, props.locale, "updateStatusOfflineLabel")
         );
         if (!result.queued && !result.ok) {
           toast.error(t(tasksDict, props.locale, "toastErrorUpdateStatus"), { description: toHebrewError(result.error, "") });
-          setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: task.status } : t)));
+          setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: task.status, sort_order: task.sort_order } : t)));
           return;
         }
         if (!result.queued && successMessage) toast.success(successMessage);
       } catch (error: unknown) {
         toast.error(t(tasksDict, props.locale, "toastErrorUpdateStatus"), { description: toHebrewError(error, "") });
-        setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: task.status } : t)));
+        setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: task.status, sort_order: task.sort_order } : t)));
       } finally {
         emitProgressActivityEnd();
       }
     },
-    [tasks, props.locale]
+    [tasks, tasksByStatus, props.locale]
   );
 
   function handleDragStart(event: DragStartEvent) {
@@ -918,9 +992,71 @@ export default function TasksPageClient(props: Props) {
       return;
     }
 
-    // Card moved to another column.
-    if (!overId.startsWith(COLUMN_PREFIX)) return;
-    void moveTask(activeId, overId.slice(COLUMN_PREFIX.length));
+    // Card drag: reorder within a column, or move to another column at a
+    // specific spot — persisted via sort_order (fractional indexing between
+    // whichever two cards it lands between), not just an append.
+    if (overId === activeId) return;
+    const draggedTask = tasks.find((task) => task.id === activeId);
+    if (!draggedTask) return;
+    const sourceStatus = draggedTask.status && tasksByStatus.has(draggedTask.status) ? draggedTask.status : "todo";
+    const targetStatus = overId.startsWith(COLUMN_PREFIX)
+      ? overId.slice(COLUMN_PREFIX.length)
+      : tasks.find((task) => task.id === overId)?.status || sourceStatus;
+    if (!tasksByStatus.has(targetStatus)) return;
+
+    // The target column's current order, excluding the dragged card itself.
+    const targetList = (tasksByStatus.get(targetStatus) ?? []).filter((task) => task.id !== activeId);
+    let targetIndex = targetList.length; // default: dropped on the column itself → append
+    if (!overId.startsWith(COLUMN_PREFIX)) {
+      const overIndex = targetList.findIndex((task) => task.id === overId);
+      if (overIndex >= 0) {
+        // Landed on the lower half of the over-card → after it, not before it.
+        const overRect = event.over?.rect;
+        const activeRect = event.active.rect.current.translated ?? event.active.rect.current.initial;
+        const insertAfter =
+          overRect && activeRect ? activeRect.top + activeRect.height / 2 > overRect.top + overRect.height / 2 : false;
+        targetIndex = insertAfter ? overIndex + 1 : overIndex;
+      }
+    }
+
+    const newSortOrder = computeInsertSortOrder(
+      targetList[targetIndex - 1]?.sort_order ?? null,
+      targetList[targetIndex]?.sort_order ?? null
+    );
+    if (targetStatus === sourceStatus && draggedTask.sort_order === newSortOrder) return;
+
+    const previousTasks = tasks;
+    setTasks((prev) =>
+      prev.map((task) =>
+        task.id === activeId
+          ? {
+              ...task,
+              status: targetStatus,
+              sort_order: newSortOrder,
+              is_overdue: targetStatus === "done" ? false : task.is_overdue,
+            }
+          : task
+      )
+    );
+    // No progress bar for this one — the card sliding into place IS the
+    // feedback, and a loading bar flashing on every single drag reads as
+    // sluggish rather than reassuring.
+    void (async () => {
+      try {
+        const result = await offlineFetch(
+          "/api/tasks/update-status",
+          { id: activeId, status: targetStatus, sort_order: newSortOrder },
+          t(tasksDict, props.locale, "updateStatusOfflineLabel")
+        );
+        if (!result.queued && !result.ok) {
+          toast.error(t(tasksDict, props.locale, "toastErrorUpdateStatus"), { description: toHebrewError(result.error, "") });
+          setTasks(previousTasks);
+        }
+      } catch (error: unknown) {
+        toast.error(t(tasksDict, props.locale, "toastErrorUpdateStatus"), { description: toHebrewError(error, "") });
+        setTasks(previousTasks);
+      }
+    })();
   }
 
   function openCard(id: string) {
@@ -981,7 +1117,28 @@ export default function TasksPageClient(props: Props) {
       let created = 0;
       let queued = 0;
       const failed: string[] = [];
+      // "Order added" = newest at the top — each line lands above whatever is
+      // currently topmost (including the previous line in this same batch, so
+      // the last line typed ends up highest).
+      let runningTop = (tasksByStatus.get(status) ?? [])[0]?.sort_order ?? null;
       for (const subject of titles) {
+        const tempId = `temp-${crypto.randomUUID()}`;
+        const sortOrder = computeInsertSortOrder(null, runningTop);
+        runningTop = sortOrder;
+        // Shows the card immediately — no toast, no waiting on the request to
+        // resolve; the card appearing IS the feedback.
+        setTasks((prev) => [
+          ...prev,
+          buildOptimisticTask({
+            id: tempId,
+            subject,
+            status,
+            priority: "medium",
+            business_domain: "general_business",
+            assigned_user_id: props.currentUserId,
+            sort_order: sortOrder,
+          }),
+        ]);
         try {
           const result = await offlineFetch(
             "/api/tasks/create",
@@ -997,21 +1154,21 @@ export default function TasksPageClient(props: Props) {
           );
           if (result.queued) queued += 1;
           else if (result.ok) created += 1;
-          else failed.push(subject);
+          else {
+            failed.push(subject);
+            setTasks((prev) => prev.filter((task) => task.id !== tempId));
+          }
         } catch {
           failed.push(subject);
+          setTasks((prev) => prev.filter((task) => task.id !== tempId));
         }
       }
-      // Report per batch, not per row — N toasts for N cards is noise.
-      if (created > 0)
-        toast.success(
-          created === 1
-            ? t(tasksDict, props.locale, "toastTaskCreatedSingle")
-            : `${t(tasksDict, props.locale, "createdCountPrefix")} ${created} ${t(tasksDict, props.locale, "tasksWord")}`
-        );
+      // Failures still get a toast — there's nothing on screen for those to see.
       if (failed.length > 0) {
         toast.error(`${failed.length} ${t(tasksDict, props.locale, "tasksNotCreatedSuffix")}`, { description: failed.join(", ") });
       }
+      // Silently reconciles the optimistic rows with the real server ones (ids,
+      // joined names, server-computed sort_order) — no toast for the happy path.
       if (created > 0 || queued > 0) router.refresh();
     } catch (error: unknown) {
       toast.error(t(tasksDict, props.locale, "toastErrorCreateTask"), { description: toHebrewError(error, "") });
@@ -1508,7 +1665,40 @@ export default function TasksPageClient(props: Props) {
         properties={props.properties}
         customers={props.customers}
         currentUserId={props.currentUserId}
-        onSaved={() => router.refresh()}
+        onSaved={(created) => {
+          // A just-created task appears the instant the request resolves —
+          // router.refresh() below silently reconciles it with the full,
+          // joined server row a moment later (no toast either way).
+          if (created && typeof created.id === "string") {
+            const id = created.id;
+            setTasks((prev) => {
+              if (prev.some((task) => task.id === id)) return prev;
+              const status = typeof created.status === "string" ? created.status : "todo";
+              const assignedUserId = typeof created.assigned_user_id === "string" ? created.assigned_user_id : null;
+              return [
+                ...prev,
+                buildOptimisticTask({
+                  id,
+                  subject: typeof created.subject === "string" ? created.subject : "משימה",
+                  status,
+                  priority: typeof created.priority === "string" ? created.priority : "medium",
+                  due_date: typeof created.due_date === "string" ? created.due_date : null,
+                  due_time: typeof created.due_time === "string" ? created.due_time : null,
+                  city: typeof created.city === "string" ? created.city : null,
+                  business_domain: typeof created.business_domain === "string" ? created.business_domain : null,
+                  project_id: typeof created.project_id === "string" ? created.project_id : null,
+                  property_id: typeof created.property_id === "string" ? created.property_id : null,
+                  customer_id: typeof created.customer_id === "string" ? created.customer_id : null,
+                  assigned_user_id: assignedUserId,
+                  assigned_user_name: assignedUserId ? props.users.find((u) => u.id === assignedUserId)?.label ?? null : null,
+                  is_private: created.is_private === true,
+                  sort_order: typeof created.sort_order === "number" ? created.sort_order : Date.now(),
+                }),
+              ];
+            });
+          }
+          router.refresh();
+        }}
       />
 
       <ConfirmDialog

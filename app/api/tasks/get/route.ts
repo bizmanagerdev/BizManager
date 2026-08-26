@@ -1,7 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
-import { resolveUserDisplayNamesForValues } from "@/lib/audit";
+import { getEntityAuditTrail, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import { translateToArabic } from "@/lib/i18n/translateToHebrew";
 
 type Row = Record<string, unknown>;
@@ -112,7 +112,25 @@ export async function POST(req: Request) {
     const owner = str(task as Row, "private_owner_id");
     const viewerIsCreator = Boolean(owner) && owner === profile.id;
 
-    return NextResponse.json({ task, members, comments, reminders, viewer_is_creator: viewerIsCreator });
+    // "What changed and who changed it" — reuses the same audit_logs trail the
+    // /activity page reads. Best-effort: audit_logs is admin/office-only by RLS,
+    // so a worker just gets an empty list here (not an error), same as every
+    // other admin-only surface built on getEntityAuditTrail.
+    let history: Array<{ id: string; actor_name: string | null; created_at: string | null; action_label: string; details: string }> = [];
+    try {
+      const trail = await getEntityAuditTrail(supabase, [{ tableName: "tasks", recordId: id }], 30);
+      history = trail.items.map((item) => ({
+        id: item.id,
+        actor_name: item.actorName,
+        created_at: item.createdAt,
+        action_label: item.actionLabel,
+        details: item.details,
+      }));
+    } catch {
+      // Non-fatal — the rest of the card works without a history list.
+    }
+
+    return NextResponse.json({ task, members, comments, reminders, history, viewer_is_creator: viewerIsCreator });
   } catch (err: unknown) {
     const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });

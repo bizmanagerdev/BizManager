@@ -68,6 +68,13 @@ export type AttachmentItem = {
   uploader_name: string | null;
   url: string | null;
 };
+export type HistoryItem = {
+  id: string;
+  actor_name: string | null;
+  created_at: string | null;
+  action_label: string;
+  details: string;
+};
 
 export function TaskDescriptionSection({
   description,
@@ -829,5 +836,28 @@ export function TaskCommentsPanel({
           </Button>
         </div>
       </section>
+  );
+}
+
+// "What changed and who changed it" — read-only, sourced from audit_logs (see
+// app/api/tasks/get). Only ever populated for admin/office viewers (RLS keeps
+// audit_logs admin-only), so a worker simply never gets this tab — the dialog
+// only renders it when the list is non-empty.
+export function TaskHistorySection({ history, locale }: { history: HistoryItem[]; locale: Locale }) {
+  return (
+    <section className="space-y-2">
+      {history.map((item) => (
+        <div key={item.id} className="rounded-md border bg-muted/20 px-3 py-2">
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            <span className="text-sm font-medium">{item.actor_name ?? t(tasksDict, locale, "unknownUserWord")}</span>
+            <span className="text-[11px] text-muted-foreground">{formatShortDateTime(item.created_at)}</span>
+          </div>
+          <div className="mt-0.5 text-sm text-muted-foreground">
+            {item.action_label}
+            {item.details ? ` · ${item.details}` : ""}
+          </div>
+        </div>
+      ))}
+    </section>
   );
 }

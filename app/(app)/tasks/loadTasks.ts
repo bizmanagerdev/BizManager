@@ -35,6 +35,8 @@ export type TaskBoardItem = {
   has_open_reminder: boolean;
   is_overdue: boolean;
   is_private: boolean;
+  /** Board position within its status column — drag-reorder persists here. */
+  sort_order: number | null;
 };
 
 export type TasksFilters = {
@@ -57,7 +59,7 @@ const DONE_LIMIT = 60;
 const OPEN_LIMIT = 1000;
 
 const TASK_SELECT =
-  "id,subject,subject_he,subject_ar,status,priority,due_date,due_time,city,business_domain,project_id,property_id,customer_id,assigned_user_id,is_private,private_owner_id";
+  "id,subject,subject_he,subject_ar,status,priority,due_date,due_time,city,business_domain,project_id,property_id,customer_id,assigned_user_id,is_private,private_owner_id,sort_order";
 
 function getString(row: Row, key: string) {
   const value = row[key];
@@ -85,6 +87,7 @@ type TaskRow = {
   assigned_user_id: string | null;
   is_private: boolean | null;
   private_owner_id: string | null;
+  sort_order: number | null;
 };
 
 export type TasksBoardResult = {
@@ -156,6 +159,10 @@ export async function loadTasksBoard(
     doneFilter = doneFilter.ilike("subject", escaped);
   }
 
+  // Selection order stays as before (recency) — it only decides WHICH rows make
+  // the cut (the done column is capped to the most recently touched). Display
+  // order within each column comes from sort_order (see the re-sort below), so a
+  // manual drag-reorder (or the created/due-date default) is what the board shows.
   const openQuery = openFilter
     .order("created_at", { ascending: false, nullsFirst: false })
     .range(0, OPEN_LIMIT - 1);
@@ -163,7 +170,13 @@ export async function loadTasksBoard(
 
   const [openRes, doneRes] = await Promise.all([openQuery, doneQuery]);
   const error = openRes.error?.message ?? doneRes.error?.message ?? null;
-  const taskRows = [...((openRes.data ?? []) as TaskRow[]), ...((doneRes.data ?? []) as TaskRow[])]
+  const bySortOrder = (a: TaskRow, b: TaskRow) =>
+    (a.sort_order ?? Number.MAX_SAFE_INTEGER) - (b.sort_order ?? Number.MAX_SAFE_INTEGER);
+  const openRows = (openRes.data ?? []) as TaskRow[];
+  const doneRows = (doneRes.data ?? []) as TaskRow[];
+  openRows.sort(bySortOrder);
+  doneRows.sort(bySortOrder);
+  const taskRows = [...openRows, ...doneRows]
     // Private tasks are visible only to their owner. RLS already enforces this at
     // the DB; this is a belt-and-suspenders guard in case the policy isn't applied.
     .filter((t) => !t.is_private || t.private_owner_id === userId);
@@ -326,6 +339,7 @@ export async function loadTasksBoard(
       has_open_reminder: reminderTaskIds.has(row.id),
       is_overdue: isOpen && row.due_date !== null && row.due_date.slice(0, 10) < todayIso,
       is_private: Boolean(row.is_private),
+      sort_order: row.sort_order,
     };
   });
 

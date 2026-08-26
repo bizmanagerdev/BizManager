@@ -7,7 +7,7 @@ import { offlineUpload } from "@/lib/offline-upload";
 import { toHebrewError } from "@/lib/error-messages";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { AttachIcon, BusinessIcon, ChevronDownIcon, ClockIcon, CommentIcon, LocationIcon, LockIcon, NotificationIcon, SpinnerIcon, SuccessIcon, TagIcon, TextIcon, UncheckedIcon, UnlockIcon, UsersIcon } from "@/components/ui/icons";
+import { AttachIcon, BusinessIcon, ChevronDownIcon, ClockIcon, CommentIcon, HistoryIcon, LocationIcon, LockIcon, NotificationIcon, SpinnerIcon, SuccessIcon, TagIcon, TextIcon, UncheckedIcon, UnlockIcon, UsersIcon } from "@/components/ui/icons";
 import { DeleteButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import {
@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { buildColorIndexMap } from "@/components/dashboard/InitialsAvatar";
+import { formatShortDateTime } from "@/lib/date";
 import { fetchExistingTagIds } from "@/components/tags/TagPicker";
 import {
   isExpenseBusinessDomain,
@@ -61,6 +62,7 @@ import {
 import {
   TaskAttachmentsSection,
   TaskCommentsPanel,
+  TaskHistorySection,
   TaskRemindersPanel,
   TaskDatesSection,
   TaskDescriptionSection,
@@ -72,6 +74,7 @@ import {
   TaskRemindersStagingSection,
   type AttachmentItem,
   type CommentItem,
+  type HistoryItem,
   type ReminderItem,
   type TaskOption,
   type UserOption,
@@ -127,7 +130,10 @@ type Props = {
   presetTagIds?: string[];
   // Pre-link a customer for a NEW task (e.g. creating from a customer page).
   presetCustomerId?: string;
-  onSaved?: () => void;
+  // On a successful CREATE, carries the raw row /api/tasks/create returned —
+  // lets the board insert it into its local list instantly instead of waiting
+  // on router.refresh(). Absent on update/delete/privacy saves.
+  onSaved?: (created?: Record<string, unknown> | null) => void;
 };
 
 function getErrorMessage(err: unknown) {
@@ -239,6 +245,9 @@ export function TaskUpsertDialog(rawProps: Props) {
   const [legacyNotes, setLegacyNotes] = useState<LegacyNote[]>([]);
   const [newComment, setNewComment] = useState("");
   const [addingComment, setAddingComment] = useState(false);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [createdAt, setCreatedAt] = useState<string | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
 
   const [reminders, setReminders] = useState<ReminderItem[]>([]);
   // When set, the reminder add-form acts as an EDIT form for this reminder id.
@@ -374,6 +383,9 @@ export function TaskUpsertDialog(rawProps: Props) {
         setComments(Array.isArray(json?.comments) ? (json.comments as CommentItem[]) : []);
         setLegacyNotes(parseLegacyNotes(typeof task.notes === "string" ? task.notes : null));
         setReminders(Array.isArray(json?.reminders) ? (json.reminders as ReminderItem[]) : []);
+        setHistory(Array.isArray(json?.history) ? (json.history as HistoryItem[]) : []);
+        setCreatedAt(typeof task.created_at === "string" ? task.created_at : null);
+        setUpdatedAt(typeof task.updated_at === "string" ? task.updated_at : null);
         void fetchAttachments(taskId);
 
         // Nothing forced open — the user opens whichever section they want.
@@ -403,6 +415,9 @@ export function TaskUpsertDialog(rawProps: Props) {
     setReminders([]);
     setPendingReminders([]);
     setAttachments([]);
+    setHistory([]);
+    setCreatedAt(null);
+    setUpdatedAt(null);
     // Or files staged for a task you abandoned would ride along to the next one.
     setPendingFiles([]);
     setNewComment("");
@@ -532,8 +547,8 @@ export function TaskUpsertDialog(rawProps: Props) {
         setIsPrivate(!next);
         return;
       }
-      if (!result.queued)
-        toast.success(t(tasksDict, props.locale, next ? "toastPrivacyOn" : "toastPrivacyOff"));
+      // No success toast — the lock icon itself already flips to reflect the
+      // change (see the header button below).
       props.onSaved?.();
     } catch (error: unknown) {
       toast.error(t(tasksDict, props.locale, "toastErrorUpdatePrivacy"), { description: getErrorMessage(error) });
@@ -585,7 +600,6 @@ export function TaskUpsertDialog(rawProps: Props) {
     emitProgressActivityStart();
     try {
       const base = buildPayload();
-      let created = 0;
       const failed: string[] = [];
       for (const line of subjectLines) {
         try {
@@ -595,16 +609,14 @@ export function TaskUpsertDialog(rawProps: Props) {
             t(tasksDict, props.locale, "newTaskLabel"),
             { idempotent: true }
           );
-          if (result.queued || result.ok) created += 1;
-          else failed.push(line);
+          if (!result.queued && !result.ok) failed.push(line);
         } catch {
           failed.push(line);
         }
       }
       // Partial failure is real across N writes: keep what failed on screen to
-      // retry rather than silently dropping it.
-      if (created > 0)
-        toast.success(`${t(tasksDict, props.locale, "createdCountPrefix")} ${created} ${t(tasksDict, props.locale, "tasksWord")}`);
+      // retry rather than silently dropping it. No success toast — the tasks
+      // showing up in the board list is the confirmation.
       if (failed.length > 0) {
         setSubject(failed.join("\n"));
         toast.error(`${failed.length} ${t(tasksDict, props.locale, "tasksFailedRetrySuffix")}`);
@@ -655,9 +667,15 @@ export function TaskUpsertDialog(rawProps: Props) {
           return;
         }
         clearDraft("task-create");
-        toast.success(t(tasksDict, props.locale, "toastTaskCreatedSingle"));
+        // No toast — the board shows the new card the instant onSaved fires
+        // (see TasksPageClient), so a "created" toast would just be announcing
+        // something already visible.
         await uploadPendingFiles(newTaskIdFrom(result.data));
-        props.onSaved?.();
+        const createdTask =
+          result.data && typeof result.data === "object" && "task" in result.data
+            ? ((result.data as { task?: Record<string, unknown> | null }).task ?? null)
+            : null;
+        props.onSaved?.(createdTask);
         // Close so the new task shows in the list (no lingering edit dialog).
         props.onOpenChange(false);
         router.refresh();
@@ -674,7 +692,8 @@ export function TaskUpsertDialog(rawProps: Props) {
         toast.error(t(tasksDict, props.locale, "toastErrorUpdateTask"), { description: toHebrewError(result.error, "") });
         return;
       }
-      if (!result.queued) toast.success(t(tasksDict, props.locale, "toastTaskUpdated"));
+      // No success toast — the dialog closing and the card reflecting the edit
+      // is the confirmation.
       props.onSaved?.();
       props.onOpenChange(false);
       router.refresh();
@@ -761,7 +780,7 @@ export function TaskUpsertDialog(rawProps: Props) {
       ]);
       setReminderAt("");
       setReminderNote("");
-      toast.success(t(tasksDict, props.locale, "toastReminderAdded"));
+      // No success toast — it's already in the reminders list above.
     } catch (error: unknown) {
       toast.error(t(tasksDict, props.locale, "toastErrorAddReminder"), { description: getErrorMessage(error) });
     } finally {
@@ -810,7 +829,7 @@ export function TaskUpsertDialog(rawProps: Props) {
       setEditingReminderId(null);
       setReminderAt("");
       setReminderNote("");
-      if (!result.queued) toast.success(t(tasksDict, props.locale, "toastReminderUpdated"));
+      // No success toast — the list already shows the updated time/note.
     } catch (error: unknown) {
       toast.error(t(tasksDict, props.locale, "toastErrorUpdateReminder"), { description: getErrorMessage(error) });
     } finally {
@@ -857,7 +876,6 @@ export function TaskUpsertDialog(rawProps: Props) {
       toast.error(t(tasksDict, props.locale, "filesNotAttachedCard"));
       return;
     }
-    let uploaded = 0;
     const failed: string[] = [];
     for (const file of pendingFiles) {
       try {
@@ -866,19 +884,14 @@ export function TaskUpsertDialog(rawProps: Props) {
           file,
           label: file.name,
         });
-        if (result.queued || result.ok) uploaded += 1;
-        else failed.push(file.name);
+        if (!result.queued && !result.ok) failed.push(file.name);
       } catch {
         failed.push(file.name);
       }
     }
-    if (uploaded > 0)
-      toast.success(
-        uploaded === 1
-          ? t(tasksDict, props.locale, "fileUploadedSingle")
-          : `${uploaded} ${t(tasksDict, props.locale, "filesUploadedCountSuffix")}`
-      );
-    // The task itself was created — don't fail the whole save over an attachment.
+    // No success toast — the file(s) show up in the attachments list. The task
+    // itself was created either way, so a failed attachment still gets a toast
+    // (there'd otherwise be nothing on screen to explain why it's missing).
     if (failed.length > 0) toast.error(t(tasksDict, props.locale, "someFilesFailedUpload"), { description: failed.join(", ") });
     setPendingFiles([]);
   }
@@ -889,9 +902,8 @@ export function TaskUpsertDialog(rawProps: Props) {
     setUploadingFiles(true);
     emitProgressActivityStart();
     try {
-      // uploaded = genuinely sent now; a queued upload was saved on the device
-      // and replays on reconnect (ConnectionToasts announces it).
-      let uploaded = 0;
+      // A queued upload was saved on the device and replays on reconnect
+      // (ConnectionToasts announces it) — nothing more to do here for those.
       for (const file of files) {
         const result = await offlineUpload("/api/tasks/attachments/upload", {
           fields: { task_id: targetId },
@@ -903,14 +915,8 @@ export function TaskUpsertDialog(rawProps: Props) {
           toast.error(t(tasksDict, props.locale, "toastErrorUploadFile"), { description: result.error });
           return;
         }
-        uploaded += 1;
       }
-      if (uploaded > 0)
-        toast.success(
-          uploaded === 1
-            ? t(tasksDict, props.locale, "fileUploadedSingle")
-            : t(tasksDict, props.locale, "filesUploadedPlural")
-        );
+      // No success toast — the file(s) appear in the attachments list below.
       await fetchAttachments(targetId);
     } catch (error: unknown) {
       toast.error(t(tasksDict, props.locale, "toastErrorUploadFile"), { description: getErrorMessage(error) });
@@ -938,7 +944,7 @@ export function TaskUpsertDialog(rawProps: Props) {
         await fetchAttachments(targetId);
         return;
       }
-      if (!result.queued) toast.success(t(tasksDict, props.locale, "toastFileDeleted"));
+      // No success toast — the file is already gone from the list.
       setAttachmentToDelete(null);
     } catch (error: unknown) {
       toast.error(t(tasksDict, props.locale, "toastErrorDeleteFile"), { description: getErrorMessage(error) });
@@ -964,7 +970,8 @@ export function TaskUpsertDialog(rawProps: Props) {
         toast.error(t(tasksDict, props.locale, "toastErrorDeleteTask"), { description: toHebrewError(result.error, "") });
         return;
       }
-      if (!result.queued) toast.success(t(tasksDict, props.locale, "toastTaskDeleted"));
+      // No success toast — closing the dialog and the task disappearing from
+      // the board is the confirmation.
       props.onSaved?.();
       props.onOpenChange(false);
       router.refresh();
@@ -1001,8 +1008,15 @@ export function TaskUpsertDialog(rawProps: Props) {
       ...(isEditing && targetTaskId
         ? [{ key: "comments", label: t(tasksDict, props.locale, "sectionComments"), icon: CommentIcon }]
         : []),
+      // History is admin/office-only in practice (see app/api/tasks/get — RLS
+      // keeps audit_logs out of reach for other roles), so it only appears
+      // once there's actually something to show, rather than as a
+      // perpetually-empty tab for everyone else.
+      ...(history.length > 0
+        ? [{ key: "history", label: t(tasksDict, props.locale, "sectionHistory"), icon: HistoryIcon }]
+        : []),
     ],
-    [isEditing, targetTaskId, props.locale]
+    [isEditing, targetTaskId, history.length, props.locale]
   );
   // At most one section open — an unknown/cleared key (including the initial
   // "nothing yet" state) means NONE is open, not a fallback to the first one.
@@ -1227,6 +1241,15 @@ export function TaskUpsertDialog(rawProps: Props) {
             ) : null}
           </div>
           <DialogDescription className="sr-only">{t(tasksDict, props.locale, "dialogDescriptionSr")}</DialogDescription>
+          {/* When it was created / last touched — always visible, no click needed. */}
+          {isEditing && (createdAt || updatedAt) ? (
+            <div className="mt-1 text-[11px] text-muted-foreground">
+              {createdAt ? `${t(tasksDict, props.locale, "createdAtLabel")} ${formatShortDateTime(createdAt)}` : ""}
+              {updatedAt && updatedAt !== createdAt
+                ? ` · ${t(tasksDict, props.locale, "updatedAtLabel")} ${formatShortDateTime(updatedAt)}`
+                : ""}
+            </div>
+          ) : null}
         </DialogHeader>
 
         {loading ? (
@@ -1461,6 +1484,18 @@ export function TaskUpsertDialog(rawProps: Props) {
                 chosenColorById={chosenColorById}
                 locale={props.locale}
               />
+            </TaskSection>
+          ) : null}
+
+          {history.length > 0 ? (
+            <TaskSection
+              icon={sectionByKey.get("history")!.icon}
+              label={sectionByKey.get("history")!.label}
+              active={isOpen("history")}
+              onToggle={() => toggleSection("history")}
+              rowRef={rowRefFor("history")}
+            >
+              <TaskHistorySection history={history} locale={props.locale} />
             </TaskSection>
           ) : null}
           </div>
