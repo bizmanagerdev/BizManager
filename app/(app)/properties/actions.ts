@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { toHebrewError } from "@/lib/error-messages";
-import { buildPaymentInsert } from "@/lib/payments";
+import { buildPaymentInsert, PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
 import type { PropertyInput } from "./PropertyFormFields";
 
 export type ActionResult = { ok: true; id?: string } | { ok: false; error: string };
@@ -18,6 +18,7 @@ export type LeaseInput = {
   deposit_type: string; // '' | 'cash' | 'bank_guarantee' | 'security_check'
   deposit_amount: string;
   deposit_reference: string;
+  keys_handed_over: string; // how many keys this tenant got at move-in
 };
 
 function clean(value: string | null | undefined) {
@@ -59,6 +60,7 @@ function propertyFields(input: PropertyInput) {
     bathrooms: numOrNull(input.bathrooms),
     mezuzah_count: numOrNull(input.mezuzah_count),
     light_bulb_count: numOrNull(input.light_bulb_count),
+    key_count: numOrNull(input.key_count),
     has_private_entrance: input.has_private_entrance,
     has_storage_room: input.has_storage_room,
     has_parking: input.has_parking,
@@ -70,6 +72,10 @@ function propertyFields(input: PropertyInput) {
     land_block: clean(input.land_block),
     land_parcel: clean(input.land_parcel),
     land_sub_parcel: clean(input.land_sub_parcel),
+    electricity_contract_number: clean(input.electricity_contract_number),
+    water_contract_number: clean(input.water_contract_number),
+    gas_contract_number: clean(input.gas_contract_number),
+    arnona_contract_number: clean(input.arnona_contract_number),
     is_furnished: input.is_furnished,
     furniture_items: input.furniture_items,
   };
@@ -187,6 +193,7 @@ function leaseFields(input: LeaseInput) {
     deposit_type: clean(input.deposit_type),
     deposit_amount: numOrNull(input.deposit_amount),
     deposit_reference: clean(input.deposit_reference),
+    keys_handed_over: numOrNull(input.keys_handed_over),
   };
 }
 
@@ -292,17 +299,20 @@ export type ScheduleRentResult =
 
 /**
  * Pre-schedule a batch of rent payments for a property (one per rental month),
- * each a pending 'check' payment: payment_date = the rental month it covers,
- * due_date = when the actual post-dated check clears. Purely additive — never
- * deletes/replaces existing rows, so re-running to extend the schedule is safe
- * — but rows whose rental month already has a scheduled payment for this
+ * each still pending: payment_date = the rental month it covers, due_date =
+ * when the money actually moves (the post-dated check's פירעון, the standing
+ * transfer's date…). The method applies to the whole batch — a lease is paid
+ * one way — and check_number is only meaningful for 'check'. Purely additive —
+ * never deletes/replaces existing rows, so re-running to extend the schedule is
+ * safe — but rows whose rental month already has a scheduled payment for this
  * property are skipped rather than double-booked (a double-submit or an
- * overlapping "extend the schedule" run should not create duplicate checks).
+ * overlapping "extend the schedule" run should not create duplicates).
  */
 export async function scheduleRentPayments(
   propertyId: string,
   rows: RentScheduleRowInput[],
-  accountId: string
+  accountId: string,
+  paymentMethod: string = "check"
 ): Promise<ScheduleRentResult> {
   try {
     const ctx = await getStaffContext();
@@ -310,6 +320,10 @@ export async function scheduleRentPayments(
     if (!propertyId) return { ok: false, error: "חסר מזהה נכס." };
     if (rows.length === 0) return { ok: false, error: "לא הוזנו תשלומים." };
     if (!accountId) return { ok: false, error: "יש לבחור חשבון." };
+    const method = PAYMENT_METHOD_OPTIONS.some((m) => m.value === paymentMethod)
+      ? paymentMethod
+      : "";
+    if (!method) return { ok: false, error: "אמצעי תשלום לא תקין." };
     const invalid = rows.find((row) => !row.paymentDate || !row.dueDate || !(row.amount > 0));
     if (invalid) return { ok: false, error: "כל תשלום חייב תאריך לחודש, תאריך פרעון וסכום תקין." };
 
@@ -338,9 +352,9 @@ export async function scheduleRentPayments(
         businessDomain: "property_management",
         propertyId,
         paymentDate: row.paymentDate,
-        paymentMethod: "check",
+        paymentMethod: method,
         paymentStatus: "pending",
-        checkNumber: row.checkNumber || null,
+        checkNumber: method === "check" ? row.checkNumber || null : null,
         dueDate: row.dueDate,
         accountId,
         recordedBy: ctx.profile.id,

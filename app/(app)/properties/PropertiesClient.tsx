@@ -12,7 +12,12 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { PageStack, AdaptiveGrid } from "@/components/layout/page-layout";
 import { formatCurrency } from "@/lib/payroll";
-import { propertyDisplayName, propertyTypeLabel, type PropertyWithLease } from "@/lib/properties";
+import {
+  propertyDisplayName,
+  propertyHasRoomLayout,
+  propertyTypeLabel,
+  type PropertyWithLease,
+} from "@/lib/properties";
 import AddReminderButton from "@/components/reminders/AddReminderButton";
 import { createProperty, updateProperty, deleteProperty } from "./actions";
 import { EMPTY_PROPERTY_FORM, propertyToForm, PropertyFormFields, type PropertyInput } from "./PropertyFormFields";
@@ -21,19 +26,20 @@ import { invalidateQuickCreateCache } from "@/components/layout/QuickCreateMenu"
 
 /** "3 חדרים · קומה 2 · 65 מ״ר · 2 חדרי רחצה" — only the parts that are set. */
 function factsLine(p: PropertyWithLease): string {
+  // A building has apartments, not a room count; a מחסן has neither — just area.
+  const hasRoomLayout = propertyHasRoomLayout(p.propertyType);
   return [
-    // A building has apartments, not a room count.
     p.propertyType === "building"
       ? p.apartmentsCount != null
         ? `${p.apartmentsCount} דירות`
         : null
-      : p.rooms != null
+      : hasRoomLayout && p.rooms != null
         ? `${p.rooms} חדרים`
         : null,
     p.floor != null ? `קומה ${p.floor}` : null,
     p.squareMeters != null ? `${p.squareMeters} מ״ר` : null,
-    p.bathrooms != null ? `${p.bathrooms} חדרי רחצה` : null,
-    p.mezuzahCount != null ? `${p.mezuzahCount} מזוזות` : null,
+    hasRoomLayout && p.bathrooms != null ? `${p.bathrooms} חדרי רחצה` : null,
+    hasRoomLayout && p.mezuzahCount != null ? `${p.mezuzahCount} מזוזות` : null,
     p.lightBulbCount != null ? `${p.lightBulbCount} נורות` : null,
   ]
     .filter(Boolean)

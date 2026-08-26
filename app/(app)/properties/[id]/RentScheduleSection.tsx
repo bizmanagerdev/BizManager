@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { AddIcon, CheckIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { DateInput } from "@/components/ui/date-input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +14,8 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { formatCurrency } from "@/lib/payroll";
+import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
+import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { normalizeCheckStatus, checkStatusLabel, checkStatusClasses } from "@/lib/checks";
 import { buildRentSchedule, stepMonthly, type RentScheduleRow } from "@/lib/rentSchedule";
 import { type LeaseAgreement, type PropertyPayment } from "@/lib/properties";
@@ -34,7 +37,18 @@ function fmtDate(value: string | null) {
   return new Intl.DateTimeFormat("he-IL", { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
 }
 
-type EditForm = { paymentDate: string; dueDate: string; amount: string; checkNumber: string };
+type EditForm = {
+  paymentDate: string;
+  dueDate: string;
+  amount: string;
+  paymentMethod: string;
+  checkNumber: string;
+};
+
+/** Rent can be paid any way — the check-only fields appear only for צ'ק. */
+function isCheck(method: string) {
+  return method === "check";
+}
 
 export default function RentScheduleSection({
   propertyId,
@@ -63,15 +77,23 @@ export default function RentScheduleSection({
     count: "12",
     firstMonth: defaultFirstMonth,
     monthlyAmount: currentLease ? String(currentLease.monthlyRentAmount) : "",
+    paymentMethod: "check",
     startingCheckNumber: "",
     accountId: "",
   });
   const [accountsList, setAccountsList] = useState<Account[]>([]);
   const [previewRows, setPreviewRows] = useState<RentScheduleRow[] | null>(null);
   const [genBusy, setGenBusy] = useState(false);
+  const genIsCheck = isCheck(genForm.paymentMethod);
 
   const [editTarget, setEditTarget] = useState<PropertyPayment | null>(null);
-  const [editForm, setEditForm] = useState<EditForm>({ paymentDate: "", dueDate: "", amount: "", checkNumber: "" });
+  const [editForm, setEditForm] = useState<EditForm>({
+    paymentDate: "",
+    dueDate: "",
+    amount: "",
+    paymentMethod: "check",
+    checkNumber: "",
+  });
   const [editBusy, setEditBusy] = useState(false);
 
   const [clearingId, setClearingId] = useState<string | null>(null);
@@ -81,11 +103,26 @@ export default function RentScheduleSection({
       count: "12",
       firstMonth: defaultFirstMonth,
       monthlyAmount: currentLease ? String(currentLease.monthlyRentAmount) : "",
+      paymentMethod: "check",
       startingCheckNumber: "",
       accountId: "",
     });
     setPreviewRows(null);
     setGeneratorOpen(true);
+  }
+
+  /**
+   * Switching the method re-points the batch at the account kind that method
+   * lands in (cash → the cash box, transfer/check → the bank), and drops the
+   * check numbers, which only describe a physical check book.
+   */
+  function pickMethod(method: string) {
+    setGenForm((prev) => ({
+      ...prev,
+      paymentMethod: method,
+      startingCheckNumber: isCheck(method) ? prev.startingCheckNumber : "",
+      accountId: defaultAccountForMethod(accountsList, method) || prev.accountId,
+    }));
   }
 
   function generatePreview() {
@@ -108,7 +145,7 @@ export default function RentScheduleSection({
         firstMonth: genForm.firstMonth,
         count,
         monthlyAmount: amount,
-        startingCheckNumber: genForm.startingCheckNumber,
+        startingCheckNumber: genIsCheck ? genForm.startingCheckNumber : "",
       })
     );
   }
@@ -130,7 +167,12 @@ export default function RentScheduleSection({
     setGenBusy(true);
     (async () => {
       try {
-        const result = await scheduleRentPayments(propertyId, previewRows, genForm.accountId);
+        const result = await scheduleRentPayments(
+          propertyId,
+          previewRows,
+          genForm.accountId,
+          genForm.paymentMethod
+        );
         if (result.ok) {
           toast.success(
             result.skipped > 0
@@ -154,6 +196,9 @@ export default function RentScheduleSection({
       paymentDate: payment.date ?? "",
       dueDate: payment.dueDate ?? "",
       amount: String(payment.amount ?? ""),
+      paymentMethod: PAYMENT_METHOD_OPTIONS.some((m) => m.value === payment.method)
+        ? (payment.method as string)
+        : "check",
       checkNumber: payment.checkNumber ?? "",
     });
   }
@@ -180,8 +225,8 @@ export default function RentScheduleSection({
             payment_date: editForm.paymentDate,
             due_date: editForm.dueDate,
             amount_total: Number(editForm.amount),
-            payment_method: "check",
-            check_number: editForm.checkNumber || null,
+            payment_method: editForm.paymentMethod,
+            check_number: isCheck(editForm.paymentMethod) ? editForm.checkNumber || null : null,
           }),
         });
         const json = await res.json().catch(() => ({}));
@@ -248,7 +293,14 @@ export default function RentScheduleSection({
                     </span>
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {[p.checkNumber ? `צ'ק #${p.checkNumber}` : null, `פרעון: ${fmtDate(p.dueDate)}`]
+                    {[
+                      p.checkNumber
+                        ? `צ'ק #${p.checkNumber}`
+                        : p.method
+                          ? paymentMethodLabel(p.method)
+                          : null,
+                      `פרעון: ${fmtDate(p.dueDate)}`,
+                    ]
                       .filter(Boolean)
                       .join(" · ")}
                   </div>
@@ -279,7 +331,7 @@ export default function RentScheduleSection({
         open={generatorOpen}
         onOpenChange={setGeneratorOpen}
         title="קביעת תשלומי שכירות מראש"
-        description="כל תשלום מציין את התאריך לפי חודש השכירות, ואת תאריך הפרעון לפי תאריך הצ'ק בפועל."
+        description="כל תשלום מציין את התאריך לפי חודש השכירות, ואת תאריך הפרעון לפי המועד שבו הכסף מתקבל בפועל."
         size="form2xl"
         onSubmit={previewRows ? saveSchedule : generatePreview}
         submitLabel={previewRows ? "שמירה" : "תצוגה מקדימה"}
@@ -312,12 +364,27 @@ export default function RentScheduleSection({
                 />
               </label>
               <label className="space-y-1 text-sm">
-                <span className="font-medium">מספר צ&apos;ק ראשון (אופציונלי)</span>
-                <Input
-                  value={genForm.startingCheckNumber}
-                  onChange={(e) => setGenForm((prev) => ({ ...prev, startingCheckNumber: e.target.value }))}
-                />
+                <span className="font-medium">אמצעי תשלום</span>
+                <NativeSelect
+                  value={genForm.paymentMethod}
+                  onChange={(e) => pickMethod(e.target.value)}
+                >
+                  {PAYMENT_METHOD_OPTIONS.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </NativeSelect>
               </label>
+              {genIsCheck ? (
+                <label className="space-y-1 text-sm">
+                  <span className="font-medium">מספר צ&apos;ק ראשון (אופציונלי)</span>
+                  <Input
+                    value={genForm.startingCheckNumber}
+                    onChange={(e) => setGenForm((prev) => ({ ...prev, startingCheckNumber: e.target.value }))}
+                  />
+                </label>
+              ) : null}
               <div className="sm:col-span-2">
                 <AccountSelect
                   required
@@ -325,7 +392,10 @@ export default function RentScheduleSection({
                   onChange={(value) => setGenForm((prev) => ({ ...prev, accountId: value }))}
                   onLoaded={(list) => {
                     setAccountsList(list);
-                    setGenForm((prev) => ({ ...prev, accountId: prev.accountId || defaultAccountForMethod(list, "check") }));
+                    setGenForm((prev) => ({
+                      ...prev,
+                      accountId: prev.accountId || defaultAccountForMethod(list, prev.paymentMethod),
+                    }));
                   }}
                 />
               </div>
@@ -333,19 +403,34 @@ export default function RentScheduleSection({
             </div>
           ) : (
             <div className="space-y-2">
-              <div className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] items-center gap-2 text-xs text-muted-foreground">
+              {/* The check-number column only exists for צ'ק — every other
+                  method has nothing to number, so the grid drops to 3 fields. */}
+              <div
+                className={
+                  "grid items-center gap-2 text-xs text-muted-foreground " +
+                  (genIsCheck ? "grid-cols-[1fr_1fr_1fr_1fr_auto]" : "grid-cols-[1fr_1fr_1fr_auto]")
+                }
+              >
                 <span>חודש</span>
-                <span>תאריך פרעון (צ&apos;ק)</span>
+                <span>תאריך פרעון</span>
                 <span>סכום</span>
-                <span>מספר צ&apos;ק</span>
+                {genIsCheck ? <span>מספר צ&apos;ק</span> : null}
                 <span />
               </div>
               {previewRows.map((row, index) => (
-                <div key={index} className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] items-center gap-2">
+                <div
+                  key={index}
+                  className={
+                    "grid items-center gap-2 " +
+                    (genIsCheck ? "grid-cols-[1fr_1fr_1fr_1fr_auto]" : "grid-cols-[1fr_1fr_1fr_auto]")
+                  }
+                >
                   <DateInput value={row.paymentDate} onChange={(e) => setPreviewRow(index, "paymentDate", e.target.value)} />
                   <DateInput value={row.dueDate} onChange={(e) => setPreviewRow(index, "dueDate", e.target.value)} />
                   <CurrencyInput value={String(row.amount)} onChange={(e) => setPreviewRow(index, "amount", e.target.value)} />
-                  <Input value={row.checkNumber} onChange={(e) => setPreviewRow(index, "checkNumber", e.target.value)} />
+                  {genIsCheck ? (
+                    <Input value={row.checkNumber} onChange={(e) => setPreviewRow(index, "checkNumber", e.target.value)} />
+                  ) : null}
                   <DeleteButton
                     onClick={() => setPreviewRows((rows) => (rows ?? []).filter((_, i) => i !== index))}
                     label="הסרת שורה"
@@ -377,7 +462,7 @@ export default function RentScheduleSection({
             <DateInput value={editForm.paymentDate} onChange={(e) => setEditForm((prev) => ({ ...prev, paymentDate: e.target.value }))} />
           </label>
           <label className="space-y-1 text-sm">
-            <span className="font-medium">תאריך פרעון (צ&apos;ק)</span>
+            <span className="font-medium">תאריך פרעון</span>
             <DateInput value={editForm.dueDate} onChange={(e) => setEditForm((prev) => ({ ...prev, dueDate: e.target.value }))} />
           </label>
           <label className="space-y-1 text-sm">
@@ -385,9 +470,30 @@ export default function RentScheduleSection({
             <CurrencyInput value={editForm.amount} onChange={(e) => setEditForm((prev) => ({ ...prev, amount: e.target.value }))} />
           </label>
           <label className="space-y-1 text-sm">
-            <span className="font-medium">מספר צ&apos;ק</span>
-            <Input value={editForm.checkNumber} onChange={(e) => setEditForm((prev) => ({ ...prev, checkNumber: e.target.value }))} />
+            <span className="font-medium">אמצעי תשלום</span>
+            <NativeSelect
+              value={editForm.paymentMethod}
+              onChange={(e) =>
+                setEditForm((prev) => ({
+                  ...prev,
+                  paymentMethod: e.target.value,
+                  checkNumber: isCheck(e.target.value) ? prev.checkNumber : "",
+                }))
+              }
+            >
+              {PAYMENT_METHOD_OPTIONS.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </NativeSelect>
           </label>
+          {isCheck(editForm.paymentMethod) ? (
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">מספר צ&apos;ק</span>
+              <Input value={editForm.checkNumber} onChange={(e) => setEditForm((prev) => ({ ...prev, checkNumber: e.target.value }))} />
+            </label>
+          ) : null}
         </div>
       </FormDialog>
     </Card>

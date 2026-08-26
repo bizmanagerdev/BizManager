@@ -10,7 +10,7 @@ import { EditButton } from "@/components/ui/icon-button";
 import { invalidateQuickCreateCache } from "@/components/layout/QuickCreateMenu";
 import { updateProperty } from "../actions";
 import { PropertyBasicFields, propertyToForm, type PropertyInput } from "../PropertyFormFields";
-import { propertyTypeLabel, type Property } from "@/lib/properties";
+import { propertyHasRoomLayout, propertyTypeLabel, type Property } from "@/lib/properties";
 
 const BASIC_KEYS = [
   "name",
@@ -25,6 +25,7 @@ const BASIC_KEYS = [
   "bathrooms",
   "mezuzah_count",
   "light_bulb_count",
+  "key_count",
   "has_private_entrance",
   "has_storage_room",
   "has_parking",
@@ -121,21 +122,24 @@ export default function PropertyDetailsCard({ propertyId, property }: { property
     );
   }
 
+  // A building has apartments, not a room count; a מחסן has neither — it is just
+  // floor area. Everything else keeps showing rooms exactly as before (including
+  // an unset type, unchanged behavior).
+  const hasRoomLayout = propertyHasRoomLayout(property.propertyType);
   const facts = [
-    // A building has apartments, not a room count — everything else keeps
-    // showing rooms exactly as before (including an unset type, unchanged behavior).
     property.propertyType === "building"
       ? property.apartmentsCount != null
         ? `${property.apartmentsCount} דירות`
         : null
-      : property.rooms != null
+      : hasRoomLayout && property.rooms != null
         ? `${property.rooms} חדרים`
         : null,
     property.floor != null ? `קומה ${property.floor}` : null,
     property.squareMeters != null ? `${property.squareMeters} מ״ר` : null,
-    property.bathrooms != null ? `${property.bathrooms} חדרי רחצה` : null,
-    property.mezuzahCount != null ? `${property.mezuzahCount} מזוזות` : null,
+    hasRoomLayout && property.bathrooms != null ? `${property.bathrooms} חדרי רחצה` : null,
+    hasRoomLayout && property.mezuzahCount != null ? `${property.mezuzahCount} מזוזות` : null,
     property.lightBulbCount != null ? `${property.lightBulbCount} נורות` : null,
+    property.keyCount != null ? `${property.keyCount} מפתחות` : null,
   ].filter(Boolean);
   const badges = [
     property.propertyType ? { label: propertyTypeLabel(property.propertyType), variant: "outline" as const } : null,

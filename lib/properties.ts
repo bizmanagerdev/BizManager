@@ -17,7 +17,7 @@ export type Property = {
   address: string;
   assetDescription: string | null;
   isActive: boolean;
-  /** 'building' | 'apartment' | 'house' | null (unset) — see propertyTypeLabel(). */
+  /** 'building' | 'apartment' | 'house' | 'storage' | null (unset) — see propertyTypeLabel(). */
   propertyType: string | null;
   /** Only meaningful when propertyType === 'building' — a building has apartments, not a room count. */
   apartmentsCount: number | null;
@@ -27,6 +27,9 @@ export type Property = {
   bathrooms: number | null;
   mezuzahCount: number | null;
   lightBulbCount: number | null;
+  /** The full set of keys the apartment has — what the office holds. What a
+   *  given tenant received is `LeaseAgreement.keysHandedOver`, not this. */
+  keyCount: number | null;
   hasPrivateEntrance: boolean;
   hasStorageRoom: boolean;
   hasParking: boolean;
@@ -38,6 +41,12 @@ export type Property = {
   landBlock: string | null;
   landParcel: string | null;
   landSubParcel: string | null;
+  /** Utility account numbers ("מספר חוזה") — one per supplier, per apartment.
+   *  Text, not numbers: identifiers with leading zeros and dashes, never summed. */
+  electricityContractNumber: string | null;
+  waterContractNumber: string | null;
+  gasContractNumber: string | null;
+  arnonaContractNumber: string | null;
   isFurnished: boolean;
   furnitureItems: string[];
   createdAt: string | null;
@@ -66,6 +75,8 @@ export type LeaseAgreement = {
   depositType: string | null;
   depositAmount: number | null;
   depositReference: string | null;
+  /** How many keys this tenant received at move-in — checked against at move-out. */
+  keysHandedOver: number | null;
   createdAt: string | null;
 };
 
@@ -133,6 +144,7 @@ function normalizeProperty(row: Row): Property {
     bathrooms: numOrNull(row.bathrooms),
     mezuzahCount: numOrNull(row.mezuzah_count),
     lightBulbCount: numOrNull(row.light_bulb_count),
+    keyCount: numOrNull(row.key_count),
     hasPrivateEntrance: row.has_private_entrance === true,
     hasStorageRoom: row.has_storage_room === true,
     hasParking: row.has_parking === true,
@@ -144,6 +156,10 @@ function normalizeProperty(row: Row): Property {
     landBlock: str(row.land_block),
     landParcel: str(row.land_parcel),
     landSubParcel: str(row.land_sub_parcel),
+    electricityContractNumber: str(row.electricity_contract_number),
+    waterContractNumber: str(row.water_contract_number),
+    gasContractNumber: str(row.gas_contract_number),
+    arnonaContractNumber: str(row.arnona_contract_number),
     isFurnished: row.is_furnished === true,
     furnitureItems: Array.isArray(row.furniture_items)
       ? row.furniture_items.filter((x): x is string => typeof x === "string")
@@ -172,6 +188,7 @@ function normalizeLease(row: Row): LeaseAgreement {
     depositType: str(row.deposit_type),
     depositAmount: numOrNull(row.deposit_amount),
     depositReference: str(row.deposit_reference),
+    keysHandedOver: numOrNull(row.keys_handed_over),
     createdAt: str(row.created_at),
   };
 }
@@ -250,9 +267,25 @@ export function propertyTypeLabel(type: string | null): string {
       return "דירה";
     case "house":
       return "בית";
+    case "storage":
+      return "מחסן";
     default:
       return "";
   }
+}
+
+/**
+ * Does this kind of property have an interior layout — rooms, bathrooms,
+ * mezuzot — or is it just floor area?
+ *
+ * A storage unit (מחסן) is let by the square meter: there is nothing to count
+ * but its size, so those fields are hidden for it instead of standing empty and
+ * inviting a "0" that means nothing. Everything else — including a property
+ * whose type was never set — keeps the full set, so no existing property loses
+ * a field.
+ */
+export function propertyHasRoomLayout(type: string | null): boolean {
+  return type !== "storage";
 }
 
 /**
@@ -270,7 +303,7 @@ export function pickCurrentLease(leases: LeaseAgreement[]): LeaseAgreement | nul
 }
 
 const LEASE_SELECT =
-  "id,property_id,customer_id,start_date,end_date,monthly_rent_amount,document_id,status,notes,deposit_type,deposit_amount,deposit_reference,created_at,customer:customers(name)";
+  "id,property_id,customer_id,start_date,end_date,monthly_rent_amount,document_id,status,notes,deposit_type,deposit_amount,deposit_reference,keys_handed_over,created_at,customer:customers(name)";
 
 /**
  * Every property with its current lease + income/expense rollup, computed in
@@ -284,7 +317,7 @@ export async function fetchProperties(supabase: SupabaseClient): Promise<Propert
         supabase
           .from("properties")
           .select(
-        "id,name,address,asset_description,is_active,property_type,apartments_count,rooms,square_meters,floor,bathrooms,mezuzah_count,light_bulb_count,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,is_furnished,furniture_items,created_at,updated_at"
+        "id,name,address,asset_description,is_active,property_type,apartments_count,rooms,square_meters,floor,bathrooms,mezuzah_count,light_bulb_count,key_count,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,electricity_contract_number,water_contract_number,gas_contract_number,arnona_contract_number,is_furnished,furniture_items,created_at,updated_at"
       )
           .range(lo, hi)
       )
@@ -380,7 +413,7 @@ export async function fetchProperty(
     const { data, error } = await supabase
       .from("properties")
       .select(
-        "id,name,address,asset_description,is_active,property_type,apartments_count,rooms,square_meters,floor,bathrooms,mezuzah_count,light_bulb_count,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,is_furnished,furniture_items,created_at,updated_at"
+        "id,name,address,asset_description,is_active,property_type,apartments_count,rooms,square_meters,floor,bathrooms,mezuzah_count,light_bulb_count,key_count,has_private_entrance,has_storage_room,has_parking,has_elevator,purchased_from,purchase_date,purchase_price,purchase_tax,land_block,land_parcel,land_sub_parcel,electricity_contract_number,water_contract_number,gas_contract_number,arnona_contract_number,is_furnished,furniture_items,created_at,updated_at"
       )
       .eq("id", id)
       .maybeSingle();

@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
-import { isExpenseBusinessDomain } from "@/lib/expenses";
+import { isExpenseBusinessDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
 import { DEFAULT_DOCUMENT_CATEGORY } from "@/lib/documents";
 import { parseTagIds, syncEntityTags } from "@/lib/tags";
 
@@ -78,6 +78,23 @@ export async function POST(req: Request) {
       storageFolder = "properties";
     }
 
+    // The domain stored on the row. This used to be NULL for anything with an
+    // entity link, so the archive could infer the domain from that link — but
+    // documents.business_domain is NOT NULL in the database (the manual
+    // db/sql/add_documents_business_domain.sql script meant to relax it never
+    // ran), so every linked upload died on a 23502 not-null violation.
+    //
+    // The link decides, not the caller: a file hanging off a property IS
+    // ניהול נכסים and a file hanging off a project IS פרויקטים, so neither can
+    // land in שוטף because some caller forgot to send the field. Only an
+    // unlinked (or customer) file falls back to what was sent.
+    const storedBusinessDomain: ExpenseBusinessDomain =
+      linkedEntityType === "property"
+        ? "property_management"
+        : linkedEntityType === "project"
+          ? "logistics_projects"
+          : businessDomain;
+
     if (!file || !(file instanceof File)) {
       return NextResponse.json({ error: "Missing file" }, { status: 400 });
     }
@@ -102,15 +119,17 @@ export async function POST(req: Request) {
       upsert: false,
     });
     if (uploadError) {
+      // Raw error first: toHebrewError collapses anything it doesn't recognise
+      // (storage RLS denials among them) into a generic line, which is what
+      // makes a failing upload impossible to tell apart from a validation slip.
+      console.error("[documents/upload] storage upload failed", { storagePath, uploadError });
       return NextResponse.json({ error: toHebrewError(uploadError.message) }, { status: 400 });
     }
 
     const { error: docError } = await supabase.from("documents").insert({
       id: documentId,
       document_type: category || DEFAULT_DOCUMENT_CATEGORY,
-      // Linked files (project/property/customer) infer their domain from the
-      // link → store NULL. Standalone files carry the chosen domain explicitly.
-      business_domain: linkedEntityId ? null : businessDomain,
+      business_domain: storedBusinessDomain,
       title: displayName,
       file_name: displayName,
       storage_key: storagePath,
@@ -120,6 +139,7 @@ export async function POST(req: Request) {
     });
 
     if (docError) {
+      console.error("[documents/upload] documents insert failed", { documentId, docError });
       await supabase.storage.from(BUCKET).remove([storagePath]);
       return NextResponse.json({ error: toHebrewError(docError.message) }, { status: 400 });
     }
@@ -134,6 +154,12 @@ export async function POST(req: Request) {
       });
 
       if (linkError) {
+        console.error("[documents/upload] document_links insert failed", {
+          documentId,
+          linkedEntityType,
+          linkedEntityId,
+          linkError,
+        });
         await supabase.from("documents").delete().eq("id", documentId);
         await supabase.storage.from(BUCKET).remove([storagePath]);
         return NextResponse.json({ error: toHebrewError(linkError.message) }, { status: 400 });
@@ -168,7 +194,14 @@ export async function POST(req: Request) {
     });
     });
   } catch (err: unknown) {
-    const message = toHebrewError(err, "Unknown error");
-    return NextResponse.json({ error: message }, { status: 500 });
+    // Log the raw error before the Hebrew mapping collapses anything it doesn't
+    // recognise into a generic line — that mapping is what left this route's
+    // 500s undebuggable from the Vercel/Sentry side.
+    console.error("[documents/upload] failed", err);
+    const raw = err instanceof Error ? err.message : String(err ?? "");
+    return NextResponse.json(
+      { error: toHebrewError(err, raw ? `שגיאה בהעלאת הקובץ: ${raw}` : "Unknown error") },
+      { status: 500 }
+    );
   }
 }

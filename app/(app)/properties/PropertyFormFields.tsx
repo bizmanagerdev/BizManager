@@ -12,7 +12,7 @@ import { DateInput } from "@/components/ui/date-input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Button } from "@/components/ui/button";
 import { CloseIcon } from "@/components/ui/icons";
-import type { Property } from "@/lib/properties";
+import { propertyHasRoomLayout, type Property } from "@/lib/properties";
 
 /** Common furnished-apartment items — the click-off half of "enter a list or
  *  click off a list". Custom items typed in below live in the same array. */
@@ -40,7 +40,7 @@ export type PropertyInput = {
   address: string;
   asset_description: string;
   is_active: boolean;
-  /** '' | 'building' | 'apartment' | 'house' */
+  /** '' | 'building' | 'apartment' | 'house' | 'storage' */
   property_type: string;
   /** Only used when property_type === 'building' */
   apartments_count: string;
@@ -50,6 +50,7 @@ export type PropertyInput = {
   bathrooms: string;
   mezuzah_count: string;
   light_bulb_count: string;
+  key_count: string;
   has_private_entrance: boolean;
   has_storage_room: boolean;
   has_parking: boolean;
@@ -61,6 +62,10 @@ export type PropertyInput = {
   land_block: string;
   land_parcel: string;
   land_sub_parcel: string;
+  electricity_contract_number: string;
+  water_contract_number: string;
+  gas_contract_number: string;
+  arnona_contract_number: string;
   is_furnished: boolean;
   furniture_items: string[];
 };
@@ -78,6 +83,7 @@ export const EMPTY_PROPERTY_FORM: PropertyInput = {
   bathrooms: "",
   mezuzah_count: "",
   light_bulb_count: "",
+  key_count: "",
   has_private_entrance: false,
   has_storage_room: false,
   has_parking: false,
@@ -89,6 +95,10 @@ export const EMPTY_PROPERTY_FORM: PropertyInput = {
   land_block: "",
   land_parcel: "",
   land_sub_parcel: "",
+  electricity_contract_number: "",
+  water_contract_number: "",
+  gas_contract_number: "",
+  arnona_contract_number: "",
   is_furnished: false,
   furniture_items: [],
 };
@@ -107,6 +117,7 @@ export function propertyToForm(p: Property): PropertyInput {
     bathrooms: p.bathrooms != null ? String(p.bathrooms) : "",
     mezuzah_count: p.mezuzahCount != null ? String(p.mezuzahCount) : "",
     light_bulb_count: p.lightBulbCount != null ? String(p.lightBulbCount) : "",
+    key_count: p.keyCount != null ? String(p.keyCount) : "",
     has_private_entrance: p.hasPrivateEntrance,
     has_storage_room: p.hasStorageRoom,
     has_parking: p.hasParking,
@@ -118,6 +129,10 @@ export function propertyToForm(p: Property): PropertyInput {
     land_block: p.landBlock ?? "",
     land_parcel: p.landParcel ?? "",
     land_sub_parcel: p.landSubParcel ?? "",
+    electricity_contract_number: p.electricityContractNumber ?? "",
+    water_contract_number: p.waterContractNumber ?? "",
+    gas_contract_number: p.gasContractNumber ?? "",
+    arnona_contract_number: p.arnonaContractNumber ?? "",
     is_furnished: p.isFurnished,
     furniture_items: p.furnitureItems,
   };
@@ -208,6 +223,9 @@ type FieldsProps = {
 
 /** Name/address/description/physical facts/amenities/active — the "פרטי הנכס" card's fields. */
 export function PropertyBasicFields({ form, set }: FieldsProps) {
+  // A מחסן is let by the square meter — no rooms, bathrooms or mezuzot to count.
+  const hasRoomLayout = propertyHasRoomLayout(form.property_type);
+
   return (
     <div className="space-y-3">
       <label className="block space-y-1 text-sm">
@@ -225,6 +243,7 @@ export function PropertyBasicFields({ form, set }: FieldsProps) {
           <option value="building">בניין</option>
           <option value="apartment">דירה</option>
           <option value="house">בית</option>
+          <option value="storage">מחסן</option>
         </NativeSelect>
       </label>
       <label className="block space-y-1 text-sm">
@@ -237,12 +256,12 @@ export function PropertyBasicFields({ form, set }: FieldsProps) {
             <span className="font-medium">מספר דירות בבניין</span>
             <Input inputMode="numeric" value={form.apartments_count} onChange={(e) => set("apartments_count", e.target.value)} />
           </label>
-        ) : (
+        ) : hasRoomLayout ? (
           <label className="block space-y-1 text-sm">
             <span className="font-medium">מספר חדרים</span>
             <Input inputMode="decimal" value={form.rooms} onChange={(e) => set("rooms", e.target.value)} />
           </label>
-        )}
+        ) : null}
         <label className="block space-y-1 text-sm">
           <span className="font-medium">מ״ר</span>
           <Input inputMode="decimal" value={form.square_meters} onChange={(e) => set("square_meters", e.target.value)} />
@@ -251,17 +270,27 @@ export function PropertyBasicFields({ form, set }: FieldsProps) {
           <span className="font-medium">קומה</span>
           <Input inputMode="numeric" value={form.floor} onChange={(e) => set("floor", e.target.value)} />
         </label>
-        <label className="block space-y-1 text-sm">
-          <span className="font-medium">חדרי רחצה</span>
-          <Input inputMode="numeric" value={form.bathrooms} onChange={(e) => set("bathrooms", e.target.value)} />
-        </label>
-        <label className="block space-y-1 text-sm">
-          <span className="font-medium">מספר מזוזות</span>
-          <Input inputMode="numeric" value={form.mezuzah_count} onChange={(e) => set("mezuzah_count", e.target.value)} />
-        </label>
+        {hasRoomLayout ? (
+          <>
+            <label className="block space-y-1 text-sm">
+              <span className="font-medium">חדרי רחצה</span>
+              <Input inputMode="numeric" value={form.bathrooms} onChange={(e) => set("bathrooms", e.target.value)} />
+            </label>
+            <label className="block space-y-1 text-sm">
+              <span className="font-medium">מספר מזוזות</span>
+              <Input inputMode="numeric" value={form.mezuzah_count} onChange={(e) => set("mezuzah_count", e.target.value)} />
+            </label>
+          </>
+        ) : null}
         <label className="block space-y-1 text-sm">
           <span className="font-medium">מספר נורות</span>
           <Input inputMode="numeric" value={form.light_bulb_count} onChange={(e) => set("light_bulb_count", e.target.value)} />
+        </label>
+        <label className="block space-y-1 text-sm">
+          {/* The full set the office holds. How many a tenant received is on the
+              lease ("מפתחות שנמסרו"), not here. */}
+          <span className="font-medium">מספר מפתחות</span>
+          <Input inputMode="numeric" value={form.key_count} onChange={(e) => set("key_count", e.target.value)} />
         </label>
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -323,6 +352,42 @@ export function PropertyFurnitureFields({ form, set }: FieldsProps) {
   );
 }
 
+/** The four utility accounts every apartment has, in one list so the form and
+ *  the read view on the property page can never drift apart. `propertyKey` is
+ *  the same field on a saved `Property`. */
+export const UTILITY_ACCOUNT_FIELDS = [
+  { key: "electricity_contract_number", propertyKey: "electricityContractNumber", label: "חשמל" },
+  { key: "water_contract_number", propertyKey: "waterContractNumber", label: "מים" },
+  { key: "gas_contract_number", propertyKey: "gasContractNumber", label: "גז" },
+  { key: "arnona_contract_number", propertyKey: "arnonaContractNumber", label: "ארנונה" },
+] as const satisfies readonly {
+  key: keyof PropertyInput;
+  propertyKey: keyof Property;
+  label: string;
+}[];
+
+/** Utility contract numbers — the "מספרי חוזה" card's fields.
+ *
+ *  Free text, not a numeric input: a contract number can carry leading zeros or
+ *  a dash, and `inputMode="numeric"` would still pop the digit keypad while
+ *  quietly dropping neither. */
+export function PropertyUtilityFields({ form, set }: FieldsProps) {
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {UTILITY_ACCOUNT_FIELDS.map((field) => (
+        <label key={field.key} className="block space-y-1 text-sm">
+          <span className="font-medium">{`מס׳ חוזה ${field.label}`}</span>
+          <Input
+            inputMode="numeric"
+            value={form[field.key]}
+            onChange={(e) => set(field.key, e.target.value)}
+          />
+        </label>
+      ))}
+    </div>
+  );
+}
+
 /** Seller/date/price/tax/land-registry — the "רכישת הנכס" card's fields. */
 export function PropertyPurchaseFields({ form, set }: FieldsProps) {
   return (
@@ -372,6 +437,10 @@ export function PropertyFormFields({ form, set }: FieldsProps) {
       <PropertyBasicFields form={form} set={set} />
       <div className="border-t pt-3">
         <PropertyFurnitureFields form={form} set={set} />
+      </div>
+      <div className="border-t pt-3">
+        <div className="mb-2 text-sm font-semibold">מספרי חוזה מול הספקים</div>
+        <PropertyUtilityFields form={form} set={set} />
       </div>
       <div className="border-t pt-3">
         <div className="mb-2 text-sm font-semibold">פרטי רכישה וזיהוי בטאבו</div>

@@ -56,6 +56,7 @@ import RentScheduleSection from "./RentScheduleSection";
 import PropertyDetailsCard from "./PropertyDetailsCard";
 import PropertyPurchaseCard from "./PropertyPurchaseCard";
 import PropertyFurnitureCard from "./PropertyFurnitureCard";
+import PropertyUtilitiesCard from "./PropertyUtilitiesCard";
 
 function fmtDate(value: string | null) {
   if (!value) return "";
@@ -339,6 +340,7 @@ const EMPTY_LEASE_FORM = {
   deposit_type: "",
   deposit_amount: "",
   deposit_reference: "",
+  keys_handed_over: "",
 };
 
 type LeaseForm = typeof EMPTY_LEASE_FORM;
@@ -354,6 +356,7 @@ function toLeaseForm(lease: LeaseAgreement): LeaseForm {
     deposit_type: lease.depositType ?? "",
     deposit_amount: lease.depositAmount != null ? String(lease.depositAmount) : "",
     deposit_reference: lease.depositReference ?? "",
+    keys_handed_over: lease.keysHandedOver != null ? String(lease.keysHandedOver) : "",
   };
 }
 
@@ -436,6 +439,34 @@ type LeaseDocState = { documentId: string | null; documentUrl: string | null; do
 const EMPTY_LEASE_DOC: LeaseDocState = { documentId: null, documentUrl: null, documentFileName: null };
 
 const PURCHASE_DOCUMENT_CATEGORIES = new Set(["מסמכי רכישה", "נסח טאבו"]);
+
+/**
+ * The lease's signed agreement, as a link. documentUrl is a signed URL that the
+ * server refreshes on every load; a lease that carries a document_id but no URL
+ * (storage key missing, signing failed) still says so rather than rendering
+ * nothing, so "no contract attached" and "contract we can't open" stay
+ * distinguishable.
+ */
+function LeaseDocumentLink({ lease }: { lease: LeaseAgreement }) {
+  if (!lease.documentId) return null;
+  const label = lease.documentFileName || "חוזה חתום";
+  return lease.documentUrl ? (
+    <a
+      href={lease.documentUrl}
+      target="_blank"
+      rel="noreferrer"
+      className="mt-0.5 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+    >
+      <DocumentIcon className="h-3.5 w-3.5" />
+      <span className="truncate">{label}</span>
+    </a>
+  ) : (
+    <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+      <DocumentIcon className="h-3.5 w-3.5" />
+      <span className="truncate">{label} — לא ניתן לפתוח את הקובץ</span>
+    </div>
+  );
+}
 
 export default function PropertyDetailClient({
   propertyId,
@@ -607,7 +638,14 @@ export default function PropertyDetailClient({
     setLeaseDocBusy(true);
     try {
       const result = await offlineUpload("/api/documents/upload", {
-        fields: { business_domain: "property_management", property_id: propertyId },
+        // Filed as חוזה/הסכם, not the generic default — a signed lease is the
+        // one document on a property whose category is never in doubt, and it
+        // makes it findable by category in the archive.
+        fields: {
+          business_domain: "property_management",
+          property_id: propertyId,
+          category: "חוזה/הסכם",
+        },
         file,
         label: file.name,
       });
@@ -680,6 +718,7 @@ export default function PropertyDetailClient({
       deposit_type: leaseForm.deposit_type,
       deposit_amount: leaseForm.deposit_amount,
       deposit_reference: leaseForm.deposit_reference,
+      keys_handed_over: leaseForm.keys_handed_over,
     };
     setLeaseBusy(true);
     try {
@@ -838,6 +877,19 @@ export default function PropertyDetailClient({
                       .join(" · ")}
                   </div>
                 ) : null}
+                {/* The signed agreement had no surface anywhere on the page —
+                    uploading one left no visible trace, so it read as if the
+                    upload had failed. */}
+                <LeaseDocumentLink lease={currentLease} />
+                {currentLease.keysHandedOver != null ? (
+                  // "2 מתוך 4" only when the apartment's own count is known —
+                  // that comparison is the whole point at move-out.
+                  <div className="text-xs text-muted-foreground">
+                    {property.keyCount != null
+                      ? `מפתחות שנמסרו: ${currentLease.keysHandedOver} מתוך ${property.keyCount}`
+                      : `מפתחות שנמסרו: ${currentLease.keysHandedOver}`}
+                  </div>
+                ) : null}
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 <span className="font-semibold">{formatCurrency(currentLease.monthlyRentAmount)}/חודש</span>
@@ -865,6 +917,7 @@ export default function PropertyDetailClient({
                       <div className="text-xs text-muted-foreground">
                         {[fmtDate(lease.startDate), fmtDate(lease.endDate)].filter(Boolean).join(" – ")}
                       </div>
+                      <LeaseDocumentLink lease={lease} />
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <span className="text-sm">{formatCurrency(lease.monthlyRentAmount)}/חודש</span>
@@ -925,7 +978,13 @@ export default function PropertyDetailClient({
             {visibleExpenseRows.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין הוצאות לנכס זה.</p>
             ) : (
-              visibleExpenseRows.map((row, index) => {
+              // Capped and scrolled on its own: a property that's been running a
+              // while accumulates hundreds of expenses and worker shifts, and an
+              // uncapped list pushed every card below it off the screen. max-h
+              // rather than a fixed h so a property with three expenses doesn't
+              // get a tall empty box. The filter buttons stay outside, pinned.
+              <div className="max-h-[26rem] space-y-2 overflow-y-auto pe-1">
+              {visibleExpenseRows.map((row, index) => {
                 const rowKey = row.kind === "expense" ? `e-${row.data.id}` : `s-${row.data.id}`;
                 const details = row.kind === "expense" ? expenseRowDetails(row.data) : sessionRowDetails(row.data);
                 return (
@@ -975,7 +1034,8 @@ export default function PropertyDetailClient({
                     )}
                   </ExpandableRow>
                 );
-              })
+              })}
+              </div>
             )}
           </CardContent>
         </Card>
@@ -1094,6 +1154,8 @@ export default function PropertyDetailClient({
         />
 
         <PropertyFurnitureCard propertyId={propertyId} property={property} />
+
+        <PropertyUtilitiesCard propertyId={propertyId} property={property} />
 
         {/* Photo gallery */}
         <Card>
@@ -1316,6 +1378,19 @@ export default function PropertyDetailClient({
               <Input
                 value={leaseForm.deposit_reference}
                 onChange={(e) => setLeaseForm((prev) => ({ ...prev, deposit_reference: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="space-y-1">
+              {/* What THIS tenant got — the apartment's full set is on the property
+                  ("מספר מפתחות"), and the two are compared at move-out. */}
+              <div className="text-sm font-medium">מפתחות שנמסרו לשוכר</div>
+              <Input
+                inputMode="numeric"
+                value={leaseForm.keys_handed_over}
+                onChange={(e) => setLeaseForm((prev) => ({ ...prev, keys_handed_over: e.target.value }))}
+                placeholder={property.keyCount != null ? `בדירה יש ${property.keyCount}` : undefined}
               />
             </div>
           </div>

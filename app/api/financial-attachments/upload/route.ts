@@ -62,10 +62,10 @@ export async function POST(req: Request) {
     // payments & expenses carry order_id.
     const selectColumns =
       entityType === "payment"
-        ? "id,project_id,order_id,business_domain,payment_method"
+        ? "id,project_id,property_id,order_id,business_domain,payment_method"
         : entityType === "expense"
-          ? "id,project_id,order_id,business_domain"
-          : "id,project_id,business_domain,user_id";
+          ? "id,project_id,property_id,order_id,business_domain"
+          : "id,project_id,property_id,business_domain,user_id";
     const { data: entity, error: entityError } = await supabase
       .from(table)
       .select(selectColumns)
@@ -76,6 +76,7 @@ export async function POST(req: Request) {
     const entityRow = entity as {
       id?: string;
       project_id?: string | null;
+      property_id?: string | null;
       order_id?: string | null;
       user_id?: string | null;
       business_domain?: string | null;
@@ -114,10 +115,18 @@ export async function POST(req: Request) {
 
     // Domain: the payment/expense/session each carry their own authoritative
     // business_domain — store it explicitly so the file lands in that תחום
-    // (sessions can be domain-only with no order/project).
+    // (sessions can be domain-only with no order/project). When the parent has
+    // no domain of its own, fall back to what it is ATTACHED to (a property's
+    // expense is ניהול נכסים, a project's is פרויקטים) before שוטף — and never
+    // to NULL, since documents.business_domain is NOT NULL and would reject the
+    // insert with a 23502 instead of filing the attachment somewhere sensible.
     const docBusinessDomain = isExpenseBusinessDomain(entityRow.business_domain)
       ? entityRow.business_domain
-      : null;
+      : entityRow.property_id
+        ? "property_management"
+        : entityRow.project_id
+          ? "logistics_projects"
+          : "general_business";
 
     const documentId = crypto.randomUUID();
     const displayName = (file.name.split(/[/\\]/).pop() ?? "attachment").trim() || "attachment";

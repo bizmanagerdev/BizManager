@@ -237,13 +237,25 @@ function buildForm(fields: Record<string, string>, parts: UploadPart[]): FormDat
 }
 
 async function extractError(response: Response): Promise<string> {
-  const text = await response.text().catch(() => response.statusText);
-  let error = text;
+  const text = await response.text().catch(() => "");
+  let raw = text;
   try {
     const json = JSON.parse(text) as { error?: string };
-    if (json.error) error = json.error;
+    if (json.error) raw = json.error;
   } catch {}
-  return toHebrewError(error);
+
+  const hebrew = toHebrewError(raw, "");
+  if (hebrew) return hebrew;
+
+  // Nothing recognisable came back: the body was empty, or an HTML/plain error
+  // page from the host (payload limit, crashed function, a filtering proxy)
+  // rather than this app's JSON. Report the status code — collapsing that into
+  // the generic "נסו שוב" makes an infrastructure failure look identical to an
+  // ordinary validation error, which is exactly what hid one of these.
+  const detail = raw.trim().startsWith("<") ? "" : raw.trim().slice(0, 120);
+  return detail
+    ? `הבקשה נכשלה (${response.status}): ${detail}`
+    : `הבקשה נכשלה (${response.status}) — השרת לא החזיר פירוט.`;
 }
 
 /**
