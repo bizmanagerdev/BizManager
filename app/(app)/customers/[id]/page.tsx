@@ -654,6 +654,7 @@ export default async function CustomerDetailsPage({
               {customerPhone ? (
                 <>
                   <ContactTapZone
+                    as="span"
                     kind="tel"
                     value={customerPhone}
                     className="font-medium text-foreground hover:underline"
@@ -865,9 +866,13 @@ export default async function CustomerDetailsPage({
           </section>
         ) : null}
 
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 lg:items-start">
+        {/* On mobile the two columns are one stack, so the activity column melts
+            into it (display:contents) — that lets היסטוריית פעילות order itself
+            last, below the reference cards, instead of splitting them from the
+            sections above. From lg up the wrapper is a real column again. */}
+        <div className="flex flex-col gap-3 lg:grid lg:grid-cols-3 lg:items-start">
           {/* Activity column: orders, projects, collection, payments */}
-          <div className="space-y-3 lg:col-span-2">
+          <div className="contents lg:block lg:col-span-2 lg:space-y-3">
             {orders.length === 0 ? (
               <EmptySectionRow
                 icon={<OrderIcon className="h-4 w-4" />}
@@ -1199,6 +1204,7 @@ export default async function CustomerDetailsPage({
 
             {profile.role === "admin" ? (
               <SectionCard
+                className="order-last lg:order-none"
                 icon={<HistoryIcon className="h-4 w-4" />}
                 title="היסטוריית פעילות"
                 aside={

@@ -96,6 +96,12 @@ async function copyContactValue(kind: ContactKind, value: string) {
 export interface ContactTapZoneProps extends Omit<React.HTMLAttributes<HTMLDivElement>, "onClick"> {
   kind: ContactKind;
   value: string;
+  /**
+   * Element to render. Use "span" when the zone sits inside a <p> or any other
+   * run of text — a <div> there is invalid nesting, and the browser closes the
+   * paragraph early, which breaks hydration as well as the line it sits on.
+   */
+  as?: "div" | "span";
   children: React.ReactNode;
 }
 
@@ -106,7 +112,15 @@ export interface ContactTapZoneProps extends Omit<React.HTMLAttributes<HTMLDivEl
  * An <a href="tel:…"> claims long-press for the browser's own link menu
  * over everything inside it, which blocks copying that other text.
  */
-export function ContactTapZone({ kind, value, children, className, title, ...props }: ContactTapZoneProps) {
+export function ContactTapZone({
+  kind,
+  value,
+  as: Tag = "div",
+  children,
+  className,
+  title,
+  ...props
+}: ContactTapZoneProps) {
   const [isDesktop, setIsDesktop] = React.useState(false);
   React.useEffect(() => setIsDesktop(usesMouse()), []);
 
@@ -121,7 +135,7 @@ export function ContactTapZone({ kind, value, children, className, title, ...pro
   const defaultTitle = kind === "tel" ? "חיוג" : "שליחת מייל";
 
   return (
-    <div
+    <Tag
       role="button"
       tabIndex={0}
       title={title ?? (isDesktop ? `${defaultTitle} · לחיצה מעתיקה` : defaultTitle)}
@@ -135,7 +149,7 @@ export function ContactTapZone({ kind, value, children, className, title, ...pro
       {...props}
     >
       {children}
-    </div>
+    </Tag>
   );
 }
 
