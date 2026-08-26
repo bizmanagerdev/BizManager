@@ -12,6 +12,7 @@ import { ViewDialog } from "@/components/ui/view-dialog";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import NotificationPrefs from "@/components/notifications/NotificationPrefs";
 import PushSubscribeButton from "@/components/notifications/PushSubscribeButton";
@@ -863,6 +864,14 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
   ];
   // A stale/ineligible ?tab= falls back rather than showing an empty page.
   const activeTab: ProfileTab = tabs.some((t) => t.key === tabParam) ? tabParam : "profile";
+
+  // The top bar mirrors the tab you're on ("נוכחות", "משכורת"…) rather than a
+  // fixed "הפרופיל שלי". These are four separate errands under one route, so on a
+  // phone — where the bar is the only thing naming the screen — a static title
+  // says less than the tab strip right below it. Set here, not by a <PageTitle>
+  // in the server page, because the active tab only exists on the client.
+  const activeTabLabel = tabs.find((t) => t.key === activeTab)?.label ?? t(profileDict, locale, "pageTitle");
+  useSetPageTitle(activeTabLabel, profile.full_name ?? undefined);
 
   const activeIndex = tabs.findIndex((t) => t.key === activeTab);
   const stepTab = (delta: number) => {

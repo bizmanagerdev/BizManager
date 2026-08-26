@@ -220,17 +220,25 @@ export default async function ProfilePage() {
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
-        <PageTitle title={t(profileDict, profile.locale, "pageTitle")} subtitle={profile.full_name ?? undefined} />
         {/* No name/email banner above the tabs: this is YOUR profile — you know
             who you are — and the details card in the first tab is where those
-            fields live anyway. (The phone's top bar still names the screen.) */}
+            fields live anyway. (The phone's top bar still names the screen — with
+            the active tab's name, which ProfileClient sets since only it knows
+            which tab is open. Hence the title here only for the error branch,
+            where there are no tabs to mirror.) */}
 
         {loadError ? (
-          <Card>
-            <CardContent className="py-6 text-sm text-destructive">
-              {t(profileDict, profile.locale, "loadErrorPrefix")}{loadError}
-            </CardContent>
-          </Card>
+          <>
+            <PageTitle
+              title={t(profileDict, profile.locale, "pageTitle")}
+              subtitle={profile.full_name ?? undefined}
+            />
+            <Card>
+              <CardContent className="py-6 text-sm text-destructive">
+                {t(profileDict, profile.locale, "loadErrorPrefix")}{loadError}
+              </CardContent>
+            </Card>
+          </>
         ) : (
           <ProfileClient
             profile={profile}
