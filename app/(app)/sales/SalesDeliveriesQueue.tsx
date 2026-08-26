@@ -22,7 +22,7 @@ import {
   prepaymentBadgeClasses,
   PREPAYMENT_ROW_CLASSES,
 } from "@/lib/orders/prepayment";
-import type { DeliveryItem, DeliveryOrderItem } from "@/app/(app)/sales/loadDeliveries";
+import { combinedCustomerName, type DeliveryItem, type DeliveryOrderItem } from "@/app/(app)/sales/loadDeliveries";
 import { pinFrom, wazeLinkForPin, type DeliveryPin } from "@/lib/delivery-location";
 import { DeliveryLocationDialog } from "@/components/orders/DeliveryLocationDialog";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
@@ -30,6 +30,8 @@ import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 type CustomerGroup = {
   customerId: string;
   customerName: string;
+  /** Set only when every order in this group is for the same specific branch. */
+  customerBranchName: string | null;
   customerPhone: string | null;
   address: string;
   orders: DeliveryItem[];
@@ -54,9 +56,12 @@ type GroupedDeliveries = ReadonlyArray<
 function buildCustomerGroups(cityDeliveries: DeliveryItem[]) {
   return Array.from(
     cityDeliveries.reduce((map, delivery) => {
-      const customerKey =
-        delivery.customerId ||
-        `${delivery.customerName}|${delivery.address}|${delivery.customerPhone ?? ""}`;
+      // Branch is part of the key: two branches of the same customer are two
+      // different delivery stops (different address) and must never merge
+      // into one group under the customer's plain id.
+      const customerKey = delivery.customerId
+        ? `${delivery.customerId}:${delivery.branchId ?? ""}`
+        : `${delivery.customerName}|${delivery.address}|${delivery.customerPhone ?? ""}`;
       const existing = map.get(customerKey);
       if (existing) {
         existing.orders.push(delivery);
@@ -65,6 +70,7 @@ function buildCustomerGroups(cityDeliveries: DeliveryItem[]) {
       map.set(customerKey, {
         customerId: delivery.customerId,
         customerName: delivery.customerName,
+        customerBranchName: delivery.customerBranchName,
         customerPhone: delivery.customerPhone,
         address: delivery.address,
         orders: [delivery],
@@ -335,7 +341,7 @@ export default function SalesDeliveriesQueue({
                             }}
                           >
                             <td className="px-4 py-3">
-                              <div className="font-medium">{group.customerName}</div>
+                              <div className="font-medium">{combinedCustomerName(group)}</div>
                               {group.customerPhone ? (
                                 <ContactLink
                                   kind="tel"
@@ -543,10 +549,10 @@ export default function SalesDeliveriesQueue({
                                 ) : null}
                                 <div className="min-w-0 flex-1 pe-9">
                                   <div className="text-sm font-bold leading-snug">
-                                    {group.address || group.customerName}
+                                    {group.address || combinedCustomerName(group)}
                                   </div>
                                   {displayAddress ? (
-                                    <div className="text-xs text-muted-foreground">{group.customerName}</div>
+                                    <div className="text-xs text-muted-foreground">{combinedCustomerName(group)}</div>
                                   ) : null}
                                   {hasMultipleOrders ? (
                                     <span className="mt-1 inline-flex rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
@@ -601,7 +607,7 @@ export default function SalesDeliveriesQueue({
                                     </span>
                                     <span className="min-w-0 flex-1">
                                       <span className="block truncate text-sm font-semibold">
-                                        {group.customerName}
+                                        {combinedCustomerName(group)}
                                       </span>
                                       {/* dir=ltr keeps the digits in dialling order, but
                                           it also left-aligns the box — text-right pulls

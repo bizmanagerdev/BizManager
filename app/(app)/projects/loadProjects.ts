@@ -138,7 +138,7 @@ export async function loadProjectsPage(
 
   const [{ data: projectSettingsRows }] = await Promise.all([
     projectIds.length > 0
-      ? supabase.from("projects").select("id,expenses_billed_separately,payment_terms,due_date,no_charge").in("id", projectIds)
+      ? supabase.from("projects").select("id,expenses_billed_separately,payment_terms,due_date,no_charge,branch_id").in("id", projectIds)
       : Promise.resolve({ data: [] as Row[] }),
   ]);
 
@@ -170,6 +170,7 @@ export async function loadProjectsPage(
   const paymentTermsByProjectId = new Map<string, string | null>();
   const dueDateByProjectId = new Map<string, string | null>();
   const noChargeByProjectId = new Map<string, boolean>();
+  const branchIdByProjectId = new Map<string, string | null>();
   ((projectSettingsRows ?? []) as Row[]).forEach((row) => {
     const projectId = typeof row?.id === "string" ? row.id : "";
     if (!projectId) return;
@@ -177,6 +178,7 @@ export async function loadProjectsPage(
     paymentTermsByProjectId.set(projectId, typeof row?.payment_terms === "string" ? row.payment_terms : null);
     dueDateByProjectId.set(projectId, typeof row?.due_date === "string" ? row.due_date.slice(0, 10) : null);
     noChargeByProjectId.set(projectId, row?.no_charge === true);
+    branchIdByProjectId.set(projectId, typeof row?.branch_id === "string" ? row.branch_id : null);
   });
 
   const financialByProjectId = new Map<string, Row>();
@@ -242,6 +244,7 @@ export async function loadProjectsPage(
       payment_status_list: paymentStatus,
       payment_terms: paymentTermsByProjectId.get(projectId) ?? null,
       due_date: dueDateByProjectId.get(projectId) ?? null,
+      branch_id: branchIdByProjectId.get(projectId) ?? null,
       // Term-aware collection status (תשלום צפוי / באיחור …) for the status badge.
       collection_status: noCharge
         ? "no_charge"

@@ -10,7 +10,7 @@ import { formatDeliveryAddress } from "@/lib/ui/cities";
 import { paymentStatusLabel } from "@/lib/orders/paymentStatus";
 import { pinFrom, wazeLinkForPin, type DeliveryPin } from "@/lib/delivery-location";
 import { isNativePlatform, shareImageNative } from "@/lib/native-share";
-import type { DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
+import { combinedCustomerName, type DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
 
 function formatCurrency(value: number | null) {
   if (value === null) return "-";
@@ -32,7 +32,7 @@ function formatItem(item: DeliveryItem["items"][number]) {
  *  a wa.me link and never selects a recipient; the OS share sheet still lets
  *  the person sharing pick who it goes to. */
 function buildDeliveryShareText(delivery: DeliveryItem, address: string, pin: DeliveryPin | null): string {
-  const lines: string[] = [`משלוח — ${delivery.customerName}`];
+  const lines: string[] = [`משלוח — ${combinedCustomerName(delivery)}`];
   if (delivery.customerPhone) lines.push(delivery.customerPhone);
   if (address) lines.push(address);
   if (delivery.deliveryInstructions) lines.push(delivery.deliveryInstructions);
@@ -160,10 +160,10 @@ export default function DeliveryShareActions({
           return;
         }
 
-        const fileName = `משלוח-${current.customerName}.png`.replace(/[\\/:*?"<>|]/g, "-");
+        const fileName = `משלוח-${combinedCustomerName(current)}.png`.replace(/[\\/:*?"<>|]/g, "-");
         const file = new File([blob], fileName, { type: "image/png" });
         const shareData = {
-          title: `משלוח — ${current.customerName}`,
+          title: `משלוח — ${combinedCustomerName(current)}`,
           files: [file],
         };
 
@@ -197,7 +197,7 @@ export default function DeliveryShareActions({
             const nativeResult = await shareImageNative(
               blob,
               fileName,
-              `משלוח — ${current.customerName}`
+              `משלוח — ${combinedCustomerName(current)}`
             );
             if (nativeResult !== "unavailable") return;
           }
@@ -231,7 +231,7 @@ export default function DeliveryShareActions({
               const HUNG = Symbol("hung");
               const outcome = await Promise.race([
                 navigator
-                  .share({ title: `משלוח — ${current.customerName}`, text: shareText })
+                  .share({ title: `משלוח — ${combinedCustomerName(current)}`, text: shareText })
                   .then(() => "shared" as const),
                 new Promise<typeof HUNG>((resolve) => setTimeout(() => resolve(HUNG), 6000)),
               ]);
@@ -357,7 +357,7 @@ export default function DeliveryShareActions({
             {/* A long customer name wraps here rather than colliding with the phone
                 row below it — flex:1 + minWidth:0 keeps it inside its own column. */}
             <span style={{ ...slipValueStyle, fontSize: "60px", fontWeight: 700, lineHeight: 1.2 }}>
-              {delivery.customerName}
+              {combinedCustomerName(delivery)}
             </span>
           </div>
 

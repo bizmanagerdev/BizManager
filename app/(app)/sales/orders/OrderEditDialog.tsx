@@ -25,6 +25,7 @@ type EditPayload = {
   initialOrder: {
     id: string;
     customer_id: string;
+    branch_id?: string | null;
     order_date: string;
     status: string;
     payment_status: string;

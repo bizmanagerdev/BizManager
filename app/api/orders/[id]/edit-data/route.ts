@@ -50,7 +50,7 @@ export async function GET(
   ] = await Promise.all([
     supabase
       .from("orders")
-      .select("id,customer_id,order_date,status,payment_status,payment_terms,due_date,discount_amount,needs_invoice,notes,requested_delivery_date")
+      .select("id,customer_id,branch_id,order_date,status,payment_status,payment_terms,due_date,discount_amount,needs_invoice,notes,requested_delivery_date")
       .eq("id", id)
       .maybeSingle(),
     supabase
@@ -162,6 +162,7 @@ export async function GET(
   const initialOrder = {
     id,
     customer_id: getString(order as Row, ["customer_id"]) ?? "",
+    branch_id: getString(order as Row, ["branch_id"]),
     collect_payment_on_delivery: (collectRow as Row | null)?.collect_payment_on_delivery === true,
     order_date: (getString(order as Row, ["order_date"]) ?? "").slice(0, 10),
     status: getString(order as Row, ["status"]) ?? "draft",

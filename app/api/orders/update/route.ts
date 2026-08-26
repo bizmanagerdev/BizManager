@@ -38,6 +38,7 @@ type OrderItemPayload = {
 type UpdateOrderPayload = {
   order_id?: string;
   customer_id?: string;
+  branch_id?: string | null;
   order_date?: string;
   status?: string;
   payment_status?: string;
@@ -166,6 +167,7 @@ export async function POST(req: Request) {
 
     const orderId = typeof body.order_id === "string" ? body.order_id : "";
     const customerId = typeof body.customer_id === "string" ? body.customer_id : "";
+    const branchId = typeof body.branch_id === "string" && body.branch_id.trim() ? body.branch_id.trim() : null;
     const orderDate = typeof body.order_date === "string" ? body.order_date : "";
     const status = typeof body.status === "string" ? body.status : "draft";
     const discountAmount = toNonNegativeInt(body.discount_amount ?? 0);
@@ -396,6 +398,7 @@ export async function POST(req: Request) {
       p_due_date: dueDate,
       p_delivery_date: deliveryDate,
       p_requested_delivery_date: requestedDeliveryDate,
+      p_branch_id: branchId,
     });
 
     if (error) {

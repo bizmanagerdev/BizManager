@@ -124,7 +124,7 @@ export default async function SalesOrderPage({
   ] = await Promise.all([
     supabase
       .from("orders")
-      .select("id,customer_id,order_date,status,payment_status,payment_terms,due_date,discount_amount,notes,needs_invoice,invoice_sent_at,delivery_confirmed_at,requested_delivery_date,created_by")
+      .select("id,customer_id,branch_id,order_date,status,payment_status,payment_terms,due_date,discount_amount,notes,needs_invoice,invoice_sent_at,delivery_confirmed_at,requested_delivery_date,created_by")
       .eq("id", id)
       .maybeSingle(),
     supabase
@@ -157,6 +157,8 @@ export default async function SalesOrderPage({
     order && typeof (order as Row).customer_id === "string"
       ? ((order as Row).customer_id as string)
       : null;
+  const branchId =
+    order && typeof (order as Row).branch_id === "string" ? ((order as Row).branch_id as string) : null;
 
   // Derive all the lookup keys from the first batch up front so the dependent
   // reads below can all run in ONE parallel round trip instead of ~5 sequential.
@@ -195,6 +197,7 @@ export default async function SalesOrderPage({
 
   const [
     { data: customer },
+    { data: branch },
     { data: products },
     paymentAuditResult,
     paymentRecordedByNameByValue,
@@ -208,6 +211,9 @@ export default async function SalesOrderPage({
           .select("id,name,name_for_invoice,registration_number,email,phone,address")
           .eq("id", customerId)
           .maybeSingle()
+      : Promise.resolve({ data: null as Row | null }),
+    branchId
+      ? supabase.from("customer_branches").select("id,name,address,phone").eq("id", branchId).maybeSingle()
       : Promise.resolve({ data: null as Row | null }),
     productIds.length > 0
       ? supabase.from("products").select("id,name,sku,barcode").in("id", productIds)
@@ -313,10 +319,20 @@ export default async function SalesOrderPage({
     customerNameForInvoiceRaw && customerNameForInvoiceRaw !== customerName
       ? customerNameForInvoiceRaw
       : null;
+  const customerBranchName = getString((branch as Row) ?? {}, "name");
+  // Only used where a single combined label is needed (share text, print) — the
+  // page's own customer card shows the branch as its own row instead.
+  const customerDisplayName = customerBranchName ? `${customerName} · סניף ${customerBranchName}` : customerName;
   const customerRegistrationNumber = getString((customer as Row) ?? {}, "registration_number");
   const customerPhone = getString((customer as Row) ?? {}, "phone");
   const customerEmail = getString((customer as Row) ?? {}, "email");
   const fullAddress = formatAddressForDisplay(getString((customer as Row) ?? {}, "address"));
+  // The branch's own address/phone (when this order is for one) is where the
+  // order actually goes — falls back to the customer's own contact details.
+  const branchAddress = getString((branch as Row) ?? {}, "address");
+  const branchPhone = getString((branch as Row) ?? {}, "phone");
+  const effectiveAddress = branchAddress ? formatAddressForDisplay(branchAddress) : fullAddress;
+  const effectivePhone = branchPhone ?? customerPhone;
   const orderNotes = getString((order as Row) ?? {}, "notes");
 
   // Comment avatars should use each author's CHOSEN color (users.avatar_color),
@@ -464,7 +480,7 @@ export default async function SalesOrderPage({
   const orderShareData = {
     orderNumber: id.slice(0, 8),
     orderDate: formatDate(orderDate),
-    customerName,
+    customerName: customerDisplayName,
     customerPhone,
     items: shareItems,
     totalAmount,
@@ -530,7 +546,7 @@ export default async function SalesOrderPage({
               <h1 className="min-w-0 truncate text-lg font-bold text-foreground">
                 {customerId ? (
                   <Link href={`/customers/${customerId}`} className="hover:underline">
-                    {customerName}
+                    {customerDisplayName}
                   </Link>
                 ) : (
                   customerName
@@ -617,9 +633,10 @@ export default async function SalesOrderPage({
                   name={customerName}
                   invoiceName={customerNameForInvoice}
                   registrationNumber={customerRegistrationNumber}
-                  phone={customerPhone}
+                  branchName={customerBranchName}
+                  phone={effectivePhone}
                   email={customerEmail}
-                  address={fullAddress}
+                  address={effectiveAddress}
                 />
               </div>
 
@@ -735,9 +752,10 @@ export default async function SalesOrderPage({
                 name={customerName}
                 invoiceName={customerNameForInvoice}
                 registrationNumber={customerRegistrationNumber}
-                phone={customerPhone}
+                branchName={customerBranchName}
+                phone={effectivePhone}
                 email={customerEmail}
-                address={fullAddress}
+                address={effectiveAddress}
               />
             </div>
 
@@ -987,7 +1005,7 @@ export default async function SalesOrderPage({
           <OrderHeaderMenu
             orderId={id}
             customerId={customerId ?? undefined}
-            customerName={customerName}
+            customerName={customerDisplayName}
             share={orderShareData}
             canManage={canLogCommunication}
             remindersSectionId={REMINDERS_SECTION_ID}

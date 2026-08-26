@@ -79,6 +79,7 @@ type ProductOption = {
 type InitialOrder = {
   id: string;
   customer_id: string;
+  branch_id?: string | null;
   order_date: string;
   status: string;
   payment_status: string;
@@ -119,6 +120,7 @@ type PaymentDraft = {
 type OrderDraft = {
   step: Step;
   customerId: string;
+  branchId: string;
   orderDate: string;
   orderStatus: string;
   paymentTerms: string;
@@ -349,6 +351,10 @@ export default function NewOrderClient({
     mapSearchResult: (entry) => mapCustomerSearchResult(entry as Record<string, unknown>),
   });
 
+  // Which of the customer's branches this order is for — only asked about when
+  // the customer actually has more than one (see the "branch" step gating below).
+  const [branchId, setBranchId] = useState(initialOrder?.branch_id ?? restoredDraft?.branchId ?? "");
+
   useEffect(() => {
     if (prefillHandled.current && !isEditMode) return;
 
@@ -394,6 +400,7 @@ export default function NewOrderClient({
     saveDraft(draftKey!, {
       step,
       customerId,
+      branchId,
       orderDate,
       orderStatus,
       paymentTerms,
@@ -413,6 +420,7 @@ export default function NewOrderClient({
     draftKey,
     step,
     customerId,
+    branchId,
     orderDate,
     orderStatus,
     paymentTerms,
@@ -794,6 +802,7 @@ export default function NewOrderClient({
         body: JSON.stringify({
           order_id: initialOrder?.id,
           customer_id: customerId,
+          branch_id: branchId || null,
           order_date: orderDate,
           status: orderStatus,
           payment_status: paymentStatus,
@@ -881,16 +890,19 @@ export default function NewOrderClient({
   // ---- Step navigation / gating -------------------------------------------------
 
   const stepIds = useMemo<Step[]>(() => {
-    const ids: Step[] = ["customer", "items", "invoice", "collection", "paymentTerms"];
+    const ids: Step[] = ["customer"];
+    if ((selectedCustomer?.branches?.length ?? 0) > 1) ids.push("branch");
+    ids.push("items", "invoice", "collection", "paymentTerms");
     if (paymentTerms !== "immediate") ids.push("dueDate");
     ids.push("payments", "orderDate", "orderStatus", "deliveryDate", "notes", "summary");
     return ids;
-  }, [paymentTerms]);
+  }, [paymentTerms, selectedCustomer?.branches?.length]);
   const wizardSteps = useMemo(() => stepIds.map((id) => ({ n: id, label: STEP_LABEL[id] })), [stepIds]);
 
   // A step is "unlocked" only when every prerequisite up to it is satisfied.
   function isSatisfied(id: Step): boolean {
     if (id === "customer") return Boolean(customerId);
+    if (id === "branch") return Boolean(branchId);
     if (id === "items") return lines.length > 0;
     return true;
   }
@@ -1133,6 +1145,7 @@ export default function NewOrderClient({
                           type="button"
                           disabled={actionLocked}
                           onClick={() => {
+                            if (customer.id !== customerId) setBranchId("");
                             setCustomerId(customer.id);
                             setPickedCustomer(customer);
                             setEditingCustomer(false);
@@ -1304,6 +1317,27 @@ export default function NewOrderClient({
               </div>
             </div>
           )}
+        </div>
+      ) : null}
+
+      {/* ------------------------------------------------------------------ BRANCH */}
+      {step === "branch" ? (
+        <div className="space-y-4">
+          <StepHeading title="לאיזה סניף?" sub={`ל${selectedCustomer?.name ?? "הלקוח"} כמה סניפים — לאיזה מהם ההזמנה?`} />
+          <div className="space-y-2">
+            {(selectedCustomer?.branches ?? []).map((branch) => (
+              <OptionRow
+                key={branch.id}
+                label={branch.name}
+                sub={branch.address ?? undefined}
+                selected={branchId === branch.id}
+                onClick={() => {
+                  setBranchId(branch.id);
+                  advanceTo("items");
+                }}
+              />
+            ))}
+          </div>
         </div>
       ) : null}
 
@@ -1967,6 +2001,9 @@ export default function NewOrderClient({
               editDisabled={actionLocked}
             >
                 <SummaryRow label="שם" value={selectedCustomer?.name || "-"} />
+                {branchId && selectedCustomer?.branches?.find((b) => b.id === branchId) ? (
+                  <SummaryRow label="סניף" value={selectedCustomer.branches.find((b) => b.id === branchId)!.name} />
+                ) : null}
                 {selectedCustomer?.contacts?.[0]?.full_name ? (
                   <SummaryRow label="איש קשר" value={selectedCustomer.contacts[0].full_name} />
                 ) : null}

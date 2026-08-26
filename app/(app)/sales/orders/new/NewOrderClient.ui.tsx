@@ -9,6 +9,7 @@ import { omitUnknownPlace } from "@/lib/ui/cities";
 
 export type Step =
   | "customer"
+  | "branch"
   | "items"
   | "invoice"
   | "collection"
@@ -32,6 +33,7 @@ export type CustomerOption = {
   address: string | null;
   requiresPrepayment: boolean;
   contacts?: Array<{ full_name: string; phone: string | null; email: string | null }>;
+  branches?: Array<{ id: string; name: string; address: string | null; phone: string | null }>;
 };
 
 export function getString(row: Record<string, unknown>, keys: string[]) {
@@ -96,6 +98,16 @@ export function mapCustomerSearchResult(row: Record<string, unknown>): CustomerO
         email: typeof c.email === "string" ? c.email : null,
       }))
     : undefined;
+  const branches = Array.isArray(row.branches)
+    ? (row.branches as Array<Record<string, unknown>>)
+        .map((b) => ({
+          id: typeof b.id === "string" ? b.id : "",
+          name: typeof b.name === "string" ? b.name : "",
+          address: typeof b.address === "string" ? b.address : null,
+          phone: typeof b.phone === "string" ? b.phone : null,
+        }))
+        .filter((b) => b.id)
+    : undefined;
 
   return {
     id,
@@ -108,6 +120,7 @@ export function mapCustomerSearchResult(row: Record<string, unknown>): CustomerO
     city: typeof row.address === "string" ? omitUnknownPlace(extractCityFromAddress(row.address)) : null,
     requiresPrepayment: row.requires_prepayment === true,
     contacts,
+    branches,
   };
 }
 
@@ -125,6 +138,7 @@ export const ORDER_STATUS_OPTIONS = [
 
 export const STEP_LABEL: Record<Step, string> = {
   customer: "לקוח",
+  branch: "סניף",
   items: "מוצרים",
   invoice: "חשבונית",
   collection: "גבייה",

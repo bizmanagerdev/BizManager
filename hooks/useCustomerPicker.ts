@@ -29,6 +29,7 @@ export type CustomerPickerOption = {
   city: string | null;
   requiresPrepayment?: boolean;
   contacts?: Array<{ full_name: string; phone: string | null; email: string | null }>;
+  branches?: Array<{ id: string; name: string; address: string | null; phone: string | null }>;
 };
 
 export function useCustomerPicker<T extends CustomerPickerOption>({

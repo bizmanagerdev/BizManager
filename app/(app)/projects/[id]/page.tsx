@@ -251,7 +251,7 @@ export default async function ProjectPage({
       >(),
     supabase
       .from("projects")
-      .select("id,notes,items_to_move,origin_address,origin_floor,origin_has_elevator,destination_address,destination_floor,destination_has_elevator,payment_terms,due_date,price_includes_vat,no_charge,vat_rate")
+      .select("id,notes,items_to_move,origin_address,origin_floor,origin_has_elevator,destination_address,destination_floor,destination_has_elevator,payment_terms,due_date,price_includes_vat,no_charge,vat_rate,branch_id")
       .eq("id", id)
       .maybeSingle<{
         id: string;
@@ -268,6 +268,7 @@ export default async function ProjectPage({
         price_includes_vat: boolean | null;
         no_charge: boolean | null;
         vat_rate: number | string | null;
+        branch_id: string | null;
       }>(),
     supabase
       .from("project_financials_view")
@@ -883,24 +884,36 @@ export default async function ProjectPage({
   // misses any customer past the first 200 and wrongly shows "—".
   const overviewCustomerId =
     typeof overview?.customer_id === "string" ? overview.customer_id : null;
-  const { data: customerRow } = overviewCustomerId
-    ? await supabase
-        .from("customer_overview_view")
-        .select("phone,email,address,name_for_invoice")
-        .eq("customer_id", overviewCustomerId)
-        .maybeSingle<{
-          phone: string | null;
-          email: string | null;
-          address: string | null;
-          name_for_invoice: string | null;
-        }>()
-    : { data: null };
+  const overviewBranchId =
+    typeof projectDetailsRaw?.branch_id === "string" ? projectDetailsRaw.branch_id : null;
+  const [{ data: customerRow }, { data: branchRow }] = await Promise.all([
+    overviewCustomerId
+      ? supabase
+          .from("customer_overview_view")
+          .select("phone,email,address,name_for_invoice")
+          .eq("customer_id", overviewCustomerId)
+          .maybeSingle<{
+            phone: string | null;
+            email: string | null;
+            address: string | null;
+            name_for_invoice: string | null;
+          }>()
+      : Promise.resolve({ data: null }),
+    overviewBranchId
+      ? supabase
+          .from("customer_branches")
+          .select("id,name,address,phone")
+          .eq("id", overviewBranchId)
+          .maybeSingle<{ id: string; name: string; address: string | null; phone: string | null }>()
+      : Promise.resolve({ data: null }),
+  ]);
   const cleanField = (value: string | null | undefined) =>
     typeof value === "string" && value.trim() ? value.trim() : null;
-  const customerPhone = cleanField(customerRow?.phone);
+  const customerBranchName = cleanField(branchRow?.name);
+  const customerPhone = cleanField(branchRow?.phone) ?? cleanField(customerRow?.phone);
   const customerWhatsapp = customerPhone;
   const customerEmail = cleanField(customerRow?.email);
-  const customerAddress = cleanField(customerRow?.address);
+  const customerAddress = cleanField(branchRow?.address) ?? cleanField(customerRow?.address);
   const customerInvoiceName = cleanField(customerRow?.name_for_invoice);
   const projectNotes =
     typeof overview?.notes === "string" && overview.notes.trim() ? overview.notes.trim() : null;
@@ -970,6 +983,7 @@ export default async function ProjectPage({
       customerId={overviewCustomerId}
       name={customerName || "ללא לקוח משויך"}
       invoiceName={customerInvoiceName}
+      branchName={customerBranchName}
       phone={customerPhone}
       whatsapp={customerWhatsapp}
       email={customerEmail}
@@ -1172,9 +1186,10 @@ export default async function ProjectPage({
       due_date: typeof payment.due_date === "string" ? payment.due_date : null,
     }))
   ).collected;
+  const customerDisplayName = customerBranchName ? `${customerName} · סניף ${customerBranchName}` : customerName;
   const projectShareData: ProjectShareData = {
     projectName,
-    customerName: customerName || "ללא לקוח",
+    customerName: customerDisplayName || "ללא לקוח",
     customerPhone,
     statusLabel: status ? getProjectStatusLabel(status) : "",
     typeLabel: projectTypeLabel(projectType),
@@ -1222,10 +1237,10 @@ export default async function ProjectPage({
                     href={`/customers/${overviewCustomerId}`}
                     className="text-foreground hover:underline"
                   >
-                    {customerName || "לקוח"}
+                    {customerDisplayName || "לקוח"}
                   </Link>
                 ) : (
-                  <span className="text-foreground">{customerName || "ללא לקוח משויך"}</span>
+                  <span className="text-foreground">{customerDisplayName || "ללא לקוח משויך"}</span>
                 )}
                 {customerPhone ? (
                   <>

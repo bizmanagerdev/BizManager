@@ -19,6 +19,8 @@ export type CustomerContactCardProps = {
   /** Billing name, shown only when it differs from the display name. */
   invoiceName?: string | null;
   registrationNumber?: string | null;
+  /** Set only when this order/project is for a specific one of the customer's branches. */
+  branchName?: string | null;
   phone?: string | null;
   /** Only rendered when it differs from the phone — otherwise it's the same row twice. */
   whatsapp?: string | null;
@@ -43,12 +45,14 @@ export function CustomerContactCard({
   name,
   invoiceName,
   registrationNumber,
+  branchName,
   phone,
   whatsapp,
   email,
   address,
 }: CustomerContactCardProps) {
   const subtitle = [
+    branchName ? `סניף: ${branchName}` : null,
     invoiceName && invoiceName !== name ? `שם לחשבונית: ${invoiceName}` : null,
     registrationNumber ? `ח.פ / ת.ז: ${registrationNumber}` : null,
   ]

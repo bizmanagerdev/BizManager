@@ -8,6 +8,7 @@ import { getCurrentVatRate } from "@/lib/settings/vat";
 type UpdateProjectPayload = {
   id?: string;
   customer_id?: string;
+  branch_id?: string | null;
   name?: string;
   project_type?: string;
   status?: string;
@@ -63,6 +64,7 @@ export async function POST(req: Request) {
 
     const id = typeof body.id === "string" ? body.id : "";
     const customerId = typeof body.customer_id === "string" ? body.customer_id : "";
+    const branchId = typeof body.branch_id === "string" && body.branch_id.trim() ? body.branch_id.trim() : null;
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const projectType = typeof body.project_type === "string" ? body.project_type : "";
     const status = typeof body.status === "string" ? body.status : "";
@@ -133,6 +135,7 @@ export async function POST(req: Request) {
       .from("projects")
       .update({
         customer_id: customerId,
+        branch_id: branchId,
         name,
         project_type: projectType,
         status,
@@ -158,7 +161,7 @@ export async function POST(req: Request) {
       })
       .eq("id", id)
       .select(
-        "id,customer_id,name,project_type,status,agreed_base_price,actual_price,expenses_billed_separately,project_manager_id,start_date,end_date,payment_terms,due_date,notes,items_to_move,origin_address,origin_floor,origin_has_elevator,destination_address,destination_floor,destination_has_elevator,created_at,updated_at"
+        "id,customer_id,branch_id,name,project_type,status,agreed_base_price,actual_price,expenses_billed_separately,project_manager_id,start_date,end_date,payment_terms,due_date,notes,items_to_move,origin_address,origin_floor,origin_has_elevator,destination_address,destination_floor,destination_has_elevator,created_at,updated_at"
       )
       .maybeSingle();
 

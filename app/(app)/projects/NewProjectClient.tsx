@@ -33,6 +33,7 @@ import { omitUnknownPlace } from "@/lib/ui/cities";
 type Row = Record<string, unknown>;
 type Step =
   | "customer"
+  | "branch"
   | "name"
   | "projectType"
   | "status"
@@ -49,6 +50,7 @@ type Step =
 
 const STEP_LABEL: Record<Step, string> = {
   customer: "לקוח",
+  branch: "סניף",
   name: "שם",
   projectType: "סוג",
   status: "סטטוס",
@@ -70,6 +72,7 @@ const STEP_LABEL: Record<Step, string> = {
 type ProjectDraft = {
   step: Step;
   customerId: string;
+  branchId: string;
   name: string;
   projectType: string;
   status: string;
@@ -100,6 +103,7 @@ export type ProjectCustomerOption = {
   city: string | null;
   address: string | null;
   contacts?: Array<{ full_name: string; phone: string | null; email: string | null }>;
+  branches?: Array<{ id: string; name: string; address: string | null; phone: string | null }>;
 };
 
 export type ProjectManagerOption = { id: string; label: string };
@@ -108,6 +112,7 @@ export type ProjectManagerOption = { id: string; label: string };
 export type InitialProject = {
   id: string;
   customer_id: string;
+  branch_id?: string | null;
   name: string;
   project_type: string;
   status: string;
@@ -202,6 +207,16 @@ export function mapProjectCustomer(row: Row): ProjectCustomerOption | null {
         email: typeof c.email === "string" ? c.email : null,
       }))
     : undefined;
+  const branches = Array.isArray(row.branches)
+    ? (row.branches as Array<Record<string, unknown>>)
+        .map((b) => ({
+          id: typeof b.id === "string" ? b.id : "",
+          name: typeof b.name === "string" ? b.name : "",
+          address: typeof b.address === "string" ? b.address : null,
+          phone: typeof b.phone === "string" ? b.phone : null,
+        }))
+        .filter((b) => b.id)
+    : undefined;
   const address = typeof row.address === "string" ? row.address : null;
   return {
     id,
@@ -213,6 +228,7 @@ export function mapProjectCustomer(row: Row): ProjectCustomerOption | null {
     address: omitUnknownPlace(address),
     city: omitUnknownPlace(getString(row, ["city"]) ?? extractCityFromAddress(address)),
     contacts,
+    branches,
   };
 }
 
@@ -335,6 +351,10 @@ export default function NewProjectClient({
     mapSearchResult: (entry) => mapProjectCustomer(entry as Row),
   });
 
+  // Which of the customer's branches this project is for — only asked about
+  // when the customer actually has more than one (see the "branch" step gating).
+  const [branchId, setBranchId] = useState(initialProject?.branch_id ?? restoredDraft?.branchId ?? "");
+
   // ---- Project details ---------------------------------------------------------
   const initialDue = initialProject?.due_date ? initialProject.due_date.slice(0, 10) : null;
   const [name, setName] = useState(initialProject?.name ?? restoredDraft?.name ?? "");
@@ -411,6 +431,7 @@ export default function NewProjectClient({
     saveDraft(draftKey!, {
       step,
       customerId,
+      branchId,
       name,
       projectType,
       status,
@@ -433,6 +454,7 @@ export default function NewProjectClient({
     draftKey,
     step,
     customerId,
+    branchId,
     name,
     projectType,
     status,
@@ -461,11 +483,13 @@ export default function NewProjectClient({
 
   // ---- Step navigation ---------------------------------------------------------
   const stepIds = useMemo<Step[]>(() => {
-    const ids: Step[] = ["customer", "name", "projectType", "status", "dates", "manager"];
+    const ids: Step[] = ["customer"];
+    if ((selectedCustomer?.branches?.length ?? 0) > 1) ids.push("branch");
+    ids.push("name", "projectType", "status", "dates", "manager");
     if (isMovingProjectType(projectType)) ids.push("moving");
     ids.push("notes", "attachments", "price", "paymentTerms", "dueDate", "expensesSeparately", "summary");
     return ids;
-  }, [projectType]);
+  }, [projectType, selectedCustomer?.branches?.length]);
   const wizardSteps = useMemo(() => stepIds.map((id) => ({ n: id, label: STEP_LABEL[id] })), [stepIds]);
   // The manager step pins this one at the top, above the search — the common
   // case (assign it to yourself) shouldn't need typing anything.
@@ -482,6 +506,8 @@ export default function NewProjectClient({
     switch (id) {
       case "customer":
         return Boolean(customerId);
+      case "branch":
+        return Boolean(branchId);
       case "name":
         return Boolean(name.trim());
       case "dates":
@@ -572,6 +598,7 @@ export default function NewProjectClient({
     try {
       const payload = {
         customer_id: customerId,
+        branch_id: branchId || null,
         name: trimmedName,
         project_type: projectType,
         status,
@@ -778,6 +805,7 @@ export default function NewProjectClient({
                           type="button"
                           disabled={actionLocked}
                           onClick={() => {
+                            if (customer.id !== customerId) setBranchId("");
                             setCustomerId(customer.id);
                             setPickedCustomer(customer);
                             setCustomerQuery("");
@@ -933,6 +961,27 @@ export default function NewProjectClient({
               </div>
             </div>
           )}
+        </div>
+      ) : null}
+
+      {/* ------------------------------------------------------------------ BRANCH */}
+      {step === "branch" ? (
+        <div className="space-y-4">
+          <StepHeading title="לאיזה סניף?" sub={`ל${selectedCustomer?.name ?? "הלקוח"} כמה סניפים — לאיזה מהם הפרויקט?`} />
+          <div className="space-y-2">
+            {(selectedCustomer?.branches ?? []).map((branch) => (
+              <OptionRow
+                key={branch.id}
+                label={branch.name}
+                sub={branch.address ?? undefined}
+                selected={branchId === branch.id}
+                onClick={() => {
+                  setBranchId(branch.id);
+                  advanceTo("name");
+                }}
+              />
+            ))}
+          </div>
         </div>
       ) : null}
 
@@ -1184,6 +1233,9 @@ export default function NewProjectClient({
 
           <SummarySection icon={<UserIcon className="h-4 w-4" />} title="לקוח" onEdit={() => goToStep("customer")} editDisabled={actionLocked}>
             <SummaryRow label="לקוח" value={pickedCustomer?.name ?? ""} />
+            {branchId && selectedCustomer?.branches?.find((b) => b.id === branchId) ? (
+              <SummaryRow label="סניף" value={selectedCustomer.branches.find((b) => b.id === branchId)!.name} />
+            ) : null}
             <SummaryRow label="טלפון" value={pickedCustomer?.phone ?? ""} />
           </SummarySection>
 

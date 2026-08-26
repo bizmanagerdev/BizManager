@@ -38,7 +38,7 @@ export default async function NewSalesOrderPage({
     const [{ data: sourceOrder }, { data: sourceItems }, { data: collectRow }] = await Promise.all([
       supabase
         .from("orders")
-        .select("id,customer_id,payment_terms,discount_amount,notes,needs_invoice")
+        .select("id,customer_id,branch_id,payment_terms,discount_amount,notes,needs_invoice")
         .eq("id", duplicateOrderId)
         .maybeSingle(),
       supabase
@@ -74,6 +74,7 @@ export default async function NewSalesOrderPage({
       duplicateInitialOrder = {
         id: duplicateOrderId,
         customer_id: getString(sourceOrder as Row, "customer_id") ?? "",
+        branch_id: getString(sourceOrder as Row, "branch_id"),
         order_date: new Date().toISOString().slice(0, 10),
         status: "draft",
         payment_status: "unpaid",

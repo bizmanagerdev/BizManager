@@ -352,10 +352,12 @@ export type CustomerSearchIndexEntry = {
   active: boolean;
   requires_prepayment: boolean;
   contacts: Array<{ full_name: string; phone: string | null; email: string | null; whatsapp: string | null }>;
+  branches: Array<{ id: string; name: string; address: string | null; phone: string | null }>;
 };
 
 const SEARCH_INDEX_CUSTOMER_CAP = 10000;
 const SEARCH_INDEX_CONTACT_CAP = 20000;
+const SEARCH_INDEX_BRANCH_CAP = 20000;
 
 /**
  * Load EVERY customer (lightweight, with contacts) for the client-side search
@@ -365,7 +367,7 @@ const SEARCH_INDEX_CONTACT_CAP = 20000;
 export async function loadCustomerSearchIndexRows(
   supabase: SupabaseClient
 ): Promise<CustomerSearchIndexEntry[]> {
-  const [{ data: customerRows }, { data: contactRows }] = await Promise.all([
+  const [{ data: customerRows }, { data: contactRows }, { data: branchRows }] = await Promise.all([
     supabase
       .from("customers")
       .select("id,name,name_for_invoice,phone,whatsapp,email,address,active,requires_prepayment")
@@ -376,6 +378,11 @@ export async function loadCustomerSearchIndexRows(
       .select("customer_id,full_name,phone,email,whatsapp")
       .eq("active", true)
       .range(0, SEARCH_INDEX_CONTACT_CAP - 1),
+    supabase
+      .from("customer_branches")
+      .select("id,customer_id,name,address,phone")
+      .eq("active", true)
+      .range(0, SEARCH_INDEX_BRANCH_CAP - 1),
   ]);
 
   const contactsByCustomer = new Map<string, CustomerSearchIndexEntry["contacts"]>();
@@ -392,6 +399,21 @@ export async function loadCustomerSearchIndexRows(
     contactsByCustomer.set(customerId, list);
   }
 
+  const branchesByCustomer = new Map<string, CustomerSearchIndexEntry["branches"]>();
+  for (const branch of (branchRows ?? []) as Row[]) {
+    const customerId = typeof branch?.customer_id === "string" ? branch.customer_id : "";
+    const id = typeof branch?.id === "string" ? branch.id : "";
+    if (!customerId || !id) continue;
+    const list = branchesByCustomer.get(customerId) ?? [];
+    list.push({
+      id,
+      name: typeof branch?.name === "string" ? branch.name : "",
+      address: (branch?.address as string | null) ?? null,
+      phone: (branch?.phone as string | null) ?? null,
+    });
+    branchesByCustomer.set(customerId, list);
+  }
+
   return ((customerRows ?? []) as Row[]).map((row) => {
     const id = typeof row?.id === "string" ? row.id : "";
     return {
@@ -405,6 +427,7 @@ export async function loadCustomerSearchIndexRows(
       active: row?.active !== false,
       requires_prepayment: row?.requires_prepayment === true,
       contacts: contactsByCustomer.get(id) ?? [],
+      branches: branchesByCustomer.get(id) ?? [],
     };
   });
 }

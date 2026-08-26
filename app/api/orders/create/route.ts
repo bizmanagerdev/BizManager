@@ -29,6 +29,7 @@ type CreateOrderItemPayload = {
 
 type CreateOrderPayload = {
   customer_id?: string;
+  branch_id?: string | null;
   order_date?: string;
   status?: string;
   payment_status?: string;
@@ -79,6 +80,7 @@ export async function POST(req: Request) {
     const body = (await req.json()) as CreateOrderPayload;
 
     const customerId = typeof body.customer_id === "string" ? body.customer_id : "";
+    const branchId = typeof body.branch_id === "string" && body.branch_id.trim() ? body.branch_id.trim() : null;
     const orderDate = typeof body.order_date === "string" ? body.order_date : "";
     const status = typeof body.status === "string" && body.status.trim() ? body.status.trim() : "draft";
     const discountAmount = toNonNegativeInt(body.discount_amount ?? 0);
@@ -198,6 +200,7 @@ export async function POST(req: Request) {
       p_due_date: dueDate,
       p_needs_invoice: needsInvoice,
       p_requested_delivery_date: requestedDeliveryDate,
+      p_branch_id: branchId,
     });
 
     if (error) {

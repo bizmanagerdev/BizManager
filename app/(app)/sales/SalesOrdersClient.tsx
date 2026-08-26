@@ -97,6 +97,8 @@ type OrderView = {
   id: string;
   customerId: string;
   customerName: string;
+  /** Set only when the order is for a specific one of the customer's branches. */
+  customerBranchName: string | null;
   customerNameForInvoice: string | null;
   customerEmail: string | null;
   customerPhone: string | null;
@@ -123,6 +125,13 @@ type OrderView = {
 };
 
 const PRODUCTS_PREVIEW_LIMIT = 3;
+
+/** Customer name, with the branch appended when set — e.g. "פיצה אורי · סניף
+ *  בית שמש". Used wherever a single label needs both (dialog titles, reminder
+ *  labels) — the list rows show it as its own line instead. */
+function combinedCustomerName(row: { customerName: string; customerBranchName: string | null }) {
+  return row.customerBranchName ? `${row.customerName} · סניף ${row.customerBranchName}` : row.customerName;
+}
 
 // The order's full comment thread, shown on the list card/row so every note is
 // visible without opening the order. Comments live in the order's notes field
@@ -489,6 +498,7 @@ export default function SalesOrdersClient({
         id,
         customerId,
         customerName: getString(row, ["customer_name"]) ?? customerId,
+        customerBranchName: getString(row, ["customer_branch_name"]),
         customerNameForInvoice: getString(row, ["customer_name_for_invoice"]),
         customerEmail: getString(row, ["customer_email"]),
         customerPhone: getString(row, ["customer_phone"]),
@@ -537,7 +547,7 @@ export default function SalesOrdersClient({
     const q = query.trim().toLowerCase();
     if (!offline || !q) return orderRows;
     return orderRows.filter((row) =>
-      [row.customerName, row.customerNameForInvoice, row.customerPhone, row.customerEmail, row.customerCity]
+      [row.customerName, row.customerBranchName, row.customerNameForInvoice, row.customerPhone, row.customerEmail, row.customerCity]
         .some((field) => (field ?? "").toLowerCase().includes(q))
     );
   }, [offline, query, orderRows]);
@@ -718,6 +728,9 @@ export default function SalesOrdersClient({
                       <td className="px-4 py-4">
                         <div>
                           <div className="font-medium">{row.customerName}</div>
+                          {row.customerBranchName ? (
+                            <div className="text-xs text-muted-foreground">סניף: {row.customerBranchName}</div>
+                          ) : null}
                           {row.customerNameForInvoice && row.customerNameForInvoice !== row.customerName ? (
                             <div className="text-xs text-muted-foreground">לחשבונית: {row.customerNameForInvoice}</div>
                           ) : null}
@@ -793,7 +806,7 @@ export default function SalesOrdersClient({
                               title="תזכורת להזמנה"
                               aria-label="תזכורת להזמנה"
                               onClick={() =>
-                                setReminderTarget({ id: row.id, customerId: row.customerId, label: row.customerName })
+                                setReminderTarget({ id: row.id, customerId: row.customerId, label: combinedCustomerName(row) })
                               }
                             >
                               <NotificationIcon className="h-4 w-4 text-warning" />
@@ -844,7 +857,7 @@ export default function SalesOrdersClient({
                         node: (
                           <OrderConfirmDialog
                             orderId={row.id}
-                            customerName={row.customerName}
+                            customerName={combinedCustomerName(row)}
                             buttonVariant="default"
                             buttonLabel={
                               <>
@@ -929,6 +942,9 @@ export default function SalesOrdersClient({
                     <div className="flex items-baseline justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-bold leading-snug">{row.customerName}</div>
+                        {row.customerBranchName ? (
+                          <div className="text-xs leading-snug text-muted-foreground">סניף: {row.customerBranchName}</div>
+                        ) : null}
                         {row.customerNameForInvoice && row.customerNameForInvoice !== row.customerName ? (
                           <div className="text-xs leading-snug text-muted-foreground">
                             לחשבונית: {row.customerNameForInvoice}

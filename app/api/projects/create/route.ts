@@ -9,6 +9,7 @@ import { notifyNewEntity } from "@/lib/notifications/new-entity";
 
 type CreateProjectPayload = {
   customer_id?: string;
+  branch_id?: string | null;
   name?: string;
   project_type?: string;
   status?: string;
@@ -68,6 +69,7 @@ export async function POST(req: Request) {
     const body = (await req.json()) as CreateProjectPayload;
 
     const customerId = typeof body.customer_id === "string" ? body.customer_id : "";
+    const branchId = typeof body.branch_id === "string" && body.branch_id.trim() ? body.branch_id.trim() : null;
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const projectType = typeof body.project_type === "string" ? body.project_type : "";
     const status = typeof body.status === "string" ? body.status : "";
@@ -126,6 +128,7 @@ export async function POST(req: Request) {
       .from("projects")
       .insert({
         customer_id: customerId,
+        branch_id: branchId,
         name,
         project_type: projectType,
         status,
@@ -150,7 +153,7 @@ export async function POST(req: Request) {
         destination_has_elevator: destinationHasElevator,
       })
       .select(
-        "id,customer_id,name,project_type,status,agreed_base_price,actual_price,expenses_billed_separately,project_manager_id,start_date,end_date,payment_terms,due_date,notes,items_to_move,origin_address,origin_floor,origin_has_elevator,destination_address,destination_floor,destination_has_elevator,created_at,updated_at"
+        "id,customer_id,branch_id,name,project_type,status,agreed_base_price,actual_price,expenses_billed_separately,project_manager_id,start_date,end_date,payment_terms,due_date,notes,items_to_move,origin_address,origin_floor,origin_has_elevator,destination_address,destination_floor,destination_has_elevator,created_at,updated_at"
       )
       .maybeSingle();
 

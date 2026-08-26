@@ -30,7 +30,7 @@ import {
 import { paymentTermsLabel } from "@/lib/paymentTerms";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import type { MorningLocalDocument } from "@/lib/morning/types";
-import { BuildingIcon, ChatIcon, ChevronLeftIcon, ClockIcon, DocumentIcon, HistoryIcon, MailIcon, NoteIcon, OrderIcon, PaymentIcon, PhoneCallIcon, PhoneIcon, ProjectIcon, UserIcon, WarningIcon, WazeIcon } from "@/components/ui/icons";
+import { BuildingIcon, ChatIcon, ChevronLeftIcon, ClockIcon, DocumentIcon, HistoryIcon, MailIcon, NoteIcon, OrderIcon, PaymentIcon, PhoneCallIcon, PhoneIcon, ProjectIcon, StoreIcon, UserIcon, WarningIcon, WazeIcon } from "@/components/ui/icons";
 import { getEntityAuditTrail } from "@/lib/audit";
 import EntityActivityTimeline from "@/app/(app)/activity/EntityActivityTimeline";
 import { notFound } from "next/navigation";
@@ -158,6 +158,7 @@ export default async function CustomerDetailsPage({
   const [
     { data: customer },
     { data: contacts },
+    { data: branches },
     { data: morningDocuments },
     { data: orderRows, error: ordersError },
     { data: projectRows, error: projectsError },
@@ -174,6 +175,11 @@ export default async function CustomerDetailsPage({
       .eq("customer_id", id)
       .order("is_primary", { ascending: false })
       .order("full_name", { ascending: true }),
+    supabase
+      .from("customer_branches")
+      .select("id,customer_id,name,address,phone,active")
+      .eq("customer_id", id)
+      .order("name", { ascending: true }),
     supabase
       .from("morning_documents")
       .select(
@@ -479,6 +485,7 @@ export default async function CustomerDetailsPage({
   const notes = s(customer as Row, "notes");
   const activeContacts = ((contacts ?? []) as Row[]).filter((contact) => contact.active !== false);
   const inactiveContacts = ((contacts ?? []) as Row[]).filter((contact) => contact.active === false);
+  const activeBranches = ((branches ?? []) as Row[]).filter((branch) => branch.active !== false);
   const customerNameParam = customerName.trim();
   const returnCustomersHref = returnPage > 1 ? `/customers?page=${returnPage}` : "/customers";
   const canManageCollections = profile.role === "admin" || profile.role === "office";
@@ -1407,6 +1414,45 @@ export default async function CustomerDetailsPage({
                       </div>
                     </div>
                   ) : null}
+                </div>
+              </SectionCard>
+            )}
+
+            {activeBranches.length === 0 ? (
+              <EmptySectionRow
+                icon={<StoreIcon className="h-4 w-4" />}
+                title="סניפים"
+                hint="לקוח שמזמין עבור כמה סניפים (למשל רשת) יכול לקבל כמה — כל אחד עם כתובת/טלפון משלו."
+                action={<EditCustomerButton customer={editButtonCustomer} />}
+              />
+            ) : (
+              <SectionCard
+                icon={<StoreIcon className="h-4 w-4" />}
+                title="סניפים"
+                aside={
+                  <div className="flex items-center gap-2">
+                    <CountPill>{activeBranches.length} סניפים</CountPill>
+                    <EditCustomerButton customer={editButtonCustomer} />
+                  </div>
+                }
+              >
+                <div className="space-y-2">
+                  {activeBranches.map((branch, index) => (
+                    <div
+                      key={s(branch, "id") || `${id}-branch-${index}`}
+                      className="rounded-xl border border-border/70 bg-background/70 p-3 text-sm"
+                    >
+                      <div className="font-medium">{s(branch, "name") || `סניף ${index + 1}`}</div>
+                      {s(branch, "address") ? (
+                        <div className="mt-1 text-xs text-muted-foreground">{s(branch, "address")}</div>
+                      ) : null}
+                      {s(branch, "phone") ? (
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          <span dir="ltr">{s(branch, "phone")}</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
                 </div>
               </SectionCard>
             )}

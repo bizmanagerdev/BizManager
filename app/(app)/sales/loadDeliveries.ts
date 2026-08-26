@@ -28,6 +28,8 @@ export type DeliveryOrderItem = {
 export type DeliveryItem = {
   id: string;
   customerId: string;
+  /** Set only when the order is for a specific one of the customer's branches. */
+  branchId: string | null;
   orderDate: string | null;
   status: string;
   totalAmount: number | null;
@@ -38,6 +40,8 @@ export type DeliveryItem = {
   collectOnDelivery: boolean;
   notes: string | null;
   customerName: string;
+  /** Set only when the order is for a specific one of the customer's branches. */
+  customerBranchName: string | null;
   customerPhone: string | null;
   city: string;
   address: string;
@@ -53,6 +57,13 @@ export type DeliveryItem = {
 };
 
 export type DeliveriesFilters = { customerId: string | null };
+
+/** Customer name, with the branch appended when set — e.g. "פיצה אורי · סניף
+ *  בית שמש". Shared by every surface that renders a delivery/order's customer
+ *  (the deliveries queue's grouped rows, the delivery slip share sheet). */
+export function combinedCustomerName(item: { customerName: string; customerBranchName: string | null }) {
+  return item.customerBranchName ? `${item.customerName} · סניף ${item.customerBranchName}` : item.customerName;
+}
 
 export type DeliveriesPageResult = {
   deliveries: DeliveryItem[];
@@ -92,7 +103,7 @@ export async function loadDeliveriesPage(
   let deliveriesQuery = supabase
     .from("delivery_overview_view")
     .select(
-      "order_id,customer_id,customer_name,customer_phone,customer_address,customer_city,order_date,created_at,status,total_amount,notes",
+      "order_id,customer_id,branch_id,customer_name,customer_phone,customer_address,customer_city,order_date,created_at,status,total_amount,notes,customer_branch_name,branch_address,branch_city",
       { count: "estimated" }
     )
     .not("status", "in", `(${CLOSED_ORDER_STATUSES.join(",")})`)
@@ -106,6 +117,7 @@ export async function loadDeliveriesPage(
     .map((row) => ({
       id: getString(row, "order_id") ?? "",
       customerId: getString(row, "customer_id") ?? "",
+      branchId: getString(row, "branch_id"),
       orderDate: getString(row, "order_date") ?? getString(row, "created_at"),
       status: getString(row, "status") ?? "-",
       totalAmount: getNumber(row, "total_amount"),
@@ -114,9 +126,13 @@ export async function loadDeliveriesPage(
       collectOnDelivery: false,
       notes: getString(row, "notes"),
       customerName: getString(row, "customer_name") ?? "לקוח",
+      customerBranchName: getString(row, "customer_branch_name"),
       customerPhone: getString(row, "customer_phone"),
-      city: getString(row, "customer_city") ?? "ללא עיר",
-      address: getString(row, "customer_address") ?? "-",
+      // A branch's own address (when the order is for one) is where the
+      // driver actually needs to go — falls back to the customer's own
+      // address/city when the order isn't for a specific branch.
+      city: getString(row, "branch_city") ?? getString(row, "customer_city") ?? "ללא עיר",
+      address: getString(row, "branch_address") ?? getString(row, "customer_address") ?? "-",
       items: [] as DeliveryOrderItem[],
       requiresPrepayment: false,
       deliveryInstructions: null as string | null,

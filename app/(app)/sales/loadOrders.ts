@@ -19,7 +19,7 @@ const CLOSED_ORDER_STATUSES = [
 ];
 
 const ORDER_SELECT =
-  "order_id,customer_id,customer_name,customer_name_for_invoice,customer_email,customer_phone,customer_city,customer_address,order_date,created_at,status,payment_status,total_amount,total_paid,remaining_balance,pending_amount,overdue_amount,payment_count,needs_invoice,invoice_sent_at,delivery_confirmed_at,notes";
+  "order_id,customer_id,branch_id,customer_branch_name,customer_name,customer_name_for_invoice,customer_email,customer_phone,customer_city,customer_address,order_date,created_at,status,payment_status,total_amount,total_paid,remaining_balance,pending_amount,overdue_amount,payment_count,needs_invoice,invoice_sent_at,delivery_confirmed_at,notes";
 
 export type OrdersTab = "orders" | "closed";
 export type OrdersPaymentFilter = "" | "paid" | "partial" | "unpaid";
@@ -253,6 +253,7 @@ export async function loadOrdersPage(
     // plus its status, so "find anything on the order" works from the list too.
     const conditions: string[] = [
       `customer_name.ilike.%${escaped}%`,
+      `customer_branch_name.ilike.%${escaped}%`,
       `customer_name_for_invoice.ilike.%${escaped}%`,
       `customer_phone.ilike.%${escaped}%`,
       `customer_email.ilike.%${escaped}%`,

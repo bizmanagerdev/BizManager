@@ -116,6 +116,49 @@ function emptyContactDraft(makePrimary: boolean): ContactDraft {
   };
 }
 
+// A customer that orders for several of its own locations (e.g. a chain) can
+// carry multiple branches, each with its own delivery address/phone — the
+// order/project wizard asks which branch only when there's more than one.
+type BranchDraft = {
+  key: string;
+  id: string | null;
+  name: string;
+  address: string;
+  phone: string;
+  active: boolean;
+  _deleted: boolean;
+};
+
+let branchKeyCounter = 0;
+function nextBranchKey() {
+  branchKeyCounter += 1;
+  return `br${branchKeyCounter}`;
+}
+
+function branchRowToDraft(row: Row): BranchDraft {
+  return {
+    key: nextBranchKey(),
+    id: typeof row.id === "string" && row.id ? row.id : null,
+    name: s(row, "name"),
+    address: s(row, "address"),
+    phone: s(row, "phone"),
+    active: row.active !== false,
+    _deleted: false,
+  };
+}
+
+function emptyBranchDraft(): BranchDraft {
+  return {
+    key: nextBranchKey(),
+    id: null,
+    name: "",
+    address: "",
+    phone: "",
+    active: true,
+    _deleted: false,
+  };
+}
+
 function splitAddress(address: string | null): { city: string; street: string } {
   if (!address) return { city: "", street: "" };
   const idx = address.indexOf("|");
@@ -156,6 +199,7 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
   const [requiresPrepayment, setRequiresPrepayment] = useState(initial?.requires_prepayment ?? false);
   const [tagIds, setTagIds] = useState<string[]>([]);
   const [contacts, setContacts] = useState<ContactDraft[]>([]);
+  const [branches, setBranches] = useState<BranchDraft[]>([]);
   const [linkedUserId, setLinkedUserId] = useState(initial?.linked_user_id ?? "");
   // Edit mode leaves `linked_user_id` out of the payload until the canonical
   // value has been read back — an omitted key leaves the column alone, so a
@@ -179,9 +223,10 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
     setLoading(true);
     void (async () => {
       try {
-        const [custRes, contactsRes] = await Promise.all([
+        const [custRes, contactsRes, branchesRes] = await Promise.all([
           fetch(`/api/customers/${initialId}`, { signal: controller.signal }),
           fetch(`/api/customer-contacts/list?customer_id=${encodeURIComponent(initialId)}`, { signal: controller.signal }),
+          fetch(`/api/customer-branches/list?customer_id=${encodeURIComponent(initialId)}`, { signal: controller.signal }),
         ]);
         if (custRes.ok) {
           const json = (await custRes.json().catch(() => ({}))) as { customer?: CustomerRecord };
@@ -212,6 +257,10 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
         if (contactsRes.ok) {
           const json = (await contactsRes.json().catch(() => ({}))) as { contacts?: Row[] };
           setContacts((json.contacts ?? []).map(contactRowToDraft));
+        }
+        if (branchesRes.ok) {
+          const json = (await branchesRes.json().catch(() => ({}))) as { branches?: Row[] };
+          setBranches((json.branches ?? []).map(branchRowToDraft));
         }
         const existingTags = await fetchExistingTagIds("customer", initialId);
         if (!controller.signal.aborted) setTagIds(existingTags);
@@ -304,6 +353,20 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
     );
   }
 
+  function addBranch() {
+    setBranches((prev) => [...prev, emptyBranchDraft()]);
+  }
+  function updateBranch(key: string, patch: Partial<BranchDraft>) {
+    setBranches((prev) => prev.map((b) => (b.key === key ? { ...b, ...patch } : b)));
+  }
+  function removeBranch(key: string) {
+    setBranches((prev) =>
+      prev
+        .map((b) => (b.key === key ? { ...b, _deleted: true } : b))
+        .filter((b) => b.id !== null || !b._deleted)
+    );
+  }
+
   function applyExistingCustomer(match: SimilarCustomer) {
     const result: CustomerFormResult = { customer: { ...match }, contacts: [] };
     (onUseExisting ?? onSaved)(result);
@@ -329,6 +392,10 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
     if (missing) return setError("יש למלא שם מלא בכל איש קשר.");
     const activePrimaries = visible.filter((c) => c.is_primary && c.active);
     if (activePrimaries.length > 1) return setError("ניתן לסמן רק איש קשר ראשי אחד.");
+
+    const branchesToSave = branches.filter((b) => !b._deleted);
+    const missingBranchName = branchesToSave.find((b) => !b.name.trim());
+    if (missingBranchName) return setError("יש למלא שם בכל סניף.");
 
     setSubmitting(true);
     try {
@@ -419,6 +486,32 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
         if (cRes.ok && cJson.contact) savedContacts.push(cJson.contact);
       }
 
+      // Persist branches (create / update / soft-delete) — same shape as contacts.
+      for (const branch of branches) {
+        if (branch._deleted) {
+          if (!branch.id) continue;
+          await fetch("/api/customer-branches/update", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ id: branch.id, active: false }),
+          });
+          continue;
+        }
+        const payload = {
+          name: branch.name.trim(),
+          address: branch.address.trim() || null,
+          phone: branch.phone.trim() || null,
+          active: branch.active,
+        };
+        const endpoint = branch.id ? "/api/customer-branches/update" : "/api/customer-branches/create";
+        const body = branch.id ? { id: branch.id, ...payload } : { customer_id: customerId, ...payload };
+        await fetch(endpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      }
+
       invalidateCustomerSearchIndex();
       onSaved({ customer: savedCustomer, contacts: savedContacts.filter((c) => c.active !== false) });
     } catch (e: unknown) {
@@ -429,6 +522,7 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
   }
 
   const visibleContacts = contacts.filter((c) => !c._deleted);
+  const visibleBranches = branches.filter((b) => !b._deleted);
 
   return (
     <form
@@ -565,7 +659,10 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
           emptyText="אין תגיות עדיין."
         />
 
-        <details className="rounded-md border border-dashed p-3" open={Boolean(notes || visibleContacts.length > 0)}>
+        <details
+          className="rounded-md border border-dashed p-3"
+          open={Boolean(notes || visibleContacts.length > 0 || visibleBranches.length > 0)}
+        >
           <summary className="cursor-pointer text-sm font-medium">פרטים נוספים ואנשי קשר</summary>
           <div className="mt-3 space-y-3">
             <Field label="הערות">
@@ -631,6 +728,50 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
                       type="checkbox"
                       checked={contact.active}
                       onChange={(e) => updateContact(contact.key, { active: e.target.checked })}
+                    />
+                    <span>פעיל</span>
+                  </label>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-3 rounded-md border p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm font-medium">סניפים</div>
+                  <div className="text-xs text-muted-foreground">
+                    {loading
+                      ? "טוען סניפים..."
+                      : "לקוח שמזמין עבור כמה סניפים (למשל רשת) — כל סניף עם כתובת/טלפון משלו."}
+                  </div>
+                </div>
+                <Button type="button" variant="secondary" size="sm" onClick={addBranch}>
+                  הוספת סניף
+                </Button>
+              </div>
+              {visibleBranches.length === 0 && !loading ? (
+                <p className="text-xs text-muted-foreground">עדיין לא נוספו סניפים.</p>
+              ) : null}
+              {visibleBranches.map((branch, index) => (
+                <div key={branch.key} className="space-y-3 rounded-md border bg-background p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-sm font-medium">סניף {index + 1}</div>
+                    <DeleteButton label="הסרת סניף" onClick={() => removeBranch(branch.key)} />
+                  </div>
+                  <Field label="שם הסניף *">
+                    <Input value={branch.name} onChange={(e) => updateBranch(branch.key, { name: e.target.value })} />
+                  </Field>
+                  <Field label="כתובת">
+                    <Input value={branch.address} onChange={(e) => updateBranch(branch.key, { address: e.target.value })} />
+                  </Field>
+                  <Field label="טלפון">
+                    <Input value={branch.phone} onChange={(e) => updateBranch(branch.key, { phone: e.target.value })} />
+                  </Field>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={branch.active}
+                      onChange={(e) => updateBranch(branch.key, { active: e.target.checked })}
                     />
                     <span>פעיל</span>
                   </label>

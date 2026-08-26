@@ -80,6 +80,7 @@ function toInitialProject(row: ProjectRow): InitialProject {
   return {
     id: getString(row, "id") ?? "",
     customer_id: getString(row, "customer_id") ?? "",
+    branch_id: getString(row, "branch_id"),
     name: getString(row, "name") ?? "",
     project_type: getString(row, "project_type") ?? defaultProjectTypeOptions[0],
     status: getString(row, "status") ?? defaultStatusOptions[0],
