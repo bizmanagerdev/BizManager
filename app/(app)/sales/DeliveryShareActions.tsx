@@ -119,6 +119,8 @@ export default function DeliveryShareActions({
   // object URL for the captured slip, shown full-screen so the user can
   // long-press it to save/copy — doesn't depend on trusting any JS API.
   const [fallbackImageUrl, setFallbackImageUrl] = useState<string | null>(null);
+  const [fallbackShareText, setFallbackShareText] = useState<string | null>(null);
+  const [fallbackTextCopied, setFallbackTextCopied] = useState(false);
 
   // Revoke the object URL whenever it's replaced or the component unmounts —
   // it's only ever needed while the fallback overlay is on screen.
@@ -286,6 +288,7 @@ export default function DeliveryShareActions({
           // plugin or Clipboard API support.
           void copyImageToClipboard(blob);
           saveFile();
+          setFallbackShareText(shareText);
           setFallbackImageUrl(URL.createObjectURL(blob));
           return;
         }
@@ -349,28 +352,56 @@ export default function DeliveryShareActions({
       {fallbackImageUrl ? (
         <div
           className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-4 bg-black/85 p-4"
-          onClick={() => setFallbackImageUrl(null)}
+          onClick={() => {
+            setFallbackImageUrl(null);
+            setFallbackShareText(null);
+            setFallbackTextCopied(false);
+          }}
         >
           <p
             className="max-w-xs text-center text-sm font-medium text-white"
             onClick={(e) => e.stopPropagation()}
           >
-            השיתוף האוטומטי לא עבד במכשיר זה. החזיקו לחיצה ארוכה על התמונה כדי לשמור או להעתיק אותה.
+            השיתוף האוטומטי לא עבד במכשיר זה. אם לחיצה ארוכה על התמונה לא פותחת אפשרות שמירה/העתקה — הדרך הבטוחה
+            ביותר היא לצלם מסך (Screenshot) של התמונה שלמטה.
           </p>
           {/* eslint-disable-next-line @next/next/no-img-element -- a plain
-              <img> is required here: this is exactly what puts Android's
-              native long-press "save image / copy image" menu on the
-              element, which next/image's wrapper markup can interfere with. */}
+              <img> is required here: it's what puts Android's native
+              long-press "save image / copy image" menu on the element where
+              that IS available — and it's also just something a screenshot
+              can capture either way, which next/image's wrapper could get in
+              the way of. */}
           <img
             src={fallbackImageUrl}
             alt="משלוח"
             className="max-h-[70vh] max-w-full rounded-lg shadow-xl"
             onClick={(e) => e.stopPropagation()}
           />
+          {fallbackShareText ? (
+            <button
+              type="button"
+              className="rounded-full bg-white/15 px-5 py-2 text-sm font-medium text-white"
+              onClick={async (e) => {
+                e.stopPropagation();
+                try {
+                  await navigator.clipboard.writeText(fallbackShareText);
+                  setFallbackTextCopied(true);
+                } catch {
+                  toast.error("העתקת הטקסט נכשלה גם היא במכשיר זה.");
+                }
+              }}
+            >
+              {fallbackTextCopied ? "הפרטים הועתקו כטקסט ✓" : "העתקת הפרטים כטקסט"}
+            </button>
+          ) : null}
           <button
             type="button"
             className="rounded-full bg-white px-5 py-2 text-sm font-medium text-black"
-            onClick={() => setFallbackImageUrl(null)}
+            onClick={() => {
+              setFallbackImageUrl(null);
+              setFallbackShareText(null);
+              setFallbackTextCopied(false);
+            }}
           >
             סגירה
           </button>
