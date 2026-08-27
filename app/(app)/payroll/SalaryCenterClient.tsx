@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AddIcon, CalendarCheckIcon, CashIcon, CheckIcon, CoinsIcon, DeleteIcon, EditIcon, FilterIcon, LaborIcon, LockIcon, PrintIcon, ReceiptIcon, UsersIcon, WalletIcon, WarningIcon } from "@/components/ui/icons";
 import { SwipeActions, type SwipeAction } from "@/components/ui/swipe-actions";
@@ -266,8 +267,6 @@ export default function SalaryCenterClient({
   const [workerPaymentError, setWorkerPaymentError] = useState("");
   const [pendingDeletion, setPendingDeletion] = useState<PendingSalaryDeletion | null>(null);
   const [locallyDeletedSessionIds, setLocallyDeletedSessionIds] = useState<string[]>([]);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
   const [protectedData, setProtectedData] = useState<SalaryCenterProtectedPayload | null>(null);
   const [protectedError, setProtectedError] = useState("");
   const [loadingProtected, setLoadingProtected] = useState(false);
@@ -922,8 +921,6 @@ export default function SalaryCenterClient({
   }
 
   function runAction(action: () => Promise<void>, options?: { onError?: (message: string) => void }) {
-    setError("");
-    setMessage("");
     startTransition(async () => {
       try {
         await action();
@@ -932,7 +929,7 @@ export default function SalaryCenterClient({
         if (options?.onError) {
           options.onError(message);
         } else {
-          setError(message);
+          toast.error(message);
         }
       }
     });
@@ -978,7 +975,7 @@ export default function SalaryCenterClient({
       });
       setCreateUserOpen(false);
       resetCreateUserForm();
-      setMessage("המשתמש נוצר.");
+      toast.success("המשתמש נוצר.");
       await refreshAll({ reloadProtected: false });
     });
   }
@@ -986,7 +983,7 @@ export default function SalaryCenterClient({
   function closeOpenSession(sessionId: string) {
     runAction(async () => {
       await postJson("/api/payroll/sessions/close", { session_id: sessionId });
-      setMessage("המשמרת נסגרה.");
+      toast.success("המשמרת נסגרה.");
       await refreshAll();
     });
   }
@@ -1013,7 +1010,7 @@ export default function SalaryCenterClient({
         locale: workerForm.locale,
         deliveries_access: workerForm.deliveries_access,
       });
-      setMessage("פרטי הגישה עודכנו.");
+      toast.success("פרטי הגישה עודכנו.");
       await refreshAll({ reloadProtected: false });
       setWorkerAccessDialogOpen(false);
     });
@@ -1031,15 +1028,15 @@ export default function SalaryCenterClient({
   function saveAgreement() {
     const targetUserId = agreementForm.user_id || selectedWorker?.id || "";
     if (!targetUserId) {
-      setError("יש לבחור עובד לפני שמירה.");
+      toast.error("יש לבחור עובד לפני שמירה.");
       return;
     }
     if (!agreementStandardDailyHoursValid) {
-      setError("יש להזין שעות יומיות תקניות גדולות מ-0.");
+      toast.error("יש להזין שעות יומיות תקניות גדולות מ-0.");
       return;
     }
     if (!agreementDueDayValid) {
-      setError("יש להזין יום תשלום תקין בין 1 ל-31.");
+      toast.error("יש להזין יום תשלום תקין בין 1 ל-31.");
       return;
     }
     runAction(async () => {
@@ -1050,7 +1047,7 @@ export default function SalaryCenterClient({
       });
       setAgreementForm(DEFAULT_AGREEMENT_FORM);
       setAgreementDialogOpen(false);
-      setMessage("הסכם השכר נשמר.");
+      toast.success("הסכם השכר נשמר.");
       await refreshAll();
     });
   }
@@ -1135,7 +1132,7 @@ export default function SalaryCenterClient({
         notes: overrideForm.notes || null,
       });
       setOverrideForm(DEFAULT_OVERRIDE_FORM);
-      setMessage("החרגת השכר נוספה.");
+      toast.success("החרגת השכר נוספה.");
       await refreshAll();
       setOverrideDialogOpen(false);
     });
@@ -1144,7 +1141,7 @@ export default function SalaryCenterClient({
   function createOrOpenPeriod() {
     runAction(async () => {
       await postJson("/api/payroll/periods", { action: "create", period_month: periodMonth });
-      setMessage("תקופת השכר נשמרה.");
+      toast.success("תקופת השכר נשמרה.");
       await refreshAll();
     });
   }
@@ -1153,7 +1150,7 @@ export default function SalaryCenterClient({
     if (!periodId) return;
     runAction(async () => {
       await postJson("/api/payroll/periods", { action, period_id: periodId });
-      setMessage("התלושים נוצרו.");
+      toast.success("התלושים נוצרו.");
       await refreshAll();
     });
   }
@@ -1166,7 +1163,7 @@ export default function SalaryCenterClient({
         payroll_period_id: selectedPeriodId,
         user_id: userId,
       });
-      setMessage("התלוש חושב מחדש.");
+      toast.success("התלוש חושב מחדש.");
       await refreshAll();
     });
   }
@@ -1178,7 +1175,7 @@ export default function SalaryCenterClient({
         payslip_id: payslipId,
         manual_adjustments: payslipAdjustmentDrafts[payslipId] ?? "0",
       });
-      setMessage("התלוש עודכן.");
+      toast.success("התלוש עודכן.");
       await refreshAll();
     });
   }
@@ -1187,7 +1184,7 @@ export default function SalaryCenterClient({
     runAction(async () => {
       await postJson("/api/payroll/payslip-items", payslipItemForm);
       setPayslipItemForm(DEFAULT_PAYSLIP_ITEM_FORM);
-      setMessage("פריט התלוש נוסף.");
+      toast.success("פריט התלוש נוסף.");
       await refreshAll();
     });
   }
@@ -1201,7 +1198,7 @@ export default function SalaryCenterClient({
       });
       const json = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) throw new Error(toHebrewError(json.error, "Request failed."));
-      setMessage("פריט התלוש נמחק.");
+      toast.success("פריט התלוש נמחק.");
       await refreshAll();
     });
   }
@@ -1247,7 +1244,7 @@ export default function SalaryCenterClient({
       if (!response.ok) throw new Error(toHebrewError(json.error, "שמירת הבונוס נכשלה."));
       setBonusDialogOpen(false);
       setBonusForm(DEFAULT_BONUS_FORM);
-      setMessage("הבונוס נוסף לתלוש של אותו חודש.");
+      toast.success("הבונוס נוסף לתלוש של אותו חודש.");
       await refreshAll();
     });
   }
@@ -1302,7 +1299,7 @@ export default function SalaryCenterClient({
       setAbsenceForm(DEFAULT_ABSENCE_FORM);
       // Say how many actually landed — with "all workers" the difference between
       // "12 marked" and "already marked" is the whole answer.
-      setMessage(
+      toast.success(
         added === 0
           ? "היום הזה כבר סומן."
           : targetIds.length > 1
@@ -1319,7 +1316,7 @@ export default function SalaryCenterClient({
       setProtectedData(null);
       setSalaryUnlocked(false);
       setProtectedError("");
-      setMessage("נתוני השכר ננעלו.");
+      toast.success("נתוני השכר ננעלו.");
       router.refresh();
     });
   }
@@ -1352,7 +1349,7 @@ export default function SalaryCenterClient({
   function openPayslipPaymentDialog(payslip: PayslipRow) {
     const debtItem = workerDebtItemsBySourceKey.get(`payslip:${payslip.id}`) ?? null;
     if (!debtItem) {
-      setError("לא נמצא פריט חוב פתוח עבור התלוש הזה.");
+      toast.error("לא נמצא פריט חוב פתוח עבור התלוש הזה.");
       return;
     }
     setSelectedWorkerId(payslip.user_id);
@@ -1498,7 +1495,7 @@ export default function SalaryCenterClient({
       setWorkerPaymentDialogOpen(false);
       setWorkerPaymentForm(DEFAULT_WORKER_PAYMENT_FORM);
       setWorkerPaymentError("");
-      setMessage(workerPaymentForm.payment_id ? "תשלום לעובד עודכן." : "תשלום לעובד נשמר.");
+      toast.success(workerPaymentForm.payment_id ? "תשלום לעובד עודכן." : "תשלום לעובד נשמר.");
       await refreshAll();
     });
   }
@@ -1525,7 +1522,7 @@ export default function SalaryCenterClient({
         if (sessionForm.session_id === pending.sessionId) {
           setSessionDialogOpen(false);
         }
-        setMessage("המשמרת נמחקה.");
+        toast.success("המשמרת נמחקה.");
         setPendingDeletion(null);
         await refreshAll();
         return;
@@ -1537,7 +1534,7 @@ export default function SalaryCenterClient({
         });
         setWorkerAccessDialogOpen(false);
         setSelectedWorkerId("");
-        setMessage("העובד הוסר מהרשימה הפעילה.");
+        toast.success("העובד הוסר מהרשימה הפעילה.");
         setPendingDeletion(null);
         if (isWorkerDetailMode) {
           router.push("/payroll");
@@ -1553,7 +1550,7 @@ export default function SalaryCenterClient({
           agreement_id: pending.agreementId,
           user_id: pending.userId,
         });
-        setMessage("המשכורת נמחקה.");
+        toast.success("המשכורת נמחקה.");
         setPendingDeletion(null);
         await refreshAll();
         return;
@@ -1570,7 +1567,7 @@ export default function SalaryCenterClient({
         });
         const json = (await response.json().catch(() => ({}))) as { error?: string };
         if (!response.ok) throw new Error(toHebrewError(json.error, "המחיקה נכשלה."));
-        setMessage(isBonus ? "הבונוס נמחק." : "ההיעדרות נמחקה.");
+        toast.success(isBonus ? "הבונוס נמחק." : "ההיעדרות נמחקה.");
         setPendingDeletion(null);
         await refreshAll();
         return;
@@ -1595,7 +1592,7 @@ export default function SalaryCenterClient({
         setWorkerPaymentError("");
       }
 
-      setMessage("תשלום לעובד נמחק.");
+      toast.success("תשלום לעובד נמחק.");
       setPendingDeletion(null);
       await refreshAll();
     });
@@ -2334,12 +2331,10 @@ export default function SalaryCenterClient({
 
   return (
     <div className="space-y-4 text-right" dir="rtl" style={{ direction: "rtl" }}>
-      {(message || error || protectedError) ? (
+      {protectedError ? (
         <Card>
           <CardContent className="space-y-2 py-4 text-sm">
-            {message ? <div className="text-success">{message}</div> : null}
-            {error ? <div className="text-destructive">{error}</div> : null}
-            {protectedError ? <div className="text-destructive">{protectedError}</div> : null}
+            <div className="text-destructive">{protectedError}</div>
           </CardContent>
         </Card>
       ) : null}
@@ -5342,7 +5337,7 @@ export default function SalaryCenterClient({
         canViewSalary={canViewSalary}
         onUnlockSuccess={loadProtectedData}
         onSaved={(msg) => {
-          setMessage(msg);
+          toast.success(msg);
           void refreshAll();
         }}
         editExtras={
