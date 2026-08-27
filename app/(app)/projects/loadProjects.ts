@@ -151,17 +151,19 @@ export async function loadProjectsPage(
       : Promise.resolve({ data: [] as Row[] }),
     // The projects view doesn't carry the customer's phone; look it up so every
     // customer name in the list can show a phone next to it (project rule).
+    // Read straight from customers (not customer_overview_view, which forces a
+    // full financial aggregation to answer a phone-number lookup).
     customerIdsForRows.length > 0
       ? supabase
-          .from("customer_overview_view")
-          .select("customer_id,phone")
-          .in("customer_id", customerIdsForRows)
+          .from("customers")
+          .select("id,phone")
+          .in("id", customerIdsForRows)
       : Promise.resolve({ data: [] as Row[] }),
   ]);
 
   const phoneByCustomerId = new Map<string, string | null>();
   ((customerPhoneRows ?? []) as Row[]).forEach((row) => {
-    const customerId = typeof row?.customer_id === "string" ? row.customer_id : "";
+    const customerId = typeof row?.id === "string" ? row.id : "";
     if (!customerId) return;
     phoneByCustomerId.set(customerId, typeof row?.phone === "string" ? row.phone : null);
   });

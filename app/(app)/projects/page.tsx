@@ -74,10 +74,12 @@ export default async function ProjectsPage({
       .order("customer_name", { ascending: true })
       .range(0, OPTIONS_PAGE_SIZE - 1),
     // Tab counts — folded into this batch so they run concurrently instead of as
-    // a second sequential round-trip wave.
+    // a second sequential round-trip wave. These only need status/customer_id,
+    // so they count the plain projects table rather than project_dashboard_view
+    // (which forces a full financials + task-progress aggregation per count).
     (() => {
       let q = supabase
-        .from("project_dashboard_view")
+        .from("projects")
         .select("id", { count: "estimated", head: true })
         .not("status", "in", `(${CLOSED_STATUSES.join(",")})`);
       if (customerId) q = q.eq("customer_id", customerId);
@@ -85,7 +87,7 @@ export default async function ProjectsPage({
     })(),
     (() => {
       let q = supabase
-        .from("project_dashboard_view")
+        .from("projects")
         .select("id", { count: "estimated", head: true })
         .eq("status", "quote");
       if (customerId) q = q.eq("customer_id", customerId);
@@ -93,7 +95,7 @@ export default async function ProjectsPage({
     })(),
     (() => {
       let q = supabase
-        .from("project_dashboard_view")
+        .from("projects")
         .select("id", { count: "estimated", head: true })
         .eq("status", "completed");
       if (customerId) q = q.eq("customer_id", customerId);
