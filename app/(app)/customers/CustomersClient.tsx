@@ -653,14 +653,14 @@ export default function CustomersClient({
                     ) : null}
                   </div>
                 </div>
-                <div className="shrink-0 text-left">
-                  <div
-                    className={`whitespace-nowrap text-sm font-semibold tabular-nums ${openBalance > 0 ? "text-destructive" : "text-muted-foreground"}`}
-                  >
-                    {ils(openBalance)}
+                {openBalance > 0 ? (
+                  <div className="shrink-0 text-left">
+                    <div className="whitespace-nowrap text-sm font-semibold tabular-nums text-destructive">
+                      {ils(openBalance)}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">יתרה</div>
                   </div>
-                  <div className="text-[10px] text-muted-foreground">{openBalance > 0 ? "יתרה" : "אין יתרה"}</div>
-                </div>
+                ) : null}
                 <ChevronLeftIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
               </div>
             </SwipeActions>
@@ -761,9 +761,9 @@ export default function CustomersClient({
                   <td className="px-2 py-1.5">{n(row, "orders_count")}</td>
                   <td className="px-2 py-1.5">{n(row, "projects_count")}</td>
                   <td className="px-2 py-1.5">
-                    <div className={`truncate font-medium ${openBalance > 0 ? "text-destructive" : ""}`}>
-                      {ils(openBalance)}
-                    </div>
+                    {openBalance > 0 ? (
+                      <div className="truncate font-medium text-destructive">{ils(openBalance)}</div>
+                    ) : null}
                   </td>
                   <td className="px-2 py-1.5">
                     <div className="flex flex-wrap gap-1">
