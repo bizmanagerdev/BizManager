@@ -41,6 +41,7 @@ import CustomerTasksSection, { type CustomerTaskItem } from "./CustomerTasksSect
 import PaymentPromises from "@/components/collections/PaymentPromises";
 import { getCustomerPromises } from "@/lib/promises";
 import CustomerNotesEditor from "./CustomerNotesEditor";
+import CustomerTagsSection from "./CustomerTagsSection";
 import DeleteCustomerButton from "./DeleteCustomerButton";
 import EditCustomerButton from "./EditCustomerButton";
 import { SectionCard } from "@/components/ui/section-card";
@@ -1254,15 +1255,7 @@ export default async function CustomerDetailsPage({
                   ) : null}
                 </div>
               ) : null}
-              {customerTags.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {customerTags.map((tag) => (
-                    <Badge key={tag.id} className={getStatusColorClasses("info")}>
-                      {tag.name}
-                    </Badge>
-                  ))}
-                </div>
-              ) : null}
+              <CustomerTagsSection customerId={id} tags={customerTags} />
               {/* Each row is one tap target, icon included — on a phone a 3.5-unit
                   glyph sitting next to the link is a miss waiting to happen. */}
               <div className="space-y-1.5 text-xs">
