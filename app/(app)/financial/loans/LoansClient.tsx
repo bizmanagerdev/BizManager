@@ -115,7 +115,7 @@ export default function LoansClient({ loans, summary }: { loans: Loan[]; summary
               key={f.key}
               type="button"
               size="sm"
-              variant={filter === f.key ? "default" : "secondary"}
+              variant={filter === f.key ? "default" : "outline"}
               onClick={() => setFilter(f.key)}
             >
               {f.label}
@@ -126,7 +126,7 @@ export default function LoansClient({ loans, summary }: { loans: Loan[]; summary
           <Button
             type="button"
             size="sm"
-            variant={showResolved ? "default" : "secondary"}
+            variant={showResolved ? "default" : "outline"}
             onClick={() => setShowResolved((prev) => !prev)}
           >
             {showResolved ? "הסתרת הלוואות שנפרעו" : `הצגת הלוואות שנפרעו (${resolvedCount})`}

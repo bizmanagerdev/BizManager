@@ -170,14 +170,14 @@ export default function RepaymentPlanPicker({
       <div className="grid grid-cols-2 gap-2">
         <Button
           type="button"
-          variant={state.mode === "single" ? "default" : "secondary"}
+          variant={state.mode === "single" ? "default" : "outline"}
           onClick={() => setMode("single")}
         >
           בתשלום אחד
         </Button>
         <Button
           type="button"
-          variant={state.mode === "installments" ? "default" : "secondary"}
+          variant={state.mode === "installments" ? "default" : "outline"}
           onClick={() => setMode("installments")}
         >
           בכמה תשלומים
