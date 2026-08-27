@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -17,10 +17,18 @@ import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
 import {
   getAccountKindLabel,
+  type AccountDeleteRef,
+  type AccountEditRef,
   type AccountTransferRef,
   type AccountWithLedger,
 } from "@/lib/accounts";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
+import { PaymentEditDialog } from "@/components/financial/PaymentEditDialog";
+import { EditWorkerPaymentDialog } from "@/components/payroll/EditWorkerPaymentDialog";
+import { EditPaidRepaymentDialog, LoanFormDialog } from "@/app/(app)/financial/loans/LoanDialogs";
+import { deleteLoan, deleteRepayment } from "@/app/(app)/financial/loans/actions";
+import type { Loan } from "@/lib/loans";
 
 function formatIls(amount: number) {
   return new Intl.NumberFormat("he-IL", {
@@ -99,11 +107,16 @@ function AccountSummaryCard({
 
 export default function BankClient({
   accounts,
+  loans,
   initialAccountId = "",
   projects = [],
   merchantMemory = {},
 }: {
   accounts: AccountWithLedger[];
+  /** For a loan/loan_repayment row's inline edit — the full computed shape
+   *  LoanFormDialog/EditPaidRepaymentDialog need, not just the ledger scan's
+   *  display fields. */
+  loans: Loan[];
   /** From ?account= — so a link can open straight on one account. */
   initialAccountId?: string;
   /** For the quick-entry row above the register. */
@@ -111,6 +124,7 @@ export default function BankClient({
   merchantMemory?: MerchantMemory;
 }) {
   const router = useRouter();
+  const loansById = useMemo(() => new Map(loans.map((l) => [l.id, l] as const)), [loans]);
   const [selectedId, setSelectedId] = useState<string>(
     accounts.find((a) => a.id === initialAccountId)?.id ?? accounts[0]?.id ?? ""
   );
@@ -157,6 +171,96 @@ export default function BankClient({
       setDeleteError(toHebrewError(error, "מחיקת ההעברה נכשלה."));
     } finally {
       setDeleting(false);
+    }
+  }
+
+  // ── Inline edit/delete for every OTHER row kind (payment, expense, worker
+  // payment, loan, loan repayment). Every kind gets both now. Expense/loan/
+  // loan_repayment already carry what their dialog needs right on the row;
+  // payment and worker_payment fetch their own context on click instead (see
+  // PaymentEditDialog / EditWorkerPaymentDialog) — too expensive, and in the
+  // worker_payment case too *risky* (existing session/payslip allocations
+  // must round-trip untouched), to preload for every ledger row.
+  const [editingExpenseRef, setEditingExpenseRef] = useState<Extract<AccountEditRef, { kind: "expense" }> | null>(null);
+  const [editingLoanId, setEditingLoanId] = useState<string | null>(null);
+  const [editingRepaymentRef, setEditingRepaymentRef] = useState<Extract<AccountEditRef, { kind: "loan_repayment" }> | null>(null);
+  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
+  const [editingWorkerPaymentId, setEditingWorkerPaymentId] = useState<string | null>(null);
+  const [rowToDelete, setRowToDelete] = useState<{ ref: AccountDeleteRef; label: string } | null>(null);
+  const [rowDeleting, setRowDeleting] = useState(false);
+  const [rowDeleteError, setRowDeleteError] = useState<string | undefined>(undefined);
+
+  function openEdit(ref: AccountEditRef) {
+    if (ref.kind === "expense") setEditingExpenseRef(ref);
+    else if (ref.kind === "loan") setEditingLoanId(ref.loanId);
+    else if (ref.kind === "loan_repayment") setEditingRepaymentRef(ref);
+    else if (ref.kind === "payment") setEditingPaymentId(ref.id);
+    else setEditingWorkerPaymentId(ref.id);
+  }
+
+  function deleteRowLabel(ref: AccountDeleteRef): string {
+    if (ref.kind === "loan") {
+      return "מחיקת ההלוואה תמחק גם את כל החזרי ההלוואה שנרשמו עבורה (כולל תשלומים מתוכננים).";
+    }
+    if (ref.kind === "loan_repayment") return "יתרת ההלוואה תחושב מחדש בהתאם.";
+    if (ref.kind === "expense") return "ההוצאה תימחק מהתזרים ומהקישור שלה למקור, אם קיים.";
+    if (ref.kind === "worker_payment") return "התשלום יימחק, כולל השיוכים שלו למשמרות/תלושים.";
+    return "התנועה תימחק מהתזרים.";
+  }
+
+  async function deleteRow() {
+    if (!rowToDelete) return;
+    const { ref } = rowToDelete;
+    setRowDeleting(true);
+    setRowDeleteError(undefined);
+    try {
+      if (ref.kind === "loan") {
+        const result = await deleteLoan(ref.id);
+        if (!result.ok) {
+          setRowDeleteError(result.error);
+          return;
+        }
+      } else if (ref.kind === "loan_repayment") {
+        const result = await deleteRepayment(ref.id, ref.loanId);
+        if (!result.ok) {
+          setRowDeleteError(result.error);
+          return;
+        }
+      } else {
+        const request =
+          ref.kind === "payment"
+            ? ref.orderId
+              ? { url: "/api/orders/payments/delete", body: { id: ref.id, order_id: ref.orderId } }
+              : { url: "/api/payments/delete", body: { id: ref.id, project_id: ref.projectId || undefined } }
+            : ref.kind === "expense"
+              ? {
+                  url: "/api/expenses/delete",
+                  body: {
+                    id: ref.id,
+                    project_id: ref.projectId || undefined,
+                    order_id: ref.orderId || undefined,
+                    property_id: ref.propertyId || undefined,
+                  },
+                }
+              : { url: "/api/payroll/worker-payments", body: { payment_id: ref.id, user_id: ref.userId || undefined } };
+        const res = await fetch(request.url, {
+          method: ref.kind === "worker_payment" ? "DELETE" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(request.body),
+        });
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) {
+          setRowDeleteError(toHebrewError(json.error, "המחיקה נכשלה."));
+          return;
+        }
+      }
+      setRowToDelete(null);
+      router.refresh();
+      toast.success("הרשומה נמחקה.");
+    } catch (error: unknown) {
+      setRowDeleteError(toHebrewError(error, "המחיקה נכשלה."));
+    } finally {
+      setRowDeleting(false);
     }
   }
 
@@ -383,42 +487,55 @@ export default function BankClient({
                         </div>
                       </>
                     );
-                    const rowClass = "flex items-center justify-between gap-3 px-3 py-2.5 text-sm";
-                    if (row.href) {
-                      return (
-                        <Link
-                          key={row.id}
-                          href={row.href}
-                          className={cn(rowClass, "transition-colors hover:bg-muted/50")}
-                        >
-                          {inner}
-                        </Link>
-                      );
-                    }
-                    // A transfer has no source record to open — it's the one
-                    // ledger row that lives ONLY here, so this is also the only
-                    // place it can be fixed or undone.
+                    // The label/amount block links to the source record when
+                    // there is one (order/project/loan/worker payroll) — click
+                    // anywhere on it to open that. A transfer has none (it's the
+                    // one ledger row that lives ONLY here), and either way the
+                    // edit/delete cluster sits OUTSIDE this link so the buttons
+                    // stay their own click target, not nested inside an <a>.
                     const transfer = row.transfer;
-                    return (
-                      <div key={row.id} className={rowClass}>
+                    const content = row.href ? (
+                      <Link href={row.href} className="flex min-w-0 flex-1 items-center gap-3">
                         {inner}
-                        {transfer ? (
+                      </Link>
+                    ) : (
+                      <div className="flex min-w-0 flex-1 items-center gap-3">{inner}</div>
+                    );
+                    const rowLabel = `${row.label} · ${formatIls(row.amount)}`;
+                    return (
+                      <div
+                        key={row.id}
+                        className="flex items-center gap-3 px-3 py-2.5 text-sm transition-colors hover:bg-muted/50"
+                      >
+                        {content}
+                        {(row.editRef || row.deleteRef || transfer) && (
                           <div className="flex shrink-0 items-center gap-0.5">
-                            <EditButton onClick={() => {
-                                setTransferToEdit(transfer);
-                                setTransferOpen(true);
-                              }} label="עריכת העברה" />
-                            <DeleteButton
-                              label="מחיקת העברה"
-                              onClick={() =>
-                                setTransferToDelete({
-                                  id: transfer.id,
-                                  label: `${row.label} · ${formatIls(row.amount)}`,
-                                })
-                              }
-                            />
+                            {row.editRef && (
+                              <EditButton label="עריכה" onClick={() => openEdit(row.editRef!)} />
+                            )}
+                            {transfer && (
+                              <EditButton
+                                label="עריכת העברה"
+                                onClick={() => {
+                                  setTransferToEdit(transfer);
+                                  setTransferOpen(true);
+                                }}
+                              />
+                            )}
+                            {row.deleteRef && (
+                              <DeleteButton
+                                label="מחיקה"
+                                onClick={() => setRowToDelete({ ref: row.deleteRef!, label: rowLabel })}
+                              />
+                            )}
+                            {transfer && (
+                              <DeleteButton
+                                label="מחיקת העברה"
+                                onClick={() => setTransferToDelete({ id: transfer.id, label: rowLabel })}
+                              />
+                            )}
                           </div>
-                        ) : null}
+                        )}
                       </div>
                     );
                   })}
@@ -481,6 +598,80 @@ export default function BankClient({
         {transferToDelete ? (
           <div className="text-sm font-medium">{transferToDelete.label}</div>
         ) : null}
+      </ConfirmDialog>
+
+      <ExpenseDialog
+        open={editingExpenseRef !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditingExpenseRef(null);
+        }}
+        editingExpense={editingExpenseRef?.data}
+        lockedProjectId={editingExpenseRef?.data.project_id}
+        lockedOrderId={editingExpenseRef?.data.order_id}
+        lockedPropertyId={editingExpenseRef?.data.property_id}
+        onSaved={() => {
+          setEditingExpenseRef(null);
+          router.refresh();
+        }}
+      />
+
+      <LoanFormDialog
+        open={editingLoanId !== null}
+        loan={editingLoanId ? (loansById.get(editingLoanId) ?? null) : null}
+        onOpenChange={(open) => {
+          if (!open) setEditingLoanId(null);
+        }}
+      />
+
+      {editingRepaymentRef && loansById.get(editingRepaymentRef.loanId) && (
+        <EditPaidRepaymentDialog
+          loan={loansById.get(editingRepaymentRef.loanId)!}
+          repayment={editingRepaymentRef.repayment}
+          onOpenChange={(open) => {
+            if (!open) setEditingRepaymentRef(null);
+          }}
+        />
+      )}
+
+      <PaymentEditDialog
+        paymentId={editingPaymentId}
+        onOpenChange={(open) => {
+          if (!open) setEditingPaymentId(null);
+        }}
+        onSaved={() => {
+          setEditingPaymentId(null);
+          router.refresh();
+        }}
+      />
+
+      <EditWorkerPaymentDialog
+        paymentId={editingWorkerPaymentId}
+        onOpenChange={(open) => {
+          if (!open) setEditingWorkerPaymentId(null);
+        }}
+        onSaved={() => {
+          setEditingWorkerPaymentId(null);
+          router.refresh();
+        }}
+      />
+
+      <ConfirmDialog
+        open={rowToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRowToDelete(null);
+            setRowDeleteError(undefined);
+          }
+        }}
+        title="מחיקת תנועה"
+        description={rowToDelete ? deleteRowLabel(rowToDelete.ref) : ""}
+        confirmLabel="מחיקה"
+        destructive
+        loading={rowDeleting}
+        error={rowDeleteError}
+        onConfirm={() => void deleteRow()}
+      >
+        {rowToDelete ? <div className="text-sm font-medium">{rowToDelete.label}</div> : null}
       </ConfirmDialog>
     </div>
   );

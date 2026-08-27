@@ -176,9 +176,12 @@ export default function QuickEntryRow({
       <div
         ref={barRef}
         className={cn(
-          "sticky bottom-[calc(58px+env(safe-area-inset-bottom))] z-30 md:fixed md:inset-x-0 md:bottom-0",
+          "sticky bottom-[calc(58px+env(safe-area-inset-bottom))] z-30 md:fixed md:bottom-0 md:left-0",
           // Physical, not logical — the rail sits at the physical right edge in
-          // this RTL app, so the box that clears it is `right`, not `end`.
+          // this RTL app, so the box that clears it is `right`, not `end`. A
+          // single `right-*` utility only (no `inset-x`) — two rules setting
+          // `right` at equal specificity is a coin flip on which one the
+          // generated stylesheet's ordering actually applies.
           collapsed ? "md:right-14" : "md:right-40"
         )}
       >

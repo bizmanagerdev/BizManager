@@ -562,7 +562,10 @@ export function LoanRepaymentsPanel({ loan }: { loan: Loan }) {
 }
 
 // ── Edit an already-paid repayment ─────────────────────────────────────────
-function EditPaidRepaymentDialog({
+// Exported so the account register (app/(app)/financial/bank/BankClient.tsx)
+// can reuse it directly for an `lr:` ledger row's inline edit — same form,
+// same `updateRepayment` action, no duplicated UI.
+export function EditPaidRepaymentDialog({
   loan,
   repayment,
   onOpenChange,

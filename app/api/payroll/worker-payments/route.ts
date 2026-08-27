@@ -330,6 +330,58 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
   });
 }
 
+// Read-only context for editing a worker_payment inline from the account
+// register (app/(app)/financial/bank/BankClient.tsx). The register only wants
+// to correct logistics (date/amount/method/account/notes) — the existing
+// allocations are returned so the edit form can resend them UNCHANGED on
+// save. PATCH above unconditionally replaces a payment's allocations with
+// whatever the request sends, so omitting them would silently wipe real
+// session/payslip debt-settlement data — see accounts-layer memory.
+export async function GET(req: Request) {
+  try {
+    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
+    if (!access.ok) return access.response;
+    const { supabase } = access.value;
+
+    const url = new URL(req.url);
+    const paymentId = (url.searchParams.get("payment_id") ?? "").trim();
+    if (!paymentId) {
+      return NextResponse.json({ error: "payment_id is required." }, { status: 400 });
+    }
+
+    const [{ data: payment, error: paymentError }, { data: allocations, error: allocationsError }] =
+      await Promise.all([
+        supabase
+          .from("worker_payments")
+          .select("id,user_id,payment_date,amount,payment_method,reference_number,notes,account_id")
+          .eq("id", paymentId)
+          .maybeSingle(),
+        supabase
+          .from("worker_payment_allocations")
+          .select("id,source_type,attendance_session_id,payslip_id,amount")
+          .eq("worker_payment_id", paymentId),
+      ]);
+    if (paymentError) return NextResponse.json({ error: toHebrewError(paymentError.message) }, { status: 400 });
+    if (allocationsError) return NextResponse.json({ error: toHebrewError(allocationsError.message) }, { status: 400 });
+    if (!payment?.id) return NextResponse.json({ error: "Payment not found." }, { status: 404 });
+
+    const { data: worker } = await supabase
+      .from("users")
+      .select("full_name")
+      .eq("id", payment.user_id)
+      .maybeSingle();
+
+    return NextResponse.json({
+      payment,
+      allocations: allocations ?? [],
+      workerName: typeof worker?.full_name === "string" ? worker.full_name : null,
+    });
+  } catch (error: unknown) {
+    const message = toHebrewError(error, "Unknown error");
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
 export async function POST(req: Request) {
   try {
     return await saveWorkerPayment(req, "create");

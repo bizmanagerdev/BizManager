@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { loadAccountsOverview } from "@/lib/accounts";
+import { fetchLoans } from "@/lib/loans";
 import type { MerchantMemory } from "@/lib/financial/cardImport";
 import BankClient from "./BankClient";
 
@@ -30,8 +31,12 @@ export default async function BankPage({
   }
 
   const params = await searchParams;
-  const [accounts, { data: projectRows }, { data: mappingRows }] = await Promise.all([
+  const [accounts, loans, { data: projectRows }, { data: mappingRows }] = await Promise.all([
     loadAccountsOverview(supabase),
+    // For the register's inline "עריכת הלוואה"/"עריכת החזר" — a loan/loan_repayment
+    // row needs the full computed Loan shape (outstanding, plannedInstallments…),
+    // not just what the ledger scan keeps for display.
+    fetchLoans(supabase),
     supabase.from("projects").select("id,name").order("created_at", { ascending: false }).limit(300),
     // Merchant memory — how a description like this was filed last time, so the
     // quick row fills its own שיוך.
@@ -65,6 +70,7 @@ export default async function BankPage({
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <BankClient
         accounts={accounts}
+        loans={loans}
         initialAccountId={params.account ?? ""}
         projects={projects}
         merchantMemory={merchantMemory}

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isCollectedPayment } from "@/lib/orders/paymentStatus";
 import { fetchAllPagedResult } from "@/lib/supabase/paginate";
+import type { LoanRepayment } from "@/lib/loans";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Accounts layer (חשבונות) — real money containers with a running balance.
@@ -108,6 +109,58 @@ export type AccountLedgerEntry = {
    *  to, so the register can edit or delete it (both legs move together)
    *  without a second round trip for the other side's id. */
   transfer?: AccountTransferRef;
+  /** How the register can delete this row in place, dispatched by kind — each
+   *  source table has its own delete rule (an order-linked payment must go
+   *  through the order route so payment_status stays in sync; a project/order
+   *  -linked expense must name its parent to match the API's ownership check).
+   *  Absent only for a transfer leg, which uses `transfer` instead. */
+  deleteRef?: AccountDeleteRef;
+  /** How the register can edit this row in place, dispatched by kind. Expense
+   *  / loan / paid loan repayment reuse an existing standalone dialog directly
+   *  with data already on the row. Payment and worker_payment only carry the
+   *  id — BankClient fetches the rest on click (which of order/project/
+   *  standalone a payment is, or a worker payment's existing allocations, so
+   *  an edit doesn't silently wipe them — see accounts-layer memory) since
+   *  that context is too expensive to preload for every ledger row. */
+  editRef?: AccountEditRef;
+};
+
+export type AccountDeleteRef =
+  | { kind: "payment"; id: string; projectId: string | null; orderId: string | null }
+  | { kind: "expense"; id: string; projectId: string | null; orderId: string | null; propertyId: string | null }
+  | { kind: "worker_payment"; id: string; userId: string | null }
+  | { kind: "loan"; id: string }
+  | { kind: "loan_repayment"; id: string; loanId: string };
+
+export type AccountEditRef =
+  | { kind: "payment"; id: string }
+  | { kind: "expense"; data: EditableExpense }
+  | { kind: "worker_payment"; id: string }
+  | { kind: "loan"; loanId: string }
+  | { kind: "loan_repayment"; loanId: string; repayment: LoanRepayment };
+
+/** Just what ExpenseDialog's `editingExpense` + `locked*Id` props need — see
+ *  components/expenses/ExpenseDialog.tsx's EditingExpenseData (kept as a
+ *  separate, structurally-matching type here so this server-safe module
+ *  never imports the "use client" dialog file itself). */
+export type EditableExpense = {
+  id: string;
+  amount: number;
+  category: string | null;
+  description: string | null;
+  notes: string | null;
+  expense_date: string | null;
+  business_domain: string | null;
+  payment_status: string | null;
+  paid_amount: number | null;
+  payment_method: string | null;
+  account_id: string | null;
+  project_id: string | null;
+  order_id: string | null;
+  property_id: string | null;
+  billed_to_customer: boolean;
+  included_in_base_price: boolean;
+  bill_to_customer_amount: number | null;
 };
 
 /** A transfer as the register needs it to prefill the edit form. */
@@ -135,6 +188,11 @@ function num(value: unknown) {
 
 function str(value: unknown) {
   return typeof value === "string" ? value : null;
+}
+
+function intOrNull(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
 }
 
 function mapAccount(row: Row): Account {
@@ -188,6 +246,8 @@ type RawLedgerEntry = {
   amount: number;
   posted: boolean;
   transfer?: AccountTransferRef;
+  deleteRef?: AccountDeleteRef;
+  editRef?: AccountEditRef;
 };
 
 /**
@@ -237,10 +297,19 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
           .or(`payment_date.gte.${earliestOpening},due_date.gte.${earliestOpening}`)
           .range(from, to)
       ),
+      // billed_to_customer/included_in_base_price are NOT columns on `expenses`
+      // itself — they live on the project_expenses JOIN row (fetched below,
+      // batched by expense id). Selecting them here 42703s the whole query,
+      // which `scan()` swallows into an empty array — i.e. every expense
+      // silently vanishes from the register/balance. (Real bug, briefly
+      // shipped 2026-08-27 — caught by a localhost-vs-production balance
+      // mismatch once the columns turned out to be missing on `expenses`.)
       scan("expenses", (from, to) =>
         supabase
           .from("expenses")
-          .select("id,account_id,expense_date,paid_date,amount,paid_amount,payment_status,description,category,project_id")
+          .select(
+            "id,account_id,expense_date,paid_date,amount,paid_amount,payment_status,description,category,project_id,order_id,property_id,business_domain,payment_method,notes"
+          )
           .not("account_id", "is", null)
           .gte("expense_date", earliestOpening)
           .range(from, to)
@@ -267,7 +336,13 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       scan("loan_repayments", (from, to) =>
         supabase
           .from("loan_repayments")
-          .select("id,account_id,loan_id,repayment_date,amount")
+          // NOT `status`/`installment_index`/`installment_count` — those only
+          // exist after the (optional) installment-plan migration, and this
+          // scan must keep working before it's run. Unnecessary here anyway:
+          // every row this query CAN return already has account_id set, and a
+          // still-planned installment never gets one (nothing's moved yet) —
+          // so every row reaching this loop is safely a paid repayment.
+          .select("id,account_id,loan_id,repayment_date,amount,interest_amount,method,notes,created_at")
           .not("account_id", "is", null)
           .gte("repayment_date", earliestOpening)
           .range(from, to)
@@ -306,6 +381,35 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
   for (const row of paymentRows) {
     const id = str(row.order_id);
     if (id) orderIds.add(id);
+  }
+
+  // billed_to_customer / included_in_base_price live on the project_expenses
+  // JOIN row, not on `expenses` itself — batched here (keyed by expense id)
+  // so the register's inline expense-edit dialog can hydrate its "חויב ללקוח"
+  // toggle correctly. Only project-linked expenses have a row at all.
+  const expenseBillingByExpenseId = new Map<
+    string,
+    { includedInBasePrice: boolean; billedToCustomer: boolean }
+  >();
+  const expenseIdsForBilling = expenseRows
+    .map((r) => str(r.id))
+    .filter((id): id is string => Boolean(id));
+  if (expenseIdsForBilling.length > 0) {
+    const { data: projectExpenseRows } = await fetchAllPagedResult<Row>((from, to) =>
+      supabase
+        .from("project_expenses")
+        .select("expense_id,included_in_base_price,billed_to_customer")
+        .in("expense_id", expenseIdsForBilling)
+        .range(from, to)
+    );
+    for (const row of projectExpenseRows ?? []) {
+      const expenseId = str(row.expense_id);
+      if (!expenseId) continue;
+      expenseBillingByExpenseId.set(expenseId, {
+        includedInBasePrice: row.included_in_base_price === true,
+        billedToCustomer: row.billed_to_customer === true,
+      });
+    }
   }
 
   // worker_payment_id → project_id, kept only when the payment maps to a single project.
@@ -502,6 +606,13 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       type: isRefund ? "out" : "in",
       amount,
       posted,
+      deleteRef: {
+        kind: "payment",
+        id: str(row.id) ?? "",
+        projectId: str(row.project_id),
+        orderId: str(row.order_id),
+      },
+      editRef: { kind: "payment", id: str(row.id) ?? "" },
     });
   }
 
@@ -533,13 +644,78 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     } else {
       postedAmount = total;
     }
+    // The `:p` (pending) ledger line is the same underlying `expenses` row as
+    // its paid leg (a partial expense splits into two lines) — both share one
+    // deleteRef/editRef so editing or deleting either affects the one row.
+    const expenseId = str(row.id) ?? "";
+    const deleteRef: AccountDeleteRef = {
+      kind: "expense",
+      id: expenseId,
+      projectId: str(row.project_id),
+      orderId: str(row.order_id),
+      propertyId: str(row.property_id),
+    };
+    const billing = expenseBillingByExpenseId.get(expenseId);
+    const editRef: AccountEditRef = {
+      kind: "expense",
+      data: {
+        id: expenseId,
+        amount: total,
+        category: str(row.category),
+        description: str(row.description),
+        notes: str(row.notes),
+        expense_date: str(row.expense_date),
+        business_domain: str(row.business_domain),
+        // Raw stored value, NOT the lowercased local `status` used for the
+        // posted/pending split above — ExpenseDialog's own normalizer expects
+        // the exact "paid"/"partial"/"not_paid" spelling as stored.
+        payment_status: str(row.payment_status),
+        paid_amount: row.paid_amount != null ? num(row.paid_amount) : null,
+        payment_method: str(row.payment_method),
+        account_id: str(row.account_id),
+        project_id: str(row.project_id),
+        order_id: str(row.order_id),
+        property_id: str(row.property_id),
+        // From project_expenses (see expenseBillingByExpenseId above) — these
+        // columns don't exist on `expenses` itself. Absent for a non-project
+        // expense, which is correctly "not billed / not included" either way.
+        billed_to_customer: billing?.billedToCustomer ?? false,
+        included_in_base_price: billing?.includedInBasePrice ?? false,
+        // Not actually wired up for a plain expense anywhere in the app today
+        // (only attendance_sessions/salary_agreements have a real column) —
+        // ExpenseDialog just shows an empty override field for it.
+        bill_to_customer_amount: null,
+      },
+    };
     if (postedAmount > 0) {
       b.postedOut += postedAmount;
-      b.rows.push({ id: `e:${str(row.id) ?? ""}`, date, label, sublabel, href, type: "out", amount: postedAmount, posted: true });
+      b.rows.push({
+        id: `e:${expenseId}`,
+        date,
+        label,
+        sublabel,
+        href,
+        type: "out",
+        amount: postedAmount,
+        posted: true,
+        deleteRef,
+        editRef,
+      });
     }
     if (pendingAmount > 0) {
       b.pendingOut += pendingAmount;
-      b.rows.push({ id: `e:${str(row.id) ?? ""}:p`, date, label, sublabel, href, type: "out", amount: pendingAmount, posted: false });
+      b.rows.push({
+        id: `e:${expenseId}:p`,
+        date,
+        label,
+        sublabel,
+        href,
+        type: "out",
+        amount: pendingAmount,
+        posted: false,
+        deleteRef,
+        editRef,
+      });
     }
   }
 
@@ -563,6 +739,8 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       type: "out",
       amount,
       posted: true,
+      deleteRef: { kind: "worker_payment", id: str(row.id) ?? "", userId: str(row.user_id) },
+      editRef: { kind: "worker_payment", id: str(row.id) ?? "" },
     });
   }
 
@@ -625,6 +803,8 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       type: taken ? "in" : "out",
       amount,
       posted: true,
+      deleteRef: { kind: "loan", id: str(row.id) ?? "" },
+      editRef: { kind: "loan", loanId: str(row.id) ?? "" },
     });
   }
 
@@ -642,15 +822,36 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     // taken loan → we repay (cash out); given loan → we get repaid (cash in).
     if (taken) b.postedOut += amount;
     else b.postedIn += amount;
+    const repaymentId = str(row.id) ?? "";
+    const loanId = str(row.loan_id) ?? "";
     b.rows.push({
-      id: `lr:${str(row.id) ?? ""}`,
+      id: `lr:${repaymentId}`,
       date,
       label: taken ? "החזר הלוואה" : "החזר שהתקבל",
-      sublabel: loanSublabelById.get(str(row.loan_id) ?? "") ?? null,
-      href: `/financial/loans/${str(row.loan_id) ?? ""}`,
+      sublabel: loanSublabelById.get(loanId) ?? null,
+      href: `/financial/loans/${loanId}`,
       type: taken ? "out" : "in",
       amount,
       posted: true,
+      deleteRef: { kind: "loan_repayment", id: repaymentId, loanId },
+      editRef: {
+        kind: "loan_repayment",
+        loanId,
+        repayment: {
+          id: repaymentId,
+          loan_id: loanId,
+          repayment_date: date,
+          amount,
+          interest_amount: num(row.interest_amount),
+          method: str(row.method),
+          account_id: str(row.account_id),
+          notes: str(row.notes),
+          created_at: str(row.created_at),
+          status: "paid",
+          installment_index: intOrNull(row.installment_index),
+          installment_count: intOrNull(row.installment_count),
+        },
+      },
     });
   }
 

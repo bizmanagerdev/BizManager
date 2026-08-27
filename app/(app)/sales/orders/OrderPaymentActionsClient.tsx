@@ -72,7 +72,13 @@ function formatDate(value: string | null) {
   }
 }
 
-function EditPaymentDialog({
+// Exported so the account register (app/(app)/financial/bank/BankClient.tsx)
+// can reuse it directly for an order-tied `p:` ledger row's inline edit — same
+// form, same /api/orders/payments/update endpoint (which keeps the order's
+// payment_status in sync), no duplicated UI. The register fetches its own
+// totalAmount/totalPaid via GET /api/payments/edit-context first, since it
+// doesn't otherwise hold the order's other payments.
+export function EditPaymentDialog({
   payment,
   orderId,
   totalAmount,
