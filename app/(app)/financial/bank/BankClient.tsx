@@ -325,9 +325,17 @@ export default function BankClient({
     group.closing = carriedBalance;
   }
   const groups = monthFilter ? allGroups.filter((g) => g.month === monthFilter) : allGroups;
-  // Newest month open, older ones folded — until the reader says otherwise. With
-  // a month filtered there's exactly one group, and it opens.
-  const isMonthOpen = (month: string, index: number) => openMonths[month] ?? index === 0;
+  // THIS calendar month open by default, older (and any newer — a post-dated
+  // check can group under next month) ones folded, until the reader says
+  // otherwise. Local date parts, not UTC, so this doesn't slip a day/month
+  // around midnight. Falls back to the newest group when nothing's posted yet
+  // this month, so the register isn't just all-collapsed. With a month
+  // filtered there's exactly one group, and it always opens.
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const hasCurrentMonth = groups.some((g) => g.month === currentMonth);
+  const isMonthOpen = (month: string, index: number) =>
+    openMonths[month] ?? (hasCurrentMonth ? month === currentMonth : index === 0);
 
   return (
     <div className="space-y-4 text-right" dir="rtl">
