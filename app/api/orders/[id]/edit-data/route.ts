@@ -28,7 +28,7 @@ function getNumber(row: Row, keys: string[]) {
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   const access = await requireRouteAccess();
@@ -39,6 +39,13 @@ export async function GET(
     return NextResponse.json({ error: "No access" }, { status: 403 });
   }
   const { id } = await context.params;
+  // The delivery-confirmation dialog only shows the order's own lines (no
+  // customer switch, no add-product picker), so it never reads `customers` or
+  // `products` from this response. Skip those queries for it — in particular
+  // products_with_last_used, whose order_count is a live aggregate over all
+  // order_items/orders (no materialization), which is what made every
+  // confirm-delivery load pay a full-catalog popularity scan for nothing.
+  const isConfirmScope = new URL(req.url).searchParams.get("scope") === "confirm";
 
   const [
     { data: order, error: orderError },
@@ -62,17 +69,21 @@ export async function GET(
       .select("id,payment_date,amount_total,payment_method,reference_number,notes")
       .eq("order_id", id)
       .order("payment_date", { ascending: false }),
-    supabase
-      .from("customers")
-      .select("id,name,name_for_invoice,phone,whatsapp,email,address,requires_prepayment")
-      .order("name", { ascending: true })
-      .range(0, 49),
-    supabase
-      .from("products_with_last_used")
-      .select("id,name,sku,barcode,description,base_price,base_cost,active")
-      .order("order_count", { ascending: false })
-      .order("name", { ascending: true })
-      .range(0, 49),
+    isConfirmScope
+      ? Promise.resolve({ data: [] as Row[], error: null })
+      : supabase
+          .from("customers")
+          .select("id,name,name_for_invoice,phone,whatsapp,email,address,requires_prepayment")
+          .order("name", { ascending: true })
+          .range(0, 49),
+    isConfirmScope
+      ? Promise.resolve({ data: [] as Row[], error: null })
+      : supabase
+          .from("products_with_last_used")
+          .select("id,name,sku,barcode,description,base_price,base_cost,active")
+          .order("order_count", { ascending: false })
+          .order("name", { ascending: true })
+          .range(0, 49),
     supabase
       .from("document_links")
       .select("document_id,created_at")
@@ -112,7 +123,7 @@ export async function GET(
   );
 
   const [{ data: selectedCustomer }, { data: selectedProducts }] = await Promise.all([
-    selectedCustomerId
+    !isConfirmScope && selectedCustomerId
       ? supabase
           .from("customers")
           .select("id,name,name_for_invoice,phone,whatsapp,email,address,requires_prepayment")
@@ -127,24 +138,30 @@ export async function GET(
       : Promise.resolve({ data: [] as Row[] }),
   ]);
 
-  const customers = Array.from(
-    new Map(
-      [selectedCustomer, ...((baseCustomers ?? []) as Row[])]
-        .filter(Boolean)
-        .map((row) => [getString(row as Row, ["customer_id", "id"]) ?? "", row as Row] as const)
-        .filter(([key]) => key)
-    ).values()
-  );
-  const products = await attachProductStock(
-    supabase,
-    Array.from(
-      new Map(
-        [...((selectedProducts ?? []) as Row[]), ...((baseProducts ?? []) as Row[])]
-          .map((row) => [getString(row as Row, ["id"]) ?? "", row] as const)
-          .filter(([key]) => key)
-      ).values()
-    )
-  );
+  const customers = isConfirmScope
+    ? []
+    : Array.from(
+        new Map(
+          [selectedCustomer, ...((baseCustomers ?? []) as Row[])]
+            .filter(Boolean)
+            .map((row) => [getString(row as Row, ["customer_id", "id"]) ?? "", row as Row] as const)
+            .filter(([key]) => key)
+        ).values()
+      );
+  // Confirm scope only needs product_name for the order's own lines — skip the
+  // stock lookup, it's unused there.
+  const products = isConfirmScope
+    ? ((selectedProducts ?? []) as Row[])
+    : await attachProductStock(
+        supabase,
+        Array.from(
+          new Map(
+            [...((selectedProducts ?? []) as Row[]), ...((baseProducts ?? []) as Row[])]
+              .map((row) => [getString(row as Row, ["id"]) ?? "", row] as const)
+              .filter(([key]) => key)
+          ).values()
+        )
+      );
 
   const productsById = new Map<string, Row>();
   (products ?? []).forEach((row) => {

@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BackspaceIcon, LocationIcon } from "@/components/ui/icons";
+import { BackspaceIcon, LocationIcon, SpinnerIcon } from "@/components/ui/icons";
 import * as Sentry from "@sentry/nextjs";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -58,6 +58,13 @@ type DeliveryImage = {
   url: string | null;
 };
 
+type ProductSearchResult = {
+  id: string;
+  name: string;
+  sku: string | null;
+  base_price: number | null;
+};
+
 type EditPayload = {
   initialOrder: {
     id: string;
@@ -99,7 +106,11 @@ function getTodayDate() {
 
 // Wizard step headings — eyebrow ("שלב N · <eyebrow>") + the big question title.
 const STEP_META: Record<string, { eyebrow: string; title: string; description?: string }> = {
-  items: { eyebrow: "כמות שנמסרה", title: "מה נמסר בפועל?", description: "סמן כמה נמסר מכל פריט. מה שלא נמסר יישאר פתוח למשלוח." },
+  items: {
+    eyebrow: "כמות שנמסרה",
+    title: "מה נמסר בפועל?",
+    description: "סמן כמה נמסר מכל פריט, ואפשר להוסיף מוצר שנמסר בנוסף. מה שלא נמסר יישאר פתוח למשלוח.",
+  },
   paidChoice: { eyebrow: "תשלום", title: "האם נגבה תשלום במסירה?" },
   amount: { eyebrow: "תשלום", title: "כמה נגבה במסירה?" },
   paymentDate: { eyebrow: "תשלום", title: "מתי שולם?" },
@@ -200,6 +211,38 @@ export default function OrderConfirmDialog({
   }
   const [deliveryDate, setDeliveryDate] = useState(getTodayDate());
   const [deliveryImages, setDeliveryImages] = useState<File[]>([]);
+  const [productQuery, setProductQuery] = useState("");
+  const [productResults, setProductResults] = useState<ProductSearchResult[]>([]);
+  const [productSearching, setProductSearching] = useState(false);
+
+  // On-demand product search (only runs when the driver actually types here) so a
+  // forgotten item can be added on the spot — searched lazily via /api/products/search
+  // rather than loaded eagerly, since eagerly fetching the whole catalog on every
+  // confirm-dialog open used to be what made it slow to load.
+  useEffect(() => {
+    if (!open) return;
+    const query = productQuery.trim();
+    if (!query) {
+      setProductResults([]);
+      setProductSearching(false);
+      return;
+    }
+    setProductSearching(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/products/search?q=${encodeURIComponent(query)}&limit=20`, {
+          cache: "no-store",
+        });
+        const json = (await res.json().catch(() => ({}))) as { products?: ProductSearchResult[] };
+        setProductResults(Array.isArray(json.products) ? json.products : []);
+      } catch {
+        setProductResults([]);
+      } finally {
+        setProductSearching(false);
+      }
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [open, productQuery]);
 
   useEffect(() => {
     if (!open) return;
@@ -210,7 +253,9 @@ export default function OrderConfirmDialog({
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/api/orders/${orderId}/edit-data`, { cache: "no-store" });
+        // scope=confirm skips the customer list + product catalog/stock queries
+        // this dialog never uses (see edit-data route) — that's what made loads slow.
+        const res = await fetch(`/api/orders/${orderId}/edit-data?scope=confirm`, { cache: "no-store" });
         const json = (await res.json().catch(() => ({}))) as EditPayload & { error?: string };
         if (!res.ok) throw new Error(toHebrewError(json.error, "טעינת נתוני האישור נכשלה."));
         if (!cancelled) setData(json);
@@ -257,6 +302,8 @@ export default function OrderConfirmDialog({
     setDeliveryNotes("");
     setDeliveryDate(getTodayDate());
     setDeliveryImages([]);
+    setProductQuery("");
+    setProductResults([]);
     setStepId("items");
     setPaidNow(false);
     setError(null);
@@ -352,6 +399,42 @@ export default function OrderConfirmDialog({
           : line
       )
     );
+  }
+
+  // Adding a product mid-confirmation means "the customer took this too, right now" —
+  // so unlike the create/edit wizard, it bumps both the ordered quantity AND the
+  // delivered-now amount by one unit (an existing line just gets one more of each;
+  // a brand-new product starts at 1/1, fully delivered).
+  function addProduct(product: ProductSearchResult) {
+    setLines((prev) => {
+      const existingIndex = prev.findIndex((line) => line.product_id === product.id);
+      if (existingIndex >= 0) {
+        return prev.map((line, lineIndex) =>
+          lineIndex === existingIndex
+            ? {
+                ...line,
+                quantity_ordered: line.quantity_ordered + 1,
+                delivered_now: line.delivered_now + 1,
+              }
+            : line
+        );
+      }
+      return [
+        ...prev,
+        {
+          product_id: product.id,
+          product_name: product.name,
+          quantity_ordered: 1,
+          quantity_delivered: 0,
+          unit_price: product.base_price ?? 0,
+          discount_amount: 0,
+          notes: "",
+          delivered_now: 1,
+        },
+      ];
+    });
+    setProductQuery("");
+    setProductResults([]);
   }
 
   async function submit() {
@@ -666,6 +749,46 @@ export default function OrderConfirmDialog({
                 אספקה חלקית — ההזמנה תישאר פתוחה (סופק חלקית) ותמשיך להופיע במשלוחים עד להשלמת היתרה.
               </p>
             ) : null}
+
+            <div className="space-y-2 border-t border-border/60 pt-3">
+              <label className="text-sm font-medium">הוספת מוצר שנמסר בנוסף</label>
+              <Input
+                value={productQuery}
+                onChange={(e) => setProductQuery(e.target.value)}
+                placeholder="חיפוש מוצר לפי שם, מק״ט או ברקוד..."
+              />
+              {productSearching ? (
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <SpinnerIcon className="h-3.5 w-3.5 animate-spin" />
+                  מחפש...
+                </p>
+              ) : null}
+              {!productSearching && productQuery.trim() && productResults.length === 0 ? (
+                <p className="text-xs text-muted-foreground">לא נמצאו מוצרים.</p>
+              ) : null}
+              {productResults.length > 0 ? (
+                <div className="max-h-48 divide-y divide-border/60 overflow-y-auto rounded-xl border border-border/70 bg-background/70">
+                  {productResults.map((product) => (
+                    <button
+                      key={product.id}
+                      type="button"
+                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-right text-sm hover:bg-muted/40"
+                      onClick={() => addProduct(product)}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium">{product.name}</span>
+                        {product.sku ? (
+                          <span className="block text-xs text-muted-foreground">מק״ט: {product.sku}</span>
+                        ) : null}
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {formatCurrency(product.base_price ?? 0)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </div>
         );
       case "paidChoice":
