@@ -51,7 +51,8 @@ import { getDigestAnchor, getMissedDigest, type AuditFeedItem } from "@/lib/audi
 import MissedDigestCell from "@/components/dashboard/MissedDigestCard";
 import { loadDomainCashBreakdown, loadFinancialEntries, type FinancialEntry } from "@/lib/financial";
 import DomainChartCard from "@/components/dashboard/DomainChartCard";
-import { monthWindow, previousMonth, toBars } from "@/lib/dashboard/domain-chart";
+import { monthWindow, previousMonth, toBars, type MonthKey } from "@/lib/dashboard/domain-chart";
+import type { Locale } from "@/lib/i18n/types";
 
 /** One domain's cash in a window — what loadDomainCashBreakdown returns. */
 type CashPoint = { domainName: string; inflow: number; outflow: number };
@@ -215,6 +216,168 @@ function Cell({
 }
 
 /**
+ * A slow widget's own placeholder while its query is still in flight. Sized
+ * generically (not per-tier) because its eventual tier — secondary vs tertiary
+ * — isn't decided until AFTER this node is built (see `present` below); the
+ * outer Cell wrapper already gives it a real flex-grow box on desktop, so
+ * `h-full` fills that. Below xl (see PanelsFallback for why) cards are their
+ * own natural height, so a fixed fallback height stands in until real content
+ * swaps it out.
+ */
+function SlowCardSkeleton() {
+  return <Skeleton className={cn("h-16 w-full rounded-[1.125rem] xl:h-full", CARD_FILL_CLASS)} />;
+}
+
+/**
+ * The five heaviest widgets (payments, collections, attendance queue,
+ * properties, the domain chart — each a multi-table scan) each get their own
+ * async cell + Suspense boundary instead of gating the WHOLE board's first
+ * paint on the slowest of them. today/tasks/activity/deliveries stay in the
+ * eager batch in DashboardPanels below (see the comment there) — they're
+ * fast, indexed, single-purpose queries, and for a worker (who never sees any
+ * of these five) they're the entire board, so his dashboard now never waits
+ * on anything past that first batch.
+ *
+ * Each cell repeats its own widget's null-when-empty rule exactly as the
+ * inline version used to — only the WHEN changed (streamed in later instead
+ * of blocking the initial Promise.all), never the WHAT.
+ */
+async function PaymentsSlowCell({
+  paymentsPromise,
+  paymentLeadRowsPromise,
+  todayIso,
+  locale,
+}: {
+  paymentsPromise: Promise<Awaited<ReturnType<typeof loadPaymentCalendarItems>> | null>;
+  paymentLeadRowsPromise: Promise<{ id?: unknown; reminder_work_days_before?: unknown }[]>;
+  todayIso: string;
+  locale: Locale;
+}) {
+  const [paymentsResult, paymentLeadRows] = await Promise.all([paymentsPromise, paymentLeadRowsPromise]);
+
+  // The payments card, in the calendar's three questions: what's late, what's
+  // due today, what's expected over the next fortnight. Anything already paid
+  // (`posted`) is history and belongs on the calendar page, not on the board —
+  // except that a standing order (`autoPaid`) is never something "to pay", so
+  // it stays out of the late count the way it does out of the calendar's
+  // alerts.
+  const paymentLeads = new Map<string, number>();
+  for (const row of paymentLeadRows) {
+    if (typeof row.id === "string" && typeof row.reminder_work_days_before === "number") {
+      paymentLeads.set(row.id, row.reminder_work_days_before);
+    }
+  }
+
+  const paymentsTodayIso = paymentsResult?.todayIso ?? todayIso;
+  const paymentsHorizonIso = addDaysIso(paymentsTodayIso, PAYMENTS_HORIZON_DAYS);
+  const unpaidPayments = (paymentsResult?.items ?? []).filter((item) => item.stage !== "posted");
+  const latePayments = unpaidPayments.filter((item) => item.date < paymentsTodayIso && !item.autoPaid);
+  const todayPayments = unpaidPayments
+    .filter((item) => item.date === paymentsTodayIso)
+    .sort((a, b) => b.amount - a.amount);
+  // "צפוי" is NOT everything in the fortnight — it's everything whose OWN alert
+  // has opened. Each recurring bill carries `reminder_work_days_before` ("remind
+  // me N work-days before"), the same setting the reminder rule fires on, so the
+  // card and the reminder can't disagree about when a payment starts nagging. A
+  // payment with no lead set falls back to PAYMENTS_DEFAULT_LEAD_DAYS rather than
+  // never appearing.
+  const upcomingPayments = unpaidPayments
+    .filter((item) => {
+      if (item.date <= paymentsTodayIso || item.date > paymentsHorizonIso) return false;
+      const lead = item.recurringTemplateId ? paymentLeads.get(item.recurringTemplateId) : undefined;
+      const remindIso = isoDate(subtractWorkingDays(toDateOnly(item.date) ?? new Date(), lead ?? PAYMENTS_DEFAULT_LEAD_DAYS));
+      return paymentsTodayIso >= remindIso;
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const sumAmounts = (items: { amount: number }[]) => items.reduce((sum, item) => sum + item.amount, 0);
+  const paymentsSummary: PaymentsSummary = {
+    today: todayPayments,
+    todayTotal: sumAmounts(todayPayments),
+    // The lists are capped; the TOTALS are not — a figure that silently stopped
+    // counting at row twelve would be a lie about what is coming.
+    upcoming: upcomingPayments.slice(0, PAYMENTS_SHOWN_LIMIT),
+    upcomingTotal: sumAmounts(upcomingPayments),
+    late: latePayments.slice(0, PAYMENTS_SHOWN_LIMIT),
+    lateCount: latePayments.length,
+    lateTotal: sumAmounts(latePayments),
+  };
+  return <UpcomingPayments summary={paymentsSummary} locale={locale} />;
+}
+
+async function CollectionsSlowCell({
+  summaryPromise,
+  locale,
+}: {
+  summaryPromise: Promise<Awaited<ReturnType<typeof getCollectionsSummary>> | null>;
+  locale: Locale;
+}) {
+  const summary = await summaryPromise;
+  return summary ? <CollectionsCard summary={summary} locale={locale} /> : null;
+}
+
+async function AttendanceQueueSlowCell({
+  dataPromise,
+  sparkPromise,
+  optionsPromise,
+  locale,
+}: {
+  dataPromise: Promise<PhoneQueueData | null>;
+  sparkPromise: Promise<number[]>;
+  optionsPromise: Promise<Awaited<ReturnType<typeof loadAttendanceClassificationOptions>> | null>;
+  locale: Locale;
+}) {
+  const [data, spark, options] = await Promise.all([dataPromise, sparkPromise, optionsPromise]);
+  if (!data) return null;
+  return (
+    <AttendanceApprovals
+      data={data}
+      spark={spark}
+      // Empty lists rather than null: the card still approves a shift whose
+      // domain needs neither (e.g. a plain office shift).
+      projectOptions={options?.projectOptions ?? []}
+      propertyOptions={options?.propertyOptions ?? []}
+      locale={locale}
+    />
+  );
+}
+
+async function PropertiesSlowCell({
+  summaryPromise,
+  locale,
+}: {
+  summaryPromise: Promise<Awaited<ReturnType<typeof getPropertiesSummary>> | null>;
+  locale: Locale;
+}) {
+  const summary = await summaryPromise;
+  return summary ? <PropertiesCard summary={summary} locale={locale} /> : null;
+}
+
+async function DomainChartSlowCell({
+  breakdownPromise,
+  prevBreakdownPromise,
+  currentMonth,
+  todayIso,
+  locale,
+}: {
+  breakdownPromise: Promise<CashPoint[]>;
+  prevBreakdownPromise: Promise<CashPoint[]>;
+  currentMonth: MonthKey;
+  todayIso: string;
+  locale: Locale;
+}) {
+  // Income vs expenses per business domain, for the month the card opens on.
+  const [domainBreakdown, domainPrevBreakdown] = await Promise.all([breakdownPromise, prevBreakdownPromise]);
+  const domainBars = toBars(domainBreakdown, domainPrevBreakdown);
+  // The card owns its month from here on: it opens on `currentMonth` and its
+  // header's picker fetches any other month itself. The widget still only
+  // appears when THIS month has something — an empty board card is still an
+  // empty card, picker or not.
+  return domainBars.length > 0 ? (
+    <DomainChartCard initialBars={domainBars} initialMonth={currentMonth} todayIso={todayIso} locale={locale} />
+  ) : null;
+}
+
+/**
  * Everything below the quick actions: alerts, personal tasks/reminders, and the
  * (role-gated) operational + finance panels. Each widget is shown/hidden/ordered
  * per the viewer's saved dashboard prefs (the "התאמת לוח" customizer); role is
@@ -292,12 +455,45 @@ export async function DashboardPanels() {
     sharedFinancialFrom
       ? loadFinancialEntries(supabase, { from: sharedFinancialFrom }).catch(() => null)
       : Promise.resolve(null);
-  // Each falls back to its own independent (narrower) scan if the shared one
-  // failed, rather than losing the widget over an unrelated table's error.
+
+  // ── SLOW group (payments, collections, attendance queue, properties, the
+  // domain chart) — every one of these is a multi-table scan. Kicked off here
+  // but deliberately NOT awaited in this function: each streams into its own
+  // Suspense boundary via the *SlowCell components above, at whatever cell the
+  // board's layout below assigns it, instead of making today/tasks/activity/
+  // deliveries (the FAST group, awaited below) wait on the heaviest queries on
+  // the page just because they all used to share one Promise.all.
   const paymentsPromise = needPayments
     ? financialEntriesPromise
         .then((shared) => loadPaymentCalendarItems(supabase, { monthsBack: 1, preloaded: shared ?? undefined }))
         .catch(() => null)
+    : Promise.resolve(null);
+  const paymentLeadRowsPromise: Promise<{ id?: unknown; reminder_work_days_before?: unknown }[]> =
+    show("payments") && isAdminOrOffice
+      ? Promise.resolve(
+          supabase
+            .from("recurring_expense_templates")
+            .select("id,reminder_work_days_before")
+            .eq("is_active", true)
+            .gt("reminder_work_days_before", 0)
+            .range(0, 999)
+            .then((r) => r.data ?? [], () => [])
+        )
+      : Promise.resolve([]);
+  const collectionsPromise = show("collections") && isAdminOrOffice
+    ? getCollectionsSummary(supabase, todayIso).catch(() => null)
+    : Promise.resolve(null);
+  const attendanceQueuePromise = show("attendanceQueue") && isAdminOrOffice
+    ? loadPhoneQueueData(supabase).catch(() => null as PhoneQueueData | null)
+    : Promise.resolve(null);
+  const attendanceSparkPromise = show("attendanceQueue") && isAdminOrOffice
+    ? loadAttendanceSpark(supabase).catch(() => [] as number[])
+    : Promise.resolve([] as number[]);
+  const attendanceOptionsPromise = show("attendanceQueue") && isAdminOrOffice
+    ? loadAttendanceClassificationOptions(supabase).catch(() => null)
+    : Promise.resolve(null);
+  const propertiesPromise = show("properties") && isAdminOrOffice
+    ? getPropertiesSummary(supabase, todayIso).catch(() => null)
     : Promise.resolve(null);
   const domainBreakdownPromise = needDomainChart
     ? financialEntriesPromise
@@ -310,54 +506,21 @@ export async function DashboardPanels() {
         .catch(() => [] as CashPoint[])
     : Promise.resolve([] as CashPoint[]);
 
-  // `workerOwed` is gated on role rather than a widget toggle because it feeds
-  // the finance strip's payroll count, which is admin-only inside that widget.
-  const [
-    inboxResult,
-    scheduleEntries,
-    myTasks,
-    paymentsResult,
-    collectionsSummary,
-    paymentLeadRows,
-    deliveriesResult,
-    deliveriesSpark,
-    attendanceQueue,
-    attendanceSpark,
-    attendanceOptions,
-    propertiesSummary,
-    domainBreakdown,
-    domainPrevBreakdown,
-    digestItems,
-  ] = await Promise.all([
-    // One feed per "היום" card: the inbox for today's DATED alerts, the schedule
-    // for today's tasks / projects / reminders. Separate widgets now, so hiding
-    // one card skips only its own query.
+  // ── FAST group — today's schedule, today's DATED alerts, my tasks,
+  // deliveries, and the activity digest. Awaited here so these are on the
+  // board's very first flush: every one is a single, narrow, now-indexed
+  // query, and for a worker (who never sees any of the five slow widgets
+  // above) this fast group IS his whole board — nothing on it waits on
+  // anything else ever again.
+  const [inboxResult, scheduleEntries, myTasks, deliveriesResult, deliveriesSpark, digestItems] = await Promise.all([
+    // The inbox for today's DATED alerts; the schedule for today's tasks /
+    // projects / reminders. Separate widgets, so hiding one skips only its
+    // own query.
     show("todayAlerts") ? getInboxView(supabase, { userId: profile.id, role }).catch(() => null) : Promise.resolve(null),
     show("todaySchedule")
       ? getScheduleEntries(supabase, { scope: "mine", userId: profile.id }).catch(() => [] as CalendarEntry[])
       : Promise.resolve([] as CalendarEntry[]),
     show("myTasks") ? getMyTasks(supabase, profile.id, locale) : Promise.resolve([]),
-    // The payments calendar, one month back so nothing that's already late is
-    // missed. The card itself keeps only what's unpaid and near — see below.
-    paymentsPromise,
-    // …and each bill's own heads-up ("N work-days before"), which is what decides
-    // whether an upcoming payment is alerting yet. Tolerant of the column not
-    // existing (pre-20260720030000) — then nothing has a custom lead.
-    // Money coming IN. Its own narrow loader rather than getCollectionsData():
-    // that one pages the whole receivables view and resolves every payment term,
-    // which is right for the worklist page and far too much for a card.
-    show("collections") && isAdminOrOffice
-      ? getCollectionsSummary(supabase, todayIso).catch(() => null)
-      : Promise.resolve(null),
-    show("payments") && isAdminOrOffice
-      ? supabase
-          .from("recurring_expense_templates")
-          .select("id,reminder_work_days_before")
-          .eq("is_active", true)
-          .gt("reminder_work_days_before", 0)
-          .range(0, 999)
-          .then((r) => r.data ?? [], () => [])
-      : Promise.resolve([]),
     // No role gate: resolveWidgets already decided, and the deliveries widget is
     // now allowed for workers too (their whole job).
     show("deliveries")
@@ -365,37 +528,11 @@ export async function DashboardPanels() {
       : Promise.resolve([] as DeliveryItem[]),
     // The shape behind the count — a week of daily totals, no figures shown.
     show("deliveries") ? loadDeliveriesSpark(supabase).catch(() => [] as number[]) : Promise.resolve([] as number[]),
-    // No cost: the dashboard shows the queue as hours, never ₪.
-    show("attendanceQueue") && isAdminOrOffice
-      ? loadPhoneQueueData(supabase).catch(() => null as PhoneQueueData | null)
-      : Promise.resolve(null),
-    show("attendanceQueue") && isAdminOrOffice
-      ? loadAttendanceSpark(supabase).catch(() => [] as number[])
-      : Promise.resolve([] as number[]),
-    // Reports are approved straight from the card, and approval means picking a
-    // domain / project / property — so the options ride along with the queue.
-    show("attendanceQueue") && isAdminOrOffice
-      ? loadAttendanceClassificationOptions(supabase).catch(() => null)
-      : Promise.resolve(null),
-    // Vacancy + expiring leases — its own narrow loader, same reasoning as
-    // getCollectionsSummary: fetchProperties() also pulls the full expense/
-    // payment rollup, which this card never shows.
-    show("properties") && isAdminOrOffice
-      ? getPropertiesSummary(supabase, todayIso).catch(() => null)
-      : Promise.resolve(null),
-    // Same window helper the card's month action uses, so "this month" means the
-    // same thing whether it came with the page or with the picker. Two months:
-    // the one on show, and the one before it as the chart's ghost baseline.
-    domainBreakdownPromise,
-    domainPrevBreakdownPromise,
     digestPromise,
   ]);
 
   // Let the recurring-tasks write (started above) finish before responding.
   await recurringTasksPromise;
-
-  // Income vs expenses per business domain, for the month the card opens on.
-  const domainBars = toBars(domainBreakdown ?? [], domainPrevBreakdown ?? []);
 
   // The dated alerts, grouped HERE (server) because that's pure rule knowledge;
   // the card only draws them. Its sibling does the date bucketing on the client,
@@ -411,55 +548,23 @@ export async function DashboardPanels() {
     alertsSlice = { ...alertsSlice, alerts: translatedAlerts };
   }
 
-  // The payments card, in the calendar's three questions: what's late, what's due
-  // today, what's expected over the next fortnight. Anything already paid
-  // (`posted`) is history and belongs on the calendar page, not on the board —
-  // except that a standing order (`autoPaid`) is never something "to pay", so it
-  // stays out of the late count the way it does out of the calendar's alerts.
-  const paymentLeads = new Map<string, number>();
-  for (const row of paymentLeadRows as { id?: unknown; reminder_work_days_before?: unknown }[]) {
-    if (typeof row.id === "string" && typeof row.reminder_work_days_before === "number") {
-      paymentLeads.set(row.id, row.reminder_work_days_before);
-    }
-  }
-
-  const paymentsTodayIso = paymentsResult?.todayIso ?? todayIso;
-  const paymentsHorizonIso = addDaysIso(paymentsTodayIso, PAYMENTS_HORIZON_DAYS);
-  const unpaidPayments = (paymentsResult?.items ?? []).filter((item) => item.stage !== "posted");
-  const latePayments = unpaidPayments.filter((item) => item.date < paymentsTodayIso && !item.autoPaid);
-  const todayPayments = unpaidPayments
-    .filter((item) => item.date === paymentsTodayIso)
-    .sort((a, b) => b.amount - a.amount);
-  // "צפוי" is NOT everything in the fortnight — it's everything whose OWN alert
-  // has opened. Each recurring bill carries `reminder_work_days_before` ("remind
-  // me N work-days before"), the same setting the reminder rule fires on, so the
-  // card and the reminder can't disagree about when a payment starts nagging. A
-  // payment with no lead set falls back to PAYMENTS_DEFAULT_LEAD_DAYS rather than
-  // never appearing.
-  const upcomingPayments = unpaidPayments
-    .filter((item) => {
-      if (item.date <= paymentsTodayIso || item.date > paymentsHorizonIso) return false;
-      const lead = item.recurringTemplateId ? paymentLeads.get(item.recurringTemplateId) : undefined;
-      const remindIso = isoDate(subtractWorkingDays(toDateOnly(item.date) ?? new Date(), lead ?? PAYMENTS_DEFAULT_LEAD_DAYS));
-      return paymentsTodayIso >= remindIso;
-    })
-    .sort((a, b) => a.date.localeCompare(b.date));
-  const sumAmounts = (items: { amount: number }[]) => items.reduce((sum, item) => sum + item.amount, 0);
-  const paymentsSummary: PaymentsSummary = {
-    today: todayPayments,
-    todayTotal: sumAmounts(todayPayments),
-    // The lists are capped; the TOTALS are not — a figure that silently stopped
-    // counting at row twelve would be a lie about what is coming.
-    upcoming: upcomingPayments.slice(0, PAYMENTS_SHOWN_LIMIT),
-    upcomingTotal: sumAmounts(upcomingPayments),
-    late: latePayments.slice(0, PAYMENTS_SHOWN_LIMIT),
-    lateCount: latePayments.length,
-    lateTotal: sumAmounts(latePayments),
-  };
-  // ── Rendered node per widget. NULL only when the widget doesn't apply to this
-  // viewer at all (role, or data that failed to load) — "nothing to report" is
-  // the card's own business, and every card answers it with a one-line
-  // QuietCard rather than by vanishing. ─────────────────────────────────────
+  // ── Node per widget. The four fast ones above are ready now — real content
+  // or null, exactly as before. The five slow ones are a Suspense boundary
+  // around one of the *SlowCell components above, which awaits its OWN
+  // promise independently — the board's shell, order and sizing (computed
+  // below from `present`) never wait on them; each cell just fills in
+  // wherever it landed once its own query resolves.
+  //
+  // A slow widget's node is non-null here whenever its fetch was even
+  // attempted (mirroring its promise's own gate above), even though the
+  // eventual content might turn out empty — so `present` below is an
+  // OPTIMISTIC read for those five, not the final truth. If one resolves
+  // with nothing to show, its cell collapses via `empty:hidden` (see Cell)
+  // and its row-mates absorb the freed space, exactly like the digest's own
+  // null-render already does today. The only cost of that optimism is a
+  // possible one-widget miscount in the "few cards" cosmetic threshold
+  // (FEW_CARDS_THRESHOLD) on a day one of them is genuinely empty — never a
+  // broken layout.
   const nodes: Record<WidgetId, ReactNode> = {
     // Named by the DATE; the greeting is the top bar's now (DashboardGreetingTitle).
     // The SSR snapshot comes from the server's clock and the card re-reads it on
@@ -467,14 +572,8 @@ export async function DashboardPanels() {
     todaySchedule: show("todaySchedule") ? (
       <TodayScheduleCard entries={scheduleEntries} initialDate={formatToday(new Date(), locale)} locale={locale} />
     ) : null,
-    // These five no longer test for emptiness HERE: each card decides for itself
-    // and collapses to a one-line QuietCard when it has nothing. A card that
-    // disappears takes its own explanation with it — you're left wondering
-    // whether it broke, you hid it, or there's genuinely nothing.
     todayAlerts: alertsSlice ? <TodayAlertsCard alerts={alertsSlice.alerts} locale={locale} /> : null,
     myTasks: <MyTasksPanel tasks={myTasks} locale={locale} />,
-    payments: isAdminOrOffice ? <UpcomingPayments summary={paymentsSummary} locale={locale} /> : null,
-    collections: collectionsSummary ? <CollectionsCard summary={collectionsSummary} locale={locale} /> : null,
     // Deliveries is a Hebrew-only feature (user, 2026-08-19: "only Hebrew
     // workers need deliveries") — never shown to an Arabic-locale worker,
     // regardless of their dashboard widget prefs.
@@ -486,26 +585,47 @@ export async function DashboardPanels() {
           canOpenOrder={isAdminOrOffice}
         />
       ),
-    attendanceQueue: attendanceQueue ? (
-      <AttendanceApprovals
-        data={attendanceQueue}
-        spark={attendanceSpark}
-        // Empty lists rather than null: the card still approves a shift whose
-        // domain needs neither (e.g. a plain office shift).
-        projectOptions={attendanceOptions?.projectOptions ?? []}
-        propertyOptions={attendanceOptions?.propertyOptions ?? []}
-        locale={locale}
-      />
+    payments: isAdminOrOffice ? (
+      <Suspense fallback={<SlowCardSkeleton />}>
+        <PaymentsSlowCell
+          paymentsPromise={paymentsPromise}
+          paymentLeadRowsPromise={paymentLeadRowsPromise}
+          todayIso={todayIso}
+          locale={locale}
+        />
+      </Suspense>
     ) : null,
-    properties: propertiesSummary ? <PropertiesCard summary={propertiesSummary} locale={locale} /> : null,
-    // The card owns its month from here on: it opens on `currentMonth` and its
-    // header's picker fetches any other month itself. The widget still only
-    // appears when THIS month has something — an empty board card is still an
-    // empty card, picker or not.
-    domainChart:
-      domainBars.length > 0 ? (
-        <DomainChartCard initialBars={domainBars} initialMonth={currentMonth} todayIso={todayIso} locale={locale} />
-      ) : null,
+    collections: show("collections") && isAdminOrOffice ? (
+      <Suspense fallback={<SlowCardSkeleton />}>
+        <CollectionsSlowCell summaryPromise={collectionsPromise} locale={locale} />
+      </Suspense>
+    ) : null,
+    attendanceQueue: show("attendanceQueue") && isAdminOrOffice ? (
+      <Suspense fallback={<SlowCardSkeleton />}>
+        <AttendanceQueueSlowCell
+          dataPromise={attendanceQueuePromise}
+          sparkPromise={attendanceSparkPromise}
+          optionsPromise={attendanceOptionsPromise}
+          locale={locale}
+        />
+      </Suspense>
+    ) : null,
+    properties: show("properties") && isAdminOrOffice ? (
+      <Suspense fallback={<SlowCardSkeleton />}>
+        <PropertiesSlowCell summaryPromise={propertiesPromise} locale={locale} />
+      </Suspense>
+    ) : null,
+    domainChart: needDomainChart ? (
+      <Suspense fallback={<SlowCardSkeleton />}>
+        <DomainChartSlowCell
+          breakdownPromise={domainBreakdownPromise}
+          prevBreakdownPromise={domainPrevBreakdownPromise}
+          currentMonth={currentMonth}
+          todayIso={todayIso}
+          locale={locale}
+        />
+      </Suspense>
+    ) : null,
   };
 
   const present: WidgetItem[] = ordered
