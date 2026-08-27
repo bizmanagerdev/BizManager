@@ -12,9 +12,11 @@ import { NavLink } from "@/components/NavLink";
 import { Badge } from "@/components/ui/badge";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
+import { ContactTapZone } from "@/components/ui/contact-link";
 import { EditButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { DateInput } from "@/components/ui/date-input";
+import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import {
   collectionStatusClasses,
@@ -438,7 +440,21 @@ function CustomerCard({
             className="mt-1 h-4 w-4 shrink-0"
           />
         ) : null}
-        <button type="button" onClick={onToggle} className="flex w-full items-start justify-between gap-2 text-right">
+        <div
+          role="link"
+          tabIndex={0}
+          onClick={(event) => {
+            if (shouldIgnoreRowNavigation(event.target)) return;
+            onToggle();
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            if (shouldIgnoreRowNavigation(event.target)) return;
+            event.preventDefault();
+            onToggle();
+          }}
+          className="flex w-full cursor-pointer items-start justify-between gap-2 text-right"
+        >
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <ChevronDownIcon
@@ -451,7 +467,13 @@ function CustomerCard({
               ) : null}
             </div>
             {group.customer_phone ? (
-              <div className="mt-1 text-sm text-muted-foreground"><PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}{group.customer_phone}</div>
+              <ContactTapZone
+                kind="tel"
+                value={group.customer_phone}
+                className="mt-1 inline-block text-sm text-muted-foreground hover:underline"
+              >
+                <PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}{group.customer_phone}
+              </ContactTapZone>
             ) : null}
             {group.oldest_days_late > 0 ? (
               <div className="text-xs text-destructive">{group.oldest_days_late} ימים באיחור</div>
@@ -464,7 +486,7 @@ function CustomerCard({
             </div>
           </div>
           <div className="shrink-0 text-lg font-semibold">{formatCurrency(group.outstanding_amount)}</div>
-        </button>
+        </div>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-border/50 pt-2">
         <CustomerActions group={group} wa={wa} withCall />
