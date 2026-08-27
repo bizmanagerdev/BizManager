@@ -17,7 +17,7 @@ import { loadMoreProjects } from "@/app/(app)/projects/actions";
 import type { ProjectsFilters } from "@/app/(app)/projects/loadProjects";
 import { ChatIcon, DocumentIcon, EditIcon, FilterIcon, ProjectIcon, SearchIcon, SuccessIcon } from "@/components/ui/icons";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
-import { paymentStatusClasses, collectionStatusClasses, collectionStatusLabel } from "@/lib/orders/paymentStatus";
+import { paymentStatusClasses } from "@/lib/orders/paymentStatus";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import { cn } from "@/lib/utils";
 import {
@@ -240,6 +240,38 @@ function paymentStatusBadgeClasses(status: "paid" | "partial" | "unpaid" | "unpr
     case "no_charge":
       return "border-info/30 bg-info-soft/40 text-info-soft-foreground";
   }
+}
+
+// One status badge, not several — but "partially paid" alone hides WHY: the
+// rest could be genuinely late, merely not due yet, or both at once (some
+// installments passed their date, others haven't). This caption spells out
+// whichever of those apply, so a mostly-paid project with a small late or
+// future-dated remainder doesn't read as if the whole balance is overdue.
+function PaymentDueCaption({
+  lateAmount,
+  expectedAmount,
+  canSeeMoney,
+}: {
+  lateAmount: number;
+  expectedAmount: number;
+  canSeeMoney: boolean;
+}) {
+  if (!canSeeMoney) return null;
+  const segments = [
+    lateAmount > 0.009 ? { text: `באיחור ${formatIls(lateAmount)}`, danger: true } : null,
+    expectedAmount > 0.009 ? { text: `צפוי ${formatIls(expectedAmount)}`, danger: false } : null,
+  ].filter((segment): segment is { text: string; danger: boolean } => segment !== null);
+  if (segments.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+      {segments.map((segment, index) => (
+        <span key={segment.text}>
+          {index > 0 ? "· " : ""}
+          <span className={segment.danger ? "text-destructive" : undefined}>{segment.text}</span>
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function defaultSortForTab(_tab: ProjectsView): SortMode {
@@ -832,7 +864,11 @@ export default function ProjectsClient({
                 const currentStatus = statusValue(row);
                 const openTasks = getNumber(row, "open_tasks");
                 const paymentStatus = paymentStatusValue(row);
-                const collectionStatus = getString(row, "collection_status") ?? paymentStatus;
+                // The genuinely-LATE slice per payment terms (never the full
+                // outstanding balance, which can include money not due yet) —
+                // and separately, money that's expected but not yet due.
+                const lateAmount = getNumber(row, "late_amount") ?? 0;
+                const expectedAmount = getNumber(row, "expected_amount") ?? 0;
                 const startDate = formatDate(getString(row, "start_date"));
                 const detailHref = `/projects/${id}${activeTab === "projects" ? "" : `?view=${activeTab}`}`;
 
@@ -866,15 +902,16 @@ export default function ProjectsClient({
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">{startDate}</td>
                     <td className="px-4 py-4">
-                      {paymentStatus === "unpriced" || paymentStatus === "no_charge" ? (
+                      <div className="space-y-1">
                         <Badge className={paymentStatusBadgeClasses(paymentStatus)}>
                           {paymentStatusLabel(paymentStatus)}
                         </Badge>
-                      ) : (
-                        <Badge className={collectionStatusClasses(collectionStatus)}>
-                          {collectionStatusLabel(collectionStatus)}
-                        </Badge>
-                      )}
+                        <PaymentDueCaption
+                          lateAmount={lateAmount}
+                          expectedAmount={expectedAmount}
+                          canSeeMoney={canSeeMoney}
+                        />
+                      </div>
                     </td>
                     <td className="px-4 py-4">
                       <div>{clientDisplayName(row)}</div>
@@ -1003,15 +1040,11 @@ export default function ProjectsClient({
           // Only the genuinely-LATE slice, never amount_due (the full price) and
           // never the outstanding balance — with nothing paid yet those both equal
           // the price, which just repeats the מחיר column below.
-          const overdueAmount = getNumber(row, "overdue_amount") ?? 0;
-          const overdueLabel =
-            canSeeMoney && overdueAmount > 0
-              ? `באיחור ${formatIls(overdueAmount)}`
-              : "תשלום באיחור";
+          const lateAmount = getNumber(row, "late_amount") ?? 0;
+          const expectedAmount = getNumber(row, "expected_amount") ?? 0;
           const totalTasks = getNumber(row, "total_tasks") ?? 0;
           const completedTasks = getNumber(row, "completed_tasks") ?? 0;
           const paymentStatus = paymentStatusValue(row);
-          const collectionStatus = getString(row, "collection_status") ?? paymentStatus;
           const startDate = formatDateShort(getString(row, "start_date"));
           const detailHref = `/projects/${id}${activeTab === "projects" ? "" : `?view=${activeTab}`}`;
 
@@ -1077,23 +1110,15 @@ export default function ProjectsClient({
                       not a headline. */}
                   <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                     <StatusBadge value={currentStatus} type="project" className={CARD_BADGE} />
-                    {paymentStatus === "unpriced" || paymentStatus === "no_charge" ? (
-                      <Badge className={cn(paymentStatusBadgeClasses(paymentStatus), CARD_BADGE)}>
-                        {paymentStatusLabel(paymentStatus)}
-                      </Badge>
-                    ) : (
-                      <Badge className={cn(collectionStatusClasses(collectionStatus), CARD_BADGE)}>
-                        {/* ONE payment signal per card. When it's genuinely late the
-                            pill carries the overdue figure itself, so there's no
-                            second red block repeating the same story. Nothing else
-                            here says WHAT is late (the desktop table has a תשלום
-                            column for that), so the pill spells it out. */}
-                        {collectionStatus === "overdue"
-                          ? overdueLabel
-                          : collectionStatusLabel(collectionStatus)}
-                      </Badge>
-                    )}
+                    <Badge className={cn(paymentStatusBadgeClasses(paymentStatus), CARD_BADGE)}>
+                      {paymentStatusLabel(paymentStatus)}
+                    </Badge>
                   </div>
+                  <PaymentDueCaption
+                    lateAmount={lateAmount}
+                    expectedAmount={expectedAmount}
+                    canSeeMoney={canSeeMoney}
+                  />
 
                   {/* Start-aligned, not centred: a list wants one vertical edge to
                       scan down. Centring every card turns the column into tiles. */}

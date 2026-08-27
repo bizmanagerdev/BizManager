@@ -505,7 +505,7 @@ export async function fetchSalaryCenterProtectedPayload(
   ] = await Promise.all([
     query(supabase.from("salary_agreements"))
       .select(
-        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id"
+        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id,is_billable_to_customer,bill_to_customer_amount"
       )
       .in("user_id", safeUserIds)
       .order("valid_from", { ascending: false }),
@@ -775,7 +775,7 @@ export async function generatePayslipsForPeriod(
       .range(0, 4999),
     query(supabase.from("salary_agreements"))
       .select(
-        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id"
+        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id,is_billable_to_customer,bill_to_customer_amount"
       )
       .in("user_id", userIds)
       .order("valid_from", { ascending: false }),
@@ -1020,7 +1020,7 @@ export async function recalculateUserSessionCostsFromRules(
       .range(0, 4999),
     query(supabase.from("salary_agreements"))
       .select(
-        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id"
+        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id,is_billable_to_customer,bill_to_customer_amount"
       )
       .eq("user_id", safeUserId)
       .order("valid_from", { ascending: false }),

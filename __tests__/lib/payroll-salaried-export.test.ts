@@ -26,6 +26,8 @@ const AGREEMENT: SalaryAgreementRow = {
   business_domain: "general_business",
   project_id: null,
   property_id: null,
+  is_billable_to_customer: null,
+  bill_to_customer_amount: null,
 };
 
 const USER = {

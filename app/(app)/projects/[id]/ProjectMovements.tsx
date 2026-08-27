@@ -371,7 +371,14 @@ export default function ProjectMovements({ movements }: { movements: Movement[] 
                     behind the chevron. */}
                 {movement.status ? <StatusDot status={movement.status} /> : null}
                 <span className="min-w-0 flex-1">
-                  <span className="block break-words font-medium">{movement.title}</span>
+                  <span className="block break-words font-medium">
+                    {movement.title}
+                    {movement.billed ? (
+                      <span className="ms-1.5">
+                        <BilledChip />
+                      </span>
+                    ) : null}
+                  </span>
                   {movement.hint ? (
                     <span className="block break-words text-xs text-muted-foreground">
                       {movement.hint}

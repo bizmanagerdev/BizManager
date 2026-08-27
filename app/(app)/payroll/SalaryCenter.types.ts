@@ -92,6 +92,8 @@ export type AgreementFormState = {
   business_domain: string;
   project_id: string;
   property_id: string;
+  is_billable_to_customer: boolean;
+  bill_to_customer_amount: string;
 };
 
 export type OverrideFormState = {

@@ -179,6 +179,8 @@ export type ProjectMonthlySalaryItem = {
   paid_amount: number | string | null;
   owed_amount: number | string | null;
   payment_status: string | null;
+  is_billable_to_customer: boolean | null;
+  bill_to_customer_amount: number | string | null;
 };
 
 // Tab bar sizing. On phones each tab takes an equal slice of the width, drops
@@ -877,11 +879,31 @@ export default function ProjectTabsClient({
           earned,
           paid,
           owed: toNumber(item.owed_amount) ?? 0,
+          billed: Boolean(item.is_billable_to_customer),
+          billToCustomerAmount: toNumber(item.bill_to_customer_amount) ?? 0,
         };
       })
       .filter((row) => row.earned > 0)
       .sort((a, b) => (b.periodMonth ?? "").localeCompare(a.periodMonth ?? ""));
   }, [monthlySalaryItems, usersById, salaryAgreements]);
+
+  // Billed monthly-salary rows join the session/expense rows on the "לחיוב לקוח" print sheet.
+  const billableSalaryRows = useMemo(
+    () =>
+      monthlySalaryRows
+        .filter((row) => row.billed && row.billToCustomerAmount > 0)
+        .map((row) => ({
+          date: formatDate(row.payDate),
+          title: `שכר — ${row.workerName}`,
+          amount: row.billToCustomerAmount,
+        })),
+    [monthlySalaryRows]
+  );
+
+  const billedCustomerPrintRows = useMemo(
+    () => [...billedPrintRows, ...billableSalaryRows],
+    [billedPrintRows, billableSalaryRows]
+  );
 
 
   async function deleteExpense(item: ExpenseListItem) {
@@ -1441,11 +1463,14 @@ export default function ProjectTabsClient({
         date: row.payDate,
         title: `שכר — ${row.workerName}`,
         status: row.paymentStatus,
-        billed: false,
-        amount: row.earned,
+        billed: row.billed,
+        amount: row.billed ? row.billToCustomerAmount : row.earned,
         hint: "משכורת חודשית",
         extras: [
           { label: "חודש", value: row.periodMonth ?? "—" },
+          ...(row.billed && row.billToCustomerAmount !== row.earned
+            ? [{ label: "עלות שכר", value: formatIls(row.earned) }]
+            : []),
           ...(row.paid > 0.009 ? [{ label: "שולם", value: formatIls(row.paid) }] : []),
           ...(row.owed > 0.009 ? [{ label: "יתרה", value: formatIls(row.owed) }] : []),
         ],
@@ -1501,12 +1526,12 @@ export default function ProjectTabsClient({
                   <AddIcon className="h-4 w-4" />
                   הכנסה
                 </Button>
-                {billableCustomerItems.length > 0 ? (
+                {billedCustomerPrintRows.length > 0 ? (
                   <BilledCustomerPrintButton
                     data={{
                       projectName: overview.name,
                       customerName: overview.customer_name ?? null,
-                      rows: billedPrintRows,
+                      rows: billedCustomerPrintRows,
                       total: billedExpensesTotal,
                     }}
                   />

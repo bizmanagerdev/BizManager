@@ -367,7 +367,9 @@ export default async function ProjectPage({
   // lines in the project's expenses; the totals come from project_financials_view.
   const monthlySalaryResult = await supabase
     .from("worker_debt_items_view")
-    .select("source_id,user_id,period_month,earned_amount,paid_amount,owed_amount,payment_status")
+    .select(
+      "source_id,user_id,period_month,earned_amount,paid_amount,owed_amount,payment_status,is_billable_to_customer,bill_to_customer_amount"
+    )
     .eq("source_type", "payslip")
     .eq("project_id", id);
   const monthlySalaryItems: ProjectMonthlySalaryItem[] = (
@@ -380,6 +382,8 @@ export default async function ProjectPage({
     paid_amount: (row.paid_amount as number | string | null) ?? null,
     owed_amount: (row.owed_amount as number | string | null) ?? null,
     payment_status: typeof row.payment_status === "string" ? row.payment_status : null,
+    is_billable_to_customer: (row.is_billable_to_customer as boolean | null) ?? null,
+    bill_to_customer_amount: (row.bill_to_customer_amount as number | string | null) ?? null,
   }));
 
   const expenseIds = Array.from(

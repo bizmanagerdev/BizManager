@@ -44,6 +44,8 @@ export type SalaryAgreementRow = {
   business_domain: string | null;
   project_id: string | null;
   property_id: string | null;
+  is_billable_to_customer: boolean | null;
+  bill_to_customer_amount: number | string | null;
 };
 
 export type PayrollPeriodRow = {

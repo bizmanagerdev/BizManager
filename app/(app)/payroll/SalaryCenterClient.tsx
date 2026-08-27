@@ -149,6 +149,8 @@ const DEFAULT_AGREEMENT_FORM: AgreementFormState = {
   business_domain: "general_business",
   project_id: "",
   property_id: "",
+  is_billable_to_customer: false,
+  bill_to_customer_amount: "",
 };
 
 const DEFAULT_OVERRIDE_FORM: OverrideFormState = {
@@ -1079,6 +1081,10 @@ export default function SalaryCenterClient({
       business_domain: currentAgreement?.business_domain ?? "general_business",
       project_id: currentAgreement?.project_id ?? "",
       property_id: currentAgreement?.property_id ?? "",
+      is_billable_to_customer: currentAgreement?.is_billable_to_customer ?? false,
+      bill_to_customer_amount: currentAgreement?.bill_to_customer_amount
+        ? String(currentAgreement.bill_to_customer_amount)
+        : "",
     });
     setAgreementDialogOpen(true);
   }
@@ -1098,6 +1104,10 @@ export default function SalaryCenterClient({
       business_domain: agreement.business_domain ?? "general_business",
       project_id: agreement.project_id ?? "",
       property_id: agreement.property_id ?? "",
+      is_billable_to_customer: agreement.is_billable_to_customer ?? false,
+      bill_to_customer_amount: agreement.bill_to_customer_amount
+        ? String(agreement.bill_to_customer_amount)
+        : "",
     });
     setAgreementDialogOpen(true);
   }
@@ -4878,6 +4888,8 @@ export default function SalaryCenterClient({
                         business_domain: value,
                         project_id: value === "logistics_projects" ? current.project_id : "",
                         property_id: value === "property_management" ? current.property_id : "",
+                        is_billable_to_customer: value === "logistics_projects" ? current.is_billable_to_customer : false,
+                        bill_to_customer_amount: value === "logistics_projects" ? current.bill_to_customer_amount : "",
                       }))
                     }
                   />
@@ -4890,13 +4902,55 @@ export default function SalaryCenterClient({
                     <ProjectPicker
                       value={agreementForm.project_id}
                       onChange={(value) =>
-                        setAgreementForm((current) => ({ ...current, project_id: value }))
+                        setAgreementForm((current) => ({
+                          ...current,
+                          project_id: value,
+                          is_billable_to_customer: value ? current.is_billable_to_customer : false,
+                          bill_to_customer_amount: value ? current.bill_to_customer_amount : "",
+                        }))
                       }
                       searchPlaceholder="חיפוש פרויקט..."
                       projects={projectOptions.map((option) => ({ id: option.id, label: option.label }))}
                     />
                     <div className="mt-1 text-xs text-muted-foreground">
                       כל המשכורת החודשית תירשם כהוצאה על הפרויקט הזה.
+                    </div>
+                  </Field>
+                ) : null}
+                {agreementForm.business_domain === "logistics_projects" && agreementForm.project_id ? (
+                  <Field label="חיוב לקוח">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={agreementForm.is_billable_to_customer}
+                        onChange={(event) =>
+                          setAgreementForm((current) => ({
+                            ...current,
+                            is_billable_to_customer: event.target.checked,
+                            bill_to_customer_amount: event.target.checked ? current.bill_to_customer_amount : "",
+                          }))
+                        }
+                      />
+                      <span>לחיוב לקוח</span>
+                    </label>
+                    {agreementForm.is_billable_to_customer ? (
+                      <div className="mt-2 space-y-1">
+                        <div className="text-sm font-medium">סכום לחיוב לקוח (חודשי)</div>
+                        <CurrencyInput
+                          inputMode="decimal"
+                          value={agreementForm.bill_to_customer_amount}
+                          onChange={(event) =>
+                            setAgreementForm((current) => ({
+                              ...current,
+                              bill_to_customer_amount: event.target.value,
+                            }))
+                          }
+                          placeholder="למשל 5000"
+                        />
+                      </div>
+                    ) : null}
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      הסכום ייווסף לחיוב הלקוח של הפרויקט מדי חודש, בנוסף לעלות המשכורת בהוצאות.
                     </div>
                   </Field>
                 ) : null}

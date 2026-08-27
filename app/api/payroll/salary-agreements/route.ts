@@ -27,6 +27,8 @@ type SalaryAgreementPayload = {
   business_domain?: string | null;
   project_id?: string | null;
   property_id?: string | null;
+  is_billable_to_customer?: boolean | null;
+  bill_to_customer_amount?: number | string | null;
 };
 
 function toNullableNumber(value: unknown) {
@@ -128,6 +130,10 @@ export async function POST(req: Request) {
       businessDomain === "property_management" && typeof body.property_id === "string" && body.property_id.trim()
         ? body.property_id.trim()
         : null;
+    // Billing to the customer only makes sense once the salary is pinned to a
+    // specific project — mirrors how projectId itself is domain-gated above.
+    const isBillableToCustomer = Boolean(projectId) && Boolean(body.is_billable_to_customer);
+    const billToCustomerAmount = isBillableToCustomer ? toNullableNumber(body.bill_to_customer_amount) : null;
 
     if (action === "delete") {
       if (!agreementId || !userId) {
@@ -147,6 +153,9 @@ export async function POST(req: Request) {
     }
     if (action !== "delete" && (dueDayOfNextMonth === null || dueDayOfNextMonth < 1 || dueDayOfNextMonth > 31)) {
       return NextResponse.json({ error: "Due day must be a whole number between 1 and 31." }, { status: 400 });
+    }
+    if (action !== "delete" && isBillableToCustomer && (billToCustomerAmount === null || billToCustomerAmount <= 0)) {
+      return NextResponse.json({ error: "Bill-to-customer amount must be greater than 0." }, { status: 400 });
     }
 
     const { supabase } = access.value;
@@ -194,7 +203,7 @@ export async function POST(req: Request) {
     const agreementsResult = await supabase
       .from("salary_agreements")
       .select(
-        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id"
+        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id,is_billable_to_customer,bill_to_customer_amount"
       )
       .eq("user_id", userId)
       .order("valid_from", { ascending: false });
@@ -256,10 +265,12 @@ export async function POST(req: Request) {
           business_domain: businessDomain,
           project_id: projectId,
           property_id: propertyId,
+          is_billable_to_customer: isBillableToCustomer,
+          bill_to_customer_amount: billToCustomerAmount,
         })
         .eq("id", agreementId)
         .select(
-          "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id"
+          "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id,is_billable_to_customer,bill_to_customer_amount"
         )
         .maybeSingle();
 
@@ -270,7 +281,7 @@ export async function POST(req: Request) {
       const refreshedAgreementsResult = await supabase
         .from("salary_agreements")
         .select(
-          "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id"
+          "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id,is_billable_to_customer,bill_to_customer_amount"
         )
         .eq("user_id", userId)
         .order("valid_from", { ascending: false });
@@ -285,7 +296,7 @@ export async function POST(req: Request) {
       const normalizedAgreementResult = await supabase
         .from("salary_agreements")
         .select(
-          "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id"
+          "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id,is_billable_to_customer,bill_to_customer_amount"
         )
         .eq("id", agreementId)
         .maybeSingle();
@@ -342,9 +353,11 @@ export async function POST(req: Request) {
         business_domain: businessDomain,
         project_id: projectId,
         property_id: propertyId,
+        is_billable_to_customer: isBillableToCustomer,
+        bill_to_customer_amount: billToCustomerAmount,
       })
       .select(
-        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id"
+        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id,is_billable_to_customer,bill_to_customer_amount"
       )
       .maybeSingle();
 
@@ -360,7 +373,7 @@ export async function POST(req: Request) {
       ? await supabase
           .from("salary_agreements")
           .select(
-            "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id"
+            "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id,is_billable_to_customer,bill_to_customer_amount"
           )
           .eq("id", insertedAgreement.id)
           .maybeSingle()

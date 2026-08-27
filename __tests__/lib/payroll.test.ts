@@ -18,6 +18,8 @@ function makeHourlyAgreement(overrides: Partial<SalaryAgreementRow> = {}): Salar
     business_domain: "general_business",
     project_id: null,
     property_id: null,
+    is_billable_to_customer: null,
+    bill_to_customer_amount: null,
     ...overrides,
   };
 }
@@ -38,6 +40,8 @@ function makeMonthlyAgreement(overrides: Partial<SalaryAgreementRow> = {}): Sala
     business_domain: "general_business",
     project_id: null,
     property_id: null,
+    is_billable_to_customer: null,
+    bill_to_customer_amount: null,
     ...overrides,
   };
 }

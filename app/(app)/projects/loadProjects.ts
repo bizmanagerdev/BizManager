@@ -200,10 +200,16 @@ export async function loadProjectsPage(
     const expensesBilled = toNumber(financialRow?.expenses_billed) ?? 0;
     const baseProjectPrice = agreedBasePrice ?? actualPrice ?? 0;
     const derivedCustomerTotalPrice = baseProjectPrice + expensesBilled;
+    // Prefer the view's own price (VAT-grossed for price-includes-VAT projects,
+    // plus billed add-ons — the same figure shown in the price column) over the
+    // derivation above, which skips VAT gross-up and so understates the true
+    // target: a merely-partially-paid VAT-inclusive project could then look
+    // "overpaid" once collections (which do include VAT) pass the understated total.
+    const viewCustomerTotalPrice = toNumber(financialRow?.customer_total_price);
     const customerTotalPrice =
-      derivedCustomerTotalPrice > 0
-        ? derivedCustomerTotalPrice
-        : toNumber(financialRow?.customer_total_price) ?? 0;
+      viewCustomerTotalPrice !== null && viewCustomerTotalPrice > 0
+        ? viewCustomerTotalPrice
+        : derivedCustomerTotalPrice;
     const paidTotal = toNumber(financialRow?.collected_amount) ?? 0;
     const expensesBilledSeparately = expensesSeparatelyByProjectId.get(projectId) ?? false;
     const noCharge = noChargeByProjectId.get(projectId) ?? false;
@@ -220,6 +226,25 @@ export async function loadProjectsPage(
         : paidTotal > 0
           ? "partial"
           : "unpaid";
+
+    // Computed once so the badge (worst-case status) and the overdue chip (how
+    // much of that is actually late, per payment terms) agree with each other —
+    // a project can be mostly collected with only a sliver genuinely overdue.
+    const sourceCollection =
+      noCharge || priceUnset
+        ? null
+        : computeSourceCollection({
+            total: customerTotalPrice,
+            collected: paidTotal,
+            pending: toNumber(financialRow?.pending_amount) ?? 0,
+            overdue: toNumber(financialRow?.overdue_amount) ?? 0,
+            outstanding:
+              toNumber(financialRow?.outstanding_amount) ?? Math.max(customerTotalPrice - paidTotal, 0),
+            nextDueDate: typeof financialRow?.next_due_date === "string" ? financialRow.next_due_date : null,
+            referenceDate: typeof row?.start_date === "string" ? row.start_date : null,
+            dueDate: dueDateByProjectId.get(projectId) ?? null,
+            today: new Date().toISOString().slice(0, 10),
+          });
 
     return {
       ...row,
@@ -246,22 +271,13 @@ export async function loadProjectsPage(
       due_date: dueDateByProjectId.get(projectId) ?? null,
       branch_id: branchIdByProjectId.get(projectId) ?? null,
       // Term-aware collection status (תשלום צפוי / באיחור …) for the status badge.
-      collection_status: noCharge
-        ? "no_charge"
-        : priceUnset
-        ? "unpriced"
-        : computeSourceCollection({
-            total: customerTotalPrice,
-            collected: paidTotal,
-            pending: toNumber(financialRow?.pending_amount) ?? 0,
-            overdue: toNumber(financialRow?.overdue_amount) ?? 0,
-            outstanding:
-              toNumber(financialRow?.outstanding_amount) ?? Math.max(customerTotalPrice - paidTotal, 0),
-            nextDueDate: typeof financialRow?.next_due_date === "string" ? financialRow.next_due_date : null,
-            referenceDate: typeof row?.start_date === "string" ? row.start_date : null,
-            dueDate: dueDateByProjectId.get(projectId) ?? null,
-            today: new Date().toISOString().slice(0, 10),
-          }).status,
+      collection_status: noCharge ? "no_charge" : priceUnset ? "unpriced" : sourceCollection?.status ?? "unpaid",
+      // How much of the outstanding balance is genuinely overdue vs. merely not
+      // yet due, by payment term — surfaced as a caption under the status badge
+      // (not a second badge) so a mostly-paid project with a small late or
+      // future-dated remainder doesn't read as entirely late.
+      late_amount: sourceCollection?.late ?? 0,
+      expected_amount: sourceCollection?.expected ?? 0,
     };
   });
 
