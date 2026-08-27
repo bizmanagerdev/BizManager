@@ -108,6 +108,46 @@ function parseDisplayToIsoDateTime(value: string) {
   return `${String(year).padStart(4, "0")}-${padTwo(month)}-${padTwo(day)}T${padTwo(hours)}:${padTwo(minutes)}`;
 }
 
+/** Auto-inserts separators into a digits-only string at fixed segment
+ *  boundaries — e.g. segments [2,2,4] with "/" turns "170926" into "17/09/26"
+ *  as each pair is completed, so typing just digits produces a formatted date
+ *  without the user having to type the slashes themselves. The last segment
+ *  accepts up to its full length (4 for a year) but naturally shows fewer
+ *  digits (2) if that's all that's been typed so far. */
+function insertDateSeparators(digits: string, segmentLengths: number[], separators: string[]) {
+  let result = "";
+  let pos = 0;
+  for (let i = 0; i < segmentLengths.length; i++) {
+    const segment = digits.slice(pos, pos + segmentLengths[i]);
+    if (!segment) break;
+    if (i > 0) result += separators[i - 1];
+    result += segment;
+    pos += segmentLengths[i];
+  }
+  return result;
+}
+
+/** Reformats a just-edited display value from its raw digits, correcting for
+ *  the classic masked-input bug where backspacing over an auto-inserted
+ *  separator character removes the separator but not a digit — which would
+ *  otherwise make it re-appear immediately and backspace would look stuck.
+ *  Detected by: something was deleted (raw got shorter) but the digit count
+ *  didn't shrink, meaning only a separator disappeared — so drop one more
+ *  trailing digit too. */
+function reformatTypedDate(
+  raw: string,
+  previousDisplayValue: string,
+  segmentLengths: number[],
+  separators: string[]
+) {
+  const rawDigits = raw.replace(/\D/g, "");
+  const previousDigits = previousDisplayValue.replace(/\D/g, "");
+  const isDeleting = raw.length < previousDisplayValue.length;
+  const nextDigits =
+    isDeleting && rawDigits.length === previousDigits.length ? rawDigits.slice(0, -1) : rawDigits;
+  return insertDateSeparators(nextDigits, segmentLengths, separators);
+}
+
 function openNativePicker(ref: React.RefObject<HTMLInputElement | null>) {
   const el = ref.current;
   if (!el) return;
@@ -151,7 +191,7 @@ export const DateInput = React.forwardRef<HTMLInputElement, DateInputProps>(
           value={displayValue}
           className={cn("pr-9", className)}
           onChange={(event) => {
-            const nextDisplayValue = event.target.value;
+            const nextDisplayValue = reformatTypedDate(event.target.value, displayValue, [2, 2, 4], ["/", "/"]);
             setDisplayValue(nextDisplayValue);
             const parsed = parseDisplayToIso(nextDisplayValue);
             if (parsed !== null) {
@@ -205,7 +245,7 @@ export const DateInput = React.forwardRef<HTMLInputElement, DateInputProps>(
 DateInput.displayName = "DateInput";
 
 export const DateTimeInput = React.forwardRef<HTMLInputElement, DateTimeInputProps>(
-  ({ value, onChange, onBlur, placeholder = "dd/mm/yy hh:mm", className, inputMode = "text", ...props }, ref) => {
+  ({ value, onChange, onBlur, placeholder = "dd/mm/yy hh:mm", className, inputMode = "numeric", ...props }, ref) => {
     const [displayValue, setDisplayValue] = React.useState(() => formatIsoDateTimeForDisplay(value));
     const pickerRef = React.useRef<HTMLInputElement>(null);
 
@@ -237,7 +277,7 @@ export const DateTimeInput = React.forwardRef<HTMLInputElement, DateTimeInputPro
           value={displayValue}
           className={cn("pr-9", className)}
           onChange={(event) => {
-            const next = event.target.value;
+            const next = reformatTypedDate(event.target.value, displayValue, [2, 2, 4, 2, 2], ["/", "/", " ", ":"]);
             setDisplayValue(next);
             const parsed = parseDisplayToIsoDateTime(next);
             if (parsed !== null) emitChange(parsed);
