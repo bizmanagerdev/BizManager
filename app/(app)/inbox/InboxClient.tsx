@@ -347,7 +347,7 @@ export default function InboxClient({
           {/* No "תזכורת" + button here — creating a reminder is a tile in the
               app's one quick-create +, which is on screen on this page too. */}
           <Button asChild variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
-            <Link href="/profile#notifications">
+            <Link href="/profile?tab=notifications">
               <SettingsIcon className="h-4 w-4" />
               {t(inboxDict, locale, "preferences")}
             </Link>

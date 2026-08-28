@@ -328,7 +328,7 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
       {/* The whole point of the page: which automatic alerts run, and who gets them. */}
       <p className="text-xs text-muted-foreground">
         מה המערכת מזהה לבד, ולמי זה מגיע. כמה התראות כל אחד מקבל — נקבע אישית ב
-        <a href="/profile#notifications" className="mx-1 text-primary hover:underline">
+        <a href="/profile?tab=notifications" className="mx-1 text-primary hover:underline">
           אזור האישי
         </a>
         של כל משתמש.
