@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
 import { DateTimeInput } from "@/components/ui/date-input";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { formatMinutes, minutesBetween } from "@/lib/payroll";
 import { formatShortDateTime } from "@/lib/date";
 import { toHebrewError } from "@/lib/error-messages";
@@ -273,7 +275,14 @@ function AttendanceLogBody({
               approval queue with nothing written on it. */}
           <label className="block space-y-1">
             <span className="block text-xs text-muted-foreground">{t(profileDict, locale, "whatDidWorkerDoLabel")}</span>
-            <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} disabled={isPending} />
+            <div className="relative">
+              <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} disabled={isPending} className="pe-11" />
+              <DictateButton
+                onTranscript={(text) => setNote((prev) => appendDictatedText(prev, text))}
+                disabled={isPending}
+                className="absolute bottom-1 end-1 h-8 w-8"
+              />
+            </div>
           </label>
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" onClick={() => signOut(nowLocal())} disabled={isPending}>
@@ -344,7 +353,14 @@ function AttendanceLogBody({
               </div>
               <label className="block space-y-1">
                 <span className="block text-xs text-muted-foreground">{t(profileDict, locale, "whatDidWorkerDoLabel")}</span>
-                <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} disabled={isPending} />
+                <div className="relative">
+                  <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} disabled={isPending} className="pe-11" />
+                  <DictateButton
+                    onTranscript={(text) => setNote((prev) => appendDictatedText(prev, text))}
+                    disabled={isPending}
+                    className="absolute bottom-1 end-1 h-8 w-8"
+                  />
+                </div>
               </label>
               <div className="flex justify-end">
                 <Button type="button" onClick={submitManual} disabled={isPending}>

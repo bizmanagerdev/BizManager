@@ -5,9 +5,11 @@ import { toast } from "sonner";
 import { DeleteButton } from "@/components/ui/icon-button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toHebrewError } from "@/lib/error-messages";
+import { appendDictatedText } from "@/lib/dictation";
 
 export type EditableCommunication = {
   id: string;
@@ -158,7 +160,19 @@ export default function EditCommunicationDialog({
             </div>
             <div className="space-y-1">
               <label className="text-sm font-medium">תוכן</label>
-              <Textarea value={content} onChange={(e) => setContent(e.target.value)} rows={3} />
+              <div className="relative">
+                <Textarea
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  rows={3}
+                  className="pe-11"
+                />
+                <DictateButton
+                  onTranscript={(text) => setContent((prev) => appendDictatedText(prev, text))}
+                  disabled={busy}
+                  className="absolute bottom-1 end-1 h-8 w-8"
+                />
+              </div>
             </div>
           </div>
       </FormDialog>

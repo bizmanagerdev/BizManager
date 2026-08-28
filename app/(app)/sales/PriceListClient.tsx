@@ -14,6 +14,8 @@ import { toHebrewError } from "@/lib/error-messages";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
@@ -1208,7 +1210,18 @@ export default function PriceListClient({
               />
             </Field>
             <Field label="תיאור">
-              <Textarea value={createDescription} onChange={(e) => setCreateDescription(e.target.value)} rows={3} />
+              <div className="relative">
+                <Textarea
+                  value={createDescription}
+                  onChange={(e) => setCreateDescription(e.target.value)}
+                  rows={3}
+                  className="pe-11"
+                />
+                <DictateButton
+                  onTranscript={(text) => setCreateDescription((prev) => appendDictatedText(prev, text))}
+                  className="absolute bottom-1 end-1 h-8 w-8"
+                />
+              </div>
             </Field>
             <Field label="סף מלאי נמוך">
               <Input
@@ -1300,7 +1313,18 @@ export default function PriceListClient({
               />
             </Field>
             <Field label="תיאור">
-              <Textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)} rows={3} />
+              <div className="relative">
+                <Textarea
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  rows={3}
+                  className="pe-11"
+                />
+                <DictateButton
+                  onTranscript={(text) => setEditDescription((prev) => appendDictatedText(prev, text))}
+                  className="absolute bottom-1 end-1 h-8 w-8"
+                />
+              </div>
             </Field>
             <Field label="סף מלאי נמוך">
               <Input

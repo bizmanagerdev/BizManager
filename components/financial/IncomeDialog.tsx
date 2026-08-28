@@ -24,6 +24,8 @@ import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { DateInput } from "@/components/ui/date-input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { getBusinessDomainIcon } from "@/components/financial/DomainSelect";
@@ -678,7 +680,18 @@ export function IncomeDialog({
         <>
           <StepHeading title="הערות פנימיות?" sub="לא חובה" />
           <label className="space-y-2 text-sm">
-          <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} autoFocus />
+          <div className="relative">
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              autoFocus
+              className="pe-11"
+            />
+            <DictateButton
+              onTranscript={(text) => setNotes((prev) => appendDictatedText(prev, text))}
+              className="absolute bottom-1 end-1 h-8 w-8"
+            />
+          </div>
           </label>
         </>
       ) : stepId === "tags" ? (

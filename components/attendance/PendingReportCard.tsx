@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect } from "@/components/ui/native-select";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -622,7 +624,19 @@ export default function PendingReportCard({
         loading={isPending}
         onConfirm={reject}
       >
-        <Textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="סיבת הדחייה" rows={2} />
+        <div className="relative">
+          <Textarea
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="סיבת הדחייה"
+            rows={2}
+            className="pe-11"
+          />
+          <DictateButton
+            onTranscript={(text) => setRejectReason((prev) => appendDictatedText(prev, text))}
+            className="absolute bottom-1 end-1 h-8 w-8"
+          />
+        </div>
       </ConfirmDialog>
     </div>
   );

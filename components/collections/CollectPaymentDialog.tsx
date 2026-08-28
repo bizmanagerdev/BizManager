@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { DateInput } from "@/components/ui/date-input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { loadAccounts } from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, getAccountKindLabel, type Account } from "@/lib/accounts";
@@ -33,6 +34,7 @@ import { formatCurrency } from "@/lib/payroll";
 import type { CustomerReceivable } from "@/lib/collections";
 import { offlineFetch } from "@/lib/offline-queue";
 import { toHebrewError } from "@/lib/error-messages";
+import { appendDictatedText } from "@/lib/dictation";
 import { getTodayDate } from "@/app/(app)/dashboard/DashboardActions.helpers";
 
 type Debtor = {
@@ -595,7 +597,20 @@ export function CollectPaymentDialog({
         <>
           <StepHeading title="הערות פנימיות?" sub="לא חובה" />
           <label className="space-y-2 text-sm">
-          <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} autoFocus />
+          <div className="relative">
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              autoFocus
+              className="pe-11"
+            />
+            <DictateButton
+              onTranscript={(text) => setNotes((prev) => appendDictatedText(prev, text))}
+              disabled={submitting}
+              className="absolute bottom-1 end-1 h-8 w-8"
+            />
+          </div>
           </label>
         </>
       ) : (

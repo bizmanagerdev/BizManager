@@ -12,6 +12,8 @@ import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { TagPicker, fetchExistingTagIds } from "@/components/tags/TagPicker";
@@ -1985,7 +1987,13 @@ export function ExpenseDialog({
         return (
           <>
             {expTitle("הערות פנימיות?", "לא חובה")}
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
+            <div className="relative">
+              <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="pe-11" />
+              <DictateButton
+                onTranscript={(text) => setNotes((prev) => appendDictatedText(prev, text))}
+                className="absolute bottom-1 end-1 h-8 w-8"
+              />
+            </div>
           </>
         );
       case "files":
@@ -3206,7 +3214,13 @@ export function ExpenseDialog({
           {/* Notes */}
           <div className="space-y-1">
             <div className="text-sm font-medium">הערות</div>
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
+            <div className="relative">
+              <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="pe-11" />
+              <DictateButton
+                onTranscript={(text) => setNotes((prev) => appendDictatedText(prev, text))}
+                className="absolute bottom-1 end-1 h-8 w-8"
+              />
+            </div>
           </div>
 
           {/* Attachments */}

@@ -16,6 +16,8 @@ import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -88,11 +90,18 @@ export function TaskDescriptionSection({
   // No panel around it and no "תיאור" heading: the tab above already says which
   // section this is, so a titled box inside a titled tab was a box in a box.
   return (
-    <Textarea
-      value={description}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={t(tasksDict, locale, "descriptionPlaceholder")}
-    />
+    <div className="relative">
+      <Textarea
+        value={description}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={t(tasksDict, locale, "descriptionPlaceholder")}
+        className="pe-11"
+      />
+      <DictateButton
+        onTranscript={(text) => onChange(appendDictatedText(description, text))}
+        className="absolute bottom-1 end-1 h-8 w-8"
+      />
+    </div>
   );
 }
 
@@ -824,12 +833,19 @@ export function TaskCommentsPanel({
             ))}
           </div>
         )}
-        <Textarea
-          value={newComment}
-          onChange={(e) => setNewComment(e.target.value)}
-          placeholder={t(tasksDict, locale, "commentPlaceholder")}
-          className="min-h-16"
-        />
+        <div className="relative">
+          <Textarea
+            value={newComment}
+            onChange={(e) => setNewComment(e.target.value)}
+            placeholder={t(tasksDict, locale, "commentPlaceholder")}
+            className="min-h-16 pe-11"
+          />
+          <DictateButton
+            onTranscript={(text) => setNewComment(appendDictatedText(newComment, text))}
+            disabled={addingComment}
+            className="absolute bottom-1 end-1 h-8 w-8"
+          />
+        </div>
         <div className="flex justify-end">
           <Button type="button" size="sm" disabled={addingComment || !newComment.trim()} onClick={onAddComment}>
             {addingComment ? t(tasksDict, locale, "savingEllipsis") : t(tasksDict, locale, "addCommentButton")}

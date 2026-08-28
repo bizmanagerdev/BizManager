@@ -8,6 +8,7 @@ import { NavLink } from "@/components/NavLink";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
 import {
   COMMUNICATION_CHANNELS,
   channelLabel,
@@ -15,6 +16,7 @@ import {
   type CommunicationLog,
 } from "@/lib/communications";
 import { offlineFetch } from "@/lib/offline-queue";
+import { appendDictatedText } from "@/lib/dictation";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 
 type LogItem = CommunicationLog & {
@@ -145,13 +147,20 @@ export default function CommunicationLogItem({
             <option value="incoming">שיחה נכנסת</option>
           </NativeSelect>
         </div>
-        <Textarea
-          className="mt-2"
-          rows={2}
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          placeholder="מה סוכם? מה הלקוח אמר?"
-        />
+        <div className="relative">
+          <Textarea
+            className="mt-2 pe-11"
+            rows={2}
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder="מה סוכם? מה הלקוח אמר?"
+          />
+          <DictateButton
+            onTranscript={(text) => setContent((prev) => appendDictatedText(prev, text))}
+            disabled={busy}
+            className="absolute bottom-1 end-1 h-8 w-8"
+          />
+        </div>
         <div className="mt-2 flex justify-end gap-1">
           <Button
             type="button"

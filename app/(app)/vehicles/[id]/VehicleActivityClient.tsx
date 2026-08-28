@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { DateInput } from "@/components/ui/date-input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Badge } from "@/components/ui/badge";
@@ -467,7 +469,17 @@ export default function VehicleActivityClient({
             />
             <div className="space-y-1">
               <div className="text-sm font-medium">הערות</div>
-              <Textarea value={incNotes} onChange={(e) => setIncNotes(e.target.value)} />
+              <div className="relative">
+                <Textarea
+                  value={incNotes}
+                  onChange={(e) => setIncNotes(e.target.value)}
+                  className="pe-11"
+                />
+                <DictateButton
+                  onTranscript={(text) => setIncNotes((prev) => appendDictatedText(prev, text))}
+                  className="absolute bottom-1 end-1 h-8 w-8"
+                />
+              </div>
             </div>
           </div>
       </FormDialog>

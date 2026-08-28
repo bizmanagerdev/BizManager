@@ -20,6 +20,8 @@ import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { CustomerForm } from "@/components/customers/CustomerForm";
 import type { CustomerRecord } from "@/components/customers/CustomerForm";
 import { useCustomerPicker } from "@/hooks/useCustomerPicker";
@@ -1971,13 +1973,21 @@ export default function NewOrderClient({
       ) : step === "notes" ? (
         <>
           <StepHeading title="הערות להזמנה?" sub="לא חובה" />
-          <Textarea
-            value={notes}
-            disabled={actionLocked}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={3}
-            autoFocus
-          />
+          <div className="relative">
+            <Textarea
+              value={notes}
+              disabled={actionLocked}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              autoFocus
+              className="pe-11"
+            />
+            <DictateButton
+              onTranscript={(text) => setNotes((prev) => appendDictatedText(prev, text))}
+              disabled={actionLocked}
+              className="absolute bottom-1 end-1 h-8 w-8"
+            />
+          </div>
         </>
       ) : null}
 

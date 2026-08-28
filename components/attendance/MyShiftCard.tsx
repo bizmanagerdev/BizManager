@@ -10,6 +10,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect } from "@/components/ui/native-select";
 import { DateTimeInput } from "@/components/ui/date-input";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { formatMinutes, minutesBetween } from "@/lib/payroll";
 import { formatShortDateTime } from "@/lib/date";
 import { toHebrewError } from "@/lib/error-messages";
@@ -218,12 +220,20 @@ export default function MyShiftCard({
               ) : null}
               <label className="block space-y-1">
                 <span className="block text-xs text-muted-foreground">{t(profileDict, locale, "whatDidYouDoLabel")}</span>
-                <Textarea
-                  value={note}
-                  onChange={(event) => setNote(event.target.value)}
-                  rows={2}
-                  disabled={working}
-                />
+                <div className="relative">
+                  <Textarea
+                    value={note}
+                    onChange={(event) => setNote(event.target.value)}
+                    rows={2}
+                    disabled={working}
+                    className="pe-11"
+                  />
+                  <DictateButton
+                    onTranscript={(text) => setNote((prev) => appendDictatedText(prev, text))}
+                    disabled={working}
+                    className="absolute bottom-1 end-1 h-8 w-8"
+                  />
+                </div>
               </label>
               <div className="flex gap-2">
                 <Button type="button" className="flex-1" disabled={working} onClick={closeShift}>
@@ -290,12 +300,20 @@ export default function MyShiftCard({
                     nothing else to go on when picking the business domain. */}
                 <label className="block space-y-1">
                   <span className="block text-xs text-muted-foreground">{t(profileDict, locale, "whatDidYouDoLabel")}</span>
-                  <Textarea
-                    value={note}
-                    onChange={(event) => setNote(event.target.value)}
-                    rows={2}
-                    disabled={working}
-                  />
+                  <div className="relative">
+                    <Textarea
+                      value={note}
+                      onChange={(event) => setNote(event.target.value)}
+                      rows={2}
+                      disabled={working}
+                      className="pe-11"
+                    />
+                    <DictateButton
+                      onTranscript={(text) => setNote((prev) => appendDictatedText(prev, text))}
+                      disabled={working}
+                      className="absolute bottom-1 end-1 h-8 w-8"
+                    />
+                  </div>
                 </label>
               </>
             ) : null}

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
 import { DateInput } from "@/components/ui/date-input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +33,7 @@ import { shiftHoursText } from "@/components/attendance/DayTile";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { paymentRecordStatusLabel } from "@/lib/payments";
+import { appendDictatedText } from "@/lib/dictation";
 import { cn } from "@/lib/utils";
 import {
   depositTypeLabel,
@@ -1396,7 +1398,19 @@ export default function PropertyDetailClient({
           </div>
           <div className="space-y-1">
             <div className="text-sm font-medium">הערות</div>
-            <Textarea value={leaseForm.notes} onChange={(e) => setLeaseForm((prev) => ({ ...prev, notes: e.target.value }))} />
+            <div className="relative">
+              <Textarea
+                value={leaseForm.notes}
+                onChange={(e) => setLeaseForm((prev) => ({ ...prev, notes: e.target.value }))}
+                className="pe-11"
+              />
+              <DictateButton
+                onTranscript={(text) =>
+                  setLeaseForm((prev) => ({ ...prev, notes: appendDictatedText(prev.notes, text) }))
+                }
+                className="absolute bottom-1 end-1 h-8 w-8"
+              />
+            </div>
           </div>
           <div className="space-y-1">
             <div className="text-sm font-medium">מסמך חתום</div>

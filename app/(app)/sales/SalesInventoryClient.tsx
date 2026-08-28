@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { toHebrewError } from "@/lib/error-messages";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { formatShortDateTime } from "@/lib/date";
 import { useRevealOnScroll } from "@/hooks/useRevealOnScroll";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
@@ -733,7 +735,18 @@ export default function SalesInventoryClient({
 
             <div className="space-y-1">
               <label className="text-sm font-medium">הערות</label>
-              <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+              <div className="relative">
+                <Textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={2}
+                  className="pe-11"
+                />
+                <DictateButton
+                  onTranscript={(text) => setNotes((prev) => appendDictatedText(prev, text))}
+                  className="absolute bottom-1 end-1 h-8 w-8"
+                />
+              </div>
             </div>
 
           </div>
@@ -779,7 +792,18 @@ export default function SalesInventoryClient({
 
             <div className="space-y-1">
               <label className="text-sm font-medium">הערות</label>
-              <Textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={2} />
+              <div className="relative">
+                <Textarea
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  rows={2}
+                  className="pe-11"
+                />
+                <DictateButton
+                  onTranscript={(text) => setEditNotes((prev) => appendDictatedText(prev, text))}
+                  className="absolute bottom-1 end-1 h-8 w-8"
+                />
+              </div>
             </div>
 
           </div>

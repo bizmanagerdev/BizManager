@@ -34,6 +34,8 @@ import { Field } from "@/components/ui/field";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { formatShortDate } from "@/lib/date";
 import MorningCustomerCard from "@/components/morning/MorningCustomerCard";
 import {
@@ -853,11 +855,19 @@ export default function CustomersClient({
           <Input value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
         </Field>
         <Field label="הערות">
-          <Textarea
-            value={contactNotes}
-            onChange={(e) => setContactNotes(e.target.value)}
-            rows={3}
-          />
+          <div className="relative">
+            <Textarea
+              value={contactNotes}
+              onChange={(e) => setContactNotes(e.target.value)}
+              rows={3}
+              className="pe-11"
+            />
+            <DictateButton
+              onTranscript={(text) => setContactNotes((prev) => appendDictatedText(prev, text))}
+              disabled={contactLoading}
+              className="absolute bottom-1 end-1 h-8 w-8"
+            />
+          </div>
         </Field>
         <label className="flex items-center gap-2 text-sm">
           <input

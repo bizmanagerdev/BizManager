@@ -6,6 +6,8 @@ import { NoteIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import { toHebrewError } from "@/lib/error-messages";
@@ -168,12 +170,19 @@ export default function OrderCommentsThread({
 
                 {editingIndex === index ? (
                   <div className="mt-2 space-y-2">
-                    <Textarea
-                      value={editDraft}
-                      onChange={(e) => setEditDraft(e.target.value)}
-                      className="min-h-16"
-                      disabled={editBusy}
-                    />
+                    <div className="relative">
+                      <Textarea
+                        value={editDraft}
+                        onChange={(e) => setEditDraft(e.target.value)}
+                        className="min-h-16 pe-11"
+                        disabled={editBusy}
+                      />
+                      <DictateButton
+                        onTranscript={(text) => setEditDraft((prev) => appendDictatedText(prev, text))}
+                        disabled={editBusy}
+                        className="absolute bottom-1 end-1 h-8 w-8"
+                      />
+                    </div>
                     <div className="flex justify-end gap-2">
                       <Button
                         type="button"
@@ -204,13 +213,20 @@ export default function OrderCommentsThread({
       )}
 
       <div className="space-y-2">
-        <Textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="כתבו תגובה..."
-          className="min-h-16"
-          disabled={busy}
-        />
+        <div className="relative">
+          <Textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="כתבו תגובה..."
+            className="min-h-16 pe-11"
+            disabled={busy}
+          />
+          <DictateButton
+            onTranscript={(text) => setDraft((prev) => appendDictatedText(prev, text))}
+            disabled={busy}
+            className="absolute bottom-1 end-1 h-8 w-8"
+          />
+        </div>
         <div className="flex justify-end">
           <Button type="button" size="sm" disabled={busy || !draft.trim()} onClick={() => void addComment()}>
             {busy ? "שומר..." : "הוספת תגובה"}

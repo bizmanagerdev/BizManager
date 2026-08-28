@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { DateTimeInput } from "@/components/ui/date-input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { AssigneeSelect } from "@/components/collections/AssigneeSelect";
 import { useAssignableUsers } from "@/hooks/useAssignableUsers";
 import { whatsappHref } from "@/lib/whatsapp";
@@ -132,12 +134,20 @@ export default function BulkActions({
                 ))}
               </NativeSelect>
             </div>
-            <Textarea
-              rows={2}
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder="תוכן התזכורת (אופציונלי)"
-            />
+            <div className="relative">
+              <Textarea
+                rows={2}
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder="תוכן התזכורת (אופציונלי)"
+                className="pe-11"
+              />
+              <DictateButton
+                onTranscript={(text) => setContent((prev) => appendDictatedText(prev, text))}
+                disabled={busy}
+                className="absolute bottom-1 end-1 h-8 w-8"
+              />
+            </div>
             <div className="space-y-1">
               <div className="text-xs text-muted-foreground">אחראי</div>
               <AssigneeSelect value={assignee} onChange={setAssignee} includeMeDefault />
@@ -155,13 +165,19 @@ export default function BulkActions({
         description="הוסיפו הערה משותפת ושלחו לכל לקוח בלחיצה."
         size="formMd"
       >
-          <Textarea
-            className="text-right"
-            rows={2}
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="הערה שתתווסף לכל ההודעות (אופציונלי)"
-          />
+          <div className="relative">
+            <Textarea
+              className="text-right pe-11"
+              rows={2}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="הערה שתתווסף לכל ההודעות (אופציונלי)"
+            />
+            <DictateButton
+              onTranscript={(text) => setNote((prev) => appendDictatedText(prev, text))}
+              className="absolute bottom-1 end-1 h-8 w-8"
+            />
+          </div>
           <div className="mt-2 space-y-1 text-right">
             {targets.map((g) => {
               const base = `שלום, נותרה יתרה לתשלום בסך ${formatCurrency(g.outstanding_amount)}. נשמח להסדרת התשלום. תודה!`;

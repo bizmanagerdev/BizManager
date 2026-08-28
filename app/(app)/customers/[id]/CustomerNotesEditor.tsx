@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { offlineFetch } from "@/lib/offline-queue";
 import { EditButton } from "@/components/ui/icon-button";
 
@@ -48,13 +50,21 @@ export default function CustomerNotesEditor({
   if (editing) {
     return (
       <div className="space-y-2">
-        <Textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          rows={4}
-          placeholder="הערות ללקוח..."
-          disabled={busy}
-        />
+        <div className="relative">
+          <Textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={4}
+            placeholder="הערות ללקוח..."
+            disabled={busy}
+            className="pe-11"
+          />
+          <DictateButton
+            onTranscript={(text) => setDraft((prev) => appendDictatedText(prev, text))}
+            disabled={busy}
+            className="absolute bottom-1 end-1 h-8 w-8"
+          />
+        </div>
         <div className="flex gap-2">
           <Button type="button" size="sm" disabled={busy} onClick={() => void save()}>
             {busy ? "שומר..." : "שמירה"}

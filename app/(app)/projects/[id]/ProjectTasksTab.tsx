@@ -10,12 +10,14 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
 import { DateInput } from "@/components/ui/date-input";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import {
   mapProjectTypeToExpenseDomain,
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
+import { appendDictatedText } from "@/lib/dictation";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -825,11 +827,18 @@ export function ProjectTasksTab({
             </div>
             <div className="space-y-1">
               <div className="text-sm font-medium">תיאור (אופציונלי)</div>
-              <Textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="פרטים נוספים..."
-              />
+              <div className="relative">
+                <Textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="פרטים נוספים..."
+                  className="pe-11"
+                />
+                <DictateButton
+                  onTranscript={(text) => setDescription((prev) => appendDictatedText(prev, text))}
+                  className="absolute bottom-1 end-1 h-8 w-8"
+                />
+              </div>
             </div>
             <div className="space-y-1">
               <div className="text-sm font-medium">תאריך יעד *</div>

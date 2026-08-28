@@ -7,6 +7,8 @@ import { SpinnerIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { DateTimeInput } from "@/components/ui/date-input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { toHebrewError } from "@/lib/error-messages";
 import type { WorkSessionRow } from "@/lib/payroll";
 
@@ -128,12 +130,20 @@ export function SessionEditFields({ state }: { state: SessionEditState }) {
       </div>
       <label className="block space-y-1">
         <span className="block text-xs text-muted-foreground">למה השינוי?</span>
-        <Textarea
-          value={state.note}
-          onChange={(e) => state.setNote(e.target.value)}
-          rows={2}
-          disabled={state.working}
-        />
+        <div className="relative">
+          <Textarea
+            value={state.note}
+            onChange={(e) => state.setNote(e.target.value)}
+            rows={2}
+            disabled={state.working}
+            className="pe-11"
+          />
+          <DictateButton
+            onTranscript={(text) => state.setNote(appendDictatedText(state.note, text))}
+            disabled={state.working}
+            className="absolute bottom-1 end-1 h-8 w-8"
+          />
+        </div>
       </label>
       {state.error ? <div className="text-xs text-destructive">{state.error}</div> : null}
       <div className="flex gap-2">

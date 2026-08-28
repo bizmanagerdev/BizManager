@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
 import { DateInput } from "@/components/ui/date-input";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { CustomerForm, type CustomerRecord } from "@/components/customers/CustomerForm";
@@ -29,6 +30,7 @@ import { useCustomerPicker } from "@/hooks/useCustomerPicker";
 import { PAYMENT_TERMS_OPTIONS, computeDueDate } from "@/lib/paymentTerms";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import { omitUnknownPlace } from "@/lib/ui/cities";
+import { appendDictatedText } from "@/lib/dictation";
 
 type Row = Record<string, unknown>;
 type Step =
@@ -1098,12 +1100,19 @@ export default function NewProjectClient({
             </div>
             <div className="space-y-1.5 text-sm">
               <span className="font-medium">פריטים להעברה</span>
-              <Textarea
-                value={itemsToMove}
-                onChange={(e) => setItemsToMove(e.target.value)}
-                rows={5}
-                placeholder="כל פריט בשורה נפרדת"
-              />
+              <div className="relative">
+                <Textarea
+                  value={itemsToMove}
+                  onChange={(e) => setItemsToMove(e.target.value)}
+                  rows={5}
+                  placeholder="כל פריט בשורה נפרדת"
+                  className="pe-11"
+                />
+                <DictateButton
+                  onTranscript={(text) => setItemsToMove((prev) => appendDictatedText(prev, text))}
+                  className="absolute bottom-1 end-1 h-8 w-8"
+                />
+              </div>
               <p className="text-xs text-muted-foreground">אפשר להשאיר ריק. כל שורה תישמר כפריט נפרד.</p>
             </div>
           </div>
@@ -1111,7 +1120,13 @@ export default function NewProjectClient({
       ) : step === "notes" ? (
         <fieldset disabled={submitting} className="contents">
           <StepHeading title="תיאור / הערות?" sub="לא חובה" />
-          <Textarea autoFocus value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+          <div className="relative">
+            <Textarea autoFocus value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="pe-11" />
+            <DictateButton
+              onTranscript={(text) => setNotes((prev) => appendDictatedText(prev, text))}
+              className="absolute bottom-1 end-1 h-8 w-8"
+            />
+          </div>
         </fieldset>
       ) : step === "attachments" ? (
         <fieldset disabled={submitting} className="contents">

@@ -27,6 +27,8 @@ import AccountSelect from "@/components/financial/AccountSelect";
 import type { Account } from "@/lib/accounts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import { WORK_SESSION_BUSINESS_DOMAINS, getBusinessDomainLabel } from "@/lib/expenses";
 import { DomainSelect } from "@/components/financial/DomainSelect";
@@ -5015,13 +5017,22 @@ export default function SalaryCenterClient({
             </Field>
             <div className="sm:col-span-2">
               <Field label="הערות">
-                <Textarea
-                  rows={3}
-                  value={agreementForm.notes}
-                  onChange={(event) =>
-                    setAgreementForm((current) => ({ ...current, notes: event.target.value }))
-                  }
-                />
+                <div className="relative">
+                  <Textarea
+                    rows={3}
+                    value={agreementForm.notes}
+                    onChange={(event) =>
+                      setAgreementForm((current) => ({ ...current, notes: event.target.value }))
+                    }
+                    className="pe-11"
+                  />
+                  <DictateButton
+                    onTranscript={(text) =>
+                      setAgreementForm((current) => ({ ...current, notes: appendDictatedText(current.notes, text) }))
+                    }
+                    className="absolute bottom-1 end-1 h-8 w-8"
+                  />
+                </div>
               </Field>
             </div>
           </div>
@@ -5271,13 +5282,22 @@ export default function SalaryCenterClient({
             </Field>
             <div className="md:col-span-2">
               <Field label="הערות">
-                <Textarea
-                  rows={3}
-                  value={workerPaymentForm.notes}
-                  onChange={(event) =>
-                    setWorkerPaymentForm((current) => ({ ...current, notes: event.target.value }))
-                  }
-                />
+                <div className="relative">
+                  <Textarea
+                    rows={3}
+                    value={workerPaymentForm.notes}
+                    onChange={(event) =>
+                      setWorkerPaymentForm((current) => ({ ...current, notes: event.target.value }))
+                    }
+                    className="pe-11"
+                  />
+                  <DictateButton
+                    onTranscript={(text) =>
+                      setWorkerPaymentForm((current) => ({ ...current, notes: appendDictatedText(current.notes, text) }))
+                    }
+                    className="absolute bottom-1 end-1 h-8 w-8"
+                  />
+                </div>
               </Field>
             </div>
           </div>

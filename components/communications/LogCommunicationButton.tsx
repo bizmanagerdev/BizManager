@@ -8,11 +8,13 @@ import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { AssigneeSelect } from "@/components/collections/AssigneeSelect";
 import { useAssignableUsers } from "@/hooks/useAssignableUsers";
 import { offlineFetch } from "@/lib/offline-queue";
 import { toHebrewError } from "@/lib/error-messages";
+import { appendDictatedText } from "@/lib/dictation";
 
 // A logged call is inherently customer-related, so these entities all resolve to
 // a customer_id plus (optionally) their own FK on the communication log.
@@ -232,7 +234,19 @@ export default function LogCommunicationButton({
 
             <div className="space-y-1">
               <label className="text-sm font-medium">תוכן</label>
-              <Textarea value={content} onChange={(e) => setContent(e.target.value)} rows={3} />
+              <div className="relative">
+                <Textarea
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  rows={3}
+                  className="pe-11"
+                />
+                <DictateButton
+                  onTranscript={(text) => setContent((prev) => appendDictatedText(prev, text))}
+                  disabled={submitting}
+                  className="absolute bottom-1 end-1 h-8 w-8"
+                />
+              </div>
             </div>
 
             <label className="flex items-center gap-2 text-sm">

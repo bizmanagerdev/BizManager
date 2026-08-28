@@ -8,11 +8,13 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
 import { DateInput } from "@/components/ui/date-input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Button } from "@/components/ui/button";
 import { CloseIcon } from "@/components/ui/icons";
 import { propertyHasRoomLayout, type Property } from "@/lib/properties";
+import { appendDictatedText } from "@/lib/dictation";
 
 /** Common furnished-apartment items — the click-off half of "enter a list or
  *  click off a list". Custom items typed in below live in the same array. */
@@ -248,7 +250,18 @@ export function PropertyBasicFields({ form, set }: FieldsProps) {
       </label>
       <label className="block space-y-1 text-sm">
         <span className="font-medium">פירוט הנכס</span>
-        <Textarea rows={2} value={form.asset_description} onChange={(e) => set("asset_description", e.target.value)} />
+        <div className="relative">
+          <Textarea
+            rows={2}
+            value={form.asset_description}
+            onChange={(e) => set("asset_description", e.target.value)}
+            className="pe-11"
+          />
+          <DictateButton
+            onTranscript={(text) => set("asset_description", appendDictatedText(form.asset_description, text))}
+            className="absolute bottom-1 end-1 h-8 w-8"
+          />
+        </div>
       </label>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {form.property_type === "building" ? (

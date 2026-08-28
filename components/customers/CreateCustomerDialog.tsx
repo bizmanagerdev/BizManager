@@ -16,6 +16,8 @@ import { SummaryRow, SummarySection } from "@/components/ui/summary";
 import { StepWizardDialog, useStepFlow } from "@/components/ui/step-wizard";
 import { OptionRow, StepHeading } from "@/components/ui/option-row";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { WorkerLinkField } from "@/components/customers/WorkerLinkField";
 import { offlineFetch } from "@/lib/offline-queue";
 
@@ -802,7 +804,19 @@ export function CreateCustomerDialog({
             ) : stepId === "notes" ? (
               <>
                 <StepHeading title="הערות?" sub="לא חובה" />
-                <Textarea autoFocus value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+                <div className="relative">
+                  <Textarea
+                    autoFocus
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={3}
+                    className="pe-11"
+                  />
+                  <DictateButton
+                    onTranscript={(text) => setNotes((prev) => appendDictatedText(prev, text))}
+                    className="absolute bottom-1 end-1 h-8 w-8"
+                  />
+                </div>
               </>
             ) : stepId === "contacts" ? (
               <div className="space-y-3">
@@ -858,11 +872,20 @@ export function CreateCustomerDialog({
                       />
                     </Field>
                     <Field label="הערות" hint="רשות">
-                      <Textarea
-                        value={contact.notes}
-                        onChange={(e) => updateContact(index, { notes: e.target.value })}
-                        rows={2}
-                      />
+                      <div className="relative">
+                        <Textarea
+                          value={contact.notes}
+                          onChange={(e) => updateContact(index, { notes: e.target.value })}
+                          rows={2}
+                          className="pe-11"
+                        />
+                        <DictateButton
+                          onTranscript={(text) =>
+                            updateContact(index, { notes: appendDictatedText(contact.notes, text) })
+                          }
+                          className="absolute bottom-1 end-1 h-8 w-8"
+                        />
+                      </div>
                     </Field>
                     <label className="flex items-center gap-2 text-sm">
                       <input

@@ -9,6 +9,8 @@ import { Field } from "@/components/ui/field";
 import { toHebrewError } from "@/lib/error-messages";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { CITY_OPTIONS } from "@/lib/ui/cities";
 import { invalidateCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import { TagPicker, fetchExistingTagIds } from "@/components/tags/TagPicker";
@@ -666,7 +668,13 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
           <summary className="cursor-pointer text-sm font-medium">פרטים נוספים ואנשי קשר</summary>
           <div className="mt-3 space-y-3">
             <Field label="הערות">
-              <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+              <div className="relative">
+                <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="pe-11" />
+                <DictateButton
+                  onTranscript={(text) => setNotes((prev) => appendDictatedText(prev, text))}
+                  className="absolute bottom-1 end-1 h-8 w-8"
+                />
+              </div>
             </Field>
 
             <div className="space-y-3 rounded-md border p-3">
@@ -708,7 +716,20 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
                     <Input value={contact.email} onChange={(e) => updateContact(contact.key, { email: e.target.value })} />
                   </Field>
                   <Field label="הערות">
-                    <Textarea value={contact.notes} onChange={(e) => updateContact(contact.key, { notes: e.target.value })} rows={2} />
+                    <div className="relative">
+                      <Textarea
+                        value={contact.notes}
+                        onChange={(e) => updateContact(contact.key, { notes: e.target.value })}
+                        rows={2}
+                        className="pe-11"
+                      />
+                      <DictateButton
+                        onTranscript={(text) =>
+                          updateContact(contact.key, { notes: appendDictatedText(contact.notes, text) })
+                        }
+                        className="absolute bottom-1 end-1 h-8 w-8"
+                      />
+                    </div>
                   </Field>
                   <label className="flex items-center gap-2 text-sm">
                     <input

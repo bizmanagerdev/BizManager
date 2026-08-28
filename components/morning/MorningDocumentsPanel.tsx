@@ -10,6 +10,8 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import { Badge } from "@/components/ui/badge";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 
 type IssueKind = "quote" | "invoice" | "receipt" | "invoice-receipt";
@@ -396,12 +398,20 @@ export default function MorningDocumentsPanel({
         busyLabel="שומר..."
         busy={editing !== null && busyKey === `edit:${editing.id}`}
       >
-          <Textarea
-            value={editNotes}
-            onChange={(event) => setEditNotes(event.target.value)}
-            placeholder="הערה למסמך..."
-            rows={4}
-          />
+          <div className="relative">
+            <Textarea
+              value={editNotes}
+              onChange={(event) => setEditNotes(event.target.value)}
+              placeholder="הערה למסמך..."
+              rows={4}
+              className="pe-11"
+            />
+            <DictateButton
+              onTranscript={(text) => setEditNotes((prev) => appendDictatedText(prev, text))}
+              disabled={editing !== null && busyKey === `edit:${editing.id}`}
+              className="absolute bottom-1 end-1 h-8 w-8"
+            />
+          </div>
       </FormDialog>
 
       <ConfirmDialog

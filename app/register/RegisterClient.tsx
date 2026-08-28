@@ -9,6 +9,8 @@ import { AuthScreen } from "@/components/auth/AuthScreen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { toHebrewError } from "@/lib/error-messages";
 
 export default function RegisterClient() {
@@ -192,13 +194,21 @@ export default function RegisterClient() {
 
         <div className="space-y-2">
           <label className="text-sm font-medium text-foreground">הערות</label>
-          <Textarea
-            placeholder="אופציונלי"
-            value={notes}
-            onChange={onChange(setNotes)}
-            rows={3}
-            disabled={loading}
-          />
+          <div className="relative">
+            <Textarea
+              placeholder="אופציונלי"
+              value={notes}
+              onChange={onChange(setNotes)}
+              rows={3}
+              disabled={loading}
+              className="pe-11"
+            />
+            <DictateButton
+              onTranscript={(text) => setNotes((prev) => appendDictatedText(prev, text))}
+              disabled={loading}
+              className="absolute bottom-1 end-1 h-8 w-8"
+            />
+          </div>
         </div>
 
         {info ? (

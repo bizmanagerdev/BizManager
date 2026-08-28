@@ -8,6 +8,8 @@ import { AddIcon, DocumentIcon, TaskIcon, VehicleIcon } from "@/components/ui/ic
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { DateInput } from "@/components/ui/date-input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -269,7 +271,18 @@ export default function VehiclesClient({ vehicles }: { vehicles: VehicleWithRoll
             </div>
             <label className="block space-y-1 text-sm">
               <span className="font-medium">הערות</span>
-              <Textarea rows={2} value={form.notes} onChange={(e) => set("notes", e.target.value)} />
+              <div className="relative">
+                <Textarea
+                  rows={2}
+                  value={form.notes}
+                  onChange={(e) => set("notes", e.target.value)}
+                  className="pe-11"
+                />
+                <DictateButton
+                  onTranscript={(text) => set("notes", appendDictatedText(form.notes, text))}
+                  className="absolute bottom-1 end-1 h-8 w-8"
+                />
+              </div>
             </label>
           </div>
       </FormDialog>

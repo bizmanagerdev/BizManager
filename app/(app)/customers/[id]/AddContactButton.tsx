@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { offlineFetch } from "@/lib/offline-queue";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { FormDialog } from "@/components/ui/form-dialog";
@@ -124,7 +126,14 @@ export default function AddContactButton({
                 <Input value={email} onChange={(e) => setEmail(e.target.value)} dir="ltr" />
               </Field>
               <Field label="הערות">
-                <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+                <div className="relative">
+                  <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="pe-11" />
+                  <DictateButton
+                    onTranscript={(text) => setNotes((prev) => appendDictatedText(prev, text))}
+                    disabled={busy}
+                    className="absolute bottom-1 end-1 h-8 w-8"
+                  />
+                </div>
               </Field>
               <label className="flex items-center gap-2 text-sm">
                 <input

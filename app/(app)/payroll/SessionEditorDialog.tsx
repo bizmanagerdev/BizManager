@@ -27,6 +27,8 @@ import { Input } from "@/components/ui/input";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import {
   WORK_SESSION_BUSINESS_DOMAINS,
   isExpenseBusinessDomain,
@@ -1310,12 +1312,21 @@ export default function SessionEditorDialog({
       ) : stepId === "notes" ? (
         <>
           <StepHeading title="הערות?" sub="לא חובה" />
-          <Textarea
-            rows={3}
-            autoFocus
-            value={sessionForm.notes}
-            onChange={(event) => setSessionForm((current) => ({ ...current, notes: event.target.value }))}
-          />
+          <div className="relative">
+            <Textarea
+              rows={3}
+              autoFocus
+              value={sessionForm.notes}
+              onChange={(event) => setSessionForm((current) => ({ ...current, notes: event.target.value }))}
+              className="pe-11"
+            />
+            <DictateButton
+              onTranscript={(text) =>
+                setSessionForm((current) => ({ ...current, notes: appendDictatedText(current.notes, text) }))
+              }
+              className="absolute bottom-1 end-1 h-8 w-8"
+            />
+          </div>
         </>
       ) : (
         <>

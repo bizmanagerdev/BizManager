@@ -22,6 +22,8 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect } from "@/components/ui/native-select";
 import { DateTimeInput } from "@/components/ui/date-input";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 // One approve/reject/split card, shared with the dashboard's נוכחות עובדים widget.
 import PendingReportCard, { WorkerHead, attendanceDetail, attendanceMeta } from "@/components/attendance/PendingReportCard";
@@ -444,7 +446,14 @@ function OpenRow({ report }: { report: OpenPhoneReport }) {
               that reaches approval with nothing written on it. */}
           <label className="block space-y-1">
             <span className="block text-xs text-muted-foreground">מה העובד עשה במשמרת?</span>
-            <Textarea value={closeNote} onChange={(e) => setCloseNote(e.target.value)} rows={2} disabled={isPending} />
+            <div className="relative">
+              <Textarea value={closeNote} onChange={(e) => setCloseNote(e.target.value)} rows={2} disabled={isPending} className="pe-11" />
+              <DictateButton
+                onTranscript={(text) => setCloseNote((prev) => appendDictatedText(prev, text))}
+                disabled={isPending}
+                className="absolute bottom-1 end-1 h-8 w-8"
+              />
+            </div>
           </label>
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" size="sm" onClick={closeShift} disabled={isPending}>

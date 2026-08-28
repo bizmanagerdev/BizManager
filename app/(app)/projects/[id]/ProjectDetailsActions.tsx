@@ -21,6 +21,8 @@ import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { CustomerPicker } from "@/components/customers/CustomerPicker";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import {
   MovingEndpointFields,
   elevatorToBool,
@@ -583,7 +585,18 @@ export default function ProjectDetailsActions({
 
             <div className="space-y-1">
               <label className="text-sm font-medium">הערות</label>
-              <Textarea value={editNotes} onChange={(event) => setEditNotes(event.target.value)} rows={3} />
+              <div className="relative">
+                <Textarea
+                  value={editNotes}
+                  onChange={(event) => setEditNotes(event.target.value)}
+                  rows={3}
+                  className="pe-11"
+                />
+                <DictateButton
+                  onTranscript={(text) => setEditNotes((prev) => appendDictatedText(prev, text))}
+                  className="absolute bottom-1 end-1 h-8 w-8"
+                />
+              </div>
             </div>
 
             {isMovingProjectType(editProjectType) ? (
@@ -609,12 +622,19 @@ export default function ProjectDetailsActions({
             {isMovingProjectType(editProjectType) ? (
               <div className="space-y-1">
                 <label className="text-sm font-medium">פריטים להעברה</label>
-                <Textarea
-                  value={editItemsToMove}
-                  onChange={(event) => setEditItemsToMove(event.target.value)}
-                  rows={5}
-                  placeholder="כל פריט בשורה נפרדת"
-                />
+                <div className="relative">
+                  <Textarea
+                    value={editItemsToMove}
+                    onChange={(event) => setEditItemsToMove(event.target.value)}
+                    rows={5}
+                    placeholder="כל פריט בשורה נפרדת"
+                    className="pe-11"
+                  />
+                  <DictateButton
+                    onTranscript={(text) => setEditItemsToMove((prev) => appendDictatedText(prev, text))}
+                    className="absolute bottom-1 end-1 h-8 w-8"
+                  />
+                </div>
                 <div className="text-xs text-muted-foreground">אפשר להשאיר ריק. כל שורה תישמר כפריט נפרד.</div>
               </div>
             ) : null}

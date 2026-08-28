@@ -9,6 +9,8 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 
 type LineDraft = {
@@ -164,12 +166,20 @@ export default function MorningQuoteDialog({
 
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">הערות להצעה (אופציונלי)</label>
-              <Textarea
-                value={notes}
-                onChange={(event) => setNotes(event.target.value)}
-                placeholder="הערות שיופיעו על המסמך..."
-                rows={3}
-              />
+              <div className="relative">
+                <Textarea
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                  placeholder="הערות שיופיעו על המסמך..."
+                  rows={3}
+                  className="pe-11"
+                />
+                <DictateButton
+                  onTranscript={(text) => setNotes((prev) => appendDictatedText(prev, text))}
+                  disabled={submitting}
+                  className="absolute bottom-1 end-1 h-8 w-8"
+                />
+              </div>
             </div>
           </div>
       </FormDialog>

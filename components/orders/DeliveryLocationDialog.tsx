@@ -19,6 +19,8 @@ import { Button } from "@/components/ui/button";
 import { DeleteButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { toHebrewError } from "@/lib/error-messages";
 import {
   formatPin,
@@ -149,12 +151,18 @@ export function DeliveryLocationDialog({
           <div className="space-y-4 text-right">
             <label className="block space-y-2 text-sm">
               <span className="font-medium">הוראות הגעה</span>
-              <Textarea
-                value={instructions}
-                onChange={(event) => setInstructions(event.target.value)}
-                rows={3}
-                className="min-h-[72px]"
-              />
+              <div className="relative">
+                <Textarea
+                  value={instructions}
+                  onChange={(event) => setInstructions(event.target.value)}
+                  rows={3}
+                  className="min-h-[72px] pe-11"
+                />
+                <DictateButton
+                  onTranscript={(text) => setInstructions((prev) => appendDictatedText(prev, text))}
+                  className="absolute bottom-1 end-1 h-8 w-8"
+                />
+              </div>
             </label>
 
             {/* Same shape as the section above — a label and its controls, no box

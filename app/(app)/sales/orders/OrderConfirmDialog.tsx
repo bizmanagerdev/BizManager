@@ -15,6 +15,8 @@ import { DateInput } from "@/components/ui/date-input";
 import { StepWizardDialog } from "@/components/ui/step-wizard";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { formatPin, pinFrom, type DeliveryPin } from "@/lib/delivery-location";
 import LoadingDots from "@/app/(app)/sales/orders/LoadingDots";
 import {
@@ -1052,12 +1054,19 @@ export default function OrderConfirmDialog({
         return (
           <div className="space-y-1">
             <label className="text-sm font-medium">הערות אספקה</label>
-            <Textarea
-              value={deliveryNotes}
-              onChange={(e) => setDeliveryNotes(e.target.value)}
-              rows={4}
-              placeholder="הערות למסירה, חוסרים, מצב אספקה..."
-            />
+            <div className="relative">
+              <Textarea
+                value={deliveryNotes}
+                onChange={(e) => setDeliveryNotes(e.target.value)}
+                rows={4}
+                placeholder="הערות למסירה, חוסרים, מצב אספקה..."
+                className="pe-11"
+              />
+              <DictateButton
+                onTranscript={(text) => setDeliveryNotes((prev) => appendDictatedText(prev, text))}
+                className="absolute bottom-1 end-1 h-8 w-8"
+              />
+            </div>
             <p className="text-xs text-muted-foreground">נשמר על ההזמנה הזו בלבד.</p>
           </div>
         );
@@ -1069,12 +1078,19 @@ export default function OrderConfirmDialog({
         return (
           <div className="space-y-2 rounded-2xl border border-border/60 bg-muted/20 p-3">
             <label className="text-sm font-medium">הוראות הגעה</label>
-            <Textarea
-              value={arrivalInstructions}
-              onChange={(e) => setArrivalInstructions(e.target.value)}
-              rows={3}
-              placeholder="לדוגמה: לעקוף את הבניין מימין, שער כחול בחניון"
-            />
+            <div className="relative">
+              <Textarea
+                value={arrivalInstructions}
+                onChange={(e) => setArrivalInstructions(e.target.value)}
+                rows={3}
+                placeholder="לדוגמה: לעקוף את הבניין מימין, שער כחול בחניון"
+                className="pe-11"
+              />
+              <DictateButton
+                onTranscript={(text) => setArrivalInstructions((prev) => appendDictatedText(prev, text))}
+                className="absolute bottom-1 end-1 h-8 w-8"
+              />
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 type="button"

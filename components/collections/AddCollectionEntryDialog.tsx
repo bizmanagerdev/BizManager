@@ -8,11 +8,13 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { COMMUNICATION_CHANNELS } from "@/lib/communications";
 import { AssigneeSelect } from "@/components/collections/AssigneeSelect";
 import { useAssignableUsers } from "@/hooks/useAssignableUsers";
 import { offlineFetch } from "@/lib/offline-queue";
+import { appendDictatedText } from "@/lib/dictation";
 
 type Mode = "reminder" | "call";
 type CustomerHit = { id: string; name: string; phone: string | null };
@@ -288,12 +290,20 @@ export default function AddCollectionEntryDialog({
                   <option value="incoming">שיחה נכנסת</option>
                 </NativeSelect>
               </div>
-              <Textarea
-                rows={2}
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                placeholder="מה סוכם? מה הלקוח אמר?"
-              />
+              <div className="relative">
+                <Textarea
+                  rows={2}
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  placeholder="מה סוכם? מה הלקוח אמר?"
+                  className="pe-11"
+                />
+                <DictateButton
+                  onTranscript={(text) => setContent((prev) => appendDictatedText(prev, text))}
+                  disabled={submitting}
+                  className="absolute bottom-1 end-1 h-8 w-8"
+                />
+              </div>
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"

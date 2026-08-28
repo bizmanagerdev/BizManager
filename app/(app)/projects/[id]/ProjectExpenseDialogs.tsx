@@ -9,6 +9,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
 import { DateInput } from "@/components/ui/date-input";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
@@ -17,6 +18,7 @@ import { ORDER_PAYMENT_METHOD_OPTIONS } from "@/lib/orders/paymentStatus";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { toHebrewError } from "@/lib/error-messages";
+import { appendDictatedText } from "@/lib/dictation";
 import { mapProjectTypeToExpenseDomain } from "@/lib/expenses";
 import { type FinancialAttachment, type PaymentRow } from "@/lib/payments";
 import {
@@ -402,11 +404,18 @@ export function AddIncomeDialog({
 
           <div className="space-y-1">
             <div className="text-sm font-medium">{"\u05d4\u05e2\u05e8\u05d5\u05ea (\u05d0\u05d5\u05e4\u05e6\u05d9\u05d5\u05e0\u05dc\u05d9)"}</div>
-            <Textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder={"\u05d4\u05e2\u05e8\u05d5\u05ea..."}
-            />
+            <div className="relative">
+              <Textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder={"\u05d4\u05e2\u05e8\u05d5\u05ea..."}
+                className="pe-11"
+              />
+              <DictateButton
+                onTranscript={(text) => setNotes((prev) => appendDictatedText(prev, text))}
+                className="absolute bottom-1 end-1 h-8 w-8"
+              />
+            </div>
           </div>
 
           <div className="space-y-2">

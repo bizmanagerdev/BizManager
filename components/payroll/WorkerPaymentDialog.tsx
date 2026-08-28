@@ -20,6 +20,8 @@ import { useEffect, useMemo, useState } from "react";
 import { toHebrewError } from "@/lib/error-messages";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { DateInput } from "@/components/ui/date-input";
 import { StepWizardDialog, useStepFlow } from "@/components/ui/step-wizard";
@@ -389,7 +391,18 @@ export function WorkerPaymentDialog({
         <>
           <StepHeading title={HEBREW.notes} sub="לא חובה" />
           <label className="space-y-2 text-sm">
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+            <div className="relative">
+              <Textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={2}
+                className="pe-11"
+              />
+              <DictateButton
+                onTranscript={(text) => setNotes((prev) => appendDictatedText(prev, text))}
+                className="absolute bottom-1 end-1 h-8 w-8"
+              />
+            </div>
           </label>
         </>
       ) : (

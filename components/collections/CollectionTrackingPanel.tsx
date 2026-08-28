@@ -10,6 +10,8 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { DateTimeInput } from "@/components/ui/date-input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import { collectionStatusClasses, collectionStatusLabel, paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { paymentTermsLabel } from "@/lib/paymentTerms";
@@ -330,13 +332,20 @@ export default function CollectionTrackingPanel({
           ))}
         </NativeSelect>
       </div>
-      <Textarea
-        className="mt-2"
-        rows={2}
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-        placeholder="מה סוכם? מה הלקוח אמר?"
-      />
+      <div className="relative">
+        <Textarea
+          className="mt-2 pe-11"
+          rows={2}
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          placeholder="מה סוכם? מה הלקוח אמר?"
+        />
+        <DictateButton
+          onTranscript={(text) => setContent((prev) => appendDictatedText(prev, text))}
+          disabled={submitting}
+          className="absolute bottom-1 end-1 h-8 w-8"
+        />
+      </div>
 
       <label className="mt-2 flex items-center gap-2 text-sm">
         <input

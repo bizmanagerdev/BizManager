@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import ProfitLossPanel from "@/app/(app)/financial/reports/ProfitLossPanel";
 import BottomLinePanel from "@/app/(app)/financial/reports/BottomLinePanel";
@@ -35,6 +36,7 @@ import type { EarnedRevenueReport } from "@/lib/financial/earnedRevenue";
 import type { ProjectBreakdown } from "@/lib/financial/projectBreakdown";
 import type { DomainProofMap } from "@/lib/financial/domainProof";
 import { formatRelativeDateLabel, formatShortDate } from "@/lib/date";
+import { appendDictatedText } from "@/lib/dictation";
 import {
   getBusinessDomainLabel,
   type ExpenseBusinessDomain,
@@ -2235,12 +2237,21 @@ export default function FinancialPageClient({
 
             <div className="space-y-1">
               <div className="text-sm font-medium">הערות</div>
-              <Textarea
-                value={incomeCreateForm.notes}
-                onChange={(event) =>
-                  setIncomeCreateForm((current) => ({ ...current, notes: event.target.value }))
-                }
-              />
+              <div className="relative">
+                <Textarea
+                  value={incomeCreateForm.notes}
+                  onChange={(event) =>
+                    setIncomeCreateForm((current) => ({ ...current, notes: event.target.value }))
+                  }
+                  className="pe-11"
+                />
+                <DictateButton
+                  onTranscript={(text) =>
+                    setIncomeCreateForm((current) => ({ ...current, notes: appendDictatedText(current.notes, text) }))
+                  }
+                  className="absolute bottom-1 end-1 h-8 w-8"
+                />
+              </div>
             </div>
 
             {incomeCreateForm.businessDomain === "general_business" ? (

@@ -16,6 +16,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedText } from "@/lib/dictation";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import {
@@ -475,11 +477,20 @@ export default function RecurringTasksClient(props: Props) {
 
             <div className="space-y-1">
               <div className="text-sm font-medium">תיאור תבנית</div>
-              <Textarea
-                value={form.description_template}
-                onChange={(e) => updateForm("description_template", e.target.value)}
-                placeholder="פרטי המשימה החוזרת..."
-              />
+              <div className="relative">
+                <Textarea
+                  value={form.description_template}
+                  onChange={(e) => updateForm("description_template", e.target.value)}
+                  placeholder="פרטי המשימה החוזרת..."
+                  className="pe-11"
+                />
+                <DictateButton
+                  onTranscript={(text) =>
+                    updateForm("description_template", appendDictatedText(form.description_template, text))
+                  }
+                  className="absolute bottom-1 end-1 h-8 w-8"
+                />
+              </div>
             </div>
 
             <AdaptiveGrid variant="formTwo">
