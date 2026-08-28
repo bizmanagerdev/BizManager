@@ -2,7 +2,13 @@
 
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { hasDeliveriesAccess } from "@/lib/auth/roleAccess";
-import { loadOrdersPage, type OrdersFilters } from "./loadOrders";
+import { findOrderIdsMatchingContent } from "@/lib/search/findMatchingChildIds";
+import {
+  loadOrdersByIds,
+  loadOrdersPage,
+  loadOrderSearchIndexRows,
+  type OrdersFilters,
+} from "./loadOrders";
 import {
   loadPriceListPage,
   loadInventoryListPage,
@@ -16,6 +22,34 @@ export async function loadMoreOrders(page: number, filters: OrdersFilters) {
   const { supabase } = await requireProfile();
   const { rows, hasMore } = await loadOrdersPage(supabase, { page, filters });
   return { rows, hasMore };
+}
+
+/** Fetch enriched order rows (products, stock, pending payment methods) for an explicit id list. */
+export async function loadOrderRowsByIds(ids: string[]) {
+  const { supabase } = await requireProfile();
+  const rows = await loadOrdersByIds(supabase, ids);
+  return { rows };
+}
+
+/**
+ * Load the full lightweight order index for the client-side in-memory search
+ * (instant order type-ahead on the orders list). Re-authenticates per call.
+ */
+export async function loadOrderSearchIndex() {
+  const { supabase } = await requireProfile();
+  const orders = await loadOrderSearchIndexRows(supabase);
+  return { orders };
+}
+
+/**
+ * Order ids reached only through a line item's product/notes or the order's
+ * own notes — the "deep content" matches the instant customer/branch index
+ * can't see. Run in the background after the instant paint.
+ */
+export async function findOrderContentMatches(query: string) {
+  const { supabase } = await requireProfile();
+  const { ids } = await findOrderIdsMatchingContent(supabase, query, 300);
+  return { ids };
 }
 
 /** Fetch the next page of price-list products for the infinite-scroll list. */

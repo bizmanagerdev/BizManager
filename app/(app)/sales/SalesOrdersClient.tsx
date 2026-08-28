@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { CheckIcon, ChevronDownIcon, CommentIcon, EditIcon, NotificationIcon, SearchIcon } from "@/components/ui/icons";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { useOfflineRows } from "@/hooks/useOfflineRows";
@@ -10,8 +10,10 @@ import StaleDataBadge from "@/components/layout/StaleDataBadge";
 import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { SwipeActions } from "@/components/ui/swipe-actions";
-import { loadMoreOrders } from "@/app/(app)/sales/actions";
+import { findOrderContentMatches, loadMoreOrders, loadOrderRowsByIds } from "@/app/(app)/sales/actions";
 import type { OrdersFilters } from "@/app/(app)/sales/loadOrders";
+import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
+import { searchOrderEntries, useOrderSearchIndex, type OrderSearchIndexEntry } from "@/hooks/useOrderSearchIndex";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import OrderPaymentDialog from "@/app/(app)/sales/orders/OrderPaymentDialog";
 import InvoiceQuickMenu from "@/app/(app)/sales/orders/InvoiceQuickMenu";
@@ -302,6 +304,50 @@ function isActiveOrder(status: string) {
   return !["closed", "cancelled", "delivered", "completed"].includes(normalizeOrderStatus(status));
 }
 
+/** Same tab/customer/invoice scoping loadOrdersPage applies server-side, replicated for the client search index. */
+function passesActiveScope(
+  entry: OrderSearchIndexEntry,
+  tab: "orders" | "closed",
+  customerId: string | null,
+  invoiceFilter: InvoiceFilter
+) {
+  const active = isActiveOrder(entry.status);
+  if (tab === "orders" && !active) return false;
+  if (tab === "closed" && active) return false;
+  if (customerId && entry.customer_id !== customerId) return false;
+  if (invoiceFilter === "needs" && entry.needs_invoice !== true) return false;
+  if (invoiceFilter === "no" && entry.needs_invoice !== false) return false;
+  if (invoiceFilter === "pending" && !(entry.needs_invoice === true && !entry.invoice_sent_at)) return false;
+  if (invoiceFilter === "sent" && !entry.invoice_sent_at) return false;
+  return true;
+}
+
+/** A just-matched, not-yet-enriched row — zero-filled financial fields, replaced within ~300ms. */
+function toBasicOrderRow(entry: OrderSearchIndexEntry): Row {
+  return {
+    order_id: entry.id,
+    customer_id: entry.customer_id,
+    customer_name: entry.customer_name,
+    customer_branch_name: entry.customer_branch_name,
+    branch_id: entry.branch_id,
+    order_date: entry.order_date,
+    status: entry.status,
+    total_amount: 0,
+    total_paid: 0,
+    pending_amount: 0,
+    overdue_amount: 0,
+    needs_invoice: entry.needs_invoice,
+    invoice_sent_at: entry.invoice_sent_at,
+    delivery_confirmed_at: null,
+    out_of_stock: false,
+    customer_requires_prepayment: false,
+    products: [],
+    pending_payment_methods: [],
+    pending_check_number: null,
+    notes: null,
+  };
+}
+
 function shouldShowPaymentAction(row: OrderView) {
   return row.remainingBalance > 0.009 || row.totalPaid > row.totalAmount + 0.009;
 }
@@ -441,31 +487,99 @@ export default function SalesOrdersClient({
     });
   }
 
-  // Push search changes to the URL so the server re-queries across the full dataset.
-  const lastPushedQueryRef = useRef(initialQuery);
+  // Client-side instant search: match the cached order + customer indexes in
+  // memory (no network round-trip per keystroke), paint immediately, then
+  // enrich with real financials and sweep for deep (order/line-item content)
+  // matches in the background. Replaces the old debounced router.push-per-keystroke.
+  const orderTab: "orders" | "closed" = showPaymentStatusFilter ? "closed" : "orders";
+  const { entries: customerIndexEntries } = useCustomerSearchIndex();
+  const { entries: orderIndexEntries, loading: orderIndexLoading } = useOrderSearchIndex();
+  const [apiSearchRows, setApiSearchRows] = useState<Row[] | null>(null);
+
   useEffect(() => {
-    if (query === lastPushedQueryRef.current) return;
-    // Offline, searching is in-memory over the cached list — never push a URL
-    // change (the server re-query would just fail and clobber the cached view).
-    if (offline) return;
-    const timer = setTimeout(() => {
-      const params = new URLSearchParams(searchParams.toString());
-      if (query.trim()) {
-        params.set("q", query.trim());
-      } else {
-        params.delete("q");
+    const q = query.trim();
+    if (!q || offline) {
+      // Clearing the previous search's results when the box empties or the
+      // connection drops — same pattern as CustomersClient's search effect.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setApiSearchRows(null);
+      return;
+    }
+    if (orderIndexLoading) return;
+    let cancelled = false;
+
+    const nameMatches = searchOrderEntries(orderIndexEntries, q, customerIndexEntries, 100).filter((entry) =>
+      passesActiveScope(entry, orderTab, customerId ?? null, invoiceFilter)
+    );
+    const basicRows = nameMatches.map(toBasicOrderRow);
+    // A payment-status filter needs real totals, unavailable until enrichment —
+    // skip the instant (zero-total) paint for that combo rather than flash rows
+    // that would immediately get filtered back out.
+    const skipInstantPaint = showPaymentStatusFilter && paymentFilter !== "all";
+    if (!skipInstantPaint) setApiSearchRows(basicRows);
+
+    const timer = setTimeout(async () => {
+      try {
+        const { ids: contentIds } = await findOrderContentMatches(q);
+        const knownIds = new Set(nameMatches.map((entry) => entry.id));
+        const extraEntries = contentIds
+          .map((id) => orderIndexEntries.find((entry) => entry.id === id))
+          .filter((entry): entry is OrderSearchIndexEntry => entry != null && !knownIds.has(entry.id))
+          .filter((entry) => passesActiveScope(entry, orderTab, customerId ?? null, invoiceFilter));
+        const allMatches = [...nameMatches, ...extraEntries];
+        if (cancelled) return;
+        const allBasicRows = [...basicRows, ...extraEntries.map(toBasicOrderRow)];
+        if (!skipInstantPaint) setApiSearchRows(allBasicRows);
+
+        const { rows: enriched } = await loadOrderRowsByIds(allMatches.map((entry) => entry.id));
+        if (cancelled) return;
+        const enrichedById = new Map(enriched.map((row) => [getString(row, ["order_id", "id"]) ?? "", row]));
+        let finalRows = allBasicRows.map((row) => enrichedById.get(getString(row, ["order_id", "id"]) ?? "") ?? row);
+        if (showPaymentStatusFilter && paymentFilter !== "all") {
+          finalRows = finalRows.filter((row) => {
+            const total = getNumber(row, ["total_amount"]) ?? 0;
+            const paid = getNumber(row, ["total_paid"]) ?? 0;
+            return derivePaymentStatus(total, paid) === paymentFilter;
+          });
+        }
+        setApiSearchRows(finalRows);
+      } catch {
+        // Keep whatever's shown (or nothing, if skipped) on failure.
       }
-      params.delete("ordersPage");
-      const qs = params.toString();
-      router.push(qs ? `/sales?${qs}` : "/sales", { scroll: false });
-      lastPushedQueryRef.current = query;
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [query, router, searchParams, offline]);
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [
+    query,
+    offline,
+    orderIndexEntries,
+    customerIndexEntries,
+    orderIndexLoading,
+    orderTab,
+    customerId,
+    invoiceFilter,
+    showPaymentStatusFilter,
+    paymentFilter,
+  ]);
+
+  // While the client search index is driving the list, infinite-scroll's "load
+  // more" would fetch more of the underlying unfiltered list, not more search
+  // matches — hide the sentinel so it doesn't fire a pointless fetch.
+  const isClientSearching = !offline && query.trim().length > 0 && apiSearchRows != null;
+
+  // Online: the client search above already produced the match set (when
+  // searching). Offline: fall back to the cached, unfiltered list — filteredRows
+  // below applies the in-memory substring filter for that case.
+  const effectiveOrders = useMemo(() => {
+    if (!offline && query.trim() && apiSearchRows) return apiSearchRows;
+    return sourceOrders;
+  }, [offline, query, sourceOrders, apiSearchRows]);
 
   const orderRows = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
-    const mappedOrders = sourceOrders.map<OrderView | null>((row) => {
+    const mappedOrders = effectiveOrders.map<OrderView | null>((row) => {
       const id = getString(row, ["order_id", "id"]);
       const customerId = getString(row, ["customer_id"]);
       if (!id || !customerId) return null;
@@ -538,7 +652,7 @@ export default function SalesOrdersClient({
     });
 
     return mappedOrders.filter((row): row is OrderView => row !== null);
-  }, [sourceOrders, paymentSnapshot]);
+  }, [effectiveOrders, paymentSnapshot]);
 
   // Online, the server already filtered by the `q` / `payment_status` URL params
   // across the full dataset. Offline, filter the cached list in memory so search
@@ -837,7 +951,7 @@ export default function SalesOrdersClient({
                   ))}
                 </tbody>
               </table>
-              {hasMore && !offline ? <div ref={sentinelRef} className="h-1" /> : null}
+              {hasMore && !offline && !isClientSearching ? <div ref={sentinelRef} className="h-1" /> : null}
             </div>
           </Card>
 
@@ -1052,7 +1166,7 @@ export default function SalesOrdersClient({
               );
             })}
           </div>
-          {hasMore && !offline ? <div ref={mobileSentinelRef} className="h-1 xl:hidden" /> : null}
+          {hasMore && !offline && !isClientSearching ? <div ref={mobileSentinelRef} className="h-1 xl:hidden" /> : null}
           </div>
           <div className="pt-3 text-center text-xs text-muted-foreground">
             {loadingMore

@@ -13,8 +13,10 @@ import PageAlertBar from "@/components/reminders/PageAlertBar";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { SwipeActions } from "@/components/ui/swipe-actions";
 import { NativeSelect } from "@/components/ui/native-select";
-import { loadMoreProjects } from "@/app/(app)/projects/actions";
+import { findProjectContentMatches, loadMoreProjects, loadProjectRowsByIds } from "@/app/(app)/projects/actions";
 import type { ProjectsFilters } from "@/app/(app)/projects/loadProjects";
+import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
+import { searchProjectEntries, useProjectSearchIndex, type ProjectSearchIndexEntry } from "@/hooks/useProjectSearchIndex";
 import { ChatIcon, DocumentIcon, EditIcon, FilterIcon, ProjectIcon, SearchIcon, SuccessIcon } from "@/components/ui/icons";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { paymentStatusClasses } from "@/lib/orders/paymentStatus";
@@ -103,6 +105,51 @@ function toInitialProject(row: ProjectRow): InitialProject {
     destination_floor: getString(row, "destination_floor"),
     destination_has_elevator:
       row["destination_has_elevator"] === true ? true : row["destination_has_elevator"] === false ? false : null,
+  };
+}
+
+const SEARCH_INDEX_CLOSED_STATUSES = ["quote", "completed"];
+
+/** Same tab/status/customer scoping loadProjectsPage applies server-side, replicated for the client search index. */
+function passesActiveScope(
+  entry: ProjectSearchIndexEntry,
+  activeTab: ProjectsView,
+  statusFilter: string,
+  customerId: string | null
+) {
+  if (activeTab === "quotes" && entry.status !== "quote") return false;
+  if (activeTab === "closed" && entry.status !== "completed") return false;
+  if (activeTab === "projects" && SEARCH_INDEX_CLOSED_STATUSES.includes(entry.status)) return false;
+  if (statusFilter !== "all" && entry.status !== statusFilter) return false;
+  if (customerId && entry.customer_id !== customerId) return false;
+  return true;
+}
+
+/** A just-matched, not-yet-enriched row — zero-filled financial fields, replaced within ~300ms. */
+function toBasicProjectRow(entry: ProjectSearchIndexEntry): ProjectRow {
+  return {
+    id: entry.id,
+    name: entry.name,
+    status: entry.status,
+    project_type: entry.project_type,
+    start_date: entry.start_date,
+    customer_id: entry.customer_id,
+    customer_name: entry.customer_name,
+    total_expenses: 0,
+    gross_profit: null,
+    total_tasks: 0,
+    completed_tasks: 0,
+    open_tasks: 0,
+    customer_phone: null,
+    customer_total_price: 0,
+    paid_total: 0,
+    amount_due: 0,
+    outstanding_amount: 0,
+    overdue_amount: 0,
+    payment_status_list: "unpriced",
+    collection_status: "unpriced",
+    late_amount: 0,
+    expected_amount: 0,
   };
 }
 
@@ -356,6 +403,57 @@ export default function ProjectsClient({
     projects
   );
 
+  // Client-side instant search: match the cached project + customer indexes in
+  // memory (no network round-trip per keystroke), paint immediately, then
+  // enrich with real financials and sweep for deep (task/comment) matches in
+  // the background. Replaces the old debounced router.push-per-keystroke.
+  const { entries: customerIndexEntries } = useCustomerSearchIndex();
+  const { entries: projectIndexEntries, loading: projectIndexLoading } = useProjectSearchIndex();
+  const [apiSearchRows, setApiSearchRows] = useState<ProjectRow[] | null>(null);
+  const scopeCustomerId = searchParams.get("customer_id");
+
+  useEffect(() => {
+    const q = query.trim();
+    if (!q || offline) {
+      setApiSearchRows(null);
+      return;
+    }
+    if (projectIndexLoading) return;
+    let cancelled = false;
+
+    const nameMatches = searchProjectEntries(projectIndexEntries, q, customerIndexEntries, 100).filter(
+      (entry) => passesActiveScope(entry, activeTab, status, scopeCustomerId)
+    );
+    const basicRows = nameMatches.map(toBasicProjectRow);
+    setApiSearchRows(basicRows);
+
+    const timer = setTimeout(async () => {
+      try {
+        const { ids: contentIds } = await findProjectContentMatches(q);
+        const knownIds = new Set(nameMatches.map((entry) => entry.id));
+        const extraEntries = contentIds
+          .map((id) => projectIndexEntries.find((entry) => entry.id === id))
+          .filter((entry): entry is ProjectSearchIndexEntry => entry != null && !knownIds.has(entry.id))
+          .filter((entry) => passesActiveScope(entry, activeTab, status, scopeCustomerId));
+        const allMatches = [...nameMatches, ...extraEntries];
+        if (cancelled) return;
+        const allBasicRows = [...basicRows, ...extraEntries.map(toBasicProjectRow)];
+        setApiSearchRows(allBasicRows);
+
+        const { rows: enriched } = await loadProjectRowsByIds(allMatches.map((entry) => entry.id));
+        if (cancelled) return;
+        const enrichedById = new Map(enriched.map((row) => [getString(row, "id") ?? "", row]));
+        setApiSearchRows(allBasicRows.map((row) => enrichedById.get(getString(row, "id") ?? "") ?? row));
+      } catch {
+        // Keep the instant basic rows on failure — still searchable, just unenriched.
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query, offline, projectIndexEntries, customerIndexEntries, projectIndexLoading, activeTab, status, scopeCustomerId]);
+
   // Push filter changes to URL — server re-fetches with the new filters applied
   // across the full dataset, then we get a fresh paginated slice back.
   const pushFilters = useCallback(
@@ -383,22 +481,6 @@ export default function ProjectsClient({
     },
     [activeTab, status, sort, query, router, searchParams]
   );
-
-  // Debounced search submission to URL
-  const initialQueryRef = useRef(initialFilters?.q ?? "");
-  useEffect(() => {
-    if (query === initialQueryRef.current) return;
-    // Offline, searching is in-memory over the cached list — never push a URL
-    // change (the server re-query would fail and clobber the cached view).
-    if (offline) return;
-    const timer = setTimeout(() => {
-      pushFilters({ q: query });
-      initialQueryRef.current = query;
-    }, 400);
-    return () => clearTimeout(timer);
-    // pushFilters intentionally omitted to avoid resending on its own changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, offline]);
 
   const setStatus = (next: string) => pushFilters({ status: next });
   const setSort = (next: SortMode) => pushFilters({ sort: next });
@@ -475,12 +557,20 @@ export default function ProjectsClient({
   // (by customer or project name) still works with no signal.
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!offline || !q) return sourceProjects;
+    if (!q) return sourceProjects;
+    // Online: the client search index above already produced the match set.
+    // Offline: fall back to filtering the cached list in memory.
+    if (!offline) return apiSearchRows ?? sourceProjects;
     return sourceProjects.filter((row) =>
       [getString(row, "name"), getString(row, "customer_name")]
         .some((field) => (field ?? "").toLowerCase().includes(q))
     );
-  }, [offline, query, sourceProjects]);
+  }, [offline, query, sourceProjects, apiSearchRows]);
+
+  // While the client search index is driving `rows`, infinite-scroll's "load
+  // more" would fetch more of the underlying unfiltered list, not more search
+  // matches — hide the sentinel so it doesn't fire a pointless fetch.
+  const isClientSearching = !offline && query.trim().length > 0 && apiSearchRows != null;
 
   const projectCount = tabCounts?.projects ?? 0;
   const quoteCount = tabCounts?.quotes ?? 0;
@@ -1024,7 +1114,7 @@ export default function ProjectsClient({
               })}
             </tbody>
           </table>
-          {hasMore && !offline ? <div ref={sentinelRef} className="h-1" /> : null}
+          {hasMore && !offline && !isClientSearching ? <div ref={sentinelRef} className="h-1" /> : null}
         </div>
       </Card>
 
@@ -1192,7 +1282,7 @@ export default function ProjectsClient({
           );
         })}
       </div>
-      {hasMore && !offline ? <div ref={mobileSentinelRef} className="h-1 xl:hidden" /> : null}
+      {hasMore && !offline && !isClientSearching ? <div ref={mobileSentinelRef} className="h-1 xl:hidden" /> : null}
 
       {rows.length > 0 ? (
         <div className="pt-1 text-center text-xs text-muted-foreground">

@@ -272,7 +272,33 @@ export async function loadOrdersPage(
 
   const { data, error, count } = await ordersQuery.range(from, to);
   const rows = (data ?? []) as Row[];
+  const rowsWithDue = await enrichOrderRows(supabase, rows);
 
+  const totalCount = typeof count === "number" ? count : rows.length;
+  // Drive "has more" off page fullness, not the estimated count.
+  const hasMore = rows.length === ORDERS_PAGE_SIZE;
+
+  return { rows: rowsWithDue, totalCount, hasMore, error: error?.message ?? null };
+}
+
+/**
+ * Load full order_overview_view rows (enriched with products, stock, pending
+ * payment methods, due dates) for an explicit id list — used by the
+ * client-side search index to fetch real data for its currently-matched rows
+ * without paginating through the whole list.
+ */
+export async function loadOrdersByIds(supabase: SupabaseClient, ids: string[]): Promise<Row[]> {
+  if (ids.length === 0) return [];
+  const { data } = await supabase.from("order_overview_view").select(ORDER_SELECT).in("order_id", ids);
+  return enrichOrderRows(supabase, (data ?? []) as Row[]);
+}
+
+/**
+ * Enrich base order rows (order_overview_view columns) with product summaries,
+ * out-of-stock flags, pending payment methods, prepayment flags and effective
+ * due dates. Shared by the paginated list load above and loadOrdersByIds.
+ */
+async function enrichOrderRows(supabase: SupabaseClient, rows: Row[]): Promise<Row[]> {
   const allOrderIds = rows
     .map((r) => (typeof r.order_id === "string" ? r.order_id : ""))
     .filter(Boolean);
@@ -312,7 +338,7 @@ export async function loadOrdersPage(
   const outOfStockIds = deriveOutOfStockOrderIds(itemRows, openOrderIds, availableByProduct);
   const productsByOrder = buildOrderProductSummaries(itemRows, nameByProduct);
 
-  const rowsWithDue = rows.map((r) => {
+  return rows.map((r) => {
     const orderId = typeof r.order_id === "string" ? r.order_id : "";
     const customerId = typeof r.customer_id === "string" ? r.customer_id : "";
     const pending = pendingMethodsByOrder.get(orderId);
@@ -326,10 +352,56 @@ export async function loadOrdersPage(
       customer_requires_prepayment: prepaymentCustomerIds.has(customerId),
     };
   });
+}
 
-  const totalCount = typeof count === "number" ? count : rows.length;
-  // Drive "has more" off page fullness, not the estimated count.
-  const hasMore = rows.length === ORDERS_PAGE_SIZE;
+/** A lightweight order row for the in-memory client search index. */
+export type OrderSearchIndexEntry = {
+  id: string;
+  customer_id: string;
+  customer_name: string;
+  branch_id: string | null;
+  customer_branch_name: string | null;
+  status: string;
+  order_date: string | null;
+  needs_invoice: boolean | null;
+  invoice_sent_at: string | null;
+};
 
-  return { rows: rowsWithDue, totalCount, hasMore, error: error?.message ?? null };
+const SEARCH_INDEX_ORDER_CAP = 20000;
+
+/**
+ * Load EVERY order (lightweight — identity fields only, no payment
+ * aggregation) for the client-side search index. Fetched once per session and
+ * searched in memory so order type-ahead is instant instead of a network
+ * round-trip per keystroke; matched rows are then enriched via loadOrdersByIds.
+ * Reads straight from orders/customers/customer_branches — not
+ * order_overview_view, which forces a full payments aggregation this index
+ * doesn't need.
+ */
+export async function loadOrderSearchIndexRows(supabase: SupabaseClient): Promise<OrderSearchIndexEntry[]> {
+  const { data } = await supabase
+    .from("orders")
+    .select(
+      "id,customer_id,branch_id,status,order_date,needs_invoice,invoice_sent_at,customers(name),customer_branches(name)"
+    )
+    .order("order_date", { ascending: false })
+    .range(0, SEARCH_INDEX_ORDER_CAP - 1);
+
+  return ((data ?? []) as Row[])
+    .map((row) => {
+      const customer = row?.customers as { name?: string } | null;
+      const branch = row?.customer_branches as { name?: string } | null;
+      return {
+        id: typeof row?.id === "string" ? row.id : "",
+        customer_id: typeof row?.customer_id === "string" ? row.customer_id : "",
+        customer_name: typeof customer?.name === "string" ? customer.name : "",
+        branch_id: typeof row?.branch_id === "string" ? row.branch_id : null,
+        customer_branch_name: typeof branch?.name === "string" ? branch.name : null,
+        status: typeof row?.status === "string" ? row.status : "",
+        order_date: typeof row?.order_date === "string" ? row.order_date : null,
+        needs_invoice: typeof row?.needs_invoice === "boolean" ? row.needs_invoice : null,
+        invoice_sent_at: typeof row?.invoice_sent_at === "string" ? row.invoice_sent_at : null,
+      };
+    })
+    .filter((entry) => entry.id);
 }

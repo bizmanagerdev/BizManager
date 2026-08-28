@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { computeSourceCollection } from "@/lib/collections";
 import { findMatchingCustomers } from "@/lib/search/findMatchingCustomers";
 import { findProjectIdsMatchingContent } from "@/lib/search/findMatchingChildIds";
+import { projectTypesMatching } from "@/lib/search/projectTypeLabels";
 
 type Row = Record<string, unknown>;
 
@@ -19,26 +20,8 @@ export type ProjectsFilters = {
 export const PROJECTS_PAGE_SIZE = 50;
 const CLOSED_STATUSES = ["quote", "completed"];
 
-// project_type is a Postgres ENUM (project_type_enum), so it has no ILIKE
-// operator — filtering it with `ilike` raises
-// "operator does not exist: project_type_enum ~~* unknown" and the whole search
-// fails. Match the typed text against the type's Hebrew label (and its raw
-// value) here instead, then filter with `in.(…)` on the resolved values.
-const PROJECT_TYPE_LABELS: Record<string, string> = {
-  logistics: "לוגיסטיקה",
-  moving: "הובלה",
-  construction: "שיפוצים",
-  home: "בית",
-  other: "אחר",
-};
-
-function projectTypesMatching(rawQuery: string) {
-  const needle = rawQuery.trim().toLowerCase();
-  if (!needle) return [];
-  return Object.entries(PROJECT_TYPE_LABELS)
-    .filter(([value, label]) => label.includes(needle) || value.includes(needle))
-    .map(([value]) => value);
-}
+const PROJECT_DASHBOARD_SELECT =
+  "id,name,status,project_type,start_date,end_date,agreed_base_price,actual_price,customer_id,customer_name,project_manager_id,project_manager_name,created_at,updated_at,total_expenses,gross_profit,total_tasks,completed_tasks,open_tasks";
 
 function toNumber(value: unknown) {
   if (typeof value === "number") return value;
@@ -72,10 +55,7 @@ export async function loadProjectsPage(
 
   let query = supabase
     .from("project_dashboard_view")
-    .select(
-      "id,name,status,project_type,start_date,end_date,agreed_base_price,actual_price,customer_id,customer_name,project_manager_id,project_manager_name,created_at,updated_at,total_expenses,gross_profit,total_tasks,completed_tasks,open_tasks",
-      { count: "estimated" }
-    );
+    .select(PROJECT_DASHBOARD_SELECT, { count: "estimated" });
 
   if (view === "quotes") {
     query = query.eq("status", "quote");
@@ -125,6 +105,34 @@ export async function loadProjectsPage(
   const { data, error, count } = await query.range(from, to);
 
   const rows = (data ?? []) as Row[];
+  const rowsWithPaymentStatus = await enrichProjectRows(supabase, rows);
+
+  const totalCount = typeof count === "number" ? count : rows.length;
+  // Drive "has more" off page fullness, not the estimated count (estimates for a
+  // view can be wildly off, which would either stall the scroll or loop).
+  const hasMore = rows.length === PROJECTS_PAGE_SIZE;
+
+  return { rows: rowsWithPaymentStatus, totalCount, hasMore, error: error?.message ?? null };
+}
+
+/**
+ * Load the full project_dashboard_view rows (enriched with settings, financials
+ * and collection status) for an explicit id list — used by the client-side
+ * search index to fetch real data for its currently-matched rows without
+ * paginating through the whole list.
+ */
+export async function loadProjectsByIds(supabase: SupabaseClient, ids: string[]): Promise<Row[]> {
+  if (ids.length === 0) return [];
+  const { data } = await supabase.from("project_dashboard_view").select(PROJECT_DASHBOARD_SELECT).in("id", ids);
+  return enrichProjectRows(supabase, (data ?? []) as Row[]);
+}
+
+/**
+ * Enrich base project rows (id/customer_id/status/financial-view columns) with
+ * per-project settings, financials and a term-aware collection status. Shared
+ * by the paginated list load above and loadProjectsByIds.
+ */
+async function enrichProjectRows(supabase: SupabaseClient, rows: Row[]): Promise<Row[]> {
   const projectIds = rows
     .map((row) => (typeof row?.id === "string" ? row.id : ""))
     .filter(Boolean);
@@ -190,7 +198,7 @@ export async function loadProjectsPage(
     financialByProjectId.set(projectId, row);
   });
 
-  const rowsWithPaymentStatus = rows.map((row) => {
+  return rows.map((row) => {
     const projectId = typeof row?.id === "string" ? row.id : "";
     const financialRow = financialByProjectId.get(projectId) ?? null;
     const actualPrice = toNumber(row?.actual_price);
@@ -282,11 +290,48 @@ export async function loadProjectsPage(
       expected_amount: sourceCollection?.expected ?? 0,
     };
   });
+}
 
-  const totalCount = typeof count === "number" ? count : rows.length;
-  // Drive "has more" off page fullness, not the estimated count (estimates for a
-  // view can be wildly off, which would either stall the scroll or loop).
-  const hasMore = rows.length === PROJECTS_PAGE_SIZE;
+/** A lightweight project row for the in-memory client search index. */
+export type ProjectSearchIndexEntry = {
+  id: string;
+  name: string;
+  customer_id: string;
+  customer_name: string;
+  status: string;
+  project_type: string;
+  start_date: string | null;
+};
 
-  return { rows: rowsWithPaymentStatus, totalCount, hasMore, error: error?.message ?? null };
+const SEARCH_INDEX_PROJECT_CAP = 20000;
+
+/**
+ * Load EVERY project (lightweight — identity fields only, no financials) for
+ * the client-side search index. Fetched once per session and searched in
+ * memory so project type-ahead is instant instead of a network round-trip per
+ * keystroke; matched rows are then enriched via loadProjectsByIds.
+ */
+export async function loadProjectSearchIndexRows(
+  supabase: SupabaseClient
+): Promise<ProjectSearchIndexEntry[]> {
+  const { data } = await supabase
+    .from("projects")
+    .select("id,name,customer_id,status,project_type,start_date,customers(name)")
+    .order("name", { ascending: true })
+    .range(0, SEARCH_INDEX_PROJECT_CAP - 1);
+
+  return ((data ?? []) as Row[])
+    .map((row) => {
+      const customer = row?.customers as { name?: string } | null;
+      return {
+        id: typeof row?.id === "string" ? row.id : "",
+        name: typeof row?.name === "string" ? row.name : "",
+        customer_id: typeof row?.customer_id === "string" ? row.customer_id : "",
+        customer_name: typeof customer?.name === "string" ? customer.name : "",
+        status: typeof row?.status === "string" ? row.status : "",
+        project_type: typeof row?.project_type === "string" ? row.project_type : "",
+        start_date: typeof row?.start_date === "string" ? row.start_date : null,
+      };
+    })
+    .filter((entry) => entry.id);
 }
