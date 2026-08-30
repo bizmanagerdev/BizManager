@@ -36,26 +36,34 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
     .maybeSingle();
   if (!statement?.id) notFound();
 
-  const [{ data: rowRows }, { data: projectRows }, { data: propertyRows }, { data: orderRows }] = await Promise.all([
-    supabase
-      .from("card_statement_rows")
-      .select(
-        "id,expense_id,income_payment_id,expense_date,transaction_date,amount,description,category,business_domain,project_id,property_id,notes,assignment_raw,include," +
-          "expense:expenses(id,amount,category,description,business_domain,project_id,property_id,expense_date,transaction_date,notes)," +
-          "income_payment:payments(id,amount_total)"
-      )
-      .eq("statement_id", id)
-      .order("row_index", { ascending: true, nullsFirst: false })
-      .order("created_at", { ascending: true }),
-    supabase.from("projects").select("id,name").order("name", { ascending: true }),
-    supabase.from("properties").select("id,name,address").order("address", { ascending: true }),
-    // Orders for the income source picker — labeled by customer + date (orders have no number).
-    supabase
-      .from("orders")
-      .select("id,order_date,customer:customers(name)")
-      .order("order_date", { ascending: false })
-      .limit(500),
-  ]);
+  const [{ data: rowRows }, { data: projectRows }, { data: propertyRows }, { data: orderRows }, { data: chargeRows }, { data: mappingRows }] =
+    await Promise.all([
+      supabase
+        .from("card_statement_rows")
+        .select(
+          "id,expense_id,income_payment_id,expense_date,transaction_date,amount,description,category,card_label,business_domain,project_id,property_id,notes,assignment_raw,include," +
+            "expense:expenses(id,amount,category,description,business_domain,project_id,property_id,expense_date,transaction_date,notes)," +
+            "income_payment:payments(id,amount_total)"
+        )
+        .eq("statement_id", id)
+        .order("row_index", { ascending: true, nullsFirst: false })
+        .order("created_at", { ascending: true }),
+      supabase.from("projects").select("id,name").order("name", { ascending: true }),
+      supabase.from("properties").select("id,name,address").order("address", { ascending: true }),
+      // Orders for the income source picker — labeled by customer + date (orders have no number).
+      supabase
+        .from("orders")
+        .select("id,order_date,customer:customers(name)")
+        .order("order_date", { ascending: false })
+        .limit(500),
+      // This statement's own lump-sum bank charges (one per card, if recorded).
+      supabase
+        .from("card_statement_charges")
+        .select("id,card_label,account_id,amount,charge_date,notes")
+        .eq("statement_id", id),
+      // Remembered card → account choice, for pre-filling a card that hasn't been charged yet.
+      supabase.from("card_account_mappings").select("card_key,account_id"),
+    ]);
 
   const projects: Option[] = ((projectRows ?? []) as Option[]).filter(
     (r) => typeof r.id === "string" && typeof r.name === "string"
@@ -91,6 +99,8 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
       amount: Number(live?.amount ?? r.amount ?? 0),
       description: String(live?.description ?? r.description ?? ""),
       category: String(live?.category ?? r.category ?? ""),
+      // Stable card identity — falls back to category for a pre-migration row.
+      cardLabel: String((r.card_label ?? r.category ?? "") || ""),
       businessDomain: String(live?.business_domain ?? r.business_domain ?? ""),
       projectId: String((live?.project_id ?? r.project_id ?? "") || ""),
       propertyId: String((live?.property_id ?? r.property_id ?? "") || ""),
@@ -112,6 +122,23 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
     fileUrl = signed?.signedUrl ?? null;
   }
 
+  const cardCharges = ((chargeRows ?? []) as Record<string, unknown>[])
+    .filter((r) => typeof r.id === "string")
+    .map((r) => ({
+      id: String(r.id),
+      cardLabel: String(r.card_label ?? ""),
+      accountId: String(r.account_id ?? ""),
+      amount: Number(r.amount ?? 0),
+      chargeDate: String(r.charge_date ?? "").slice(0, 10),
+      notes: typeof r.notes === "string" ? r.notes : null,
+    }));
+  const cardAccountDefaults: Record<string, string> = {};
+  for (const r of (mappingRows ?? []) as Record<string, unknown>[]) {
+    const key = typeof r.card_key === "string" ? r.card_key : "";
+    const accountId = typeof r.account_id === "string" ? r.account_id : "";
+    if (key && accountId) cardAccountDefaults[key] = accountId;
+  }
+
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <StatementDetailClient
@@ -129,6 +156,8 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
         properties={properties}
         orders={orders}
         fileUrl={fileUrl}
+        cardCharges={cardCharges}
+        cardAccountDefaults={cardAccountDefaults}
       />
     </AppShell>
   );

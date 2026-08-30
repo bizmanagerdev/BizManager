@@ -13,6 +13,11 @@ import {
   parseAmount,
   parseDateToIso,
   parseStatementLines,
+  detectHeaderRow,
+  extractCardName,
+  findColumn,
+  FIELD_TOKENS,
+  FALLBACK_CATEGORY,
   type ParsedTxn,
   type MerchantMemory,
 } from "@/lib/financial/cardImport";
@@ -35,58 +40,10 @@ type ReviewRow = {
   propertyId: string;
 };
 
-const FALLBACK_CATEGORY = "כרטיס אשראי";
-
 // ── Parsing helpers ─────────────────────────────────────────────────────────
-// norm / parseAmount / parseDateToIso / parseStatementLines live in
+// norm / parseAmount / parseDateToIso / parseStatementLines / detectHeaderRow /
+// extractCardName / findColumn / FIELD_TOKENS / FALLBACK_CATEGORY live in
 // @/lib/financial/cardImport (pure + unit-tested).
-
-const FIELD_TOKENS = {
-  date: ["תאריך חיוב", "מועד חיוב", "תאריך החיוב", "תאריך"],
-  amount: ["סכום חיוב", "סכום החיוב", "סכום לחיוב", "סכום בשח", "סכום בש", "חיוב", "סכום"],
-  merchant: ["שם בית עסק", "שם בית העסק", "בית עסק", "בית העסק", "תיאור עסקה", "תיאור", "שם"],
-  txnDate: ["תאריך עסקה", "תאריך העסקה", "מועד עסקה"],
-  assignment: ["שיוך", "שיוך עסקי", "קטגוריה", "תחום"],
-} as const;
-
-function findColumn(header: string[], tokens: readonly string[]): number {
-  for (const token of tokens) {
-    const idx = header.findIndex((cell) => norm(cell).includes(token));
-    if (idx !== -1) return idx;
-  }
-  return -1;
-}
-
-function detectHeaderRow(rows: string[][]): number {
-  const limit = Math.min(rows.length, 25);
-  let best = 0;
-  let bestScore = 0;
-  for (let i = 0; i < limit; i++) {
-    const header = rows[i] ?? [];
-    let score = 0;
-    for (const tokens of Object.values(FIELD_TOKENS)) {
-      if (findColumn(header, tokens) !== -1) score += 1;
-    }
-    if (score > bestScore) {
-      bestScore = score;
-      best = i;
-    }
-  }
-  return best;
-}
-
-// A card-section title row, e.g. "חשבון כרטיס: 176606 שם כרטיס: ויזה כאל זהב ארבע ספרות אחרונות 9557".
-function extractCardName(rowCells: string[]): string | null {
-  const joined = rowCells.map((c) => String(c ?? "")).join(" ").trim();
-  if (!joined) return null;
-  if (!/שם כרטיס|חשבון כרטיס|ספרות אחרונות/.test(joined)) return null;
-  const last4 = joined.match(/(\d{4})\s*$/) ?? joined.match(/אחרונות\D*(\d{3,4})/);
-  const digits = last4 ? last4[1] : "";
-  const nameMatch = joined.match(/שם כרטיס[:\s]*(.*?)(?:ארבע ספרות|ספרות אחרונות|$)/);
-  const name = nameMatch ? nameMatch[1].trim() : "";
-  const label = [name, digits].filter(Boolean).join(" ").trim();
-  return label || FALLBACK_CATEGORY;
-}
 
 type Assignment = { include?: boolean; businessDomain?: string; projectId?: string; propertyId?: string };
 
@@ -265,7 +222,18 @@ export default function CardImportClient({
   function applyAutoDetect(sheet: Sheet) {
     const hr = detectHeaderRow(sheet.rows);
     const header = sheet.rows[hr] ?? [];
-    const preset = loadPresets()[sheetSignature(sheet)];
+    const rawPreset = loadPresets()[sheetSignature(sheet)];
+    // Trust a remembered preset only if its own header row still has real text
+    // in the two required columns — otherwise it's stale (most likely saved
+    // against a misdetected header row, e.g. a card-section divider) and
+    // silently mapping blank columns is worse than just re-detecting fresh.
+    const presetHeader = rawPreset ? sheet.rows[rawPreset.headerRow] ?? [] : [];
+    const presetLooksValid =
+      rawPreset != null &&
+      [rawPreset.colDate, rawPreset.colAmount].every(
+        (ci) => ci >= 0 && String(presetHeader[ci] ?? "").trim().length > 0
+      );
+    const preset = presetLooksValid ? rawPreset : undefined;
     const m: MappingPreset = preset ?? {
       headerRow: hr,
       colDate: findColumn(header, FIELD_TOKENS.date),
@@ -514,6 +482,10 @@ export default function CardImportClient({
           amount: r.amount,
           description: r.description,
           category: categoryFor(r.card),
+          // Stable card identity, snapshotted once here — never re-derived
+          // from category again, so a later category edit can't create a
+          // phantom card group (see the card_label migration).
+          card_label: categoryFor(r.card),
           business_domain: r.businessDomain || null,
           project_id: r.businessDomain === "logistics_projects" ? r.projectId || null : null,
           property_id: r.businessDomain === "property_management" ? r.propertyId || null : null,

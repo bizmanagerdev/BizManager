@@ -6,6 +6,10 @@ import {
   shiftIso,
   findDuplicate,
   parseStatementLines,
+  detectHeaderRow,
+  extractCardName,
+  findColumn,
+  FIELD_TOKENS,
   type ExistingExpense,
 } from "@/lib/financial/cardImport";
 
@@ -134,6 +138,67 @@ describe("findDuplicate", () => {
     const prior = existing({ expense_date: "2026-06-01", transaction_date: "2026-06-01", amount: 250, description: "סופר" });
     const dup = findDuplicate({ amount: 250, billingDate: "", txnDate: "", description: "סופר" }, [prior], 3);
     expect(dup).toBeNull();
+  });
+});
+
+describe("extractCardName — card-section divider detection", () => {
+  it("recognizes a divider row", () => {
+    expect(extractCardName(["חשבון כרטיסי: 176606 שם כרטיס: ויזה כאל זהב ארבע ספרות אחרונות 9557"])).toBe(
+      "ויזה כאל זהב 9557"
+    );
+  });
+
+  it("does not misfire on a real header row", () => {
+    expect(extractCardName(["שיוך", "סכום החיוב", "סכום העסקה", "בית העסק", "תאריך העסקה", "תאריך חיוב"])).toBeNull();
+  });
+
+  it("returns null for a blank row", () => {
+    expect(extractCardName(["", "", ""])).toBeNull();
+  });
+});
+
+describe("detectHeaderRow — never picks a card-section divider (regression)", () => {
+  // Exact real-world layout that broke: row 0 is the card-title divider
+  // (mostly blank besides the merged title text), row 1 is the true header,
+  // row 2+ are data. Before the fix, detectHeaderRow defaulted to row 0
+  // (nothing beat its initial bestScore=0), so every mapping dropdown showed
+  // "(ריק)" and the merchant name never made it into the imported rows.
+  const rows = [
+    ["חשבון כרטיסי: 176606 שם כרטיס: ויזה כאל זהב ארבע ספרות אחרונות 9557"],
+    ["שיוך", "סכום החיוב", "סכום העסקה", "בית העסק", "תאריך העסקה", "תאריך חיוב"],
+    ["צדקה", "120", "120", "סועד פת שחרית", "02/07/2026", "02/08/2026"],
+    ["בית", "15", "15", "מוסדות טעפליק", "08/06/2026", "02/08/2026"],
+  ];
+
+  it("skips the divider row and lands on the real header row", () => {
+    expect(detectHeaderRow(rows)).toBe(1);
+  });
+
+  it("the resolved header row correctly locates every field column", () => {
+    const header = rows[detectHeaderRow(rows)];
+    expect(findColumn(header, FIELD_TOKENS.merchant)).toBe(3); // בית העסק
+    expect(findColumn(header, FIELD_TOKENS.amount)).toBe(1); // סכום החיוב
+    expect(findColumn(header, FIELD_TOKENS.date)).toBe(5); // תאריך חיוב
+    expect(findColumn(header, FIELD_TOKENS.txnDate)).toBe(4); // תאריך העסקה
+  });
+
+  it("falls back to the first non-divider row when nothing scores at all", () => {
+    expect(
+      detectHeaderRow([
+        ["חשבון כרטיסי: 1 שם כרטיס: כרטיס א ספרות אחרונות 1111"],
+        ["", "", ""],
+        ["", "", ""],
+      ])
+    ).toBe(1);
+  });
+
+  it("a normal file with the header genuinely on row 0 still works", () => {
+    expect(
+      detectHeaderRow([
+        ["תאריך חיוב", "שם בית עסק", "סכום חיוב"],
+        ["01/06/2026", "סופר", "100"],
+      ])
+    ).toBe(0);
   });
 });
 

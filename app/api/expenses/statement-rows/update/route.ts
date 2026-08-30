@@ -24,6 +24,10 @@ export async function POST(req: Request) {
       expense_date?: string | null;
       transaction_date?: string | null;
       include?: boolean;
+      /** Explicit "reassign to a different card" action only — NEVER derived
+       *  from `category`. Omit to leave the row's card identity untouched
+       *  (an ordinary category edit must never move a row to another card). */
+      card_label?: string | null;
     };
 
     const rowId = typeof body.row_id === "string" ? body.row_id.trim() : "";
@@ -60,6 +64,10 @@ export async function POST(req: Request) {
       businessDomain === "property_management" && typeof body.property_id === "string" && body.property_id.trim()
         ? body.property_id.trim()
         : null;
+    // Present only on an explicit "reassign card" action — never inferred
+    // from category, so an ordinary category edit can't move a row to
+    // another (possibly phantom) card group.
+    const cardLabel = typeof body.card_label === "string" && body.card_label.trim() ? body.card_label.trim() : null;
 
     // ── Draft row (no expense yet): update only the snapshot, domain optional ──────────
     if (!expenseId) {
@@ -75,6 +83,7 @@ export async function POST(req: Request) {
       };
       if (Number.isFinite(amount)) snapshot.amount = amount;
       if (typeof body.include === "boolean") snapshot.include = body.include;
+      if (cardLabel) snapshot.card_label = cardLabel;
       const { error: snapError } = await supabase.from("card_statement_rows").update(snapshot).eq("id", rowId);
       if (snapError) return NextResponse.json({ error: toHebrewError(snapError.message) }, { status: 400 });
       return NextResponse.json({ ok: true });
@@ -138,6 +147,7 @@ export async function POST(req: Request) {
         business_domain: businessDomain,
         project_id: projectId,
         property_id: propertyId,
+        ...(cardLabel ? { card_label: cardLabel } : null),
       })
       .eq("id", rowId);
 

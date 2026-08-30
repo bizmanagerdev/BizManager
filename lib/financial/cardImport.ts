@@ -51,6 +51,68 @@ const MS_PER_DAY = 86_400_000;
 export const norm = (s: unknown) =>
   String(s ?? "").replace(/["׳״'`]/g, "").replace(/\s+/g, " ").trim();
 
+export const FALLBACK_CATEGORY = "כרטיס אשראי";
+
+// Column-header phrase candidates, checked in order, for each parsed field.
+export const FIELD_TOKENS = {
+  date: ["תאריך חיוב", "מועד חיוב", "תאריך החיוב", "תאריך"],
+  amount: ["סכום חיוב", "סכום החיוב", "סכום לחיוב", "סכום בשח", "סכום בש", "חיוב", "סכום"],
+  merchant: ["שם בית עסק", "שם בית העסק", "בית עסק", "בית העסק", "תיאור עסקה", "תיאור", "שם"],
+  txnDate: ["תאריך עסקה", "תאריך העסקה", "מועד עסקה"],
+  assignment: ["שיוך", "שיוך עסקי", "קטגוריה", "תחום"],
+} as const;
+
+export function findColumn(header: string[], tokens: readonly string[]): number {
+  for (const token of tokens) {
+    const idx = header.findIndex((cell) => norm(cell).includes(token));
+    if (idx !== -1) return idx;
+  }
+  return -1;
+}
+
+// A card-section title row, e.g. "חשבון כרטיס: 176606 שם כרטיס: ויזה כאל זהב ארבע ספרות אחרונות 9557".
+export function extractCardName(rowCells: string[]): string | null {
+  const joined = rowCells.map((c) => String(c ?? "")).join(" ").trim();
+  if (!joined) return null;
+  if (!/שם כרטיס|חשבון כרטיס|ספרות אחרונות/.test(joined)) return null;
+  const last4 = joined.match(/(\d{4})\s*$/) ?? joined.match(/אחרונות\D*(\d{3,4})/);
+  const digits = last4 ? last4[1] : "";
+  const nameMatch = joined.match(/שם כרטיס[:\s]*(.*?)(?:ארבע ספרות|ספרות אחרונות|$)/);
+  const name = nameMatch ? nameMatch[1].trim() : "";
+  const label = [name, digits].filter(Boolean).join(" ").trim();
+  return label || FALLBACK_CATEGORY;
+}
+
+/**
+ * Which row of a parsed sheet is the real column-header row. Scores each row
+ * (within the first 25) by how many FIELD_TOKENS categories it matches, and
+ * skips any row that looks like a card-section divider ("חשבון כרטיס: … שם
+ * כרטיס: …") — a divider must never be picked, or its own (mostly blank)
+ * columns get treated as the header for date/amount/merchant, and the whole
+ * mapping step shows every field as empty. Falls back to the first
+ * non-divider row when nothing scores (instead of blindly defaulting to row
+ * 0, which is often the divider itself).
+ */
+export function detectHeaderRow(rows: string[][]): number {
+  const limit = Math.min(rows.length, 25);
+  let best = -1;
+  let bestScore = 0;
+  for (let i = 0; i < limit; i++) {
+    const header = rows[i] ?? [];
+    if (extractCardName(header)) continue;
+    if (best === -1) best = i;
+    let score = 0;
+    for (const tokens of Object.values(FIELD_TOKENS)) {
+      if (findColumn(header, tokens) !== -1) score += 1;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = i;
+    }
+  }
+  return best === -1 ? 0 : best;
+}
+
 export function parseAmount(raw: unknown): number {
   if (typeof raw === "number") return raw;
   let s = String(raw ?? "").trim();

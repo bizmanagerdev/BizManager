@@ -21,6 +21,7 @@ type SaveRow = {
   notes?: string | null;
   assignment_raw?: string | null; // original שיוך text from the sheet
   include?: boolean; // whether to create an expense later (default true)
+  card_label?: string | null; // stable card identity, snapshotted at import — see card_label migration
 };
 
 type StatementMeta = {
@@ -76,6 +77,9 @@ export async function POST(req: Request) {
       const description = typeof row.description === "string" && row.description.trim() ? row.description.trim() : null;
       const notes = typeof row.notes === "string" && row.notes.trim() ? row.notes.trim() : null;
       const category = typeof row.category === "string" && row.category.trim() ? row.category.trim() : FALLBACK_CATEGORY;
+      // Stable card identity — defaults to whatever category was at import
+      // time (they start equal) but is NEVER touched by later category edits.
+      const cardLabel = typeof row.card_label === "string" && row.card_label.trim() ? row.card_label.trim() : category;
       const businessDomain =
         typeof row.business_domain === "string" && row.business_domain.trim() ? row.business_domain.trim() : null;
       const projectId = typeof row.project_id === "string" && row.project_id.trim() ? row.project_id.trim() : null;
@@ -97,6 +101,7 @@ export async function POST(req: Request) {
         notes,
         assignment_raw: assignmentRaw,
         include: row.include === false ? false : true,
+        card_label: cardLabel,
       };
     });
 

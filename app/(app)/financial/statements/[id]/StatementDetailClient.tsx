@@ -13,11 +13,13 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormDialog } from "@/components/ui/form-dialog";
+import { ViewDialog } from "@/components/ui/view-dialog";
 import { getBusinessDomainLabel, isExpenseBusinessDomain } from "@/lib/expenses";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { findDuplicate, norm, shiftIso, type ExistingExpense } from "@/lib/financial/cardImport";
-import { DeleteButton, EditButton } from "@/components/ui/icon-button";
-import { CheckIcon } from "@/components/ui/icons";
+import { DeleteButton, EditButton, IconButton } from "@/components/ui/icon-button";
+import { CheckIcon, LinkIcon } from "@/components/ui/icons";
+import AccountSelect from "@/components/financial/AccountSelect";
 
 type Option = { id: string; name: string };
 
@@ -30,6 +32,10 @@ export type StatementRowView = {
   amount: number;
   description: string;
   category: string;
+  /** Stable "which physical card" identity — set once at import, decoupled
+   *  from the freely-editable category (see the card_label migration). Only
+   *  an explicit reassignment changes it. */
+  cardLabel: string;
   businessDomain: string;
   projectId: string;
   propertyId: string;
@@ -72,6 +78,25 @@ type Statement = {
   markedDone: boolean;
 };
 
+// This statement's card → lump bank charge, if one's been recorded (see the
+// card_statement_charges migration). The real bank hit — ONE line per card,
+// not the itemized detail — see lib/accounts.ts.
+export type CardChargeView = {
+  id: string;
+  cardLabel: string;
+  accountId: string;
+  amount: number;
+  chargeDate: string;
+  notes: string | null;
+};
+
+type ChargeForm = {
+  accountId: string;
+  amount: string;
+  chargeDate: string;
+  notes: string;
+};
+
 // Fixed dedup window (days) — matches the importer's default.
 const DUP_WINDOW = 3;
 
@@ -109,6 +134,8 @@ export default function StatementDetailClient({
   properties,
   orders,
   fileUrl,
+  cardCharges: initialCardCharges,
+  cardAccountDefaults,
 }: {
   statement: Statement;
   rows: StatementRowView[];
@@ -116,6 +143,11 @@ export default function StatementDetailClient({
   properties: Option[];
   orders: Option[];
   fileUrl: string | null;
+  /** Already-recorded lump charges for this statement, one per card. */
+  cardCharges: CardChargeView[];
+  /** Remembered card → account choice (card_key → account_id), for a card
+   *  that hasn't been charged in THIS statement yet. */
+  cardAccountDefaults: Record<string, string>;
 }) {
   const router = useRouter();
   const [rows, setRows] = useState<StatementRowView[]>(initialRows);
@@ -130,6 +162,13 @@ export default function StatementDetailClient({
   const [creating, setCreating] = useState(false);
   const [createNotice, setCreateNotice] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // The 3 supplementary panels (create expenses / charge card / income from
+  // card) open in a dialog on demand instead of sitting inline — 3 stacked
+  // cards pushed the actual row table too far down the page.
+  const [actionDialogOpen, setActionDialogOpen] = useState(false);
+  const [chargeListOpen, setChargeListOpen] = useState(false);
+  const [incomeListOpen, setIncomeListOpen] = useState(false);
 
   const [markedDone, setMarkedDone] = useState(statement.markedDone);
   const [markingDone, setMarkingDone] = useState(false);
@@ -154,19 +193,39 @@ export default function StatementDetailClient({
   const [incomeSaving, setIncomeSaving] = useState(false);
   const [incomeError, setIncomeError] = useState<string | null>(null);
 
+  // Card → account lump charge (the real bank hit — see lib/accounts.ts).
+  const [cardCharges, setCardCharges] = useState<CardChargeView[]>(initialCardCharges);
+  const [chargeCardLabel, setChargeCardLabel] = useState<string | null>(null);
+  const [chargeForm, setChargeForm] = useState<ChargeForm | null>(null);
+  const [chargeSaving, setChargeSaving] = useState(false);
+  const [chargeError, setChargeError] = useState<string | null>(null);
+  const [chargeToDelete, setChargeToDelete] = useState<{ id: string; label: string } | null>(null);
+  const [chargeDeleting, setChargeDeleting] = useState(false);
+  const [chargeDeleteError, setChargeDeleteError] = useState<string | null>(null);
+
+  // Merge a whole "card" group into another — the cleanup tool for a
+  // phantom card created by editing rows' category (see the reassign-card
+  // route). Bulk-moves every row in the group's card_label at once.
+  const [mergeGroup, setMergeGroup] = useState<{ label: string; rowIds: string[] } | null>(null);
+  const [mergeTarget, setMergeTarget] = useState("");
+  const [merging, setMerging] = useState(false);
+  const [mergeError, setMergeError] = useState<string | null>(null);
+
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? "";
   const propertyName = (id: string) => properties.find((p) => p.id === id)?.name ?? "";
 
   const todayIso = new Date().toISOString().slice(0, 10);
 
-  // Cards (by category) whose income total is built from the rows marked for expense — the
-  // "להוצאה" checkbox (include flag). Positive, included, and not already turned into income.
-  // X / "לא לתעד" rows are unchecked by default, so they drop out automatically.
+  // Cards (by stable card identity, NOT the freely-editable category — see
+  // the card_label migration) whose income total is built from the rows
+  // marked for expense — the "להוצאה" checkbox (include flag). Positive,
+  // included, and not already turned into income. X / "לא לתעד" rows are
+  // unchecked by default, so they drop out automatically.
   const incomeCards = useMemo(() => {
     const map = new Map<string, { rowIds: string[]; sum: number; maxDate: string }>();
     for (const r of rows) {
       if (!(r.amount > 0) || r.incomeExists || !r.include) continue;
-      const key = r.category || "כרטיס אשראי";
+      const key = r.cardLabel || "כרטיס אשראי";
       const cur = map.get(key) ?? { rowIds: [], sum: 0, maxDate: "" };
       cur.rowIds.push(r.id);
       cur.sum += r.amount;
@@ -176,6 +235,167 @@ export default function StatementDetailClient({
     }
     return [...map.entries()].map(([label, v]) => ({ label, ...v }));
   }, [rows]);
+
+  // Cards (by stable card identity, NOT category), for the "record the bank
+  // charge" section — grouped from EVERY row (unlike incomeCards' include-only
+  // filter): the amount the bank actually charges the card covers every line
+  // on the statement, refunds and X-marked rows included, regardless of
+  // whether it becomes a business expense. This is only a starting default —
+  // fully editable against the real bank statement number.
+  const cardGroups = useMemo(() => {
+    const map = new Map<string, { rowIds: string[]; netAmount: number; dateCounts: Map<string, number> }>();
+    for (const r of rows) {
+      const key = r.cardLabel || "כרטיס אשראי";
+      const cur = map.get(key) ?? { rowIds: [], netAmount: 0, dateCounts: new Map<string, number>() };
+      cur.rowIds.push(r.id);
+      cur.netAmount += r.amount;
+      const d = r.expenseDate;
+      if (d) cur.dateCounts.set(d, (cur.dateCounts.get(d) ?? 0) + 1);
+      map.set(key, cur);
+    }
+    return [...map.entries()].map(([label, v]) => {
+      // The billing date most of this card's rows share (typically all of them).
+      let chargeDate = "";
+      let bestCount = 0;
+      for (const [d, c] of v.dateCounts) {
+        if (c > bestCount) { bestCount = c; chargeDate = d; }
+      }
+      return { label, rowIds: v.rowIds, netAmount: v.netAmount, chargeDate };
+    });
+  }, [rows]);
+
+  function chargeFor(label: string): CardChargeView | undefined {
+    return cardCharges.find((c) => c.cardLabel === label);
+  }
+
+  function openCharge(group: { label: string; netAmount: number; chargeDate: string }) {
+    const existing = chargeFor(group.label);
+    setChargeCardLabel(group.label);
+    setChargeForm({
+      accountId: existing?.accountId ?? cardAccountDefaults[norm(group.label)] ?? "",
+      amount: String(existing?.amount ?? (group.netAmount > 0 ? group.netAmount : "")),
+      chargeDate: existing?.chargeDate || group.chargeDate || todayIso,
+      notes: existing?.notes ?? "",
+    });
+    setChargeError(null);
+  }
+
+  function patchCharge(patch: Partial<ChargeForm>) {
+    setChargeForm((f) => (f ? { ...f, ...patch } : f));
+  }
+
+  async function submitCharge() {
+    if (!chargeForm || !chargeCardLabel || chargeSaving) return;
+    if (!chargeForm.accountId) {
+      setChargeError("יש לבחור חשבון.");
+      return;
+    }
+    const amountNum = Number(chargeForm.amount);
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      setChargeError("יש להזין סכום תקין.");
+      return;
+    }
+    if (!chargeForm.chargeDate) {
+      setChargeError("יש לבחור תאריך חיוב.");
+      return;
+    }
+    setChargeSaving(true);
+    setChargeError(null);
+    try {
+      const res = await fetch("/api/financial/card-charges", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          statement_id: statement.id,
+          card_label: chargeCardLabel,
+          account_id: chargeForm.accountId,
+          amount: amountNum,
+          charge_date: chargeForm.chargeDate,
+          notes: chargeForm.notes.trim() || null,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
+      if (!res.ok || !data.id) {
+        setChargeError(toHebrewError(data.error, "שמירת החיוב נכשלה."));
+        return;
+      }
+      const saved: CardChargeView = {
+        id: data.id,
+        cardLabel: chargeCardLabel,
+        accountId: chargeForm.accountId,
+        amount: amountNum,
+        chargeDate: chargeForm.chargeDate,
+        notes: chargeForm.notes.trim() || null,
+      };
+      setCardCharges((prev) => [...prev.filter((c) => c.cardLabel !== chargeCardLabel), saved]);
+      setChargeCardLabel(null);
+      setChargeForm(null);
+      router.refresh();
+    } catch {
+      setChargeError("שמירת החיוב נכשלה.");
+    } finally {
+      setChargeSaving(false);
+    }
+  }
+
+  async function deleteCharge() {
+    if (!chargeToDelete || chargeDeleting) return;
+    setChargeDeleting(true);
+    setChargeDeleteError(null);
+    try {
+      const res = await fetch(`/api/financial/card-charges?id=${encodeURIComponent(chargeToDelete.id)}`, {
+        method: "DELETE",
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setChargeDeleteError(toHebrewError(data.error, "מחיקת החיוב נכשלה."));
+        return;
+      }
+      setCardCharges((prev) => prev.filter((c) => c.id !== chargeToDelete.id));
+      setChargeToDelete(null);
+      router.refresh();
+    } catch {
+      setChargeDeleteError("מחיקת החיוב נכשלה.");
+    } finally {
+      setChargeDeleting(false);
+    }
+  }
+
+  function openMerge(group: { label: string; rowIds: string[] }) {
+    setMergeGroup(group);
+    setMergeTarget("");
+    setMergeError(null);
+  }
+
+  async function submitMerge() {
+    if (!mergeGroup || merging) return;
+    if (!mergeTarget) {
+      setMergeError("יש לבחור לאיזה כרטיס למזג.");
+      return;
+    }
+    setMerging(true);
+    setMergeError(null);
+    try {
+      const res = await fetch("/api/expenses/statement-rows/reassign-card", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ row_ids: mergeGroup.rowIds, card_label: mergeTarget }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setMergeError(toHebrewError(data.error, "מיזוג הכרטיס נכשל."));
+        return;
+      }
+      const movedIds = new Set(mergeGroup.rowIds);
+      setRows((prev) => prev.map((r) => (movedIds.has(r.id) ? { ...r, cardLabel: mergeTarget } : r)));
+      setMergeGroup(null);
+      router.refresh();
+    } catch {
+      setMergeError("מיזוג הכרטיס נכשל.");
+    } finally {
+      setMerging(false);
+    }
+  }
 
   function openIncome(title: string, rowIds: string[], amount: number, date: string, reference: string) {
     setIncomeTitle(title);
@@ -613,6 +833,7 @@ export default function StatementDetailClient({
       if (data.skipped) parts.push(`${data.skipped} דולגו`);
       if (data.errors && data.errors.length) parts.push(`${data.errors.length} שגיאות`);
       setCreateNotice(parts.join(" · "));
+      setActionDialogOpen(false);
       router.refresh();
     } catch {
       setCreateError("יצירת ההוצאות נכשלה.");
@@ -662,6 +883,7 @@ export default function StatementDetailClient({
           property_id: draft.businessDomain === "property_management" ? draft.propertyId || null : null,
           amount: draft.amount,
           category: draft.category,
+          card_label: draft.cardLabel,
           description: draft.description,
           notes: draft.notes,
           expense_date: draft.expenseDate,
@@ -781,17 +1003,39 @@ export default function StatementDetailClient({
         ) : null}
       </div>
 
-      {/* Action bar: assign hint on top, then helpers + the create CTA on a separate row */}
-      <Card>
-        <CardContent className="space-y-3 py-3">
-          <div className="text-sm text-muted-foreground">
-            בחר/י תחום עסקי לכל שורה (עמודת &quot;שיוך מקורי&quot; מציגה את מה שסומן בקובץ), ואז צור/י את ההוצאות.
-            {dupRowIds.length > 0 ? (
-              <span className="ms-1 text-warning-soft-foreground">זוהו {dupRowIds.length} כפילויות אפשריות מול הוצאות קיימות.</span>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      {/* The 3 supplementary actions live behind a button + dialog now, so the
+          row table isn't pushed down the page by 3 stacked cards. */}
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" onClick={() => setActionDialogOpen(true)}>
+          יצירת הוצאות ({eligibleRows.length})
+        </Button>
+        {cardGroups.length > 0 ? (
+          <Button variant="outline" size="sm" onClick={() => setChargeListOpen(true)}>
+            חיוב כרטיס בחשבון{cardCharges.length > 0 ? ` (${cardCharges.length})` : ""}
+          </Button>
+        ) : null}
+        {incomeCards.length > 0 ? (
+          <Button variant="outline" size="sm" onClick={() => setIncomeListOpen(true)}>
+            הכנסה מכרטיס
+          </Button>
+        ) : null}
+      </div>
+      {createNotice ? <p className="text-sm text-success-soft-foreground">{createNotice}</p> : null}
+      {createError ? <p className="text-sm text-destructive">{createError}</p> : null}
+      {rowError ? <p className="text-sm text-destructive">{rowError}</p> : null}
+
+      {/* Create expenses: assign hint + duplicate helpers + the create CTA */}
+      <ViewDialog
+        open={actionDialogOpen}
+        onOpenChange={setActionDialogOpen}
+        title="יצירת הוצאות"
+        description={'בחר/י תחום עסקי לכל שורה בטבלה למטה (עמודת "שיוך מקורי" מציגה את מה שסומן בקובץ), ואז צור/י את ההוצאות.'}
+      >
+        <div className="space-y-3">
+          {dupRowIds.length > 0 ? (
+            <p className="text-sm text-warning-soft-foreground">זוהו {dupRowIds.length} כפילויות אפשריות מול הוצאות קיימות.</p>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             {xDraftRows.length > 0 ? (
               <label className="flex items-center gap-2 text-sm" title="בטל את הסימון 'להוצאה' לכל שורות ה-X בבת אחת">
                 <button
@@ -818,40 +1062,124 @@ export default function StatementDetailClient({
                 אל תיצור הוצאה לכפילויות
               </Button>
             ) : null}
-            </div>
-            <Button
-              size="sm"
-              onClick={() => void createExpenses()}
-              disabled={creating || savingRowId !== null || eligibleRows.length === 0}
-            >
-              {creating ? "יוצר..." : `צור הוצאות (${eligibleRows.length})`}
-            </Button>
           </div>
-        </CardContent>
-      </Card>
-      {createNotice ? <p className="text-sm text-success-soft-foreground">{createNotice}</p> : null}
-      {createError ? <p className="text-sm text-destructive">{createError}</p> : null}
-      {rowError ? <p className="text-sm text-destructive">{rowError}</p> : null}
+          <Button
+            className="w-full"
+            onClick={() => void createExpenses()}
+            disabled={creating || savingRowId !== null || eligibleRows.length === 0}
+          >
+            {creating ? "יוצר..." : `צור הוצאות (${eligibleRows.length})`}
+          </Button>
+          {createError ? <p className="text-sm text-destructive">{createError}</p> : null}
+        </div>
+      </ViewDialog>
+
+      {/* Charge the card's statement total onto a bank account — ONE lump sum
+          per card, matching the real bank statement, instead of every itemized
+          line. The itemized expenses above are unaffected (still per-domain). */}
+      <ViewDialog
+        open={chargeListOpen}
+        onOpenChange={setChargeListOpen}
+        title="חיוב כרטיס בחשבון"
+        description="רשום/י כמה הכרטיס חייב את חשבון הבנק בפועל — סכום אחד כולל, ולא כל שורה בנפרד. ברירת המחדל היא סכום כל שורות הכרטיס; אפשר לשנות אותו כדי שיתאים בדיוק לדף הבנק."
+      >
+        <div className="space-y-3">
+          {cardGroups.length > 1 ? (
+            <p className="text-xs text-muted-foreground">
+              אם שינוי קטגוריה בשורה יצר כאן בטעות כרטיס נוסף (שאינו קיים באמת) — לחצו על סמל המיזוג כדי לאחד אותו לתוך
+              הכרטיס האמיתי.
+            </p>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            {cardGroups.map((group) => {
+              const existing = chargeFor(group.label);
+              const mergeButton =
+                cardGroups.length > 1 ? (
+                  <IconButton
+                    icon={LinkIcon}
+                    label={`מיזוג "${group.label}" לתוך כרטיס אחר`}
+                    variant="ghost"
+                    onClick={() => openMerge(group)}
+                  />
+                ) : null;
+              return existing ? (
+                <div
+                  key={group.label}
+                  className="flex items-center gap-1.5 rounded-md border bg-success-soft/15 px-2 py-1 text-xs"
+                >
+                  <span className="font-medium">{group.label}</span>
+                  <span>· {formatCurrency(existing.amount)} · {formatIsoDisplay(existing.chargeDate)}</span>
+                  <EditButton label="עריכת חיוב" onClick={() => openCharge(group)} />
+                  <DeleteButton
+                    label="מחיקת חיוב"
+                    onClick={() =>
+                      setChargeToDelete({ id: existing.id, label: `${group.label} · ${formatCurrency(existing.amount)}` })
+                    }
+                  />
+                  {mergeButton}
+                </div>
+              ) : (
+                <div key={group.label} className="flex items-center gap-1">
+                  <Button variant="outline" size="sm" onClick={() => openCharge(group)}>
+                    {group.label} · {formatCurrency(group.netAmount)}
+                  </Button>
+                  {mergeButton}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </ViewDialog>
+
+      {/* Merge a phantom card group (created by editing a row's category)
+          into its real card — see /api/expenses/statement-rows/reassign-card */}
+      <FormDialog
+        open={mergeGroup !== null}
+        onOpenChange={(open) => {
+          if (!open) setMergeGroup(null);
+        }}
+        title="מיזוג כרטיס"
+        description={mergeGroup ? `כל השורות של "${mergeGroup.label}" יעברו לכרטיס שתבחר/י.` : undefined}
+        onSubmit={() => void submitMerge()}
+        submitLabel="מיזוג"
+        busyLabel="ממזג..."
+        busy={merging}
+        error={mergeError || undefined}
+      >
+        {mergeGroup ? (
+          <Field size="xs" label="מיזוג לתוך כרטיס *">
+            <NativeSelect dense value={mergeTarget} onChange={(e) => setMergeTarget(e.target.value)}>
+              <option value="">— בחר/י כרטיס —</option>
+              {cardGroups
+                .filter((g) => g.label !== mergeGroup.label)
+                .map((g) => (
+                  <option key={g.label} value={g.label}>
+                    {g.label}
+                  </option>
+                ))}
+            </NativeSelect>
+          </Field>
+        ) : null}
+      </FormDialog>
 
       {/* Income from cards: when a card's charges are really someone's payment for a job */}
-      {incomeCards.length > 0 ? (
-        <Card>
-          <CardContent className="space-y-2 py-3">
-            <div className="text-sm font-medium">צור הכנסה מכרטיס</div>
-            <p className="text-xs text-muted-foreground">
-              אם ההוצאות בכרטיס הן למעשה תשלום של מישהו עבור עבודה — צור/י הכנסה אחת לכל הכרטיס (תקבול מהלקוח), בנוסף להוצאות.
-              הסכום מחושב מהשורות המסומנות &quot;להוצאה&quot; (שורות X / &quot;לא לתעד&quot; שאינן מסומנות לא נכללות).
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {incomeCards.map((card) => (
-                <Button key={card.label} variant="outline" size="sm" onClick={() => openCardIncome(card)}>
-                  {card.label} · {formatCurrency(card.sum)} ({card.rowIds.length})
-                </Button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
+      <ViewDialog
+        open={incomeListOpen}
+        onOpenChange={setIncomeListOpen}
+        title="צור הכנסה מכרטיס"
+        description={
+          'אם ההוצאות בכרטיס הן למעשה תשלום של מישהו עבור עבודה — צור/י הכנסה אחת לכל הכרטיס (תקבול מהלקוח), בנוסף להוצאות. ' +
+          'הסכום מחושב מהשורות המסומנות "להוצאה" (שורות X / "לא לתעד" שאינן מסומנות לא נכללות).'
+        }
+      >
+        <div className="flex flex-wrap gap-2">
+          {incomeCards.map((card) => (
+            <Button key={card.label} variant="outline" size="sm" onClick={() => openCardIncome(card)}>
+              {card.label} · {formatCurrency(card.sum)} ({card.rowIds.length})
+            </Button>
+          ))}
+        </div>
+      </ViewDialog>
 
       <Card className="overflow-hidden">
         <CardContent className="p-0">
@@ -1085,8 +1413,20 @@ export default function StatementDetailClient({
                   className="h-9"
                 />
               </Field>
-              <Field size="xs" label="קטגוריה (כרטיס)">
+              <Field size="xs" label="קטגוריה">
                 <Input value={draft.category} onChange={(e) => patchDraft({ category: e.target.value })} className="h-9" />
+              </Field>
+              <Field size="xs" label="כרטיס" hint="לאיזה כרטיס פיזי השורה שייכת — שינוי הקטגוריה לא משפיע על זה.">
+                <NativeSelect dense value={draft.cardLabel} onChange={(e) => patchDraft({ cardLabel: e.target.value })}>
+                  {!cardGroups.some((g) => g.label === draft.cardLabel) ? (
+                    <option value={draft.cardLabel}>{draft.cardLabel}</option>
+                  ) : null}
+                  {cardGroups.map((g) => (
+                    <option key={g.label} value={g.label}>
+                      {g.label}
+                    </option>
+                  ))}
+                </NativeSelect>
               </Field>
               <Field size="xs" label="תאריך חיוב">
                 <Input
@@ -1257,6 +1597,77 @@ export default function StatementDetailClient({
             </div>
           ) : null}
       </FormDialog>
+
+      {/* Charge card → account dialog (create or update the lump sum) */}
+      <FormDialog
+        open={chargeCardLabel !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setChargeCardLabel(null);
+            setChargeForm(null);
+          }
+        }}
+        title={`חיוב כרטיס: ${chargeCardLabel ?? ""}`}
+        description="הסכום הכולל שהכרטיס חייב את חשבון הבנק — שורה אחת בחשבון, לא כל עסקה בנפרד."
+        onSubmit={() => void submitCharge()}
+        submitLabel="שמירה"
+        busyLabel="שומר..."
+        busy={chargeSaving}
+        error={chargeError || undefined}
+      >
+        {chargeForm ? (
+          <div className="space-y-3">
+            <AccountSelect
+              required
+              value={chargeForm.accountId}
+              onChange={(accountId) => patchCharge({ accountId })}
+            />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field size="xs" label="סכום *">
+                <CurrencyInput
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={chargeForm.amount}
+                  onChange={(e) => patchCharge({ amount: e.target.value })}
+                  className="h-9"
+                />
+              </Field>
+              <Field size="xs" label="תאריך חיוב *">
+                <Input
+                  type="date"
+                  value={chargeForm.chargeDate}
+                  onChange={(e) => patchCharge({ chargeDate: e.target.value })}
+                  className="h-9"
+                />
+              </Field>
+            </div>
+            <Field size="xs" label="הערה">
+              <Input value={chargeForm.notes} onChange={(e) => patchCharge({ notes: e.target.value })} className="h-9" />
+            </Field>
+          </div>
+        ) : null}
+      </FormDialog>
+
+      {/* Delete a recorded card charge */}
+      <ConfirmDialog
+        open={chargeToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setChargeToDelete(null);
+            setChargeDeleteError(null);
+          }
+        }}
+        title="מחיקת חיוב כרטיס"
+        description="החיוב יימחק מהחשבון. השורות בפירוט האשראי עצמו לא יימחקו."
+        confirmLabel="מחיקה"
+        destructive
+        loading={chargeDeleting}
+        error={chargeDeleteError || undefined}
+        onConfirm={() => void deleteCharge()}
+      >
+        {chargeToDelete ? <div className="text-sm font-medium">{chargeToDelete.label}</div> : null}
+      </ConfirmDialog>
     </div>
   );
 }
