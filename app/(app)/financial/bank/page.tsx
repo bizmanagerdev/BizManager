@@ -4,6 +4,7 @@ import { requireProfile } from "@/lib/auth/requireProfile";
 import { loadAccountsOverview } from "@/lib/accounts";
 import { fetchLoans } from "@/lib/loans";
 import type { MerchantMemory } from "@/lib/financial/cardImport";
+import { propertyDisplayName } from "@/lib/properties";
 import BankClient from "./BankClient";
 
 export const dynamic = "force-dynamic";
@@ -31,13 +32,20 @@ export default async function BankPage({
   }
 
   const params = await searchParams;
-  const [accounts, loans, { data: projectRows }, { data: mappingRows }] = await Promise.all([
+  const [accounts, loans, { data: projectRows }, { data: propertyRows }, { data: mappingRows }] = await Promise.all([
     loadAccountsOverview(supabase),
     // For the register's inline "עריכת הלוואה"/"עריכת החזר" — a loan/loan_repayment
     // row needs the full computed Loan shape (outstanding, plannedInstallments…),
     // not just what the ledger scan keeps for display.
     fetchLoans(supabase),
     supabase.from("projects").select("id,name").order("created_at", { ascending: false }).limit(300),
+    // For the expense-edit dialog's property picker (property_management domain)
+    // — same list CashFlowPageContent.tsx feeds ExpenseDialog with, just fetched
+    // here too since this page's own edit dialog wasn't getting it at all
+    // (2026-08-27, "look around for more places with this issue": editing an
+    // unlinked expense here and switching it to ניהול נכסים showed "no
+    // properties available" even though properties exist).
+    supabase.from("properties").select("id,name,address,is_active").order("address", { ascending: true }).limit(999),
     // Merchant memory — how a description like this was filed last time, so the
     // quick row fills its own שיוך.
     supabase
@@ -48,6 +56,15 @@ export default async function BankPage({
   const projects: Option[] = ((projectRows ?? []) as Option[]).filter(
     (row) => typeof row.id === "string" && typeof row.name === "string"
   );
+  const recurringProperties = ((propertyRows ?? []) as Array<{
+    id: string;
+    name: string | null;
+    address: string | null;
+    is_active: boolean | null;
+  }>)
+    .filter((row) => row.is_active !== false)
+    .map((row) => ({ id: row.id, label: propertyDisplayName({ name: row.name, address: row.address ?? "" }) }))
+    .filter((row) => row.id && row.label);
 
   const merchantMemory: MerchantMemory = {};
   for (const row of (mappingRows ?? []) as Array<{
@@ -73,6 +90,7 @@ export default async function BankPage({
         loans={loans}
         initialAccountId={params.account ?? ""}
         projects={projects}
+        recurringProperties={recurringProperties}
         merchantMemory={merchantMemory}
       />
     </AppShell>

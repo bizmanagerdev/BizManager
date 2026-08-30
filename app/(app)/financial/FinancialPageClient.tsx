@@ -2291,7 +2291,12 @@ export default function FinancialPageClient({
         editingSourceLabel={activeEditingExpense?.sourceLabel ?? null}
         lockedProjectId={activeEditingExpense?.expenseProjectId}
         lockedOrderId={activeEditingExpense?.expenseOrderId}
-        lockedPropertyId={activeEditingExpense?.expensePropertyId}
+        // NOT lockedPropertyId — unlike project/order, property_id is meant to
+        // be freely re-editable from this general list (see /api/expenses/update
+        // and the ExpenseDialog picker itself); locking it here would show the
+        // read-only "association kept as-is" box instead of the picker for any
+        // expense that already has a property, defeating that fix entirely
+        // (2026-08-27, caught auditing for "more places with this issue").
         recurringProjects={recurringProjects}
         recurringOrders={recurringOrders}
         recurringProperties={recurringProperties}

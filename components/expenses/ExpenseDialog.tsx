@@ -1158,12 +1158,19 @@ export function ExpenseDialog({
       return;
     }
     // When options are offered for a project/property domain, one must be chosen.
+    // Project stays !isEditing-gated (matches its picker being hidden in edit
+    // mode, above) — property does NOT, since its picker is genuinely editable
+    // in edit mode now, and this check was the one place that gap survived
+    // fixing the render gate (2026-08-27, "look around for more places with
+    // this issue" — a user could switch domain to property_management during
+    // an edit, leave the (now-visible) picker unset, and hit no client-side
+    // validation at all before this fix).
     if (!isEditing && effectiveDomain === "logistics_projects" && !effectiveProjectId) {
       setErrorMessage("יש לבחור פרויקט.");
       toast.error("יש לבחור פרויקט");
       return;
     }
-    if (!isEditing && effectiveDomain === "property_management" && !effectivePropertyId) {
+    if (effectiveDomain === "property_management" && !effectivePropertyId) {
       setErrorMessage("יש לבחור נכס.");
       toast.error("יש לבחור נכס");
       return;
@@ -2486,7 +2493,17 @@ export function ExpenseDialog({
                 />
               </div>
 
-              {effectiveDomain === "logistics_projects" && (
+              {/* Project (unlike property below) stays edit-mode-gated: the
+                  backend still treats project_id as immutable on edit — moving
+                  a project-linked expense between projects means moving its
+                  project_expenses row too (billing fields live there), which
+                  /api/expenses/update doesn't do. Showing an editable picker
+                  here in edit mode would let the user pick a project and then
+                  fail on save with a confusing "not associated" error — same
+                  bug as the property one, just not yet safe to fix the same
+                  way (2026-08-27, caught while auditing for "more places with
+                  this issue"). */}
+              {!isEditing && effectiveDomain === "logistics_projects" && (
                 <div className="space-y-1">
                   <div className="text-sm font-medium">פרויקט *</div>
                   {recurringProjects.length > 0 ? (
@@ -2504,7 +2521,9 @@ export function ExpenseDialog({
                 </div>
               )}
 
-              {effectiveDomain === "sales" && recurringOrders.length > 0 && (
+              {/* Order stays edit-mode-gated too, same reason as project above
+                  — order_id is still backend-immutable on edit. */}
+              {!isEditing && effectiveDomain === "sales" && recurringOrders.length > 0 && (
                 <div className="space-y-1">
                   <div className="text-sm font-medium">הזמנה</div>
                   <NativeSelect

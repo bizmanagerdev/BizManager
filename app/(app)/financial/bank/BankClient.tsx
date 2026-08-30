@@ -110,6 +110,7 @@ export default function BankClient({
   loans,
   initialAccountId = "",
   projects = [],
+  recurringProperties = [],
   merchantMemory = {},
 }: {
   accounts: AccountWithLedger[];
@@ -121,6 +122,9 @@ export default function BankClient({
   initialAccountId?: string;
   /** For the quick-entry row above the register. */
   projects?: Array<{ id: string; name: string }>;
+  /** For the expense-edit dialog's property picker — see ExpenseDialog's
+   *  `recurringProperties` prop. */
+  recurringProperties?: Array<{ id: string; label: string }>;
   merchantMemory?: MerchantMemory;
 }) {
   const router = useRouter();
@@ -626,7 +630,9 @@ export default function BankClient({
         editingExpense={editingExpenseRef?.data}
         lockedProjectId={editingExpenseRef?.data.project_id}
         lockedOrderId={editingExpenseRef?.data.order_id}
-        lockedPropertyId={editingExpenseRef?.data.property_id}
+        // NOT lockedPropertyId — see the same note in FinancialPageClient.tsx;
+        // property_id is meant to be freely re-editable, unlike project/order.
+        recurringProperties={recurringProperties}
         onSaved={() => {
           setEditingExpenseRef(null);
           router.refresh();

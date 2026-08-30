@@ -129,9 +129,6 @@ export async function POST(req: Request) {
     if (!session) {
       return NextResponse.json({ error: "המשמרת לא נמצאה." }, { status: 404 });
     }
-    if (projectId && session.project_id !== projectId) {
-      return NextResponse.json({ error: "המשמרת לא משויכת לפרויקט שנבחר." }, { status: 404 });
-    }
 
     const { data: selectedUser, error: selectedUserError } = await supabase
       .from("users")
