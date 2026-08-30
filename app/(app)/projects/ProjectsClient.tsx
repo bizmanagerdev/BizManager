@@ -35,7 +35,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { Badge } from "@/components/ui/badge";
-import { StatusBadge } from "@/components/ui/status-badge";
+import { ProjectStatusPicker } from "@/components/projects/ProjectStatusPicker";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog } from "@/components/ui/dialog";
 import DeleteProjectButton from "@/app/(app)/projects/DeleteProjectButton";
@@ -988,7 +988,17 @@ export default function ProjectsClient({
                       </div>
                     </td>
                     <td className="px-4 py-4">
-                      <StatusBadge value={currentStatus} type="project" />
+                      <ProjectStatusPicker
+                        projectId={id}
+                        status={currentStatus}
+                        canEdit
+                        variant="badge"
+                        onChanged={(next) =>
+                          setProjects((prev) =>
+                            prev.map((r) => (getRowId(r) === id ? { ...r, status: next } : r))
+                          )
+                        }
+                      />
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">{startDate}</td>
                     <td className="px-4 py-4">
@@ -1199,7 +1209,18 @@ export default function ProjectsClient({
                       lighter than a standalone badge: on a card they're a caption,
                       not a headline. */}
                   <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                    <StatusBadge value={currentStatus} type="project" className={CARD_BADGE} />
+                    <ProjectStatusPicker
+                      projectId={id}
+                      status={currentStatus}
+                      canEdit
+                      variant="badge"
+                      badgeClassName={CARD_BADGE}
+                      onChanged={(next) =>
+                        setProjects((prev) =>
+                          prev.map((r) => (getRowId(r) === id ? { ...r, status: next } : r))
+                        )
+                      }
+                    />
                     <Badge className={cn(paymentStatusBadgeClasses(paymentStatus), CARD_BADGE)}>
                       {paymentStatusLabel(paymentStatus)}
                     </Badge>

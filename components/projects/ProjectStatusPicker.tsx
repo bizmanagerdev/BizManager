@@ -10,12 +10,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import { toHebrewError } from "@/lib/error-messages";
 
-// The project's status as the סטטוס הפרויקט card's headline — and the control
-// that changes it. Posts to the status-only endpoint, then refreshes so every
-// other place the status appears (badges, filters, alerts) follows.
+// The project's status — as the סטטוס הפרויקט card's headline ("text" variant,
+// the project detail page) or as the status badge itself ("badge" variant, the
+// projects list) — and the control that changes it. Posts to the status-only
+// endpoint; the detail page refreshes the route afterward (`onChanged` unset),
+// the list instead patches its own row locally via `onChanged` since a full
+// router.refresh() there would fight the list's own infinite-scroll state.
 
 const STATUS_OPTIONS = ["quote", "planned", "active", "on_hold", "completed", "cancelled"];
 
@@ -23,10 +27,18 @@ export function ProjectStatusPicker({
   projectId,
   status,
   canEdit,
+  variant = "text",
+  badgeClassName,
+  onChanged,
 }: {
   projectId: string;
   status: string;
   canEdit: boolean;
+  variant?: "text" | "badge";
+  /** "badge" variant only — passed through to the underlying StatusBadge. */
+  badgeClassName?: string;
+  /** Called after a successful save instead of the default router.refresh(). */
+  onChanged?: (nextStatus: string) => void;
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -36,7 +48,11 @@ export function ProjectStatusPicker({
   const label = value ? getProjectStatusLabel(value) : "—";
 
   if (!canEdit) {
-    return <span className="text-lg font-bold leading-snug">{label}</span>;
+    return variant === "badge" ? (
+      <StatusBadge value={value} type="project" className={badgeClassName} />
+    ) : (
+      <span className="text-lg font-bold leading-snug">{label}</span>
+    );
   }
 
   async function select(next: string) {
@@ -57,7 +73,11 @@ export function ProjectStatusPicker({
         return;
       }
       toast.success("הסטטוס עודכן");
-      startTransition(() => router.refresh());
+      if (onChanged) {
+        onChanged(next);
+      } else {
+        startTransition(() => router.refresh());
+      }
     } catch (err: unknown) {
       setValue(previous);
       toast.error("שגיאה בעדכון סטטוס", { description: toHebrewError(err, "") });
@@ -70,15 +90,28 @@ export function ProjectStatusPicker({
     <DropdownMenu>
       <DropdownMenuTrigger
         disabled={saving}
-        className="flex items-center gap-1 text-lg font-bold leading-snug hover:text-secondary disabled:opacity-60"
+        className={
+          variant === "badge"
+            ? "inline-flex items-center gap-1 rounded-full transition-opacity hover:opacity-80 disabled:opacity-60"
+            : "flex items-center gap-1 text-lg font-bold leading-snug hover:text-secondary disabled:opacity-60"
+        }
         aria-label="שינוי סטטוס הפרויקט"
         title="שינוי סטטוס הפרויקט"
       >
-        {label}
-        {saving ? (
-          <SpinnerIcon className="h-4 w-4 animate-spin text-muted-foreground" />
+        {variant === "badge" ? (
+          <>
+            <StatusBadge value={value} type="project" className={badgeClassName} />
+            {saving ? <SpinnerIcon className="h-3 w-3 animate-spin text-muted-foreground" /> : null}
+          </>
         ) : (
-          <ChevronDownIcon className="h-4 w-4 text-muted-foreground" />
+          <>
+            {label}
+            {saving ? (
+              <SpinnerIcon className="h-4 w-4 animate-spin text-muted-foreground" />
+            ) : (
+              <ChevronDownIcon className="h-4 w-4 text-muted-foreground" />
+            )}
+          </>
         )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
