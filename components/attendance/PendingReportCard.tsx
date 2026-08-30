@@ -16,7 +16,6 @@ import { appendDictatedText } from "@/lib/dictation";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import { shiftHoursText } from "@/components/attendance/DayTile";
 import { WORK_SESSION_BUSINESS_DOMAINS } from "@/lib/expenses";
 import { formatCurrency, formatMinutes, minutesBetween } from "@/lib/payroll";
@@ -83,12 +82,10 @@ function freeTextNote(source: string, notes: string | null) {
   return trimmed.startsWith(label) ? trimmed.slice(label.length).replace(/^[\s—–\-·:,]+/, "") : trimmed;
 }
 
-/** Card head shared by both rows: avatar, name, phone. */
+/** Card head shared by both rows: name, phone. */
 export function WorkerHead({
   name,
   phone,
-  userId,
-  avatarColor,
   clockIn,
   clockOut,
   duration,
@@ -99,9 +96,6 @@ export function WorkerHead({
 }: {
   name: string | null;
   phone: string | null;
-  userId: string;
-  /** The worker's own users.avatar_color — same circle they wear everywhere else. */
-  avatarColor: string | null;
   clockIn: string;
   /** Null while the shift is still open. */
   clockOut?: string | null;
@@ -124,9 +118,10 @@ export function WorkerHead({
     // Same shape as a delivery / task row: an identity line, then one muted line
     // of everything else. It used to be a bordered person-chip with a date badge
     // in the opposite corner — two boxes inside a box, which read as a card in a
-    // card once these rows moved onto the dashboard.
+    // card once these rows moved onto the dashboard. No avatar (user, 2026-08-31):
+    // the name + phone already identify the worker, so the circle was a second,
+    // redundant identity mark eating width the dropdowns needed.
     <div className="flex items-start gap-2.5">
-      <InitialsAvatar name={name ?? "עובד"} color={avatarColor} colorKey={userId} size="sm" className="mt-0.5" />
       <div className="min-w-0 flex-1 space-y-0.5">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <span className="truncate text-sm font-medium text-foreground">{name ?? "עובד לא ידוע"}</span>
@@ -380,7 +375,7 @@ export default function PendingReportCard({
         // "בחירת ...". The full name stays in the aria-label.
         placeholder="שיוך"
         ariaLabel="תחום עסקי"
-        className="h-9 w-full min-w-0 max-w-40 px-3 py-0"
+        className="h-9 w-full min-w-[8.5rem] max-w-40 px-3 py-0"
       />
       {parts[index].domain === "logistics_projects" ? (
         <SearchableSelect
@@ -389,7 +384,7 @@ export default function PendingReportCard({
           onChange={(v) => updatePart(index, { projectId: v })}
           placeholder="בחירת פרויקט"
           ariaLabel="פרויקט"
-          className="h-9 w-full min-w-0 max-w-48 px-3 py-0"
+          className="h-9 w-full min-w-[10rem] max-w-48 px-3 py-0"
         />
       ) : null}
       {parts[index].domain === "property_management" ? (
@@ -399,7 +394,7 @@ export default function PendingReportCard({
           onChange={(v) => updatePart(index, { propertyId: v })}
           placeholder="בחירת נכס"
           ariaLabel="נכס"
-          className="h-9 w-full min-w-0 max-w-48 px-3 py-0"
+          className="h-9 w-full min-w-[10rem] max-w-48 px-3 py-0"
         />
       ) : null}
       {/* Bill to customer — only for project work. */}
@@ -417,7 +412,7 @@ export default function PendingReportCard({
             // `dense` rather than a hand-rolled h-9: forcing the height while the
             // base keeps its py-2/text-base clipped the descenders off ק and ן.
             dense
-            className="w-full min-w-0 max-w-40"
+            className="w-full min-w-[9.5rem] max-w-40"
           >
             <option value="no">ללא חיוב ללקוח</option>
             <option value="yes">חיוב ללקוח</option>
@@ -427,7 +422,7 @@ export default function PendingReportCard({
               value={parts[index].billAmount}
               onChange={(e) => updatePart(index, { billAmount: e.target.value })}
               placeholder="סכום לחיוב"
-              containerClassName="w-full min-w-0 max-w-32"
+              containerClassName="w-full min-w-[6rem] max-w-32"
             />
           ) : null}
         </>
@@ -444,7 +439,11 @@ export default function PendingReportCard({
             // report picks out THAT one — without it a stack of near-identical
             // forms gives you nothing to hold on to.
             "relative px-4 py-3 transition-colors hover:bg-secondary/10"
-          : "rounded-xl border border-border bg-card px-3 py-2 shadow-sm"
+          : // border-2, not the usual border-1: on the queue page each report is
+            // its own shift, and a hairline the same weight as every other card
+            // border in the app read as one continuous strip rather than
+            // separate stops (user, 2026-08-31: wants a clear break between them).
+            "rounded-xl border-2 border-border bg-card px-3 py-2 shadow-sm"
       )}
     >
       {/* Covers the row, under everything you can actually act on: the head below
@@ -463,8 +462,6 @@ export default function PendingReportCard({
       <WorkerHead
         name={report.worker_name}
         phone={report.worker_phone}
-        userId={report.user_id}
-        avatarColor={report.worker_avatar_color}
         clockIn={report.clock_in}
         clockOut={report.clock_out}
         duration={`${formatMinutes(totalMinutes)} שעות`}
@@ -490,23 +487,20 @@ export default function PendingReportCard({
         }
       />
 
-      {/* Row 2 — classify and act on ONE line, at any width. The fields take the
-          space that's left and shrink into it (they're capped, not fixed, so the
-          page still shows them at their natural size); the buttons never wrap off
-          onto a line of their own. Splitting is the exception and gets its own
-          block below. No rule above it when `flat`: the parent already draws one
-          BETWEEN reports, and a second one inside each was a line where the eye
-          expected a boundary. */}
-      <div
-        className={cn(
-          "relative mt-2 flex items-center gap-2",
-          !flat && "border-t border-border/60 pt-2"
-        )}
-      >
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+      {/* Row 2 — classify, then act, each on its OWN row. The fields used to
+          share one row with the buttons and get squeezed down to a sliver
+          ("min-w-0" let flexbox shrink a chosen domain to a couple of
+          letters) — now the fields get the card's full width and wrap onto
+          as many lines as they need (user, 2026-08-31: dropdowns were
+          unreadably cut off; let them take a row if necessary). Splitting is
+          the exception and gets its own block below. No rule above it when
+          `flat`: the parent already draws one BETWEEN reports, and a second
+          one inside each was a line where the eye expected a boundary. */}
+      <div className={cn("relative mt-2", !flat && "border-t border-border/60 pt-2")}>
+        <div className="flex flex-wrap items-center gap-2">
           {split ? <span className="text-sm text-muted-foreground">מפוצל ל-{parts.length} תחומים</span> : partFields(0)}
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="mt-2 flex items-center justify-end gap-1">
           {/* The secondary actions are BARE GLYPHS — no plate, no border, no word
               (user, 2026-08-17: "just an outline icon like the share button").
               Approving is the act you came for and keeps the filled button; these

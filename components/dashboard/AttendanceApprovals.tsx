@@ -202,7 +202,11 @@ export default function AttendanceApprovals({
                       <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums">{reports.length}</span>
                     </button>
                     {isOpen ? (
-                      <div className="divide-y divide-border/50">
+                      // divide-y-2, not the day-groups' hairline divide-y/50 above:
+                      // each row here is its own shift, and a hairline the same
+                      // weight as everything else read as one continuous strip
+                      // rather than separate stops (user, 2026-08-31).
+                      <div className="divide-y-2 divide-border/70">
                         {/* pointer-events-auto per ROW, not on the wrapper: the gaps
                             between rows stay part of the card's own click target. */}
                         {reports.map((report) => (

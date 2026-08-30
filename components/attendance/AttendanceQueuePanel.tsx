@@ -367,8 +367,6 @@ function OpenRow({ report }: { report: OpenPhoneReport }) {
       <WorkerHead
         name={report.worker_name}
         phone={report.worker_phone}
-        userId={report.user_id}
-        avatarColor={report.worker_avatar_color}
         clockIn={report.clock_in}
         duration={`כבר ${formatMinutes(elapsed)} שעות`}
         // This queue is admin/office-only, who never read Arabic — prefer the
