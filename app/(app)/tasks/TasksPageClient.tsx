@@ -898,18 +898,30 @@ export default function TasksPageClient(props: Props) {
   const activeColumnStatus = isColumnDrag && activeDragId ? activeDragId.slice(COLUMN_PREFIX.length) : null;
   const activeTask = activeDragId && !isColumnDrag ? tasks.find((t) => t.id === activeDragId) ?? null : null;
 
-  function pushFilters(filters: UrlFilters) {
-    emitNavigationStart();
-    router.push(buildTasksUrl(filters));
-  }
+  // Both wrapped in useCallback (not plain function declarations) so they're
+  // referentially STABLE across renders — headerToolbarNode below depends on
+  // handleQChange, and a fresh function reference every render meant that
+  // memo recomputed every render too, which re-ran useSetHeaderToolbar's
+  // effect every render, which called setState every render: an infinite
+  // "Maximum update depth exceeded" loop (caught after shipping, 2026-08-27).
+  const pushFilters = useCallback(
+    (filters: UrlFilters) => {
+      emitNavigationStart();
+      router.push(buildTasksUrl(filters));
+    },
+    [router]
+  );
 
-  function handleQChange(value: string) {
-    setQInput(value);
-    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    searchDebounceRef.current = setTimeout(() => {
-      pushFilters({ q: value, priority: urlPriority, domain: urlDomain, linkedId: urlLinkedId, scope: urlScope });
-    }, 400);
-  }
+  const handleQChange = useCallback(
+    (value: string) => {
+      setQInput(value);
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = setTimeout(() => {
+        pushFilters({ q: value, priority: urlPriority, domain: urlDomain, linkedId: urlLinkedId, scope: urlScope });
+      }, 400);
+    },
+    [pushFilters, urlPriority, urlDomain, urlLinkedId, urlScope]
+  );
 
   const linkedTarget =
     urlDomain === "logistics_projects" ? "project" : urlDomain === "property_management" ? "property" : "";
