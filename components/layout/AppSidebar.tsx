@@ -76,8 +76,10 @@ const flyoutSubRow = cn(subLinkBase, "shrink-0 whitespace-nowrap");
  * plain tab it's just the name.
  *
  * Portalled to <body> and positioned `fixed` because the nav is a scroll
- * container (it would clip the panel) and the sidebar's backdrop-filter makes it
- * a containing block for fixed children.
+ * container and would clip the panel otherwise. (Used to ALSO dodge the
+ * sidebar's own backdrop-filter, which makes an element a containing block
+ * for fixed children — moot now that the rail's backdrop-blur is gone, but
+ * portalling past the scroll-clip on its own still requires this.)
  */
 function NavFlyout({
   state,
@@ -349,9 +351,14 @@ export function AppSidebar({ items }: Props) {
   return (
     <aside
       className={cn(
-        // Sits UNDER the full-width top bar (60px): the brand corner in that bar
-        // is the light patch above it, so the rail itself starts straight at the nav.
-        "sticky top-[60px] hidden h-[calc(100vh-60px)] self-start md:flex shrink-0 flex-col border-e border-sidebar-border/80 bg-sidebar/95 backdrop-blur-xl transition-all duration-200",
+        // Sits UNDER the full-width top bar (60px): the brand corner in that
+        // bar is the SAME dark surface (bg-sidebar, opaque — see TopBar.tsx),
+        // so the rail itself starts straight at the nav. Was bg-sidebar/95 +
+        // backdrop-blur-xl — a translucent rail under an OPAQUE brand corner
+        // read as two slightly different blues at the seam where they meet
+        // (user, 2026-08-27: "why is the navbar a different blue it should be
+        // the same"). Full opacity, no blur, so the two are byte-identical.
+        "sticky top-[60px] hidden h-[calc(100vh-60px)] self-start md:flex shrink-0 flex-col border-e border-sidebar-border/80 bg-sidebar transition-all duration-200",
         collapsed ? RAIL_WIDTH.collapsed : RAIL_WIDTH.expanded
       )}
     >

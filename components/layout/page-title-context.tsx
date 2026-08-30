@@ -43,6 +43,8 @@ type Store = {
   setPageTitle: (value: PageTitle) => void;
   headerAction: ReactNode;
   setHeaderAction: (value: ReactNode) => void;
+  headerToolbar: ReactNode;
+  setHeaderToolbar: (value: ReactNode) => void;
 };
 
 const PageTitleContext = createContext<Store>({
@@ -50,14 +52,17 @@ const PageTitleContext = createContext<Store>({
   setPageTitle: () => {},
   headerAction: null,
   setHeaderAction: () => {},
+  headerToolbar: null,
+  setHeaderToolbar: () => {},
 });
 
 export function PageTitleProvider({ children }: { children: ReactNode }) {
   const [pageTitle, setPageTitle] = useState<PageTitle>(null);
   const [headerAction, setHeaderAction] = useState<ReactNode>(null);
+  const [headerToolbar, setHeaderToolbar] = useState<ReactNode>(null);
   const value = useMemo(
-    () => ({ pageTitle, setPageTitle, headerAction, setHeaderAction }),
-    [pageTitle, headerAction]
+    () => ({ pageTitle, setPageTitle, headerAction, setHeaderAction, headerToolbar, setHeaderToolbar }),
+    [pageTitle, headerAction, headerToolbar]
   );
   return <PageTitleContext.Provider value={value}>{children}</PageTitleContext.Provider>;
 }
@@ -88,6 +93,31 @@ export function useSetHeaderAction(node: ReactNode) {
     setHeaderAction(node);
     return () => setHeaderAction(null);
   }, [setHeaderAction, node]);
+}
+
+/** Read the header toolbar — for the top bar. */
+export function useHeaderToolbar() {
+  return useContext(PageTitleContext).headerToolbar;
+}
+
+/**
+ * Take over the ENTIRE title slot on a phone with a page's own search/filter
+ * row, instead of a page name — for a page whose board wants the vertical
+ * space a separate toolbar strip would otherwise cost it (see
+ * TasksPageClient.tsx: "move the search and buttons to the top bar so the
+ * cards can take the full height"). Unlike `useSetPageTitle`, the node is
+ * rendered raw (no whitespace-nowrap/clamp text styling — those assume a
+ * heading, not a row of controls). Mobile-only, same as `PageHeaderToolbar`
+ * used to be for this content — the desktop layout has its own room for it.
+ * `node` must be referentially stable (wrap it in useMemo).
+ */
+export function useSetHeaderToolbar(node: ReactNode) {
+  const { setHeaderToolbar } = useContext(PageTitleContext);
+  useEffect(() => {
+    if (node === null || node === undefined) return;
+    setHeaderToolbar(node);
+    return () => setHeaderToolbar(null);
+  }, [setHeaderToolbar, node]);
 }
 
 /**

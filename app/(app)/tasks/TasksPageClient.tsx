@@ -44,8 +44,7 @@ import { dueUrgencyChipClass, formatShortDate, getDueUrgency } from "@/lib/date"
 import { TaskUpsertDialog, type TaskOption, type UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { emitNavigationStart, emitProgressActivityEnd, emitProgressActivityStart } from "@/components/layout/TopNavigationProgress";
 import { DomainSelect } from "@/components/financial/DomainSelect";
-import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
-import { useSetPageTitle } from "@/components/layout/page-title-context";
+import { useSetHeaderToolbar } from "@/components/layout/page-title-context";
 import { getTaskPriorityLabel, getTaskStatusLabel } from "@/lib/ui/status-colors";
 import type { Locale } from "@/lib/i18n/types";
 import { t } from "@/lib/i18n/t";
@@ -658,7 +657,6 @@ export default function TasksPageClient(props: Props) {
   // task. Search + filters now live in the dark header; the filters drop down
   // over the board when asked for.
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const hasActiveFilter = Boolean(urlPriority || urlDomain || urlLinkedId) || urlScope === "all";
   useEffect(() => {
     if (!filtersOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -1177,12 +1175,6 @@ export default function TasksPageClient(props: Props) {
     }
   }
 
-  // Phones have no sidebar to say where you are — the dark header says it. The
-  // subtitle counts what's still TO DO: the total includes everything already
-  // done, which is the one number nobody needs at a glance.
-  const todoCount = (tasksByStatus.get("todo") ?? []).length;
-  useSetPageTitle(t(tasksDict, props.locale, "pageTitle"), `${todoCount} ${t(tasksDict, props.locale, "todoSuffix")}`);
-
   // One definition of the filter controls, used by both the desktop toolbar and
   // the phone drop-down, so the two can't drift apart.
   const filterFields = (
@@ -1262,61 +1254,110 @@ export default function TasksPageClient(props: Props) {
     </>
   );
 
-  // Desktop controls — they live at the end of the tab row (see below). Search
-  // stays a field (you type into it); everything else is a button, with the
-  // number of live filters on the מסננים one so a hidden filter can't be
+  // Number of live filters on the מסננים button, so a hidden filter can't be
   // forgotten about.
   const activeFilterCount =
     (urlPriority ? 1 : 0) + (urlDomain ? 1 : 0) + (urlLinkedId ? 1 : 0) + (urlScope === "all" ? 1 : 0);
-  // Sized and coloured for the navy strip they sit on — the same recessed
-  // white/10 treatment the phone header uses, so the two read as one bar.
-  const desktopSearch = (
-    <div className="relative w-64">
-      <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-      <Input
-        value={qInput}
-        onChange={(e) => handleQChange(e.target.value)}
-        placeholder={t(tasksDict, props.locale, "searchPlaceholder")}
-        className="h-8 rounded-lg ps-9"
-      />
-    </div>
+
+  // The board's search/filters/recurring controls live IN THE TOP BAR ITSELF
+  // (via useSetHeaderToolbar) rather than a separate strip below it — moved
+  // there (user, 2026-08-27: "move the search and the buttons to the top bar
+  // so the cards can take the full height") so the board gets that strip's
+  // height back at every width. Two responsive blocks in one node (phone:
+  // full-width search + icon-only buttons; tablet/desktop: centered search +
+  // labelled filter button) rather than two separate places rendering it, so
+  // they can't drift apart. Explicitly white regardless of the bar's own dark
+  // tokens (see .dark-topbar-page in globals.css) — user, 2026-08-27: "make
+  // the search white not this grey."
+  const headerToolbarNode = useMemo(
+    () => (
+      <>
+        <div className="mx-auto flex w-full max-w-md items-center justify-center gap-1.5 md:hidden">
+          <div className="relative w-full min-w-0">
+            <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[rgb(var(--primary-5))]" />
+            <Input
+              value={qInput}
+              onChange={(e) => handleQChange(e.target.value)}
+              placeholder={t(tasksDict, props.locale, "searchPlaceholder")}
+              className="h-10 w-full rounded-xl border-transparent bg-white ps-9 text-[rgb(var(--primary-3))] placeholder:text-[rgb(var(--primary-5))]"
+            />
+          </div>
+          <Button
+            type="button"
+            size="icon"
+            aria-label={t(tasksDict, props.locale, filtersOpen ? "hideFiltersAria" : "showFiltersAria")}
+            className="h-10 w-10 shrink-0 rounded-xl"
+            onClick={() => setFiltersOpen((x) => !x)}
+          >
+            <FilterIcon className="h-4 w-4" />
+          </Button>
+          {/* No "משימה" + here — the app's one quick-create + carries it. Each
+              board list keeps its own inline "הוספת כרטיס", which files the
+              card straight into that list; the global + can't do that. */}
+          {canSeeAll ? (
+            <Button
+              asChild
+              size="icon"
+              className="h-10 w-10 shrink-0 rounded-xl"
+              aria-label={t(tasksDict, props.locale, "recurringTasksLabel")}
+              title={t(tasksDict, props.locale, "recurringTasksLabel")}
+            >
+              <Link href="/tasks/recurring" onClick={() => emitNavigationStart()}>
+                <RecurringIcon className="h-4 w-4" />
+              </Link>
+            </Button>
+          ) : null}
+        </div>
+
+        <div className="hidden w-full items-center gap-2 md:flex">
+          <div className="flex-1" />
+          <div className="relative w-64">
+            <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[rgb(var(--primary-5))]" />
+            <Input
+              value={qInput}
+              onChange={(e) => handleQChange(e.target.value)}
+              placeholder={t(tasksDict, props.locale, "searchPlaceholder")}
+              className="h-8 rounded-lg border-transparent bg-white ps-9 text-[rgb(var(--primary-3))] placeholder:text-[rgb(var(--primary-5))]"
+            />
+          </div>
+          <div className="flex flex-1 items-center justify-end gap-2">
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 gap-1.5 rounded-lg px-2.5"
+              aria-expanded={filtersOpen}
+              onClick={() => setFiltersOpen((x) => !x)}
+            >
+              <FilterIcon className="h-4 w-4" />
+              {t(tasksDict, props.locale, "filtersLabel")}
+              {activeFilterCount > 0 ? (
+                <span className="rounded-full bg-white/25 px-1.5 text-[11px] leading-5">{activeFilterCount}</span>
+              ) : null}
+            </Button>
+            {/* Recurring tasks is a button here too, like the phone header — it
+                was a whole tab bar for a link used once a month, and the board
+                wants the room. (The recurring page keeps its tabs, so there's
+                a way back.) */}
+            {canSeeAll ? (
+              <Button
+                asChild
+                size="icon"
+                className="h-8 w-8 shrink-0 rounded-lg"
+                aria-label={t(tasksDict, props.locale, "recurringTasksLabel")}
+                title={t(tasksDict, props.locale, "recurringTasksLabel")}
+              >
+                <Link href="/tasks/recurring" onClick={() => emitNavigationStart()}>
+                  <RecurringIcon className="h-4 w-4" />
+                </Link>
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      </>
+    ),
+    [qInput, handleQChange, filtersOpen, canSeeAll, activeFilterCount, props.locale]
   );
-  const desktopActions = (
-    <>
-      <Button
-        type="button"
-        size="sm"
-        className="h-8 gap-1.5 rounded-lg px-2.5"
-        aria-expanded={filtersOpen}
-        onClick={() => setFiltersOpen((x) => !x)}
-      >
-        <FilterIcon className="h-4 w-4" />
-        {t(tasksDict, props.locale, "filtersLabel")}
-        {activeFilterCount > 0 ? (
-          <span className="rounded-full bg-white/25 px-1.5 text-[11px] leading-5">{activeFilterCount}</span>
-        ) : null}
-      </Button>
-      {/* No "משימה" + here — the app's one quick-create + carries it. Each board
-          list keeps its own inline "הוספת כרטיס", which files the card straight
-          into that list; the global + can't do that. */}
-      {/* Recurring tasks is a button here too, like the phone header — it was a
-          whole tab bar for a link used once a month, and the board wants the
-          room. (The recurring page keeps its tabs, so there's a way back.) */}
-      {canSeeAll ? (
-        <Button
-          asChild
-          size="icon"
-          className="h-8 w-8 shrink-0 rounded-lg "
-          aria-label={t(tasksDict, props.locale, "recurringTasksLabel")}
-          title={t(tasksDict, props.locale, "recurringTasksLabel")}
-        >
-          <Link href="/tasks/recurring" onClick={() => emitNavigationStart()}>
-            <RecurringIcon className="h-4 w-4" />
-          </Link>
-        </Button>
-      ) : null}
-    </>
-  );
+  useSetHeaderToolbar(headerToolbarNode);
 
   return (
     // Cancel the shell's padding around the board at every size: the board is a
@@ -1328,69 +1369,19 @@ export default function TasksPageClient(props: Props) {
     // BOARD_BLEED) and this contains the overspill without turning it into
     // scrollable page. The margin has to clear the board's own -mx bleed too,
     // which is why it's 3rem and not 0.
-    <div className="-mb-24 -mt-4 overflow-clip [overflow-clip-margin:4rem] md:-mb-6 md:-mt-6 lg:-mb-8 lg:-mt-8">
-      {/* Phone toolbar lives INSIDE the dark header (see PageHeaderToolbar), so
-          the board starts at the top of the page instead of below a screenful of
-          filter fields. */}
-      <PageHeaderToolbar>
-        <div className="mx-auto flex w-full max-w-md items-center justify-center gap-1.5">
-          {/* No "משימה" + here — see desktopActions above. */}
-          {/* Same navy treatment as every other page's header strip (orders,
-              customers): a recessed white/10 field on the bar, not a light one. */}
-          <div className="relative w-full min-w-0">
-            <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={qInput}
-              onChange={(e) => handleQChange(e.target.value)}
-              placeholder={t(tasksDict, props.locale, "searchPlaceholder")}
-              className="h-10 w-full rounded-xl ps-9"
-            />
-          </div>
-          {/* Reads as ON (sky fill) while the panel is open or a filter is set. */}
-          <Button
-            type="button"
-            size="icon"
-            aria-label={t(tasksDict, props.locale, filtersOpen ? "hideFiltersAria" : "showFiltersAria")}
-            className={
-              filtersOpen || hasActiveFilter
-                ? "h-10 w-10 shrink-0 rounded-xl"
-                : "h-10 w-10 shrink-0 rounded-xl "
-            }
-            onClick={() => setFiltersOpen((x) => !x)}
-          >
-            <FilterIcon className="h-4 w-4" />
-          </Button>
-          {/* "משימות קבועות" as a button, not a tab row: the tab strip cost the
-              board a whole line for a link used once a month. The tabs are still
-              there from tablet up (and on the recurring page itself, so there's
-              always a way back). */}
-          {canSeeAll ? (
-            <Button
-              asChild
-              size="icon"
-              className="h-10 w-10 shrink-0 rounded-xl "
-              aria-label={t(tasksDict, props.locale, "recurringTasksLabel")}
-              title={t(tasksDict, props.locale, "recurringTasksLabel")}
-            >
-              <Link href="/tasks/recurring" onClick={() => emitNavigationStart()}>
-                <RecurringIcon className="h-4 w-4" />
-              </Link>
-            </Button>
-          ) : null}
-        </div>
-      </PageHeaderToolbar>
-
+    <div className="dark-topbar-page -mb-24 -mt-4 overflow-clip [overflow-clip-margin:4rem] md:-mb-6 md:-mt-6 lg:-mb-8 lg:-mt-8">
       {/* Phone: the filters drop DOWN OVER the board, pinned under the sticky
-          header (60px top bar + 52px toolbar) — where you're already looking. */}
+          header (60px top bar only now — the toolbar strip moved INTO it, see
+          headerToolbarNode above). */}
       {filtersOpen ? (
         <>
           <button
             type="button"
             aria-label={t(tasksDict, props.locale, "closeFiltersAria")}
-            className="fixed inset-0 top-[112px] z-20 bg-black/30 md:hidden"
+            className="fixed inset-0 top-[60px] z-20 bg-black/30 md:hidden"
             onClick={() => setFiltersOpen(false)}
           />
-          <div className="fixed inset-x-0 top-[112px] z-20 border-b border-border bg-card p-3 shadow-lg md:hidden">
+          <div className="fixed inset-x-0 top-[60px] z-20 border-b border-border bg-card p-3 shadow-lg md:hidden">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-sm font-medium">{t(tasksDict, props.locale, "filtersLabel")}</span>
               <button
@@ -1407,25 +1398,11 @@ export default function TasksPageClient(props: Props) {
         </>
       ) : null}
 
-      {/* Tablet and up: the tab row carries the controls at its end, and the
-          filters drop out of it — a toolbar CARD above the board cost a third of
-          the screen for four fields that are usually left alone. */}
-      {/* Desktop: ONE narrow navy row — add, search, filters, recurring — that
-          continues the top bar, with the board owning everything under it. Same
-          shape as the phone header; the tab bar is gone from this page entirely
-          (see the recurring button above). Full-bleed like the board, so the
-          dark runs edge to edge. */}
-      <div className="-mx-3 hidden items-center gap-2 bg-sidebar px-3 py-1.5 md:-mx-6 md:flex md:px-6 lg:-mx-8 lg:px-8">
-        {/* Equal flex-1 flanks put the search dead centre; the actions ride the
-            end of the row (the left, in RTL). */}
-        <div className="flex-1" />
-        {desktopSearch}
-        <div className="flex flex-1 items-center justify-end gap-2">{desktopActions}</div>
-      </div>
-
       {/* Desktop filters: a card floating OVER the board, hung under the מסננים
           button (fixed, so the board's overflow-clip can't cut it off). Inline
-          it pushed the board down every time it opened. */}
+          it pushed the board down every time it opened. Anchored under the top
+          bar directly now (60px) — the separate navy row this used to hang
+          under moved INTO the bar itself (see headerToolbarNode above). */}
       {filtersOpen ? (
         <div className="hidden md:block">
           <button
@@ -1434,7 +1411,7 @@ export default function TasksPageClient(props: Props) {
             className="fixed inset-0 z-40 bg-black/20"
             onClick={() => setFiltersOpen(false)}
           />
-          <div className="fixed left-6 top-[7rem] z-50 w-[28rem] max-w-[calc(100vw-3rem)] rounded-xl border bg-card p-3 shadow-xl lg:left-8">
+          <div className="fixed left-6 top-[60px] z-50 w-[28rem] max-w-[calc(100vw-3rem)] rounded-xl border bg-card p-3 shadow-xl lg:left-8">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-sm font-medium">{t(tasksDict, props.locale, "filtersLabel")}</span>
               <button

@@ -16,7 +16,7 @@ import { HoverPanel, HoverPanelContent, HoverPanelTrigger, useHoverPanel } from 
 import { useAlerts } from "@/lib/ui/alerts-store";
 import { BrandMark } from "@/components/ui/brand-mark";
 import { RAIL_WIDTH, useSidebarCollapse } from "@/components/layout/sidebar-collapse-context";
-import { useHeaderAction, usePageTitle } from "@/components/layout/page-title-context";
+import { useHeaderAction, useHeaderToolbar, usePageTitle } from "@/components/layout/page-title-context";
 import { titleForPath } from "@/lib/ui/route-titles";
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n/t";
@@ -105,6 +105,7 @@ export function TopBar({
   // past `lg` it does, so a title in the bar repeats it. See the slot below.
   const headerTitle = pageTitle ?? (fallbackTitle ? { title: fallbackTitle, subtitle: undefined } : null);
   const headerAction = useHeaderAction();
+  const headerToolbar = useHeaderToolbar();
   const { alerts, count, loading: alertsLoading, error: alertsError } = useAlerts();
 
   // The signed-in user's chosen avatar color (null = auto). The (app) layout
@@ -265,7 +266,17 @@ export function TopBar({
           as "16 באוגוס🔍ט"). Worse, every bit of padding added to separate the two
           made the slot narrower and the spill longer. Titles are chosen to fit;
           this only stops a stray long one from painting over the icons. */}
-      {headerTitle ? (
+      {headerToolbar ? (
+        // Takes over the whole slot with the page's own controls (search,
+        // filters, refresh) instead of a page name, AT EVERY WIDTH — unlike a
+        // plain title, this doesn't hide past `lg` (the caller's own content
+        // handles its own phone/desktop variants internally, e.g. via
+        // md:hidden pairs). The point is the row this used to occupy below the
+        // bar collapses entirely and the page gets that height back everywhere,
+        // not just on phone. Rendered raw (no whitespace-nowrap/clamp text
+        // styling — that's for a heading, not a row of buttons and an input).
+        <div className="flex min-w-0 flex-1 items-center">{headerToolbar}</div>
+      ) : headerTitle ? (
         <div
           className={cn(
             "flex min-w-0 flex-1 flex-col justify-center overflow-hidden px-3 leading-tight",
@@ -299,8 +310,9 @@ export function TopBar({
           itself flex-1 and already does this; on desktop the title is hidden on
           every page but the dashboard, so without this the cluster would slide
           back against the brand corner. Needed whenever the slot isn't filling
-          the row: no title at all, or a title that's phone-only. */}
-      {headerTitle && pageTitle?.showOnDesktop ? null : <div className="hidden flex-1 lg:block" />}
+          the row: no title at all, a title that's phone-only, and NOT needed
+          when headerToolbar is present — that one is flex-1 at every width. */}
+      {headerToolbar || (headerTitle && pageTitle?.showOnDesktop) ? null : <div className="hidden flex-1 lg:block" />}
 
       {/* ms-3 (RTL → space on the RIGHT, i.e. toward the title): the search glyph
           leads this cluster on a phone and sat flush against the page title, so
