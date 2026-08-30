@@ -49,6 +49,7 @@ import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import MyShiftCard from "@/components/attendance/MyShiftCard";
 import MyBonusCard from "@/components/payroll/MyBonusCard";
 import SessionList from "@/components/attendance/SessionList";
+import { PendingReportList } from "@/components/attendance/PendingReportList";
 import type { PayslipItemRow as BonusItemRow } from "@/lib/payroll-bonuses";
 import type { MyShiftReport } from "@/lib/attendance/my-shift";
 import { t } from "@/lib/i18n/t";
@@ -1225,26 +1226,13 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
                   ₪300 bonus that day" is one thought, not two screens. */}
               <MyBonusCard bonuses={myBonuses} locale={locale} />
               {pendingShiftReports.length > 0 ? (
-                <Card>
-                  <CardContent className="space-y-2 py-5 text-right">
+                <Card className="overflow-hidden">
+                  <CardContent className="space-y-2 px-3 py-5 text-right sm:px-6">
                     <div className="text-lg font-semibold">{t(profileDict, locale, "pendingApprovalTitle")}</div>
                     <p className="text-sm text-muted-foreground">
                       {t(profileDict, locale, "pendingApprovalHint")}
                     </p>
-                    {pendingShiftReports.map((report) => (
-                      <div
-                        key={report.id}
-                        className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 py-2 last:border-b-0"
-                      >
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium">{formatDateTime(report.clock_in)}</div>
-                          {report.notes ? <div className="text-xs text-muted-foreground">{report.notes}</div> : null}
-                        </div>
-                        <div className="text-sm font-semibold">
-                          {report.worked_minutes ? `${formatMinutes(report.worked_minutes)} ${t(profileDict, locale, "hoursSuffix")}` : ""}
-                        </div>
-                      </div>
-                    ))}
+                    <PendingReportList reports={pendingShiftReports} locale={locale} />
                   </CardContent>
                 </Card>
               ) : null}
