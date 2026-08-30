@@ -87,7 +87,6 @@ export async function POST(req: Request) {
 
     const effectiveProjectId = expenseRow.project_id || projectExpenseRow?.project_id || "";
     const effectiveOrderId = expenseRow.order_id || "";
-    const effectivePropertyId = expenseRow.property_id || "";
 
     if (effectiveProjectId && projectId !== effectiveProjectId) {
       return NextResponse.json({ error: "ההוצאה לא משויכת לפרויקט שנבחר." }, { status: 404 });
@@ -95,26 +94,25 @@ export async function POST(req: Request) {
     if (effectiveOrderId && orderId !== effectiveOrderId) {
       return NextResponse.json({ error: "ההוצאה לא משויכת להזמנה שנבחרה." }, { status: 404 });
     }
-    if (effectivePropertyId && propertyId !== effectivePropertyId) {
-      return NextResponse.json({ error: "ההוצאה לא משויכת לנכס שנבחר." }, { status: 404 });
-    }
     if (!effectiveProjectId && projectId) {
       return NextResponse.json({ error: "ההוצאה לא משויכת לפרויקט שנבחר." }, { status: 404 });
     }
     if (!effectiveOrderId && orderId) {
       return NextResponse.json({ error: "ההוצאה לא משויכת להזמנה שנבחרה." }, { status: 404 });
     }
-    if (!effectivePropertyId && propertyId) {
-      return NextResponse.json({ error: "ההוצאה לא משויכת לנכס שנבחר." }, { status: 404 });
-    }
+    // property_id, UNLIKE project/order, is freely (re)assignable on edit — a
+    // property-linked expense has no separate join-table complexity (no
+    // property_expenses row to move; expenses.property_id IS the whole
+    // relationship, confirmed nothing else in the app reads property_expenses),
+    // so there's nothing unsafe about letting it change (2026-08-27: "i want
+    // to make it be for this property instead of the general that it was").
+    // Project/order stay locked — moving those involves project_expenses.
 
     const lockedBusinessDomain = effectiveProjectId
       ? "logistics_projects"
       : effectiveOrderId
         ? "sales"
-        : effectivePropertyId
-          ? "property_management"
-          : null;
+        : null;
     const nextBusinessDomain =
       businessDomainInput ||
       (typeof expenseRow.business_domain === "string" ? expenseRow.business_domain.trim() : "") ||
@@ -127,7 +125,7 @@ export async function POST(req: Request) {
     if (!isExpenseBusinessDomain(nextBusinessDomain)) {
       return NextResponse.json({ error: "יש לבחור תחום עסקי." }, { status: 400 });
     }
-    if (nextBusinessDomain === "property_management" && !effectivePropertyId) {
+    if (nextBusinessDomain === "property_management" && !propertyId) {
       return NextResponse.json({ error: "יש לבחור נכס לתחום ניהול נכסים." }, { status: 400 });
     }
     if (nextBusinessDomain === "logistics_projects" && !effectiveProjectId) {
@@ -156,6 +154,11 @@ export async function POST(req: Request) {
       notes,
       expense_date: expenseDate,
       business_domain: nextBusinessDomain,
+      // project_id/order_id are NOT written here — they stay locked to
+      // whatever the expense already had (see the validation above).
+      // property_id is the one freely-editable source field, so it's the one
+      // actually persisted here.
+      property_id: propertyId || null,
       payment_status: paymentStatus,
       paid_amount: paidAmount,
       payment_method: (paymentStatus === "paid" || paymentStatus === "partial") ? paymentMethod : null,
