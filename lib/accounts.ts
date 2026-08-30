@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { isCollectedPayment } from "@/lib/orders/paymentStatus";
 import { fetchAllPagedResult } from "@/lib/supabase/paginate";
 import type { LoanRepayment } from "@/lib/loans";
+import { buildFocusHref } from "@/lib/audit";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Accounts layer (חשבונות) — real money containers with a running balance.
@@ -628,7 +629,13 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     const paid = Math.abs(num(row.paid_amount));
     const label = str(row.description)?.trim() || str(row.category)?.trim() || "תשלום";
     const sublabel = composeSublabel({ projectId: str(row.project_id) });
-    const href = str(row.project_id) ? `/projects/${str(row.project_id)}` : "/financial";
+    // A non-project expense has no record of its own to open — send it to the
+    // ledger AT this exact entry (same "focus" deep link the activity feed
+    // uses for expenses, lib/audit.ts) instead of dumping the reader on the
+    // bare page with no way to find it among everything else there.
+    const href = str(row.project_id)
+      ? `/projects/${str(row.project_id)}`
+      : buildFocusHref("/financial", `expense:${str(row.id) ?? ""}`);
     let postedAmount = 0;
     let pendingAmount = 0;
     if (status === "paid" || status === "collected" || status === "completed") {

@@ -353,6 +353,13 @@ describe("loadAccountsOverview — running balance & register", () => {
     expect(overview.ledger.map((l) => l.runningBalance)).toEqual([null, 1300, 1500]);
     const posted = overview.ledger.filter((l) => l.posted);
     expect(posted.map((l) => l.runningBalance)).toEqual([1300, 1500]);
+
+    // A non-project expense has no record of its own — it must still deep-link
+    // to its exact ledger entry (not dump the reader on the bare /financial
+    // page with no way to find it there).
+    const byId = Object.fromEntries(overview.ledger.map((l) => [l.id, l]));
+    expect(byId["e:e1"].href).toBe("/financial?focus=expense%3Ae1");
+    expect(byId["e:e2:p"].href).toBe("/financial?focus=expense%3Ae2");
   });
 
   it("returns an empty list when there are no accounts", async () => {
