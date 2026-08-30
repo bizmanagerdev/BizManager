@@ -2292,6 +2292,9 @@ export default function FinancialPageClient({
         lockedProjectId={activeEditingExpense?.expenseProjectId}
         lockedOrderId={activeEditingExpense?.expenseOrderId}
         lockedPropertyId={activeEditingExpense?.expensePropertyId}
+        recurringProjects={recurringProjects}
+        recurringOrders={recurringOrders}
+        recurringProperties={recurringProperties}
         onSaved={() => {
           return refreshAndWait();
         }}

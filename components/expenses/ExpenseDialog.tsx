@@ -614,6 +614,12 @@ export function ExpenseDialog({
       if (dom && (EXPENSE_BUSINESS_DOMAINS as readonly string[]).includes(dom)) {
         setBusinessDomain(dom as ExpenseBusinessDomain);
       }
+      // Only meaningful when the source isn't locked (see isSourceLocked) — a
+      // locked edit shows these read-only instead — but harmless to always set:
+      // the project/order/property picker below is what actually reads them.
+      setProjectId(editingExpense.project_id ?? "");
+      setOrderId(editingExpense.order_id ?? "");
+      setPropertyId(editingExpense.property_id ?? "");
       setExistingAttachments(
         Array.isArray(editingExpense.attachments) ? editingExpense.attachments : []
       );
@@ -2480,7 +2486,7 @@ export function ExpenseDialog({
                 />
               </div>
 
-              {!isEditing && effectiveDomain === "logistics_projects" && (
+              {effectiveDomain === "logistics_projects" && (
                 <div className="space-y-1">
                   <div className="text-sm font-medium">פרויקט *</div>
                   {recurringProjects.length > 0 ? (
@@ -2498,7 +2504,7 @@ export function ExpenseDialog({
                 </div>
               )}
 
-              {!isEditing && effectiveDomain === "sales" && recurringOrders.length > 0 && (
+              {effectiveDomain === "sales" && recurringOrders.length > 0 && (
                 <div className="space-y-1">
                   <div className="text-sm font-medium">הזמנה</div>
                   <NativeSelect
@@ -2513,7 +2519,7 @@ export function ExpenseDialog({
                 </div>
               )}
 
-              {!isEditing && effectiveDomain === "property_management" && (
+              {effectiveDomain === "property_management" && (
                 <div className="space-y-1">
                   <div className="text-sm font-medium">נכס *</div>
                   {recurringProperties.length > 0 ? (
