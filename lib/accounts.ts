@@ -3,6 +3,7 @@ import { isCollectedPayment } from "@/lib/orders/paymentStatus";
 import { fetchAllPagedResult } from "@/lib/supabase/paginate";
 import type { LoanRepayment } from "@/lib/loans";
 import { buildFocusHref } from "@/lib/audit";
+import { getCurrentCcFeeRate } from "@/lib/settings/ccFee";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Accounts layer (חשבונות) — real money containers with a running balance.
@@ -192,6 +193,12 @@ function str(value: unknown) {
   return typeof value === "string" ? value : null;
 }
 
+function formatIls(amount: number) {
+  return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 }).format(
+    Math.round(amount)
+  );
+}
+
 function intOrNull(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
@@ -280,6 +287,10 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     }
     return data;
   };
+
+  // Fired now, awaited later — runs alongside the table scans below rather
+  // than adding a serial round trip. Used only for Grow-style batches.
+  const ccFeeRatePromise = getCurrentCcFeeRate(supabase);
 
   const [
     paymentRows,
@@ -579,7 +590,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     { postedIn: number; postedOut: number; pendingIn: number; pendingOut: number; rows: RawLedgerEntry[] }
   >(accounts.map((a) => [a.id, { postedIn: 0, postedOut: 0, pendingIn: 0, pendingOut: 0, rows: [] }]));
 
-  // ── Credit-card payments settled via a clearing company (e.g. Growth): the
+  // ── Credit-card payments settled via a clearing company (e.g. Grow): the
   // customer paid (and their order is marked paid) on payment_date, but the
   // real money lands in the account as ONE lump sum on a later, known date —
   // tagged the same way a post-dated check is, by giving the payment a
@@ -661,25 +672,34 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     });
   }
 
-  // ── Emit one ledger row per Growth-style batch collected above. Unlike
+  // ── Emit one ledger row per Grow-style batch collected above. Unlike
   // every other row in this scan, posted/pending here is DATE-based (has the
   // settlement date arrived yet?), not status-based — there is no manual
   // "cleared" flip for a processor batch the way there is for a check; it
-  // simply lands on the calendar day it lands. ─────────────────────────────
+  // simply lands on the calendar day it lands. The amount posted is NET of
+  // the clearing company's fee (business_settings.cc_fee_rate) — that is
+  // what actually lands in the bank, matching the real statement; the
+  // customer-facing order amounts stay at the full gross price. ───────────
+  const ccFeeRate = await ccFeeRatePromise;
   const todayIso = new Date().toISOString().slice(0, 10);
   for (const g of growthBatches.values()) {
     const b = buckets.get(g.accountId)!;
     const posted = g.dueDate <= todayIso;
-    if (posted) b.postedIn += g.amount;
-    else b.pendingIn += g.amount;
+    const feeAmount = g.amount * ccFeeRate;
+    const netAmount = g.amount - feeAmount;
+    if (posted) b.postedIn += netAmount;
+    else b.pendingIn += netAmount;
+    const feePercentLabel = `${Math.round(ccFeeRate * 1000) / 10}%`;
     b.rows.push({
       id: `ccb:${g.accountId}:${g.dueDate}`,
       date: g.dueDate,
       label: "תקבולי אשראי (סליקה)",
-      sublabel: `${g.count} תשלומים מ-${g.minPaymentDate.slice(5, 7)}/${g.minPaymentDate.slice(2, 4)}`,
+      sublabel:
+        `${g.count} תשלומים מ-${g.minPaymentDate.slice(5, 7)}/${g.minPaymentDate.slice(2, 4)}` +
+        (feeAmount > 0 ? ` · עמלת סליקה ${feePercentLabel} (${formatIls(feeAmount)})` : ""),
       href: null,
       type: "in",
-      amount: g.amount,
+      amount: netAmount,
       posted,
     });
   }

@@ -54,7 +54,7 @@ export const PAYMENT_METHOD_OPTIONS = [
 
 /**
  * The 10th of the month AFTER a given date — the day a credit-card clearing
- * company (e.g. Growth) typically deposits a month's batched card charges as
+ * company (e.g. Grow) typically deposits a month's batched card charges as
  * one lump sum, not the day the customer paid. Pure; "" on a bad input.
  *
  * A credit_card payment whose due_date is set to this (via the "מגיע דרך
@@ -115,7 +115,7 @@ function defaultPaymentStatusForMethod(
   // A credit-card charge is collected from the CUSTOMER the moment they pay —
   // unlike a check or a שוטף+30 promise, there is no "will they actually pay"
   // uncertainty. A due_date on a credit_card payment marks something else
-  // entirely: when a clearing company (e.g. Growth) deposits the month's
+  // entirely: when a clearing company (e.g. Grow) deposits the month's
   // batched total into our account — a business-internal timing detail the
   // account ledger (lib/accounts.ts) defers to on its own. The order/customer
   // side must never sit "pending" waiting on that date.

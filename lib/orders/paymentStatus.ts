@@ -185,7 +185,7 @@ function getOrderPaymentStatusColor(status: string): StatusColor {
 // immediately, so buildPaymentInsert (lib/payments.ts) always defaults its
 // payment_status to 'cleared' regardless of due_date. A due_date on a
 // credit_card payment means something else — when a clearing company (e.g.
-// Growth) deposits the batched total — and only lib/accounts.ts's account
+// Grow) deposits the batched total — and only lib/accounts.ts's account
 // ledger defers to it; the order/collections side never does.
 
 export type CollectionStatus =

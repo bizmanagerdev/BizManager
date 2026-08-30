@@ -106,7 +106,7 @@ export function CollectPaymentDialog({
   const [date, setDate] = useState(getTodayDate());
   const [method, setMethod] = useState("");
   // Set only for a credit_card payment collected through a clearing company
-  // (e.g. Growth) — the customer paid, but the account only sees the money on
+  // (e.g. Grow) — the customer paid, but the account only sees the money on
   // this later date, batched with every other card payment settling the same
   // day. See lib/accounts.ts's growthBatches / lib/payments.ts nextMonthTenth.
   const [dueDate, setDueDate] = useState("");

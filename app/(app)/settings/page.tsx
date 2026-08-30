@@ -4,6 +4,7 @@ import { requireProfile } from "@/lib/auth/requireProfile";
 import SettingsTabs from "@/app/(app)/settings/SettingsTabs";
 import { loadMorningSettings, type MorningSettings } from "@/lib/morning/settings";
 import { getCurrentVatRate } from "@/lib/settings/vat";
+import { getCurrentCcFeeRate } from "@/lib/settings/ccFee";
 import { loadAccounts, type Account } from "@/lib/accounts";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { describeDevice } from "@/lib/notifications/devices";
@@ -44,6 +45,9 @@ export default async function SettingsPage() {
 
   // ── VAT rate (admin only) ────────────────────────────────────────────────
   const vatRate = isAdmin ? await getCurrentVatRate(supabase) : 0.18;
+
+  // ── Credit-card processor fee rate (admin only) ──────────────────────────
+  const ccFeeRate = isAdmin ? await getCurrentCcFeeRate(supabase) : 0.14;
 
   // ── Accounts (admin only) — empty list if the table isn't deployed yet ────
   const accounts: Account[] = isAdmin ? await loadAccounts(supabase) : [];
@@ -122,6 +126,7 @@ export default async function SettingsPage() {
         devicesUnavailable={devicesUnavailable}
         morningSettings={morningSettings}
         vatRate={vatRate}
+        ccFeeRate={ccFeeRate}
         auditLoggingEnabled={auditLoggingEnabled}
         accounts={accounts}
       />

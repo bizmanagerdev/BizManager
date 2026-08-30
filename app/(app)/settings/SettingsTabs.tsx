@@ -9,6 +9,7 @@ import ConnectedDevicesCard, { type ConnectedDevice } from "@/components/notific
 import MorningAutoIssueForm from "@/app/(app)/settings/integrations/morning/MorningAutoIssueForm";
 import BackupCard from "@/app/(app)/settings/BackupCard";
 import VatRateCard from "@/app/(app)/settings/VatRateCard";
+import CcFeeRateCard from "@/app/(app)/settings/CcFeeRateCard";
 import AuditLoggingCard from "@/app/(app)/settings/AuditLoggingCard";
 import AccountsCard from "@/app/(app)/settings/AccountsCard";
 import type { MorningSettings } from "@/lib/morning/settings";
@@ -23,6 +24,8 @@ type Props = {
   morningSettings: MorningSettings | null;
   // Current VAT rate (fraction, e.g. 0.18) — admin only
   vatRate: number;
+  // Credit-card processor (e.g. Grow) fee rate (fraction, e.g. 0.14) — admin only
+  ccFeeRate: number;
   // Global audit-logging switch — admin only
   auditLoggingEnabled: boolean;
   // Bank/cash accounts (חשבונות) — admin only
@@ -93,6 +96,7 @@ export default function SettingsTabs(props: Props) {
         <div className="space-y-4">
           <AccountsCard initialAccounts={props.accounts} />
           <VatRateCard initialRate={props.vatRate} />
+          <CcFeeRateCard initialRate={props.ccFeeRate} />
         </div>
       )}
 

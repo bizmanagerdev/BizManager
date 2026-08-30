@@ -67,6 +67,9 @@ function makeSupabase(tables: Tables) {
     for (const m of ["select", "eq", "not", "gte", "in", "or", "order", "range"]) {
       self[m] = () => self;
     }
+    // Used by business_settings lookups (e.g. getCurrentCcFeeRate) — the
+    // first configured row, or null (caller falls back to its default).
+    self.maybeSingle = () => Promise.resolve({ data: rows[0] ?? null, error: null });
     self.then = (onF: (v: { data: unknown; error: null }) => unknown, onR?: (e: unknown) => unknown) =>
       Promise.resolve({ data: rows, error: null }).then(onF, onR);
     return self;
@@ -354,6 +357,7 @@ describe("loadAccountBalances — credit-card processor batches (e.g. Growth)", 
     const [overview] = await loadAccountsOverview(
       makeSupabase({
         accounts: [account({ opening_date: "2024-01-01" })],
+        business_settings: [{ cc_fee_rate: 0 }], // isolate the batching behavior from the fee math (tested separately below)
         payments: [
           ccPayment({ id: "p1", payment_date: "2024-08-05", amount_total: 340 }),
           ccPayment({ id: "p2", payment_date: "2024-08-12", amount_total: 340 }),
@@ -371,6 +375,7 @@ describe("loadAccountBalances — credit-card processor batches (e.g. Growth)", 
   it("posts the batch once its settlement date has passed", async () => {
     const b = await balance({
       accounts: [account({ opening_date: "2020-01-01" })],
+      business_settings: [{ cc_fee_rate: 0 }],
       payments: [
         ccPayment({ id: "p1", payment_date: "2019-12-05", due_date: "2020-01-10", amount_total: 500 }),
       ],
@@ -411,6 +416,7 @@ describe("loadAccountBalances — credit-card processor batches (e.g. Growth)", 
           account({ id: "bank1", opening_date: "2024-01-01" }),
           account({ id: "bank2", opening_date: "2024-01-01" }),
         ],
+        business_settings: [{ cc_fee_rate: 0 }],
         payments: [
           ccPayment({ id: "p1", account_id: "bank1", amount_total: 300 }),
           ccPayment({ id: "p2", account_id: "bank2", amount_total: 700 }),
@@ -419,6 +425,60 @@ describe("loadAccountBalances — credit-card processor batches (e.g. Growth)", 
     );
     expect(balances.find((b) => b.id === "bank1")!.pendingIn).toBe(300);
     expect(balances.find((b) => b.id === "bank2")!.pendingIn).toBe(700);
+  });
+});
+
+describe("loadAccountBalances — credit-card batches net the clearing company's fee", () => {
+  function ccPayment(overrides: Record<string, unknown> = {}) {
+    return {
+      account_id: "acc1",
+      payment_method: "credit_card",
+      payment_status: "cleared",
+      amount_total: 1000,
+      payment_date: "2024-08-05",
+      due_date: "2099-09-10",
+      ...overrides,
+    };
+  }
+
+  it("defaults to the 14% fee when no business setting is configured", async () => {
+    const b = await balance({
+      accounts: [account({ opening_date: "2024-01-01" })],
+      payments: [ccPayment({ id: "p1" })],
+    });
+    // 1000 - 14% = 860
+    expect(b.pendingIn).toBe(860);
+  });
+
+  it("uses the configured business_settings.cc_fee_rate instead of the default", async () => {
+    const b = await balance({
+      accounts: [account({ opening_date: "2024-01-01" })],
+      business_settings: [{ cc_fee_rate: 0.1 }],
+      payments: [ccPayment({ id: "p1" })],
+    });
+    // 1000 - 10% = 900
+    expect(b.pendingIn).toBe(900);
+  });
+
+  it("a zero fee rate posts the full gross amount", async () => {
+    const b = await balance({
+      accounts: [account({ opening_date: "2024-01-01" })],
+      business_settings: [{ cc_fee_rate: 0 }],
+      payments: [ccPayment({ id: "p1" })],
+    });
+    expect(b.pendingIn).toBe(1000);
+  });
+
+  it("the ledger row's sublabel notes the fee amount", async () => {
+    const [overview] = await loadAccountsOverview(
+      makeSupabase({
+        accounts: [account({ opening_date: "2024-01-01" })],
+        business_settings: [{ cc_fee_rate: 0.14 }],
+        payments: [ccPayment({ id: "p1" })],
+      })
+    );
+    expect(overview.ledger[0].sublabel).toContain("14%");
+    expect(overview.ledger[0].amount).toBe(860);
   });
 });
 
