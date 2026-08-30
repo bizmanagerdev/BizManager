@@ -94,7 +94,7 @@ export type AuditRecordInfo = {
   createdAt: string | null;
 };
 
-export function entityLabel(tableName: string) {
+export function entityLabel(tableName: string, data?: Record<string, AuditLogValue> | null) {
   switch (tableName) {
     case "projects": return "פרויקט";
     case "tasks": return "משימה";
@@ -121,7 +121,19 @@ export function entityLabel(tableName: string) {
     case "recurring_expense_templates": return "הוצאה קבועה";
     case "recurring_task_templates": return "משימה קבועה";
     case "recurring_task_template_assignees": return "משתתף במשימה קבועה";
-    case "phone_attendance_reports": return "דיווח נוכחות טלפוני";
+    // The same table holds three different origins for a clocked shift — a real
+    // phone call-in, one manually keyed in for someone (still "phone" in spirit),
+    // and one the worker logged himself through the app on his own smartphone.
+    // Those are NOT the same event and must read differently in the feed (see
+    // [[phone-attendance-callin]] and attendanceSourceLabel in
+    // lib/attendance/my-shift.ts, which draws the same distinction for the
+    // approval queue).
+    case "phone_attendance_reports": {
+      const source = typeof data?.source === "string" ? data.source : null;
+      if (source === "app") return "דיווח נוכחות מהאפליקציה";
+      if (source === "phone_manual") return "דיווח נוכחות ידני";
+      return "דיווח נוכחות טלפוני";
+    }
     case "worker_absences": return "יום חופש";
     case "payslip_items": return "רכיב תלוש";
     case "property_expenses": return "הוצאת נכס";
@@ -439,8 +451,8 @@ export function buildDetails(tableName: string, newData: AuditLogValue): string 
   return parts.join(" · ");
 }
 
-export function buildSummary(tableName: string, action: string) {
-  return `${entityLabel(tableName)} ${actionLabel(action)}`;
+export function buildSummary(tableName: string, action: string, data?: Record<string, AuditLogValue> | null) {
+  return `${entityLabel(tableName, data)} ${actionLabel(action)}`;
 }
 
 // ── Deep links & parent grouping ─────────────────────────────────────────────
@@ -1567,8 +1579,8 @@ export function buildAuditFeedItem(
     recordId: row.record_id,
     action: row.action,
     actionLabel: actionLabel(row.action),
-    entityLabel: entityLabel(row.table_name),
-    summary: buildSummary(row.table_name, row.action),
+    entityLabel: entityLabel(row.table_name, data),
+    summary: buildSummary(row.table_name, row.action, data),
     details,
     baseDetails: base,
     changes,
