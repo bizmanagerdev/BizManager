@@ -19,8 +19,12 @@ export default async function VehiclesPage() {
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
+      {/* OUTSIDE the space-y-4 below — see tasks/page.tsx for why (space-y adds
+          margin-top to any sibling with a preceding one, even PageAlertBar's
+          own zero-height node, which read as a white gap that closed the
+          instant every alert was dismissed). */}
+      <PageAlertBar keys={["vehicle_expiry"]} />
       <div className="space-y-4">
-        <PageAlertBar keys={["vehicle_expiry"]} />
         <VehiclesClient vehicles={vehicles} />
       </div>
     </AppShell>

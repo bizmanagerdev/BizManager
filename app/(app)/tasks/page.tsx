@@ -142,8 +142,17 @@ export default async function TasksPage({
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
+      {/* OUTSIDE the space-y-4 below, deliberately: PageAlertBar renders a real
+          (if zero-height) DOM node whenever there are alerts, and space-y's
+          sibling-margin CSS doesn't care that a sibling is 0 tall — it still
+          added a phantom margin-top to whatever came after it, which read as
+          a blank white gap that closed the instant every alert was dismissed
+          (user, 2026-08-27: "there is a white section until i x them"). Being
+          a sibling BEFORE the space-y container instead of its first child
+          keeps the exact same visual overlay (it still sits right above the
+          same content) without being inside that container's margin rules. */}
+      <PageAlertBar keys={["task_overdue", "task_due_soon"]} locale={profile.locale} />
       <div className="space-y-4">
-        <PageAlertBar keys={["task_overdue", "task_due_soon"]} locale={profile.locale} />
         {/* The tab bar is rendered by TasksPageClient on this page — the board's
             search / filters / + ride the END of that same row on desktop, and
             they're client-owned. Phones get no tab bar at all: "משימות קבועות"

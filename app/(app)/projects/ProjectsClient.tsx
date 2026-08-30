@@ -800,6 +800,16 @@ export default function ProjectsClient({
         </TabsList>
       </Tabs>
 
+      {/* PageAlertBar + the mobile filters block share ONE plain wrapper (no
+          space-y class) rather than being two direct PageStack children —
+          PageStack is space-y-4, and that CSS adds margin-top to ANY sibling
+          that has a preceding one, even a zero-height one. PageAlertBar always
+          renders a real (if 0-tall) DOM node while alerts exist, so the block
+          right after it used to get a phantom extra gap that vanished the
+          instant every alert was dismissed (user, 2026-08-27: "there is a
+          white section until i x them"). Grouping them removes that extra
+          sibling boundary from PageStack's own point of view. */}
+      <div>
       <PageAlertBar keys={["project_closed_unbilled", "project_deadline", "project_starting", "stale_quote"]} />
 
       <div className="space-y-3 md:hidden">
@@ -863,6 +873,7 @@ export default function ProjectsClient({
             </Button>
           </div>
         </div>
+      </div>
       </div>
 
       <AdaptiveStack

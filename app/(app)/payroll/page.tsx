@@ -27,8 +27,12 @@ export default async function PayrollPage({
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
+      {/* OUTSIDE the space-y-4 below — see tasks/page.tsx for why (space-y adds
+          margin-top to any sibling with a preceding one, even PageAlertBar's
+          own zero-height node, which read as a white gap that closed the
+          instant every alert was dismissed). */}
+      <PageAlertBar keys={["wage_overdue"]} />
       <div className="space-y-4 text-right" dir="rtl">
-        <PageAlertBar keys={["wage_overdue"]} />
         {loadError ? (
           <Card>
             <CardContent className="py-6 text-sm text-destructive">
