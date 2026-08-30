@@ -131,7 +131,8 @@ export type AccountDeleteRef =
   | { kind: "expense"; id: string; projectId: string | null; orderId: string | null; propertyId: string | null }
   | { kind: "worker_payment"; id: string; userId: string | null }
   | { kind: "loan"; id: string }
-  | { kind: "loan_repayment"; id: string; loanId: string };
+  | { kind: "loan_repayment"; id: string; loanId: string }
+  | { kind: "card_charge"; id: string };
 
 export type AccountEditRef =
   | { kind: "payment"; id: string }
@@ -287,11 +288,12 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     loanRows,
     loanRepaymentRows,
     transferRows,
+    cardChargeRows,
   ] = await Promise.all([
       scan("payments", (from, to) =>
         supabase
           .from("payments")
-          .select("id,account_id,payment_date,due_date,amount_total,payment_status,notes,project_id,order_id")
+          .select("id,account_id,payment_date,due_date,amount_total,payment_status,payment_method,notes,project_id,order_id")
           .not("account_id", "is", null)
           // Either date may be the one inside the window: a check handed over
           // in May and cashed in July is May-dated but July money.
@@ -355,6 +357,17 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
           .from("account_transfers")
           .select("id,from_account_id,to_account_id,amount,transfer_date,notes")
           .gte("transfer_date", earliestOpening)
+          .range(from, to)
+      ),
+      // Credit-card statement → ONE lump charge on the account (see the
+      // card_statement_charges migration). Never touches the P&L — the
+      // itemized expenses it summarizes already carry the domain/category
+      // cost and are deliberately never given an account_id.
+      scan("card_statement_charges", (from, to) =>
+        supabase
+          .from("card_statement_charges")
+          .select("id,statement_id,card_label,account_id,amount,charge_date,notes")
+          .gte("charge_date", earliestOpening)
           .range(from, to)
       ),
     ]);
@@ -566,24 +579,55 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     { postedIn: number; postedOut: number; pendingIn: number; pendingOut: number; rows: RawLedgerEntry[] }
   >(accounts.map((a) => [a.id, { postedIn: 0, postedOut: 0, pendingIn: 0, pendingOut: 0, rows: [] }]));
 
+  // ── Credit-card payments settled via a clearing company (e.g. Growth): the
+  // customer paid (and their order is marked paid) on payment_date, but the
+  // real money lands in the account as ONE lump sum on a later, known date —
+  // tagged the same way a post-dated check is, by giving the payment a
+  // due_date that differs from payment_date. Every credit_card payment
+  // sharing an account + due_date is folded into ONE batch row below instead
+  // of appearing individually — see nextMonthTenth() in lib/payments.ts,
+  // which fills due_date from the order payment dialogs' quick-fill.
+  const growthBatches = new Map<
+    string,
+    { accountId: string; dueDate: string; amount: number; count: number; minPaymentDate: string }
+  >();
+
   // ── Payments: inflows, EXCEPT refunds (negative amount_total = money out) ────
   for (const row of paymentRows) {
     const account = byId.get(str(row.account_id) ?? "");
     if (!account) continue;
-    const b = buckets.get(account.id)!;
     const recordedDate = str(row.payment_date);
     const dueDate = str(row.due_date);
-    // The day the money actually moves through the account. A post-dated check
-    // sits in a drawer until its פירעון date; that is when the bank credits it.
-    const date = dueDate && recordedDate && dueDate !== recordedDate ? dueDate : recordedDate;
-    if (!date || date < account.openingDate) continue; // before go-live → in opening
     const signed = num(row.amount_total);
     const amount = Math.abs(signed);
     if (!amount) continue;
     const status = str(row.payment_status)?.trim().toLowerCase() ?? "";
     if (status === "rejected") continue; // bounced — moved nothing
-    const posted = isCollectedPayment(status);
     const isRefund = signed < 0; // a refund leaves the account
+    const isDeferredCardBatch =
+      !isRefund &&
+      (str(row.payment_method)?.trim().toLowerCase() ?? "") === "credit_card" &&
+      Boolean(dueDate) &&
+      Boolean(recordedDate) &&
+      dueDate !== recordedDate;
+    if (isDeferredCardBatch) {
+      if (dueDate! >= account.openingDate) {
+        const key = `${account.id}|${dueDate}`;
+        const g = growthBatches.get(key) ?? { accountId: account.id, dueDate: dueDate!, amount: 0, count: 0, minPaymentDate: recordedDate! };
+        g.amount += amount;
+        g.count += 1;
+        if (recordedDate! < g.minPaymentDate) g.minPaymentDate = recordedDate!;
+        growthBatches.set(key, g);
+      }
+      continue;
+    }
+
+    const b = buckets.get(account.id)!;
+    // The day the money actually moves through the account. A post-dated check
+    // sits in a drawer until its פירעון date; that is when the bank credits it.
+    const date = dueDate && recordedDate && dueDate !== recordedDate ? dueDate : recordedDate;
+    if (!date || date < account.openingDate) continue; // before go-live → in opening
+    const posted = isCollectedPayment(status);
     if (isRefund) {
       if (posted) b.postedOut += amount;
       else b.pendingOut += amount;
@@ -614,6 +658,29 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
         orderId: str(row.order_id),
       },
       editRef: { kind: "payment", id: str(row.id) ?? "" },
+    });
+  }
+
+  // ── Emit one ledger row per Growth-style batch collected above. Unlike
+  // every other row in this scan, posted/pending here is DATE-based (has the
+  // settlement date arrived yet?), not status-based — there is no manual
+  // "cleared" flip for a processor batch the way there is for a check; it
+  // simply lands on the calendar day it lands. ─────────────────────────────
+  const todayIso = new Date().toISOString().slice(0, 10);
+  for (const g of growthBatches.values()) {
+    const b = buckets.get(g.accountId)!;
+    const posted = g.dueDate <= todayIso;
+    if (posted) b.postedIn += g.amount;
+    else b.pendingIn += g.amount;
+    b.rows.push({
+      id: `ccb:${g.accountId}:${g.dueDate}`,
+      date: g.dueDate,
+      label: "תקבולי אשראי (סליקה)",
+      sublabel: `${g.count} תשלומים מ-${g.minPaymentDate.slice(5, 7)}/${g.minPaymentDate.slice(2, 4)}`,
+      href: null,
+      type: "in",
+      amount: g.amount,
+      posted,
     });
   }
 
@@ -912,6 +979,30 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
         transfer: ref,
       });
     }
+  }
+
+  // ── Credit-card statement charges: one lump outflow per card per statement ──
+  for (const row of cardChargeRows) {
+    const account = byId.get(str(row.account_id) ?? "");
+    if (!account) continue;
+    const date = str(row.charge_date);
+    const amount = Math.abs(num(row.amount));
+    if (!date || !amount || date < account.openingDate) continue;
+    const b = buckets.get(account.id)!;
+    b.postedOut += amount;
+    const cardLabel = str(row.card_label)?.trim() || "כרטיס אשראי";
+    const statementId = str(row.statement_id) ?? "";
+    b.rows.push({
+      id: `cc:${str(row.id) ?? ""}`,
+      date,
+      label: `חיוב כרטיס: ${cardLabel}`,
+      sublabel: str(row.notes),
+      href: statementId ? `/financial/statements/${statementId}` : "/financial/statements",
+      type: "out",
+      amount,
+      posted: true,
+      deleteRef: { kind: "card_charge", id: str(row.id) ?? "" },
+    });
   }
 
   return buckets;

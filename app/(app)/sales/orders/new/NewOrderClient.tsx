@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { DateInput } from "@/components/ui/date-input";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
+import { nextMonthTenth } from "@/lib/payments";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
@@ -1892,6 +1893,18 @@ export default function NewOrderClient({
                       <p className="text-[11px] text-muted-foreground">
                         לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
                       </p>
+                    ) : null}
+                    {payment.payment_method === "credit_card" ? (
+                      <button
+                        type="button"
+                        disabled={actionLocked}
+                        onClick={() =>
+                          updatePaymentDraft(index, { due_date: nextMonthTenth(payment.payment_date) || payment.due_date })
+                        }
+                        className="rounded border border-input px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted disabled:opacity-50"
+                      >
+                        מגיע דרך סליקה (גרואו) — 10 לחודש הבא
+                      </button>
                     ) : null}
                   </div>
                 </div>

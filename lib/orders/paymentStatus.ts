@@ -180,6 +180,13 @@ function getOrderPaymentStatusColor(status: string): StatusColor {
 // only what actually cleared. These helpers split a set of payments into what was
 // collected vs what is still expected, and derive a collection status for the
 // owner's גבייה (collections) worklist.
+//
+// EXCEPTION — credit_card: a card charge is collected from the customer
+// immediately, so buildPaymentInsert (lib/payments.ts) always defaults its
+// payment_status to 'cleared' regardless of due_date. A due_date on a
+// credit_card payment means something else — when a clearing company (e.g.
+// Growth) deposits the batched total — and only lib/accounts.ts's account
+// ledger defers to it; the order/collections side never does.
 
 export type CollectionStatus =
   | "overpaid"

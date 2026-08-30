@@ -52,6 +52,29 @@ export const PAYMENT_METHOD_OPTIONS = [
   { value: "other", label: "אחר" },
 ] as const;
 
+/**
+ * The 10th of the month AFTER a given date — the day a credit-card clearing
+ * company (e.g. Growth) typically deposits a month's batched card charges as
+ * one lump sum, not the day the customer paid. Pure; "" on a bad input.
+ *
+ * A credit_card payment whose due_date is set to this (via the "מגיע דרך
+ * סליקה" quick-fill in the order payment dialogs) is picked up by
+ * lib/accounts.ts's scanAccountActivity and merged with every other
+ * credit_card payment sharing the same account + due_date into ONE ledger
+ * line, instead of showing every payment separately.
+ */
+export function nextMonthTenth(dateIso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateIso);
+  if (!m) return "";
+  let year = Number(m[1]);
+  let month = Number(m[2]) + 1; // 1-12, then bumped one month forward
+  if (month > 12) {
+    month = 1;
+    year += 1;
+  }
+  return `${year}-${String(month).padStart(2, "0")}-10`;
+}
+
 type BuildPaymentInsertInput = {
   amountTotal: number;
   businessDomain: ExpenseBusinessDomain;
@@ -87,7 +110,16 @@ function defaultPaymentStatusForMethod(
   paymentDate: string,
   dueDate: string | null
 ): "pending" | "cleared" {
-  if (normalizePaymentMethod(method) === "check") return "pending";
+  const normalized = normalizePaymentMethod(method);
+  if (normalized === "check") return "pending";
+  // A credit-card charge is collected from the CUSTOMER the moment they pay —
+  // unlike a check or a שוטף+30 promise, there is no "will they actually pay"
+  // uncertainty. A due_date on a credit_card payment marks something else
+  // entirely: when a clearing company (e.g. Growth) deposits the month's
+  // batched total into our account — a business-internal timing detail the
+  // account ledger (lib/accounts.ts) defers to on its own. The order/customer
+  // side must never sit "pending" waiting on that date.
+  if (normalized === "credit_card") return "cleared";
   // Non-check method with a due_date that is today or in the future — treat as pending.
   // Compare against today so that paymentDate == dueDate (both set to a future date) is
   // correctly treated as pending, not cleared.

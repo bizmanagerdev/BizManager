@@ -17,6 +17,7 @@ import {
 } from "@/lib/orders/paymentStatus";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
+import { nextMonthTenth } from "@/lib/payments";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
 import { offlineFetch } from "@/lib/offline-queue";
@@ -320,6 +321,15 @@ export default function OrderPaymentDialog({
                   <p className="text-[11px] text-muted-foreground">
                     לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
                   </p>
+                ) : null}
+                {paymentMethod === "credit_card" ? (
+                  <button
+                    type="button"
+                    onClick={() => setDueDate(nextMonthTenth(paymentDate) || dueDate)}
+                    className="rounded border border-input px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted"
+                  >
+                    מגיע דרך סליקה (גרואו) — 10 לחודש הבא
+                  </button>
                 ) : null}
               </div>
             ) : null}

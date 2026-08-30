@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { toPaymentCalendarItems, upcomingDueDates } from "@/lib/payables";
+import {
+  toPaymentCalendarItems,
+  upcomingDueDates,
+  loadCardChargeItems,
+  loadCardChargedExpenseIds,
+} from "@/lib/payables";
 import type { FinancialEntry } from "@/lib/financial";
 
 function entry(over: Partial<FinancialEntry>): FinancialEntry {
@@ -91,6 +96,144 @@ describe("toPaymentCalendarItems", () => {
       today
     );
     expect(item.workerUserId).toBe("user-1");
+  });
+});
+
+describe("loadCardChargeItems — real charges + one-per-card forecast", () => {
+  function makeSupabase(rows: Record<string, unknown>[]) {
+    return {
+      from: () => ({
+        select: () => Promise.resolve({ data: rows, error: null }),
+      }),
+    } as never;
+  }
+
+  it("shows a real charge as a posted item on its charge_date", async () => {
+    const items = await loadCardChargeItems(makeSupabase([
+      { id: "c1", statement_id: "s1", card_label: "ויזה 9557", account_id: "acc1", amount: 19878.27, charge_date: "2026-07-05", notes: null },
+    ]), { referenceDate: "2026-08-30" });
+    const real = items.find((i) => i.id === "ccharge:c1")!;
+    expect(real.date).toBe("2026-07-05");
+    expect(real.amount).toBe(19878.27);
+    expect(real.stage).toBe("posted");
+    expect(real.autoPaid).toBe(true);
+    expect(real.sourceHref).toBe("/financial/statements/s1");
+  });
+
+  it("forecasts the next month from the last real charge, estimated from its amount + day", async () => {
+    const items = await loadCardChargeItems(makeSupabase([
+      { id: "c1", statement_id: "s1", card_label: "ויזה 9557", account_id: "acc1", amount: 1000, charge_date: "2026-07-05", notes: null },
+    ]), { referenceDate: "2026-08-30" });
+    const forecast = items.find((i) => i.id === "ccharge_proj:ויזה 9557:2026-08");
+    expect(forecast).toBeTruthy();
+    expect(forecast!.date).toBe("2026-08-05");
+    expect(forecast!.amount).toBe(1000);
+    expect(forecast!.variableAmount).toBe(true);
+    expect(forecast!.autoPaid).toBe(true);
+    // Predicted day (08-05) already passed relative to referenceDate (08-30).
+    expect(forecast!.stage).toBe("pending");
+    expect(forecast!.overdue).toBe(true);
+  });
+
+  it("the forecast is pending (overdue) once its predicted date is in the past", async () => {
+    const items = await loadCardChargeItems(makeSupabase([
+      { id: "c1", statement_id: "s1", card_label: "ויזה 9557", account_id: "acc1", amount: 1000, charge_date: "2026-06-05", notes: null },
+    ]), { referenceDate: "2026-08-30" });
+    // Last real charge June 5 → forecasts July 5 (past → pending/overdue) AND August 5 (past → pending/overdue too).
+    const july = items.find((i) => i.id === "ccharge_proj:ויזה 9557:2026-07")!;
+    const august = items.find((i) => i.id === "ccharge_proj:ויזה 9557:2026-08")!;
+    expect(july.stage).toBe("pending");
+    expect(july.overdue).toBe(true);
+    expect(august.stage).toBe("pending");
+  });
+
+  it("a real charge for a period suppresses that period's forecast", async () => {
+    const items = await loadCardChargeItems(makeSupabase([
+      { id: "c1", statement_id: "s1", card_label: "ויזה 9557", account_id: "acc1", amount: 1000, charge_date: "2026-07-05", notes: null },
+      { id: "c2", statement_id: "s2", card_label: "ויזה 9557", account_id: "acc1", amount: 1100, charge_date: "2026-08-06", notes: null },
+    ]), { referenceDate: "2026-08-30" });
+    expect(items.find((i) => i.id === "ccharge_proj:ויזה 9557:2026-08")).toBeUndefined();
+    expect(items.filter((i) => i.id.startsWith("ccharge_proj"))).toHaveLength(1); // only September forecast remains
+    expect(items.find((i) => i.id === "ccharge_proj:ויזה 9557:2026-09")).toBeTruthy();
+  });
+
+  it("handles multiple cards independently", async () => {
+    const items = await loadCardChargeItems(makeSupabase([
+      { id: "c1", statement_id: "s1", card_label: "ויזה 9557", account_id: "acc1", amount: 500, charge_date: "2026-08-05", notes: null },
+      { id: "c2", statement_id: "s1", card_label: "ויזה 9828", account_id: "acc1", amount: 700, charge_date: "2026-07-27", notes: null },
+    ]), { referenceDate: "2026-08-30" });
+    expect(items.find((i) => i.id === "ccharge:c1")!.amount).toBe(500);
+    expect(items.find((i) => i.id === "ccharge:c2")!.amount).toBe(700);
+    expect(items.find((i) => i.id === "ccharge_proj:ויזה 9828:2026-08")).toBeTruthy();
+  });
+
+  it("returns nothing when there are no recorded charges yet", async () => {
+    expect(await loadCardChargeItems(makeSupabase([]), { referenceDate: "2026-08-30" })).toEqual([]);
+  });
+});
+
+describe("loadCardChargedExpenseIds — hide itemized detail once a lump charge covers it", () => {
+  function makeSupabase(tables: { card_statement_rows: Record<string, unknown>[]; card_statement_charges: Record<string, unknown>[] }) {
+    return {
+      from: (table: "card_statement_rows" | "card_statement_charges") => ({
+        select: () => ({
+          not: () => Promise.resolve({ data: tables[table], error: null }),
+          then: (onF: (v: { data: unknown; error: null }) => unknown) =>
+            Promise.resolve({ data: tables[table], error: null }).then(onF),
+        }),
+      }),
+    } as never;
+  }
+
+  it("excludes an expense whose card+statement already has a recorded lump charge", async () => {
+    const ids = await loadCardChargedExpenseIds(
+      makeSupabase({
+        card_statement_rows: [
+          { expense_id: "e1", statement_id: "s1", card_label: "ויזה 9557", category: "ויזה 9557" },
+          { expense_id: "e2", statement_id: "s1", card_label: "ויזה 9828", category: "ויזה 9828" }, // different card, not charged
+        ],
+        card_statement_charges: [{ statement_id: "s1", card_label: "ויזה 9557" }],
+      })
+    );
+    expect(ids.has("e1")).toBe(true);
+    expect(ids.has("e2")).toBe(false);
+  });
+
+  it("returns an empty set when nothing has been charged yet", async () => {
+    const ids = await loadCardChargedExpenseIds(
+      makeSupabase({
+        card_statement_rows: [{ expense_id: "e1", statement_id: "s1", card_label: "ויזה 9557", category: "ויזה 9557" }],
+        card_statement_charges: [],
+      })
+    );
+    expect(ids.size).toBe(0);
+  });
+
+  it("regression: an edited category never breaks matching — card_label (stable) is what's used, not category", async () => {
+    // Exact real-world bug: user retyped a row's category to "ויזה 9557 - דלק"
+    // (card name + extra word). Before the fix, grouping/matching read
+    // category and treated this as a brand-new phantom card. card_label is
+    // untouched by that edit, so the row still correctly matches its real
+    // card's recorded lump charge.
+    const ids = await loadCardChargedExpenseIds(
+      makeSupabase({
+        card_statement_rows: [
+          { expense_id: "e1", statement_id: "s1", card_label: "ויזה 9557", category: "ויזה 9557 - דלק" },
+        ],
+        card_statement_charges: [{ statement_id: "s1", card_label: "ויזה 9557" }],
+      })
+    );
+    expect(ids.has("e1")).toBe(true);
+  });
+
+  it("falls back to category only for a pre-migration row with no card_label yet", async () => {
+    const ids = await loadCardChargedExpenseIds(
+      makeSupabase({
+        card_statement_rows: [{ expense_id: "e1", statement_id: "s1", card_label: null, category: "ויזה 9557" }],
+        card_statement_charges: [{ statement_id: "s1", card_label: "ויזה 9557" }],
+      })
+    );
+    expect(ids.has("e1")).toBe(true);
   });
 });
 

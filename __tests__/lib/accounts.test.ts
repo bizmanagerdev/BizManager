@@ -333,6 +333,95 @@ describe("loadAccountBalances — transfers between our own accounts", () => {
   });
 });
 
+describe("loadAccountBalances — credit-card processor batches (e.g. Growth)", () => {
+  // A credit_card payment whose due_date differs from payment_date represents
+  // a clearing company's later lump-sum deposit (see lib/payments.ts
+  // nextMonthTenth). Every such payment sharing an account + due_date must
+  // fold into ONE ledger line instead of appearing individually.
+  function ccPayment(overrides: Record<string, unknown> = {}) {
+    return {
+      account_id: "acc1",
+      payment_method: "credit_card",
+      payment_status: "cleared",
+      amount_total: 340,
+      payment_date: "2024-08-05",
+      due_date: "2099-09-10", // far future, so posted/pending is deterministic regardless of "today"
+      ...overrides,
+    };
+  }
+
+  it("merges several deferred card payments sharing a due_date into one pending line", async () => {
+    const [overview] = await loadAccountsOverview(
+      makeSupabase({
+        accounts: [account({ opening_date: "2024-01-01" })],
+        payments: [
+          ccPayment({ id: "p1", payment_date: "2024-08-05", amount_total: 340 }),
+          ccPayment({ id: "p2", payment_date: "2024-08-12", amount_total: 340 }),
+          ccPayment({ id: "p3", payment_date: "2024-08-20", amount_total: 340 }),
+        ],
+      })
+    );
+    expect(overview.pendingIn).toBe(1020);
+    expect(overview.postedIn).toBe(0);
+    expect(overview.ledger).toHaveLength(1);
+    expect(overview.ledger[0]).toMatchObject({ date: "2099-09-10", amount: 1020, type: "in", posted: false });
+    expect(overview.ledger[0].sublabel).toContain("3 תשלומים");
+  });
+
+  it("posts the batch once its settlement date has passed", async () => {
+    const b = await balance({
+      accounts: [account({ opening_date: "2020-01-01" })],
+      payments: [
+        ccPayment({ id: "p1", payment_date: "2019-12-05", due_date: "2020-01-10", amount_total: 500 }),
+      ],
+    });
+    expect(b.postedIn).toBe(500);
+    expect(b.pendingIn).toBe(0);
+    expect(b.currentBalance).toBe(1500);
+  });
+
+  it("a credit_card payment with no due_date (or same-day) is NOT batched — behaves as before", async () => {
+    const [overview] = await loadAccountsOverview(
+      makeSupabase({
+        accounts: [account({ opening_date: "2024-01-01" })],
+        payments: [ccPayment({ id: "p1", payment_date: "2024-08-05", due_date: null })],
+      })
+    );
+    expect(overview.ledger).toHaveLength(1);
+    expect(overview.ledger[0].id).toBe("p:p1");
+    expect(overview.ledger[0].posted).toBe(true); // status-based, cleared → posted immediately
+  });
+
+  it("a card refund with a due_date is left on the normal per-row path, not batched", async () => {
+    const [overview] = await loadAccountsOverview(
+      makeSupabase({
+        accounts: [account({ opening_date: "2024-01-01" })],
+        payments: [ccPayment({ id: "p1", amount_total: -100, payment_date: "2024-08-05", due_date: "2024-09-10" })],
+      })
+    );
+    expect(overview.ledger).toHaveLength(1);
+    expect(overview.ledger[0].id).toBe("p:p1");
+    expect(overview.ledger[0].type).toBe("out");
+  });
+
+  it("batches independently per account", async () => {
+    const balances = await loadAccountBalances(
+      makeSupabase({
+        accounts: [
+          account({ id: "bank1", opening_date: "2024-01-01" }),
+          account({ id: "bank2", opening_date: "2024-01-01" }),
+        ],
+        payments: [
+          ccPayment({ id: "p1", account_id: "bank1", amount_total: 300 }),
+          ccPayment({ id: "p2", account_id: "bank2", amount_total: 700 }),
+        ],
+      })
+    );
+    expect(balances.find((b) => b.id === "bank1")!.pendingIn).toBe(300);
+    expect(balances.find((b) => b.id === "bank2")!.pendingIn).toBe(700);
+  });
+});
+
 describe("loadAccountsOverview — running balance & register", () => {
   it("rolls the running balance chronologically and lists newest-first", async () => {
     const [overview] = await loadAccountsOverview(

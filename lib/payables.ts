@@ -394,6 +394,145 @@ export async function loadProjectedRecurringExpenses(
   return items;
 }
 
+/**
+ * Credit-card statement lump charges (card_statement_charges — the one
+ * account-ledger line per card per statement, see lib/accounts.ts) shown on
+ * the payments calendar: every REAL recorded charge on its charge_date, plus
+ * a forecast for the next period(s) that don't have a real charge yet —
+ * estimated from that card's most recent real charge (amount + day of
+ * month) — so a card due for its monthly statement shows up ahead of time,
+ * like a bank standing order (הוראת קבע). A forecast disappears the moment a
+ * real charge is recorded for that period (same "materialized wins" pattern
+ * as loadProjectedRecurringExpenses). Both kinds are `autoPaid: true` — the
+ * amount already left (or will leave) the account on its own; there is no
+ * "mark paid" action for a lump card charge, only editing it from the
+ * statement it came from (real) or waiting for the real one (forecast).
+ * Independent of lib/financial — this table is deliberately never read
+ * there, so it can't double the P&L (the statement's itemized, domain-tagged
+ * expenses already carry that cost).
+ */
+export async function loadCardChargeItems(
+  supabase: SupabaseClient,
+  { referenceDate }: { referenceDate: string }
+): Promise<PaymentCalendarItem[]> {
+  const { data: chargeRows, error } = await supabase
+    .from("card_statement_charges")
+    .select("id,statement_id,card_label,account_id,amount,charge_date,notes");
+  if (error || !chargeRows?.length) return [];
+
+  type ChargeRow = {
+    id: string;
+    statement_id: string | null;
+    card_label: string | null;
+    account_id: string | null;
+    amount: number | string | null;
+    charge_date: string | null;
+    notes: string | null;
+  };
+  const charges = (chargeRows as ChargeRow[]).filter(
+    (r) => r.charge_date && Number(r.amount) > 0
+  );
+
+  const items: PaymentCalendarItem[] = [];
+  const coveredMonths = new Set<string>(); // "cardLabel:YYYY-MM" — already has a real charge
+  const latestByCard = new Map<string, ChargeRow>();
+
+  for (const row of charges) {
+    const cardLabel = (row.card_label ?? "").trim() || "כרטיס אשראי";
+    const date = row.charge_date!.slice(0, 10);
+    const amount = Number(row.amount);
+    coveredMonths.add(`${cardLabel}:${date.slice(0, 7)}`);
+    items.push({
+      id: `ccharge:${row.id}`,
+      date,
+      amount,
+      label: `חיוב כרטיס: ${cardLabel}`,
+      sourceLabel: "חיוב כרטיס אשראי",
+      sourceHref: row.statement_id ? `/financial/statements/${row.statement_id}` : "/financial/statements",
+      stage: date <= referenceDate ? "posted" : "scheduled",
+      paymentStatus: null,
+      origin: "expense",
+      domainName: "",
+      expenseId: null,
+      category: cardLabel,
+      businessDomain: null,
+      accountId: row.account_id,
+      paidAmount: date <= referenceDate ? amount : null,
+      descriptionRaw: null,
+      notes: row.notes,
+      overdue: false,
+      installmentGroupId: null,
+      installmentIndex: null,
+      installmentCount: null,
+      expenseProjectId: null,
+      expenseOrderId: null,
+      expensePropertyId: null,
+      workerUserId: null,
+      recurringTemplateId: null,
+      recurrenceKey: null,
+      variableAmount: false,
+      autoPaid: true,
+    });
+    const cur = latestByCard.get(cardLabel);
+    if (!cur || date > cur.charge_date!.slice(0, 10)) latestByCard.set(cardLabel, row);
+  }
+
+  // Forecast: for each card with history, project every month from right
+  // after its last real charge through one month past today that doesn't
+  // already have a real charge — so a statement that's overdue for
+  // processing keeps showing (not just next month's).
+  const refIdx = Number(referenceDate.slice(0, 4)) * 12 + (Number(referenceDate.slice(5, 7)) - 1);
+  for (const [cardLabel, last] of latestByCard) {
+    const lastDate = last.charge_date!.slice(0, 10);
+    const dueDay = Number(lastDate.slice(8, 10));
+    const amount = Number(last.amount);
+    const lastIdx = Number(lastDate.slice(0, 4)) * 12 + (Number(lastDate.slice(5, 7)) - 1);
+    const endIdx = refIdx + 1; // through one month ahead of today
+    for (let idx = lastIdx + 1; idx <= endIdx; idx++) {
+      const y = Math.floor(idx / 12);
+      const m = (idx % 12) + 1;
+      const ym = `${y}-${pad2(m)}`;
+      if (coveredMonths.has(`${cardLabel}:${ym}`)) continue;
+      const lastDayOfMonth = new Date(y, m, 0).getDate();
+      const day = Math.min(dueDay, lastDayOfMonth);
+      const date = `${y}-${pad2(m)}-${pad2(day)}`;
+      items.push({
+        id: `ccharge_proj:${cardLabel}:${ym}`,
+        date,
+        amount,
+        label: `חיוב כרטיס: ${cardLabel}`,
+        sourceLabel: "חיוב כרטיס אשראי — צפוי",
+        sourceHref: "/financial/statements",
+        stage: date < referenceDate ? "pending" : "scheduled",
+        paymentStatus: "not_paid",
+        origin: "expense",
+        domainName: "",
+        expenseId: null,
+        category: cardLabel,
+        businessDomain: null,
+        accountId: last.account_id,
+        paidAmount: null,
+        descriptionRaw: null,
+        notes: null,
+        overdue: date < referenceDate,
+        installmentGroupId: null,
+        installmentIndex: null,
+        installmentCount: null,
+        expenseProjectId: null,
+        expenseOrderId: null,
+        expensePropertyId: null,
+        workerUserId: null,
+        recurringTemplateId: null,
+        recurrenceKey: null,
+        variableAmount: true, // estimated from the last real charge — shown as "משוער"
+        autoPaid: true,
+      });
+    }
+  }
+
+  return items;
+}
+
 // Convert a projected outflow calendar item into a FinancialEntry so the money
 // engine can fold the forecast into its FUTURE/forecast views (never actual/P&L).
 function projectedItemToEntry(item: PaymentCalendarItem): FinancialEntry {
@@ -446,6 +585,49 @@ export async function loadProjectedOutflowEntries(
 }
 
 /**
+ * Which itemized card-purchase expenses (from card_statement_rows) already
+ * have their card+statement superseded by a single recorded lump charge
+ * (card_statement_charges) — see loadCardChargeItems. The calendar must show
+ * EITHER the lump sum OR the itemized detail for a given card+period, never
+ * both, or the same money reads as leaving the account twice on that day.
+ * P&L/domain reports are untouched — they still read every itemized expense
+ * individually; this set only trims what the CALENDAR displays.
+ */
+export async function loadCardChargedExpenseIds(supabase: SupabaseClient): Promise<Set<string>> {
+  try {
+    const [{ data: rowData, error: rowError }, { data: chargeData, error: chargeError }] = await Promise.all([
+      supabase.from("card_statement_rows").select("expense_id,statement_id,card_label,category").not("expense_id", "is", null),
+      supabase.from("card_statement_charges").select("statement_id,card_label"),
+    ]);
+    if (rowError || chargeError) return new Set();
+
+    const charged = new Set(
+      ((chargeData ?? []) as Array<{ statement_id: string | null; card_label: string | null }>).map(
+        (c) => `${c.statement_id}:${(c.card_label ?? "").trim()}`
+      )
+    );
+    const excluded = new Set<string>();
+    for (const row of (rowData ?? []) as Array<{
+      expense_id: string | null;
+      statement_id: string | null;
+      card_label: string | null;
+      category: string | null;
+    }>) {
+      if (!row.expense_id) continue;
+      // card_label is the stable card identity (see the card_label migration)
+      // — falls back to category only for a pre-migration row that hasn't
+      // been backfilled yet.
+      const identity = (row.card_label ?? row.category ?? "").trim();
+      const key = `${row.statement_id}:${identity}`;
+      if (charged.has(key)) excluded.add(row.expense_id);
+    }
+    return excluded;
+  } catch {
+    return new Set();
+  }
+}
+
+/**
  * Load all outgoing payments for the calendar. `monthsBack` widens the scan
  * window so unpaid items from earlier still show (default 13 months, matching the
  * financial page); future-dated scheduled items are always included.
@@ -470,12 +652,23 @@ export async function loadPaymentCalendarItems(
           return d.toISOString().slice(0, 10);
         })(),
       });
-  const items = toPaymentCalendarItems(entries, referenceDate);
+  const allItems = toPaymentCalendarItems(entries, referenceDate);
   // Forecast upcoming monthly salaries + recurring bills onto the calendar
-  // (calendar-only; never breaks the page if a source is unreadable).
-  const [projectedSalaries, projectedRecurring] = await Promise.all([
-    loadProjectedSalaries(supabase, { referenceDate, existingItems: items }).catch(() => []),
+  // (calendar-only; never breaks the page if a source is unreadable). Card
+  // statement charges (real + forecast) are a separate, independent source —
+  // see loadCardChargeItems — since card_statement_charges is deliberately
+  // outside loadFinancialEntries.
+  const [projectedSalaries, projectedRecurring, cardCharges, chargedExpenseIds] = await Promise.all([
+    loadProjectedSalaries(supabase, { referenceDate, existingItems: allItems }).catch(() => []),
     loadProjectedRecurringExpenses(supabase, { referenceDate }).catch(() => []),
+    loadCardChargeItems(supabase, { referenceDate }).catch(() => []),
+    loadCardChargedExpenseIds(supabase),
   ]);
-  return { items: [...items, ...projectedSalaries, ...projectedRecurring], todayIso: referenceDate };
+  // Drop the itemized card-purchase expenses whose card+period already has a
+  // recorded lump charge — the lump sum (in cardCharges) replaces them here,
+  // so the calendar doesn't show a day's spend twice.
+  const items = chargedExpenseIds.size
+    ? allItems.filter((i) => !(i.expenseId && chargedExpenseIds.has(i.expenseId)))
+    : allItems;
+  return { items: [...items, ...projectedSalaries, ...projectedRecurring, ...cardCharges], todayIso: referenceDate };
 }

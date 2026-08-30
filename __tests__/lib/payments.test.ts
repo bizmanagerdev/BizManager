@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildPaymentInsert } from "@/lib/payments";
+import { buildPaymentInsert, nextMonthTenth } from "@/lib/payments";
 import { splitPaymentAmounts } from "@/lib/orders/paymentStatus";
 import { applyProjectVatToBase } from "@/lib/projects/vat";
 
@@ -118,6 +118,32 @@ describe("buildPaymentInsert — future due_date (bank transfer)", () => {
   });
 });
 
+describe("buildPaymentInsert — credit_card is always cleared, regardless of due_date", () => {
+  // A card charge is collected from the customer immediately — a future due_date
+  // on a credit_card payment (e.g. a processor's monthly settlement day) must NOT
+  // make the order/customer side look unpaid. Only the account ledger defers to it.
+  it("status=cleared for credit_card with a far-future due_date", () => {
+    const result = buildPaymentInsert({ ...BASE_INPUT, paymentMethod: "credit_card", dueDate: "2099-01-01" });
+    expect(result.payment_status).toBe("cleared");
+    expect(result.due_date).toBe("2099-01-01");
+  });
+
+  it("status=cleared for credit_card with no due_date at all", () => {
+    const result = buildPaymentInsert({ ...BASE_INPUT, paymentMethod: "credit_card" });
+    expect(result.payment_status).toBe("cleared");
+  });
+
+  it("an explicit paymentStatus override still wins for credit_card", () => {
+    const result = buildPaymentInsert({
+      ...BASE_INPUT,
+      paymentMethod: "credit_card",
+      dueDate: "2099-01-01",
+      paymentStatus: "pending",
+    });
+    expect(result.payment_status).toBe("pending");
+  });
+});
+
 describe("splitPaymentAmounts — counts toward price uses net_amount", () => {
   it("official payment counts only the net (VAT excluded)", () => {
     const split = splitPaymentAmounts([
@@ -147,6 +173,21 @@ describe("splitPaymentAmounts — counts toward price uses net_amount", () => {
       { amount_total: 540000, net_amount: 540000, payment_status: "cleared" },
     ]);
     expect(split.collected).toBe(1040000); // counts toward price (not 1,130,000 gross)
+  });
+});
+
+describe("nextMonthTenth — credit-card processor settlement day", () => {
+  it("returns the 10th of the following month", () => {
+    expect(nextMonthTenth("2026-08-05")).toBe("2026-09-10");
+  });
+
+  it("rolls over the year in December", () => {
+    expect(nextMonthTenth("2026-12-25")).toBe("2027-01-10");
+  });
+
+  it("returns '' for a malformed date", () => {
+    expect(nextMonthTenth("not-a-date")).toBe("");
+    expect(nextMonthTenth("")).toBe("");
   });
 });
 

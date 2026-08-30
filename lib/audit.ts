@@ -1626,6 +1626,10 @@ export const TRIGGER_AUDITED_TABLES = new Set([
   "accounts",
   // trg_audit_account_transfers (migration 20260805000000_account_transfers.sql).
   "account_transfers",
+  // trg_audit_card_account_mappings / trg_audit_card_statement_charges
+  // (migration 20260830120000_card_statement_charges.sql).
+  "card_account_mappings",
+  "card_statement_charges",
 ]);
 
 // Plain row-CRUD actions the DB trigger already records. Distinct semantic

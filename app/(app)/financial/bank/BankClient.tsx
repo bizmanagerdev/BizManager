@@ -205,6 +205,7 @@ export default function BankClient({
     if (ref.kind === "loan_repayment") return "יתרת ההלוואה תחושב מחדש בהתאם.";
     if (ref.kind === "expense") return "ההוצאה תימחק מהתזרים ומהקישור שלה למקור, אם קיים.";
     if (ref.kind === "worker_payment") return "התשלום יימחק, כולל השיוכים שלו למשמרות/תלושים.";
+    if (ref.kind === "card_charge") return "החיוב יימחק מהתזרים. השורות בפירוט האשראי עצמו לא יימחקו.";
     return "התנועה תימחק מהתזרים.";
   }
 
@@ -224,6 +225,15 @@ export default function BankClient({
         const result = await deleteRepayment(ref.id, ref.loanId);
         if (!result.ok) {
           setRowDeleteError(result.error);
+          return;
+        }
+      } else if (ref.kind === "card_charge") {
+        const res = await fetch(`/api/financial/card-charges?id=${encodeURIComponent(ref.id)}`, {
+          method: "DELETE",
+        });
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) {
+          setRowDeleteError(toHebrewError(json.error, "המחיקה נכשלה."));
           return;
         }
       } else {
