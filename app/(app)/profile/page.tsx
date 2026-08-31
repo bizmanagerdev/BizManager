@@ -258,7 +258,17 @@ export default async function ProfilePage() {
               // Nothing worth rearranging on a worker's board — it's the clock,
               // his tasks and his deliveries.
               isWorker ? null : (
-                <DashboardCustomizer role={profile.role} initialPrefs={sanitizePrefs(profile.dashboard_prefs)} />
+                // Explicit key: this element is created here (a Server Component)
+                // but rendered by ProfileClient (a Client Component) as one of
+                // CardContent's children — an element crossing that boundary as a
+                // prop doesn't get the usual "written directly as a JSX sibling"
+                // exemption from the key check the way a plain client-created
+                // sibling would, so it still needs its own key.
+                <DashboardCustomizer
+                  key="dashboard-customizer"
+                  role={profile.role}
+                  initialPrefs={sanitizePrefs(profile.dashboard_prefs)}
+                />
               )
             }
             openShiftReport={shiftState.open}
