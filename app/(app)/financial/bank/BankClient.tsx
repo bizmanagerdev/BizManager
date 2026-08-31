@@ -541,34 +541,39 @@ export default function BankClient({
                 sticky - the account name and the month sticky"). */}
             <div
               ref={registerHeaderRef}
-              className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 border-b bg-muted px-3 py-2"
+              className="sticky top-0 z-10 space-y-1 border-b bg-muted px-3 py-2"
             >
-              <div className="font-medium">{selected.name}</div>
-              <div className="flex flex-wrap items-center gap-3">
-                {allGroups.length > 0 ? (
+              {/* Name + month dropdown share ONE row — on mobile the dropdown
+                  sits inline at the left corner, next to the name, instead of
+                  wrapping to a row of its own (user, 2026-08-31: "the month
+                  dropdown should move to be inline with the name of the
+                  account on the left corner"). Opening balance is its own
+                  line below regardless of width — it was the extra width
+                  THAT was pushing the dropdown off onto its own line. */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="font-medium">{selected.name}</div>
+                {allGroups.length > 0 && (
                   // No "חודש" label — the dropdown's own options (כל החודשים /
                   // a specific month) already say what it filters (user,
                   // 2026-08-31: "it's clear what the dropdown is").
-                  <>
-                    <NativeSelect
-                      className="h-9 w-auto"
-                      aria-label="סינון לפי חודש"
-                      value={monthFilter}
-                      onChange={(e) => setMonthFilter(e.target.value)}
-                    >
-                      <option value="">כל החודשים</option>
-                      {allGroups.map((group) => (
-                        <option key={group.month} value={group.month}>
-                          {monthLabel(group.month)}
-                        </option>
-                      ))}
-                    </NativeSelect>
-                  </>
-                ) : null}
-                <div className="text-xs text-muted-foreground">
-                  יתרת פתיחה {formatMoneyRounded(selected.openingBalance)} · נכון ל-
-                  <span dir="ltr">{formatDate(selected.openingDate)}</span>
-                </div>
+                  <NativeSelect
+                    className="h-9 w-auto"
+                    aria-label="סינון לפי חודש"
+                    value={monthFilter}
+                    onChange={(e) => setMonthFilter(e.target.value)}
+                  >
+                    <option value="">כל החודשים</option>
+                    {allGroups.map((group) => (
+                      <option key={group.month} value={group.month}>
+                        {monthLabel(group.month)}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                )}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                יתרת פתיחה {formatMoneyRounded(selected.openingBalance)} · נכון ל-
+                <span dir="ltr">{formatDate(selected.openingDate)}</span>
               </div>
             </div>
 
