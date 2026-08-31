@@ -16,7 +16,12 @@ import { HoverPanel, HoverPanelContent, HoverPanelTrigger, useHoverPanel } from 
 import { useAlerts } from "@/lib/ui/alerts-store";
 import { BrandMark } from "@/components/ui/brand-mark";
 import { RAIL_WIDTH, useSidebarCollapse } from "@/components/layout/sidebar-collapse-context";
-import { useHeaderAction, useHeaderToolbar, usePageTitle } from "@/components/layout/page-title-context";
+import {
+  useHeaderAction,
+  useHeaderToolbar,
+  useHeaderTrailingAction,
+  usePageTitle,
+} from "@/components/layout/page-title-context";
 import { titleForPath } from "@/lib/ui/route-titles";
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n/t";
@@ -106,6 +111,7 @@ export function TopBar({
   const headerTitle = pageTitle ?? (fallbackTitle ? { title: fallbackTitle, subtitle: undefined } : null);
   const headerAction = useHeaderAction();
   const headerToolbar = useHeaderToolbar();
+  const trailingAction = useHeaderTrailingAction();
   const { alerts, count, loading: alertsLoading, error: alertsError } = useAlerts();
 
   // The signed-in user's chosen avatar color (null = auto). The (app) layout
@@ -313,6 +319,11 @@ export function TopBar({
           the row: no title at all, a title that's phone-only, and NOT needed
           when headerToolbar is present — that one is flex-1 at every width. */}
       {headerToolbar || (headerTitle && pageTitle?.showOnDesktop) ? null : <div className="hidden flex-1 lg:block" />}
+
+      {/* A page-declared control grouped with the search/notification/avatar
+          cluster at the far edge, rather than beside the back arrow (see
+          headerAction above) — e.g. חשבונות' "ניהול חשבונות" button. */}
+      {trailingAction ? <div className="shrink-0">{trailingAction}</div> : null}
 
       {/* ms-3 (RTL → space on the RIGHT, i.e. toward the title): the search glyph
           leads this cluster on a phone and sat flush against the page title, so

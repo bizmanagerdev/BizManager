@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import SettingsTabs from "@/app/(app)/settings/SettingsTabs";
@@ -119,17 +120,21 @@ export default async function SettingsPage() {
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
-      <SettingsTabs
-        isAdmin={isAdmin}
-        users={users}
-        connectedDevices={connectedDevices}
-        devicesUnavailable={devicesUnavailable}
-        morningSettings={morningSettings}
-        vatRate={vatRate}
-        ccFeeRate={ccFeeRate}
-        auditLoggingEnabled={auditLoggingEnabled}
-        accounts={accounts}
-      />
+      {/* SettingsTabs reads ?tab= via useSearchParams (to deep-link e.g.
+          ?tab=finance) — Next requires a Suspense boundary around that. */}
+      <Suspense fallback={null}>
+        <SettingsTabs
+          isAdmin={isAdmin}
+          users={users}
+          connectedDevices={connectedDevices}
+          devicesUnavailable={devicesUnavailable}
+          morningSettings={morningSettings}
+          vatRate={vatRate}
+          ccFeeRate={ccFeeRate}
+          auditLoggingEnabled={auditLoggingEnabled}
+          accounts={accounts}
+        />
+      </Suspense>
     </AppShell>
   );
 }

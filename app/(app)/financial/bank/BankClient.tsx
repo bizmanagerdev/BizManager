@@ -1,16 +1,16 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronDownIcon, TransferIcon } from "@/components/ui/icons";
+import { ChevronDownIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AccountTransferDialog } from "@/components/financial/AccountTransferDialog";
-import { AdaptiveGrid } from "@/components/layout/page-layout";
+import { useSetHeaderAction, useSetHeaderTrailingAction } from "@/components/layout/page-title-context";
 import type { MerchantMemory } from "@/lib/financial/cardImport";
 import QuickEntryRow from "./QuickEntryRow";
 import { toHebrewError } from "@/lib/error-messages";
@@ -66,41 +66,50 @@ function AccountSummaryCard({
     // The whole card selects the account. הכנסה / הוצאה moved onto the tab bar
     // below, where they act on the account that's actually open — one place to
     // record money instead of a pair of glyphs on every card.
+    // Corner/center/bottom layout (user, 2026-08-31): name + kind badge pinned
+    // to their top corners, the balance centered in the middle of the card
+    // (not just left-aligned under the header row), pending amounts pinned to
+    // the bottom. h-full so every card in a flex-wrap row stretches to match
+    // the tallest one, and the middle flex-1 row centers within whatever
+    // height that leaves.
     <button
       type="button"
       onClick={onSelect}
       className={cn(
-        "flex w-full items-start justify-between gap-2 rounded-lg border bg-background p-3 text-right transition-colors",
+        "flex h-full w-full flex-col items-stretch gap-1.5 rounded-lg border bg-background p-3 text-right transition-colors",
         selected ? "border-primary ring-1 ring-primary" : "hover:border-foreground/30"
       )}
     >
-      <span className="min-w-0 flex-1">
-        <span className="font-medium break-words">{account.name}</span>
+      <span className="flex w-full items-start justify-between gap-2">
+        <span className="min-w-0 flex-1 break-words text-sm font-medium">{account.name}</span>
+        <span className="shrink-0 rounded-full border px-1.5 py-0 text-[10px] text-muted-foreground">
+          {getAccountKindLabel(account.kind)}
+        </span>
+      </span>
+      <span className="flex flex-1 items-center justify-center">
         {/* Money colour: in the black is green, in the red is red. */}
         <span
           dir="ltr"
           className={cn(
-            "mt-1 block text-2xl font-semibold tabular-nums",
+            "block text-xl font-semibold tabular-nums",
             account.currentBalance < 0 ? "text-destructive" : "text-success"
           )}
         >
           {formatIls(account.currentBalance)}
         </span>
-        {(account.pendingIn > 0 || account.pendingOut > 0) && (
-          <span dir="ltr" className="mt-1 flex flex-wrap justify-end gap-x-3 text-xs tabular-nums">
-            {account.pendingIn > 0 && (
-              <span className="text-success">+{formatIls(account.pendingIn)} צפוי</span>
-            )}
-            {account.pendingOut > 0 && (
-              <span className="text-destructive">−{formatIls(account.pendingOut)} צפוי</span>
-            )}
-          </span>
-        )}
       </span>
-
-      <span className="shrink-0 rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
-        {getAccountKindLabel(account.kind)}
-      </span>
+      {/* Only the selected card's own pending amounts — every card showing its
+          own צפוי line at once was noise (user, 2026-08-31). */}
+      {selected && (account.pendingIn > 0 || account.pendingOut > 0) && (
+        <span dir="ltr" className="flex flex-wrap justify-end gap-x-2 text-xs tabular-nums">
+          {account.pendingIn > 0 && (
+            <span className="text-success">+{formatIls(account.pendingIn)} צפוי</span>
+          )}
+          {account.pendingOut > 0 && (
+            <span className="text-destructive">−{formatIls(account.pendingOut)} צפוי</span>
+          )}
+        </span>
+      )}
     </button>
   );
 }
@@ -129,9 +138,81 @@ export default function BankClient({
 }) {
   const router = useRouter();
   const loansById = useMemo(() => new Map(loans.map((l) => [l.id, l] as const)), [loans]);
+  // Total liquidity + "ניהול חשבונות" moved OUT of the page and split across
+  // TWO top-bar slots, not moved together — the total stays near the back-
+  // arrow/sidebar side (headerAction), the button moves near the search/
+  // avatar cluster (trailingAction) (user, 2026-08-31: "leave the total
+  // there and move the button to be near the icons"). Computed here (before
+  // the accounts.length===0 early return below) so these hooks are always
+  // called, never conditionally.
+  const totalLiquidity = accounts.filter((a) => a.isActive).reduce((sum, a) => sum + a.currentBalance, 0);
+  const headerAction = useMemo(
+    () => (
+      // mt-1.5: a little breathing room above the label — the 60px bar's
+      // items-center was landing it almost flush with the top edge (user,
+      // 2026-08-31: "a drop more space on top of the total and the button").
+      <div className="hidden mt-1.5 text-right leading-tight sm:block">
+        <div className="text-[10px] text-muted-foreground">סך נזילות</div>
+        <div
+          dir="ltr"
+          className={cn(
+            "text-2xl font-semibold tabular-nums",
+            totalLiquidity < 0 ? "text-destructive" : "text-success"
+          )}
+        >
+          {formatIls(totalLiquidity)}
+        </div>
+      </div>
+    ),
+    [totalLiquidity]
+  );
+  useSetHeaderAction(headerAction);
+  const trailingAction = useMemo(
+    () => (
+      // Outline, not filled — a deliberate, confirmed exception to the usual
+      // "buttons always get a fill" rule for this one button (user,
+      // 2026-08-31: "i know i set the rule but i still want outline").
+      // mt-1.5 matches the total's own nudge below the top edge.
+      <Button asChild variant="outline" size="sm" className="mt-1.5">
+        {/* ?tab=finance — SettingsTabs now reads this; it used to always land
+            on the first (notifications) tab (user, 2026-08-31). */}
+        <Link href="/settings?tab=finance">ניהול חשבונות</Link>
+      </Button>
+    ),
+    []
+  );
+  useSetHeaderTrailingAction(trailingAction);
   const [selectedId, setSelectedId] = useState<string>(
     accounts.find((a) => a.id === initialAccountId)?.id ?? accounts[0]?.id ?? ""
   );
+
+  // THIS month should be the first thing on screen when you land here or
+  // switch accounts — not something you scroll past a year of future-dated
+  // groups to find (user, 2026-08-31: "this month should be first ... scroll
+  // up to see the months upcoming"). Registered here (before the
+  // accounts.length===0 early return) so the hook itself is always called;
+  // the effect body below just no-ops if that month's button never mounts
+  // (e.g. filtered to a different month, or no accounts at all).
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const monthNodeRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  // The register itself scrolls (max-h-[70vh] overflow-y-auto below), with
+  // its own account-name/month-filter header pinned via sticky top-0 — NOT
+  // the page (user, 2026-08-31: "the whole page jumps ... i dont want the
+  // page to move just the table to be scrolled"). scrollIntoView would also
+  // scroll the WINDOW to bring this container into view if it isn't already
+  // fully on screen, so this sets registerScrollRef's own scrollTop directly
+  // instead — that can only ever move this one container.
+  const registerScrollRef = useRef<HTMLDivElement>(null);
+  const registerHeaderRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const container = registerScrollRef.current;
+    const target = monthNodeRefs.current.get(currentMonth);
+    if (!container || !target) return;
+    const headerHeight = registerHeaderRef.current?.offsetHeight ?? 0;
+    const offset = target.getBoundingClientRect().top - container.getBoundingClientRect().top;
+    container.scrollTop += offset - headerHeight;
+  }, [selectedId, currentMonth]);
 
   function selectAccount(accountId: string) {
     setSelectedId(accountId);
@@ -288,7 +369,7 @@ export default function BankClient({
               היתרה העדכנית של כל אחד.
             </p>
             <Button asChild>
-              <Link href="/settings">להגדרת חשבונות</Link>
+              <Link href="/settings?tab=finance">להגדרת חשבונות</Link>
             </Button>
           </CardContent>
         </Card>
@@ -297,9 +378,6 @@ export default function BankClient({
   }
 
   const selected = accounts.find((a) => a.id === selectedId) ?? accounts[0];
-  const totalLiquidity = accounts
-    .filter((a) => a.isActive)
-    .reduce((sum, a) => sum + a.currentBalance, 0);
 
   // Group the selected account's ledger (already newest-first) by month, and
   // total each month so a folded header still says what happened in it.
@@ -345,101 +423,98 @@ export default function BankClient({
   // around midnight. Falls back to the newest group when nothing's posted yet
   // this month, so the register isn't just all-collapsed. With a month
   // filtered there's exactly one group, and it always opens.
-  const now = new Date();
-  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  // (`now`/`currentMonth` are computed above, before the early return.)
   const hasCurrentMonth = groups.some((g) => g.month === currentMonth);
   const isMonthOpen = (month: string, index: number) =>
     openMonths[month] ?? (hasCurrentMonth ? month === currentMonth : index === 0);
 
   return (
     <div className="space-y-4 text-right" dir="rtl">
-      <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-xs text-muted-foreground">סך נזילות (חשבונות פעילים)</div>
-            <div
-              dir="ltr"
-              className={cn(
-                "text-2xl font-semibold tabular-nums",
-                totalLiquidity < 0 ? "text-destructive" : "text-success"
-              )}
-            >
-              {formatIls(totalLiquidity)}
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => {
-                setTransferToEdit(null);
-                setTransferOpen(true);
-              }}
-            >
-              <TransferIcon className="h-4 w-4" />
-              העברה בין חשבונות
-            </Button>
-            <Button asChild variant="secondary" size="sm">
-              <Link href="/settings">ניהול חשבונות</Link>
-            </Button>
-          </div>
-        </div>
-
-      <AdaptiveGrid variant="customerStats">
+      {/* Total liquidity + "ניהול חשבונות" now live in the top bar's action
+          slot (see headerAction above). The "העברה בין חשבונות" create button
+          that used to sit here is gone too — creating a transfer is already
+          covered by the + quick-create menu; only editing/deleting an
+          existing one still happens inline in the register below. */}
+      {/* flex-wrap + a fixed card width, not a fixed-column-count grid — with
+          `1fr` grid columns, fewer accounts than columns left a lopsided gap
+          on one side instead of centering (user, 2026-08-31: "center the
+          cards"). This wraps and centers at any count/width, and naturally
+          fits ~10 per row on a wide screen without hand-tuned breakpoints. */}
+      <div className="flex flex-wrap justify-center gap-2">
         {accounts.map((account) => (
-          <AccountSummaryCard
-            key={account.id}
-            account={account}
-            selected={account.id === selected.id}
-            onSelect={() => selectAccount(account.id)}
-          />
+          <div key={account.id} className="w-36">
+            <AccountSummaryCard
+              account={account}
+              selected={account.id === selected.id}
+              onSelect={() => selectAccount(account.id)}
+            />
+          </div>
         ))}
-      </AdaptiveGrid>
+      </div>
 
-      {/* Register for the selected account */}
+      {/* Register for the selected account. Scrolls WITHIN this bounded
+          container (not the page) — see registerScrollRef above. */}
       <Card>
         <CardContent className="p-0">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-3 py-2">
-            <div className="font-medium">{selected.name}</div>
-            <div className="flex flex-wrap items-center gap-3">
-              {allGroups.length > 0 ? (
-                <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>חודש</span>
-                  <NativeSelect
-                    className="h-9 w-auto"
-                    aria-label="סינון לפי חודש"
-                    value={monthFilter}
-                    onChange={(e) => setMonthFilter(e.target.value)}
-                  >
-                    <option value="">כל החודשים</option>
-                    {allGroups.map((group) => (
-                      <option key={group.month} value={group.month}>
-                        {monthLabel(group.month)}
-                      </option>
-                    ))}
-                  </NativeSelect>
-                </label>
-              ) : null}
-              <div className="text-xs text-muted-foreground">
-                יתרת פתיחה {formatIls(selected.openingBalance)} · נכון ל-
-                <span dir="ltr">{formatDate(selected.openingDate)}</span>
+          <div ref={registerScrollRef} className="max-h-[70vh] overflow-y-auto">
+            {/* Sticky, solid background (not the old translucent one — a
+                sticky header needs to actually occlude what scrolls under
+                it): the account name + month filter stay pinned as the
+                register scrolls (user, 2026-08-31: "i want the table header
+                sticky - the account name and the month sticky"). */}
+            <div
+              ref={registerHeaderRef}
+              className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 border-b bg-muted px-3 py-2"
+            >
+              <div className="font-medium">{selected.name}</div>
+              <div className="flex flex-wrap items-center gap-3">
+                {allGroups.length > 0 ? (
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>חודש</span>
+                    <NativeSelect
+                      className="h-9 w-auto"
+                      aria-label="סינון לפי חודש"
+                      value={monthFilter}
+                      onChange={(e) => setMonthFilter(e.target.value)}
+                    >
+                      <option value="">כל החודשים</option>
+                      {allGroups.map((group) => (
+                        <option key={group.month} value={group.month}>
+                          {monthLabel(group.month)}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </label>
+                ) : null}
+                <div className="text-xs text-muted-foreground">
+                  יתרת פתיחה {formatIls(selected.openingBalance)} · נכון ל-
+                  <span dir="ltr">{formatDate(selected.openingDate)}</span>
+                </div>
               </div>
             </div>
-          </div>
 
-          {selected.ledger.length === 0 ? (
-            <div className="py-10 text-center text-sm text-muted-foreground">
-              אין תנועות משויכות לחשבון זה עדיין. תנועות יופיעו כאן ברגע שתשייך תקבולים והוצאות
-              לחשבון.
-            </div>
-          ) : (
-            <div className="divide-y divide-border/60">
-              {groups.map((group, groupIndex) => {
+            {selected.ledger.length === 0 ? (
+              <div className="py-10 text-center text-sm text-muted-foreground">
+                אין תנועות משויכות לחשבון זה עדיין. תנועות יופיעו כאן ברגע שתשייך תקבולים והוצאות
+                לחשבון.
+              </div>
+            ) : (
+              <div className="divide-y divide-border/60">
+                {groups.map((group, groupIndex) => {
                 const open = isMonthOpen(group.month, groupIndex);
                 return (
                 <Fragment key={group.month}>
                   {/* The month header folds its rows away and, closed, still
-                      reports what moved that month. */}
+                      reports what moved that month. Registered in
+                      monthNodeRefs so the register can scroll (its own
+                      container's scrollTop — see registerScrollRef above) to
+                      land the current month right under the sticky header on
+                      open/account-switch. */}
                   <button
+                    ref={(el) => {
+                      if (el) monthNodeRefs.current.set(group.month, el);
+                      else monthNodeRefs.current.delete(group.month);
+                    }}
                     type="button"
                     onClick={() =>
                       setOpenMonths((prev) => ({ ...prev, [group.month]: !open }))
@@ -566,6 +641,7 @@ export default function BankClient({
               })}
             </div>
           )}
+          </div>
         </CardContent>
       </Card>
 

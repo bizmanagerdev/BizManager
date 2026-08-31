@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import NotificationSettings from "@/components/notifications/NotificationSettings";
@@ -45,9 +46,28 @@ const ALL_TABS = [
 
 type TabKey = (typeof ALL_TABS)[number]["key"];
 
+function isTabKey(value: string | null): value is TabKey {
+  return value != null && ALL_TABS.some((tab) => tab.key === value);
+}
+
 export default function SettingsTabs(props: Props) {
   const tabs = ALL_TABS.filter((tab) => !tab.adminOnly || props.isAdmin);
-  const [activeTab, setActiveTab] = useState<TabKey>("notifications");
+  // A caller can deep-link a specific tab (e.g. /settings?tab=finance from the
+  // חשבונות page's "ניהול חשבונות" button) — previously this always landed on
+  // the first tab since nothing here read the URL at all.
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState<TabKey>(isTabKey(tabParam) ? tabParam : "notifications");
+  // Re-sync if the param changes under an already-mounted instance (a second
+  // Link to a different tab while already on /settings doesn't remount this
+  // component). Adjusting state during render in response to a changed prop
+  // (React's documented alternative to an effect for this) — a manual tab
+  // click isn't affected, since this only fires when tabParam itself changes.
+  const [prevTabParam, setPrevTabParam] = useState(tabParam);
+  if (tabParam !== prevTabParam) {
+    setPrevTabParam(tabParam);
+    if (isTabKey(tabParam)) setActiveTab(tabParam);
+  }
 
   return (
     <div className="space-y-4">

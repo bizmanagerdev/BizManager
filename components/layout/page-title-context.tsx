@@ -45,6 +45,8 @@ type Store = {
   setHeaderAction: (value: ReactNode) => void;
   headerToolbar: ReactNode;
   setHeaderToolbar: (value: ReactNode) => void;
+  trailingAction: ReactNode;
+  setTrailingAction: (value: ReactNode) => void;
 };
 
 const PageTitleContext = createContext<Store>({
@@ -54,15 +56,21 @@ const PageTitleContext = createContext<Store>({
   setHeaderAction: () => {},
   headerToolbar: null,
   setHeaderToolbar: () => {},
+  trailingAction: null,
+  setTrailingAction: () => {},
 });
 
 export function PageTitleProvider({ children }: { children: ReactNode }) {
   const [pageTitle, setPageTitle] = useState<PageTitle>(null);
   const [headerAction, setHeaderAction] = useState<ReactNode>(null);
   const [headerToolbar, setHeaderToolbar] = useState<ReactNode>(null);
+  const [trailingAction, setTrailingAction] = useState<ReactNode>(null);
   const value = useMemo(
-    () => ({ pageTitle, setPageTitle, headerAction, setHeaderAction, headerToolbar, setHeaderToolbar }),
-    [pageTitle, headerAction, headerToolbar]
+    () => ({
+      pageTitle, setPageTitle, headerAction, setHeaderAction,
+      headerToolbar, setHeaderToolbar, trailingAction, setTrailingAction,
+    }),
+    [pageTitle, headerAction, headerToolbar, trailingAction]
   );
   return <PageTitleContext.Provider value={value}>{children}</PageTitleContext.Provider>;
 }
@@ -98,6 +106,31 @@ export function useSetHeaderAction(node: ReactNode) {
 /** Read the header toolbar — for the top bar. */
 export function useHeaderToolbar() {
   return useContext(PageTitleContext).headerToolbar;
+}
+
+/** Read the trailing action — for the top bar. */
+export function useHeaderTrailingAction() {
+  return useContext(PageTitleContext).trailingAction;
+}
+
+/**
+ * Declare a control for the top bar's FAR corner, grouped with the
+ * search/notifications/avatar cluster — for a page-level control that
+ * belongs at that end of the bar rather than beside the back arrow (see
+ * `useSetHeaderAction`, which sits at the other end). חשבונות uses BOTH
+ * slots at once: the total stays via `useSetHeaderAction` (near the arrow/
+ * sidebar), and "ניהול חשבונות" moves here (user, 2026-08-31: "leave the
+ * total there and move the button to be near the icons" — the two controls
+ * belong in different slots, not moved together). `node` must be
+ * referentially stable (wrap it in useMemo).
+ */
+export function useSetHeaderTrailingAction(node: ReactNode) {
+  const { setTrailingAction } = useContext(PageTitleContext);
+  useEffect(() => {
+    if (node === null || node === undefined) return;
+    setTrailingAction(node);
+    return () => setTrailingAction(null);
+  }, [setTrailingAction, node]);
 }
 
 /**

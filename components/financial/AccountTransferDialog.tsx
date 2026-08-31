@@ -371,7 +371,7 @@ export function AccountTransferDialog({
       ) : notEnoughAccounts ? (
         <div className="space-y-2 py-6 text-center text-sm text-muted-foreground">
           <p>כדי לרשום העברה צריך לפחות שני חשבונות פעילים (למשל חשבון בנק וקופת מזומן).</p>
-          <Link href="/settings" className="text-secondary underline underline-offset-4">
+          <Link href="/settings?tab=finance" className="text-secondary underline underline-offset-4">
             להגדרת חשבונות
           </Link>
         </div>
