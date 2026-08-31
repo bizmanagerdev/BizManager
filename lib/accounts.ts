@@ -4,6 +4,8 @@ import { fetchAllPagedResult } from "@/lib/supabase/paginate";
 import type { LoanRepayment } from "@/lib/loans";
 import { buildFocusHref } from "@/lib/audit";
 import { getCurrentCcFeeRate } from "@/lib/settings/ccFee";
+import { getBusinessDomainLabel } from "@/lib/expenses";
+import { propertyDisplayName } from "@/lib/properties";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Accounts layer (חשבונות) — real money containers with a running balance.
@@ -95,7 +97,7 @@ export type AccountLedgerEntry = {
   id: string;
   date: string; // YYYY-MM-DD
   label: string;
-  sublabel: string | null; // extra context (worker name / project) shown under the label
+  sublabel: string | null; // extra context (domain / worker / customer / project / property) shown under the label
   href: string | null; // link to the source record (order / project / worker / loans page)
   type: "in" | "out";
   amount: number;
@@ -304,7 +306,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       scan("payments", (from, to) =>
         supabase
           .from("payments")
-          .select("id,account_id,payment_date,due_date,amount_total,payment_status,payment_method,notes,project_id,order_id")
+          .select("id,account_id,payment_date,due_date,amount_total,payment_status,payment_method,notes,project_id,order_id,property_id,business_domain")
           .not("account_id", "is", null)
           // Either date may be the one inside the window: a check handed over
           // in May and cashed in July is May-dated but July money.
@@ -340,7 +342,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       scan("loans", (from, to) =>
         supabase
           .from("loans")
-          .select("id,account_id,direction,loan_date,amount,lender,borrower")
+          .select("id,account_id,direction,loan_date,amount,lender,borrower,business_domain")
           .not("account_id", "is", null)
           .gte("loan_date", earliestOpening)
           .range(from, to)
@@ -400,6 +402,16 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
   for (const row of expenseRows) {
     const id = str(row.project_id);
     if (id) projectIds.add(id);
+  }
+  // Any row (payment or expense) tied to a property is named the same way.
+  const propertyIds = new Set<string>();
+  for (const row of paymentRows) {
+    const id = str(row.property_id);
+    if (id) propertyIds.add(id);
+  }
+  for (const row of expenseRows) {
+    const id = str(row.property_id);
+    if (id) propertyIds.add(id);
   }
   // Customer of a תקבול/refund is resolved through its order or (fallback) project.
   const orderIds = new Set<string>();
@@ -493,9 +505,10 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     }
   }
 
-  // Bulk-resolve worker names, project names+customers, and order→customer links.
+  // Bulk-resolve worker names, project names+customers, property names, and order→customer links.
   const workerNameById = new Map<string, string>();
   const projectNameById = new Map<string, string>();
+  const propertyNameById = new Map<string, string>();
   const projectCustomerById = new Map<string, string>();
   const orderCustomerById = new Map<string, string>();
   await Promise.all([
@@ -541,6 +554,21 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
               if (id && cid) orderCustomerById.set(id, cid);
             }
           }),
+    propertyIds.size === 0
+      ? Promise.resolve()
+      : supabase
+          .from("properties")
+          .select("id,name,address")
+          .in("id", Array.from(propertyIds))
+          .then(({ data }) => {
+            for (const p of (data ?? []) as Row[]) {
+              const id = str(p.id);
+              if (!id) continue;
+              const address = str(p.address) ?? "";
+              const name = propertyDisplayName({ name: str(p.name), address }).trim();
+              if (name) propertyNameById.set(id, name);
+            }
+          }),
   ]);
 
   // Resolve the customer display strings (name + phone, per the customer-phone rule).
@@ -563,16 +591,34 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     }
   }
 
-  // Compose the "עובד: … · לקוח: … · פרויקט: …" context line shown under a row's label.
+  // Compose the "תחום: … · עובד: … · לקוח: … · פרויקט/נכס: …" context line shown
+  // under a row's label. `domain` is the row's raw business_domain (payments,
+  // expenses and loans carry a real column; other kinds pass nothing and just
+  // skip the domain part). Project/property names only surface when the domain
+  // actually matches — a project/property id is never set on any other domain
+  // (DB check constraints), mirroring the financial ledger's own buildSource.
   const composeSublabel = (
-    opts: { workerName?: string | null; customerId?: string | null; projectId?: string | null } = {}
+    opts: {
+      domain?: string | null;
+      workerName?: string | null;
+      customerId?: string | null;
+      projectId?: string | null;
+      propertyId?: string | null;
+    } = {}
   ): string | null => {
     const parts: string[] = [];
+    if (opts.domain) parts.push(`תחום: ${getBusinessDomainLabel(opts.domain)}`);
     if (opts.workerName) parts.push(`עובד: ${opts.workerName}`);
     const customerLabel = opts.customerId ? customerLabelById.get(opts.customerId) : undefined;
     if (customerLabel) parts.push(`לקוח: ${customerLabel}`);
-    const projectName = opts.projectId ? projectNameById.get(opts.projectId) : undefined;
-    if (projectName) parts.push(`פרויקט: ${projectName}`);
+    if (!opts.domain || opts.domain === "logistics_projects") {
+      const projectName = opts.projectId ? projectNameById.get(opts.projectId) : undefined;
+      if (projectName) parts.push(`פרויקט: ${projectName}`);
+    }
+    if (opts.domain === "property_management") {
+      const propertyName = opts.propertyId ? propertyNameById.get(opts.propertyId) : undefined;
+      if (propertyName) parts.push(`נכס: ${propertyName}`);
+    }
     return parts.length > 0 ? parts.join(" · ") : null;
   };
 
@@ -653,7 +699,12 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       // Kept only to explain a row whose two dates differ ("נרשם 24/05").
       recordedDate: recordedDate && recordedDate !== date ? recordedDate : null,
       label: str(row.notes)?.trim() || (isRefund ? "החזר ללקוח" : "תקבול"),
-      sublabel: composeSublabel({ customerId: paymentCustomerId(row), projectId: str(row.project_id) }),
+      sublabel: composeSublabel({
+        domain: str(row.business_domain),
+        customerId: paymentCustomerId(row),
+        projectId: str(row.project_id),
+        propertyId: str(row.property_id),
+      }),
       href: str(row.order_id)
         ? `/sales/orders/${str(row.order_id)}`
         : str(row.project_id)
@@ -715,7 +766,11 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     const total = Math.abs(num(row.amount));
     const paid = Math.abs(num(row.paid_amount));
     const label = str(row.description)?.trim() || str(row.category)?.trim() || "תשלום";
-    const sublabel = composeSublabel({ projectId: str(row.project_id) });
+    const sublabel = composeSublabel({
+      domain: str(row.business_domain),
+      projectId: str(row.project_id),
+      propertyId: str(row.property_id),
+    });
     // A non-project expense has no record of its own to open — send it to the
     // ledger AT this exact entry (same "focus" deep link the activity feed
     // uses for expenses, lib/audit.ts) instead of dumping the reader on the
@@ -847,6 +902,13 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     const name = (taken ? str(row.lender) : str(row.borrower))?.trim() || null;
     return name ? `${taken ? "מלווה" : "לווה"}: ${name}` : null;
   };
+  const loanSublabel = (row: Row) =>
+    [
+      `תחום: ${getBusinessDomainLabel(str(row.business_domain))}`,
+      loanCounterparty(row),
+    ]
+      .filter(Boolean)
+      .join(" · ");
 
   // Resolve loan direction for every repayment's parent loan (the repayment's own
   // loan may be older than the scan window / unassigned, so fetch directions by id).
@@ -856,8 +918,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     const id = str(row.id);
     if (!id) return;
     loanDirectionById.set(id, str(row.direction) ?? "taken");
-    const sublabel = loanCounterparty(row);
-    if (sublabel) loanSublabelById.set(id, sublabel);
+    loanSublabelById.set(id, loanSublabel(row));
   };
   for (const row of loanRows) rememberLoan(row);
   const repayLoanIds = Array.from(
@@ -871,7 +932,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
   if (repayLoanIds.length > 0) {
     const { data: extraLoans } = await supabase
       .from("loans")
-      .select("id,direction,lender,borrower")
+      .select("id,direction,lender,borrower,business_domain")
       .in("id", repayLoanIds);
     for (const row of (extraLoans ?? []) as Row[]) rememberLoan(row);
   }
@@ -892,7 +953,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       id: `l:${str(row.id) ?? ""}`,
       date,
       label: taken ? "הלוואה שהתקבלה" : "הלוואה שניתנה",
-      sublabel: loanCounterparty(row),
+      sublabel: loanSublabel(row),
       href: `/financial/loans/${str(row.id) ?? ""}`,
       type: taken ? "in" : "out",
       amount,

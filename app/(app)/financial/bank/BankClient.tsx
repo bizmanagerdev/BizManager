@@ -583,6 +583,7 @@ export default function BankClient({
       <QuickEntryRow
         account={selected}
         projects={projects}
+        properties={recurringProperties}
         merchantMemory={merchantMemory}
         onSaved={() => router.refresh()}
       />

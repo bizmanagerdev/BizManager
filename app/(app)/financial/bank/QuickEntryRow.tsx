@@ -57,11 +57,13 @@ function todayIso() {
 export default function QuickEntryRow({
   account,
   projects,
+  properties,
   merchantMemory,
   onSaved,
 }: {
   account: Account;
   projects: Array<{ id: string; name: string }>;
+  properties: Array<{ id: string; label: string }>;
   /** How a description like this was filed last time — fills the row for you. */
   merchantMemory: MerchantMemory;
   onSaved: () => void;
@@ -73,6 +75,7 @@ export default function QuickEntryRow({
   const [businessDomain, setBusinessDomain] = useState("");
   const [category, setCategory] = useState<string>(DEFAULT_EXPENSE_CATEGORY);
   const [projectId, setProjectId] = useState("");
+  const [propertyId, setPropertyId] = useState("");
   const [busy, setBusy] = useState<"income" | "expense" | null>(null);
   const descriptionRef = useRef<HTMLInputElement>(null);
 
@@ -103,6 +106,7 @@ export default function QuickEntryRow({
     if (!businessDomain) setBusinessDomain(remembered.businessDomain);
     if (remembered.category && category === DEFAULT_EXPENSE_CATEGORY) setCategory(remembered.category);
     if (!projectId && remembered.projectId) setProjectId(remembered.projectId);
+    if (!propertyId && remembered.propertyId) setPropertyId(remembered.propertyId);
   }
 
   async function save(kind: "income" | "expense") {
@@ -113,6 +117,10 @@ export default function QuickEntryRow({
     }
     if (!businessDomain) {
       toast.error("יש לבחור תחום.");
+      return;
+    }
+    if (businessDomain === "property_management" && !propertyId) {
+      toast.error("יש לבחור נכס לתחום ניהול נכסים.");
       return;
     }
 
@@ -132,6 +140,7 @@ export default function QuickEntryRow({
                 description: description.trim() || category,
                 business_domain: businessDomain,
                 project_id: projectId || null,
+                property_id: propertyId || null,
                 payment_status: "paid",
                 payment_method: paymentMethod,
                 account_id: account.id,
@@ -146,6 +155,7 @@ export default function QuickEntryRow({
                 business_domain: businessDomain,
                 payment_method: paymentMethod,
                 project_id: projectId || undefined,
+                property_id: propertyId || undefined,
                 notes: description.trim() || undefined,
                 account_id: account.id,
               }),
@@ -236,7 +246,14 @@ export default function QuickEntryRow({
               <DomainSelect
                 className="h-9"
                 value={businessDomain}
-                onChange={setBusinessDomain}
+                onChange={(value) => {
+                  setBusinessDomain(value);
+                  // A project/property picked under one domain doesn't carry over
+                  // to another — leaving it set would send both project_id and
+                  // property_id together, which the create APIs reject.
+                  if (value !== "logistics_projects") setProjectId("");
+                  if (value !== "property_management") setPropertyId("");
+                }}
                 placeholder="תחום *"
                 ariaLabel="תחום"
               />
@@ -294,6 +311,19 @@ export default function QuickEntryRow({
                 placeholder="פרויקט"
                 emptyOptionLabel="ללא פרויקט"
                 ariaLabel="פרויקט"
+              />
+            )}
+            {/* property_management requires a property — no "ללא" option, unlike
+                the project picker above, since the create APIs reject a
+                property_management row with no property_id. */}
+            {businessDomain === "property_management" && (
+              <SearchableSelect
+                className="h-9 sm:w-64"
+                options={properties.map((property) => ({ value: property.id, label: property.label }))}
+                value={propertyId}
+                onChange={setPropertyId}
+                placeholder="נכס *"
+                ariaLabel="נכס"
               />
             )}
           </CardContent>

@@ -540,4 +540,42 @@ describe("loadAccountsOverview — running balance & register", () => {
     expect(byId["w:w1"].sublabel).toBe("עובד: יוסי כהן · פרויקט: מעבר דירה");
     expect(byId["w:w1"].href).toBe("/payroll/workers/u1");
   });
+
+  it("shows the business domain on every applicable row, plus the property/project only when the domain matches", async () => {
+    const [overview] = await loadAccountsOverview(
+      makeSupabase({
+        accounts: [account()],
+        payments: [
+          {
+            id: "p1", account_id: "acc1", payment_date: "2024-02-01", amount_total: 500,
+            payment_status: "collected", business_domain: "logistics_projects", project_id: "pr1",
+          },
+          {
+            id: "p2", account_id: "acc1", payment_date: "2024-02-03", amount_total: 300,
+            payment_status: "collected", business_domain: "general_business",
+          },
+        ],
+        expenses: [
+          {
+            id: "e1", account_id: "acc1", expense_date: "2024-03-01", amount: 200,
+            payment_status: "paid", business_domain: "property_management", property_id: "prop1",
+          },
+        ],
+        loans: [
+          {
+            id: "l1", account_id: "acc1", direction: "taken", loan_date: "2024-01-15",
+            amount: 1000, lender: "בנק הפועלים", business_domain: "sales",
+          },
+        ],
+        projects: [{ id: "pr1", name: "מעבר דירה" }],
+        properties: [{ id: "prop1", name: null, address: "הרצל 5, תל אביב" }],
+      })
+    );
+
+    const byId = Object.fromEntries(overview.ledger.map((l) => [l.id, l]));
+    expect(byId["p:p1"].sublabel).toBe("תחום: פרויקטים · פרויקט: מעבר דירה");
+    expect(byId["p:p2"].sublabel).toBe("תחום: שוטף");
+    expect(byId["e:e1"].sublabel).toBe("תחום: ניהול נכסים · נכס: הרצל 5, תל אביב");
+    expect(byId["l:l1"].sublabel).toBe("תחום: מכירות · מלווה: בנק הפועלים");
+  });
 });
