@@ -428,7 +428,7 @@ export function QuickCreateMenu({
       {isFab && panel.open && typeof document !== "undefined"
         ? createPortal(
             <div
-              className="fixed inset-x-0 top-0 bottom-[calc(58px+env(safe-area-inset-bottom))] z-[60] bg-primary/60 backdrop-blur-[2px] animate-in fade-in-0 md:hidden"
+              className="fixed inset-x-0 top-0 bottom-[calc(58px+env(safe-area-inset-bottom))] z-[60] bg-primary/60 animate-in fade-in-0 md:hidden"
               // Radix closes on outside pointer-down anyway; this keeps the tap
               // from reaching whatever is under the scrim.
               onPointerDown={() => panel.hide()}

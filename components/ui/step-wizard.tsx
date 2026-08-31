@@ -468,7 +468,7 @@ export function StepWizard<TStep extends string | number>({
     <DialogChromeFooter>{footerInner}</DialogChromeFooter>
   ) : (
     // Standalone: flush above the bottom nav on a phone, a sticky card on md+.
-    <div className="fixed inset-x-0 bottom-[58px] z-40 space-y-2 border-t border-border/70 bg-background/95 px-3 py-3 shadow-[0_-2px_12px_rgb(0_0_0_/_0.06)] backdrop-blur sm:px-4 md:sticky md:inset-x-auto md:bottom-0 md:z-10 md:mt-1 md:rounded-2xl md:border md:shadow-lg">
+    <div className="fixed inset-x-0 bottom-[58px] z-40 space-y-2 border-t border-border/70 bg-background/95 px-3 py-3 shadow-[0_-2px_12px_rgb(0_0_0_/_0.06)] sm:px-4 md:sticky md:inset-x-auto md:bottom-0 md:z-10 md:mt-1 md:rounded-2xl md:border md:shadow-lg">
       {footerInner}
     </div>
   );

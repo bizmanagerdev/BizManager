@@ -13,6 +13,7 @@ type Props = Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>, "href"> & {
   className?: string;
   activeClassName?: string;
   pendingClassName?: string;
+  prefetch?: LinkProps["prefetch"];
 };
 
 function isActivePath(pathname: string, to: string, end: boolean) {
@@ -22,7 +23,7 @@ function isActivePath(pathname: string, to: string, end: boolean) {
 }
 
 export const NavLink = React.forwardRef<HTMLAnchorElement, Props>(
-  ({ className, activeClassName, pendingClassName, to, end = false, ...props }, ref) => {
+  ({ className, activeClassName, pendingClassName, to, end = false, prefetch, ...props }, ref) => {
     const pathname = usePathname() ?? "/";
     let toPath = "/";
     if (typeof to === "string") {
@@ -65,6 +66,7 @@ export const NavLink = React.forwardRef<HTMLAnchorElement, Props>(
       <Link
         ref={ref}
         href={to}
+        prefetch={prefetch}
         className={cn(
           className,
           active && activeClassName,

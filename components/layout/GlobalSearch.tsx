@@ -294,7 +294,7 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
             />
           </div>
           {open ? (
-            <div className="absolute inset-x-0 top-[calc(100%+0.6rem)] z-50 overflow-hidden rounded-[1.4rem] border border-border/60 bg-background/95 shadow-elevated backdrop-blur-xl">
+            <div className="absolute inset-x-0 top-[calc(100%+0.6rem)] z-50 overflow-hidden rounded-[1.4rem] border border-border/60 bg-background/95 shadow-elevated">
               <SearchResults results={results} query={query} offline={offlineFallback} onNavigate={() => setOpen(false)} />
               {query.trim().length >= 2 ? (
                 <div className="border-t border-border/70 p-2">

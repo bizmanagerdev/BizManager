@@ -50,6 +50,10 @@ export function BottomNav({ items, moreItems = [], viewerRole, viewerLocale = "h
       key={item.title}
       to={item.url}
       end={item.url === "/"}
+      // Same reasoning as the desktop sidebar's dashboard tab: it's always
+      // mounted here, so fully prefetch it instead of leaving a dynamic route
+      // uncached.
+      prefetch={item.url === "/dashboard" ? true : undefined}
       className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-sm py-1 text-sidebar-foreground/70 transition-all duration-200 hover:bg-white/10 hover:text-white"
       activeClassName="bg-secondary text-secondary-foreground shadow-md shadow-secondary/25"
       pendingClassName="bg-white/10 opacity-70"
