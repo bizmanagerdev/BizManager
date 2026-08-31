@@ -4,9 +4,15 @@ import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronDownIcon } from "@/components/ui/icons";
+import { ChevronDownIcon, DeleteIcon, EditIcon, MoreIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { NativeSelect } from "@/components/ui/native-select";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AccountTransferDialog } from "@/components/financial/AccountTransferDialog";
@@ -22,21 +28,25 @@ import {
   type AccountTransferRef,
   type AccountWithLedger,
 } from "@/lib/accounts";
-import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
 import { PaymentEditDialog } from "@/components/financial/PaymentEditDialog";
 import { EditWorkerPaymentDialog } from "@/components/payroll/EditWorkerPaymentDialog";
 import { EditPaidRepaymentDialog, LoanFormDialog } from "@/app/(app)/financial/loans/LoanDialogs";
 import { deleteLoan, deleteRepayment } from "@/app/(app)/financial/loans/actions";
 import type { Loan } from "@/lib/loans";
+import { formatMoneyRounded } from "@/lib/money";
 
-function formatIls(amount: number) {
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    maximumFractionDigits: 0,
-  }).format(Math.round(amount));
-}
+// Was a local Intl-currency-style formatter — exactly the anti-pattern
+// lib/money.ts's own docstring warns about ("every hand-written
+// Intl.NumberFormat(...,{style:'currency'}) in the app disagrees" with the
+// canonical ₪-first shape). That's why this page mixed ₪-after-a-space,
+// ₪-with-no-space and even different dash characters for negative amounts
+// depending on which spot on the page you looked at (user, 2026-08-31:
+// "Number formatting is inconsistent ... Pick one"). formatMoneyRounded is
+// used everywhere below instead — money.ts's canonical ₪-first shape, but
+// rounded to whole shekels like the old local formatter was (plain
+// formatMoney allows up to 2 decimals, which briefly leaked ugly amounts
+// like ₪128,006.4 onto this page after the first switch).
 
 function formatDate(iso: string) {
   const date = new Date(iso);
@@ -77,25 +87,41 @@ function AccountSummaryCard({
       onClick={onSelect}
       className={cn(
         "flex h-full w-full flex-col items-stretch gap-1.5 rounded-lg border bg-background p-3 text-right transition-colors",
-        selected ? "border-primary ring-1 ring-primary" : "hover:border-foreground/30"
+        // Inverted — navy fill, white text — not just a border, after a
+        // round of borders (white fill/secondary border, then a plain
+        // thicker primary border) that a reviewer correctly called a "weak
+        // selection signal": at 1px-3px a navy edge barely reads as
+        // different from the card's own default border. Solid primary fill
+        // is unmissable AND ties the selected account to the chrome, since
+        // primary IS the chrome colour (2026-08-31 design review).
+        selected
+          ? "border-primary bg-primary text-primary-foreground"
+          : "hover:border-foreground/30"
       )}
     >
       <span className="flex w-full items-start justify-between gap-2">
         <span className="min-w-0 flex-1 break-words text-sm font-medium">{account.name}</span>
-        <span className="shrink-0 rounded-full border px-1.5 py-0 text-[10px] text-muted-foreground">
+        <span
+          className={cn(
+            "shrink-0 rounded-full border px-1.5 py-0 text-[10px]",
+            selected ? "border-primary-foreground/30 text-primary-foreground/80" : "text-muted-foreground"
+          )}
+        >
           {getAccountKindLabel(account.kind)}
         </span>
       </span>
       <span className="flex flex-1 items-center justify-center">
-        {/* Money colour: in the black is green, in the red is red. */}
-        <span
-          dir="ltr"
-          className={cn(
-            "block text-xl font-semibold tabular-nums",
-            account.currentBalance < 0 ? "text-destructive" : "text-success"
-          )}
-        >
-          {formatIls(account.currentBalance)}
+        {/* Only the sign is red/green — the figure itself stays neutral text.
+            Red/green on the WHOLE number would double as this card's only
+            "danger" signal, but red already means danger everywhere else in
+            the app (delete, destructive badges, errors) — a negative balance
+            isn't that (user, 2026-08-31: "colour is overloaded... red means
+            danger everywhere else"). */}
+        <span dir="ltr" className="block text-xl font-semibold tabular-nums">
+          <span className={account.currentBalance < 0 ? "text-destructive" : "text-success"}>
+            {account.currentBalance < 0 ? "-" : "+"}
+          </span>
+          {formatMoneyRounded(Math.abs(account.currentBalance))}
         </span>
       </span>
       {/* Only the selected card's own pending amounts — every card showing its
@@ -103,10 +129,16 @@ function AccountSummaryCard({
       {selected && (account.pendingIn > 0 || account.pendingOut > 0) && (
         <span dir="ltr" className="flex flex-wrap justify-end gap-x-2 text-xs tabular-nums">
           {account.pendingIn > 0 && (
-            <span className="text-success">+{formatIls(account.pendingIn)} צפוי</span>
+            <span>
+              <span className="text-success">+</span>
+              {formatMoneyRounded(account.pendingIn)} צפוי
+            </span>
           )}
           {account.pendingOut > 0 && (
-            <span className="text-destructive">−{formatIls(account.pendingOut)} צפוי</span>
+            <span>
+              <span className="text-destructive">-</span>
+              {formatMoneyRounded(account.pendingOut)} צפוי
+            </span>
           )}
         </span>
       )}
@@ -153,6 +185,10 @@ export default function BankClient({
       // 2026-08-31: "a drop more space on top of the total and the button").
       <div className="hidden mt-1.5 text-right leading-tight sm:block">
         <div className="text-[10px] text-muted-foreground">סך נזילות</div>
+        {/* Whole figure colored red/green here — a deliberate exception to
+            the sign-only treatment on the account tiles (user, 2026-08-31:
+            "the top number should be red or green reflecting the amount
+            unlike the account totals"). */}
         <div
           dir="ltr"
           className={cn(
@@ -160,7 +196,7 @@ export default function BankClient({
             totalLiquidity < 0 ? "text-destructive" : "text-success"
           )}
         >
-          {formatIls(totalLiquidity)}
+          {formatMoneyRounded(totalLiquidity)}
         </div>
       </div>
     ),
@@ -205,6 +241,15 @@ export default function BankClient({
   // instead — that can only ever move this one container.
   const registerScrollRef = useRef<HTMLDivElement>(null);
   const registerHeaderRef = useRef<HTMLDivElement>(null);
+  // QuickEntryRow's own page-level spacer only reserves room in NORMAL page
+  // flow (below this whole register), which does nothing for a container
+  // that scrolls in its own bounded box — the last rows were still landing
+  // behind the fixed bar regardless (user, 2026-08-31: "the add bar still
+  // covers rows ... padding-bottom on the list equal to the bar's height").
+  // QuickEntryRow reports its live height here via onHeightChange, applied
+  // below as the scroll container's own padding-bottom so the last real row
+  // can always scroll fully clear of the bar.
+  const [quickEntryHeight, setQuickEntryHeight] = useState(0);
   useLayoutEffect(() => {
     const container = registerScrollRef.current;
     const target = monthNodeRefs.current.get(currentMonth);
@@ -435,14 +480,17 @@ export default function BankClient({
           that used to sit here is gone too — creating a transfer is already
           covered by the + quick-create menu; only editing/deleting an
           existing one still happens inline in the register below. */}
-      {/* flex-wrap + a fixed card width, not a fixed-column-count grid — with
-          `1fr` grid columns, fewer accounts than columns left a lopsided gap
-          on one side instead of centering (user, 2026-08-31: "center the
-          cards"). This wraps and centers at any count/width, and naturally
-          fits ~10 per row on a wide screen without hand-tuned breakpoints. */}
-      <div className="flex flex-wrap justify-center gap-2">
+      {/* A single scrollable row, not a wrapping grid — a fixed-column grid
+          left a lopsided gap when there were fewer accounts than columns, and
+          wrapping to more rows doesn't scale as accounts are added (user,
+          2026-08-31: "i want the strip to scroll if there are more cards").
+          shrink-0 on each card keeps it from being squeezed by the scroll
+          container; no justify-center here — combined with overflow-x-auto
+          that's a known way to clip the first/last card once the row
+          actually overflows. */}
+      <div className="flex gap-2 overflow-x-auto pb-1">
         {accounts.map((account) => (
-          <div key={account.id} className="w-36">
+          <div key={account.id} className="w-36 shrink-0">
             <AccountSummaryCard
               account={account}
               selected={account.id === selected.id}
@@ -456,7 +504,11 @@ export default function BankClient({
           container (not the page) — see registerScrollRef above. */}
       <Card>
         <CardContent className="p-0">
-          <div ref={registerScrollRef} className="max-h-[70vh] overflow-y-auto">
+          <div
+            ref={registerScrollRef}
+            className="max-h-[70vh] overflow-y-auto"
+            style={{ paddingBottom: quickEntryHeight }}
+          >
             {/* Sticky, solid background (not the old translucent one — a
                 sticky header needs to actually occlude what scrolls under
                 it): the account name + month filter stay pinned as the
@@ -487,7 +539,7 @@ export default function BankClient({
                   </label>
                 ) : null}
                 <div className="text-xs text-muted-foreground">
-                  יתרת פתיחה {formatIls(selected.openingBalance)} · נכון ל-
+                  יתרת פתיחה {formatMoneyRounded(selected.openingBalance)} · נכון ל-
                   <span dir="ltr">{formatDate(selected.openingDate)}</span>
                 </div>
               </div>
@@ -532,16 +584,16 @@ export default function BankClient({
                     <span className="ms-auto flex items-center gap-2">
                       <span dir="ltr" className="flex items-center gap-2 tabular-nums">
                         {group.in > 0 && (
-                          <span className="text-success">+{formatIls(group.in)}</span>
+                          <span className="text-success">+{formatMoneyRounded(group.in)}</span>
                         )}
                         {group.out > 0 && (
-                          <span className="text-destructive">−{formatIls(group.out)}</span>
+                          <span className="text-destructive">-{formatMoneyRounded(group.out)}</span>
                         )}
                       </span>
                       {/* Where the account stood when the month ended. */}
                       <span className="hidden text-muted-foreground/70 sm:inline">יתרה</span>
                       <span dir="ltr" className="tabular-nums font-semibold text-foreground">
-                        {formatIls(group.closing)}
+                        {formatMoneyRounded(group.closing)}
                       </span>
                     </span>
                   </button>
@@ -573,12 +625,12 @@ export default function BankClient({
                               row.type === "in" ? "text-success" : "text-destructive"
                             )}
                           >
-                            {row.type === "in" ? "+" : "−"}
-                            {formatIls(row.amount)}
+                            {row.type === "in" ? "+" : "-"}
+                            {formatMoneyRounded(row.amount)}
                           </div>
                           {row.runningBalance !== null && (
                             <div dir="ltr" className="text-xs tabular-nums text-muted-foreground">
-                              {formatIls(row.runningBalance)}
+                              {formatMoneyRounded(row.runningBalance)}
                             </div>
                           )}
                         </div>
@@ -598,40 +650,68 @@ export default function BankClient({
                     ) : (
                       <div className="flex min-w-0 flex-1 items-center gap-3">{inner}</div>
                     );
-                    const rowLabel = `${row.label} · ${formatIls(row.amount)}`;
+                    const rowLabel = `${row.label} · ${formatMoneyRounded(row.amount)}`;
                     return (
                       <div
                         key={row.id}
                         className="flex items-center gap-3 px-3 py-2.5 text-sm transition-colors hover:bg-muted/50"
                       >
                         {content}
+                        {/* A single "⋮" menu instead of separate edit/delete icon
+                            buttons on every row (user, 2026-08-31) — same pattern
+                            as ProjectMovements.tsx's RowActions. */}
                         {(row.editRef || row.deleteRef || transfer) && (
-                          <div className="flex shrink-0 items-center gap-0.5">
-                            {row.editRef && (
-                              <EditButton label="עריכה" onClick={() => openEdit(row.editRef!)} />
-                            )}
-                            {transfer && (
-                              <EditButton
-                                label="עריכת העברה"
-                                onClick={() => {
-                                  setTransferToEdit(transfer);
-                                  setTransferOpen(true);
-                                }}
-                              />
-                            )}
-                            {row.deleteRef && (
-                              <DeleteButton
-                                label="מחיקה"
-                                onClick={() => setRowToDelete({ ref: row.deleteRef!, label: rowLabel })}
-                              />
-                            )}
-                            {transfer && (
-                              <DeleteButton
-                                label="מחיקת העברה"
-                                onClick={() => setTransferToDelete({ id: transfer.id, label: rowLabel })}
-                              />
-                            )}
-                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+                                title="פעולות"
+                                aria-label="פעולות"
+                              >
+                                <MoreIcon className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-40">
+                              {row.editRef && (
+                                <DropdownMenuItem onClick={() => openEdit(row.editRef!)}>
+                                  <EditIcon className="me-2 h-4 w-4" />
+                                  עריכה
+                                </DropdownMenuItem>
+                              )}
+                              {transfer && (
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setTransferToEdit(transfer);
+                                    setTransferOpen(true);
+                                  }}
+                                >
+                                  <EditIcon className="me-2 h-4 w-4" />
+                                  עריכת העברה
+                                </DropdownMenuItem>
+                              )}
+                              {row.deleteRef && (
+                                <DropdownMenuItem
+                                  onClick={() => setRowToDelete({ ref: row.deleteRef!, label: rowLabel })}
+                                  className="text-destructive focus:text-destructive"
+                                >
+                                  <DeleteIcon className="me-2 h-4 w-4" />
+                                  מחיקה
+                                </DropdownMenuItem>
+                              )}
+                              {transfer && (
+                                <DropdownMenuItem
+                                  onClick={() => setTransferToDelete({ id: transfer.id, label: rowLabel })}
+                                  className="text-destructive focus:text-destructive"
+                                >
+                                  <DeleteIcon className="me-2 h-4 w-4" />
+                                  מחיקת העברה
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         )}
                       </div>
                     );
@@ -662,6 +742,7 @@ export default function BankClient({
         properties={recurringProperties}
         merchantMemory={merchantMemory}
         onSaved={() => router.refresh()}
+        onHeightChange={setQuickEntryHeight}
       />
 
       <AccountTransferDialog

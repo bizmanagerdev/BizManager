@@ -30,10 +30,10 @@
 // /api/payments/create), so audit, VAT and receipts behave identically — this is
 // a faster way in, not a second way of recording money.
 
-import { useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
-import { AddIcon, RemoveIcon, SpinnerIcon } from "@/components/ui/icons";
+import { AddIcon, HelpIcon, RemoveIcon, SpinnerIcon } from "@/components/ui/icons";
 import { CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,6 +41,7 @@ import { DateInput } from "@/components/ui/date-input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { DomainSelect } from "@/components/financial/DomainSelect";
+import { HoverPanel, HoverPanelContent, HoverPanelTrigger, useHoverPanel } from "@/components/ui/hover-panel";
 import { toHebrewError } from "@/lib/error-messages";
 import { DEFAULT_EXPENSE_CATEGORY, EXPENSE_CATEGORY_OPTIONS } from "@/lib/expenses";
 import { norm, type MerchantMemory } from "@/lib/financial/cardImport";
@@ -51,6 +52,14 @@ import type { Account } from "@/lib/accounts";
 // No reactive source — this only answers "are we on the client yet" (same
 // pattern as DesktopQuickCreateFab, for the same reason below).
 const subscribeClient = () => () => {};
+
+// Spelled out for the first few sessions, then collapsed to a "?" — a
+// permanently-visible keyboard-shortcut legend is onboarding, not something a
+// daily user needs staring at them forever (user, 2026-08-31: "the keyboard
+// hint is permanent ... show it for the first few sessions, then collapse to
+// a ? next to the bar").
+const HINT_STORAGE_KEY = "bizh:quickEntryHintSessions";
+const HINT_MAX_SESSIONS = 3;
 
 /** Today in the local calendar — a night-time entry mustn't slip a day (UTC would). */
 function todayIso() {
@@ -66,6 +75,7 @@ export default function QuickEntryRow({
   properties,
   merchantMemory,
   onSaved,
+  onHeightChange,
 }: {
   account: Account;
   projects: Array<{ id: string; name: string }>;
@@ -73,6 +83,12 @@ export default function QuickEntryRow({
   /** How a description like this was filed last time — fills the row for you. */
   merchantMemory: MerchantMemory;
   onSaved: () => void;
+  /** Fires with the bar's live rendered height (px) whenever it changes — so a
+   *  caller with its OWN internally-scrolling content (e.g. BankClient's
+   *  bounded register list) can pad that content clear of the bar too. The
+   *  page-level spacer below only reserves room in normal page flow, which
+   *  does nothing for a sibling that scrolls in its own bounded box. */
+  onHeightChange?: (px: number) => void;
 }) {
   const { collapsed } = useSidebarCollapse();
   // Portaled straight to <body> (see the return statement below) — server
@@ -89,6 +105,32 @@ export default function QuickEntryRow({
   const [propertyId, setPropertyId] = useState("");
   const [busy, setBusy] = useState<"income" | "expense" | null>(null);
   const descriptionRef = useRef<HTMLInputElement>(null);
+  const hintPanel = useHoverPanel();
+
+  // Defaults to showing the full hint (matches the pre-collapse behavior)
+  // until this effect reads the real count on mount — by then onClient above
+  // hasn't flipped yet either, so nothing has actually painted, and there's
+  // no flash. Each of the first HINT_MAX_SESSIONS mounts counts as one
+  // "session" and bumps the stored count once; from then on it stays a "?".
+  const [showFullHint, setShowFullHint] = useState(true);
+  useEffect(() => {
+    let count = 0;
+    try {
+      count = Number(localStorage.getItem(HINT_STORAGE_KEY)) || 0;
+    } catch {
+      // Private browsing / storage disabled — just keep showing the hint.
+      return;
+    }
+    setShowFullHint(count < HINT_MAX_SESSIONS);
+    if (count < HINT_MAX_SESSIONS) {
+      try {
+        localStorage.setItem(HINT_STORAGE_KEY, String(count + 1));
+      } catch {
+        // Nothing to do if it can't be persisted — worst case the hint
+        // shows a session longer than intended.
+      }
+    }
+  }, []);
 
   // Once the bar leaves normal flow for `fixed` (md+), nothing reserves its
   // footprint any more, so it would sit on top of the register's last rows
@@ -102,12 +144,15 @@ export default function QuickEntryRow({
   useLayoutEffect(() => {
     const el = barRef.current;
     if (!el) return;
-    const update = () => setBarHeight(el.offsetHeight);
+    const update = () => {
+      setBarHeight(el.offsetHeight);
+      onHeightChange?.(el.offsetHeight);
+    };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [onHeightChange]);
 
   /** Fill the שיוך from how this description was filed last time. */
   function rememberFor(text: string) {
@@ -230,11 +275,31 @@ export default function QuickEntryRow({
           leaving rounded slivers of page visible under it. */}
       <div className="w-fit max-w-full rounded-t-2xl border-2 border-primary bg-muted text-card-foreground shadow-[0_-8px_24px_rgba(0,0,0,0.18)]">
         <CardContent className="space-y-2 p-2.5">
-            <div className="flex flex-wrap items-baseline gap-x-2 text-xs">
+            <div className="flex flex-wrap items-center gap-x-2 text-xs">
               <span className="text-sm font-medium">הוספה מהירה ל{account.name}</span>
-              <span className="text-muted-foreground">
-                Enter = הוצאה · Shift+Enter = הכנסה · התאריך והתחום נשארים לשורה הבאה
-              </span>
+              {showFullHint ? (
+                <span className="text-muted-foreground">
+                  Enter = הוצאה · Shift+Enter = הכנסה · התאריך והתחום נשארים לשורה הבאה
+                </span>
+              ) : (
+                <HoverPanel open={hintPanel.open} onOpenChange={hintPanel.setOpen}>
+                  <HoverPanelTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="h-5 w-5 text-muted-foreground hover:text-foreground"
+                      aria-label="קיצורי מקלדת"
+                      {...hintPanel.triggerProps}
+                    >
+                      <HelpIcon className="h-3.5 w-3.5" />
+                    </Button>
+                  </HoverPanelTrigger>
+                  <HoverPanelContent align="start" className="w-64 p-2.5 text-xs" {...hintPanel.panelProps}>
+                    Enter = הוצאה · Shift+Enter = הכנסה · התאריך והתחום נשארים לשורה הבאה
+                  </HoverPanelContent>
+                </HoverPanel>
+              )}
             </div>
 
             {/* Flex-wrap, not a fixed grid template — every field gets a real
