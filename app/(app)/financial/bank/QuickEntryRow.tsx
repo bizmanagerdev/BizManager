@@ -8,23 +8,19 @@
 // (date, domain, category) stay filled while the description and amount clear
 // themselves, so a run of lines off one page is a few keystrokes each.
 //
-// On DESKTOP (md+) it's pinned to the bottom of the WINDOW at all times, via
-// `fixed` — not `sticky`. Sticky only locks on once you've scrolled close to
-// the end of a long register, which for a page whose whole point is fast
-// repeated entry means it's off-screen most of the time (user, 2026-08-27:
-// "I don't want to scroll to it"). The right inset tracks the sidebar rail's
-// current width (RAIL_WIDTH, collapsed/expanded); physical right, not logical
-// end, per the same reasoning as DesktopQuickCreateFab — one less thing RTL
-// can flip on us. The card itself is centered within that box (not stretched
-// to its edges) — user, 2026-08-31: "center the bar in the page[, ]now its
-// sticking to right of the table and looks funny".
-//
-// Below md there's no sidebar, and the mobile BottomNav takes the fixed-bottom
-// slot instead — it's fixed to the true bottom (58px + its safe-area inset)
-// with a higher z-index, so pinning this bar under it (not sticky at
-// bottom-0) keeps its buttons out from behind the nav bar's opaque
-// background. It folds into two short rows on a narrow window, so half a
-// screen is enough.
+// DESKTOP (md+) ONLY — hidden below md (user, 2026-08-31: "on mobile remove
+// the quick add"). This is inherently a wide-screen, many-fields-in-a-row
+// power tool for typing off a split-screen desktop window; on a phone there's
+// no room for it and the + quick-create menu already covers recording money.
+// It's pinned to the bottom of the WINDOW at all times, via `fixed` — not
+// `sticky`, which only locks on once you've scrolled close to the end of a
+// long register (user, 2026-08-27: "I don't want to scroll to it"). The right
+// inset tracks the sidebar rail's current width (RAIL_WIDTH, collapsed/
+// expanded); physical right, not logical end, per the same reasoning as
+// DesktopQuickCreateFab — one less thing RTL can flip on us. The card itself
+// is centered within that box (not stretched to its edges) — user,
+// 2026-08-31: "center the bar in the page[, ]now its sticking to right of the
+// table and looks funny".
 //
 // It writes through the SAME endpoints as everywhere else (/api/expenses/create,
 // /api/payments/create), so audit, VAT and receipts behave identically — this is
@@ -247,12 +243,10 @@ export default function QuickEntryRow({
     <div
       ref={barRef}
       className={cn(
-        // Mobile: sticky, offset above the BottomNav (58px + its safe-area
-        // inset) so this bar's buttons don't sit behind its opaque
-        // background. Desktop (md+): truly fixed to the real bottom:0 — no
-        // bottom padding, so the box's own bottom edge sits exactly there,
-        // not floating above it behind a gap.
-        "sticky bottom-[calc(58px+env(safe-area-inset-bottom))] z-30 flex justify-center overflow-x-hidden px-2 md:fixed md:bottom-0 md:left-0 md:px-3",
+        // Hidden below md — desktop-only (see the file header comment). No
+        // bottom padding on the fixed box itself: its own bottom edge sits
+        // exactly at bottom:0, not floating above it behind a gap.
+        "hidden overflow-x-hidden md:fixed md:bottom-0 md:left-0 md:z-30 md:flex md:justify-center md:px-3",
         // Physical, not logical — the rail sits at the physical right edge in
         // this RTL app, so the box that clears it is `right`, not `end`. A
         // single `right-*` utility only (no `inset-x`) — two rules setting

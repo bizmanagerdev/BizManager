@@ -118,7 +118,16 @@ function AccountSummaryCard({
             isn't that (user, 2026-08-31: "colour is overloaded... red means
             danger everywhere else"). */}
         <span dir="ltr" className="block text-xl font-semibold tabular-nums">
-          <span className={account.currentBalance < 0 ? "text-destructive" : "text-success"}>
+          {/* Bigger than the digits — at the same size a bare "-"/"+" glyph
+              is visually thin/short next to full-height digits and barely
+              registers (user, 2026-08-31: "the minus and plus need to be
+              bigger"). */}
+          <span
+            className={cn(
+              "text-2xl",
+              account.currentBalance < 0 ? "text-destructive" : "text-success"
+            )}
+          >
             {account.currentBalance < 0 ? "-" : "+"}
           </span>
           {formatMoneyRounded(Math.abs(account.currentBalance))}
@@ -130,13 +139,13 @@ function AccountSummaryCard({
         <span dir="ltr" className="flex flex-wrap justify-end gap-x-2 text-xs tabular-nums">
           {account.pendingIn > 0 && (
             <span>
-              <span className="text-success">+</span>
+              <span className="text-sm text-success">+</span>
               {formatMoneyRounded(account.pendingIn)} צפוי
             </span>
           )}
           {account.pendingOut > 0 && (
             <span>
-              <span className="text-destructive">-</span>
+              <span className="text-sm text-destructive">-</span>
               {formatMoneyRounded(account.pendingOut)} צפוי
             </span>
           )}
