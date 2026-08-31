@@ -894,8 +894,8 @@ export default function NewProjectClient({
                           <Button
                             type="button"
                             size="icon"
-                            variant="secondary"
-                            className="h-8 w-8"
+                            variant="ghost"
+                            className="h-8 w-8 border-secondary bg-transparent text-secondary shadow-none hover:bg-secondary/10 hover:text-secondary"
                             onClick={() => setEditingCustomer((v) => !v)}
                             disabled={actionLocked}
                             aria-label={editingCustomer ? "סגירת העריכה" : "עריכת פרטי הלקוח"}

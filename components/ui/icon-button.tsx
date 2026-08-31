@@ -7,8 +7,12 @@
 // stay scannable, nothing wraps, and the Hebrew label survives as `aria-label` +
 // `title` so screen readers and hover tooltips still name the action.
 //
-// Delete gets one extra rule: it is red-OUTLINED — a red border on the page's
-// own background, never a filled or tinted red slab. See `DeleteButton` below.
+// Edit and delete share the same look: an OUTLINED glyph — a colored border on
+// the page's own background, never a filled or tinted slab. This is a
+// deliberate, explicit exception to the app's general "buttons wear a solid
+// fill" rule (components/ui/button.tsx's own comment) — the owner asked for
+// these two specifically to stay outline regardless (2026-08-31). See
+// `EditButton`/`DeleteButton` below.
 
 import * as React from "react";
 
@@ -51,13 +55,29 @@ IconButton.displayName = "IconButton";
 type FixedIconButtonProps = Omit<IconButtonProps, "icon" | "label"> & { label?: string };
 
 /**
- * THE edit control for the whole app: a pencil, no text, everywhere.
- * Pass `label` only to say WHAT is being edited ("עריכת לקוח") — it changes the
- * tooltip, never the pencil.
+ * THE edit control for the whole app: a square, secondary-OUTLINED pencil
+ * glyph, no text, everywhere. Pass `label` only to say WHAT is being edited
+ * ("עריכת לקוח") — it changes the tooltip, never the pencil.
+ *
+ * Outline only, same construction as `DeleteButton` below (just the app's
+ * secondary blue instead of destructive red) — a border on the page's own
+ * background, no filled or tinted slab.
  */
 export const EditButton = React.forwardRef<HTMLButtonElement, FixedIconButtonProps>(
-  ({ label = "עריכה", ...props }, ref) => (
-    <IconButton ref={ref} icon={EditIcon} label={label} {...props} />
+  ({ label = "עריכה", className, ...props }, ref) => (
+    <IconButton
+      ref={ref}
+      icon={EditIcon}
+      label={label}
+      // `ghost` as the base for the same reason as DeleteButton: it brings no
+      // border/background of its own to fight with the outline below.
+      variant="ghost"
+      className={cn(
+        "border-secondary bg-transparent text-secondary shadow-none hover:bg-secondary/10 hover:text-secondary",
+        className
+      )}
+      {...props}
+    />
   )
 );
 EditButton.displayName = "EditButton";
