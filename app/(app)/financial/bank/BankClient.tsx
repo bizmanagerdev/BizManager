@@ -195,11 +195,21 @@ function AccountTotalsCard({
       >
         {formatMoneyRounded(total)}
       </span>
-      <span dir="ltr" className="flex flex-col gap-0.5 text-xs tabular-nums">
-        <span className="text-success">חיובי +{formatMoneyRounded(positive)}</span>
+      {/* dir="ltr" on the NUMBER only, not the whole line — Hebrew text
+          ("חיובי"/"שלילי") forced into an ltr context next to an ltr number
+          is exactly the bidi mix that had every figure reordering itself
+          differently (user, 2026-08-31: "each number is displaying in
+          different directions"). Same fix already used elsewhere in this
+          file for "יתרת פתיחה … <span dir=ltr>{date}</span>". */}
+      <span className="flex flex-col gap-0.5 text-xs tabular-nums">
+        <span className="text-success">
+          חיובי <span dir="ltr">+{formatMoneyRounded(positive)}</span>
+        </span>
         {/* negative is already ≤ 0, so formatMoneyRounded's own embedded
             minus sign is the "-" here — no extra one needed. */}
-        <span className="text-destructive">שלילי {formatMoneyRounded(negative)}</span>
+        <span className="text-destructive">
+          שלילי <span dir="ltr">{formatMoneyRounded(negative)}</span>
+        </span>
       </span>
     </div>
   );
