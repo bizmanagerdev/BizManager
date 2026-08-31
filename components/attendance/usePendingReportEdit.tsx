@@ -12,6 +12,10 @@ import { appendDictatedText } from "@/lib/dictation";
 import { toHebrewError } from "@/lib/error-messages";
 import type { MyShiftReport } from "@/lib/attendance/my-shift";
 
+/** Only what the editor actually reads — lets an admin-side report type (which
+ *  has no `status`) be passed in alongside the worker's own MyShiftReport. */
+type EditableReport = Pick<MyShiftReport, "id" | "clock_in" | "clock_out" | "notes">;
+
 /** An ISO instant as a datetime-local value, to prefill the editor. */
 function isoToLocal(iso: string | null | undefined) {
   if (!iso) return "";
@@ -26,8 +30,12 @@ function isoToLocal(iso: string | null | undefined) {
  * has reached payroll yet (contrast useSessionEdit, which withdraws an already
  * APPROVED shift and re-queues it). Same shape as that hook on purpose, so a
  * shift's edit form looks and behaves the same whether it's pending or approved.
+ *
+ * `endpoint` defaults to the worker's own self-service route; the admin queue
+ * (PendingReportCard) passes /api/attendance/phone-reports/edit instead, which
+ * skips the self-report backdate limit that route enforces.
  */
-export function usePendingReportEdit(report: MyShiftReport) {
+export function usePendingReportEdit(report: EditableReport, endpoint = "/api/attendance/my/pending-report-edit") {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [saving, startSaving] = useTransition();
@@ -57,7 +65,7 @@ export function usePendingReportEdit(report: MyShiftReport) {
     setError("");
     setBusy(true);
     try {
-      const response = await fetch("/api/attendance/my/pending-report-edit", {
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

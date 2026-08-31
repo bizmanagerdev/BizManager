@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AddIcon, BlockedIcon, ChevronDownIcon, LayersIcon, RefreshIcon } from "@/components/ui/icons";
+import { AddIcon, BlockedIcon, ChevronDownIcon, EditIcon, LayersIcon, RefreshIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DeleteButton } from "@/components/ui/icon-button";
@@ -17,6 +17,7 @@ import { DomainSelect } from "@/components/financial/DomainSelect";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { shiftHoursText } from "@/components/attendance/DayTile";
+import { usePendingReportEdit, PendingReportEditFields } from "@/components/attendance/usePendingReportEdit";
 import { WORK_SESSION_BUSINESS_DOMAINS } from "@/lib/expenses";
 import { formatCurrency, formatMinutes, minutesBetween } from "@/lib/payroll";
 import { formatShortDate, hebrewWeekday } from "@/lib/date";
@@ -240,6 +241,11 @@ export default function PendingReportCard({
   const [error, setError] = useState("");
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  // Fixing the report's OWN clock in/out/note before it's even classified —
+  // separate from approving. Same hook + form the worker uses to edit his own
+  // pending report (components/attendance/PendingReportList.tsx), pointed at the
+  // admin route instead, which isn't held to the worker self-report backdate limit.
+  const timeEdit = usePendingReportEdit(report, "/api/attendance/phone-reports/edit");
 
   const totalMinutes = report.worked_minutes ?? minutesBetween(report.clock_in, report.clock_out);
   const split = parts.length > 1;
@@ -506,6 +512,17 @@ export default function PendingReportCard({
               Approving is the act you came for and keeps the filled button; these
               sit beside it without competing. aria-label/title carry the Hebrew
               name, which is the whole reason an icon-only control is allowed. */}
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-8 w-8 shrink-0 p-0 shadow-none max-md:min-h-[44px] max-md:min-w-[44px]"
+            onClick={timeEdit.editing ? timeEdit.closeEditor : timeEdit.openEditor}
+            disabled={isPending}
+            aria-label="עריכת שעות הדיווח"
+            title="עריכת שעות הדיווח"
+          >
+            <EditIcon className="h-4 w-4" />
+          </Button>
           {canSplit ? (
             // The icon is Layers (one shift becoming several stacked parts); the
             // Split glyph read as a road fork.
@@ -568,6 +585,12 @@ export default function PendingReportCard({
           </Button>
         </div>
       </div>
+
+      {timeEdit.editing ? (
+        <div className={cn("relative mt-2", !flat && "border-t border-border/60 pt-2")}>
+          <PendingReportEditFields state={timeEdit} />
+        </div>
+      ) : null}
 
       {split ? (
         <div className="relative mt-2 space-y-2">
