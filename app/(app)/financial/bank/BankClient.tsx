@@ -261,6 +261,24 @@ export default function BankClient({
   // instead — that can only ever move this one container.
   const registerScrollRef = useRef<HTMLDivElement>(null);
   const registerHeaderRef = useRef<HTMLDivElement>(null);
+  // Tracks the sticky account/filter header's live height so every month
+  // group's own header can stick right below it (not on top of it) — see the
+  // month button's `style` below. Kept as ongoing state (ResizeObserver, not
+  // a one-off measurement) because the header's own height changes at the md
+  // breakpoint (opening balance moves in/out of it) and whenever the name or
+  // month-select wraps differently (user, 2026-08-31: "when i scroll in the
+  // table i need the month header to stay sticky so if i want to close it at
+  // any point i could").
+  const [registerHeaderHeight, setRegisterHeaderHeight] = useState(0);
+  useLayoutEffect(() => {
+    const el = registerHeaderRef.current;
+    if (!el) return;
+    const update = () => setRegisterHeaderHeight(el.offsetHeight);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   // QuickEntryRow's own page-level spacer only reserves room in NORMAL page
   // flow (below this whole register), which does nothing for a container
   // that scrolls in its own bounded box — the last rows were still landing
@@ -557,7 +575,8 @@ export default function BankClient({
                   // a specific month) already say what it filters (user,
                   // 2026-08-31: "it's clear what the dropdown is").
                   <NativeSelect
-                    className="h-9 w-auto"
+                    dense
+                    className="w-auto max-w-full"
                     aria-label="סינון לפי חודש"
                     value={monthFilter}
                     onChange={(e) => setMonthFilter(e.target.value)}
@@ -571,10 +590,20 @@ export default function BankClient({
                   </NativeSelect>
                 )}
               </div>
-              <div className="text-xs text-muted-foreground">
+              {/* Desktop only — permanently occupying sticky-header space for
+                  this on mobile was wasteful (user, 2026-08-31: "not the
+                  smartest to waste this space with this line"). The mobile
+                  copy below sits in the normal (non-sticky) flow instead, so
+                  it scrolls away with the first screenful rather than
+                  sitting there forever. */}
+              <div className="hidden text-xs text-muted-foreground md:block">
                 יתרת פתיחה {formatMoneyRounded(selected.openingBalance)} · נכון ל-
                 <span dir="ltr">{formatDate(selected.openingDate)}</span>
               </div>
+            </div>
+            <div className="px-3 py-1.5 text-xs text-muted-foreground md:hidden">
+              יתרת פתיחה {formatMoneyRounded(selected.openingBalance)} · נכון ל-
+              <span dir="ltr">{formatDate(selected.openingDate)}</span>
             </div>
 
             {selected.ledger.length === 0 ? (
@@ -593,7 +622,19 @@ export default function BankClient({
                       monthNodeRefs so the register can scroll (its own
                       container's scrollTop — see registerScrollRef above) to
                       land the current month right under the sticky header on
-                      open/account-switch. */}
+                      open/account-switch.
+                      Sticky (stacked right below the account/filter header,
+                      via registerHeaderHeight) so the collapse toggle stays
+                      reachable while scrolling through a long month instead
+                      of scrolling back up to find it (user, 2026-08-31: "i
+                      need the month header to stay sticky so if i want to
+                      close it at any point i could"). Every month's header
+                      gets this, not just the open one — stacked sticky
+                      elements at the same `top` hand off from one to the
+                      next as you scroll past each section, which is what
+                      makes ONLY the current one visible without any JS
+                      beyond the height tracking above. z-[5], under the
+                      account header's z-10, so that one always wins. */}
                   <button
                     ref={(el) => {
                       if (el) monthNodeRefs.current.set(group.month, el);
@@ -604,7 +645,13 @@ export default function BankClient({
                       setOpenMonths((prev) => ({ ...prev, [group.month]: !open }))
                     }
                     aria-expanded={open}
-                    className="flex w-full items-center gap-2 bg-muted/30 px-3 py-2 text-right text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted/60"
+                    style={{ top: registerHeaderHeight }}
+                    // Solid bg-muted, not the old translucent bg-muted/30 —
+                    // no backdrop-blur here (this app's own APK had ghosting
+                    // on a scrolling backdrop-blur overlay before; a plain
+                    // opaque fill is what actually occludes rows scrolling
+                    // underneath a sticky element, blur or not).
+                    className="sticky z-[5] flex w-full items-center gap-2 bg-muted px-3 py-2 text-right text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted/60"
                   >
                     <ChevronDownIcon
                       className={cn("h-4 w-4 shrink-0 transition-transform", open && "rotate-180")}
