@@ -242,6 +242,19 @@ export default function BankClient({
     accounts.find((a) => a.id === initialAccountId)?.id ?? accounts[0]?.id ?? ""
   );
 
+  // The account strip scrolls horizontally now (see below) — on a phone, the
+  // selected card can land anywhere in it, off to one side, depending on
+  // where it happens to sit in the list (user, 2026-08-31: "the selected
+  // accounts card should be centered on the mobile screen"). block:"nearest"
+  // (not "start"/"center") deliberately avoids the page-jumping mistake from
+  // the register's own scroll-to-current-month fix — it only ever moves this
+  // one horizontal scrollbar, not the page, since the strip is normally
+  // already vertically in view.
+  const selectedCardRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    selectedCardRef.current?.scrollIntoView({ inline: "center", block: "nearest" });
+  }, [selectedId]);
+
   // THIS month should be the first thing on screen when you land here or
   // switch accounts — not something you scroll past a year of future-dated
   // groups to find (user, 2026-08-31: "this month should be first ... scroll
@@ -533,7 +546,11 @@ export default function BankClient({
           actually overflows. */}
       <div className="flex gap-2 overflow-x-auto pb-1">
         {accounts.map((account) => (
-          <div key={account.id} className="w-36 shrink-0">
+          <div
+            key={account.id}
+            ref={account.id === selected.id ? selectedCardRef : undefined}
+            className="w-36 shrink-0"
+          >
             <AccountSummaryCard
               account={account}
               selected={account.id === selected.id}
@@ -600,10 +617,6 @@ export default function BankClient({
                 יתרת פתיחה {formatMoneyRounded(selected.openingBalance)} · נכון ל-
                 <span dir="ltr">{formatDate(selected.openingDate)}</span>
               </div>
-            </div>
-            <div className="px-3 py-1.5 text-xs text-muted-foreground md:hidden">
-              יתרת פתיחה {formatMoneyRounded(selected.openingBalance)} · נכון ל-
-              <span dir="ltr">{formatDate(selected.openingDate)}</span>
             </div>
 
             {selected.ledger.length === 0 ? (
@@ -892,6 +905,16 @@ export default function BankClient({
               })}
             </div>
           )}
+          {/* Last, not first — a mobile-only copy of the opening balance
+              (desktop's stays up in the sticky header). Originally placed
+              right after the header, then moved here per the user (2026-08-31:
+              "the opening balance is the first row now i want it to be the
+              last") — after the transactions, like a footnote, instead of
+              being the first thing you scroll past. */}
+          <div className="border-t px-3 py-1.5 text-xs text-muted-foreground md:hidden">
+            יתרת פתיחה {formatMoneyRounded(selected.openingBalance)} · נכון ל-
+            <span dir="ltr">{formatDate(selected.openingDate)}</span>
+          </div>
           </div>
         </CardContent>
       </Card>
