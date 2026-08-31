@@ -544,15 +544,17 @@ export default function PendingReportCard({
           >
             <BlockedIcon className="h-4 w-4" />
           </Button>
-          {/* The word alone, OUTLINE, same size and shape as "סופק" / "בוצע" on
-              the other board cards — every row's primary action looks the same
-              wherever you are. Outline rather than filled (user, 2026-08-18): one
-              filled button per row, repeated down four cards, turned the board
-              into a column of blue blocks that shouted over the rows themselves. */}
+          {/* The word alone, same size and shape as "סופק" / "בוצע" on the other
+              board cards. OUTLINE while it's still dead weight — a filled button
+              per row, repeated down four cards, turned the board into a column
+              of blue blocks that shouted over the rows themselves (user,
+              2026-08-18) — but it FILLS the moment a שיוך makes it clickable, so
+              the one button actually worth pressing now stands out (user,
+              2026-08-31: wants it obvious once ready). */}
           <Button
             type="button"
             size="sm"
-            variant="outline"
+            variant={canApprove ? "default" : "outline"}
             className="h-8 shrink-0 px-3 text-sm max-md:min-h-[44px]"
             onClick={approve}
             // Dead until a שיוך is chosen. Approving without one was the ONE
