@@ -52,6 +52,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Capacitor's native Android build output (Gradle-generated bundled JS,
+    // copied straight from node_modules) — not app source, and re-linting it
+    // just surfaces noise from a vendored/bundled file on every full-project run.
+    "android/**",
   ]),
 ]);
 

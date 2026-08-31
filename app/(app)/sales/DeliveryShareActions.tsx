@@ -151,6 +151,13 @@ export default function DeliveryShareActions({
 
     const run = async () => {
       const current = deliveryRef.current;
+      // Same reasoning as `current` itself (see the comment above deliveryRef):
+      // re-derive from the ref instead of closing over the outer `address`/
+      // `slipPin` consts, so a delivery update mid-capture can't leave the
+      // share TEXT quoting a different address than the slip IMAGE (captured
+      // fresh from the DOM below) actually shows.
+      const currentAddress = formatDeliveryAddress({ address: current.address, city: current.city });
+      const currentSlipPin = pinFrom(current.deliveryLat, current.deliveryLng);
       try {
         if ("fonts" in document) await document.fonts.ready;
         const node = slipRef.current;
@@ -257,7 +264,7 @@ export default function DeliveryShareActions({
           // Text sharing is far more broadly supported across phone
           // browsers/WebViews than file sharing, so this succeeds even where
           // the block above can't.
-          const shareText = buildDeliveryShareText(current, address, slipPin);
+          const shareText = buildDeliveryShareText(current, currentAddress, currentSlipPin);
           if (typeof navigator !== "undefined" && "share" in navigator) {
             try {
               const HUNG = Symbol("hung");
