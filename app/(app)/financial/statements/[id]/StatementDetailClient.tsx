@@ -66,6 +66,7 @@ type IncomeForm = {
   paymentMethod: string;
   referenceNumber: string;
   notes: string;
+  accountId: string;
 };
 
 type Statement = {
@@ -410,6 +411,7 @@ export default function StatementDetailClient({
       paymentMethod: "credit_card",
       referenceNumber: reference,
       notes: "",
+      accountId: "",
     });
     setIncomeError(null);
     setIncomeOpen(true);
@@ -445,6 +447,10 @@ export default function StatementDetailClient({
       setIncomeError("יש לבחור תאריך.");
       return;
     }
+    if (!incomeForm.accountId) {
+      setIncomeError("יש לבחור חשבון.");
+      return;
+    }
     setIncomeSaving(true);
     setIncomeError(null);
     try {
@@ -462,6 +468,7 @@ export default function StatementDetailClient({
           payment_method: incomeForm.paymentMethod,
           reference_number: incomeForm.referenceNumber.trim() || null,
           notes: incomeForm.notes.trim() || null,
+          account_id: incomeForm.accountId,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as { payment_id?: string; error?: string };
@@ -1550,6 +1557,12 @@ export default function StatementDetailClient({
                   />
                 </Field>
               ) : null}
+
+              <AccountSelect
+                required
+                value={incomeForm.accountId}
+                onChange={(accountId) => patchIncome({ accountId })}
+              />
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field size="xs" label="סכום *">

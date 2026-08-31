@@ -460,6 +460,7 @@ export type PropertyPayment = {
   dueDate: string | null;
   checkNumber: string | null;
   paymentStatus: string | null;
+  accountId: string | null;
 };
 
 export type PropertyDocument = {
@@ -596,7 +597,7 @@ export async function fetchPropertyActivity(
         .eq("property_id", propertyId),
       supabase
         .from("payments")
-        .select("id,payment_date,amount_total,payment_method,due_date,check_number,payment_status")
+        .select("id,payment_date,amount_total,payment_method,due_date,check_number,payment_status,account_id")
         .eq("property_id", propertyId),
       supabase.from("document_links").select("document_id").eq("entity_type", "property").eq("entity_id", propertyId),
       supabase.from("tasks").select("id,subject,status,due_date").eq("property_id", propertyId),
@@ -654,6 +655,7 @@ export async function fetchPropertyActivity(
       dueDate: str(r.due_date),
       checkNumber: str(r.check_number),
       paymentStatus: str(r.payment_status),
+      accountId: str(r.account_id),
     }));
     const documents: PropertyDocument[] = ((docRows ?? []) as Row[]).map((r) => {
       const key = str(r.storage_key);

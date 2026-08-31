@@ -64,7 +64,7 @@ export async function POST(req: Request) {
 
     const { data: existingPayment, error: existingPaymentError } = await supabase
       .from("payments")
-      .select("id,project_id,order_id,property_id,business_domain,payment_status,vat_rate")
+      .select("id,project_id,order_id,property_id,business_domain,payment_status,vat_rate,account_id")
       .eq("id", paymentId)
       .maybeSingle();
 
@@ -130,7 +130,14 @@ export async function POST(req: Request) {
       requiresSplit,
       vatRate,
       recordedBy: user.id,
-      accountId: typeof body.account_id === "string" && body.account_id.trim() ? body.account_id.trim() : null,
+      // Same reasoning as payment_status above: a caller that doesn't send
+      // account_id (e.g. a dialog with no account field) must not silently
+      // wipe a payment's already-assigned account. Only an explicit non-empty
+      // value changes it.
+      accountId:
+        typeof body.account_id === "string" && body.account_id.trim()
+          ? body.account_id.trim()
+          : (existingPayment.account_id as string | null | undefined) ?? null,
     });
     void ignoredRecordedBy;
 

@@ -43,6 +43,7 @@ type EditForm = {
   amount: string;
   paymentMethod: string;
   checkNumber: string;
+  accountId: string;
 };
 
 /** Rent can be paid any way — the check-only fields appear only for צ'ק. */
@@ -93,6 +94,7 @@ export default function RentScheduleSection({
     amount: "",
     paymentMethod: "check",
     checkNumber: "",
+    accountId: "",
   });
   const [editBusy, setEditBusy] = useState(false);
 
@@ -200,6 +202,7 @@ export default function RentScheduleSection({
         ? (payment.method as string)
         : "check",
       checkNumber: payment.checkNumber ?? "",
+      accountId: payment.accountId ?? "",
     });
   }
 
@@ -211,6 +214,10 @@ export default function RentScheduleSection({
     }
     if (!(Number(editForm.amount) > 0)) {
       toast.error("יש להזין סכום תקין.");
+      return;
+    }
+    if (accountsList.length > 0 && !editForm.accountId) {
+      toast.error("יש לבחור חשבון.");
       return;
     }
     setEditBusy(true);
@@ -227,6 +234,7 @@ export default function RentScheduleSection({
             amount_total: Number(editForm.amount),
             payment_method: editForm.paymentMethod,
             check_number: isCheck(editForm.paymentMethod) ? editForm.checkNumber || null : null,
+            account_id: editForm.accountId || null,
           }),
         });
         const json = await res.json().catch(() => ({}));
@@ -494,6 +502,12 @@ export default function RentScheduleSection({
               <Input value={editForm.checkNumber} onChange={(e) => setEditForm((prev) => ({ ...prev, checkNumber: e.target.value }))} />
             </label>
           ) : null}
+          <AccountSelect
+            required
+            value={editForm.accountId}
+            onChange={(value) => setEditForm((prev) => ({ ...prev, accountId: value }))}
+            onLoaded={setAccountsList}
+          />
         </div>
       </FormDialog>
     </Card>
