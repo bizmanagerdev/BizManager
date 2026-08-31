@@ -15,10 +15,10 @@ export async function GET() {
   try {
     const supabase = await createSupabaseRouteClient();
     const {
-      data: { session },
-    } = await supabase.auth.getSession();
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    const authUserId = session?.user?.id;
+    const authUserId = user?.id;
     if (!authUserId) {
       return NextResponse.json({ role: null }, { status: 401 });
     }

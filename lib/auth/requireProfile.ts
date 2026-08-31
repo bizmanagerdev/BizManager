@@ -34,13 +34,17 @@ export type UserProfile = {
 export const requireProfile = cache(async () => {
   const supabase = await createSupabaseServerClient();
 
+  // getUser() (not getSession()) is required here: this result gates role/
+  // access lookups below, and getSession() only reads the cookie's claims
+  // back without verifying them against the Auth server — a stale or
+  // tampered cookie would be trusted as-is.
   const {
-    data: { session: fastSession },
-  } = await supabase.auth.getSession();
+    data: { user: authUser },
+  } = await supabase.auth.getUser();
 
-  const userId = fastSession?.user?.id;
+  if (!authUser) redirect("/login");
 
-  if (!userId) redirect("/login");
+  const userId = authUser.id;
 
   let { data: profile, error } = await supabase
     .from("users")
@@ -94,5 +98,5 @@ export const requireProfile = cache(async () => {
   });
   Sentry.setTag("user.role", typed.role);
 
-  return { supabase, user: fastSession.user, profile: typed };
+  return { supabase, user: authUser, profile: typed };
 });

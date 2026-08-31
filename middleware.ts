@@ -22,9 +22,13 @@ export async function middleware(req: NextRequest) {
     },
   });
 
+  // getUser(), not getSession(): getSession() only reads the cookie's claims
+  // back without asking the Auth server to confirm them, so a stale/tampered
+  // cookie would pass this gate as-is. Per Supabase's own Next.js middleware
+  // guidance, getSession() is explicitly not safe to gate routing on.
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
+    data: { user },
+  } = await supabase.auth.getUser();
 
   const path = req.nextUrl.pathname;
 
@@ -38,13 +42,13 @@ export async function middleware(req: NextRequest) {
     path.startsWith("/icon") ||
     path.startsWith("/api");
 
-  if (session && path.startsWith("/login")) {
+  if (user && path.startsWith("/login")) {
     const url = req.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);
   }
 
-  if (!session && !isPublic) {
+  if (!user && !isPublic) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);

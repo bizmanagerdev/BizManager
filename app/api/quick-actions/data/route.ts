@@ -14,9 +14,9 @@ export async function GET() {
   try {
     const supabase = await createSupabaseRouteClient();
     const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const authUserId = session?.user?.id;
+      data: { user },
+    } = await supabase.auth.getUser();
+    const authUserId = user?.id;
     if (!authUserId) return NextResponse.json({ error: "לא מחובר." }, { status: 401 });
 
     let { data: profile } = await supabase
