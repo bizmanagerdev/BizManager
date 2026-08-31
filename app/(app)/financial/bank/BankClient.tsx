@@ -164,6 +164,47 @@ function AccountSummaryCard({
   );
 }
 
+// Last item in the account strip, not another account — the strip is
+// already "all my accounts," so a total belongs at its end (design review,
+// 2026-08-31: "same logic as the footer row on your properties table").
+// Reached by scrolling, not shouting at you on every page load. Visually
+// distinct from the plain-white/selected-navy account tiles via the
+// secondary tint, and wider (w-48 vs w-36) since it holds three figures —
+// net, חיובי, שלילי — not one.
+function AccountTotalsCard({
+  total,
+  positive,
+  negative,
+}: {
+  total: number;
+  positive: number;
+  negative: number;
+}) {
+  return (
+    <div className="flex h-full w-48 shrink-0 flex-col items-stretch justify-center gap-1.5 rounded-lg border border-secondary/40 bg-secondary/5 p-3 text-right">
+      <span className="text-sm font-medium text-secondary">סך נזילות</span>
+      {/* Whole figure colored, like the top-bar total this restates — not
+          sign-only like the account tiles, which is part of what makes this
+          card read as a different KIND of thing, not just another account. */}
+      <span
+        dir="ltr"
+        className={cn(
+          "block text-xl font-semibold tabular-nums",
+          total < 0 ? "text-destructive" : "text-success"
+        )}
+      >
+        {formatMoneyRounded(total)}
+      </span>
+      <span dir="ltr" className="flex flex-col gap-0.5 text-xs tabular-nums">
+        <span className="text-success">חיובי +{formatMoneyRounded(positive)}</span>
+        {/* negative is already ≤ 0, so formatMoneyRounded's own embedded
+            minus sign is the "-" here — no extra one needed. */}
+        <span className="text-destructive">שלילי {formatMoneyRounded(negative)}</span>
+      </span>
+    </div>
+  );
+}
+
 export default function BankClient({
   accounts,
   loans,
@@ -196,6 +237,17 @@ export default function BankClient({
   // the accounts.length===0 early return below) so these hooks are always
   // called, never conditionally.
   const totalLiquidity = accounts.filter((a) => a.isActive).reduce((sum, a) => sum + a.currentBalance, 0);
+  // חיובי/שלילי split for the summary card at the end of the account strip
+  // (design review, 2026-08-31: "it has room for the split I keep
+  // suggesting"). Positive and negative balances summed separately —
+  // together with totalLiquidity above they always foot: positive + negative
+  // === totalLiquidity.
+  const positiveLiquidity = accounts
+    .filter((a) => a.isActive && a.currentBalance > 0)
+    .reduce((sum, a) => sum + a.currentBalance, 0);
+  const negativeLiquidity = accounts
+    .filter((a) => a.isActive && a.currentBalance < 0)
+    .reduce((sum, a) => sum + a.currentBalance, 0);
   const headerAction = useMemo(
     () => (
       // mt-1.5: a little breathing room above the label — the 60px bar's
@@ -558,6 +610,7 @@ export default function BankClient({
             />
           </div>
         ))}
+        <AccountTotalsCard total={totalLiquidity} positive={positiveLiquidity} negative={negativeLiquidity} />
       </div>
 
       {/* Register for the selected account. Scrolls WITHIN this bounded
