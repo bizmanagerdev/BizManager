@@ -15,6 +15,9 @@ import { Button } from "@/components/ui/button";
 import { CloseIcon } from "@/components/ui/icons";
 import { propertyHasRoomLayout, type Property } from "@/lib/properties";
 import { appendDictatedText } from "@/lib/dictation";
+import type { PropertyInput } from "./property-types";
+
+export type { PropertyInput };
 
 /** Common furnished-apartment items — the click-off half of "enter a list or
  *  click off a list". Custom items typed in below live in the same array. */
@@ -36,41 +39,6 @@ export const FURNITURE_PRESET_ITEMS = [
   "טלוויזיה",
   "וילונות/תריסים",
 ];
-
-export type PropertyInput = {
-  name: string;
-  address: string;
-  asset_description: string;
-  is_active: boolean;
-  /** '' | 'building' | 'apartment' | 'house' | 'storage' */
-  property_type: string;
-  /** Only used when property_type === 'building' */
-  apartments_count: string;
-  rooms: string;
-  square_meters: string;
-  floor: string;
-  bathrooms: string;
-  mezuzah_count: string;
-  light_bulb_count: string;
-  key_count: string;
-  has_private_entrance: boolean;
-  has_storage_room: boolean;
-  has_parking: boolean;
-  has_elevator: boolean;
-  purchased_from: string;
-  purchase_date: string;
-  purchase_price: string;
-  purchase_tax: string;
-  land_block: string;
-  land_parcel: string;
-  land_sub_parcel: string;
-  electricity_contract_number: string;
-  water_contract_number: string;
-  gas_contract_number: string;
-  arnona_contract_number: string;
-  is_furnished: boolean;
-  furniture_items: string[];
-};
 
 export const EMPTY_PROPERTY_FORM: PropertyInput = {
   name: "",

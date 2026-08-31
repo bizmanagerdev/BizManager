@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { toHebrewError } from "@/lib/error-messages";
 import { buildPaymentInsert, PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
-import type { PropertyInput } from "./PropertyFormFields";
+import type { PropertyInput } from "./property-types";
 
 export type ActionResult = { ok: true; id?: string } | { ok: false; error: string };
 
