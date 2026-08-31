@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { NativeSelect } from "@/components/ui/native-select";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { SwipeActions, type SwipeAction } from "@/components/ui/swipe-actions";
 import { AccountTransferDialog } from "@/components/financial/AccountTransferDialog";
 import { useSetHeaderAction, useSetHeaderTrailingAction } from "@/components/layout/page-title-context";
 import type { MerchantMemory } from "@/lib/financial/cardImport";
@@ -338,6 +339,11 @@ export default function BankClient({
   const [rowToDelete, setRowToDelete] = useState<{ ref: AccountDeleteRef; label: string } | null>(null);
   const [rowDeleting, setRowDeleting] = useState(false);
   const [rowDeleteError, setRowDeleteError] = useState<string | undefined>(undefined);
+  // One row's swipe-revealed actions open at a time, like every other swipe
+  // list in this app (see ProjectMovements.tsx) — mobile-only; desktop keeps
+  // the "⋮" menu (user, 2026-08-31: "put the actions in a row swipe instead
+  // of 3 dots on mobile").
+  const [swipedRowId, setSwipedRowId] = useState<string | null>(null);
 
   function openEdit(ref: AccountEditRef) {
     if (ref.kind === "expense") setEditingExpenseRef(ref);
@@ -540,8 +546,10 @@ export default function BankClient({
               <div className="font-medium">{selected.name}</div>
               <div className="flex flex-wrap items-center gap-3">
                 {allGroups.length > 0 ? (
-                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span>חודש</span>
+                  // No "חודש" label — the dropdown's own options (כל החודשים /
+                  // a specific month) already say what it filters (user,
+                  // 2026-08-31: "it's clear what the dropdown is").
+                  <>
                     <NativeSelect
                       className="h-9 w-auto"
                       aria-label="סינון לפי חודש"
@@ -555,7 +563,7 @@ export default function BankClient({
                         </option>
                       ))}
                     </NativeSelect>
-                  </label>
+                  </>
                 ) : null}
                 <div className="text-xs text-muted-foreground">
                   יתרת פתיחה {formatMoneyRounded(selected.openingBalance)} · נכון ל-
@@ -683,23 +691,74 @@ export default function BankClient({
                       <div className="flex min-w-0 flex-1 items-center gap-3">{inner}</div>
                     );
                     const rowLabel = `${row.label} · ${formatMoneyRounded(row.amount)}`;
-                    return (
-                      <div
-                        key={row.id}
-                        className="flex items-center gap-3 px-3 py-2.5 text-sm transition-colors hover:bg-muted/50"
-                      >
+                    const hasActions = Boolean(row.editRef || row.deleteRef || transfer);
+                    // Same edit/delete pair either way — just two different
+                    // surfaces for it (desktop "⋮" menu vs mobile swipe strip).
+                    const swipeActions: SwipeAction[] = [
+                      ...(row.editRef
+                        ? [
+                            {
+                              key: "edit",
+                              label: "עריכה",
+                              icon: <EditIcon className="h-4 w-4" />,
+                              onSelect: () => openEdit(row.editRef!),
+                              className: "bg-secondary text-secondary-foreground",
+                            },
+                          ]
+                        : transfer
+                          ? [
+                              {
+                                key: "edit-transfer",
+                                label: "עריכת העברה",
+                                icon: <EditIcon className="h-4 w-4" />,
+                                onSelect: () => {
+                                  setTransferToEdit(transfer);
+                                  setTransferOpen(true);
+                                },
+                                className: "bg-secondary text-secondary-foreground",
+                              },
+                            ]
+                          : []),
+                      ...(row.deleteRef
+                        ? [
+                            {
+                              key: "delete",
+                              label: "מחיקה",
+                              icon: <DeleteIcon className="h-4 w-4" />,
+                              onSelect: () => setRowToDelete({ ref: row.deleteRef!, label: rowLabel }),
+                              className: "bg-destructive text-destructive-foreground",
+                            },
+                          ]
+                        : transfer
+                          ? [
+                              {
+                                key: "delete-transfer",
+                                label: "מחיקת העברה",
+                                icon: <DeleteIcon className="h-4 w-4" />,
+                                onSelect: () => setTransferToDelete({ id: transfer.id, label: rowLabel }),
+                                className: "bg-destructive text-destructive-foreground",
+                              },
+                            ]
+                          : []),
+                    ];
+                    const rowContent = (
+                      <div className="flex items-center gap-3 px-3 py-2.5 text-sm transition-colors hover:bg-muted/50">
                         {content}
-                        {/* A single "⋮" menu instead of separate edit/delete icon
-                            buttons on every row (user, 2026-08-31) — same pattern
-                            as ProjectMovements.tsx's RowActions. */}
-                        {(row.editRef || row.deleteRef || transfer) && (
+                        {/* Desktop: a single "⋮" menu instead of separate
+                            edit/delete icon buttons (user, 2026-08-31) — same
+                            pattern as ProjectMovements.tsx's RowActions. */}
+                        {hasActions && (
                           <DropdownMenu>
+                            {/* rowContent is shared by BOTH the desktop wrapper
+                                and the mobile SwipeActions wrapper below — hide
+                                the trigger itself on mobile so the "⋮" doesn't
+                                also show up floating inside a swipe row. */}
                             <DropdownMenuTrigger asChild>
                               <Button
                                 type="button"
                                 variant="ghost"
                                 size="sm"
-                                className="h-8 w-8 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+                                className="hidden h-8 w-8 shrink-0 p-0 text-muted-foreground hover:text-foreground md:inline-flex"
                                 title="פעולות"
                                 aria-label="פעולות"
                               >
@@ -745,6 +804,34 @@ export default function BankClient({
                             </DropdownMenuContent>
                           </DropdownMenu>
                         )}
+                      </div>
+                    );
+                    // Mobile: swipe the row to reveal edit/delete instead of the
+                    // "⋮" menu (user, 2026-08-31: "put the actions in a row
+                    // swipe instead of 3 dots on mobile") — same SwipeActions
+                    // component ProjectMovements.tsx uses, one row open at a
+                    // time. Two full copies of the row (one per breakpoint,
+                    // toggled via `hidden`), not one row conditionally wrapped —
+                    // matching ProjectMovements' own desktop-table/mobile-list
+                    // split, and it keeps a desktop mouse-drag from ever
+                    // reaching the swipe gesture at all.
+                    return (
+                      <div key={row.id}>
+                        <div className="hidden md:block">{rowContent}</div>
+                        <div className="md:hidden">
+                          {hasActions ? (
+                            <SwipeActions
+                              className="rounded-none"
+                              open={swipedRowId === row.id}
+                              onOpenChange={(next) => setSwipedRowId(next ? row.id : null)}
+                              actions={swipeActions}
+                            >
+                              {rowContent}
+                            </SwipeActions>
+                          ) : (
+                            rowContent
+                          )}
+                        </div>
                       </div>
                     );
                   })}
