@@ -72,6 +72,7 @@ function AccountSummaryCard({
   selected: boolean;
   onSelect: () => void;
 }) {
+  const kindLabel = getAccountKindLabel(account.kind);
   return (
     // The whole card selects the account. הכנסה / הוצאה moved onto the tab bar
     // below, where they act on the account that's actually open — one place to
@@ -101,14 +102,21 @@ function AccountSummaryCard({
     >
       <span className="flex w-full items-start justify-between gap-2">
         <span className="min-w-0 flex-1 break-words text-sm font-medium">{account.name}</span>
-        <span
-          className={cn(
-            "shrink-0 rounded-full border px-1.5 py-0 text-[10px]",
-            selected ? "border-primary-foreground/30 text-primary-foreground/80" : "text-muted-foreground"
-          )}
-        >
-          {getAccountKindLabel(account.kind)}
-        </span>
+        {/* Hidden when it just repeats the name — e.g. a cash account named
+            "מזומן" showing a "מזומן" kind badge says nothing a bank account's
+            "בנק" badge (distinct from ITS name) actually does (2026-08-31
+            design review: "the type badge is the odd one out ... Hide the
+            badge when it duplicates the name"). */}
+        {kindLabel.trim() !== account.name.trim() && (
+          <span
+            className={cn(
+              "shrink-0 rounded-full border px-1.5 py-0 text-[10px]",
+              selected ? "border-primary-foreground/30 text-primary-foreground/80" : "text-muted-foreground"
+            )}
+          >
+            {kindLabel}
+          </span>
+        )}
       </span>
       <span className="flex flex-1 items-center justify-center">
         {/* Only the sign is red/green — the figure itself stays neutral text.
@@ -217,8 +225,10 @@ export default function BankClient({
       // Outline, not filled — a deliberate, confirmed exception to the usual
       // "buttons always get a fill" rule for this one button (user,
       // 2026-08-31: "i know i set the rule but i still want outline").
-      // mt-1.5 matches the total's own nudge below the top edge.
-      <Button asChild variant="outline" size="sm" className="mt-1.5">
+      // mt-1.5 matches the total's own nudge below the top edge. Desktop
+      // only — hidden on mobile, where the top bar has no room to spare for
+      // it (user, 2026-08-31: "remove the ניהול חשבונות button on mobile").
+      <Button asChild variant="outline" size="sm" className="mt-1.5 hidden md:inline-flex">
         {/* ?tab=finance — SettingsTabs now reads this; it used to always land
             on the first (notifications) tab (user, 2026-08-31). */}
         <Link href="/settings?tab=finance">ניהול חשבונות</Link>
@@ -591,17 +601,30 @@ export default function BankClient({
                     </span>
                     <span className="text-muted-foreground/70">({group.items.length})</span>
                     <span className="ms-auto flex items-center gap-2">
-                      <span dir="ltr" className="flex items-center gap-2 tabular-nums">
+                      {/* Hidden on the smallest screens, not just squeezed —
+                          at phone width this row was cramming chevron/month/
+                          count/in/out/יתרה/closing into one line with no
+                          wrap room, so the browser was breaking a figure's
+                          "+"/"-" sign onto its own line above the number
+                          (user, 2026-08-31: "this needs to be normalized for
+                          mobile"). whitespace-nowrap on each figure is the
+                          real fix for that; hiding the breakdown below sm is
+                          decluttering so the row reliably fits at all. */}
+                      <span dir="ltr" className="hidden items-center gap-2 tabular-nums sm:flex">
                         {group.in > 0 && (
-                          <span className="text-success">+{formatMoneyRounded(group.in)}</span>
+                          <span className="whitespace-nowrap text-success">
+                            +{formatMoneyRounded(group.in)}
+                          </span>
                         )}
                         {group.out > 0 && (
-                          <span className="text-destructive">-{formatMoneyRounded(group.out)}</span>
+                          <span className="whitespace-nowrap text-destructive">
+                            -{formatMoneyRounded(group.out)}
+                          </span>
                         )}
                       </span>
                       {/* Where the account stood when the month ended. */}
                       <span className="hidden text-muted-foreground/70 sm:inline">יתרה</span>
-                      <span dir="ltr" className="tabular-nums font-semibold text-foreground">
+                      <span dir="ltr" className="whitespace-nowrap tabular-nums font-semibold text-foreground">
                         {formatMoneyRounded(group.closing)}
                       </span>
                     </span>
