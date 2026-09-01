@@ -670,16 +670,6 @@ export default function BankClient({
                   </NativeSelect>
                 )}
               </div>
-              {/* Desktop only — permanently occupying sticky-header space for
-                  this on mobile was wasteful (user, 2026-08-31: "not the
-                  smartest to waste this space with this line"). The mobile
-                  copy below sits in the normal (non-sticky) flow instead, so
-                  it scrolls away with the first screenful rather than
-                  sitting there forever. */}
-              <div className="hidden text-xs text-muted-foreground md:block">
-                יתרת פתיחה {formatMoneyRounded(selected.openingBalance)} · נכון ל-
-                <span dir="ltr">{formatDate(selected.openingDate)}</span>
-              </div>
             </div>
 
             {selected.ledger.length === 0 ? (
@@ -968,13 +958,14 @@ export default function BankClient({
               })}
             </div>
           )}
-          {/* Last, not first — a mobile-only copy of the opening balance
-              (desktop's stays up in the sticky header). Originally placed
-              right after the header, then moved here per the user (2026-08-31:
-              "the opening balance is the first row now i want it to be the
-              last") — after the transactions, like a footnote, instead of
-              being the first thing you scroll past. */}
-          <div className="border-t px-3 py-1.5 text-xs text-muted-foreground md:hidden">
+          {/* Last, not first, and now on every width — this started mobile-
+              only (desktop kept it up in the sticky header), then the user
+              asked for the same footnote placement on desktop too
+              (2026-08-31: "we moved this to the bottom row in the table on
+              mobile i want to do that on desktop too"). After the
+              transactions, like a footnote, instead of being the first thing
+              you scroll past or permanent sticky-header real estate. */}
+          <div className="border-t px-3 py-1.5 text-xs text-muted-foreground">
             יתרת פתיחה {formatMoneyRounded(selected.openingBalance)} · נכון ל-
             <span dir="ltr">{formatDate(selected.openingDate)}</span>
           </div>
