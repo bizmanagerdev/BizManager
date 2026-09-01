@@ -18,10 +18,11 @@ import {
 } from "@/components/layout/page-layout";
 import StaleDataBadge from "@/components/layout/StaleDataBadge";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
-import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
+import { clickableRowProps } from "@/lib/ui/row-navigation";
+import { DataTableShell } from "@/components/ui/data-table-shell";
+import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { ChevronLeftIcon, CloseIcon, DownloadIcon, EditIcon, FilterIcon, OrderIcon, ProjectIcon, SearchIcon, WazeIcon } from "@/components/ui/icons";
-import { Card } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
 import { SwipeActions } from "@/components/ui/swipe-actions";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
@@ -562,143 +563,141 @@ export default function CustomersClient({
       {/* Mobile list. The four action buttons that used to sit under every card
           are now behind a swipe — the card stays compact so more customers fit
           on a screen, which is the whole point of the list. */}
-      <div className="grid grid-cols-1 gap-2 xl:hidden">
-        <p className="px-1 text-[11px] text-muted-foreground">
-          החלק כרטיס ימינה לפעולות · הקש לפרטים
-        </p>
-        {filtered.map((row) => {
-          const id = s(row, "customer_id");
-          const customerName = s(row, "customer_name") || "לקוח";
-          const linkedMorningClientId = s(row, "morning_client_id");
-          const openBalance = n(row, "open_balance");
-          const phone = s(row, "phone");
-          const ordersCount = n(row, "orders_count");
-          const projectsCount = n(row, "projects_count");
-          const rowKey = id || customerName;
-          return (
-            <SwipeActions
-              key={rowKey}
-              className="border border-border/70 shadow-sm"
-              open={swipedRow === rowKey}
-              onOpenChange={(next) => setSwipedRow(next ? rowKey : null)}
-              actions={[
-                {
-                  key: "project",
-                  label: "פרויקט",
-                  icon: <ProjectIcon className="h-5 w-5" />,
-                  className: "bg-secondary",
-                  onSelect: () => router.push(`/projects?create=1&customer_id=${encodeURIComponent(id)}`),
-                },
-                {
-                  key: "order",
-                  label: "הזמנה",
-                  icon: <OrderIcon className="h-5 w-5" />,
-                  className: "bg-secondary-3",
-                  onSelect: () => router.push(`/sales/orders/new?customer_id=${encodeURIComponent(id)}`),
-                },
-                {
-                  key: "edit",
-                  label: "עריכה",
-                  icon: <EditIcon className="h-5 w-5" />,
-                  className: "bg-secondary-2",
-                  onSelect: () => openEdit(row),
-                },
-              ]}
-            >
-              <div
-                role="link"
-                tabIndex={0}
-                onClick={(event) => {
-                  if (shouldIgnoreRowNavigation(event.target)) return;
-                  openCustomerDetails(id);
-                }}
-                onKeyDown={(event) => {
-                  if (shouldIgnoreRowNavigation(event.target)) return;
-                  if (event.key !== "Enter" && event.key !== " ") return;
-                  event.preventDefault();
-                  openCustomerDetails(id);
-                }}
-                className="flex w-full min-w-0 cursor-pointer items-center gap-3 p-3 text-right"
-              >
-                <div className="min-w-0 flex-1 space-y-1">
-                  <div className="text-sm font-semibold leading-snug">{customerName}</div>
-                  {phone ? (
-                    // A <div> (ContactTapZone), not an <a href="tel:…"> — see its own
-                    // comment: a real tel: link claims the long-press gesture for the
-                    // browser's own menu instead of leaving the number selectable/copyable.
-                    <ContactTapZone
-                      kind="tel"
-                      value={phone}
-                      className="inline-block text-xs text-muted-foreground hover:text-secondary hover:underline"
+      <ResponsiveDataView
+        breakpoint="xl"
+        mobile={
+          <>
+            <div className="grid grid-cols-1 gap-2">
+              <p className="px-1 text-[11px] text-muted-foreground">
+                החלק כרטיס ימינה לפעולות · הקש לפרטים
+              </p>
+              {filtered.map((row) => {
+                const id = s(row, "customer_id");
+                const customerName = s(row, "customer_name") || "לקוח";
+                const linkedMorningClientId = s(row, "morning_client_id");
+                const openBalance = n(row, "open_balance");
+                const phone = s(row, "phone");
+                const ordersCount = n(row, "orders_count");
+                const projectsCount = n(row, "projects_count");
+                const rowKey = id || customerName;
+                return (
+                  <SwipeActions
+                    key={rowKey}
+                    className="border border-border/70 shadow-sm"
+                    open={swipedRow === rowKey}
+                    onOpenChange={(next) => setSwipedRow(next ? rowKey : null)}
+                    actions={[
+                      {
+                        key: "project",
+                        label: "פרויקט",
+                        icon: <ProjectIcon className="h-5 w-5" />,
+                        className: "bg-secondary",
+                        onSelect: () => router.push(`/projects?create=1&customer_id=${encodeURIComponent(id)}`),
+                      },
+                      {
+                        key: "order",
+                        label: "הזמנה",
+                        icon: <OrderIcon className="h-5 w-5" />,
+                        className: "bg-secondary-3",
+                        onSelect: () => router.push(`/sales/orders/new?customer_id=${encodeURIComponent(id)}`),
+                      },
+                      {
+                        key: "edit",
+                        label: "עריכה",
+                        icon: <EditIcon className="h-5 w-5" />,
+                        className: "bg-secondary-2",
+                        onSelect: () => openEdit(row),
+                      },
+                    ]}
+                  >
+                    <div
+                      className="flex w-full min-w-0 cursor-pointer items-center gap-3 p-3 text-right"
+                      {...clickableRowProps(() => openCustomerDetails(id))}
                     >
-                      <span dir="ltr">{phone}</span>
-                    </ContactTapZone>
-                  ) : null}
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {ordersCount > 0 ? (
-                      <Badge variant="outline" className="px-1.5 py-0 text-[10px]">{ordersCount} הזמנות</Badge>
-                    ) : null}
-                    {projectsCount > 0 ? (
-                      <Badge variant="outline" className="px-1.5 py-0 text-[10px]">{projectsCount} פרויקטים</Badge>
-                    ) : null}
-                    {row.linked_user_id ? (
-                      <Badge className={`${customerFlagBadgeClass("info")} px-1.5 py-0 text-[10px]`}>עובד</Badge>
-                    ) : null}
-                    {row.requires_prepayment === true ? (
-                      <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>תשלום מראש</Badge>
-                    ) : null}
-                    {row.active === false ? (
-                      <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>לא פעיל</Badge>
-                    ) : null}
-                    {linkedMorningClientId ? (
-                      <Badge className={`${customerFlagBadgeClass("success")} px-1.5 py-0 text-[10px]`}>Morning</Badge>
-                    ) : null}
-                  </div>
-                </div>
-                {openBalance > 0 ? (
-                  <div className="shrink-0 text-left">
-                    <div className="whitespace-nowrap text-sm font-semibold tabular-nums text-destructive">
-                      {ils(openBalance)}
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="text-sm font-semibold leading-snug">{customerName}</div>
+                        {phone ? (
+                          // A <div> (ContactTapZone), not an <a href="tel:…"> — see its own
+                          // comment: a real tel: link claims the long-press gesture for the
+                          // browser's own menu instead of leaving the number selectable/copyable.
+                          <ContactTapZone
+                            kind="tel"
+                            value={phone}
+                            className="inline-block text-xs text-muted-foreground hover:text-secondary hover:underline"
+                          >
+                            <span dir="ltr">{phone}</span>
+                          </ContactTapZone>
+                        ) : null}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {ordersCount > 0 ? (
+                            <Badge variant="outline" className="px-1.5 py-0 text-[10px]">{ordersCount} הזמנות</Badge>
+                          ) : null}
+                          {projectsCount > 0 ? (
+                            <Badge variant="outline" className="px-1.5 py-0 text-[10px]">{projectsCount} פרויקטים</Badge>
+                          ) : null}
+                          {row.linked_user_id ? (
+                            <Badge className={`${customerFlagBadgeClass("info")} px-1.5 py-0 text-[10px]`}>עובד</Badge>
+                          ) : null}
+                          {row.requires_prepayment === true ? (
+                            <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>תשלום מראש</Badge>
+                          ) : null}
+                          {row.active === false ? (
+                            <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>לא פעיל</Badge>
+                          ) : null}
+                          {linkedMorningClientId ? (
+                            <Badge className={`${customerFlagBadgeClass("success")} px-1.5 py-0 text-[10px]`}>Morning</Badge>
+                          ) : null}
+                        </div>
+                      </div>
+                      {openBalance > 0 ? (
+                        <div className="shrink-0 text-left">
+                          <div className="whitespace-nowrap text-sm font-semibold tabular-nums text-destructive">
+                            {ils(openBalance)}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground">יתרה</div>
+                        </div>
+                      ) : null}
+                      <ChevronLeftIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
                     </div>
-                    <div className="text-[10px] text-muted-foreground">יתרה</div>
-                  </div>
-                ) : null}
-                <ChevronLeftIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-              </div>
-            </SwipeActions>
-          );
-        })}
-      </div>
-      {!apiSearchRows && hasMore ? <div ref={mobileSentinelRef} className="h-1 xl:hidden" /> : null}
-
-      <Card className="hidden overflow-hidden border-border/70 shadow-sm xl:block">
-        <div ref={scrollRef} className="max-h-[70vh] overflow-auto">
-        <table className="w-full table-fixed text-sm">
-          <colgroup>
-            <col className="w-[17%]" />
-            <col className="w-[15%]" />
-            <col className="w-[14%]" />
-            <col className="w-[6%]" />
-            <col className="w-[6%]" />
-            <col className="w-[6%]" />
-            <col className="w-[9%]" />
-            <col className="w-[11%]" />
-            <col className="w-[16%]" />
-          </colgroup>
-          <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
-            <tr className="border-b border-border/70 text-right">
-              <th className="px-2 py-2 font-medium">לקוח</th>
-              <th className="px-2 py-2 font-medium">טלפון ואימייל</th>
-              <th className="px-2 py-2 font-medium">כתובת</th>
-              <th className="px-2 py-2 font-medium">Morning</th>
-              <th className="px-2 py-2 font-medium">הזמנות</th>
-              <th className="px-2 py-2 font-medium">פרויקטים</th>
-              <th className="px-2 py-2 font-medium">יתרה פתוחה</th>
-              <th className="px-2 py-2 font-medium">סטטוס</th>
-              <th className="px-2 py-2 font-medium">פעולות</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/70">
+                  </SwipeActions>
+                );
+              })}
+            </div>
+          {!apiSearchRows && hasMore ? <div ref={mobileSentinelRef} className="h-1" /> : null}
+          </>
+        }
+        desktop={
+          <DataTableShell
+            ref={scrollRef}
+            tableClassName="table-fixed"
+            colgroup={
+              <>
+                <col className="w-[17%]" />
+                <col className="w-[15%]" />
+                <col className="w-[14%]" />
+                <col className="w-[6%]" />
+                <col className="w-[6%]" />
+                <col className="w-[6%]" />
+                <col className="w-[9%]" />
+                <col className="w-[11%]" />
+                <col className="w-[16%]" />
+              </>
+            }
+            header={
+              <>
+                <th className="px-2 py-2 font-medium">לקוח</th>
+                <th className="px-2 py-2 font-medium">טלפון ואימייל</th>
+                <th className="px-2 py-2 font-medium">כתובת</th>
+                <th className="px-2 py-2 font-medium">Morning</th>
+                <th className="px-2 py-2 font-medium">הזמנות</th>
+                <th className="px-2 py-2 font-medium">פרויקטים</th>
+                <th className="px-2 py-2 font-medium">יתרה פתוחה</th>
+                <th className="px-2 py-2 font-medium">סטטוס</th>
+                <th className="px-2 py-2 font-medium">פעולות</th>
+              </>
+            }
+            footer={!apiSearchRows && hasMore ? <div ref={sentinelRef} className="h-1" /> : null}
+          >
             {filtered.map((row) => {
               const id = s(row, "customer_id");
               const customerName = s(row, "customer_name") || "לקוח";
@@ -709,18 +708,7 @@ export default function CustomersClient({
                 <tr
                   key={`${id || customerName}-desktop`}
                   className="cursor-pointer align-middle hover:bg-muted/20 focus-visible:bg-muted/20"
-                  tabIndex={0}
-                  role="link"
-                  onClick={(event) => {
-                    if (shouldIgnoreRowNavigation(event.target)) return;
-                    openCustomerDetails(id);
-                  }}
-                  onKeyDown={(event) => {
-                    if (shouldIgnoreRowNavigation(event.target)) return;
-                    if (event.key !== "Enter" && event.key !== " ") return;
-                    event.preventDefault();
-                    openCustomerDetails(id);
-                  }}
+                  {...clickableRowProps(() => openCustomerDetails(id))}
                 >
                   <td className="px-2 py-1.5">
                     <div className="truncate text-right font-medium leading-tight">{customerName}</div>
@@ -802,11 +790,9 @@ export default function CustomersClient({
                 </tr>
               );
             })}
-          </tbody>
-        </table>
-        {!apiSearchRows && hasMore ? <div ref={sentinelRef} className="h-1" /> : null}
-        </div>
-      </Card>
+          </DataTableShell>
+        }
+      />
 
       {!apiSearchRows ? (
         <div className="pt-1 text-center text-xs text-muted-foreground">

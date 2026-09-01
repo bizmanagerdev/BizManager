@@ -43,7 +43,9 @@ import {
 } from "@/lib/orders/prepayment";
 import { parseOrderComments, type OrderComment } from "@/lib/orders/comments";
 import OrderReminderDialog from "@/components/orders/OrderReminderDialog";
-import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
+import { rowNavigateProps } from "@/lib/ui/row-navigation";
+import { DataTableShell } from "@/components/ui/data-table-shell";
+import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
 import {
   collectionStatusClasses,
   orderCollectionStatusLabel,
@@ -740,82 +742,85 @@ export default function SalesOrdersClient({
         <div className="relative">
           {isFilterPending ? <FilterLoaderOverlay /> : null}
           <div className={isFilterPending ? "pointer-events-none opacity-50 transition-opacity" : "transition-opacity"}>
-            <Card className="hidden overflow-hidden border-border/70 shadow-sm xl:block">
-            <div ref={scrollRef} className="max-h-[70vh] overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
-                  <tr className="border-b border-border/70 text-right">
-                    <th className="px-4 py-3 font-medium">לקוח</th>
-                    <th className="px-4 py-3 font-medium">עיר ותאריך</th>
-                    <th className="px-4 py-3 font-medium">מוצרים</th>
-                    <th className="px-4 py-3 font-medium">הערות ותגובות</th>
-                    <th className="px-4 py-3 font-medium">סטטוס הזמנה</th>
-                    {anyOutOfStock ? <th className="px-4 py-3 font-medium">מלאי</th> : null}
-                    <th className="px-4 py-3 font-medium">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground focus:outline-none"
-                          >
-                            <span>חשבונית</span>
-                            {invoiceFilter !== "all" ? (
-                              <span className="text-xs text-primary">
-                                ({INVOICE_FILTER_OPTIONS.find((o) => o.value === invoiceFilter)?.label})
-                              </span>
-                            ) : null}
-                            <ChevronDownIcon className="h-3.5 w-3.5" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start">
-                          <DropdownMenuRadioGroup
-                            value={invoiceFilter}
-                            onValueChange={(value) => setInvoiceFilter(value as InvoiceFilter)}
-                          >
-                            {INVOICE_FILTER_OPTIONS.map((option) => (
-                              <DropdownMenuRadioItem key={option.value} value={option.value}>
-                                {option.label}
-                              </DropdownMenuRadioItem>
-                            ))}
-                          </DropdownMenuRadioGroup>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </th>
-                    <th className="px-4 py-3 font-medium">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground focus:outline-none"
-                          >
-                            <span>סטטוס תשלום</span>
-                            {paymentFilter !== "all" ? (
-                              <span className="text-xs text-primary">
-                                ({PAYMENT_FILTER_OPTIONS.find((o) => o.value === paymentFilter)?.label})
-                              </span>
-                            ) : null}
-                            <ChevronDownIcon className="h-3.5 w-3.5" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start">
-                          <DropdownMenuRadioGroup
-                            value={paymentFilter}
-                            onValueChange={(value) => setPaymentFilter(value as PaymentStatusFilter)}
-                          >
-                            {PAYMENT_FILTER_OPTIONS.map((option) => (
-                              <DropdownMenuRadioItem key={option.value} value={option.value}>
-                                {option.label}
-                              </DropdownMenuRadioItem>
-                            ))}
-                          </DropdownMenuRadioGroup>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </th>
-                    <th className="px-4 py-3 font-medium">סכום</th>
-                    <th className="px-4 py-3 font-medium">פעולות</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/70">
+            <ResponsiveDataView
+              breakpoint="xl"
+              desktop={
+                <DataTableShell
+                  ref={scrollRef}
+                  header={
+                    <>
+                      <th className="px-4 py-3 font-medium">לקוח</th>
+                      <th className="px-4 py-3 font-medium">עיר ותאריך</th>
+                      <th className="px-4 py-3 font-medium">מוצרים</th>
+                      <th className="px-4 py-3 font-medium">הערות ותגובות</th>
+                      <th className="px-4 py-3 font-medium">סטטוס הזמנה</th>
+                      {anyOutOfStock ? <th className="px-4 py-3 font-medium">מלאי</th> : null}
+                      <th className="px-4 py-3 font-medium">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground focus:outline-none"
+                            >
+                              <span>חשבונית</span>
+                              {invoiceFilter !== "all" ? (
+                                <span className="text-xs text-primary">
+                                  ({INVOICE_FILTER_OPTIONS.find((o) => o.value === invoiceFilter)?.label})
+                                </span>
+                              ) : null}
+                              <ChevronDownIcon className="h-3.5 w-3.5" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start">
+                            <DropdownMenuRadioGroup
+                              value={invoiceFilter}
+                              onValueChange={(value) => setInvoiceFilter(value as InvoiceFilter)}
+                            >
+                              {INVOICE_FILTER_OPTIONS.map((option) => (
+                                <DropdownMenuRadioItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </DropdownMenuRadioItem>
+                              ))}
+                            </DropdownMenuRadioGroup>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </th>
+                      <th className="px-4 py-3 font-medium">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground focus:outline-none"
+                            >
+                              <span>סטטוס תשלום</span>
+                              {paymentFilter !== "all" ? (
+                                <span className="text-xs text-primary">
+                                  ({PAYMENT_FILTER_OPTIONS.find((o) => o.value === paymentFilter)?.label})
+                                </span>
+                              ) : null}
+                              <ChevronDownIcon className="h-3.5 w-3.5" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start">
+                            <DropdownMenuRadioGroup
+                              value={paymentFilter}
+                              onValueChange={(value) => setPaymentFilter(value as PaymentStatusFilter)}
+                            >
+                              {PAYMENT_FILTER_OPTIONS.map((option) => (
+                                <DropdownMenuRadioItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </DropdownMenuRadioItem>
+                              ))}
+                            </DropdownMenuRadioGroup>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </th>
+                      <th className="px-4 py-3 font-medium">סכום</th>
+                      <th className="px-4 py-3 font-medium">פעולות</th>
+                    </>
+                  }
+                  footer={hasMore && !offline && !isClientSearching ? <div ref={sentinelRef} className="h-1" /> : null}
+                >
                   {filteredRows.map((row) => (
                     <tr
                       key={row.id}
@@ -824,20 +829,7 @@ export default function SalesOrdersClient({
                           ? PREPAYMENT_ROW_CLASSES
                           : ""
                       }`}
-                      tabIndex={0}
-                      role="link"
-                      onClick={(event) => {
-                        if (shouldIgnoreRowNavigation(event.target)) return;
-                        emitNavigationStart();
-                        router.push(`/sales/orders/${row.id}`);
-                      }}
-                      onKeyDown={(event) => {
-                        if (shouldIgnoreRowNavigation(event.target)) return;
-                        if (event.key !== "Enter" && event.key !== " ") return;
-                        event.preventDefault();
-                        emitNavigationStart();
-                        router.push(`/sales/orders/${row.id}`);
-                      }}
+                      {...rowNavigateProps(router, `/sales/orders/${row.id}`)}
                     >
                       <td className="px-4 py-4">
                         <div>
@@ -949,224 +941,212 @@ export default function SalesOrdersClient({
                       </td>
                     </tr>
                   ))}
-                </tbody>
-              </table>
-              {hasMore && !offline && !isClientSearching ? <div ref={sentinelRef} className="h-1" /> : null}
-            </div>
-          </Card>
-
-          <div className="grid grid-cols-1 gap-2 xl:hidden">
-            <p className="px-1 text-[11px] text-muted-foreground">
-              החלק כרטיס ימינה לפעולות · הקש לפתיחה
-            </p>
-            {filteredRows.map((row) => {
-              const showConfirm = isActiveOrder(row.status);
-              const showPayment = !showConfirm && shouldShowPaymentAction(row);
-              const actions = [
-                ...(showConfirm
-                  ? [
+                </DataTableShell>
+              }
+              mobile={
+                <>
+                <div className="grid grid-cols-1 gap-2">
+                  <p className="px-1 text-[11px] text-muted-foreground">
+                    החלק כרטיס ימינה לפעולות · הקש לפתיחה
+                  </p>
+                  {filteredRows.map((row) => {
+                    const showConfirm = isActiveOrder(row.status);
+                    const showPayment = !showConfirm && shouldShowPaymentAction(row);
+                    const actions = [
+                      ...(showConfirm
+                        ? [
+                            {
+                              key: "confirm",
+                              className: "bg-secondary",
+                              node: (
+                                <OrderConfirmDialog
+                                  orderId={row.id}
+                                  customerName={combinedCustomerName(row)}
+                                  buttonVariant="default"
+                                  buttonLabel={
+                                    <>
+                                      <CheckIcon className="h-5 w-5" />
+                                      אספקה
+                                    </>
+                                  }
+                                  buttonClassName="!bg-transparent"
+                                />
+                              ),
+                            },
+                          ]
+                        : showPayment
+                          ? [
+                              {
+                                key: "pay",
+                                className: "bg-secondary",
+                                node: (
+                                  <OrderPaymentDialog
+                                    orderId={row.id}
+                                    totalAmount={row.totalAmount}
+                                    paidAmount={row.totalPaid}
+                                    buttonClassName="!bg-transparent"
+                                  />
+                                ),
+                              },
+                            ]
+                          : []),
                       {
-                        key: "confirm",
-                        className: "bg-secondary",
-                        node: (
-                          <OrderConfirmDialog
-                            orderId={row.id}
-                            customerName={combinedCustomerName(row)}
-                            buttonVariant="default"
-                            buttonLabel={
-                              <>
-                                <CheckIcon className="h-5 w-5" />
-                                אספקה
-                              </>
-                            }
-                            buttonClassName="!bg-transparent"
-                          />
-                        ),
-                      },
-                    ]
-                  : showPayment
-                    ? [
-                        {
-                          key: "pay",
-                          className: "bg-secondary",
-                          node: (
-                            <OrderPaymentDialog
-                              orderId={row.id}
-                              totalAmount={row.totalAmount}
-                              paidAmount={row.totalPaid}
-                              buttonClassName="!bg-transparent"
-                            />
-                          ),
+                        key: "edit",
+                        label: "עריכה",
+                        icon: <EditIcon className="h-5 w-5" />,
+                        className: "bg-secondary-2",
+                        onSelect: () => {
+                          emitNavigationStart();
+                          router.push(`/sales/orders/${row.id}/edit`);
                         },
-                      ]
-                    : []),
-                {
-                  key: "edit",
-                  label: "עריכה",
-                  icon: <EditIcon className="h-5 w-5" />,
-                  className: "bg-secondary-2",
-                  onSelect: () => {
-                    emitNavigationStart();
-                    router.push(`/sales/orders/${row.id}/edit`);
-                  },
-                },
-              ];
+                      },
+                    ];
 
-              return (
-                <SwipeActions
-                  key={row.id}
-                  className={`shadow-sm ${
-                    isUnpaidPrepayment(row.requiresPrepayment, row.remainingBalance)
-                      ? `border-2 border-destructive ${PREPAYMENT_ROW_CLASSES}`
-                      : "border border-border/70"
-                  }`}
-                  actions={actions}
-                  open={swipedRow === row.id}
-                  onOpenChange={(next) => setSwipedRow(next ? row.id : null)}
-                >
-                  <div
-                    role="link"
-                    tabIndex={0}
-                    className="cursor-pointer divide-y divide-border/60 p-3 [&>*]:py-2 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0"
-                    onClick={(event) => {
-                      if (shouldIgnoreRowNavigation(event.target)) return;
-                      emitNavigationStart();
-                      router.push(`/sales/orders/${row.id}`);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key !== "Enter" && event.key !== " ") return;
-                      if (shouldIgnoreRowNavigation(event.target)) return;
-                      event.preventDefault();
-                      emitNavigationStart();
-                      router.push(`/sales/orders/${row.id}`);
-                    }}
-                  >
-                    {/* Compact card. Two rules:
-                        1. NOTHING truncates — names, cities and product chips
-                           wrap onto another line rather than becoming "…". The
-                           row is what you scan by, so a clipped name is useless.
-                        2. The money row adapts: an order that's settled shows
-                           just its total, one still owing leads with the balance
-                           and shows the total as context. Same information, one
-                           line shorter in the common case. */}
-                    {/* Top line: WHO on the leading (right) edge — it's what you
-                        scan the list by — and WHEN tucked small into the far
-                        corner. The date is reference, not headline, so it takes
-                        the smallest type on the card. */}
-                    <div className="flex items-baseline justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-bold leading-snug">{row.customerName}</div>
-                        {row.customerBranchName ? (
-                          <div className="text-xs leading-snug text-muted-foreground">סניף: {row.customerBranchName}</div>
-                        ) : null}
-                        {row.customerNameForInvoice && row.customerNameForInvoice !== row.customerName ? (
-                          <div className="text-xs leading-snug text-muted-foreground">
-                            לחשבונית: {row.customerNameForInvoice}
+                    return (
+                      <SwipeActions
+                        key={row.id}
+                        className={`shadow-sm ${
+                          isUnpaidPrepayment(row.requiresPrepayment, row.remainingBalance)
+                            ? `border-2 border-destructive ${PREPAYMENT_ROW_CLASSES}`
+                            : "border border-border/70"
+                        }`}
+                        actions={actions}
+                        open={swipedRow === row.id}
+                        onOpenChange={(next) => setSwipedRow(next ? row.id : null)}
+                      >
+                        <div
+                          className="cursor-pointer divide-y divide-border/60 p-3 [&>*]:py-2 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0"
+                          {...rowNavigateProps(router, `/sales/orders/${row.id}`)}
+                        >
+                          {/* Compact card. Two rules:
+                              1. NOTHING truncates — names, cities and product chips
+                                 wrap onto another line rather than becoming "…". The
+                                 row is what you scan by, so a clipped name is useless.
+                              2. The money row adapts: an order that's settled shows
+                                 just its total, one still owing leads with the balance
+                                 and shows the total as context. Same information, one
+                                 line shorter in the common case. */}
+                          {/* Top line: WHO on the leading (right) edge — it's what you
+                              scan the list by — and WHEN tucked small into the far
+                              corner. The date is reference, not headline, so it takes
+                              the smallest type on the card. */}
+                          <div className="flex items-baseline justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-bold leading-snug">{row.customerName}</div>
+                              {row.customerBranchName ? (
+                                <div className="text-xs leading-snug text-muted-foreground">סניף: {row.customerBranchName}</div>
+                              ) : null}
+                              {row.customerNameForInvoice && row.customerNameForInvoice !== row.customerName ? (
+                                <div className="text-xs leading-snug text-muted-foreground">
+                                  לחשבונית: {row.customerNameForInvoice}
+                                </div>
+                              ) : null}
+                              {row.customerPhone || row.customerCity ? (
+                                <div className="text-xs text-muted-foreground">
+                                  {/* A <div> (ContactTapZone), not an <a href="tel:…"> — a
+                                      real tel: link claims the long-press gesture for the
+                                      browser's own menu, which doesn't surface a copy option
+                                      everywhere this app runs. Plain text long-presses into
+                                      normal selection instead — see contact-link.tsx. */}
+                                  {row.customerPhone ? (
+                                    <ContactTapZone kind="tel" value={row.customerPhone} className="inline-block hover:underline">
+                                      <span dir="ltr">{row.customerPhone}</span>
+                                    </ContactTapZone>
+                                  ) : null}
+                                  {row.customerPhone && row.customerCity ? " · " : null}
+                                  {row.customerCity}
+                                </div>
+                              ) : null}
+                            </div>
+                            <span className="shrink-0 text-[10px] leading-4 text-muted-foreground">
+                              {formatOrderDate(row.orderDate)}
+                            </span>
                           </div>
-                        ) : null}
-                        {row.customerPhone || row.customerCity ? (
-                          <div className="text-xs text-muted-foreground">
-                            {/* A <div> (ContactTapZone), not an <a href="tel:…"> — a
-                                real tel: link claims the long-press gesture for the
-                                browser's own menu, which doesn't surface a copy option
-                                everywhere this app runs. Plain text long-presses into
-                                normal selection instead — see contact-link.tsx. */}
-                            {row.customerPhone ? (
-                              <ContactTapZone kind="tel" value={row.customerPhone} className="inline-block hover:underline">
-                                <span dir="ltr">{row.customerPhone}</span>
-                              </ContactTapZone>
+
+                          {/* Only what's EXCEPTIONAL about the order — a status that isn't
+                              the one this tab implies, or a stock problem. Nothing here on
+                              a normal order, so the card stays short. */}
+                          {row.status !== EXPECTED_STATUS_BY_VIEW[view] || row.outOfStock ? (
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {row.status !== EXPECTED_STATUS_BY_VIEW[view] ? (
+                                <StatusBadge
+                                  value={row.status}
+                                  type="order"
+                                  className={`${orderStatusBadgeClasses(row.status)} px-2 py-0 text-[11px]`}
+                                />
+                              ) : null}
+                              {row.outOfStock ? (
+                                <Badge className={`${outOfStockBadgeClasses} px-2 py-0 text-[11px]`}>חוסר במלאי</Badge>
+                              ) : null}
+                            </div>
+                          ) : null}
+
+                          {/* Money line: the figure leads, its statuses trail. No "סכום"
+                              label — the ₪ already says what it is, and dropping it is what
+                              buys the badges enough room to stay on one line instead of
+                              stacking. These orders are paid all-or-nothing, so a balance
+                              equal to the total would just print the same number twice;
+                              "נותר" only earns its place on a genuinely PART-paid order. */}
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                            <span className="whitespace-nowrap text-sm font-bold tabular-nums">{formatCurrency(row.totalAmount)}</span>
+                            {row.totalPaid > 0.009 && row.remainingBalance > 0.009 ? (
+                              <span className="whitespace-nowrap text-xs font-semibold tabular-nums text-destructive">
+                                נותר {formatCurrency(row.remainingBalance)}
+                              </span>
                             ) : null}
-                            {row.customerPhone && row.customerCity ? " · " : null}
-                            {row.customerCity}
+                            {/* Paid-or-not sits WITH the figure it describes — pushed to
+                                the far edge it read as unrelated to the amount. */}
+                            {isUnpaidPrepayment(row.requiresPrepayment, row.remainingBalance) ? (
+                              <Badge className={`${prepaymentBadgeClasses} px-2 py-0 text-[11px]`}>
+                                {PREPAYMENT_UNPAID_LABEL}
+                              </Badge>
+                            ) : null}
+                            <Badge className={`${collectionStatusClasses(row.collectionStatus)} px-2 py-0 text-[11px]`}>
+                              {orderCollectionStatusLabel(row.collectionStatus)}
+                            </Badge>
+                            {row.pendingMethods.includes("check") ? (
+                              <Badge variant="info" className="px-2 py-0 text-[11px]">
+                                צ׳ק{row.pendingCheckNumber ? ` ${row.pendingCheckNumber}` : ""}
+                              </Badge>
+                            ) : null}
                           </div>
-                        ) : null}
-                      </div>
-                      <span className="shrink-0 text-[10px] leading-4 text-muted-foreground">
-                        {formatOrderDate(row.orderDate)}
-                      </span>
-                    </div>
-
-                    {/* Only what's EXCEPTIONAL about the order — a status that isn't
-                        the one this tab implies, or a stock problem. Nothing here on
-                        a normal order, so the card stays short. */}
-                    {row.status !== EXPECTED_STATUS_BY_VIEW[view] || row.outOfStock ? (
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {row.status !== EXPECTED_STATUS_BY_VIEW[view] ? (
-                          <StatusBadge
-                            value={row.status}
-                            type="order"
-                            className={`${orderStatusBadgeClasses(row.status)} px-2 py-0 text-[11px]`}
-                          />
-                        ) : null}
-                        {row.outOfStock ? (
-                          <Badge className={`${outOfStockBadgeClasses} px-2 py-0 text-[11px]`}>חוסר במלאי</Badge>
-                        ) : null}
-                      </div>
-                    ) : null}
-
-                    {/* Money line: the figure leads, its statuses trail. No "סכום"
-                        label — the ₪ already says what it is, and dropping it is what
-                        buys the badges enough room to stay on one line instead of
-                        stacking. These orders are paid all-or-nothing, so a balance
-                        equal to the total would just print the same number twice;
-                        "נותר" only earns its place on a genuinely PART-paid order. */}
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-                      <span className="whitespace-nowrap text-sm font-bold tabular-nums">{formatCurrency(row.totalAmount)}</span>
-                      {row.totalPaid > 0.009 && row.remainingBalance > 0.009 ? (
-                        <span className="whitespace-nowrap text-xs font-semibold tabular-nums text-destructive">
-                          נותר {formatCurrency(row.remainingBalance)}
-                        </span>
-                      ) : null}
-                      {/* Paid-or-not sits WITH the figure it describes — pushed to
-                          the far edge it read as unrelated to the amount. */}
-                      {isUnpaidPrepayment(row.requiresPrepayment, row.remainingBalance) ? (
-                        <Badge className={`${prepaymentBadgeClasses} px-2 py-0 text-[11px]`}>
-                          {PREPAYMENT_UNPAID_LABEL}
-                        </Badge>
-                      ) : null}
-                      <Badge className={`${collectionStatusClasses(row.collectionStatus)} px-2 py-0 text-[11px]`}>
-                        {orderCollectionStatusLabel(row.collectionStatus)}
-                      </Badge>
-                      {row.pendingMethods.includes("check") ? (
-                        <Badge variant="info" className="px-2 py-0 text-[11px]">
-                          צ׳ק{row.pendingCheckNumber ? ` ${row.pendingCheckNumber}` : ""}
-                        </Badge>
-                      ) : null}
-                    </div>
 
 
-                    {row.products.length > 0 ? (
-                      <div>
-                        <OrderProductList products={row.products} chips />
-                      </div>
-                    ) : null}
+                          {row.products.length > 0 ? (
+                            <div>
+                              <OrderProductList products={row.products} chips />
+                            </div>
+                          ) : null}
 
-                    {/* Ruled off from the products above it — a note is commentary on
-                        the order, not another line of its contents. */}
-                    {row.comments.length > 0 ? (
-                      <OrderCommentPreview comments={row.comments} />
-                    ) : null}
+                          {/* Ruled off from the products above it — a note is commentary on
+                              the order, not another line of its contents. */}
+                          {row.comments.length > 0 ? (
+                            <OrderCommentPreview comments={row.comments} />
+                          ) : null}
 
-                    {/* Last row on the card: everything above it is read, this is the
-                        one thing you SET. A bare dropdown mid-card read as a stray
-                        button — the label anchors it, and the footer position keeps
-                        the control out of the content you scan. */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-muted-foreground">סטטוס הנפקה:</span>
-                      <InvoiceQuickMenu
-                        orderId={row.id}
-                        needsInvoice={row.needsInvoice}
-                        invoiceSentAt={row.invoiceSentAt}
-                        showSentDate={false}
-                      />
-                    </div>
+                          {/* Last row on the card: everything above it is read, this is the
+                              one thing you SET. A bare dropdown mid-card read as a stray
+                              button — the label anchors it, and the footer position keeps
+                              the control out of the content you scan. */}
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-muted-foreground">סטטוס הנפקה:</span>
+                            <InvoiceQuickMenu
+                              orderId={row.id}
+                              needsInvoice={row.needsInvoice}
+                              invoiceSentAt={row.invoiceSentAt}
+                              showSentDate={false}
+                            />
+                          </div>
 
-                  </div>
-                </SwipeActions>
-              );
-            })}
-          </div>
-          {hasMore && !offline && !isClientSearching ? <div ref={mobileSentinelRef} className="h-1 xl:hidden" /> : null}
+                        </div>
+                      </SwipeActions>
+                    );
+                  })}
+                </div>
+                {hasMore && !offline && !isClientSearching ? <div ref={mobileSentinelRef} className="h-1" /> : null}
+                </>
+              }
+            />
           </div>
           <div className="pt-3 text-center text-xs text-muted-foreground">
             {loadingMore

@@ -1,3 +1,6 @@
+import type { KeyboardEvent, MouseEvent } from "react";
+import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
+
 // Skip row-level navigation when the click/keydown originated on an interactive
 // element inside the row (so per-row buttons/links still work as expected).
 export function shouldIgnoreRowNavigation(target: EventTarget | null): boolean {
@@ -17,4 +20,50 @@ export function shouldIgnoreRowNavigation(target: EventTarget | null): boolean {
       '[role="dialog"], [role="alertdialog"], [role="menu"], [role="menuitem"], [role="listbox"], [data-radix-popper-content-wrapper]'
     )
   );
+}
+
+/**
+ * Spread onto a `<tr>` or a mobile card `<div>` to make the whole row activate
+ * `onActivate` on click or Enter/Space, while interactive elements inside it
+ * (buttons, links, an opened dialog/menu) keep handling their own clicks — see
+ * `shouldIgnoreRowNavigation`. A plain function, not a hook, on purpose: every
+ * call site builds these props once per row inside a `.map()`, where calling a
+ * hook would break the rules of hooks.
+ */
+export function clickableRowProps(
+  onActivate: () => void,
+  { role = "link" }: { role?: "link" | "button" } = {}
+) {
+  return {
+    role,
+    tabIndex: 0,
+    onClick: (event: MouseEvent) => {
+      if (shouldIgnoreRowNavigation(event.target)) return;
+      onActivate();
+    },
+    onKeyDown: (event: KeyboardEvent) => {
+      if (shouldIgnoreRowNavigation(event.target)) return;
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      onActivate();
+    },
+  } as const;
+}
+
+/**
+ * The common case of `clickableRowProps`: navigate to `href` via the app
+ * router, kicking off the top nav-progress bar first (rows aren't real `<a>`
+ * tags, so nothing else would trigger it). Pass the `router` from the calling
+ * component's own `useRouter()` — this file has no "use client" directive and
+ * stays importable from anywhere.
+ */
+export function rowNavigateProps(
+  router: { push: (href: string) => void },
+  href: string,
+  options?: { role?: "link" | "button" }
+) {
+  return clickableRowProps(() => {
+    emitNavigationStart();
+    router.push(href);
+  }, options);
 }

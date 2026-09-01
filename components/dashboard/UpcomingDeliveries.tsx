@@ -12,7 +12,7 @@ import { ContactTapZone } from "@/components/ui/contact-link";
 import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import PickingListDialog from "@/app/(app)/sales/PickingListDialog";
-import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
+import { clickableRowProps } from "@/lib/ui/row-navigation";
 import type { DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
 
 /**
@@ -118,19 +118,8 @@ export default function UpcomingDeliveries({
             {rows.map((delivery) => (
               <li
                 key={delivery.id}
-                role="link"
-                tabIndex={0}
                 aria-label={`פרטי המשלוח — ${delivery.customerName}`}
-                onClick={(event) => {
-                  if (shouldIgnoreRowNavigation(event.target)) return;
-                  router.push(hrefFor(delivery.id));
-                }}
-                onKeyDown={(event) => {
-                  if (shouldIgnoreRowNavigation(event.target)) return;
-                  if (event.key !== "Enter" && event.key !== " ") return;
-                  event.preventDefault();
-                  router.push(hrefFor(delivery.id));
-                }}
+                {...clickableRowProps(() => router.push(hrefFor(delivery.id)))}
                 className="pointer-events-auto relative cursor-pointer px-4 py-3 transition-colors hover:bg-secondary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {/* items-center: the action reads as belonging to the whole row,

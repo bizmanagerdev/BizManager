@@ -29,7 +29,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
-import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
+import { rowNavigateProps } from "@/lib/ui/row-navigation";
+import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
 import { WORK_SESSION_BUSINESS_DOMAINS, getBusinessDomainLabel } from "@/lib/expenses";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import {
@@ -2452,261 +2453,240 @@ export default function SalaryCenterClient({
                   table (which overflows sideways and squashes the email char-by-char).
                   Plain block flow (not `grid`) so a card can never be stretched wider
                   than the viewport by its own nowrap content (email / amounts). */}
-              <div className="space-y-3 lg:hidden">
-                {employeeWorkers.length === 0 ? (
-                  <EmptyState dense>
-                    {"אין עובדים להצגה."}
-                  </EmptyState>
-                ) : (
-                  employeeWorkers.map((worker) => {
-                    const workerType = normalizePayrollWorkerType(worker.payroll_worker_type, worker.pay_tracking_mode);
-                    const monthStats = currentMonthPayrollStatsByUserId.get(worker.id) ?? { totalMinutes: 0, totalAmount: 0, sessionCount: 0 };
-                    const balance = effectiveWorkerBalancesByUserId.get(worker.id) ?? null;
-                    return (
-                      <div
-                        key={worker.id}
-                        role="button"
-                        tabIndex={0}
-                        className="cursor-pointer rounded-2xl border bg-background p-4 text-right shadow-sm transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
-                        onClick={(event) => {
-                          if (shouldIgnoreRowNavigation(event.target)) return;
-                          emitNavigationStart();
-                          router.push(`/payroll/workers/${worker.id}`);
-                        }}
-                        onKeyDown={(event) => {
-                          if (shouldIgnoreRowNavigation(event.target)) return;
-                          if (event.key !== "Enter" && event.key !== " ") return;
-                          event.preventDefault();
-                          emitNavigationStart();
-                          router.push(`/payroll/workers/${worker.id}`);
-                        }}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="font-semibold">{worker.full_name ?? worker.email ?? "עובד"}</div>
-                            {worker.phone ? <div className="text-sm text-muted-foreground" dir="ltr">{worker.phone}</div> : null}
-                            {worker.email ? <div className="truncate text-xs text-muted-foreground" dir="ltr">{worker.email}</div> : null}
-                            {!worker.email && !worker.phone ? <div className="text-xs text-muted-foreground">{"ללא פרטי קשר"}</div> : null}
-                          </div>
-                          <StatusPill tone={worker.active === false ? "muted" : "success"}>
-                            {worker.active === false ? "לא פעיל" : "פעיל"}
-                          </StatusPill>
-                        </div>
-
-                        <div className="mt-3 flex flex-wrap justify-center gap-2">
-                          <WorkerTypeBadge workerType={workerType} />
-                          <RoleBadge role={worker.role} />
-                        </div>
-
-                        <div className="mt-3 grid grid-cols-2 gap-3">
-                          <SalaryProtected
-                            unlocked={salaryUnlocked}
-                            hasPasswordConfigured={hasPasswordConfigured}
-                            canUnlock={canViewSalary}
-                            onUnlockSuccess={loadProtectedData}
-                            fallback={<MiniStat label="יתרה כוללת" value="מוגן" />}
-                          >
-                            <MiniStat label="יתרה כוללת" loading={protectedLoading} value={formatCurrency(balance?.owed_amount ?? 0)} />
-                          </SalaryProtected>
-                          {workerType === "session_only" ? (
-                            <MiniStat label="משמרות החודש" value={String(monthStats.sessionCount)} />
-                          ) : payrollWorkerTypeAllowsSessions(workerType) ? (
-                            <MiniStat label="שעות החודש" loading={protectedLoading} value={formatMinutes(monthStats.totalMinutes)} />
-                          ) : null}
-                        </div>
-
-                        <div className="mt-3 flex items-center justify-between gap-2">
-                          <SalaryProtected
-                            unlocked={salaryUnlocked}
-                            hasPasswordConfigured={hasPasswordConfigured}
-                            canUnlock={canViewSalary}
-                            onUnlockSuccess={loadProtectedData}
-                            fallback={<span />}
-                          >
-                            <PaymentStatusBadge status={balance?.payment_status} owedAmount={balance?.owed_amount} />
-                          </SalaryProtected>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              emitNavigationStart();
-                              router.push(`/payroll/workers/${worker.id}`);
-                            }}
-                          >
-                            {"פרטים"}
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              {/* Wide screens: full detail table */}
-              <div className="hidden max-h-[70vh] overflow-auto lg:block">
-                <table className="w-full text-center text-xs">
-                  <thead className="sticky top-0 z-10 bg-muted">
-                    <tr className="border-b text-muted-foreground">
-                      <th className="px-2 py-2 font-medium">עובד</th>
-                      <th className="px-2 py-2 font-medium">סטטוס</th>
-                      <th className="px-2 py-2 font-medium">סוג עובד</th>
-                      <th className="px-2 py-2 font-medium">שעות החודש</th>
-                      <th className="px-2 py-2 font-medium">משכורת נוכחית</th>
-                      <th className="px-2 py-2 font-medium">עלות עבודה החודש</th>
-                      <th className="px-2 py-2 font-medium">תלוש אחרון</th>
-                      <th className="px-2 py-2 font-medium">סטטוס תשלום</th>
-                      <th className="px-2 py-2 font-medium">שולם כולל</th>
-                      <th className="px-2 py-2 font-medium">יתרה כוללת</th>
-                      <th className="px-2 py-2 font-medium">פעולות</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+              <ResponsiveDataView
+                breakpoint="lg"
+                mobile={
+                  <div className="space-y-3">
                     {employeeWorkers.length === 0 ? (
-                      <tr>
-                        <td colSpan={11} className="px-2 py-6 text-center text-muted-foreground">
-                          {"אין עובדים להצגה."}
-                        </td>
-                      </tr>
+                      <EmptyState dense>
+                        {"אין עובדים להצגה."}
+                      </EmptyState>
                     ) : (
-                      employeeWorkers.map((worker, index) => {
+                      employeeWorkers.map((worker) => {
                         const workerType = normalizePayrollWorkerType(worker.payroll_worker_type, worker.pay_tracking_mode);
-                        const monthStats = currentMonthPayrollStatsByUserId.get(worker.id) ?? {
-                          totalMinutes: 0,
-                          totalAmount: 0,
-                          sessionCount: 0,
-                        };
-                        const currentAgreement = getCurrentSalaryAgreement(agreementsByUserId.get(worker.id) ?? []);
-                        const latestPayslip = [...(payslipsByUserId.get(worker.id) ?? [])].sort((a, b) =>
-                          (periodsById.get(b.payroll_period_id)?.period_month ?? "").localeCompare(
-                            periodsById.get(a.payroll_period_id)?.period_month ?? ""
-                          )
-                        )[0] ?? null;
+                        const monthStats = currentMonthPayrollStatsByUserId.get(worker.id) ?? { totalMinutes: 0, totalAmount: 0, sessionCount: 0 };
                         const balance = effectiveWorkerBalancesByUserId.get(worker.id) ?? null;
-                        const rowClass = index % 2 === 0 ? "bg-muted/20" : "bg-background";
-                        const monthlyLaborCost = monthStats.totalAmount;
-
                         return (
-                          <tr
+                          <div
                             key={worker.id}
-                            className={`cursor-pointer border-b align-top hover:bg-muted/40 focus-visible:bg-muted/40 ${rowClass}`}
-                            tabIndex={0}
-                            role="button"
-                            onClick={(event) => {
-                              if (shouldIgnoreRowNavigation(event.target)) return;
-                              emitNavigationStart();
-                              router.push(`/payroll/workers/${worker.id}`);
-                            }}
-                            onKeyDown={(event) => {
-                              if (shouldIgnoreRowNavigation(event.target)) return;
-                              if (event.key !== "Enter" && event.key !== " ") return;
-                              event.preventDefault();
-                              emitNavigationStart();
-                              router.push(`/payroll/workers/${worker.id}`);
-                            }}
+                            className="cursor-pointer rounded-2xl border bg-background p-4 text-right shadow-sm transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+                            {...rowNavigateProps(router, `/payroll/workers/${worker.id}`, { role: "button" })}
                           >
-                            <td className="px-2 py-2 font-medium w-[180px]">
-                              <div className="flex flex-col items-center gap-1">
-                                <div>{worker.full_name ?? worker.email ?? "עובד"}</div>
-                                <div className="flex flex-col items-center text-muted-foreground break-all">
-                                  {worker.email ? <div dir="ltr">{worker.email}</div> : null}
-                                  {worker.phone ? <div dir="ltr">{worker.phone}</div> : null}
-                                  {!worker.email && !worker.phone ? <div>ללא פרטי קשר</div> : null}
-                                </div>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="font-semibold">{worker.full_name ?? worker.email ?? "עובד"}</div>
+                                {worker.phone ? <div className="text-sm text-muted-foreground" dir="ltr">{worker.phone}</div> : null}
+                                {worker.email ? <div className="truncate text-xs text-muted-foreground" dir="ltr">{worker.email}</div> : null}
+                                {!worker.email && !worker.phone ? <div className="text-xs text-muted-foreground">{"ללא פרטי קשר"}</div> : null}
                               </div>
-                            </td>
-                            <td className="px-2 py-2">
-                              <div className="flex flex-col items-center gap-1">
-                                <RoleBadge role={worker.role} />
-                                <AccessBadge hasAccess={getWorkerAccessLabel(worker) === "עם גישה"} />
-                                <StatusPill tone={worker.active === false ? "muted" : "success"}>
-                                  {worker.active === false ? "לא פעיל" : "פעיל"}
-                                </StatusPill>
-                              </div>
-                            </td>
-                            <td className="px-2 py-2 whitespace-nowrap">
+                              <StatusPill tone={worker.active === false ? "muted" : "success"}>
+                                {worker.active === false ? "לא פעיל" : "פעיל"}
+                              </StatusPill>
+                            </div>
+
+                            <div className="mt-3 flex flex-wrap justify-center gap-2">
                               <WorkerTypeBadge workerType={workerType} />
-                            </td>
-                            <td className="px-2 py-2 whitespace-nowrap">
-                              {payrollWorkerTypeAllowsSessions(workerType) ? formatMinutes(monthStats.totalMinutes) : "-"}
-                            </td>
-                            <td className="px-2 py-2 whitespace-nowrap">
+                              <RoleBadge role={worker.role} />
+                            </div>
+
+                            <div className="mt-3 grid grid-cols-2 gap-3">
                               <SalaryProtected
                                 unlocked={salaryUnlocked}
                                 hasPasswordConfigured={hasPasswordConfigured}
                                 canUnlock={canViewSalary}
                                 onUnlockSuccess={loadProtectedData}
-                                fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                                fallback={<MiniStat label="יתרה כוללת" value="מוגן" />}
                               >
-                                {protectedLoading ? (
-                                  <LoadingDots />
-                                ) : currentAgreement ? (
-                                  currentAgreement.salary_type === "hourly"
-                                    ? `${formatCurrency(currentAgreement.hourly_rate)} / שעה`
-                                    : formatCurrency(currentAgreement.monthly_salary)
-                                ) : (
-                                  "-"
-                                )}
+                                <MiniStat label="יתרה כוללת" loading={protectedLoading} value={formatCurrency(balance?.owed_amount ?? 0)} />
                               </SalaryProtected>
-                            </td>
-                            <td className="px-2 py-2 whitespace-nowrap">
+                              {workerType === "session_only" ? (
+                                <MiniStat label="משמרות החודש" value={String(monthStats.sessionCount)} />
+                              ) : payrollWorkerTypeAllowsSessions(workerType) ? (
+                                <MiniStat label="שעות החודש" loading={protectedLoading} value={formatMinutes(monthStats.totalMinutes)} />
+                              ) : null}
+                            </div>
+
+                            <div className="mt-3 flex items-center justify-between gap-2">
                               <SalaryProtected
                                 unlocked={salaryUnlocked}
                                 hasPasswordConfigured={hasPasswordConfigured}
                                 canUnlock={canViewSalary}
                                 onUnlockSuccess={loadProtectedData}
-                                fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
-                              >
-                                {protectedLoading ? <LoadingDots /> : formatCurrency(monthlyLaborCost)}
-                              </SalaryProtected>
-                            </td>
-                            <td className="px-2 py-2 whitespace-nowrap">{latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"}</td>
-                            <td className="px-2 py-2">
-                              <SalaryProtected
-                                unlocked={salaryUnlocked}
-                                hasPasswordConfigured={hasPasswordConfigured}
-                                canUnlock={canViewSalary}
-                                onUnlockSuccess={loadProtectedData}
-                                fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                                fallback={<span />}
                               >
                                 <PaymentStatusBadge status={balance?.payment_status} owedAmount={balance?.owed_amount} />
                               </SalaryProtected>
-                            </td>
-                            <td className="px-3 py-3">
-                              <SalaryProtected
-                                unlocked={salaryUnlocked}
-                                hasPasswordConfigured={hasPasswordConfigured}
-                                canUnlock={canViewSalary}
-                                onUnlockSuccess={loadProtectedData}
-                                fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  emitNavigationStart();
+                                  router.push(`/payroll/workers/${worker.id}`);
+                                }}
                               >
-                                {protectedLoading ? <LoadingDots /> : formatCurrency(balance?.paid_amount ?? 0)}
-                              </SalaryProtected>
-                            </td>
-                            <td className="px-3 py-3">
-                              <SalaryProtected
-                                unlocked={salaryUnlocked}
-                                hasPasswordConfigured={hasPasswordConfigured}
-                                canUnlock={canViewSalary}
-                                onUnlockSuccess={loadProtectedData}
-                                fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
-                              >
-                                {protectedLoading ? <LoadingDots /> : formatCurrency(balance?.owed_amount ?? 0)}
-                              </SalaryProtected>
-                            </td>
-                            <td className="px-3 py-3">
-                              <div className="flex flex-wrap justify-center gap-2">
-                                <Button variant="outline" size="sm" onClick={() => { emitNavigationStart(); router.push(`/payroll/workers/${worker.id}`); }}>
-                                  {"פרטים"}
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
+                                {"פרטים"}
+                              </Button>
+                            </div>
+                          </div>
                         );
                       })
                     )}
-                  </tbody>
-                </table>
-              </div>
+                  </div>
+                }
+                desktop={
+                  <div className="max-h-[70vh] overflow-auto">
+                    <table className="w-full text-center text-xs">
+                      <thead className="sticky top-0 z-10 bg-muted">
+                        <tr className="border-b text-muted-foreground">
+                          <th className="px-2 py-2 font-medium">עובד</th>
+                          <th className="px-2 py-2 font-medium">סטטוס</th>
+                          <th className="px-2 py-2 font-medium">סוג עובד</th>
+                          <th className="px-2 py-2 font-medium">שעות החודש</th>
+                          <th className="px-2 py-2 font-medium">משכורת נוכחית</th>
+                          <th className="px-2 py-2 font-medium">עלות עבודה החודש</th>
+                          <th className="px-2 py-2 font-medium">תלוש אחרון</th>
+                          <th className="px-2 py-2 font-medium">סטטוס תשלום</th>
+                          <th className="px-2 py-2 font-medium">שולם כולל</th>
+                          <th className="px-2 py-2 font-medium">יתרה כוללת</th>
+                          <th className="px-2 py-2 font-medium">פעולות</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {employeeWorkers.length === 0 ? (
+                          <tr>
+                            <td colSpan={11} className="px-2 py-6 text-center text-muted-foreground">
+                              {"אין עובדים להצגה."}
+                            </td>
+                          </tr>
+                        ) : (
+                          employeeWorkers.map((worker, index) => {
+                            const workerType = normalizePayrollWorkerType(worker.payroll_worker_type, worker.pay_tracking_mode);
+                            const monthStats = currentMonthPayrollStatsByUserId.get(worker.id) ?? {
+                              totalMinutes: 0,
+                              totalAmount: 0,
+                              sessionCount: 0,
+                            };
+                            const currentAgreement = getCurrentSalaryAgreement(agreementsByUserId.get(worker.id) ?? []);
+                            const latestPayslip = [...(payslipsByUserId.get(worker.id) ?? [])].sort((a, b) =>
+                              (periodsById.get(b.payroll_period_id)?.period_month ?? "").localeCompare(
+                                periodsById.get(a.payroll_period_id)?.period_month ?? ""
+                              )
+                            )[0] ?? null;
+                            const balance = effectiveWorkerBalancesByUserId.get(worker.id) ?? null;
+                            const rowClass = index % 2 === 0 ? "bg-muted/20" : "bg-background";
+                            const monthlyLaborCost = monthStats.totalAmount;
+
+                            return (
+                              <tr
+                                key={worker.id}
+                                className={`cursor-pointer border-b align-top hover:bg-muted/40 focus-visible:bg-muted/40 ${rowClass}`}
+                                {...rowNavigateProps(router, `/payroll/workers/${worker.id}`, { role: "button" })}
+                              >
+                                <td className="px-2 py-2 font-medium w-[180px]">
+                                  <div className="flex flex-col items-center gap-1">
+                                    <div>{worker.full_name ?? worker.email ?? "עובד"}</div>
+                                    <div className="flex flex-col items-center text-muted-foreground break-all">
+                                      {worker.email ? <div dir="ltr">{worker.email}</div> : null}
+                                      {worker.phone ? <div dir="ltr">{worker.phone}</div> : null}
+                                      {!worker.email && !worker.phone ? <div>ללא פרטי קשר</div> : null}
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-2 py-2">
+                                  <div className="flex flex-col items-center gap-1">
+                                    <RoleBadge role={worker.role} />
+                                    <AccessBadge hasAccess={getWorkerAccessLabel(worker) === "עם גישה"} />
+                                    <StatusPill tone={worker.active === false ? "muted" : "success"}>
+                                      {worker.active === false ? "לא פעיל" : "פעיל"}
+                                    </StatusPill>
+                                  </div>
+                                </td>
+                                <td className="px-2 py-2 whitespace-nowrap">
+                                  <WorkerTypeBadge workerType={workerType} />
+                                </td>
+                                <td className="px-2 py-2 whitespace-nowrap">
+                                  {payrollWorkerTypeAllowsSessions(workerType) ? formatMinutes(monthStats.totalMinutes) : "-"}
+                                </td>
+                                <td className="px-2 py-2 whitespace-nowrap">
+                                  <SalaryProtected
+                                    unlocked={salaryUnlocked}
+                                    hasPasswordConfigured={hasPasswordConfigured}
+                                    canUnlock={canViewSalary}
+                                    onUnlockSuccess={loadProtectedData}
+                                    fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                                  >
+                                    {protectedLoading ? (
+                                      <LoadingDots />
+                                    ) : currentAgreement ? (
+                                      currentAgreement.salary_type === "hourly"
+                                        ? `${formatCurrency(currentAgreement.hourly_rate)} / שעה`
+                                        : formatCurrency(currentAgreement.monthly_salary)
+                                    ) : (
+                                      "-"
+                                    )}
+                                  </SalaryProtected>
+                                </td>
+                                <td className="px-2 py-2 whitespace-nowrap">
+                                  <SalaryProtected
+                                    unlocked={salaryUnlocked}
+                                    hasPasswordConfigured={hasPasswordConfigured}
+                                    canUnlock={canViewSalary}
+                                    onUnlockSuccess={loadProtectedData}
+                                    fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                                  >
+                                    {protectedLoading ? <LoadingDots /> : formatCurrency(monthlyLaborCost)}
+                                  </SalaryProtected>
+                                </td>
+                                <td className="px-2 py-2 whitespace-nowrap">{latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"}</td>
+                                <td className="px-2 py-2">
+                                  <SalaryProtected
+                                    unlocked={salaryUnlocked}
+                                    hasPasswordConfigured={hasPasswordConfigured}
+                                    canUnlock={canViewSalary}
+                                    onUnlockSuccess={loadProtectedData}
+                                    fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                                  >
+                                    <PaymentStatusBadge status={balance?.payment_status} owedAmount={balance?.owed_amount} />
+                                  </SalaryProtected>
+                                </td>
+                                <td className="px-3 py-3">
+                                  <SalaryProtected
+                                    unlocked={salaryUnlocked}
+                                    hasPasswordConfigured={hasPasswordConfigured}
+                                    canUnlock={canViewSalary}
+                                    onUnlockSuccess={loadProtectedData}
+                                    fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                                  >
+                                    {protectedLoading ? <LoadingDots /> : formatCurrency(balance?.paid_amount ?? 0)}
+                                  </SalaryProtected>
+                                </td>
+                                <td className="px-3 py-3">
+                                  <SalaryProtected
+                                    unlocked={salaryUnlocked}
+                                    hasPasswordConfigured={hasPasswordConfigured}
+                                    canUnlock={canViewSalary}
+                                    onUnlockSuccess={loadProtectedData}
+                                    fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                                  >
+                                    {protectedLoading ? <LoadingDots /> : formatCurrency(balance?.owed_amount ?? 0)}
+                                  </SalaryProtected>
+                                </td>
+                                <td className="px-3 py-3">
+                                  <div className="flex flex-wrap justify-center gap-2">
+                                    <Button variant="outline" size="sm" onClick={() => { emitNavigationStart(); router.push(`/payroll/workers/${worker.id}`); }}>
+                                      {"פרטים"}
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                  </table>
+                </div>
+                }
+              />
             </CardContent>
           </Card>
         </TabsContent>
@@ -2717,220 +2697,199 @@ export default function SalaryCenterClient({
               {/* Narrow screens / large font: stacked cards instead of the wide table.
                   Plain block flow (not `grid`) so a card can never be stretched wider
                   than the viewport by its own nowrap content (email / amounts). */}
-              <div className="space-y-3 lg:hidden">
-                {laborWorkers.length === 0 ? (
-                  <EmptyState dense>
-                    {"אין פועלים להצגה."}
-                  </EmptyState>
-                ) : (
-                  laborWorkers.map((worker) => {
-                    const workerType = normalizePayrollWorkerType(worker.payroll_worker_type, worker.pay_tracking_mode);
-                    const monthStats = currentMonthPayrollStatsByUserId.get(worker.id) ?? { totalMinutes: 0, totalAmount: 0, sessionCount: 0 };
-                    const balance = effectiveWorkerBalancesByUserId.get(worker.id) ?? null;
-                    return (
-                      <div
-                        key={worker.id}
-                        role="button"
-                        tabIndex={0}
-                        className="cursor-pointer rounded-2xl border bg-background p-4 text-right shadow-sm transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
-                        onClick={(event) => {
-                          if (shouldIgnoreRowNavigation(event.target)) return;
-                          emitNavigationStart();
-                          router.push(`/payroll/workers/${worker.id}`);
-                        }}
-                        onKeyDown={(event) => {
-                          if (shouldIgnoreRowNavigation(event.target)) return;
-                          if (event.key !== "Enter" && event.key !== " ") return;
-                          event.preventDefault();
-                          emitNavigationStart();
-                          router.push(`/payroll/workers/${worker.id}`);
-                        }}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="font-semibold">{worker.full_name ?? worker.email ?? "פועל"}</div>
-                            {worker.phone ? <div className="text-sm text-muted-foreground" dir="ltr">{worker.phone}</div> : null}
-                            {worker.email ? <div className="truncate text-xs text-muted-foreground" dir="ltr">{worker.email}</div> : null}
-                            {!worker.email && !worker.phone ? <div className="text-xs text-muted-foreground">{"ללא פרטי קשר"}</div> : null}
-                          </div>
-                          <StatusPill tone={worker.active === false ? "muted" : "success"}>
-                            {worker.active === false ? "לא פעיל" : "פעיל"}
-                          </StatusPill>
-                        </div>
-
-                        <div className="mt-3 flex flex-wrap justify-center gap-2">
-                          <WorkerTypeBadge workerType={workerType} />
-                          <StatusPill tone="info">{"פועל"}</StatusPill>
-                        </div>
-
-                        <div className="mt-3 grid grid-cols-2 gap-3">
-                          <SalaryProtected
-                            unlocked={salaryUnlocked}
-                            hasPasswordConfigured={hasPasswordConfigured}
-                            canUnlock={canViewSalary}
-                            onUnlockSuccess={loadProtectedData}
-                            fallback={<MiniStat label="יתרה כוללת" value="מוגן" />}
-                          >
-                            <MiniStat label="יתרה כוללת" loading={protectedLoading} value={formatCurrency(balance?.owed_amount ?? 0)} />
-                          </SalaryProtected>
-                          {workerType === "session_only" ? (
-                            <MiniStat label="משמרות החודש" value={String(monthStats.sessionCount)} />
-                          ) : payrollWorkerTypeAllowsSessions(workerType) ? (
-                            <MiniStat label="שעות החודש" loading={protectedLoading} value={formatMinutes(monthStats.totalMinutes)} />
-                          ) : null}
-                        </div>
-
-                        <div className="mt-3 flex items-center justify-between gap-2">
-                          <SalaryProtected
-                            unlocked={salaryUnlocked}
-                            hasPasswordConfigured={hasPasswordConfigured}
-                            canUnlock={canViewSalary}
-                            onUnlockSuccess={loadProtectedData}
-                            fallback={<span />}
-                          >
-                            <PaymentStatusBadge status={balance?.payment_status} owedAmount={balance?.owed_amount} />
-                          </SalaryProtected>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              emitNavigationStart();
-                              router.push(`/payroll/workers/${worker.id}`);
-                            }}
-                          >
-                            {"פרטים"}
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              {/* Wide screens: full detail table */}
-              <div className="hidden max-h-[70vh] overflow-auto lg:block">
-                <table className="w-full text-center text-xs">
-                  <thead className="sticky top-0 z-10 bg-muted">
-                    <tr className="border-b text-muted-foreground">
-                      <th className="px-2 py-2 font-medium">פועל</th>
-                      <th className="px-2 py-2 font-medium">סטטוס</th>
-                      <th className="px-2 py-2 font-medium">סוג עובד</th>
-                      <th className="px-2 py-2 font-medium">שעות החודש</th>
-                      <th className="px-2 py-2 font-medium">סטטוס תשלום</th>
-                      <th className="px-2 py-2 font-medium">שולם כולל</th>
-                      <th className="px-2 py-2 font-medium">יתרה כוללת</th>
-                      <th className="px-2 py-2 font-medium">פעולות</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+              <ResponsiveDataView
+                breakpoint="lg"
+                mobile={
+                  <div className="space-y-3">
                     {laborWorkers.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="px-2 py-6 text-center text-muted-foreground">
-                          {"אין פועלים להצגה."}
-                        </td>
-                      </tr>
+                      <EmptyState dense>
+                        {"אין פועלים להצגה."}
+                      </EmptyState>
                     ) : (
-                      laborWorkers.map((worker, index) => {
+                      laborWorkers.map((worker) => {
                         const workerType = normalizePayrollWorkerType(worker.payroll_worker_type, worker.pay_tracking_mode);
-                        const monthStats = currentMonthPayrollStatsByUserId.get(worker.id) ?? {
-                          totalMinutes: 0,
-                          totalAmount: 0,
-                          sessionCount: 0,
-                        };
+                        const monthStats = currentMonthPayrollStatsByUserId.get(worker.id) ?? { totalMinutes: 0, totalAmount: 0, sessionCount: 0 };
                         const balance = effectiveWorkerBalancesByUserId.get(worker.id) ?? null;
-                        const rowClass = index % 2 === 0 ? "bg-muted/20" : "bg-background";
-
                         return (
-                          <tr
+                          <div
                             key={worker.id}
-                            className={`cursor-pointer border-b align-top hover:bg-muted/40 focus-visible:bg-muted/40 ${rowClass}`}
-                            tabIndex={0}
-                            role="button"
-                            onClick={(event) => {
-                              if (shouldIgnoreRowNavigation(event.target)) return;
-                              emitNavigationStart();
-                              router.push(`/payroll/workers/${worker.id}`);
-                            }}
-                            onKeyDown={(event) => {
-                              if (shouldIgnoreRowNavigation(event.target)) return;
-                              if (event.key !== "Enter" && event.key !== " ") return;
-                              event.preventDefault();
-                              emitNavigationStart();
-                              router.push(`/payroll/workers/${worker.id}`);
-                            }}
+                            className="cursor-pointer rounded-2xl border bg-background p-4 text-right shadow-sm transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+                            {...rowNavigateProps(router, `/payroll/workers/${worker.id}`, { role: "button" })}
                           >
-                            <td className="px-2 py-2 font-medium w-[180px]">
-                              <div className="flex flex-col items-center gap-1">
-                                <div>{worker.full_name ?? worker.email ?? "פועל"}</div>
-                                <div className="flex flex-col items-center text-muted-foreground break-all">
-                                  {worker.email ? <div dir="ltr">{worker.email}</div> : null}
-                                  {worker.phone ? <div dir="ltr">{worker.phone}</div> : null}
-                                  {!worker.email && !worker.phone ? <div>ללא פרטי קשר</div> : null}
-                                </div>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="font-semibold">{worker.full_name ?? worker.email ?? "פועל"}</div>
+                                {worker.phone ? <div className="text-sm text-muted-foreground" dir="ltr">{worker.phone}</div> : null}
+                                {worker.email ? <div className="truncate text-xs text-muted-foreground" dir="ltr">{worker.email}</div> : null}
+                                {!worker.email && !worker.phone ? <div className="text-xs text-muted-foreground">{"ללא פרטי קשר"}</div> : null}
                               </div>
-                            </td>
-                            <td className="px-2 py-2">
-                              <div className="flex flex-col items-center gap-1">
-                                <StatusPill tone="warning">{"פועל"}</StatusPill>
-                                <AccessBadge hasAccess={false} />
-                                <StatusPill tone={worker.active === false ? "muted" : "success"}>
-                                  {worker.active === false ? "לא פעיל" : "פעיל"}
-                                </StatusPill>
-                              </div>
-                            </td>
-                            <td className="px-2 py-2 whitespace-nowrap">
+                              <StatusPill tone={worker.active === false ? "muted" : "success"}>
+                                {worker.active === false ? "לא פעיל" : "פעיל"}
+                              </StatusPill>
+                            </div>
+
+                            <div className="mt-3 flex flex-wrap justify-center gap-2">
                               <WorkerTypeBadge workerType={workerType} />
-                            </td>
-                            <td className="px-2 py-2 whitespace-nowrap">
-                              {payrollWorkerTypeAllowsSessions(workerType) ? formatMinutes(monthStats.totalMinutes) : "-"}
-                            </td>
-                            <td className="px-2 py-2">
+                              <StatusPill tone="info">{"פועל"}</StatusPill>
+                            </div>
+
+                            <div className="mt-3 grid grid-cols-2 gap-3">
                               <SalaryProtected
                                 unlocked={salaryUnlocked}
                                 hasPasswordConfigured={hasPasswordConfigured}
                                 canUnlock={canViewSalary}
                                 onUnlockSuccess={loadProtectedData}
-                                fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                                fallback={<MiniStat label="יתרה כוללת" value="מוגן" />}
+                              >
+                                <MiniStat label="יתרה כוללת" loading={protectedLoading} value={formatCurrency(balance?.owed_amount ?? 0)} />
+                              </SalaryProtected>
+                              {workerType === "session_only" ? (
+                                <MiniStat label="משמרות החודש" value={String(monthStats.sessionCount)} />
+                              ) : payrollWorkerTypeAllowsSessions(workerType) ? (
+                                <MiniStat label="שעות החודש" loading={protectedLoading} value={formatMinutes(monthStats.totalMinutes)} />
+                              ) : null}
+                            </div>
+
+                            <div className="mt-3 flex items-center justify-between gap-2">
+                              <SalaryProtected
+                                unlocked={salaryUnlocked}
+                                hasPasswordConfigured={hasPasswordConfigured}
+                                canUnlock={canViewSalary}
+                                onUnlockSuccess={loadProtectedData}
+                                fallback={<span />}
                               >
                                 <PaymentStatusBadge status={balance?.payment_status} owedAmount={balance?.owed_amount} />
                               </SalaryProtected>
-                            </td>
-                            <td className="px-2 py-2 whitespace-nowrap">
-                              <SalaryProtected
-                                unlocked={salaryUnlocked}
-                                hasPasswordConfigured={hasPasswordConfigured}
-                                canUnlock={canViewSalary}
-                                onUnlockSuccess={loadProtectedData}
-                                fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  emitNavigationStart();
+                                  router.push(`/payroll/workers/${worker.id}`);
+                                }}
                               >
-                                {protectedLoading ? <LoadingDots /> : formatCurrency(balance?.paid_amount ?? 0)}
-                              </SalaryProtected>
-                            </td>
-                            <td className="px-2 py-2 whitespace-nowrap">
-                              <SalaryProtected
-                                unlocked={salaryUnlocked}
-                                hasPasswordConfigured={hasPasswordConfigured}
-                                canUnlock={canViewSalary}
-                                onUnlockSuccess={loadProtectedData}
-                                fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
-                              >
-                                {protectedLoading ? <LoadingDots /> : formatCurrency(balance?.owed_amount ?? 0)}
-                              </SalaryProtected>
-                            </td>
-                            <td className="px-2 py-2">
-                              <div className="flex flex-wrap justify-center gap-2">
-                                <Button variant="outline" size="sm" onClick={() => { emitNavigationStart(); router.push(`/payroll/workers/${worker.id}`); }}>
-                                  {"פרטים"}
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
+                                {"פרטים"}
+                              </Button>
+                            </div>
+                          </div>
                         );
                       })
                     )}
-                  </tbody>
-                </table>
-              </div>
+                  </div>
+                }
+                desktop={
+                  <div className="max-h-[70vh] overflow-auto">
+                    <table className="w-full text-center text-xs">
+                      <thead className="sticky top-0 z-10 bg-muted">
+                        <tr className="border-b text-muted-foreground">
+                          <th className="px-2 py-2 font-medium">פועל</th>
+                          <th className="px-2 py-2 font-medium">סטטוס</th>
+                          <th className="px-2 py-2 font-medium">סוג עובד</th>
+                          <th className="px-2 py-2 font-medium">שעות החודש</th>
+                          <th className="px-2 py-2 font-medium">סטטוס תשלום</th>
+                          <th className="px-2 py-2 font-medium">שולם כולל</th>
+                          <th className="px-2 py-2 font-medium">יתרה כוללת</th>
+                          <th className="px-2 py-2 font-medium">פעולות</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {laborWorkers.length === 0 ? (
+                          <tr>
+                            <td colSpan={8} className="px-2 py-6 text-center text-muted-foreground">
+                              {"אין פועלים להצגה."}
+                            </td>
+                          </tr>
+                        ) : (
+                          laborWorkers.map((worker, index) => {
+                            const workerType = normalizePayrollWorkerType(worker.payroll_worker_type, worker.pay_tracking_mode);
+                            const monthStats = currentMonthPayrollStatsByUserId.get(worker.id) ?? {
+                              totalMinutes: 0,
+                              totalAmount: 0,
+                              sessionCount: 0,
+                            };
+                            const balance = effectiveWorkerBalancesByUserId.get(worker.id) ?? null;
+                            const rowClass = index % 2 === 0 ? "bg-muted/20" : "bg-background";
+
+                            return (
+                              <tr
+                                key={worker.id}
+                                className={`cursor-pointer border-b align-top hover:bg-muted/40 focus-visible:bg-muted/40 ${rowClass}`}
+                                {...rowNavigateProps(router, `/payroll/workers/${worker.id}`, { role: "button" })}
+                              >
+                                <td className="px-2 py-2 font-medium w-[180px]">
+                                  <div className="flex flex-col items-center gap-1">
+                                    <div>{worker.full_name ?? worker.email ?? "פועל"}</div>
+                                    <div className="flex flex-col items-center text-muted-foreground break-all">
+                                      {worker.email ? <div dir="ltr">{worker.email}</div> : null}
+                                      {worker.phone ? <div dir="ltr">{worker.phone}</div> : null}
+                                      {!worker.email && !worker.phone ? <div>ללא פרטי קשר</div> : null}
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-2 py-2">
+                                  <div className="flex flex-col items-center gap-1">
+                                    <StatusPill tone="warning">{"פועל"}</StatusPill>
+                                    <AccessBadge hasAccess={false} />
+                                    <StatusPill tone={worker.active === false ? "muted" : "success"}>
+                                      {worker.active === false ? "לא פעיל" : "פעיל"}
+                                    </StatusPill>
+                                  </div>
+                                </td>
+                                <td className="px-2 py-2 whitespace-nowrap">
+                                  <WorkerTypeBadge workerType={workerType} />
+                                </td>
+                                <td className="px-2 py-2 whitespace-nowrap">
+                                  {payrollWorkerTypeAllowsSessions(workerType) ? formatMinutes(monthStats.totalMinutes) : "-"}
+                                </td>
+                                <td className="px-2 py-2">
+                                  <SalaryProtected
+                                    unlocked={salaryUnlocked}
+                                    hasPasswordConfigured={hasPasswordConfigured}
+                                    canUnlock={canViewSalary}
+                                    onUnlockSuccess={loadProtectedData}
+                                    fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                                  >
+                                    <PaymentStatusBadge status={balance?.payment_status} owedAmount={balance?.owed_amount} />
+                                  </SalaryProtected>
+                                </td>
+                                <td className="px-2 py-2 whitespace-nowrap">
+                                  <SalaryProtected
+                                    unlocked={salaryUnlocked}
+                                    hasPasswordConfigured={hasPasswordConfigured}
+                                    canUnlock={canViewSalary}
+                                    onUnlockSuccess={loadProtectedData}
+                                    fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                                  >
+                                    {protectedLoading ? <LoadingDots /> : formatCurrency(balance?.paid_amount ?? 0)}
+                                  </SalaryProtected>
+                                </td>
+                                <td className="px-2 py-2 whitespace-nowrap">
+                                  <SalaryProtected
+                                    unlocked={salaryUnlocked}
+                                    hasPasswordConfigured={hasPasswordConfigured}
+                                    canUnlock={canViewSalary}
+                                    onUnlockSuccess={loadProtectedData}
+                                    fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                                  >
+                                    {protectedLoading ? <LoadingDots /> : formatCurrency(balance?.owed_amount ?? 0)}
+                                  </SalaryProtected>
+                                </td>
+                                <td className="px-2 py-2">
+                                  <div className="flex flex-wrap justify-center gap-2">
+                                    <Button variant="outline" size="sm" onClick={() => { emitNavigationStart(); router.push(`/payroll/workers/${worker.id}`); }}>
+                                      {"פרטים"}
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                }
+              />
             </CardContent>
           </Card>
         </TabsContent>

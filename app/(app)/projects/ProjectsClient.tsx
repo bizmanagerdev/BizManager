@@ -20,7 +20,9 @@ import { searchProjectEntries, useProjectSearchIndex, type ProjectSearchIndexEnt
 import { ChatIcon, DocumentIcon, EditIcon, FilterIcon, ProjectIcon, SearchIcon, SuccessIcon } from "@/components/ui/icons";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { paymentStatusClasses } from "@/lib/orders/paymentStatus";
-import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
+import { rowNavigateProps } from "@/lib/ui/row-navigation";
+import { DataTableShell } from "@/components/ui/data-table-shell";
+import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
 import { cn } from "@/lib/utils";
 import {
   AdaptivePageDialog,
@@ -31,7 +33,6 @@ import {
 import { DIALOG_CHROME_CONTENT_PAGE, useSwipeToDismiss } from "@/components/ui/dialog-chrome";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -939,11 +940,13 @@ export default function ProjectsClient({
             : `נמצאו ${tabCounts?.projects ?? rows.length} פרויקטים`}
       </div>
 
-      <Card className="hidden overflow-hidden border-border/70 shadow-sm xl:block">
-        <div ref={scrollRef} className="max-h-[70vh] overflow-auto">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
-              <tr className="border-b border-border/70 text-right">
+      <ResponsiveDataView
+        breakpoint="xl"
+        desktop={
+          <DataTableShell
+            ref={scrollRef}
+            header={
+              <>
                 <th className="px-4 py-3 font-medium">פרויקט</th>
                 <th className="px-4 py-3 font-medium">סטטוס</th>
                 <th className="px-4 py-3 font-medium">תאריך התחלה</th>
@@ -955,9 +958,10 @@ export default function ProjectsClient({
                 <th className="px-4 py-3 font-medium">משימות פתוחות</th>
                 <th className="px-4 py-3 font-medium">{activeTab === "quotes" ? "אישור הצעה" : "מסמכים"}</th>
                 <th className="px-4 py-3 font-medium">פעולות</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/70">
+              </>
+            }
+            footer={hasMore && !offline && !isClientSearching ? <div ref={sentinelRef} className="h-1" /> : null}
+          >
               {rows.map((row) => {
                 const id = getString(row, "id") ?? "";
                 const profit = profitValue(row);
@@ -977,20 +981,7 @@ export default function ProjectsClient({
                   <tr
                     key={`${id}-table`}
                     className="cursor-pointer align-top hover:bg-muted/20 focus-visible:bg-muted/20"
-                    tabIndex={0}
-                    role="link"
-                    onClick={(event) => {
-                      if (shouldIgnoreRowNavigation(event.target)) return;
-                      emitNavigationStart();
-                      router.push(detailHref);
-                    }}
-                    onKeyDown={(event) => {
-                      if (shouldIgnoreRowNavigation(event.target)) return;
-                      if (event.key !== "Enter" && event.key !== " ") return;
-                      event.preventDefault();
-                      emitNavigationStart();
-                      router.push(detailHref);
-                    }}
+                    {...rowNavigateProps(router, detailHref)}
                   >
                     <td className="px-4 py-4">
                       <div className="block">
@@ -1133,188 +1124,176 @@ export default function ProjectsClient({
                   </tr>
                 );
               })}
-            </tbody>
-          </table>
-          {hasMore && !offline && !isClientSearching ? <div ref={sentinelRef} className="h-1" /> : null}
-        </div>
-      </Card>
+          </DataTableShell>
+        }
+        mobile={
+          <>
+            <div className="grid gap-2.5">
+              <p className="px-1 text-[11px] text-muted-foreground">
+                החלק כרטיס ימינה לפעולות · הקש לפתיחה
+              </p>
+              {rows.map((row) => {
+                const id = getString(row, "id") ?? "";
+                const profit = profitValue(row);
+                const actualPrice = actualPriceValue(row);
+                const currentStatus = statusValue(row);
+                // Only the genuinely-LATE slice, never amount_due (the full price) and
+                // never the outstanding balance — with nothing paid yet those both equal
+                // the price, which just repeats the מחיר column below.
+                const lateAmount = getNumber(row, "late_amount") ?? 0;
+                const expectedAmount = getNumber(row, "expected_amount") ?? 0;
+                const totalTasks = getNumber(row, "total_tasks") ?? 0;
+                const completedTasks = getNumber(row, "completed_tasks") ?? 0;
+                const paymentStatus = paymentStatusValue(row);
+                const startDate = formatDateShort(getString(row, "start_date"));
+                const detailHref = `/projects/${id}${activeTab === "projects" ? "" : `?view=${activeTab}`}`;
 
-      <div className="grid gap-2.5 xl:hidden">
-        <p className="px-1 text-[11px] text-muted-foreground">
-          החלק כרטיס ימינה לפעולות · הקש לפתיחה
-        </p>
-        {rows.map((row) => {
-          const id = getString(row, "id") ?? "";
-          const profit = profitValue(row);
-          const actualPrice = actualPriceValue(row);
-          const currentStatus = statusValue(row);
-          // Only the genuinely-LATE slice, never amount_due (the full price) and
-          // never the outstanding balance — with nothing paid yet those both equal
-          // the price, which just repeats the מחיר column below.
-          const lateAmount = getNumber(row, "late_amount") ?? 0;
-          const expectedAmount = getNumber(row, "expected_amount") ?? 0;
-          const totalTasks = getNumber(row, "total_tasks") ?? 0;
-          const completedTasks = getNumber(row, "completed_tasks") ?? 0;
-          const paymentStatus = paymentStatusValue(row);
-          const startDate = formatDateShort(getString(row, "start_date"));
-          const detailHref = `/projects/${id}${activeTab === "projects" ? "" : `?view=${activeTab}`}`;
-
-          // Deliberately short: the swipe carries only what you'd do FROM the
-          // list. Reminder, log-call and delete live inside the project itself —
-          // they're decisions you make with the project open, not in passing.
-          const actions = [
-            currentStatus === "quote"
-              ? {
-                  key: "approve",
-                  label: "אישור",
-                  icon: <SuccessIcon className="h-5 w-5" />,
-                  className: "bg-secondary",
-                  onSelect: () => openApproveQuote(row),
-                }
-              : {
-                  key: "sheet",
-                  label: "דף עבודה",
-                  icon: <DocumentIcon className="h-5 w-5" />,
-                  className: "bg-secondary",
-                  onSelect: () => {
-                    emitNavigationStart();
-                    router.push(`/projects/${id}/export?mode=worker`);
-                  },
-                },
-            {
-              key: "edit",
-              label: "עריכה",
-              icon: <EditIcon className="h-5 w-5" />,
-              className: "bg-secondary-2",
-              onSelect: () => openEditProject(row),
-            },
-          ];
-
-          return (
-            <SwipeActions
-              key={id}
-              className="border border-border/70 shadow-sm"
-              actions={actions}
-              open={swipedRow === id}
-              onOpenChange={(next) => setSwipedRow(next ? id : null)}
-            >
-              <div
-                role="link"
-                tabIndex={0}
-                className="block cursor-pointer p-4"
-                onClick={(event) => {
-                  if (shouldIgnoreRowNavigation(event.target)) return;
-                  emitNavigationStart();
-                  router.push(detailHref);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key !== "Enter" && event.key !== " ") return;
-                  if (shouldIgnoreRowNavigation(event.target)) return;
-                  event.preventDefault();
-                  emitNavigationStart();
-                  router.push(detailHref);
-                }}
-              >
-                <div className="space-y-3">
-                  {/* Glance line — the two statuses, nothing else. Tighter and
-                      lighter than a standalone badge: on a card they're a caption,
-                      not a headline. */}
-                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                    <ProjectStatusPicker
-                      projectId={id}
-                      status={currentStatus}
-                      canEdit
-                      variant="badge"
-                      badgeClassName={CARD_BADGE}
-                      onChanged={(next) =>
-                        setProjects((prev) =>
-                          prev.map((r) => (getRowId(r) === id ? { ...r, status: next } : r))
-                        )
+                // Deliberately short: the swipe carries only what you'd do FROM the
+                // list. Reminder, log-call and delete live inside the project itself —
+                // they're decisions you make with the project open, not in passing.
+                const actions = [
+                  currentStatus === "quote"
+                    ? {
+                        key: "approve",
+                        label: "אישור",
+                        icon: <SuccessIcon className="h-5 w-5" />,
+                        className: "bg-secondary",
+                        onSelect: () => openApproveQuote(row),
                       }
-                    />
-                    <Badge className={cn(paymentStatusBadgeClasses(paymentStatus), CARD_BADGE)}>
-                      {paymentStatusLabel(paymentStatus)}
-                    </Badge>
-                  </div>
-                  <PaymentDueCaption
-                    lateAmount={lateAmount}
-                    expectedAmount={expectedAmount}
-                    canSeeMoney={canSeeMoney}
-                  />
+                    : {
+                        key: "sheet",
+                        label: "דף עבודה",
+                        icon: <DocumentIcon className="h-5 w-5" />,
+                        className: "bg-secondary",
+                        onSelect: () => {
+                          emitNavigationStart();
+                          router.push(`/projects/${id}/export?mode=worker`);
+                        },
+                      },
+                  {
+                    key: "edit",
+                    label: "עריכה",
+                    icon: <EditIcon className="h-5 w-5" />,
+                    className: "bg-secondary-2",
+                    onSelect: () => openEditProject(row),
+                  },
+                ];
 
-                  {/* Start-aligned, not centred: a list wants one vertical edge to
-                      scan down. Centring every card turns the column into tiles. */}
-                  <div>
-                    <div className="text-base font-semibold leading-snug">{projectDisplayName(row)}</div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">
-                      {clientDisplayName(row)}
-                      {clientPhone(row) ? (
-                        <>
-                          {" · "}
-                          <a
-                            href={`tel:${clientPhone(row)}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="hover:underline"
-                          >
-                            {clientPhone(row)}
-                          </a>
-                        </>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  {/* Hidden entirely when the project has no tasks — an empty bar
-                      says nothing and just adds a row to every card. */}
-                  {totalTasks > 0 ? (
-                    <div className="flex items-center gap-2">
-                      <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
-                        <div
-                          className="h-full rounded-full bg-success transition-all"
-                          style={{ width: `${Math.round((completedTasks / totalTasks) * 100)}%` }}
+                return (
+                  <SwipeActions
+                    key={id}
+                    className="border border-border/70 shadow-sm"
+                    actions={actions}
+                    open={swipedRow === id}
+                    onOpenChange={(next) => setSwipedRow(next ? id : null)}
+                  >
+                    <div
+                      className="block cursor-pointer p-4"
+                      {...rowNavigateProps(router, detailHref)}
+                    >
+                      <div className="space-y-3">
+                        {/* Glance line — the two statuses, nothing else. Tighter and
+                            lighter than a standalone badge: on a card they're a caption,
+                            not a headline. */}
+                        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                          <ProjectStatusPicker
+                            projectId={id}
+                            status={currentStatus}
+                            canEdit
+                            variant="badge"
+                            badgeClassName={CARD_BADGE}
+                            onChanged={(next) =>
+                              setProjects((prev) =>
+                                prev.map((r) => (getRowId(r) === id ? { ...r, status: next } : r))
+                              )
+                            }
+                          />
+                          <Badge className={cn(paymentStatusBadgeClasses(paymentStatus), CARD_BADGE)}>
+                            {paymentStatusLabel(paymentStatus)}
+                          </Badge>
+                        </div>
+                        <PaymentDueCaption
+                          lateAmount={lateAmount}
+                          expectedAmount={expectedAmount}
+                          canSeeMoney={canSeeMoney}
                         />
-                      </div>
-                      <span className="shrink-0 text-[11px] text-muted-foreground">
-                        {completedTasks}/{totalTasks} משימות
-                      </span>
-                    </div>
-                  ) : null}
 
-                  {/* Nothing truncates here: the figures are short and fixed-shape,
-                      so they get whitespace-nowrap and the row spreads them out.
-                      Truncating money to "0,780…" is worse than no figure at all. */}
-                  <div className="flex items-center gap-3 border-t border-border/60 pt-2.5">
-                    <div className="flex flex-1 items-center justify-between gap-3">
-                      {canSeeMoney ? (
-                        <div className="whitespace-nowrap">
-                          <div className="text-[10px] text-muted-foreground">רווח</div>
-                          <div
-                            className={`text-[13px] font-semibold ${profit !== null && profit < 0 ? "text-destructive" : ""}`}
-                          >
-                            {profit === null ? "-" : formatIls(profit)}
+                        {/* Start-aligned, not centred: a list wants one vertical edge to
+                            scan down. Centring every card turns the column into tiles. */}
+                        <div>
+                          <div className="text-base font-semibold leading-snug">{projectDisplayName(row)}</div>
+                          <div className="mt-0.5 text-xs text-muted-foreground">
+                            {clientDisplayName(row)}
+                            {clientPhone(row) ? (
+                              <>
+                                {" · "}
+                                <a
+                                  href={`tel:${clientPhone(row)}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="hover:underline"
+                                >
+                                  {clientPhone(row)}
+                                </a>
+                              </>
+                            ) : null}
                           </div>
                         </div>
-                      ) : null}
-                      {canSeeMoney ? (
-                        <div className="whitespace-nowrap">
-                          <div className="text-[10px] text-muted-foreground">מחיר</div>
-                          <div className="text-[13px] font-semibold">
-                            {actualPrice === null ? "-" : formatIls(actualPrice)}
+
+                        {/* Hidden entirely when the project has no tasks — an empty bar
+                            says nothing and just adds a row to every card. */}
+                        {totalTasks > 0 ? (
+                          <div className="flex items-center gap-2">
+                            <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
+                              <div
+                                className="h-full rounded-full bg-success transition-all"
+                                style={{ width: `${Math.round((completedTasks / totalTasks) * 100)}%` }}
+                              />
+                            </div>
+                            <span className="shrink-0 text-[11px] text-muted-foreground">
+                              {completedTasks}/{totalTasks} משימות
+                            </span>
+                          </div>
+                        ) : null}
+
+                        {/* Nothing truncates here: the figures are short and fixed-shape,
+                            so they get whitespace-nowrap and the row spreads them out.
+                            Truncating money to "0,780…" is worse than no figure at all. */}
+                        <div className="flex items-center gap-3 border-t border-border/60 pt-2.5">
+                          <div className="flex flex-1 items-center justify-between gap-3">
+                            {canSeeMoney ? (
+                              <div className="whitespace-nowrap">
+                                <div className="text-[10px] text-muted-foreground">רווח</div>
+                                <div
+                                  className={`text-[13px] font-semibold ${profit !== null && profit < 0 ? "text-destructive" : ""}`}
+                                >
+                                  {profit === null ? "-" : formatIls(profit)}
+                                </div>
+                              </div>
+                            ) : null}
+                            {canSeeMoney ? (
+                              <div className="whitespace-nowrap">
+                                <div className="text-[10px] text-muted-foreground">מחיר</div>
+                                <div className="text-[13px] font-semibold">
+                                  {actualPrice === null ? "-" : formatIls(actualPrice)}
+                                </div>
+                              </div>
+                            ) : null}
+                            <div className="whitespace-nowrap">
+                              <div className="text-[10px] text-muted-foreground">התחלה</div>
+                              <div className="text-[13px] font-semibold">{startDate}</div>
+                            </div>
                           </div>
                         </div>
-                      ) : null}
-                      <div className="whitespace-nowrap">
-                        <div className="text-[10px] text-muted-foreground">התחלה</div>
-                        <div className="text-[13px] font-semibold">{startDate}</div>
                       </div>
                     </div>
-                  </div>
-                </div>
-              </div>
-            </SwipeActions>
-          );
-        })}
-      </div>
-      {hasMore && !offline && !isClientSearching ? <div ref={mobileSentinelRef} className="h-1 xl:hidden" /> : null}
+                  </SwipeActions>
+                );
+              })}
+            </div>
+            {hasMore && !offline && !isClientSearching ? <div ref={mobileSentinelRef} className="h-1" /> : null}
+          </>
+        }
+      />
 
       {rows.length > 0 ? (
         <div className="pt-1 text-center text-xs text-muted-foreground">

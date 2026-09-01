@@ -16,7 +16,8 @@ import { ContactTapZone } from "@/components/ui/contact-link";
 import { EditButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { DateInput } from "@/components/ui/date-input";
-import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
+import { clickableRowProps } from "@/lib/ui/row-navigation";
+import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import {
   collectionStatusClasses,
@@ -441,19 +442,8 @@ function CustomerCard({
           />
         ) : null}
         <div
-          role="link"
-          tabIndex={0}
-          onClick={(event) => {
-            if (shouldIgnoreRowNavigation(event.target)) return;
-            onToggle();
-          }}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter" && event.key !== " ") return;
-            if (shouldIgnoreRowNavigation(event.target)) return;
-            event.preventDefault();
-            onToggle();
-          }}
           className="flex w-full cursor-pointer items-start justify-between gap-2 text-right"
+          {...clickableRowProps(onToggle)}
         >
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -831,9 +821,11 @@ export function DebtorsTable({
             : "אין פריטים שתואמים לסינון."}
         </div>
       ) : (
-        <>
-          {/* Desktop: aging table with a sticky header */}
-          <div className="hidden max-h-[70vh] overflow-auto rounded-2xl border border-border/70 sm:block">
+        <ResponsiveDataView
+          breakpoint="sm"
+          desktop={
+            // Aging table with a sticky header.
+            <div className="max-h-[70vh] overflow-auto rounded-2xl border border-border/70">
             <table className="w-full min-w-[720px] border-collapse text-sm">
               <thead className="sticky top-0 z-10 bg-muted">
                 <tr className="border-b border-border/70 text-xs text-muted-foreground">
@@ -885,10 +877,11 @@ export function DebtorsTable({
                 </tr>
               </tfoot>
             </table>
-          </div>
-
-          {/* Mobile: cards */}
-          <div className="space-y-3 sm:hidden">
+            </div>
+          }
+          mobile={
+            // Cards.
+            <div className="space-y-3">
             {filtered.map((group) => {
               const key = group.customer_id ?? group.customer_name;
               const cid = group.customer_id;
@@ -908,8 +901,9 @@ export function DebtorsTable({
             <div className="rounded-2xl border border-border/70 bg-muted/30 p-3 text-sm font-semibold">
               סה״כ ({filtered.length} לקוחות): {formatCurrency(footer.outstanding)}
             </div>
-          </div>
-        </>
+            </div>
+          }
+        />
       )}
         </>
       )}
