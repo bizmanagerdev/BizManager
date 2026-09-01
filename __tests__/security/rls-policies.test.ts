@@ -178,6 +178,118 @@ describe("identity guardrail — app code resolving the current caller", () => {
   });
 });
 
+describe("RLS guardrail — view security_invoker regression", () => {
+  // Live audit (2026-09-01) found 10 financial/payroll views readable by the
+  // PUBLIC anon key — no login required — because they lacked security_invoker
+  // and ran as the view owner, bypassing RLS for every caller. Root cause,
+  // confirmed by reading migration history: 5 of them had ALREADY been fixed
+  // once (db/sql/fix_rls_views_security_invoker.sql, June 2026), but a later
+  // `create or replace view` in a routine feature migration recreated the view
+  // and silently dropped the security_invoker reloption — Postgres does not
+  // carry it over unless the replacing statement re-specifies it. This
+  // happened 7 times across 7 different migrations in about two months
+  // (see 20260630000002, 20260707000000, 20260724010000, 20260826134530,
+  // 20260827000000). Fixed again in 20260901000000_fix_financial_views_
+  // security_invoker_leak.sql. This guard exists so the NEXT `create or
+  // replace view` on one of these regresses loudly in CI instead of quietly
+  // reopening a data leak for another few months.
+  //
+  // Scope: every view currently granted SELECT to anon (42, per the same
+  // live audit). This guard can only verify views whose lifecycle is visible
+  // in supabase/migrations — some of these 42 were created only via the
+  // frozen, untracked db/sql/ legacy files (the migration baseline never
+  // captured views — see [[db-schema-drift]] / foundation-hardening memory),
+  // so this test SKIPS a view it never sees touched rather than asserting
+  // anything about it. That's a real, separate gap (no versioned record of
+  // those views' current state) — not something a static text scan can close.
+  const PROTECTED_VIEWS = [
+    "cash_flow_entries_view",
+    "cash_flow_monthly_view",
+    "cash_flow_view",
+    "collections_view",
+    "current_salary_agreements_view",
+    "customer_activity_view",
+    "customer_open_balance_view",
+    "customer_orders_view",
+    "customer_overview_view",
+    "customer_projects_view",
+    "customer_sales_summary_view",
+    "delivery_overview_view",
+    "document_overview_view",
+    "financial_expenses_view",
+    "financial_payments_view",
+    "financial_project_view",
+    "monthly_worker_balance_view",
+    "operations_dashboard_view",
+    "order_financials_view",
+    "order_items_detailed_view",
+    "order_overview_view",
+    "payroll_period_summary_view",
+    "products_with_last_used",
+    "profit_and_loss_view",
+    "project_dashboard_view",
+    "project_documents_view",
+    "project_expenses_summary_view",
+    "project_financials_view",
+    "project_overview_view",
+    "project_task_progress_view",
+    "project_worker_balance_view",
+    "salary_center_worker_overview_view",
+    "sales_financials_view",
+    "session_effective_payment_view",
+    "task_bottleneck_view",
+    "task_overview_view",
+    "task_time_summary_view",
+    "user_workload_view",
+    "worker_attendance_monthly_view",
+    "worker_balance_summary_view",
+    "worker_debt_items_view",
+    "worker_project_hours_view",
+  ];
+
+  const CREATE_VIEW = /create\s+(?:or\s+replace\s+)?view\s+public\.([a-z0-9_]+)\s*([^;]*);/gi;
+  const ALTER_VIEW_INVOKER =
+    /alter\s+view\s+public\.([a-z0-9_]+)\s+set\s*\(\s*security_invoker\s*=\s*(on|true|off|false)\s*\)/gi;
+
+  function reconstructInvokerState() {
+    // Chronological order matters: migrations are an append-only history, and
+    // whichever statement touched a view LAST determines its current state.
+    const files = sqlFiles(MIGRATIONS_DIR).sort((a, b) => a.name.localeCompare(b.name));
+    const state = new Map<string, boolean>();
+    for (const f of files) {
+      const norm = normalize(f.text);
+      for (const m of norm.matchAll(CREATE_VIEW)) {
+        const [, name, body] = m;
+        state.set(name.toLowerCase(), /security_invoker\s*=\s*(on|true)/i.test(body));
+      }
+      for (const m of norm.matchAll(ALTER_VIEW_INVOKER)) {
+        const [, name, value] = m;
+        state.set(name.toLowerCase(), /on|true/i.test(value));
+      }
+    }
+    return state;
+  }
+
+  it("every anon-exposed view touched by a migration ends up security_invoker=on", () => {
+    const state = reconstructInvokerState();
+    const violations = PROTECTED_VIEWS.filter((name) => state.has(name) && state.get(name) === false);
+    expect(violations).toEqual([]);
+  });
+
+  it("the regression-fix migration is still present", () => {
+    // Without it, several of the views above would be failing the check above
+    // right now instead of passing — this pins the fix so it can't be reverted
+    // by accident.
+    const present = sqlFiles(MIGRATIONS_DIR).map((f) => f.name);
+    expect(present).toContain("20260901000000_fix_financial_views_security_invoker_leak.sql");
+  });
+
+  it("finds view definitions to guard (parser is actually matching migrations)", () => {
+    const state = reconstructInvokerState();
+    expect(state.size).toBeGreaterThanOrEqual(8);
+  });
+});
+
 describe("RLS guardrail — sanity", () => {
   it("finds policy SQL to guard (parser is actually matching files)", () => {
     const all = [...sqlFiles(MIGRATIONS_DIR), ...sqlFiles(LEGACY_DIR)];
