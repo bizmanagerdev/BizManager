@@ -55,6 +55,39 @@ The financial layer is being consolidated toward **one source of truth** (`lib/f
 - Refunds are negative-amount payment rows → they are **outflows / contra-revenue**, never income. There are regression tests for this in `__tests__/lib/financial/entries.test.ts`; keep them green.
 - Prefer SQL-side aggregation (views/RPCs) over pulling whole tables into Node.
 
+## Component tests
+
+`components/ui/*` (and other render-worthy components) can be tested with jsdom + React
+Testing Library, not just their helper functions:
+
+```tsx
+// __tests__/components/ui/my-component.test.tsx
+// @vitest-environment jsdom
+import { render, screen } from "@testing-library/react";
+import { MyComponent } from "@/components/ui/my-component";
+
+it("does the thing", () => {
+  render(<MyComponent />);
+  expect(screen.getByRole("button", { name: "..." })).toBeInTheDocument();
+});
+```
+
+- The `// @vitest-environment jsdom` docblock (first line) is required — the suite defaults
+  to the lighter `node` environment for lib/api/security tests.
+- `__tests__/setup/jsdom.ts` (global `setupFiles`) wires up jest-dom matchers, auto-cleanup
+  between tests, and a few jsdom polyfills Radix needs (ResizeObserver, matchMedia, pointer
+  capture). Add to it if a new Radix primitive needs another one.
+- Prefer `getByRole`/`getByText` assertions on rendered output over snapshotting className
+  strings, except where the class IS the contract (e.g. the outline-only styling on
+  `EditButton`/`DeleteButton` — see `__tests__/components/ui/icon-button.test.tsx`).
+- **Radix Popover/Select-based components** (anything built on `@radix-ui/react-popper` /
+  floating-ui — `SearchableSelect` is the example) pay a one-off ~15-20s cost the first time
+  a test in the file actually opens the popover, from transforming floating-ui's dependency
+  graph — not a per-test cost, but real. `__tests__/components/ui/searchable-select.test.tsx`
+  deliberately tests only the closed-state trigger-label contract for this reason; Radix
+  `Dialog`-based components (no floating-ui) don't have this cost — see
+  `confirm-dialog.test.tsx` for full open-interaction coverage.
+
 ## Code style
 
 - **Keep components small.** New UI should be composed of focused components; do not grow the existing 2,000–5,000-line `*Client.tsx` files. When you touch one, leave it smaller than you found it where practical.
