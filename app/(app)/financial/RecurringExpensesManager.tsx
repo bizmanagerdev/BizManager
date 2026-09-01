@@ -7,6 +7,7 @@ import { AddDateIcon, AddReminderIcon, CheckIcon, RecurringIcon, SpinnerIcon } f
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { toHebrewError } from "@/lib/error-messages";
+import { deleteRecurringExpenseTemplate } from "@/lib/recurring/deleteTemplate";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getBusinessDomainLabel } from "@/lib/expenses";
@@ -276,14 +277,9 @@ export default function RecurringExpensesManager(props: Props) {
     if (!id) return;
     setDeleting(true);
     try {
-      const res = await fetch("/api/recurring-expenses/delete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error("שגיאה במחיקת הוצאה קבועה", { description: toHebrewError(json?.error, "") });
+      const result = await deleteRecurringExpenseTemplate(id);
+      if (!result.ok) {
+        toast.error("שגיאה במחיקת הוצאה קבועה", { description: toHebrewError(result.error, "") });
         return;
       }
       setConfirmDeleteId(null);

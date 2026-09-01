@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { InitialsAvatar, isHexColor } from "@/components/dashboard/InitialsAvatar";
 import { setAvatarColorCache } from "@/lib/ui/avatar-color";
+import { setMyAvatarColor, setMyProfileDetails, setMyFontScale } from "@/lib/profile/selfSettings";
 import type { UserProfile } from "@/lib/auth/requireProfile";
 import { EXPENSE_BUSINESS_DOMAINS, WORK_SESSION_BUSINESS_DOMAINS, type ExpenseBusinessDomain } from "@/lib/expenses";
 import { DomainSelect } from "@/components/financial/DomainSelect";
@@ -194,17 +195,13 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
     setSavingDetails(true);
     setDetailsError("");
     try {
-      const res = await fetch("/api/profile/details", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ full_name: name, phone: detailsPhoneDraft.trim() }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string; phone?: string | null };
-      if (!res.ok) throw new Error(json.error);
+      const phone = detailsPhoneDraft.trim() || null;
+      const result = await setMyProfileDetails(name, phone);
+      if (!result.ok) throw new Error(result.error);
       setDetailsName(name);
-      setDetailsPhone(json.phone ?? "");
+      setDetailsPhone(phone ?? "");
       setDetailsNameDraft(name);
-      setDetailsPhoneDraft(json.phone ?? "");
+      setDetailsPhoneDraft(phone ?? "");
       setEditingDetails(false);
       toast.success(t(profileDict, locale, "detailsSavedToast"));
       // The name shows in the top bar / presence too — refresh the server tree.
@@ -371,11 +368,7 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
     else setFontScale(scale);
     // Persist to the account so the choice follows the user across devices.
     // Fire-and-forget: the local apply above already took effect.
-    void fetch("/api/profile/font-scale", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ scale, device }),
-    }).catch(() => {});
+    void setMyFontScale(scale, device).catch(() => {});
   }
 
   // Personal avatar color — the colored initials circle shown across the app.
@@ -388,11 +381,7 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
     // Update the shared cache so the top-bar avatar reflects the change live.
     setAvatarColorCache(color);
     // Fire-and-forget; a refresh propagates the new color to every other avatar.
-    void fetch("/api/profile/avatar-color", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ color }),
-    })
+    void setMyAvatarColor(color)
       .then(() => router.refresh())
       .catch(() => {});
   }

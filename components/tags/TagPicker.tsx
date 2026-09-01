@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { AddIcon, CheckIcon, CloseIcon, VehicleIcon } from "@/components/ui/icons";
 import { Badge } from "@/components/ui/badge";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export type TagOption = { id: string; kind: string; name: string; color?: string | null };
 
@@ -12,11 +13,19 @@ export type TagOption = { id: string; kind: string; name: string; color?: string
 // forever" approach left the list permanently empty after an early empty load.
 let cache: TagOption[] | null = null;
 
+// Reads straight from Supabase (no /api/tags/list round trip) — RLS on `tags`
+// enforces the same active/system_access/role check the route used to do via
+// requireRouteAccess (see the tighten_tags_entity_tags_rls migration).
 async function loadTags(): Promise<TagOption[]> {
   try {
-    const r = await fetch("/api/tags/list", { cache: "no-store" });
-    const j = r.ok ? await r.json() : { tags: [] };
-    cache = (j?.tags ?? []) as TagOption[];
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase
+      .from("tags")
+      .select("id,kind,name,color")
+      .eq("is_active", true)
+      .order("name", { ascending: true });
+    if (error) throw error;
+    cache = (data ?? []) as TagOption[];
     return cache;
   } catch {
     return cache ?? [];
@@ -28,17 +37,54 @@ export function invalidateTagCache() {
   cache = null;
 }
 
-/** Existing tag ids attached to an entity — for pre-filling an edit dialog. */
+// A fixed allow-list of tag kinds creatable inline from a picker — mirrors the
+// old /api/tags/create route exactly ('vehicle' stays owned by the vehicles
+// flow, which also creates a detail row). RLS ("Staff manage tags",
+// admin/office) already matches the route's own allowedRoles gate.
+const CREATABLE_KINDS = new Set(["general", "campaign", "vendor"]);
+
+async function createTagDirect(name: string, requestedKind: string): Promise<TagOption | null> {
+  const kind = CREATABLE_KINDS.has(requestedKind) ? requestedKind : "general";
+  const supabase = createSupabaseBrowserClient();
+
+  // Reuse an existing active tag of the same kind+name so the same label
+  // isn't duplicated every time it's typed.
+  const { data: existing } = await supabase
+    .from("tags")
+    .select("id,kind,name,color")
+    .eq("kind", kind)
+    .eq("name", name)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (existing) return existing as TagOption;
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data, error } = await supabase
+    .from("tags")
+    .insert({ kind, name, created_by: user?.id ?? null })
+    .select("id,kind,name,color")
+    .maybeSingle();
+  if (error || !data) return null;
+  return data as TagOption;
+}
+
+/** Existing tag ids attached to an entity — for pre-filling an edit dialog.
+ *  Reads straight from Supabase — same RLS gate as loadTags() above. */
 export async function fetchExistingTagIds(entityType: string, entityId: string): Promise<string[]> {
   if (!entityId) return [];
   try {
-    const res = await fetch(
-      `/api/entity-tags/list?entity_type=${encodeURIComponent(entityType)}&entity_id=${encodeURIComponent(entityId)}`,
-      { cache: "no-store" }
-    );
-    if (!res.ok) return [];
-    const json = (await res.json()) as { tag_ids?: string[] };
-    return Array.isArray(json?.tag_ids) ? json.tag_ids : [];
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase
+      .from("entity_tags")
+      .select("tag_id")
+      .eq("entity_type", entityType)
+      .eq("entity_id", entityId);
+    if (error) return [];
+    return ((data ?? []) as Array<{ tag_id?: string }>)
+      .map((r) => r.tag_id)
+      .filter((id): id is string => Boolean(id));
   } catch {
     return [];
   }
@@ -99,16 +145,11 @@ export function TagPicker({
     if (!name || creating) return;
     setCreating(true);
     try {
-      const res = await fetch("/api/tags/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name, kind: createKind ?? kind }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { tag?: TagOption };
-      if (res.ok && json.tag) {
+      const tag = await createTagDirect(name, createKind ?? kind);
+      if (tag) {
         invalidateTagCache();
-        setOptions((prev) => (prev.some((o) => o.id === json.tag!.id) ? prev : [...prev, json.tag!]));
-        if (!value.includes(json.tag.id)) onChange([...value, json.tag.id]);
+        setOptions((prev) => (prev.some((o) => o.id === tag.id) ? prev : [...prev, tag]));
+        if (!value.includes(tag.id)) onChange([...value, tag.id]);
         setNewName("");
       }
     } catch {

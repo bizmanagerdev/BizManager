@@ -1642,6 +1642,18 @@ export const TRIGGER_AUDITED_TABLES = new Set([
   // (migration 20260830120000_card_statement_charges.sql).
   "card_account_mappings",
   "card_statement_charges",
+  // Found 2026-09-01 while auditing routes for the hybrid-direct-supabase
+  // initiative: all 3 had the generic trg_audit_* trigger attached (confirmed
+  // via 20260825120000_close_audit_coverage_drift.sql's own comment for the
+  // first two, and payslip_items existing since the baseline with a uuid PK
+  // and no denylist entry) but were missing here — every logAuditEvent call
+  // on these tables had been double-logging into audit_logs since each table
+  // was created. Exact same drift class as the notifications/phone_attendance
+  // fixes already documented above; this list is hand-maintained and the DB
+  // attach-loop isn't, so they silently diverge unless checked explicitly.
+  "phone_attendance_reports",
+  "worker_absences",
+  "payslip_items",
 ]);
 
 // Plain row-CRUD actions the DB trigger already records. Distinct semantic

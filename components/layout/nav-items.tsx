@@ -31,6 +31,7 @@ function writeCachedRole(role: string) {
   }
 }
 import { ActivityIcon, BankIcon, BuildingIcon, CalendarIcon, CardIcon, CashIcon, ChatIcon, ClockIcon, CoinsIcon, DashboardIcon, DeliveryIcon, FolderIcon, HomeIcon, OrderIcon, PaymentIcon, ProjectIcon, ReceiptIcon, ReportIcon, ScheduleIcon, SettingsIcon, TaskIcon, TransferIcon, UsersIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
+import { fetchMyProfile } from "@/lib/profile/fetchMyProfile";
 
 export type SidebarNavItem = {
   title: string;
@@ -202,14 +203,10 @@ export function useNavItems(
 
     let active = true;
 
-    void fetch("/api/profile/me", { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) return null;
-        return (await response.json().catch(() => null)) as { role?: string | null } | null;
-      })
+    void fetchMyProfile()
       .then((json) => {
         if (!active) return;
-        const freshRole = typeof json?.role === "string" ? json.role : null;
+        const freshRole = json.role;
         if (freshRole) {
           writeCachedRole(freshRole);
           setViewerRole(freshRole);

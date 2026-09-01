@@ -12,7 +12,7 @@ export async function POST(req: Request) {
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
     const { supabase, profile } = access.value;
-    if (profile.role !== "admin") {
+    if (profile.role !== "admin" && profile.role !== "office") {
       return NextResponse.json({ error: "אין הרשאה." }, { status: 403 });
     }
 

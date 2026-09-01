@@ -9,6 +9,7 @@ import {
   disableNativePush,
   nativePermissionStatus,
 } from "@/lib/native-push";
+import { subscribeWebPush, unsubscribeWebPush } from "@/lib/notifications/pushTokens";
 import { ShareIcon } from "@/components/ui/icons";
 
 type Status = "loading" | "unsupported" | "denied" | "subscribed" | "unsubscribed";
@@ -132,18 +133,10 @@ export default function PushSubscribeButton() {
       });
       const json = sub.toJSON();
       const keys = json.keys as { p256dh?: string; auth?: string } | undefined;
-      const res = await fetch("/api/notifications/subscribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          endpoint: sub.endpoint,
-          p256dh: keys?.p256dh ?? "",
-          auth: keys?.auth ?? "",
-        }),
-      });
-      // The save to the server MUST succeed — otherwise the cron has no record
-      // and the "subscribed" button would be lying. Roll back on failure.
-      if (!res.ok) {
+      const saved = await subscribeWebPush(sub.endpoint, keys?.p256dh ?? "", keys?.auth ?? "");
+      // The save MUST succeed — otherwise the cron has no record and the
+      // "subscribed" button would be lying. Roll back on failure.
+      if (!saved) {
         await sub.unsubscribe().catch(() => {});
         setStatus("unsubscribed");
         toast.error("שמירת ההתראות נכשלה. בדקו את החיבור ונסו שוב.");
@@ -171,11 +164,7 @@ export default function PushSubscribeButton() {
     try {
       const sub = await getCurrentSubscription();
       if (sub) {
-        await fetch("/api/notifications/unsubscribe", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ endpoint: sub.endpoint }),
-        });
+        await unsubscribeWebPush(sub.endpoint);
         await sub.unsubscribe();
       }
       setStatus("unsubscribed");

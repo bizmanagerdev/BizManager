@@ -34,6 +34,8 @@ import { PaymentEditDialog } from "@/components/financial/PaymentEditDialog";
 import { EditWorkerPaymentDialog } from "@/components/payroll/EditWorkerPaymentDialog";
 import { EditPaidRepaymentDialog, LoanFormDialog } from "@/app/(app)/financial/loans/LoanDialogs";
 import { deleteLoan, deleteRepayment } from "@/app/(app)/financial/loans/actions";
+import { deleteCardCharge } from "@/lib/financial/cardChargesClient";
+import { deleteAccountTransfer } from "@/lib/financial/transfersClient";
 import type { Loan } from "@/lib/loans";
 import { formatMoneyRounded } from "@/lib/money";
 
@@ -222,6 +224,7 @@ export default function BankClient({
   projects = [],
   recurringProperties = [],
   merchantMemory = {},
+  dataIncomplete = false,
 }: {
   accounts: AccountWithLedger[];
   /** For a loan/loan_repayment row's inline edit — the full computed shape
@@ -236,6 +239,11 @@ export default function BankClient({
    *  `recurringProperties` prop. */
   recurringProperties?: Array<{ id: string; label: string }>;
   merchantMemory?: MerchantMemory;
+  /** True when at least one money table failed to scan for these balances
+   *  (see lib/accounts.ts's scanAccountActivity) — the figures below are
+   *  understated, not just "no activity". Reported to Sentry already; this
+   *  is the visible half of that same fix. */
+  dataIncomplete?: boolean;
 }) {
   const router = useRouter();
   const loansById = useMemo(() => new Map(loans.map((l) => [l.id, l] as const)), [loans]);
@@ -399,12 +407,9 @@ export default function BankClient({
     setDeleting(true);
     setDeleteError(undefined);
     try {
-      const res = await fetch(`/api/financial/transfers?id=${encodeURIComponent(id)}`, {
-        method: "DELETE",
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        setDeleteError(toHebrewError(json.error, "מחיקת ההעברה נכשלה."));
+      const result = await deleteAccountTransfer(id);
+      if (!result.ok) {
+        setDeleteError(toHebrewError(result.error, "מחיקת ההעברה נכשלה."));
         return;
       }
       setTransferToDelete(null);
@@ -476,12 +481,9 @@ export default function BankClient({
           return;
         }
       } else if (ref.kind === "card_charge") {
-        const res = await fetch(`/api/financial/card-charges?id=${encodeURIComponent(ref.id)}`, {
-          method: "DELETE",
-        });
-        const json = (await res.json().catch(() => ({}))) as { error?: string };
-        if (!res.ok) {
-          setRowDeleteError(toHebrewError(json.error, "המחיקה נכשלה."));
+        const result = await deleteCardCharge(ref.id);
+        if (!result.ok) {
+          setRowDeleteError(toHebrewError(result.error, "המחיקה נכשלה."));
           return;
         }
       } else {
@@ -593,6 +595,12 @@ export default function BankClient({
 
   return (
     <div className="space-y-4 text-right" dir="rtl">
+      {dataIncomplete ? (
+        <div className="rounded-lg border border-warning/40 bg-warning/15 px-4 py-3 text-sm text-warning-strong">
+          חלק מנתוני התנועות לא נטענו כרגע — היתרות המוצגות למטה עשויות להיות
+          חסרות. נשלחה התראה לצוות הפיתוח; רעננו את הדף בעוד כמה דקות.
+        </div>
+      ) : null}
       {/* Total liquidity + "ניהול חשבונות" now live in the top bar's action
           slot (see headerAction above). The "העברה בין חשבונות" create button
           that used to sit here is gone too — creating a transfer is already

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { fetchMyFontScale } from "@/lib/profile/selfSettings";
 
 // Reconciles the per-account text-size multiplier across devices.
 //
@@ -33,15 +34,14 @@ export default function FontScaleSync() {
     }
 
     let active = true;
-    void fetch("/api/profile/font-scale", { cache: "no-store" })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((json: { fontScale?: number | null; fontScaleMobile?: number | null } | null) => {
+    void fetchMyFontScale()
+      .then((result) => {
         if (!active) return;
         try { sessionStorage.setItem("biz-font-scale-synced", "1"); } catch { /* ignore */ }
         // One key per device class — the CSS picks between them by viewport, so
         // both travel with the account and each device reads the one it needs.
-        cache("biz-font-scale", json?.fontScale);
-        cache("biz-font-scale-mobile", json?.fontScaleMobile);
+        cache("biz-font-scale", result.fontScale);
+        cache("biz-font-scale-mobile", result.fontScaleMobile);
       })
       .catch(() => {
         // Offline / network error — the locally-cached value stays in effect.

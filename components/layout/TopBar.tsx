@@ -23,6 +23,8 @@ import {
   usePageTitle,
 } from "@/components/layout/page-title-context";
 import { titleForPath } from "@/lib/ui/route-titles";
+import { fetchMyProfile } from "@/lib/profile/fetchMyProfile";
+import { fetchMyAvatarColor } from "@/lib/profile/selfSettings";
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n/t";
 import { topbarDict } from "@/lib/i18n/dictionaries/topbar";
@@ -132,11 +134,8 @@ export function TopBar({
     // Fallback fetch only if the server didn't provide a value (e.g. the column
     // isn't there yet) — normally the cache is already seeded above.
     if (getAvatarColorCache() === undefined) {
-      void fetch("/api/profile/avatar-color", { cache: "no-store" })
-        .then((response) => (response.ok ? response.json() : null))
-        .then((json: { avatarColor?: string | null } | null) => {
-          setAvatarColorCache(json && typeof json.avatarColor === "string" ? json.avatarColor : null);
-        })
+      void fetchMyAvatarColor()
+        .then((color) => setAvatarColorCache(color))
         .catch(() => {
           // Offline / not signed in — leave the cache unset so a later mount retries.
         });
@@ -179,13 +178,12 @@ export function TopBar({
     }
     if (meCache) return;
     if (!meInFlight) {
-      meInFlight = fetch("/api/profile/me", { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((json: { email?: string | null; canTrackSessions?: boolean; canViewSalary?: boolean } | null) => {
+      meInFlight = fetchMyProfile()
+        .then((json) => {
           meCache = {
-            email: typeof json?.email === "string" ? json.email : null,
-            canTrackSessions: json?.canTrackSessions === true,
-            canViewSalary: json?.canViewSalary === true,
+            email: json.email,
+            canTrackSessions: json.canTrackSessions,
+            canViewSalary: json.canViewSalary,
           };
         })
         .catch(() => {

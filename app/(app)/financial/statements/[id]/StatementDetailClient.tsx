@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Field } from "@/components/ui/field";
 import { toHebrewError } from "@/lib/error-messages";
+import { deleteCardStatement, markCardStatementDone, reassignCardStatementRows } from "@/lib/expenses/cardStatementActions";
+import { saveCardCharge, deleteCardCharge } from "@/lib/financial/cardChargesClient";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -303,23 +305,19 @@ export default function StatementDetailClient({
     setChargeSaving(true);
     setChargeError(null);
     try {
-      const res = await fetch("/api/financial/card-charges", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          statement_id: statement.id,
-          card_label: chargeCardLabel,
-          account_id: chargeForm.accountId,
-          amount: amountNum,
-          charge_date: chargeForm.chargeDate,
-          notes: chargeForm.notes.trim() || null,
-        }),
+      const result = await saveCardCharge({
+        statement_id: statement.id,
+        card_label: chargeCardLabel,
+        account_id: chargeForm.accountId,
+        amount: amountNum,
+        charge_date: chargeForm.chargeDate,
+        notes: chargeForm.notes.trim() || null,
       });
-      const data = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
-      if (!res.ok || !data.id) {
-        setChargeError(toHebrewError(data.error, "שמירת החיוב נכשלה."));
+      if (!result.ok) {
+        setChargeError(toHebrewError(result.error, "שמירת החיוב נכשלה."));
         return;
       }
+      const data = { id: result.id };
       const saved: CardChargeView = {
         id: data.id,
         cardLabel: chargeCardLabel,
@@ -344,12 +342,9 @@ export default function StatementDetailClient({
     setChargeDeleting(true);
     setChargeDeleteError(null);
     try {
-      const res = await fetch(`/api/financial/card-charges?id=${encodeURIComponent(chargeToDelete.id)}`, {
-        method: "DELETE",
-      });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        setChargeDeleteError(toHebrewError(data.error, "מחיקת החיוב נכשלה."));
+      const result = await deleteCardCharge(chargeToDelete.id);
+      if (!result.ok) {
+        setChargeDeleteError(toHebrewError(result.error, "מחיקת החיוב נכשלה."));
         return;
       }
       setCardCharges((prev) => prev.filter((c) => c.id !== chargeToDelete.id));
@@ -377,14 +372,9 @@ export default function StatementDetailClient({
     setMerging(true);
     setMergeError(null);
     try {
-      const res = await fetch("/api/expenses/statement-rows/reassign-card", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ row_ids: mergeGroup.rowIds, card_label: mergeTarget }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        setMergeError(toHebrewError(data.error, "מיזוג הכרטיס נכשל."));
+      const result = await reassignCardStatementRows(mergeGroup.rowIds, mergeTarget);
+      if (!result.ok) {
+        setMergeError(toHebrewError(result.error, "מיזוג הכרטיס נכשל."));
         return;
       }
       const movedIds = new Set(mergeGroup.rowIds);
@@ -771,14 +761,9 @@ export default function StatementDetailClient({
     setDeleting(true);
     setDeleteError(null);
     try {
-      const res = await fetch("/api/expenses/statement-delete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ statement_id: statement.id }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        setDeleteError(toHebrewError(data.error, "המחיקה נכשלה."));
+      const result = await deleteCardStatement(statement.id);
+      if (!result.ok) {
+        setDeleteError(toHebrewError(result.error, "המחיקה נכשלה."));
         setDeleting(false);
         return;
       }
@@ -795,14 +780,9 @@ export default function StatementDetailClient({
     setMarkingDone(true);
     setCreateError(null);
     try {
-      const res = await fetch("/api/expenses/statement-mark-done", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ statement_id: statement.id, done: next }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        setCreateError(toHebrewError(data.error, "עדכון הסטטוס נכשל."));
+      const result = await markCardStatementDone(statement.id, next);
+      if (!result.ok) {
+        setCreateError(toHebrewError(result.error, "עדכון הסטטוס נכשל."));
         return;
       }
       setMarkedDone(next);
@@ -1139,7 +1119,7 @@ export default function StatementDetailClient({
       </ViewDialog>
 
       {/* Merge a phantom card group (created by editing a row's category)
-          into its real card — see /api/expenses/statement-rows/reassign-card */}
+          into its real card — see reassignCardStatementRows() */}
       <FormDialog
         open={mergeGroup !== null}
         onOpenChange={(open) => {

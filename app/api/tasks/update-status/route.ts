@@ -28,6 +28,19 @@ export async function POST(req: Request) {
     const priorStatus = typeof current?.status === "string" ? current.status : null;
     const statusChanged = priorStatus !== null && priorStatus !== status;
 
+    // Snapshot BEFORE the write: the trg_close_task_reminders_on_status_close
+    // trigger (see migration 20260901130130) closes these atomically as part of
+    // the tasks UPDATE below, so counting after would always read back 0.
+    let pendingReminderCount = 0;
+    if (statusChanged && CLOSED_TASK_STATUSES.has(status)) {
+      const { count } = await supabase
+        .from("reminders")
+        .select("id", { count: "exact", head: true })
+        .eq("task_id", id)
+        .eq("status", "pending");
+      pendingReminderCount = count ?? 0;
+    }
+
     let data: Record<string, unknown> | null = null;
     let writeError: { message: string } | null = null;
 
@@ -63,24 +76,12 @@ export async function POST(req: Request) {
 
     // A reminder to do a task you've just done is noise, and it outlived the
     // task everywhere the two are listed side by side: the dashboard's "היום"
-    // card and the calendar both read reminders straight from the table, so
-    // ticking the task left its own reminder sitting there.
-    //
-    // Best-effort and NOT a reason to fail the request: the status change is
-    // what the caller asked for, and RLS decides which of the task's reminders
-    // this user may close (someone else's reminder about the same task is
-    // theirs to clear). Closing only PENDING ones keeps a reminder that was
-    // already cancelled from being rewritten as done.
-    let closedReminders = 0;
-    if (data?.id && CLOSED_TASK_STATUSES.has(status)) {
-      const { data: closed } = await supabase
-        .from("reminders")
-        .update({ status: "done", updated_by: profile.id })
-        .eq("task_id", id)
-        .eq("status", "pending")
-        .select("id");
-      closedReminders = closed?.length ?? 0;
-    }
+    // card and the calendar both read reminders straight from the table.
+    // Closing pending ones is now done by trg_close_task_reminders_on_status_close
+    // (fires on the UPDATE above, same RLS scope since it runs SECURITY INVOKER —
+    // someone else's reminder about this task is still theirs to clear) — this
+    // is just the pre-write count for the response.
+    const closedReminders = data?.id ? pendingReminderCount : 0;
 
     if (data?.id && statusChanged) {
       await logAuditEvent({

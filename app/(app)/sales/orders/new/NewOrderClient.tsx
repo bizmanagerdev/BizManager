@@ -33,6 +33,7 @@ import {
   paymentStatusLabel,
 } from "@/lib/orders/paymentStatus";
 import { PREPAYMENT_WIZARD_WARNING } from "@/lib/orders/prepayment";
+import { searchProducts } from "@/lib/orders/searchProducts";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
@@ -477,17 +478,9 @@ export default function NewOrderClient({
       setProductSearchLoading(true);
       setProductSearchError(null);
 
-      void fetch(`/api/products/search?q=${encodeURIComponent(productQuery)}&limit=50`, {
-        signal: controller.signal,
-      })
-        .then(async (res) => {
-          const json = (await res.json().catch(() => ({}))) as {
-            error?: string;
-            products?: Row[];
-          };
-          if (!res.ok) throw new Error(toHebrewError(json.error, "שגיאת חיפוש מוצרים"));
-
-          const remoteProducts = (json.products ?? [])
+      void searchProducts(productQuery, 50, controller.signal)
+        .then((products) => {
+          const remoteProducts = (products as Row[])
             .map((row): ProductOption => {
               const id = getString(row, ["id"]) ?? "";
               const name = getString(row, ["name", "product_name", "title", "sku"]) ?? "מוצר";

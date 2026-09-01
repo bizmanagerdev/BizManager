@@ -11,6 +11,7 @@ import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
 import { toHebrewError } from "@/lib/error-messages";
 import type { MyShiftReport } from "@/lib/attendance/my-shift";
+import { updatePendingPhoneReport } from "@/lib/attendance/phoneReportActions";
 
 /** Only what the editor actually reads — lets an admin-side report type (which
  *  has no `status`) be passed in alongside the worker's own MyShiftReport. */
@@ -31,11 +32,14 @@ function isoToLocal(iso: string | null | undefined) {
  * APPROVED shift and re-queues it). Same shape as that hook on purpose, so a
  * shift's edit form looks and behaves the same whether it's pending or approved.
  *
- * `endpoint` defaults to the worker's own self-service route; the admin queue
- * (PendingReportCard) passes /api/attendance/phone-reports/edit instead, which
- * skips the self-report backdate limit that route enforces.
+ * `mode` defaults to "self" (the worker's own self-service route — server-
+ * routed, since it enforces a backdate limit and auto-translates Arabic
+ * notes). The admin queue (PendingReportCard) passes "admin" instead, which
+ * writes straight to Supabase (RLS: "Staff manage phone attendance reports"
+ * already scopes this to admin/office) and skips the self-report backdate
+ * limit the worker route enforces.
  */
-export function usePendingReportEdit(report: EditableReport, endpoint = "/api/attendance/my/pending-report-edit") {
+export function usePendingReportEdit(report: EditableReport, mode: "self" | "admin" = "self") {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [saving, startSaving] = useTransition();
@@ -65,20 +69,28 @@ export function usePendingReportEdit(report: EditableReport, endpoint = "/api/at
     setError("");
     setBusy(true);
     try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          report_id: report.id,
-          clock_in: start.toISOString(),
-          clock_out: end.toISOString(),
-          notes: note.trim() || null,
-        }),
-      });
-      const json = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) {
-        setError(toHebrewError(json.error ?? "", "עדכון הדיווח נכשל."));
-        return;
+      if (mode === "admin") {
+        const result = await updatePendingPhoneReport(report.id, start, end, note.trim());
+        if (!result.ok) {
+          setError(toHebrewError(result.error, "עדכון הדיווח נכשל."));
+          return;
+        }
+      } else {
+        const response = await fetch("/api/attendance/my/pending-report-edit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            report_id: report.id,
+            clock_in: start.toISOString(),
+            clock_out: end.toISOString(),
+            notes: note.trim() || null,
+          }),
+        });
+        const json = (await response.json().catch(() => ({}))) as { error?: string };
+        if (!response.ok) {
+          setError(toHebrewError(json.error ?? "", "עדכון הדיווח נכשל."));
+          return;
+        }
       }
       setEditing(false);
       toast.success("הדיווח עודכן.");

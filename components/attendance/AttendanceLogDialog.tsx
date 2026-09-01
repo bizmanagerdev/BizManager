@@ -19,6 +19,8 @@ import { t } from "@/lib/i18n/t";
 import type { Locale } from "@/lib/i18n/types";
 import { commonDict } from "@/lib/i18n/dictionaries/common";
 import { profileDict } from "@/lib/i18n/dictionaries/profile";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { closePhoneReport, updatePhoneReportClockIn } from "@/lib/attendance/phoneReportActions";
 
 export type AttendanceLogWorker = { id: string; label: string };
 
@@ -148,14 +150,27 @@ function AttendanceLogBody({
     setStateLoaded(false);
     if (!next) return;
     setStateLoading(true);
-    fetch(`/api/attendance/phone-reports/worker-state?user_id=${encodeURIComponent(next)}`)
-      .then((r) => r.json().catch(() => ({})))
-      .then((json: { open?: OpenState }) => {
-        setState(json.open ?? null);
+    // RLS on phone_attendance_reports already scopes this the same way the old
+    // route did (same RLS-bound client, no extra filtering beyond user_id+status).
+    void (async () => {
+      try {
+        const { data, error } = await createSupabaseBrowserClient()
+          .from("phone_attendance_reports")
+          .select("id,clock_in")
+          .eq("user_id", next)
+          .eq("status", "open")
+          .order("clock_in", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (error) throw error;
+        setState(data ? { id: data.id, clock_in: data.clock_in } : null);
         setStateLoaded(true);
-      })
-      .catch(() => setError(t(profileDict, locale, "errLoadWorkerState")))
-      .finally(() => setStateLoading(false));
+      } catch {
+        setError(t(profileDict, locale, "errLoadWorkerState"));
+      } finally {
+        setStateLoading(false);
+      }
+    })();
   }
 
   // When the picker has been narrowed to just one worker (an Arabic-locale
@@ -200,28 +215,29 @@ function AttendanceLogBody({
   function signOut(atLocal: string) {
     const d = new Date(atLocal);
     if (!atLocal || Number.isNaN(d.getTime())) return setError(t(profileDict, locale, "errInvalidClockOutTime"));
-    post(
-      "/api/attendance/phone-reports/close",
-      { report_id: state?.id, clock_out: d.toISOString(), notes: note.trim() || null },
-      t(profileDict, locale, "shiftClosedForTemplate").replace("{name}", workerLabel),
-      t(profileDict, locale, "clockOutReportFailed")
-    );
+    if (!state?.id) return;
+    setError("");
+    startTransition(async () => {
+      try {
+        const result = await closePhoneReport(state.id, d, note.trim());
+        if (!result.ok) return setError(toHebrewError(result.error, t(profileDict, locale, "clockOutReportFailed")));
+        afterSuccess(t(profileDict, locale, "shiftClosedForTemplate").replace("{name}", workerLabel));
+      } catch (err: unknown) {
+        setError(toHebrewError(err, t(profileDict, locale, "clockOutReportFailed")));
+      }
+    });
   }
 
   function saveEntry() {
     const d = new Date(entryLocal);
     if (!entryLocal || Number.isNaN(d.getTime())) return setError(t(profileDict, locale, "errInvalidClockInTime"));
     if (d.getTime() > Date.now() + 60_000) return setError(t(profileDict, locale, "errClockInFuture"));
+    if (!state?.id) return;
     setError("");
     startTransition(async () => {
       try {
-        const res = await fetch("/api/attendance/phone-reports/update-entry", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ report_id: state?.id, clock_in: d.toISOString() }),
-        });
-        const json = (await res.json().catch(() => ({}))) as { error?: string };
-        if (!res.ok) return setError(toHebrewError(json.error, t(profileDict, locale, "updateClockInFailed")));
+        const result = await updatePhoneReportClockIn(state.id, d);
+        if (!result.ok) return setError(toHebrewError(result.error, t(profileDict, locale, "updateClockInFailed")));
         toast.success(t(profileDict, locale, "clockInUpdatedTemplate").replace("{name}", workerLabel));
         onSaved?.();
         router.refresh();

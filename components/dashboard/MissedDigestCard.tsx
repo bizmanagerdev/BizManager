@@ -168,7 +168,7 @@ export default function MissedDigestCell({
     // doesn't wait on the network.
     withViewTransition(() => setDismissed(true));
     try {
-      await fetch("/api/dashboard/digest/dismiss", { method: "POST" });
+      await createSupabaseBrowserClient().rpc("set_my_digest_seen_at", { p_at: null });
       // The board's COLUMN layout — how many columns, and which cards share
       // which one — was planned server-side around this card occupying a cell.
       // Hiding it via local state lets its own column's siblings grow into the

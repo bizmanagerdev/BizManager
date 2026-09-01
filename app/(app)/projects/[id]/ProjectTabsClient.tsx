@@ -2,6 +2,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 
 import type { AuditRecordInfo } from "@/lib/audit";
+import { updateDocumentTag } from "@/lib/documents/updateDocumentTag";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
@@ -609,14 +610,9 @@ export default function ProjectTabsClient({
 
     setEditTagSaving(true);
     try {
-      const res = await fetch("/api/documents/tag", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ document_id: documentId, document_type: value }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error("שגיאה בעדכון תג", { description: toHebrewError(json?.error, "") });
+      const result = await updateDocumentTag(documentId, value);
+      if (!result.ok) {
+        toast.error("שגיאה בעדכון תג", { description: toHebrewError(result.error, "") });
         return;
       }
       toast.success("התג עודכן");

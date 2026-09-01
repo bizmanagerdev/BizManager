@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import ReminderFormDialog, { type ReminderFormValue } from "@/components/reminders/ReminderFormDialog";
 import { toHebrewError } from "@/lib/error-messages";
 import { EditButton } from "@/components/ui/icon-button";
+import { fetchEntityReminders } from "@/lib/reminders/fetchEntityReminders";
 
 // Shows ALL open reminders attached to one entity (order / project / customer /
 // task…) with inline add / edit / done / cancel. Drop it on any details page:
@@ -72,9 +73,7 @@ export default function EntityReminders({
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`/api/reminders/list?${queryKey}=${encodeURIComponent(queryId)}`, { cache: "no-store" });
-      const json = (await res.json().catch(() => ({}))) as { items?: ReminderRow[] };
-      const next = res.ok ? json.items ?? [] : [];
+      const next = await fetchEntityReminders(queryKey, queryId);
       setItems(next);
       onCountChange?.(next.length);
     } catch {

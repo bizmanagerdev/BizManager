@@ -5,11 +5,12 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { formatShortDateTime } from "@/lib/date";
 import { NOTIF_BUCKETS } from "@/lib/notifications/categories";
-import { refreshNotifications, type NotificationItem } from "@/lib/ui/notifications-store";
+import { markNotificationRead, refreshNotifications, type NotificationItem } from "@/lib/ui/notifications-store";
 import type { Locale } from "@/lib/i18n/types";
 import { t } from "@/lib/i18n/t";
 import { commonDict } from "@/lib/i18n/dictionaries/common";
 import { notificationsDict } from "@/lib/i18n/dictionaries/notifications";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 const CATEGORY_LABEL: Record<string, string> = Object.fromEntries(NOTIF_BUCKETS.map((b) => [b.key, b.label]));
 const CATEGORY_ORDER = NOTIF_BUCKETS.map((b) => b.key);
@@ -51,11 +52,18 @@ export default function NotificationsClient({
     setLoading(true);
     try {
       const before = items[items.length - 1].created_at;
-      const res = await fetch(`/api/notifications/list?before=${encodeURIComponent(before)}&limit=50`, { cache: "no-store" });
-      const json = (await res.json().catch(() => ({}))) as { items?: NotificationItem[]; hasMore?: boolean };
-      if (res.ok && Array.isArray(json.items)) {
-        setItems((prev) => [...prev, ...json.items!]);
-        setHasMore(Boolean(json.hasMore));
+      const limit = 50;
+      // RLS scopes this to the viewer's own rows, same as the old
+      // /api/notifications/list route with its identical (cookie-bound) client.
+      const { data, error } = await createSupabaseBrowserClient()
+        .from("notifications")
+        .select("id,title,body,url,category,read_at,created_at")
+        .lt("created_at", before)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+      if (!error && Array.isArray(data)) {
+        setItems((prev) => [...prev, ...(data as NotificationItem[])]);
+        setHasMore(data.length === limit);
       }
     } finally {
       setLoading(false);
@@ -67,11 +75,7 @@ export default function NotificationsClient({
     const nowIso = new Date().toISOString();
     setItems((prev) => prev.map((n) => (n.read_at ? n : { ...n, read_at: nowIso })));
     try {
-      await fetch("/api/notifications/read", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ all: true }),
-      });
+      await markNotificationRead({ all: true });
       refreshNotifications();
     } finally {
       setBusy(false);
@@ -81,11 +85,7 @@ export default function NotificationsClient({
   function markOne(id: string) {
     const nowIso = new Date().toISOString();
     setItems((prev) => prev.map((n) => (n.id === id && !n.read_at ? { ...n, read_at: nowIso } : n)));
-    void fetch("/api/notifications/read", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
-    }).then(() => refreshNotifications());
+    void markNotificationRead({ id }).then(() => refreshNotifications());
   }
 
   if (items.length === 0) {

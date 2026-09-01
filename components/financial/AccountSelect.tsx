@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { cn } from "@/lib/utils";
 import { getAccountKindLabel, type Account } from "@/lib/accounts";
+import { fetchAccountsDirect } from "@/lib/accounts/accountsClient";
 
 // Module-level cache so multiple pickers on one page (and re-mounts) share a
 // single fetch of the accounts list.
@@ -13,10 +14,9 @@ let inflight: Promise<Account[]> | null = null;
 async function fetchAccounts(): Promise<Account[]> {
   if (cache) return cache;
   if (!inflight) {
-    inflight = fetch("/api/financial/accounts")
-      .then((res) => (res.ok ? res.json() : { accounts: [] }))
-      .then((json: { accounts?: Account[] }) => {
-        cache = (json.accounts ?? []).filter((a) => a.isActive);
+    inflight = fetchAccountsDirect()
+      .then((accounts) => {
+        cache = accounts.filter((a) => a.isActive);
         return cache;
       })
       .catch(() => {

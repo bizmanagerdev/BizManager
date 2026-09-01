@@ -16,6 +16,8 @@ import { invalidateCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import { TagPicker, fetchExistingTagIds } from "@/components/tags/TagPicker";
 import { WorkerLinkField } from "@/components/customers/WorkerLinkField";
 import { TagIcon } from "@/components/ui/icons";
+import { fetchCustomerCore } from "@/lib/customers/fetchCustomerCore";
+import { fetchCustomerContactsDirect, fetchCustomerBranchesDirect, updateCustomerBranchDirect } from "@/lib/customers/branchesContacts";
 
 export type CustomerRecord = {
   id: string;
@@ -225,14 +227,13 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
     setLoading(true);
     void (async () => {
       try {
-        const [custRes, contactsRes, branchesRes] = await Promise.all([
-          fetch(`/api/customers/${initialId}`, { signal: controller.signal }),
-          fetch(`/api/customer-contacts/list?customer_id=${encodeURIComponent(initialId)}`, { signal: controller.signal }),
-          fetch(`/api/customer-branches/list?customer_id=${encodeURIComponent(initialId)}`, { signal: controller.signal }),
+        const [custRecord, contactsRows, branchesRows] = await Promise.all([
+          fetchCustomerCore(initialId, controller.signal),
+          fetchCustomerContactsDirect(initialId, controller.signal),
+          fetchCustomerBranchesDirect(initialId, controller.signal),
         ]);
-        if (custRes.ok) {
-          const json = (await custRes.json().catch(() => ({}))) as { customer?: CustomerRecord };
-          const c = json.customer;
+        {
+          const c = custRecord as CustomerRecord | null;
           if (c) {
             setName(c.name ?? "");
             setInvoiceName(c.name_for_invoice ?? "");
@@ -256,14 +257,8 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
             setLinkLoaded(true);
           }
         }
-        if (contactsRes.ok) {
-          const json = (await contactsRes.json().catch(() => ({}))) as { contacts?: Row[] };
-          setContacts((json.contacts ?? []).map(contactRowToDraft));
-        }
-        if (branchesRes.ok) {
-          const json = (await branchesRes.json().catch(() => ({}))) as { branches?: Row[] };
-          setBranches((json.branches ?? []).map(branchRowToDraft));
-        }
+        setContacts(contactsRows.map(contactRowToDraft));
+        setBranches(branchesRows.map(branchRowToDraft));
         const existingTags = await fetchExistingTagIds("customer", initialId);
         if (!controller.signal.aborted) setTagIds(existingTags);
       } catch {
@@ -492,11 +487,7 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
       for (const branch of branches) {
         if (branch._deleted) {
           if (!branch.id) continue;
-          await fetch("/api/customer-branches/update", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ id: branch.id, active: false }),
-          });
+          await updateCustomerBranchDirect(branch.id, { active: false });
           continue;
         }
         const payload = {
@@ -505,13 +496,15 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
           phone: branch.phone.trim() || null,
           active: branch.active,
         };
-        const endpoint = branch.id ? "/api/customer-branches/update" : "/api/customer-branches/create";
-        const body = branch.id ? { id: branch.id, ...payload } : { customer_id: customerId, ...payload };
-        await fetch(endpoint, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
-        });
+        if (branch.id) {
+          await updateCustomerBranchDirect(branch.id, payload);
+        } else {
+          await fetch("/api/customer-branches/create", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ customer_id: customerId, ...payload }),
+          });
+        }
       }
 
       invalidateCustomerSearchIndex();

@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { formatOrderDate } from "@/lib/orders/format";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type InvoiceState = "needs_unsent" | "needs_sent" | "no" | "undecided";
 
@@ -69,16 +70,20 @@ export default function InvoiceQuickMenu({
   const state = invoiceState(needsInvoice, invoiceSentAt);
   const badge = invoiceBadge(state);
 
-  async function apply(update: Record<string, unknown>) {
+  async function apply(update: { needs_invoice?: boolean; invoice_sent?: boolean }) {
     if (busy) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/orders/invoice-status", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ order_id: orderId, ...update }),
-      });
-      if (res.ok) router.refresh();
+      // RLS on `orders` (admin/office ALL) matches the old route's
+      // allowedRoles gate exactly. invoice_sent is a UI-only toggle that
+      // translates to invoice_sent_at = now()/null, same as the route did.
+      const dbUpdate: Record<string, unknown> =
+        "needs_invoice" in update ? { needs_invoice: update.needs_invoice } : {};
+      if ("invoice_sent" in update) {
+        dbUpdate.invoice_sent_at = update.invoice_sent ? new Date().toISOString() : null;
+      }
+      const { error } = await createSupabaseBrowserClient().from("orders").update(dbUpdate).eq("id", orderId);
+      if (!error) router.refresh();
     } finally {
       setBusy(false);
     }

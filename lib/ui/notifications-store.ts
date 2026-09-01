@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useSyncExternalStore } from "react";
 import { toHebrewError } from "@/lib/error-messages";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export type NotificationItem = {
   id: string;
@@ -46,10 +47,24 @@ async function refresh(force = false): Promise<void> {
   }
   inFlight = (async () => {
     try {
-      const res = await fetch("/api/notifications/list", { cache: "no-store" });
-      const json = (await res.json().catch(() => ({}))) as { items?: NotificationItem[]; unreadCount?: number; error?: string };
-      if (!res.ok) throw new Error(toHebrewError(json.error, "טעינת ההתראות נכשלה."));
-      state = { items: Array.isArray(json.items) ? json.items : [], unreadCount: json.unreadCount ?? 0, error: null, loading: false };
+      // RLS scopes both queries to the viewer (notifications.user_id = auth.uid()),
+      // same as the old /api/notifications/list route did with the identical client.
+      const supabase = createSupabaseBrowserClient();
+      const [itemsRes, countRes] = await Promise.all([
+        supabase
+          .from("notifications")
+          .select("id,title,body,url,category,read_at,created_at")
+          .order("created_at", { ascending: false })
+          .limit(40),
+        supabase.from("notifications").select("id", { count: "exact", head: true }).is("read_at", null),
+      ]);
+      if (itemsRes.error) throw itemsRes.error;
+      state = {
+        items: (itemsRes.data ?? []) as NotificationItem[],
+        unreadCount: countRes.count ?? 0,
+        error: null,
+        loading: false,
+      };
       lastFetchedAt = Date.now();
     } catch (err: unknown) {
       state = { items: state.items, unreadCount: state.unreadCount, loading: false, error: toHebrewError(err, "טעינת ההתראות נכשלה.") };
@@ -82,11 +97,11 @@ export async function markNotificationRead(opts: { id?: string; all?: boolean })
     emit();
   }
   try {
-    await fetch("/api/notifications/read", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(opts),
-    });
+    const supabase = createSupabaseBrowserClient();
+    const nowIso = new Date().toISOString();
+    let q = supabase.from("notifications").update({ read_at: nowIso });
+    q = opts.all ? q.is("read_at", null) : q.eq("id", opts.id ?? "");
+    await q;
   } catch {
     // best-effort — a later refresh corrects any drift
   }

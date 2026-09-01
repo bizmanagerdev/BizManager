@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isCollectedPayment } from "@/lib/orders/paymentStatus";
 import { fetchAllPagedResult } from "@/lib/supabase/paginate";
@@ -276,15 +277,23 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
   );
 
   // Each money table is scanned independently and degrades to "no rows" if its
-  // query fails — most importantly when a table is missing its account_id column
-  // (Postgres 42703) because create_accounts.sql hasn't been (fully) run yet.
-  // A single missing column must NOT take down the whole חשבונות page; the
-  // balances are computed from whatever tables ARE available, mirroring how
-  // loadAccounts() already swallows its own error.
+  // query fails, rather than taking down the whole חשבונות page over one bad
+  // table. That degrade-and-continue behavior stays — but it must never be
+  // SILENT: a failed scan means the balances/register this function returns
+  // are wrong (understated), and the only way anyone finds out has to be more
+  // reliable than a console.warn nobody is watching. Every failure is now
+  // both reported to Sentry (so it's visible without anyone needing to look)
+  // and collected into `failedTables` so callers can show a real "this may be
+  // incomplete" notice instead of a balance that quietly looks fine.
+  const failedTables: string[] = [];
   const scan = async (table: string, page: (from: number, to: number) => PromiseLike<{ data: unknown; error: unknown }>) => {
     const { data, error } = await fetchAllPagedResult<Row>(page);
     if (error) {
-      console.warn(`[accounts] skipped "${table}" in balance scan: ${error.message}`);
+      const message = error instanceof Error ? error.message : String((error as { message?: unknown })?.message ?? error);
+      failedTables.push(table);
+      Sentry.captureException(new Error(`[accounts] balance scan failed for "${table}": ${message}`), {
+        tags: { area: "accounts", table },
+      });
       return [] as Row[];
     }
     return data;
@@ -1086,15 +1095,37 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     });
   }
 
-  return buckets;
+  return { buckets, failedTables };
+}
+
+/** Extra metadata attached to the plain array `loadAccountBalances`/
+ *  `loadAccountsOverview` already return — not a new wrapper shape, so every
+ *  existing `.map()`/destructure/`.find()` caller (including the whole
+ *  existing test suite) keeps working unchanged; only new code that actually
+ *  wants to know needs to read these two properties. */
+export type AccountScanCompleteness = {
+  /** True when at least one money table failed to scan — the balances/register
+   *  above are understated, not just "no activity found". */
+  dataIncomplete: boolean;
+  /** Which table(s) failed, for a more specific message if wanted. */
+  incompleteTables: string[];
+};
+
+function withScanCompleteness<T extends unknown[]>(list: T, failedTables: string[]): T & AccountScanCompleteness {
+  return Object.assign(list, {
+    dataIncomplete: failedTables.length > 0,
+    incompleteTables: failedTables,
+  });
 }
 
 /** Per-account live balances (no ledger rows) — the cheap overview. */
-export async function loadAccountBalances(supabase: SupabaseClient): Promise<AccountBalance[]> {
+export async function loadAccountBalances(
+  supabase: SupabaseClient
+): Promise<AccountBalance[] & AccountScanCompleteness> {
   const accounts = await loadAccounts(supabase);
-  if (accounts.length === 0) return [];
-  const buckets = await scanAccountActivity(supabase, accounts);
-  return accounts.map((a) => {
+  if (accounts.length === 0) return withScanCompleteness([], []);
+  const { buckets, failedTables } = await scanAccountActivity(supabase, accounts);
+  const result = accounts.map((a) => {
     const b = buckets.get(a.id)!;
     return {
       ...a,
@@ -1105,6 +1136,7 @@ export async function loadAccountBalances(supabase: SupabaseClient): Promise<Acc
       pendingOut: b.pendingOut,
     };
   });
+  return withScanCompleteness(result, failedTables);
 }
 
 /**
@@ -1113,12 +1145,14 @@ export async function loadAccountBalances(supabase: SupabaseClient): Promise<Acc
  * only (opening → newest); pending rows appear in the list with a null running
  * balance. Ledger is returned newest-first for display.
  */
-export async function loadAccountsOverview(supabase: SupabaseClient): Promise<AccountWithLedger[]> {
+export async function loadAccountsOverview(
+  supabase: SupabaseClient
+): Promise<AccountWithLedger[] & AccountScanCompleteness> {
   const accounts = await loadAccounts(supabase);
-  if (accounts.length === 0) return [];
-  const buckets = await scanAccountActivity(supabase, accounts);
+  if (accounts.length === 0) return withScanCompleteness([], []);
+  const { buckets, failedTables } = await scanAccountActivity(supabase, accounts);
 
-  return accounts.map((a) => {
+  const result = accounts.map((a) => {
     const b = buckets.get(a.id)!;
     // Oldest-first to roll the running balance forward from the opening figure.
     const chronological = [...b.rows].sort(
@@ -1141,4 +1175,5 @@ export async function loadAccountsOverview(supabase: SupabaseClient): Promise<Ac
       ledger: withRunning.reverse(), // newest-first for display
     };
   });
+  return withScanCompleteness(result, failedTables);
 }

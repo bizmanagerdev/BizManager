@@ -15,6 +15,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { ViewDialog } from "@/components/ui/view-dialog";
 import { toHebrewError } from "@/lib/error-messages";
+import { updateDocumentTag } from "@/lib/documents/updateDocumentTag";
 import {
   Card,
   CardContent,
@@ -455,17 +456,9 @@ export default function DocumentsArchiveClient({
 
     startTransition(async () => {
       try {
-        const response = await fetch("/api/documents/tag", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            document_id: editDialogDoc.id,
-            document_type: nextValue,
-          }),
-        });
-        const json = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          toast.error("שגיאה בעדכון הקטגוריה", { description: toHebrewError(json?.error, "") });
+        const result = await updateDocumentTag(editDialogDoc.id, nextValue);
+        if (!result.ok) {
+          toast.error("שגיאה בעדכון הקטגוריה", { description: toHebrewError(result.error, "") });
           return;
         }
         toast.success("הקטגוריה עודכנה");

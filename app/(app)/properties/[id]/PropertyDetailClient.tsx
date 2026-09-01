@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
+import { deleteRecurringExpenseTemplate } from "@/lib/recurring/deleteTemplate";
 import { DateInput } from "@/components/ui/date-input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Badge } from "@/components/ui/badge";
@@ -808,6 +809,17 @@ export default function PropertyDetailClient({
         refresh();
         return;
       }
+      if (del.kind === "template") {
+        const result = await deleteRecurringExpenseTemplate(del.id);
+        if (!result.ok) {
+          toast.error("שגיאה במחיקה", { description: toHebrewError(result.error, "") });
+          return;
+        }
+        toast.success("נמחק");
+        setDel(null);
+        refresh();
+        return;
+      }
       const endpoint =
         del.kind === "expense"
           ? ["/api/expenses/delete", { id: del.id, property_id: propertyId }]
@@ -815,11 +827,9 @@ export default function PropertyDetailClient({
             ? ["/api/payments/delete", { id: del.id }]
             : del.kind === "task"
               ? ["/api/tasks/delete", { id: del.id }]
-              : del.kind === "template"
-                ? ["/api/recurring-expenses/delete", { id: del.id }]
-                : del.kind === "session"
-                  ? ["/api/payroll/sessions/delete", { session_id: del.id }]
-                  : ["/api/documents/delete", { document_id: del.id }];
+              : del.kind === "session"
+                ? ["/api/payroll/sessions/delete", { session_id: del.id }]
+                : ["/api/documents/delete", { document_id: del.id }];
       const res = await fetch(endpoint[0] as string, {
         method: "POST",
         headers: { "content-type": "application/json" },

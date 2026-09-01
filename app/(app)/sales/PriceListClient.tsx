@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getOrCreateProductCategory } from "@/lib/products/productCategories";
 import { loadMorePriceList } from "@/app/(app)/sales/actions";
 import type { ProductsFilters } from "@/app/(app)/sales/loadProducts";
 import { AddIcon, FilterIcon, SearchIcon, SendIcon, SpinnerIcon } from "@/components/ui/icons";
@@ -438,27 +440,18 @@ export default function PriceListClient({
     }
 
     try {
-      const res = await fetch("/api/product-categories", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      const json = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        category?: Record<string, unknown>;
-      };
+      const result = await getOrCreateProductCategory(name);
 
-      if (!res.ok || !json.category) {
-        const message = toHebrewError(json.error, "יצירת קטגוריה נכשלה.");
+      if (!result.ok) {
+        const message = toHebrewError(result.error, "יצירת קטגוריה נכשלה.");
         if (isCreate) setCreateCategoryError(message);
         else setEditCategoryError(message);
         return;
       }
-
       const createdCategory: CategoryOption = {
-        id: typeof json.category.id === "string" ? json.category.id : crypto.randomUUID(),
-        name: typeof json.category.name === "string" ? json.category.name : name,
-        active: json.category.active !== false,
+        id: result.category.id || crypto.randomUUID(),
+        name: result.category.name || name,
+        active: result.category.active !== false,
       };
 
       setCategories((prev) => {
@@ -777,14 +770,9 @@ export default function PriceListClient({
     setTableError("");
     setDeleteLoadingId(pendingDelete.id);
     try {
-      const res = await fetch("/api/products/delete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: pendingDelete.id }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        setTableError(toHebrewError(json.error, "מחיקת מוצר נכשלה."));
+      const { error } = await createSupabaseBrowserClient().from("products").delete().eq("id", pendingDelete.id);
+      if (error) {
+        setTableError(toHebrewError(error.message, "מחיקת מוצר נכשלה."));
         return;
       }
       const nextRows = rows.filter((item) => item.id !== pendingDelete.id);

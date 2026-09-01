@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
 import { formatPin, pinFrom, type DeliveryPin } from "@/lib/delivery-location";
+import { searchProducts } from "@/lib/orders/searchProducts";
 import LoadingDots from "@/app/(app)/sales/orders/LoadingDots";
 import {
   ORDER_PAYMENT_METHOD_OPTIONS,
@@ -218,7 +219,7 @@ export default function OrderConfirmDialog({
   const [productSearching, setProductSearching] = useState(false);
 
   // On-demand product search (only runs when the driver actually types here) so a
-  // forgotten item can be added on the spot — searched lazily via /api/products/search
+  // forgotten item can be added on the spot — searched lazily via searchProducts()
   // rather than loaded eagerly, since eagerly fetching the whole catalog on every
   // confirm-dialog open used to be what made it slow to load.
   useEffect(() => {
@@ -232,11 +233,8 @@ export default function OrderConfirmDialog({
     setProductSearching(true);
     const timer = window.setTimeout(async () => {
       try {
-        const res = await fetch(`/api/products/search?q=${encodeURIComponent(query)}&limit=20`, {
-          cache: "no-store",
-        });
-        const json = (await res.json().catch(() => ({}))) as { products?: ProductSearchResult[] };
-        setProductResults(Array.isArray(json.products) ? json.products : []);
+        const products = await searchProducts(query, 20);
+        setProductResults(products as ProductSearchResult[]);
       } catch {
         setProductResults([]);
       } finally {

@@ -92,6 +92,7 @@ export default async function BankPage({
         projects={projects}
         recurringProperties={recurringProperties}
         merchantMemory={merchantMemory}
+        dataIncomplete={accounts.dataIncomplete}
       />
     </AppShell>
   );

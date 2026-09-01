@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { offlineFetch } from "@/lib/offline-queue";
+import { fetchCustomerCore } from "@/lib/customers/fetchCustomerCore";
 
 export type InlineCustomerUpdate = {
   id: string;
@@ -70,27 +71,22 @@ export function InlineCustomerEditor({
     setSavedField(null);
     void (async () => {
       try {
-        const res = await fetch(`/api/customers/${customerId}`, { signal: controller.signal });
-        if (!res.ok) return;
-        const json = (await res.json()) as {
-          customer?: {
-            id: string;
-            name: string | null;
-            phone: string | null;
-            whatsapp: string | null;
-            email: string | null;
-            address: string | null;
-          };
-        };
-        if (!json.customer) return;
+        const customer = (await fetchCustomerCore(customerId, controller.signal)) as {
+          name: string | null;
+          phone: string | null;
+          whatsapp: string | null;
+          email: string | null;
+          address: string | null;
+        } | null;
+        if (!customer) return;
         const toStr = (v: string | null | undefined) =>
           typeof v === "number" ? String(v) : (v ?? "");
         const next: Record<FieldKey, string> = {
-          name: toStr(json.customer.name),
-          phone: toStr(json.customer.phone),
-          whatsapp: toStr(json.customer.whatsapp),
-          email: toStr(json.customer.email),
-          address: toStr(json.customer.address),
+          name: toStr(customer.name),
+          phone: toStr(customer.phone),
+          whatsapp: toStr(customer.whatsapp),
+          email: toStr(customer.email),
+          address: toStr(customer.address),
         };
         setValues(next);
         savedRef.current = next;

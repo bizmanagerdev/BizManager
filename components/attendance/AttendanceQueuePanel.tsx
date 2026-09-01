@@ -27,6 +27,7 @@ import { appendDictatedText } from "@/lib/dictation";
 import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 // One approve/reject/split card, shared with the dashboard's נוכחות עובדים widget.
 import PendingReportCard, { WorkerHead, attendanceDetail, attendanceMeta } from "@/components/attendance/PendingReportCard";
+import { closePhoneReport, updatePhoneReportClockIn } from "@/lib/attendance/phoneReportActions";
 import { AttendanceGuideDialog } from "@/components/attendance/AttendanceGuideDialog";
 import { formatCurrency, formatMinutes, minutesBetween } from "@/lib/payroll";
 import { toHebrewError } from "@/lib/error-messages";
@@ -319,13 +320,8 @@ function OpenRow({ report }: { report: OpenPhoneReport }) {
 
     startTransition(async () => {
       try {
-        const response = await fetch("/api/attendance/phone-reports/update-entry", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ report_id: report.id, clock_in: clockIn.toISOString() }),
-        });
-        const json = (await response.json().catch(() => ({}))) as { error?: string };
-        if (!response.ok) return setError(toHebrewError(json.error, "עדכון שעת הכניסה נכשל."));
+        const result = await updatePhoneReportClockIn(report.id, clockIn);
+        if (!result.ok) return setError(toHebrewError(result.error, "עדכון שעת הכניסה נכשל."));
         toast.success("שעת הכניסה עודכנה.");
         setEditing(false);
         router.refresh();
@@ -343,17 +339,8 @@ function OpenRow({ report }: { report: OpenPhoneReport }) {
 
     startTransition(async () => {
       try {
-        const response = await fetch("/api/attendance/phone-reports/close", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            report_id: report.id,
-            clock_out: clockOut.toISOString(),
-            notes: closeNote.trim() || null,
-          }),
-        });
-        const json = (await response.json().catch(() => ({}))) as { error?: string };
-        if (!response.ok) return setError(toHebrewError(json.error, "סגירת המשמרת נכשלה."));
+        const result = await closePhoneReport(report.id, clockOut, closeNote.trim());
+        if (!result.ok) return setError(toHebrewError(result.error, "סגירת המשמרת נכשלה."));
         toast.success("המשמרת נסגרה וממתינה לאישור.");
         router.refresh();
       } catch (err: unknown) {

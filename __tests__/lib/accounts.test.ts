@@ -61,8 +61,8 @@ type Tables = Record<string, Record<string, unknown>[]>;
  *  the builder, and awaiting it resolves to `{ data: rows, error: null }`. The
  *  engine re-applies its own date/account filters in JS, so returning all rows
  *  for a table is faithful. */
-function makeSupabase(tables: Tables) {
-  const builder = (rows: Record<string, unknown>[]) => {
+function makeSupabase(tables: Tables, errorTables: string[] = []) {
+  const builder = (rows: Record<string, unknown>[], failing: boolean) => {
     const self: Record<string, unknown> = {};
     for (const m of ["select", "eq", "not", "gte", "in", "or", "order", "range"]) {
       self[m] = () => self;
@@ -70,11 +70,17 @@ function makeSupabase(tables: Tables) {
     // Used by business_settings lookups (e.g. getCurrentCcFeeRate) — the
     // first configured row, or null (caller falls back to its default).
     self.maybeSingle = () => Promise.resolve({ data: rows[0] ?? null, error: null });
-    self.then = (onF: (v: { data: unknown; error: null }) => unknown, onR?: (e: unknown) => unknown) =>
-      Promise.resolve({ data: rows, error: null }).then(onF, onR);
+    self.then = (onF: (v: { data: unknown; error: unknown }) => unknown, onR?: (e: unknown) => unknown) =>
+      Promise.resolve(
+        failing
+          ? { data: null, error: { message: "simulated query failure" } }
+          : { data: rows, error: null }
+      ).then(onF, onR);
     return self;
   };
-  return { from: (table: string) => builder(tables[table] ?? []) } as never;
+  return {
+    from: (table: string) => builder(tables[table] ?? [], errorTables.includes(table)),
+  } as never;
 }
 
 function account(overrides: Record<string, unknown> = {}) {
@@ -512,7 +518,36 @@ describe("loadAccountsOverview — running balance & register", () => {
   });
 
   it("returns an empty list when there are no accounts", async () => {
-    expect(await loadAccountsOverview(makeSupabase({ accounts: [] }))).toEqual([]);
+    const overview = await loadAccountsOverview(makeSupabase({ accounts: [] }));
+    expect(overview).toHaveLength(0);
+    // Still carries the completeness metadata (see below) — just trivially
+    // "complete" since no scan ever ran.
+    expect(overview.dataIncomplete).toBe(false);
+  });
+
+  it("flags dataIncomplete and names the failed table when a scan errors, rather than silently returning as if nothing were wrong", async () => {
+    const result = await loadAccountsOverview(
+      makeSupabase(
+        { accounts: [account()], payments: [{ id: "p1", account_id: "acc1", payment_date: "2024-02-01", amount_total: 500, payment_status: "collected" }] },
+        ["expenses"] // simulate exactly the real incident: one table's query fails
+      )
+    );
+    expect(result.dataIncomplete).toBe(true);
+    expect(result.incompleteTables).toContain("expenses");
+    // The OTHER tables still contribute normally — a failure in one table must
+    // not zero out everything, only make the result honest about what's missing.
+    expect(result[0].postedIn).toBe(500);
+  });
+
+  it("dataIncomplete stays false when every table scans cleanly", async () => {
+    const result = await loadAccountsOverview(
+      makeSupabase({
+        accounts: [account()],
+        payments: [{ id: "p1", account_id: "acc1", payment_date: "2024-02-01", amount_total: 500, payment_status: "collected" }],
+      })
+    );
+    expect(result.dataIncomplete).toBe(false);
+    expect(result.incompleteTables).toEqual([]);
   });
 
   it("enriches ledger rows with worker, customer (+phone) and project context", async () => {

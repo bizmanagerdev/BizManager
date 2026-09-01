@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export type AssignableUser = { id: string; label: string };
 
@@ -14,26 +15,49 @@ let inFlight: Promise<void> | null = null;
 // hiccup on page load leaves every assignee picker permanently empty.
 let loadedOk = false;
 
+// Reads straight from Supabase — RLS on `users` already scopes the result the
+// same way the old /api/users/list route did (office/admin see everyone active,
+// a worker sees only other active workers), since that route used the same
+// RLS-bound client with no extra role filtering of its own.
 async function loadUsers() {
   if (loadedOk) return;
   if (inFlight) return inFlight;
-  inFlight = fetch("/api/users/list")
-    .then(async (res) => {
-      if (!res.ok) throw new Error(`users/list ${res.status}`);
-      const json = (await res.json()) as {
-        users?: AssignableUser[];
-        currentUserId?: string | null;
-      };
-      cachedUsers = json.users ?? [];
-      cachedCurrentUserId = json.currentUserId ?? null;
+  inFlight = (async () => {
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const authRes = await supabase.auth.getUser();
+      const authUid = authRes.data.user?.id ?? null;
+      const [usersRes, selfRes] = await Promise.all([
+        supabase
+          .from("users")
+          .select("id,full_name,email")
+          .eq("active", true)
+          .order("full_name", { ascending: true })
+          .range(0, 499),
+        authUid
+          ? supabase.from("users").select("id").eq("auth_user_id", authUid).maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
+      ]);
+      if (usersRes.error) throw usersRes.error;
+      const rows = (usersRes.data ?? []) as Array<{
+        id: string;
+        full_name: string | null;
+        email: string | null;
+      }>;
+      cachedUsers = rows
+        .map((u) => ({
+          id: u.id,
+          label: u.full_name?.trim() || u.email?.trim() || "ללא שם",
+        }))
+        .filter((u) => u.id);
+      cachedCurrentUserId = (selfRes.data as { id: string } | null)?.id ?? null;
       loadedOk = true;
-    })
-    .catch(() => {
+    } catch {
       // Leave loadedOk=false so the next mount retries instead of caching empty.
-    })
-    .finally(() => {
+    } finally {
       inFlight = null;
-    });
+    }
+  })();
   return inFlight;
 }
 

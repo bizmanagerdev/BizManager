@@ -9,6 +9,7 @@ import { DeleteIcon, EditIcon } from "@/components/ui/icons";
 import { SwipeActions } from "@/components/ui/swipe-actions";
 import { NativeSelect } from "@/components/ui/native-select";
 import { toHebrewError } from "@/lib/error-messages";
+import { deleteRecurringTaskTemplate } from "@/lib/recurring/deleteTemplate";
 import { Card, CardContent } from "@/components/ui/card";
 import { DateInput } from "@/components/ui/date-input";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
@@ -205,14 +206,9 @@ export default function RecurringTasksClient(props: Props) {
   }
 
   async function remove(id: string) {
-    const res = await fetch("/api/recurring-tasks/delete", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id }),
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      toast.error("שגיאה במחיקת משימה קבועה", { description: toHebrewError(json?.error, "") });
+    const result = await deleteRecurringTaskTemplate(id);
+    if (!result.ok) {
+      toast.error("שגיאה במחיקת משימה קבועה", { description: toHebrewError(result.error, "") });
       return;
     }
     router.refresh();

@@ -10,6 +10,7 @@ import { DateInput } from "@/components/ui/date-input";
 import { Badge } from "@/components/ui/badge";
 import { toHebrewError } from "@/lib/error-messages";
 import { formatCurrency } from "@/lib/payroll";
+import { updatePaymentPromise } from "@/lib/collections/paymentPromises";
 import { promiseStatusLabel, type PaymentPromise } from "@/lib/promises";
 
 function statusTone(status: string): "success" | "destructive" | "secondary" | "warning" {
@@ -60,13 +61,8 @@ export default function PaymentPromises({ customerId, promises }: { customerId: 
   async function setStatus(id: string, status: "kept" | "broken" | "cancelled") {
     setBusy(true);
     try {
-      const res = await fetch("/api/payment-promises/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, status }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(json.error);
+      const result = await updatePaymentPromise(id, { status });
+      if (!result.ok) throw new Error(result.error);
       toast.success("ההבטחה עודכנה.");
       router.refresh();
     } catch (err) {

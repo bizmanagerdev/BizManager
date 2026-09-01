@@ -11,6 +11,7 @@ import { DateInput } from "@/components/ui/date-input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { ACCOUNT_KINDS, getAccountKindLabel, type Account } from "@/lib/accounts";
+import { fetchAccountsDirect, saveAccountDirect, deleteAccountDirect } from "@/lib/accounts/accountsClient";
 import { toHebrewError } from "@/lib/error-messages";
 import { invalidateAccountsCache } from "@/components/financial/AccountSelect";
 
@@ -65,9 +66,8 @@ export default function AccountsCard({ initialAccounts }: { initialAccounts: Acc
   }
 
   async function refresh() {
-    const res = await fetch("/api/financial/accounts");
-    const json = (await res.json().catch(() => null)) as { accounts?: Account[] } | null;
-    if (res.ok && json?.accounts) setAccounts(json.accounts);
+    const nextAccounts = await fetchAccountsDirect();
+    setAccounts(nextAccounts);
   }
 
   const balanceNum = Number(form.openingBalance);
@@ -80,7 +80,7 @@ export default function AccountsCard({ initialAccounts }: { initialAccounts: Acc
     if (invalid || saving) return;
     setSaving(true);
     try {
-      const payload = {
+      const result = await saveAccountDirect({
         id: form.id ?? undefined,
         name: form.name.trim(),
         kind: form.kind,
@@ -88,15 +88,9 @@ export default function AccountsCard({ initialAccounts }: { initialAccounts: Acc
         opening_date: form.openingDate,
         is_active: form.isActive,
         notes: form.notes.trim() || null,
-      };
-      const res = await fetch("/api/financial/accounts", {
-        method: form.id ? "PATCH" : "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
       });
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
-      if (!res.ok) {
-        toast.error(toHebrewError(json?.error, "שמירת החשבון נכשלה."));
+      if (!result.ok) {
+        toast.error(toHebrewError(result.error, "שמירת החשבון נכשלה."));
         return;
       }
       toast.success(form.id ? "החשבון עודכן" : "החשבון נוצר");
@@ -114,12 +108,9 @@ export default function AccountsCard({ initialAccounts }: { initialAccounts: Acc
     if (!deleteTarget || deleting) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/financial/accounts?id=${encodeURIComponent(deleteTarget.id)}`, {
-        method: "DELETE",
-      });
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
-      if (!res.ok) {
-        toast.error(toHebrewError(json?.error, "מחיקת החשבון נכשלה."));
+      const result = await deleteAccountDirect(deleteTarget.id);
+      if (!result.ok) {
+        toast.error(toHebrewError(result.error, "מחיקת החשבון נכשלה."));
         return;
       }
       toast.success("החשבון נמחק");

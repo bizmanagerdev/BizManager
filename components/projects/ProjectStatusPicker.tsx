@@ -13,6 +13,7 @@ import {
 import { StatusBadge } from "@/components/ui/status-badge";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import { toHebrewError } from "@/lib/error-messages";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 // The project's status — as the סטטוס הפרויקט card's headline ("text" variant,
 // the project detail page) or as the status badge itself ("badge" variant, the
@@ -61,15 +62,17 @@ export function ProjectStatusPicker({
     setValue(next);
     setSaving(true);
     try {
-      const res = await fetch("/api/projects/update-status", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ project_id: projectId, status: next }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
+      // RLS on `projects` already scopes this write (admin/office only — no
+      // worker UPDATE policy exists), same as the old route's RLS-bound client.
+      // `status` is a Postgres enum (project_status_enum), so an invalid value
+      // is rejected by the database itself, not just the STATUS_OPTIONS list.
+      const { error } = await createSupabaseBrowserClient()
+        .from("projects")
+        .update({ status: next })
+        .eq("id", projectId);
+      if (error) {
         setValue(previous);
-        toast.error("שגיאה בעדכון סטטוס", { description: toHebrewError(json?.error, "") });
+        toast.error("שגיאה בעדכון סטטוס", { description: toHebrewError(error.message, "") });
         return;
       }
       toast.success("הסטטוס עודכן");

@@ -77,6 +77,7 @@ import {
   getWorkerAbsenceTypeLabel,
 } from "@/lib/payroll-bonuses";
 import { toHebrewError } from "@/lib/error-messages";
+import { createWorkerAbsences, deleteWorkerAbsence } from "@/lib/payroll/absencesClient";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import type {
   Props,
@@ -1281,23 +1282,14 @@ export default function SalaryCenterClient({
 
     setAbsenceError("");
     runAction(async () => {
-      const response = await fetch("/api/payroll/absences", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          user_ids: targetIds,
-          absence_date: absenceForm.absence_date,
-          absence_type: absenceForm.absence_type,
-          notes: absenceForm.notes,
-        }),
+      const result = await createWorkerAbsences({
+        userIds: targetIds,
+        absenceDate: absenceForm.absence_date,
+        absenceType: absenceForm.absence_type,
+        notes: absenceForm.notes,
       });
-      const json = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        skipped?: number;
-        absences?: unknown[];
-      };
-      if (!response.ok) throw new Error(toHebrewError(json.error, "שמירת ההיעדרות נכשלה."));
-      const added = json.absences?.length ?? 0;
+      if (!result.ok) throw new Error(toHebrewError(result.error, "שמירת ההיעדרות נכשלה."));
+      const added = result.added;
       setAbsenceDialogOpen(false);
       setAbsenceForm(DEFAULT_ABSENCE_FORM);
       // Say how many actually landed — with "all workers" the difference between
@@ -1559,18 +1551,25 @@ export default function SalaryCenterClient({
         return;
       }
 
-      if (pending.kind === "bonus" || pending.kind === "absence") {
-        const isBonus = pending.kind === "bonus";
-        const response = await fetch(isBonus ? "/api/payroll/bonuses" : "/api/payroll/absences", {
+      if (pending.kind === "absence") {
+        if (!pending.absenceId) throw new Error("חסר מזהה היעדרות.");
+        const result = await deleteWorkerAbsence(pending.absenceId);
+        if (!result.ok) throw new Error(toHebrewError(result.error, "המחיקה נכשלה."));
+        toast.success("ההיעדרות נמחקה.");
+        setPendingDeletion(null);
+        await refreshAll();
+        return;
+      }
+
+      if (pending.kind === "bonus") {
+        const response = await fetch("/api/payroll/bonuses", {
           method: "DELETE",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(
-            isBonus ? { item_id: pending.bonusId } : { absence_id: pending.absenceId }
-          ),
+          body: JSON.stringify({ item_id: pending.bonusId }),
         });
         const json = (await response.json().catch(() => ({}))) as { error?: string };
         if (!response.ok) throw new Error(toHebrewError(json.error, "המחיקה נכשלה."));
-        toast.success(isBonus ? "הבונוס נמחק." : "ההיעדרות נמחקה.");
+        toast.success("הבונוס נמחק.");
         setPendingDeletion(null);
         await refreshAll();
         return;

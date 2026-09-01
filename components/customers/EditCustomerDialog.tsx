@@ -18,6 +18,8 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import { CITY_OPTIONS } from "@/lib/ui/cities";
 import { TagPicker, fetchExistingTagIds } from "@/components/tags/TagPicker";
 import { WorkerLinkField } from "@/components/customers/WorkerLinkField";
+import { fetchCustomerCore } from "@/lib/customers/fetchCustomerCore";
+import { fetchCustomerContactsDirect, fetchCustomerBranchesDirect, updateCustomerBranchDirect } from "@/lib/customers/branchesContacts";
 import { TagIcon } from "@/components/ui/icons";
 
 function splitAddressIntoCityAndStreet(address: string | null): { city: string; street: string } {
@@ -225,32 +227,22 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
     if (!customer.id) return;
     void fetchExistingTagIds("customer", customer.id).then(setTagIds);
     // Authoritative worker link, whatever the caller happened to pass.
-    void fetch(`/api/customers/${encodeURIComponent(customer.id)}`)
-      .then(async (res) => {
-        if (!res.ok) return;
-        const json = (await res.json().catch(() => ({}))) as { customer?: Row };
-        if (!json.customer) return;
-        const linked = json.customer.linked_user_id;
+    void fetchCustomerCore(customer.id)
+      .then((row) => {
+        if (!row) return;
+        const linked = (row as Row).linked_user_id;
         setLinkedUserId(typeof linked === "string" ? linked : "");
         setLinkLoaded(true);
       })
       .catch(() => { /* ignore — the link stays out of the payload */ });
     setContactsLoading(true);
-    void fetch(`/api/customer-contacts/list?customer_id=${encodeURIComponent(customer.id)}`)
-      .then(async (res) => {
-        if (!res.ok) return;
-        const json = (await res.json().catch(() => ({}))) as { contacts?: Row[] };
-        setContacts((json.contacts ?? []).map(contactRowToDraft));
-      })
+    void fetchCustomerContactsDirect(customer.id)
+      .then((rows) => setContacts(rows.map(contactRowToDraft)))
       .catch(() => { /* ignore */ })
       .finally(() => setContactsLoading(false));
     setBranchesLoading(true);
-    void fetch(`/api/customer-branches/list?customer_id=${encodeURIComponent(customer.id)}`)
-      .then(async (res) => {
-        if (!res.ok) return;
-        const json = (await res.json().catch(() => ({}))) as { branches?: Row[] };
-        setBranches((json.branches ?? []).map(branchRowToDraft));
-      })
+    void fetchCustomerBranchesDirect(customer.id)
+      .then((rows) => setBranches(rows.map(branchRowToDraft)))
       .catch(() => { /* ignore */ })
       .finally(() => setBranchesLoading(false));
   }, [open, customer]);
@@ -405,14 +397,9 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
       for (const branch of branches) {
         if (branch._deleted) {
           if (!branch.id) continue;
-          const delRes = await fetch("/api/customer-branches/update", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ id: branch.id, active: false }),
-          });
-          if (!delRes.ok) {
-            const delJson = (await delRes.json().catch(() => ({}))) as { error?: string };
-            return setErr(toHebrewError(delJson.error, `הסרת סניף נכשלה (${branch.name || branch.id}).`));
+          const delResult = await updateCustomerBranchDirect(branch.id, { active: false });
+          if (!delResult.ok) {
+            return setErr(toHebrewError(delResult.error, `הסרת סניף נכשלה (${branch.name || branch.id}).`));
           }
           continue;
         }
@@ -425,14 +412,9 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
         };
 
         if (branch.id) {
-          const upRes = await fetch("/api/customer-branches/update", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ id: branch.id, ...branchPayload }),
-          });
-          if (!upRes.ok) {
-            const upJson = (await upRes.json().catch(() => ({}))) as { error?: string };
-            return setErr(toHebrewError(upJson.error, `עדכון סניף נכשל (${branchPayload.name}).`));
+          const upResult = await updateCustomerBranchDirect(branch.id, branchPayload);
+          if (!upResult.ok) {
+            return setErr(toHebrewError(upResult.error, `עדכון סניף נכשל (${branchPayload.name}).`));
           }
         } else {
           const crRes = await fetch("/api/customer-branches/create", {

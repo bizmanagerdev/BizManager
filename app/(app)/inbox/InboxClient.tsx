@@ -13,6 +13,7 @@ import ReminderFormDialog, { type ReminderFormValue } from "@/components/reminde
 import { cn } from "@/lib/utils";
 import { NOTIF_BUCKETS } from "@/lib/notifications/categories";
 import { inboxBucket, inboxOrigin, type InboxView, type WorklistItem, type WorklistSeverity } from "@/lib/reminders/worklist";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { EditButton } from "@/components/ui/icon-button";
 import type { Locale } from "@/lib/i18n/types";
 import { t } from "@/lib/i18n/t";
@@ -201,8 +202,9 @@ export default function InboxClient({
   async function markAllSeen() {
     setMarking(true);
     try {
-      const res = await fetch("/api/reminders/seen", { method: "POST" });
-      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error);
+      const supabase = createSupabaseBrowserClient();
+      const { error } = await supabase.rpc("set_my_inbox_seen_at", { p_at: null });
+      if (error) throw new Error(error.message);
       router.refresh();
     } catch (err) {
       toast.error(toHebrewError(err, t(inboxDict, locale, "toastActionFailed")));

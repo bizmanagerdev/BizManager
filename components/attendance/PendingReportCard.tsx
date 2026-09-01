@@ -18,6 +18,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { shiftHoursText } from "@/components/attendance/DayTile";
 import { usePendingReportEdit, PendingReportEditFields } from "@/components/attendance/usePendingReportEdit";
+import { reopenPhoneReport, rejectPhoneReport } from "@/lib/attendance/phoneReportActions";
 import { WORK_SESSION_BUSINESS_DOMAINS } from "@/lib/expenses";
 import { formatCurrency, formatMinutes, minutesBetween } from "@/lib/payroll";
 import { formatShortDate, hebrewWeekday } from "@/lib/date";
@@ -245,7 +246,7 @@ export default function PendingReportCard({
   // separate from approving. Same hook + form the worker uses to edit his own
   // pending report (components/attendance/PendingReportList.tsx), pointed at the
   // admin route instead, which isn't held to the worker self-report backdate limit.
-  const timeEdit = usePendingReportEdit(report, "/api/attendance/phone-reports/edit");
+  const timeEdit = usePendingReportEdit(report, "admin");
 
   const totalMinutes = report.worked_minutes ?? minutesBetween(report.clock_in, report.clock_out);
   const split = parts.length > 1;
@@ -334,13 +335,8 @@ export default function PendingReportCard({
     setError("");
     startTransition(async () => {
       try {
-        const response = await fetch("/api/attendance/phone-reports/reopen", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ report_id: report.id }),
-        });
-        const json = (await response.json().catch(() => ({}))) as { error?: string };
-        if (!response.ok) return setError(toHebrewError(json.error, "פתיחת המשמרת מחדש נכשלה."));
+        const result = await reopenPhoneReport(report.id);
+        if (!result.ok) return setError(toHebrewError(result.error, "פתיחת המשמרת מחדש נכשלה."));
         toast.success("המשמרת נפתחה מחדש והעובד חזר לנוכחים.");
         router.refresh();
       } catch (err: unknown) {
@@ -353,14 +349,9 @@ export default function PendingReportCard({
     setError("");
     startTransition(async () => {
       try {
-        const response = await fetch("/api/attendance/phone-reports/reject", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ report_id: report.id, reason: rejectReason.trim() || null }),
-        });
-        const json = (await response.json().catch(() => ({}))) as { error?: string };
+        const result = await rejectPhoneReport(report.id, rejectReason.trim());
         setRejectOpen(false);
-        if (!response.ok) return setError(toHebrewError(json.error, "דחיית הדיווח נכשלה."));
+        if (!result.ok) return setError(toHebrewError(result.error, "דחיית הדיווח נכשלה."));
         toast.success("הדיווח נדחה.");
         router.refresh();
       } catch (err: unknown) {

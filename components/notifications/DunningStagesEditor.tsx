@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { DeleteButton } from "@/components/ui/icon-button";
+import { fetchDunningStages, saveDunningStages } from "@/lib/notifications/dunningStages";
 
 type Stage = { day_offset: number; label: string; severity: string; enabled: boolean };
 
@@ -25,10 +26,9 @@ export default function DunningStagesEditor() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/notifications/dunning-stages")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: { stages?: Stage[] } | null) => {
-        if (!cancelled) setStages((d?.stages ?? []).map((s) => ({ day_offset: s.day_offset, label: s.label, severity: s.severity, enabled: s.enabled })));
+    fetchDunningStages()
+      .then((rows) => {
+        if (!cancelled) setStages(rows.map((s) => ({ day_offset: s.day_offset, label: s.label, severity: s.severity, enabled: s.enabled })));
       })
       .catch(() => setStages([]));
     return () => {
@@ -50,12 +50,8 @@ export default function DunningStagesEditor() {
     if (!stages) return;
     setSaving(true);
     try {
-      const res = await fetch("/api/notifications/dunning-stages", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stages: [...stages].sort((a, b) => a.day_offset - b.day_offset) }),
-      });
-      if (!res.ok) throw new Error();
+      const ok = await saveDunningStages([...stages].sort((a, b) => a.day_offset - b.day_offset));
+      if (!ok) throw new Error();
       toast.success("סולם הגבייה נשמר");
     } catch {
       toast.error("שמירה נכשלה");

@@ -8,6 +8,8 @@ import { Field } from "@/components/ui/field";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormDialog } from "@/components/ui/form-dialog";
 import type { AlertMode, AlertRow, AlertSchedule } from "@/lib/notifications/types";
+import { fetchAlertConfigs, createAlertConfig, updateAlertConfig, deleteAlertConfig } from "@/lib/notifications/alertConfig";
+import { fetchNavOptions } from "@/lib/navOptions";
 import { BUILTIN_ALERT_TYPES } from "@/lib/notifications/types";
 import AlertMetricsPanel from "@/components/notifications/AlertMetricsPanel";
 import { notifyAlertsChanged } from "@/lib/ui/alerts-refresh";
@@ -123,20 +125,16 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/notifications/config")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: { alerts?: AlertRow[] } | null) => {
-        if (!cancelled) setAlerts(d?.alerts ?? []);
+    fetchAlertConfigs()
+      .then((rows) => {
+        if (!cancelled) setAlerts(rows);
       })
       .catch(() => null);
     return () => { cancelled = true; };
   }, []);
 
   async function loadAlerts() {
-    const r = await fetch("/api/notifications/config").catch(() => null);
-    if (!r?.ok) return;
-    const d = (await r.json()) as { alerts?: AlertRow[] };
-    setAlerts(d.alerts ?? []);
+    setAlerts(await fetchAlertConfigs());
   }
 
   function openAdd() {
@@ -169,32 +167,20 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
     setAlerts((prev) =>
       prev?.map((a) => (a.id === alert.id ? { ...a, enabled: next } : a)) ?? prev
     );
-    await fetch(`/api/notifications/config/${alert.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled: next }),
-    });
+    await updateAlertConfig(alert.id, { enabled: next });
   }
 
   async function saveForm() {
     if (!form.title.trim()) return;
     setSaving(true);
     if (editingId) {
-      await fetch(`/api/notifications/config/${editingId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
+      await updateAlertConfig(editingId, form);
       setAlerts((prev) =>
         prev?.map((a) => (a.id === editingId ? { ...a, ...form } : a)) ?? prev
       );
     } else {
-      const r = await fetch("/api/notifications/config", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-      if (r.ok) await loadAlerts();
+      const result = await createAlertConfig(form);
+      if (result.ok) await loadAlerts();
     }
     setSaving(false);
     setDialogOpen(false);
@@ -202,7 +188,7 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
 
   async function deleteAlert(id: string) {
     setDeleting(id);
-    await fetch(`/api/notifications/config/${id}`, { method: "DELETE" });
+    await deleteAlertConfig(id);
     setAlerts((prev) => prev?.filter((a) => a.id !== id) ?? prev);
     setDeleting(null);
     setConfirmDelete(null);
@@ -676,10 +662,9 @@ function UrlPicker({ value, onChange }: { value: string; onChange: (url: string)
     const controller = new AbortController();
     fetchAbortRef.current = controller;
     setLoading(true);
-    fetch(`/api/nav-options?type=${section.optionsType}`, { signal: controller.signal })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: { options?: NavOption[] } | null) => {
-        setItems(d?.options ?? []);
+    fetchNavOptions(section.optionsType, controller.signal)
+      .then((options) => {
+        setItems(options);
         setLoading(false);
       })
       .catch((err: unknown) => {

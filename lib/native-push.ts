@@ -6,6 +6,8 @@
 // All Capacitor packages are pulled in with dynamic import() so nothing here is
 // bundled into the server build or evaluated during SSR.
 
+import { registerFcmToken, unregisterFcmToken } from "@/lib/notifications/pushTokens";
+
 export type NativeEnableResult = "granted" | "denied" | "unsupported";
 
 let listenersAttached = false;
@@ -43,11 +45,7 @@ export async function nativePermissionStatus(): Promise<
 // tokens so no more FCM is sent. (The OS-level permission stays granted; the
 // user can re-enable instantly.)
 export async function disableNativePush(): Promise<void> {
-  await fetch("/api/notifications/fcm-unregister", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
-  }).catch(() => {});
+  await unregisterFcmToken().catch(() => {});
 }
 
 // Create the channel, request permission, register with FCM, and start
@@ -77,11 +75,21 @@ export async function enableNativePush(): Promise<NativeEnableResult> {
       listenersAttached = true;
 
       await PushNotifications.addListener("registration", (token) => {
-        void fetch("/api/notifications/fcm-register", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token: token.value, platform: Capacitor.getPlatform() }),
-        }).catch(() => {});
+        void registerFcmToken(token.value, Capacitor.getPlatform())
+          .then(async (ok) => {
+            // A failed write means the token never actually got stored — the
+            // device thinks push is on, but no alert will ever arrive. This was
+            // happening silently for every account whose users.id != auth_user_id
+            // until the identity bug behind this write was fixed (2026-09-01);
+            // report any future recurrence instead of letting it go unnoticed again.
+            if (!ok) {
+              const Sentry = await import("@sentry/nextjs");
+              Sentry.captureException(new Error("fcm token registration failed"), {
+                tags: { area: "push" },
+              });
+            }
+          })
+          .catch(() => {});
       });
 
       // Tapping a notification deep-links to the alert it was about.

@@ -34,6 +34,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
 import { toHebrewError } from "@/lib/error-messages";
+import { saveAccountTransfer } from "@/lib/financial/transfersClient";
 import { getAccountKindLabel, type Account, type AccountTransferRef } from "@/lib/accounts";
 import { loadAccounts as loadActiveAccounts } from "@/components/financial/AccountSelect";
 import { getTodayDate, normalizeDateOnly } from "@/app/(app)/dashboard/DashboardActions.helpers";
@@ -303,21 +304,16 @@ export function AccountTransferDialog({
 
     setSubmitting(true);
     try {
-      const res = await fetch("/api/financial/transfers", {
-        method: transfer ? "PATCH" : "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          ...(transfer ? { id: transfer.id } : null),
-          from_account_id: fromAccountId,
-          to_account_id: toAccountId,
-          amount: amountValue,
-          transfer_date: date,
-          notes: notes.trim() || null,
-        }),
+      const result = await saveAccountTransfer({
+        ...(transfer ? { id: transfer.id } : null),
+        from_account_id: fromAccountId,
+        to_account_id: toAccountId,
+        amount: amountValue,
+        transfer_date: date,
+        notes: notes.trim() || null,
       });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        setError(toHebrewError(json.error, transfer ? "עדכון ההעברה נכשל." : "שמירת ההעברה נכשלה."));
+      if (!result.ok) {
+        setError(toHebrewError(result.error, transfer ? "עדכון ההעברה נכשל." : "שמירת ההעברה נכשלה."));
         return;
       }
       handleOpenChange(false);
