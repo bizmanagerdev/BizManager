@@ -17,6 +17,7 @@ import {
   getAuditFeedPaginated,
   groupAuditFeedItems,
   resolveAuditTitles,
+  resolvePrivateTaskIds,
   resolveUserColorsForValues,
   resolveUserDisplayNamesForValues,
   type AuditFeedItem,
@@ -514,8 +515,11 @@ export default function ActivityClient({
               actorName = names[row.changed_by] ?? null;
               actorColor = colors[row.changed_by] ?? null;
             }
-            const titles = await resolveAuditTitles(supabase, [row]);
-            const item = buildAuditFeedItem(row, actorName, titles.get(row.id) ?? null, actorColor);
+            const [titles, privateTaskIds] = await Promise.all([
+              resolveAuditTitles(supabase, [row]),
+              resolvePrivateTaskIds(supabase, [row]),
+            ]);
+            const item = buildAuditFeedItem(row, actorName, titles.get(row.id) ?? null, actorColor, privateTaskIds);
             if (item.tableName === "documents") await enrichDocumentLinks(supabase, [item]);
 
             setExtraItems((prev) => {

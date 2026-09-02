@@ -1,6 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { buildDetails, invalidateAuditFlagCache, logAuditEvent, TRIGGER_AUDITED_TABLES } from "@/lib/audit";
+import {
+  buildAuditFeedItem,
+  buildDetails,
+  invalidateAuditFlagCache,
+  logAuditEvent,
+  resolvePrivateTaskIds,
+  TRIGGER_AUDITED_TABLES,
+  type AuditLogRow,
+} from "@/lib/audit";
 import { formatMoney } from "@/lib/money";
+
+// resolvePrivateTaskIds deliberately bypasses the caller's own (RLS-bound)
+// client via createSupabaseAdminClient — falls back to whatever `supabase` it
+// was given (see the code comment) when the service key isn't configured, same
+// pattern as payroll-sessions-delete.test.ts.
+vi.mock("@/lib/supabase/admin", () => ({ createSupabaseAdminClient: () => null }));
 
 // logAuditEvent is called by nearly every mutating route in the app, and
 // every one of those route tests mocks it away as a transparent
@@ -193,5 +207,127 @@ describe("buildDetails — payslips / payslip_items", () => {
   it("shows a negative amount for a deduction item", () => {
     const details = buildDetails("payslip_items", { item_type: "deduction", amount: -200, notes: "איחור" });
     expect(details).toBe(`ניכוי · ${formatMoney(-200)} · איחור`);
+  });
+});
+
+// A private task (see tasks-trello-board memory) is hidden from everyone but
+// its creator at the tasks-table RLS level — but audit_logs has no such gate,
+// so its own row (and anything hung off it: comments, members, reminders,
+// attachments) would otherwise leak the task's subject/description straight
+// into the admin-wide /activity feed. buildAuditFeedItem must still show that
+// SOMETHING happened, just not what.
+function makeRow(overrides: Partial<AuditLogRow>): AuditLogRow {
+  return {
+    id: "row-1",
+    table_name: "tasks",
+    record_id: "task-1",
+    action: "update",
+    changed_by: "user-1",
+    user_role: "admin",
+    created_at: "2026-09-01T00:00:00Z",
+    new_data: null,
+    old_data: null,
+    ...overrides,
+  };
+}
+
+describe("buildAuditFeedItem — private task redaction", () => {
+  it("hides subject/title/changes/link on a private task's own create/update/delete row", () => {
+    const row = makeRow({
+      new_data: { subject: "פרויקט חשאי", is_private: true },
+      old_data: { subject: "ישן", is_private: true },
+    });
+    const item = buildAuditFeedItem(row, "מישהו", "פרויקט חשאי");
+    expect(item.title).toBeNull();
+    expect(item.details).toBe("משימה פרטית");
+    expect(item.baseDetails).toBe("משימה פרטית");
+    expect(item.changes).toEqual([]);
+    expect(item.href).toBeNull();
+    expect(item.parentKey).toBeNull();
+    // The fact that a task-related action happened still shows — this isn't a
+    // total blackout, only the content is stripped.
+    expect(item.entityLabel).toBe("משימה");
+    expect(item.actionLabel).toBe("עודכן");
+  });
+
+  it("shows full details for a non-private task (no false positives)", () => {
+    const row = makeRow({ new_data: { subject: "בדיקת ציוד", is_private: false } });
+    const item = buildAuditFeedItem(row, "מישהו", "בדיקת ציוד");
+    expect(item.title).toBe("בדיקת ציוד");
+    expect(item.details).toBe("בדיקת ציוד");
+    expect(item.href).toBe("/tasks/task-1");
+  });
+
+  it("redacts a delete row too (is_private only survives in old_data on a DELETE)", () => {
+    const row = makeRow({
+      action: "delete",
+      new_data: null,
+      old_data: { subject: "פרויקט חשאי", is_private: true },
+    });
+    const item = buildAuditFeedItem(row, "מישהו", "פרויקט חשאי");
+    expect(item.title).toBeNull();
+    expect(item.details).toBe("משימה פרטית");
+  });
+
+  it("redacts a child row (e.g. a document attached to a task) whose task the caller flagged private", () => {
+    const row = makeRow({
+      table_name: "document_links",
+      record_id: "link-1",
+      new_data: { entity_type: "task", entity_id: "task-9", document_id: "doc-1" },
+    });
+    const item = buildAuditFeedItem(row, "מישהו", null, null, new Set(["task-9"]));
+    expect(item.details).toBe("משימה פרטית");
+    expect(item.href).toBeNull();
+    expect(item.parentKey).toBeNull();
+  });
+
+  it("does NOT redact a child row whose task isn't in the private set", () => {
+    const row = makeRow({
+      table_name: "document_links",
+      record_id: "link-1",
+      new_data: { entity_type: "task", entity_id: "task-9", document_id: "doc-1" },
+    });
+    const item = buildAuditFeedItem(row, "מישהו", null, null, new Set());
+    expect(item.href).toBe("/documents?focus=doc-1");
+  });
+});
+
+describe("resolvePrivateTaskIds", () => {
+  it("looks up is_private only for tasks referenced by CHILD rows, skipping a tasks-table row's own id", async () => {
+    const seenIds: string[] = [];
+    const supabase = {
+      from: (table: string) => {
+        expect(table).toBe("tasks");
+        return {
+          select: () => ({
+            in: (_col: string, ids: string[]) => {
+              seenIds.push(...ids);
+              return Promise.resolve({ data: ids.map((id) => ({ id, is_private: id === "task-private" })) });
+            },
+          }),
+        };
+      },
+    };
+    const rows: AuditLogRow[] = [
+      makeRow({ table_name: "tasks", record_id: "task-own", new_data: { is_private: true } }),
+      makeRow({ table_name: "task_comments", record_id: "c1", new_data: { task_id: "task-private" } }),
+      makeRow({ table_name: "reminders", record_id: "r1", new_data: { task_id: "task-public" } }),
+    ];
+    const result = await resolvePrivateTaskIds(supabase as never, rows);
+    expect([...seenIds].sort()).toEqual(["task-private", "task-public"]);
+    expect(result.has("task-private")).toBe(true);
+    expect(result.has("task-public")).toBe(false);
+    // Not looked up — buildAuditFeedItem reads is_private inline off the row's
+    // own data for a tasks-table row, no query needed.
+    expect(result.has("task-own")).toBe(false);
+  });
+
+  it("skips the query entirely when nothing needs looking up", async () => {
+    const from = vi.fn();
+    const result = await resolvePrivateTaskIds({ from } as never, [
+      makeRow({ table_name: "tasks", new_data: { is_private: true } }),
+    ]);
+    expect(from).not.toHaveBeenCalled();
+    expect(result.size).toBe(0);
   });
 });

@@ -3,6 +3,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { formatMoney } from "@/lib/money";
 import { ORDER_NOTES_SEPARATOR } from "@/lib/orders/comments";
 import { getSalaryTypeLabel } from "@/lib/payroll";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type AuditLogPrimitive = string | number | boolean | null;
@@ -512,6 +513,85 @@ function recordData(
   }
   return null;
 }
+
+// ── Private-task redaction ───────────────────────────────────────────────────
+// A task made private (see [[tasks-trello-board]]) is hidden from everyone but
+// its creator at the DB (RLS) level — but `audit_logs` is a separate table with
+// no such gate, so its create/update/delete row (and any comment/member/time-
+// report/reminder/attachment hung off it) would otherwise print the task's
+// subject/description straight into the admin-wide /activity feed. These rows
+// still show that SOMETHING happened (create/update/delete, comment added…) —
+// only the content is stripped.
+
+// Tables that hang directly off a task via a `task_id` column. Their audit rows
+// redact the same way as the task's own row when that task is private.
+const TASK_CHILD_TABLES = new Set(["task_comments", "task_members", "task_time_reports"]);
+
+// The task a non-`tasks` audit row belongs to, resolvable from the row's own
+// data alone (no query) — used to look up whether that task is private.
+function taskIdForPrivacyCheck(
+  tableName: string,
+  d: Record<string, AuditLogValue> | null
+): string | null {
+  if (TASK_CHILD_TABLES.has(tableName) || tableName === "reminders") {
+    const v = d?.task_id;
+    return typeof v === "string" && v ? v : null;
+  }
+  if (tableName === "document_links" && d?.entity_type === "task") {
+    const v = d?.entity_id;
+    return typeof v === "string" && v ? v : null;
+  }
+  return null;
+}
+
+function isPrivateTaskAuditRow(
+  tableName: string,
+  d: Record<string, AuditLogValue> | null,
+  privateTaskIds: Set<string>
+): boolean {
+  if (tableName === "tasks") return d?.is_private === true;
+  const taskId = taskIdForPrivacyCheck(tableName, d);
+  return taskId ? privateTaskIds.has(taskId) : false;
+}
+
+// Batches the one query needed to redact a page of rows: which of the tasks
+// referenced by CHILD rows (comments/members/time reports/reminders/document
+// links) are private. A `tasks` row itself never needs the query — is_private
+// already lives inline in its own new_data/old_data.
+//
+// Deliberately queries with the service-role client, not the caller's own
+// `supabase`: the whole point is to see is_private for tasks the VIEWER isn't
+// allowed to see (an admin who isn't the private task's owner) — through the
+// caller's own RLS-bound client, the private task's row would simply be
+// filtered out by `tasks_privacy_restrict`, so it would look "not found" and
+// silently fail to redact, the opposite of what this is for. Only the boolean
+// flag leaves this query, never the task's content. Falls back to the passed
+// client (best-effort) when the service key isn't configured — same pattern as
+// getUserPresenceRoster.
+export async function resolvePrivateTaskIds(
+  supabase: SupabaseClient,
+  rows: AuditLogRow[]
+): Promise<Set<string>> {
+  const lookupIds = new Set<string>();
+  for (const r of rows) {
+    if (r.table_name === "tasks") continue;
+    const d = recordData(r.new_data ?? null, r.old_data ?? null);
+    const taskId = taskIdForPrivacyCheck(r.table_name, d);
+    if (taskId) lookupIds.add(taskId);
+  }
+  const privateTaskIds = new Set<string>();
+  if (lookupIds.size === 0) return privateTaskIds;
+  const client = createSupabaseAdminClient() ?? supabase;
+  const { data } = await client.from("tasks").select("id,is_private").in("id", Array.from(lookupIds));
+  for (const t of (data ?? []) as { id?: string; is_private?: boolean }[]) {
+    if (typeof t.id === "string" && t.is_private === true) privateTaskIds.add(t.id);
+  }
+  return privateTaskIds;
+}
+
+// Shown instead of the real details/title on a redacted row — confirms
+// something happened without saying what.
+const PRIVATE_TASK_LABEL = "משימה פרטית";
 
 // Resolve a "<type>:<uuid>" parent key to a viewable route.
 function hrefFromParentKey(parentKey: string | null): string | null {
@@ -1644,25 +1724,27 @@ export function buildAuditFeedItem(
   row: AuditLogRow,
   actorName: string | null,
   title: string | null = null,
-  actorColor: string | null = null
+  actorColor: string | null = null,
+  privateTaskIds: Set<string> = new Set()
 ): AuditFeedItem {
+  // Deletes carry their foreign keys (and is_private) in old_data only.
+  const data = recordData(row.new_data ?? null, row.old_data ?? null);
+  const isPrivate = isPrivateTaskAuditRow(row.table_name, data, privateTaskIds);
+
   // DELETE rows only ever carry old_data (see log_changes() — new_data is never
   // written on delete), so fall back to it or a deleted row's details column
   // would always be blank.
-  const base = buildDetails(row.table_name, row.new_data ?? row.old_data ?? null);
-  const changes = isUpdateAction(row.action)
+  const base = isPrivate ? "" : buildDetails(row.table_name, row.new_data ?? row.old_data ?? null);
+  const changes = !isPrivate && isUpdateAction(row.action)
     ? buildChangeList(row.old_data ?? null, row.new_data ?? null)
     : [];
-  const details = [base, changeListToString(changes)].filter(Boolean).join(" · ");
+  const details = isPrivate
+    ? PRIVATE_TASK_LABEL
+    : [base, changeListToString(changes)].filter(Boolean).join(" · ");
 
-  const parentKey = buildParentKey(
-    row.table_name,
-    row.record_id,
-    row.new_data ?? null,
-    row.old_data ?? null
-  );
-  // Deletes carry their foreign keys in old_data only.
-  const data = recordData(row.new_data ?? null, row.old_data ?? null);
+  const parentKey = isPrivate
+    ? null
+    : buildParentKey(row.table_name, row.record_id, row.new_data ?? null, row.old_data ?? null);
 
   return {
     id: row.id,
@@ -1673,15 +1755,15 @@ export function buildAuditFeedItem(
     entityLabel: entityLabel(row.table_name, data),
     summary: buildSummary(row.table_name, row.action, data),
     details,
-    baseDetails: base,
+    baseDetails: isPrivate ? PRIVATE_TASK_LABEL : base,
     changes,
     actorName: row.changed_by ? actorName ?? "משתמש" : "מערכת",
     actorRole: row.user_role,
     actorColor: row.changed_by ? actorColor : null,
     createdAt: row.created_at,
-    title,
+    title: isPrivate ? null : title,
     parentKey,
-    href: buildHref(row.table_name, row.record_id, parentKey, data),
+    href: isPrivate ? null : buildHref(row.table_name, row.record_id, parentKey, data),
     isChild: CHILD_TABLES.has(row.table_name),
   };
 }
@@ -1690,14 +1772,16 @@ function normalizeAuditRows(
   rows: AuditLogRow[],
   actorNames: Map<string, string>,
   titles?: Map<string, string>,
-  actorColors?: Map<string, string>
+  actorColors?: Map<string, string>,
+  privateTaskIds?: Set<string>
 ): AuditFeedItem[] {
   return rows.map((row) =>
     buildAuditFeedItem(
       row,
       row.changed_by ? actorNames.get(row.changed_by) ?? null : null,
       titles?.get(row.id) ?? null,
-      row.changed_by ? actorColors?.get(row.changed_by) ?? null : null
+      row.changed_by ? actorColors?.get(row.changed_by) ?? null : null,
+      privateTaskIds
     )
   );
 }
@@ -1841,13 +1925,14 @@ export async function getRecentAuditEvents(supabase: SupabaseClient, limit = 8) 
         .filter((value): value is string => typeof value === "string" && Boolean(value))
     )
   );
-  const [actorInfo, titles] = await Promise.all([
+  const [actorInfo, titles, privateTaskIds] = await Promise.all([
     getActorInfo(supabase, actorIds),
     resolveAuditTitles(supabase, rows),
+    resolvePrivateTaskIds(supabase, rows),
   ]);
 
   return {
-    items: normalizeAuditRows(rows, actorInfo.names, titles, actorInfo.colors),
+    items: normalizeAuditRows(rows, actorInfo.names, titles, actorInfo.colors, privateTaskIds),
     error: null as string | null,
   };
 }
@@ -2325,8 +2410,8 @@ export async function enrichDocumentLinks(supabase: SupabaseClient, items: Audit
       ? supabase.from("projects").select("id,name").in("id", Array.from(projectIds))
       : Promise.resolve({ data: [] as NamedRow[] }),
     taskIds.size > 0
-      ? supabase.from("tasks").select("id,subject").in("id", Array.from(taskIds))
-      : Promise.resolve({ data: [] as { id?: string; subject?: string }[] }),
+      ? supabase.from("tasks").select("id,subject,is_private").in("id", Array.from(taskIds))
+      : Promise.resolve({ data: [] as { id?: string; subject?: string; is_private?: boolean }[] }),
     propertyIds.size > 0
       ? supabase.from("properties").select("id,name,address").in("id", Array.from(propertyIds))
       : Promise.resolve({ data: [] as { id?: string; name?: string; address?: string }[] }),
@@ -2344,8 +2429,13 @@ export async function enrichDocumentLinks(supabase: SupabaseClient, items: Audit
       projectName.set(row.id, row.name.trim());
     }
   }
+  // A private task (see [[tasks-trello-board]]) is hidden from everyone but its
+  // creator — a document attached to one must not leak its subject here either,
+  // so those ids are simply left unresolved (nameFor falls back to the generic
+  // "שייך למשימה" with no name, same as the redacted task rows themselves).
   const taskName = new Map<string, string>();
-  for (const row of (taskRes.data ?? []) as { id?: string; subject?: string }[]) {
+  for (const row of (taskRes.data ?? []) as { id?: string; subject?: string; is_private?: boolean }[]) {
+    if (row.is_private === true) continue;
     if (typeof row.id === "string" && typeof row.subject === "string" && row.subject.trim()) {
       taskName.set(row.id, row.subject.trim());
     }
@@ -2496,14 +2586,15 @@ export async function getAuditFeedPaginated(
   const actorIds = Array.from(
     new Set(rows.map((r) => r.changed_by).filter((v): v is string => typeof v === "string" && Boolean(v)))
   );
-  const [actorInfo, titles] = await Promise.all([
+  const [actorInfo, titles, privateTaskIds] = await Promise.all([
     getActorInfo(supabase, actorIds),
     resolveAuditTitles(supabase, rows),
+    resolvePrivateTaskIds(supabase, rows),
   ]);
   const totalCount = count ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / AUDIT_PAGE_SIZE));
 
-  const items = normalizeAuditRows(rows, actorInfo.names, titles, actorInfo.colors);
+  const items = normalizeAuditRows(rows, actorInfo.names, titles, actorInfo.colors, privateTaskIds);
   await Promise.all([
     enrichLogoutDurations(supabase, items),
     enrichDocumentLinks(supabase, items),
