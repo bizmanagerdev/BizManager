@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // surface in one place. We mock the Supabase route client (the only dependency)
 // and drive each decision path.
 
-const getUser = vi.fn();
+const getSession = vi.fn();
 const maybeSingle = vi.fn();
 
 // Records the column/value passed to .eq() so we can assert the gate looks up
@@ -14,7 +14,7 @@ const eqSpy = vi.fn();
 
 function makeSupabase() {
   return {
-    auth: { getUser },
+    auth: { getSession },
     from: vi.fn(() => ({
       select: vi.fn(() => ({
         eq: (col: string, val: string) => {
@@ -43,25 +43,18 @@ const ACTIVE_ADMIN = {
 };
 
 function authedUser() {
-  getUser.mockResolvedValue({ data: { user: { id: "auth-1", email: "a@b.com" } }, error: null });
+  getSession.mockResolvedValue({ data: { session: { user: { id: "auth-1", email: "a@b.com" } } }, error: null });
 }
 
 beforeEach(() => {
-  getUser.mockReset();
+  getSession.mockReset();
   maybeSingle.mockReset();
   eqSpy.mockReset();
 });
 
 describe("requireRouteAccess — authentication", () => {
-  it("returns 400 when getUser errors", async () => {
-    getUser.mockResolvedValue({ data: { user: null }, error: { message: "boom" } });
-    const result = await requireRouteAccess();
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.response.status).toBe(400);
-  });
-
-  it("returns 401 when there is no user (not logged in)", async () => {
-    getUser.mockResolvedValue({ data: { user: null }, error: null });
+  it("returns 401 when there is no session (not logged in)", async () => {
+    getSession.mockResolvedValue({ data: { session: null }, error: null });
     const result = await requireRouteAccess();
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(401);

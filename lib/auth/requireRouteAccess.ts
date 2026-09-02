@@ -31,17 +31,31 @@ export async function requireRouteAccess(options?: {
 }): Promise<RouteAccessResult> {
   const supabase = await createSupabaseRouteClient();
 
+  // getSession(), NOT getUser() — see the matching notes in middleware.ts and
+  // requireProfile.ts (2026-09-02). getUser() makes an HTTP round-trip to the
+  // Auth server on every call, and this function gates nearly every API route
+  // in the app, so every write (including every delivery-confirm request) paid
+  // that latency. Under Auth-server load this produced two failure modes: a
+  // false "Unauthorized" for a genuinely signed-in user (getUser() silently
+  // returns {user: null} when saturated, no thrown error), and — worse — a
+  // race where the round-trip's latency outlasted a token refresh, so the
+  // request that finally reached Postgres carried a JWT already rotated out
+  // from under it, producing a real RLS with_check failure on the write
+  // ("new row violates row-level security policy") for an account whose
+  // active/system_access were never actually wrong. Confirmed live 2026-09-02:
+  // a worker's delivery-confirm failed twice this way, then succeeded on
+  // retry seconds later — intermittent, not a data problem.
+  //
+  // The identity read here is not the trust boundary on its own: it only
+  // decides which `users` row to load, and that row's role/active/
+  // system_access checks below — plus RLS on every subsequent query, via the
+  // same supabase client returned to the caller — are what actually gate
+  // access. Restore verification with getClaims() (local JWKS check) if ever
+  // needed, not getUser().
   const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-
-  if (userError) {
-    return {
-      ok: false,
-      response: NextResponse.json({ error: `Authentication error: ${userError.message}` }, { status: 400 }),
-    };
-  }
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user ?? null;
 
   if (!user) {
     return {
