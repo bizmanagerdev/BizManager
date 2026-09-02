@@ -22,13 +22,26 @@ export async function middleware(req: NextRequest) {
     },
   });
 
-  // getUser(), not getSession(): getSession() only reads the cookie's claims
-  // back without asking the Auth server to confirm them, so a stale/tampered
-  // cookie would pass this gate as-is. Per Supabase's own Next.js middleware
-  // guidance, getSession() is explicitly not safe to gate routing on.
+  // getSession(), NOT getUser(). getUser() makes an HTTP call to the Auth
+  // server on every invocation — and this middleware runs on every request the
+  // matcher below admits: each page, each RSC payload, and each link prefetch
+  // Next fires on hover. Switching this to getUser() (2026-09-01) put two
+  // sequential Auth round-trips in front of every navigation and made the whole
+  // app unusable: /auth/v1/user measured 0.7-5.2s against this project, versus
+  // 130-300ms for /rest/v1. Worse, a saturated Auth server answers with
+  // { user: null } rather than throwing, so the `!user` branch below started
+  // bouncing signed-in users to /login mid-session.
+  //
+  // Reading the cookie's claims without confirming them is acceptable HERE and
+  // only here: this gate decides ROUTING, nothing more. A forged cookie buys a
+  // redirect decision, not data — every read is still behind requireProfile()'s
+  // role/active checks and the table's RLS policies. Verify the token properly
+  // with getClaims() (local JWKS signature check, no round-trip) rather than by
+  // reintroducing getUser().
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user ?? null;
 
   const path = req.nextUrl.pathname;
 

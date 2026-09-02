@@ -176,12 +176,47 @@ self.addEventListener("sync", (event) => {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function putInCache(cacheName, request, response) {
   if (!response.ok) return;
+  // NEVER store a response that fetch() reached by following a redirect.
+  // Handing one back for a navigation is a network error (see asNavigation
+  // below), so caching it poisons that URL until the next version bump: every
+  // later visit reads the redirect out of the cache and dies the same way,
+  // offline or not.
+  if (response.redirected) return;
   // Clone synchronously — must happen before the response body starts being
   // consumed by the caller. Awaiting caches.open() first and cloning inside
   // the .then() runs after the page reads the body, throwing
   // "Response body is already used".
   const clone = response.clone();
   caches.open(cacheName).then((cache) => cache.put(request, clone)).catch(() => {});
+}
+
+// caches.match() rejects if the Cache Storage backend is unavailable — evicted
+// under storage pressure, corrupted, or blocked by the user's site settings. An
+// unhandled rejection inside respondWith() is a dead tab ("This site can't be
+// reached"), so every lookup degrades to "no cache entry" instead.
+async function matchCache(request) {
+  try {
+    return (await caches.match(request)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// A navigation Request has redirect mode "manual" — the BROWSER is the only
+// thing allowed to act on a redirect, so respondWith() rejects any response
+// fetch() already followed:
+//   "The FetchEvent for <url> resulted in a network error response: a
+//    redirected response was used for a request whose redirect mode is not
+//    follow"
+// That is exactly what a signed-out (or spuriously signed-out) user hits:
+// middleware answers /projects with a 307 to /login, fetch() follows it here,
+// and the login page they were being sent to arrives as an unreachable-site
+// screen — the offline fallback below never gets a chance to run. Re-issue it
+// as a fresh redirect so the browser performs the navigation itself and the
+// address bar lands on /login.
+function asNavigation(response) {
+  if (!response.redirected) return response;
+  return Response.redirect(response.url, 302);
 }
 
 // How long a page navigation may wait on the network before we answer from
@@ -223,7 +258,7 @@ self.addEventListener("fetch", (event) => {
   // 1. Next.js immutable chunks — always content-hashed, safe to cache forever
   if (url.pathname.startsWith("/_next/static/")) {
     event.respondWith(
-      caches.match(request).then(
+      matchCache(request).then(
         (cached) =>
           cached ??
           fetch(request).then((res) => {
@@ -243,7 +278,7 @@ self.addEventListener("fetch", (event) => {
           putInCache(STATIC_CACHE, request, res);
           return res;
         })
-        .catch(() => caches.match(request))
+        .catch(() => matchCache(request))
         .then((res) => res ?? new Response("Offline", { status: 503 }))
     );
     return;
@@ -257,7 +292,7 @@ self.addEventListener("fetch", (event) => {
           putInCache(API_CACHE, request, res);
           return res;
         })
-        .catch(() => caches.match(request))
+        .catch(() => matchCache(request))
         .then(
           (res) =>
             res ??
@@ -284,7 +319,7 @@ self.addEventListener("fetch", (event) => {
           putInCache(PAGES_CACHE, request, res);
           return res;
         })
-        .catch(() => caches.match(request))
+        .catch(() => matchCache(request))
         .then((res) => res ?? new Response("Offline", { status: 503 }))
     );
     return;
@@ -315,7 +350,7 @@ self.addEventListener("fetch", (event) => {
         } catch {
           res = null; // network rejected outright — fall through to cache
         }
-        if (res) return res;
+        if (res) return asNavigation(res);
 
         // Timed out: leave the request in flight so a merely-slow network still
         // warms PAGES_CACHE for the next launch, but stop waiting on it here.
@@ -323,11 +358,13 @@ self.addEventListener("fetch", (event) => {
 
         // Try the exact page, then dashboard, then login, then root
         const cached =
-          (await caches.match(request)) ??
-          (await caches.match("/dashboard")) ??
-          (await caches.match("/login")) ??
-          (await caches.match("/"));
-        if (cached) return cached;
+          (await matchCache(request)) ??
+          (await matchCache("/dashboard")) ??
+          (await matchCache("/login")) ??
+          (await matchCache("/"));
+        // Entries cached before putInCache learned to reject redirects can still
+        // carry the flag, so this goes through asNavigation() too.
+        if (cached) return asNavigation(cached);
         return new Response(OFFLINE_HTML, {
           headers: { "Content-Type": "text/html; charset=utf-8" },
         });
@@ -338,7 +375,7 @@ self.addEventListener("fetch", (event) => {
 
   // 6. Everything else (icons, fonts, etc.) — cache-first
   event.respondWith(
-    caches.match(request).then(
+    matchCache(request).then(
       (cached) =>
         cached ??
         fetch(request).then((res) => {

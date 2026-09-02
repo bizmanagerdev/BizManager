@@ -34,13 +34,24 @@ export type UserProfile = {
 export const requireProfile = cache(async () => {
   const supabase = await createSupabaseServerClient();
 
-  // getUser() (not getSession()) is required here: this result gates role/
-  // access lookups below, and getSession() only reads the cookie's claims
-  // back without verifying them against the Auth server — a stale or
-  // tampered cookie would be trusted as-is.
+  // getSession(), NOT getUser() — see the matching note in middleware.ts.
+  // getUser() costs an HTTP round-trip to the Auth server; this runs in the
+  // (app) layout, which sits above every route's loading.tsx, so that latency
+  // blocks the shell on every single navigation before a skeleton can show.
+  // Together with the middleware call it put two sequential Auth round-trips in
+  // front of each tab switch.
+  //
+  // The id read here is not a trust boundary on its own: it only selects which
+  // `users` row to load, and that row's role/active/system_access checks below —
+  // plus RLS on every subsequent query — are what actually gate access. A forged
+  // cookie would have to name a real auth_user_id and would still be held to
+  // those. Restore verification with getClaims() (local JWKS check), not
+  // getUser().
   const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
+    data: { session: fastSession },
+  } = await supabase.auth.getSession();
+
+  const authUser = fastSession?.user ?? null;
 
   if (!authUser) redirect("/login");
 
