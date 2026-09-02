@@ -144,13 +144,15 @@ async function enrichProjectRows(supabase: SupabaseClient, rows: Row[]): Promise
     )
   );
 
-  const [{ data: projectSettingsRows }] = await Promise.all([
+  // All three enrichment queries are independent of each other (only the base
+  // rows above gate them) — one Promise.all wave, not two sequential ones. This
+  // used to be split into two `await`ed waves (settings alone, then financials
+  // + phone together), silently adding a full extra network round-trip to
+  // every projects-list load/tab switch for no reason.
+  const [{ data: projectSettingsRows }, { data: financialRows }, { data: customerPhoneRows }] = await Promise.all([
     projectIds.length > 0
       ? supabase.from("projects").select("id,expenses_billed_separately,payment_terms,due_date,no_charge,branch_id").in("id", projectIds)
       : Promise.resolve({ data: [] as Row[] }),
-  ]);
-
-  const [{ data: financialRows }, { data: customerPhoneRows }] = await Promise.all([
     projectIds.length > 0
       ? supabase
           .from("project_financials_view")
