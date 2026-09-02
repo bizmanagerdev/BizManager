@@ -467,6 +467,11 @@ export async function POST(req: Request) {
 
       if (paymentsInsertError) {
         await cleanupUploadedDocument(supabase, uploadedDocuments);
+        console.error("orders/update payments insert failed", { orderId, message: paymentsInsertError.message });
+        Sentry.captureException(new Error(`payments insert failed: ${paymentsInsertError.message}`), {
+          tags: { route: "orders/update", op: "payments_insert" },
+          extra: { orderId, customerId, paymentCount: paymentInserts.length },
+        });
         return NextResponse.json({ error: toHebrewError(paymentsInsertError.message) }, { status: 400 });
       }
       for (const row of insertedPaymentRows ?? []) {
@@ -481,6 +486,11 @@ export async function POST(req: Request) {
 
       if (refundsInsertError) {
         await cleanupUploadedDocument(supabase, uploadedDocuments);
+        console.error("orders/update refunds insert failed", { orderId, message: refundsInsertError.message });
+        Sentry.captureException(new Error(`refunds insert failed: ${refundsInsertError.message}`), {
+          tags: { route: "orders/update", op: "refunds_insert" },
+          extra: { orderId, customerId, refundCount: refundInserts.length },
+        });
         const message =
           refundsInsertError.message.includes("payments_amount_total_check") ||
           refundsInsertError.message.includes("payments_net_amount_check") ||
