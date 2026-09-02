@@ -2,7 +2,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
@@ -18,7 +18,11 @@ import type { ProjectsFilters } from "@/app/(app)/projects/loadProjects";
 import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import { searchProjectEntries, useProjectSearchIndex, type ProjectSearchIndexEntry } from "@/hooks/useProjectSearchIndex";
 import { ChatIcon, DocumentIcon, EditIcon, FilterIcon, ProjectIcon, SearchIcon, SuccessIcon } from "@/components/ui/icons";
-import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
+import {
+  emitNavigationStart,
+  emitProgressActivityEnd,
+  emitProgressActivityStart,
+} from "@/components/layout/TopNavigationProgress";
 import { paymentStatusClasses } from "@/lib/orders/paymentStatus";
 import { rowNavigateProps } from "@/lib/ui/row-navigation";
 import { DataTableShell } from "@/components/ui/data-table-shell";
@@ -455,6 +459,22 @@ export default function ProjectsClient({
     };
   }, [query, offline, projectIndexEntries, customerIndexEntries, projectIndexLoading, activeTab, status, scopeCustomerId]);
 
+  // Tab/status/sort changes push a new URL, which re-runs the server page with
+  // the new searchParams — but Next only shows the route's loading.tsx
+  // skeleton for a genuinely new segment, not for a searchParams-only
+  // navigation on the same page, so switching tabs used to give no feedback
+  // at all for the 1-3s the RSC round-trip takes (user, 2026-09-02: "i want
+  // the loader to appear when switching it might help the feeling"). Wrapping
+  // the push in a transition exposes isFiltersPending, which drives the same
+  // shared top progress bar every other navigation in the app uses.
+  const [isFiltersPending, startFiltersTransition] = useTransition();
+
+  useEffect(() => {
+    if (!isFiltersPending) return;
+    emitProgressActivityStart();
+    return () => emitProgressActivityEnd();
+  }, [isFiltersPending]);
+
   // Push filter changes to URL — server re-fetches with the new filters applied
   // across the full dataset, then we get a fresh paginated slice back.
   const pushFilters = useCallback(
@@ -478,7 +498,9 @@ export default function ProjectsClient({
       if (merged.sort !== defaultSort) params.set("sort", merged.sort);
       if (merged.q.trim()) params.set("q", merged.q.trim());
       const qs = params.toString();
-      router.push(qs ? `/projects?${qs}` : "/projects", { scroll: false });
+      startFiltersTransition(() => {
+        router.push(qs ? `/projects?${qs}` : "/projects", { scroll: false });
+      });
     },
     [activeTab, status, sort, query, router, searchParams]
   );
@@ -940,6 +962,12 @@ export default function ProjectsClient({
             : `נמצאו ${tabCounts?.projects ?? rows.length} פרויקטים`}
       </div>
 
+      <div
+        className={cn(
+          "transition-opacity duration-150",
+          isFiltersPending ? "pointer-events-none opacity-50" : "opacity-100"
+        )}
+      >
       <ResponsiveDataView
         breakpoint="xl"
         desktop={
@@ -1294,6 +1322,7 @@ export default function ProjectsClient({
           </>
         }
       />
+      </div>
 
       {rows.length > 0 ? (
         <div className="pt-1 text-center text-xs text-muted-foreground">
