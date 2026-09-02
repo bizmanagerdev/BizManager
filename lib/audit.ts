@@ -1,5 +1,8 @@
 import { formatShortDate } from "@/lib/date";
 import { toHebrewError } from "@/lib/error-messages";
+import { formatMoney } from "@/lib/money";
+import { ORDER_NOTES_SEPARATOR } from "@/lib/orders/comments";
+import { getSalaryTypeLabel } from "@/lib/payroll";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type AuditLogPrimitive = string | number | boolean | null;
@@ -271,6 +274,33 @@ export function buildDetails(tableName: string, newData: AuditLogValue): string 
     case "worker_payment_allocations": {
       const amt = money(d.amount);
       if (amt) parts.push(amt);
+      break;
+    }
+    case "payslips": {
+      const gross = money(d.gross_salary);
+      if (gross) parts.push(gross);
+      const type = str(d.calculated_salary_type);
+      if (type) parts.push(getSalaryTypeLabel(type));
+      const minutes = Number(d.total_work_minutes);
+      if (Number.isFinite(minutes) && minutes > 0) {
+        parts.push(`${(minutes / 60).toLocaleString("he-IL", { maximumFractionDigits: 1 })} שעות`);
+      }
+      // Can be negative (a downward correction), so this doesn't go through the
+      // `money` helper above, which only ever shows positive amounts.
+      const adj = Number(d.manual_adjustments);
+      if (Number.isFinite(adj) && adj !== 0) parts.push(`התאמה ${formatMoney(adj)}`);
+      const note = str(d.notes);
+      if (note) parts.push(note);
+      break;
+    }
+    case "payslip_items": {
+      const type = str(d.item_type);
+      if (type) parts.push(PAYSLIP_ITEM_TYPE_LABELS[type] ?? type);
+      // A deduction/negative correction is stored as a negative amount.
+      const amt = Number(d.amount);
+      if (Number.isFinite(amt) && amt !== 0) parts.push(formatMoney(amt));
+      const note = str(d.notes);
+      if (note) parts.push(note);
       break;
     }
     case "tasks": {
@@ -576,7 +606,8 @@ export function buildParentKey(
       return null;
     }
     case "worker_payments":
-    case "attendance_sessions": {
+    case "attendance_sessions":
+    case "payslips": {
       const u = fk("user_id");
       return u ? `worker:${u}` : null;
     }
@@ -877,6 +908,7 @@ export async function resolveAuditTitles(
   const orderIds = new Set<string>(); // resolved one hop further → their customer
   const workerPaymentIds = new Set<string>(); // resolved one hop further → their worker
   const loanIds = new Set<string>(); // resolved one hop further → their counterparty
+  const payslipIds = new Set<string>(); // resolved one hop further → their worker
 
   for (const r of rows) {
     const d = dataOf(r);
@@ -936,7 +968,8 @@ export async function resolveAuditTitles(
       case "attendance_sessions":
       case "phone_attendance_reports":
       case "worker_absences":
-      case "recurring_task_template_assignees": {
+      case "recurring_task_template_assignees":
+      case "payslips": {
         const u = fk(d, "user_id");
         if (u) userIds.add(u);
         break;
@@ -946,6 +979,12 @@ export async function resolveAuditTitles(
       case "worker_payment_allocations": {
         const wp = fk(d, "worker_payment_id");
         if (wp) workerPaymentIds.add(wp);
+        break;
+      }
+      // Same shape: only payslip_id lives here, the worker is one hop away.
+      case "payslip_items": {
+        const p = fk(d, "payslip_id");
+        if (p) payslipIds.add(p);
         break;
       }
       case "expenses":
@@ -968,7 +1007,7 @@ export async function resolveAuditTitles(
   // Three one-hop lookups, each keyed off ids gathered from the original `rows`
   // pass above and none reading the others' output — run them concurrently
   // instead of one after another.
-  const [orderHopRes, loanHopRes, workerPaymentHopRes] = await Promise.all([
+  const [orderHopRes, loanHopRes, workerPaymentHopRes, payslipHopRes] = await Promise.all([
     orderIds.size > 0
       ? supabase.from("orders").select("id,customer_id").in("id", Array.from(orderIds))
       : Promise.resolve({ data: [] as { id?: string; customer_id?: string }[] }),
@@ -982,6 +1021,9 @@ export async function resolveAuditTitles(
         }),
     workerPaymentIds.size > 0
       ? supabase.from("worker_payments").select("id,user_id").in("id", Array.from(workerPaymentIds))
+      : Promise.resolve({ data: [] as { id?: string; user_id?: string }[] }),
+    payslipIds.size > 0
+      ? supabase.from("payslips").select("id,user_id").in("id", Array.from(payslipIds))
       : Promise.resolve({ data: [] as { id?: string; user_id?: string }[] }),
   ]);
 
@@ -1015,6 +1057,15 @@ export async function resolveAuditTitles(
   for (const row of (workerPaymentHopRes.data ?? []) as { id?: string; user_id?: string }[]) {
     if (typeof row.id === "string" && typeof row.user_id === "string") {
       workerPaymentUser.set(row.id, row.user_id);
+      userIds.add(row.user_id);
+    }
+  }
+
+  // First hop: payslip_items → its payslips row → the worker.
+  const payslipUser = new Map<string, string>();
+  for (const row of (payslipHopRes.data ?? []) as { id?: string; user_id?: string }[]) {
+    if (typeof row.id === "string" && typeof row.user_id === "string") {
+      payslipUser.set(row.id, row.user_id);
       userIds.add(row.user_id);
     }
   }
@@ -1123,7 +1174,8 @@ export async function resolveAuditTitles(
       case "attendance_sessions":
       case "phone_attendance_reports":
       case "worker_absences":
-      case "recurring_task_template_assignees": {
+      case "recurring_task_template_assignees":
+      case "payslips": {
         const u = fk(d, "user_id");
         title = u ? userNames[u] ?? null : null;
         break;
@@ -1131,6 +1183,12 @@ export async function resolveAuditTitles(
       case "worker_payment_allocations": {
         const wp = fk(d, "worker_payment_id");
         const u = wp ? workerPaymentUser.get(wp) : null;
+        title = u ? userNames[u] ?? null : null;
+        break;
+      }
+      case "payslip_items": {
+        const p = fk(d, "payslip_id");
+        const u = p ? payslipUser.get(p) : null;
         title = u ? userNames[u] ?? null : null;
         break;
       }
@@ -1231,6 +1289,15 @@ const ABSENCE_TYPE_LABELS: Record<string, string> = {
   holiday: "חג", unpaid: "ללא תשלום", other: "אחר",
 };
 
+// Mirrors PAYSLIP_ITEM_TYPES in app/(app)/payroll/SalaryCenterUi.tsx — kept as a
+// separate copy since that file is component-side and this one isn't.
+const PAYSLIP_ITEM_TYPE_LABELS: Record<string, string> = {
+  bonus: "בונוס", overtime_extra: "תוספת שעות נוספות", travel_allowance: "דמי נסיעה",
+  meal_allowance: "דמי אוכל", advance: "מקדמה", deduction: "ניכוי",
+  exception_absence: "היעדרות", exception_partial_month: "חודש חלקי",
+  manual_adjustment: "התאמה ידנית",
+};
+
 function formatChangeValue(field: string, value: AuditLogValue): string {
   if (value === null || value === undefined || value === "") return "—";
   if (field === "amount" || field.endsWith("_price") || field.endsWith("_amount")) {
@@ -1248,6 +1315,27 @@ function isUpdateAction(action: string): boolean {
   return action === "update" || action === "UPDATE" || action === "status_changed" || action === "priority_changed";
 }
 
+// `notes` doubles as an append-only comment log on some tables (see
+// lib/orders/comments.ts): every edit appends a new "<author> · <date>\n<body>"
+// block onto the existing text, so `before` is a near-total prefix of `after`.
+// Diffing it like any other field would print that whole accumulated blob
+// twice (once as "before", once as "after") — this shows only what actually
+// changed instead.
+function buildNotesChange(before: string, after: string): AuditChange {
+  const label = CHANGE_FIELD_LABELS.notes;
+  if (after.startsWith(before) && before.length > 0) {
+    const added = after.slice(before.length);
+    const block = added.startsWith(ORDER_NOTES_SEPARATOR) ? added.slice(ORDER_NOTES_SEPARATOR.length) : added.replace(/^\n+/, "");
+    return { label, before: "(ללא שינוי בהיסטוריה הקודמת)", after: block || formatChangeValue("notes", after) };
+  }
+  if (before.startsWith(after) && after.length > 0) {
+    const removed = before.slice(after.length);
+    const block = removed.startsWith(ORDER_NOTES_SEPARATOR) ? removed.slice(ORDER_NOTES_SEPARATOR.length) : removed.replace(/^\n+/, "");
+    return { label, before: block || formatChangeValue("notes", before), after: "(ללא שינוי בהיסטוריה הקודמת)" };
+  }
+  return { label, before: formatChangeValue("notes", before), after: formatChangeValue("notes", after) };
+}
+
 function buildChangeList(oldData: AuditLogValue, newData: AuditLogValue): AuditChange[] {
   if (!oldData || typeof oldData !== "object" || Array.isArray(oldData)) return [];
   if (!newData || typeof newData !== "object" || Array.isArray(newData)) return [];
@@ -1261,11 +1349,14 @@ function buildChangeList(oldData: AuditLogValue, newData: AuditLogValue): AuditC
     const before = o[field] ?? null;
     const after = n[field] ?? null;
     if (JSON.stringify(before) === JSON.stringify(after)) continue;
-    const change: AuditChange = {
-      label: CHANGE_FIELD_LABELS[field],
-      before: formatChangeValue(field, before),
-      after: formatChangeValue(field, after),
-    };
+    const change: AuditChange =
+      field === "notes" && typeof before === "string" && typeof after === "string"
+        ? buildNotesChange(before, after)
+        : {
+            label: CHANGE_FIELD_LABELS[field],
+            before: formatChangeValue(field, before),
+            after: formatChangeValue(field, after),
+          };
     // Skip duplicates (e.g. agreed_base_price + actual_price both → "מחיר").
     const key = `${change.label}|${change.before}|${change.after}`;
     if (seen.has(key)) continue;
@@ -2291,6 +2382,71 @@ export async function enrichDocumentLinks(supabase: SupabaseClient, items: Audit
   }
 }
 
+// An order row's "סטטוס: X" field-diff chips aren't what a buyer (or the feed
+// reader) actually wants to know — they think in "what's in this order", not
+// field names. Replace the base amount + status changes with a compact
+// "item ×qty, item ×qty … · סה"כ ₪N" line, same convention as the WhatsApp/
+// print order summary in OrderShareActions. Mutates the passed items; a no-op
+// when the page has no order rows or an order currently has no line items
+// (e.g. it was deleted and its items cascaded away).
+async function enrichOrderItemsSummary(supabase: SupabaseClient, items: AuditFeedItem[]): Promise<void> {
+  const orderItems = items.filter((i) => i.tableName === "orders" && i.recordId);
+  if (orderItems.length === 0) return;
+
+  const orderIds = Array.from(new Set(orderItems.map((i) => i.recordId)));
+  const { data } = await supabase
+    .from("order_items")
+    .select("order_id,product_id,description,quantity_ordered")
+    .in("order_id", orderIds);
+  const rows = (data ?? []) as {
+    order_id?: string;
+    product_id?: string;
+    description?: string;
+    quantity_ordered?: number;
+  }[];
+  if (rows.length === 0) return;
+
+  const productIds = Array.from(
+    new Set(rows.map((r) => r.product_id).filter((v): v is string => typeof v === "string" && Boolean(v)))
+  );
+  const productName = new Map<string, string>();
+  if (productIds.length > 0) {
+    const { data: productRows } = await supabase.from("products").select("id,name").in("id", productIds);
+    for (const p of (productRows ?? []) as { id?: string; name?: string }[]) {
+      if (typeof p.id === "string" && typeof p.name === "string" && p.name.trim()) {
+        productName.set(p.id, p.name.trim());
+      }
+    }
+  }
+
+  const byOrder = new Map<string, { name: string; quantity: number }[]>();
+  for (const r of rows) {
+    if (typeof r.order_id !== "string") continue;
+    const name =
+      (typeof r.product_id === "string" ? productName.get(r.product_id) : null) ??
+      ((typeof r.description === "string" ? r.description.trim() : "") || "פריט");
+    const quantity = Number(r.quantity_ordered) || 0;
+    const list = byOrder.get(r.order_id) ?? [];
+    list.push({ name, quantity });
+    byOrder.set(r.order_id, list);
+  }
+
+  // Keep each card short: name a few items and fold the rest into a count
+  // rather than listing everything (an order can carry a dozen-plus lines).
+  const ITEMS_SHOWN = 3;
+  for (const item of orderItems) {
+    const list = byOrder.get(item.recordId);
+    if (!list || list.length === 0) continue;
+    const shown = list.slice(0, ITEMS_SHOWN).map((i) => `${i.name} ×${i.quantity}`).join(", ");
+    const rest = list.length - ITEMS_SHOWN;
+    const itemsPart = rest > 0 ? `${shown} ועוד ${rest}` : shown;
+    const summary = item.baseDetails ? `${itemsPart} · סה"כ ${item.baseDetails}` : itemsPart;
+    item.baseDetails = summary;
+    item.details = summary;
+    item.changes = [];
+  }
+}
+
 export async function getAuditFeedPaginated(
   supabase: SupabaseClient,
   {
@@ -2348,7 +2504,11 @@ export async function getAuditFeedPaginated(
   const totalPages = Math.max(1, Math.ceil(totalCount / AUDIT_PAGE_SIZE));
 
   const items = normalizeAuditRows(rows, actorInfo.names, titles, actorInfo.colors);
-  await Promise.all([enrichLogoutDurations(supabase, items), enrichDocumentLinks(supabase, items)]);
+  await Promise.all([
+    enrichLogoutDurations(supabase, items),
+    enrichDocumentLinks(supabase, items),
+    enrichOrderItemsSummary(supabase, items),
+  ]);
 
   return {
     items,

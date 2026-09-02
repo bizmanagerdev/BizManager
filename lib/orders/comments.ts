@@ -12,7 +12,10 @@ export type OrderComment = {
   body: string;
 };
 
-const SEPARATOR = "\n―――\n";
+// Exported so lib/audit.ts can recognize the append-only shape when diffing
+// `notes` for the activity feed (see buildNotesChange there).
+export const ORDER_NOTES_SEPARATOR = "\n―――\n";
+const SEPARATOR = ORDER_NOTES_SEPARATOR;
 
 /** Format "now" as a short Israel-local timestamp, regardless of server timezone. */
 export function formatOrderCommentTimestamp(date: Date): string {

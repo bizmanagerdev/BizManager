@@ -140,57 +140,62 @@ function ActorCell({ item }: { item: AuditFeedItem }) {
   );
 }
 
-// The old→new field changes as two aligned stacks (used for the table's before /
-// after columns). `side` picks which value to show; the "before" side carries the
-// field label so the row reads "סטטוס: פתוח" → "הושלם" across the two columns.
+// The old→new field changes, one line per changed field. `side` picks which
+// value to show; the "before" side (its own table column) carries the field
+// label so the row reads "סטטוס: פתוח", while the "after" side (rendered
+// inside the פרטים column, alongside the base details) reads "הושלם" for the
+// same field.
 function ChangeStack({ item, side }: { item: AuditFeedItem; side: "before" | "after" }) {
   if (item.changes.length === 0) return null;
   return (
     <div className="flex flex-col gap-0.5 leading-tight">
       {item.changes.map((c, i) => (
-        // No whitespace-nowrap here: a free-text field (e.g. הערות) can be far
-        // longer than this fixed-width column, and nowrap let it spill out over
-        // the neighboring cells instead of wrapping inside its own column.
-        <span key={i} className="break-words">
+        <span key={i}>
           <span className="whitespace-nowrap text-muted-foreground">{`${c.label}: `}</span>
-          {side === "before" ? (
-            <span className="text-foreground/80">{c.before}</span>
-          ) : (
-            <span className="font-medium text-foreground">{c.after}</span>
-          )}
+          <span className={side === "before" ? "text-foreground/80" : "font-medium text-foreground"}>
+            <WrappedTokens text={side === "before" ? c.before : c.after} />
+          </span>
         </span>
       ))}
     </div>
   );
 }
 
-// Renders a details string so it wraps at spaces only — each token (a date like
-// "2026-09-09", a "₪680" amount, the "→" arrow) stays whole and never splits
-// across two rows. The line still wraps between tokens when it's too long —
-// the card has no fixed height, so wrapping just makes it a line taller; the
-// card growing to fit is the point, not a compromise.
+// Renders text so it wraps at spaces only — each token (a date like
+// "2026-09-09", a "₪680" amount, a long ID/card/phone number) stays whole and
+// never splits mid-word across two lines. The line still wraps between tokens
+// when it's too long — a table cell or card growing to fit is the point, not
+// a compromise.
 // The trailing space used to be rendered INSIDE the nowrap span together with
 // the token, which made the space itself non-breaking too — with no break
 // opportunity left ANYWHERE (nowrap suppresses it at the space, and there's no
 // space between two adjacent spans), the whole line became one solid
-// unbreakable run and just ran off the card's edge instead of wrapping between
+// unbreakable run and just ran off the edge instead of wrapping between
 // words. Fixed by moving the space OUTSIDE the span, as a plain sibling text
 // node the (non-nowrap) container is free to break at, same as normal text.
-// EXCEPTION: a token longer than a card is ever going to be (a UUID-based file
+// EXCEPTION: a token longer than a line is ever going to be (a UUID-based file
 // name, a long code with no spaces) has no space to break at in the first
 // place — past a length threshold it falls back to break-words so it wraps
 // inside itself as a last resort instead of overflowing.
 const NOWRAP_TOKEN_MAX = 28;
-function DetailsText({ text, className }: { text: string; className: string }) {
+function WrappedTokens({ text }: { text: string }) {
   const tokens = text.split(" ");
   return (
-    <div className={className}>
+    <>
       {tokens.map((tok, i) => (
         <Fragment key={i}>
           <span className={tok.length > NOWRAP_TOKEN_MAX ? "break-words" : "whitespace-nowrap"}>{tok}</span>
           {i < tokens.length - 1 ? " " : ""}
         </Fragment>
       ))}
+    </>
+  );
+}
+
+function DetailsText({ text, className }: { text: string; className: string }) {
+  return (
+    <div className={className}>
+      <WrappedTokens text={text} />
     </div>
   );
 }
@@ -331,7 +336,7 @@ function ActivityTableChildRow({ item }: { item: AuditFeedItem }) {
           {item.actionLabel}
         </span>
       </td>
-      <td className="px-3 py-1 align-top" colSpan={5}>
+      <td className="px-3 py-1 align-top" colSpan={4}>
         {item.href ? (
           <Link href={item.href} className="hover:underline">{inner}</Link>
         ) : (
@@ -779,7 +784,6 @@ export default function ActivityClient({
               <col className="w-[11rem]" />
               <col />
               <col className="w-[9rem]" />
-              <col className="w-[9rem]" />
               {/* Wide enough for the full "09.08.26 21:54" stamp at text-xs. */}
               <col className="w-[8.5rem]" />
             </colgroup>
@@ -794,7 +798,6 @@ export default function ActivityClient({
                 <th className="px-3 py-3.5 text-right">משתמש</th>
                 <th className="px-3 py-3.5 text-right">פרטים</th>
                 <th className="px-3 py-3.5 text-right">לפני</th>
-                <th className="px-3 py-3.5 text-right">אחרי</th>
                 <th className="whitespace-nowrap px-3 py-3.5 text-right">זמן</th>
               </tr>
             </thead>
@@ -833,7 +836,6 @@ export default function ActivityClient({
                             <span>מערכת</span>
                           </span>
                         </td>
-                        <td className="px-3 py-2" />
                         <td className="px-3 py-2" />
                         <td className="px-3 py-2" />
                         <td
@@ -904,16 +906,16 @@ export default function ActivityClient({
                       <td className="whitespace-nowrap px-3 py-2 align-middle text-xs text-muted-foreground">
                         <ActorCell item={header} />
                       </td>
-                      <td className="max-w-[18rem] px-3 py-2 align-middle text-xs text-foreground/70">
-                        {header.baseDetails ? (
-                          <DetailsText text={header.baseDetails} className="leading-tight" />
-                        ) : null}
+                      <td className="max-w-[22rem] px-3 py-2 align-middle text-xs text-foreground/70">
+                        <div className="flex flex-col gap-0.5">
+                          {header.baseDetails ? (
+                            <DetailsText text={header.baseDetails} className="leading-tight" />
+                          ) : null}
+                          <ChangeStack item={header} side="after" />
+                        </div>
                       </td>
                       <td className="px-3 py-2 align-middle text-xs">
                         <ChangeStack item={header} side="before" />
-                      </td>
-                      <td className="px-3 py-2 align-middle text-xs">
-                        <ChangeStack item={header} side="after" />
                       </td>
                       <td
                         dir="ltr"

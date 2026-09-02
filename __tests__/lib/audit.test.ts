@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { invalidateAuditFlagCache, logAuditEvent, TRIGGER_AUDITED_TABLES } from "@/lib/audit";
+import { buildDetails, invalidateAuditFlagCache, logAuditEvent, TRIGGER_AUDITED_TABLES } from "@/lib/audit";
+import { formatMoney } from "@/lib/money";
 
 // logAuditEvent is called by nearly every mutating route in the app, and
 // every one of those route tests mocks it away as a transparent
@@ -154,5 +155,43 @@ describe("logAuditEvent — never throws on a DB error", () => {
     await expect(logAuditEvent({ ...BASE, supabase: database as never })).resolves.toBeUndefined();
     expect(consoleError).toHaveBeenCalled();
     consoleError.mockRestore();
+  });
+});
+
+// A payslip/payslip-item audit row used to render with NO details at all
+// (buildDetails had no case for either table) — "תלוש שכר · עודכן" and
+// nothing else, same bug class as the payments/loans cases documented in
+// lib/audit.ts.
+describe("buildDetails — payslips / payslip_items", () => {
+  it("shows gross salary, salary type, hours and notes for a payslip", () => {
+    const details = buildDetails("payslips", {
+      gross_salary: 8500,
+      calculated_salary_type: "monthly",
+      total_work_minutes: 600,
+      manual_adjustments: 0,
+      notes: "כולל שעות נוספות",
+    });
+    expect(details).toBe("₪8,500 · גלובלי · 10 שעות · כולל שעות נוספות");
+  });
+
+  it("shows a signed manual adjustment (can be negative)", () => {
+    const details = buildDetails("payslips", {
+      gross_salary: 5000,
+      calculated_salary_type: "hourly",
+      total_work_minutes: 0,
+      manual_adjustments: -150,
+      notes: null,
+    });
+    expect(details).toBe(`₪5,000 · שעתי · התאמה ${formatMoney(-150)}`);
+  });
+
+  it("labels the item type and shows the amount for a payslip item", () => {
+    const details = buildDetails("payslip_items", { item_type: "bonus", amount: 300, notes: null });
+    expect(details).toBe("בונוס · ₪300");
+  });
+
+  it("shows a negative amount for a deduction item", () => {
+    const details = buildDetails("payslip_items", { item_type: "deduction", amount: -200, notes: "איחור" });
+    expect(details).toBe(`ניכוי · ${formatMoney(-200)} · איחור`);
   });
 });
