@@ -242,6 +242,9 @@ export function EditPaymentDialog({
                 const m = e.target.value;
                 setPaymentMethod(m);
                 setAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
+                // Credit-card payments here always clear through Grow — default the
+                // settlement date so the ledger batches it without an extra click.
+                if (m === "credit_card") setDueDate((prev) => prev || nextMonthTenth(paymentDate));
               }}
             >
               <option value="">בחר אמצעי תשלום...</option>

@@ -1877,6 +1877,9 @@ export default function NewOrderClient({
                         updatePaymentDraft(index, {
                           payment_method: m,
                           account_id: payment.account_id || defaultAccountForMethod(paymentAccountsList, m),
+                          // Credit-card payments here always clear through Grow — default the
+                          // settlement date so the ledger batches it without an extra click.
+                          due_date: m === "credit_card" ? payment.due_date || nextMonthTenth(payment.payment_date) : payment.due_date,
                         });
                       }}
                     >
