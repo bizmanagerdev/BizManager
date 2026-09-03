@@ -914,7 +914,7 @@ export default function NewOrderClient({
 
   const stepIds = useMemo<Step[]>(() => {
     const ids: Step[] = ["customer"];
-    if ((selectedCustomer?.branches?.length ?? 0) > 1) ids.push("branch");
+    if ((selectedCustomer?.branches?.length ?? 0) > 0) ids.push("branch");
     ids.push("items", "invoice", "collection", "paymentTerms");
     if (paymentTerms !== "immediate") ids.push("dueDate");
     ids.push("payments", "orderDate", "orderStatus", "deliveryDate", "notes", "summary");
@@ -925,7 +925,7 @@ export default function NewOrderClient({
   // A step is "unlocked" only when every prerequisite up to it is satisfied.
   function isSatisfied(id: Step): boolean {
     if (id === "customer") return Boolean(customerId);
-    if (id === "branch") return Boolean(branchId);
+    if (id === "branch") return true; // "" (main/no branch) is itself a valid, pre-selected default
     if (id === "items") return lines.length > 0;
     return true;
   }
@@ -1346,8 +1346,17 @@ export default function NewOrderClient({
       {/* ------------------------------------------------------------------ BRANCH */}
       {step === "branch" ? (
         <div className="space-y-4">
-          <StepHeading title="לאיזה סניף?" sub={`ל${selectedCustomer?.name ?? "הלקוח"} כמה סניפים — לאיזה מהם ההזמנה?`} />
+          <StepHeading title="לאיזה סניף?" sub={`ל${selectedCustomer?.name ?? "הלקוח"} יש סניפים — לאיזה מהם ההזמנה?`} />
           <div className="space-y-2">
+            <OptionRow
+              label="ראשי"
+              sub={selectedCustomer?.address ?? undefined}
+              selected={branchId === ""}
+              onClick={() => {
+                setBranchId("");
+                advanceTo("items");
+              }}
+            />
             {(selectedCustomer?.branches ?? []).map((branch) => (
               <OptionRow
                 key={branch.id}

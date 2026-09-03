@@ -486,7 +486,7 @@ export default function NewProjectClient({
   // ---- Step navigation ---------------------------------------------------------
   const stepIds = useMemo<Step[]>(() => {
     const ids: Step[] = ["customer"];
-    if ((selectedCustomer?.branches?.length ?? 0) > 1) ids.push("branch");
+    if ((selectedCustomer?.branches?.length ?? 0) > 0) ids.push("branch");
     ids.push("name", "projectType", "status", "dates", "manager");
     if (isMovingProjectType(projectType)) ids.push("moving");
     ids.push("notes", "attachments", "price", "paymentTerms", "dueDate", "expensesSeparately", "summary");
@@ -509,7 +509,7 @@ export default function NewProjectClient({
       case "customer":
         return Boolean(customerId);
       case "branch":
-        return Boolean(branchId);
+        return true; // "" (main/no branch) is itself a valid, pre-selected default
       case "name":
         return Boolean(name.trim());
       case "dates":
@@ -969,8 +969,17 @@ export default function NewProjectClient({
       {/* ------------------------------------------------------------------ BRANCH */}
       {step === "branch" ? (
         <div className="space-y-4">
-          <StepHeading title="לאיזה סניף?" sub={`ל${selectedCustomer?.name ?? "הלקוח"} כמה סניפים — לאיזה מהם הפרויקט?`} />
+          <StepHeading title="לאיזה סניף?" sub={`ל${selectedCustomer?.name ?? "הלקוח"} יש סניפים — לאיזה מהם הפרויקט?`} />
           <div className="space-y-2">
+            <OptionRow
+              label="ראשי"
+              sub={selectedCustomer?.address ?? undefined}
+              selected={branchId === ""}
+              onClick={() => {
+                setBranchId("");
+                advanceTo("name");
+              }}
+            />
             {(selectedCustomer?.branches ?? []).map((branch) => (
               <OptionRow
                 key={branch.id}
