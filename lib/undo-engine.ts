@@ -16,7 +16,7 @@ import { toast } from "sonner";
  * provider. Mirrors the module-singleton shape of lib/offline-queue.ts.
  */
 
-const DEFAULT_WINDOW_MS = 6000;
+const DEFAULT_WINDOW_MS = 10000;
 
 export type ActionResult = { ok: true } | { ok: false; error?: string };
 
