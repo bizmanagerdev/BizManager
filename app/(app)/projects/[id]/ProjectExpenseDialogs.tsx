@@ -3,6 +3,7 @@
 // Lazy-loaded heavy financial-entry dialogs, extracted from ProjectTabsClient so
 // their code only downloads when a user actually opens "add expense"/"add income".
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -20,6 +21,7 @@ import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { toHebrewError } from "@/lib/error-messages";
 import { appendDictatedText } from "@/lib/dictation";
 import { mapProjectTypeToExpenseDomain } from "@/lib/expenses";
+import { registerReversibleCreate } from "@/lib/undo-engine";
 import { type FinancialAttachment, type PaymentRow } from "@/lib/payments";
 import {
   getErrorMessage,
@@ -49,6 +51,7 @@ export function AddIncomeDialog({
   editingPayment: PaymentRow | null;
   onSaved: (saved: PaymentRow) => void;
 }) {
+  const router = useRouter();
   const isEditing = Boolean(editingPayment);
   const [submitting, setSubmitting] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
@@ -190,7 +193,34 @@ export function AddIncomeDialog({
         attachments: [...existingAttachments, ...uploadedAttachments],
       };
 
-      toast.success(isEditing ? "ההכנסה עודכנה" : "ההכנסה נוספה");
+      if (isEditing) {
+        // Not made undoable: a many-field edit save, same as ExpenseDialog's own
+        // (unconverted) edit path — no safe way to replay the previous values.
+        toast.success("ההכנסה עודכנה");
+      } else if (savedPayment.id) {
+        const paymentId = savedPayment.id;
+        // The create already committed (attachments needed the real id to upload
+        // to) — undo replays a real reverse call via the existing delete route,
+        // same as ExpenseDialog's own registerReversibleCreate.
+        registerReversibleCreate({
+          scope: "project-payment",
+          id: paymentId,
+          message: "ההכנסה נוספה",
+          onUndo: async () => {
+            const res = await fetch("/api/payments/delete", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ id: paymentId }),
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "ביטול נכשל.") };
+            router.refresh();
+            return { ok: true };
+          },
+        });
+      } else {
+        toast.success("ההכנסה נוספה");
+      }
       setAmount("");
       setPaymentDate(projectDateOrToday(projectStartDate));
       setPaymentMethod("");

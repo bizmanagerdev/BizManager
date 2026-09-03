@@ -19,6 +19,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { shiftHoursText } from "@/components/attendance/DayTile";
 import { usePendingReportEdit, PendingReportEditFields } from "@/components/attendance/usePendingReportEdit";
 import { reopenPhoneReport, rejectPhoneReport } from "@/lib/attendance/phoneReportActions";
+import { scheduleDeferredDelete } from "@/lib/undo-engine";
 import { WORK_SESSION_BUSINESS_DOMAINS } from "@/lib/expenses";
 import { formatCurrency, formatMinutes, minutesBetween } from "@/lib/payroll";
 import { formatShortDate, hebrewWeekday } from "@/lib/date";
@@ -330,34 +331,40 @@ export default function PendingReportCard({
   }
 
   /** He clocked out and kept working: undo the close so THIS shift carries on,
-   *  rather than starting a second one that would be approved separately. */
+   *  rather than starting a second one that would be approved separately. Deferred
+   *  like a delete-from-this-queue: the report leaves the pending list right away
+   *  and only actually flips back to "open" once the window elapses unopposed. */
   function reopen() {
     setError("");
-    startTransition(async () => {
-      try {
-        const result = await reopenPhoneReport(report.id);
-        if (!result.ok) return setError(toHebrewError(result.error, "פתיחת המשמרת מחדש נכשלה."));
-        toast.success("המשמרת נפתחה מחדש והעובד חזר לנוכחים.");
+    const reportId = report.id;
+    scheduleDeferredDelete({
+      scope: "phone-report-pending",
+      id: reportId,
+      message: "המשמרת נפתחה מחדש והעובד חזר לנוכחים.",
+      onCommit: async () => {
+        const result = await reopenPhoneReport(reportId);
+        if (!result.ok) return { ok: false, error: toHebrewError(result.error, "פתיחת המשמרת מחדש נכשלה.") };
         router.refresh();
-      } catch (err: unknown) {
-        setError(toHebrewError(err, "פתיחת המשמרת מחדש נכשלה."));
-      }
+        return { ok: true };
+      },
     });
   }
 
   function reject() {
     setError("");
-    startTransition(async () => {
-      try {
-        const result = await rejectPhoneReport(report.id, rejectReason.trim());
-        setRejectOpen(false);
-        if (!result.ok) return setError(toHebrewError(result.error, "דחיית הדיווח נכשלה."));
-        toast.success("הדיווח נדחה.");
+    const reportId = report.id;
+    const reasonSnapshot = rejectReason.trim();
+    setRejectOpen(false);
+    scheduleDeferredDelete({
+      scope: "phone-report-pending",
+      id: reportId,
+      message: "הדיווח נדחה.",
+      onCommit: async () => {
+        const result = await rejectPhoneReport(reportId, reasonSnapshot);
+        if (!result.ok) return { ok: false, error: toHebrewError(result.error, "דחיית הדיווח נכשלה.") };
         router.refresh();
-      } catch (err: unknown) {
-        setRejectOpen(false);
-        setError(toHebrewError(err, "דחיית הדיווח נכשלה."));
-      }
+        return { ok: true };
+      },
     });
   }
 

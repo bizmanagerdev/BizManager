@@ -55,6 +55,8 @@ import { toHebrewError } from "@/lib/error-messages";
 import { offlineUpload } from "@/lib/offline-upload";
 import { createLease, updateLease, deleteLease, setLeaseDocument, type LeaseInput } from "../actions";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import { scheduleDeferredDelete } from "@/lib/undo-engine";
 import RentScheduleSection from "./RentScheduleSection";
 import PropertyDetailsCard from "./PropertyDetailsCard";
 import PropertyPurchaseCard from "./PropertyPurchaseCard";
@@ -482,7 +484,13 @@ export default function PropertyDetailClient({
 }: Props) {
   const router = useRouter();
   const refresh = () => router.refresh();
-  const leases = property.leases;
+  const leases = useUndoOverlay(property.leases, (l) => l.id, "property-lease");
+  const activityExpenses = useUndoOverlay(activity.expenses, (e) => e.id, "property-expense");
+  const activitySessions = useUndoOverlay(activity.sessions, (s) => s.id, "property-session");
+  const activityPayments = useUndoOverlay(activity.payments, (p) => p.id, "property-payment");
+  const activityDocuments = useUndoOverlay(activity.documents, (d) => d.id, "property-document");
+  const activityTasks = useUndoOverlay(activity.tasks, (t) => t.id, "property-task");
+  const activityTemplates = useUndoOverlay(activity.recurringTemplates, (t) => t.id, "property-template");
   const address = propertyDisplayName(property);
 
   // Task assignment stays limited to active, dashboard-having staff (unchanged
@@ -553,21 +561,20 @@ export default function PropertyDetailClient({
   const [docBusy, setDocBusy] = useState(false);
   // delete
   const [del, setDel] = useState<{ kind: "expense" | "payment" | "document" | "lease" | "task" | "template" | "session"; id: string; label: string } | null>(null);
-  const [delBusy, setDelBusy] = useState(false);
 
   const currentLease = pickCurrentLease(leases);
   const otherLeases = leases.filter((l) => l.id !== currentLease?.id);
-  const checkPayments = activity.payments.filter((p) => p.method === "check");
-  const otherPayments = activity.payments.filter((p) => p.method !== "check");
-  const purchaseDocuments = activity.documents.filter((d) => PURCHASE_DOCUMENT_CATEGORIES.has(d.documentType ?? ""));
-  const photos = activity.documents.filter((d) => d.documentType === "צילום");
-  const otherDocuments = activity.documents.filter(
+  const checkPayments = activityPayments.filter((p) => p.method === "check");
+  const otherPayments = activityPayments.filter((p) => p.method !== "check");
+  const purchaseDocuments = activityDocuments.filter((d) => PURCHASE_DOCUMENT_CATEGORIES.has(d.documentType ?? ""));
+  const photos = activityDocuments.filter((d) => d.documentType === "צילום");
+  const otherDocuments = activityDocuments.filter(
     (d) => !PURCHASE_DOCUMENT_CATEGORIES.has(d.documentType ?? "") && d.documentType !== "צילום"
   );
   const userNameById = new Map(users.map((u) => [u.id, u.label]));
   const expenseRows: Array<{ kind: "expense"; date: string | null; data: PropertyExpense } | { kind: "session"; date: string | null; data: PropertySession }> = [
-    ...activity.expenses.map((e) => ({ kind: "expense" as const, date: e.date, data: e })),
-    ...activity.sessions.map((s) => ({ kind: "session" as const, date: s.clock_in, data: s })),
+    ...activityExpenses.map((e) => ({ kind: "expense" as const, date: e.date, data: e })),
+    ...activitySessions.map((s) => ({ kind: "session" as const, date: s.clock_in, data: s })),
   ].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
   const visibleExpenseRows = expenseRows.filter(
     (row) => expenseFilter === "all" || (expenseFilter === "expenses" ? row.kind === "expense" : row.kind === "session")
@@ -794,58 +801,48 @@ export default function PropertyDetailClient({
     }
   }
 
-  async function confirmDelete() {
+  function confirmDelete() {
     if (!del) return;
-    setDelBusy(true);
-    try {
-      if (del.kind === "lease") {
-        const result = await deleteLease(propertyId, del.id);
-        if (!result.ok) {
-          toast.error(result.error);
-          return;
+    const target = del;
+    setDel(null);
+    scheduleDeferredDelete({
+      scope: `property-${target.kind}`,
+      id: target.id,
+      message: target.kind === "lease" ? "החוזה נמחק" : "נמחק",
+      onCommit: async () => {
+        if (target.kind === "lease") {
+          const result = await deleteLease(propertyId, target.id);
+          if (!result.ok) return { ok: false, error: result.error };
+          refresh();
+          return { ok: true };
         }
-        toast.success("החוזה נמחק");
-        setDel(null);
-        refresh();
-        return;
-      }
-      if (del.kind === "template") {
-        const result = await deleteRecurringExpenseTemplate(del.id);
-        if (!result.ok) {
-          toast.error("שגיאה במחיקה", { description: toHebrewError(result.error, "") });
-          return;
+        if (target.kind === "template") {
+          const result = await deleteRecurringExpenseTemplate(target.id);
+          if (!result.ok) return { ok: false, error: toHebrewError(result.error, "") };
+          refresh();
+          return { ok: true };
         }
-        toast.success("נמחק");
-        setDel(null);
+        const endpoint =
+          target.kind === "expense"
+            ? ["/api/expenses/delete", { id: target.id, property_id: propertyId }]
+            : target.kind === "payment"
+              ? ["/api/payments/delete", { id: target.id }]
+              : target.kind === "task"
+                ? ["/api/tasks/delete", { id: target.id }]
+                : target.kind === "session"
+                  ? ["/api/payroll/sessions/delete", { session_id: target.id }]
+                  : ["/api/documents/delete", { document_id: target.id }];
+        const res = await fetch(endpoint[0] as string, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(endpoint[1]),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "") };
         refresh();
-        return;
-      }
-      const endpoint =
-        del.kind === "expense"
-          ? ["/api/expenses/delete", { id: del.id, property_id: propertyId }]
-          : del.kind === "payment"
-            ? ["/api/payments/delete", { id: del.id }]
-            : del.kind === "task"
-              ? ["/api/tasks/delete", { id: del.id }]
-              : del.kind === "session"
-                ? ["/api/payroll/sessions/delete", { session_id: del.id }]
-                : ["/api/documents/delete", { document_id: del.id }];
-      const res = await fetch(endpoint[0] as string, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(endpoint[1]),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error("שגיאה במחיקה", { description: toHebrewError(json?.error, "") });
-        return;
-      }
-      toast.success("נמחק");
-      setDel(null);
-      refresh();
-    } finally {
-      setDelBusy(false);
-    }
+        return { ok: true };
+      },
+    });
   }
 
   return (
@@ -955,14 +952,14 @@ export default function PropertyDetailClient({
             isolate either kind when there's more than one on the property. */}
         <Card>
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
-            <CardTitle className="text-base">הוצאות ({activity.expenses.length + activity.sessions.length})</CardTitle>
+            <CardTitle className="text-base">הוצאות ({activityExpenses.length + activitySessions.length})</CardTitle>
             <Button size="sm" onClick={openAddExpense}>
               <AddIcon className="h-4 w-4" />
               הוצאה
             </Button>
           </CardHeader>
           <CardContent className="space-y-2">
-            {activity.sessions.length > 0 ? (
+            {activitySessions.length > 0 ? (
               <div className="flex items-center gap-1 pb-1">
                 <Button
                   size="sm"
@@ -976,14 +973,14 @@ export default function PropertyDetailClient({
                   variant={expenseFilter === "expenses" ? "default" : "outline"}
                   onClick={() => setExpenseFilter("expenses")}
                 >
-                  הוצאות ({activity.expenses.length})
+                  הוצאות ({activityExpenses.length})
                 </Button>
                 <Button
                   size="sm"
                   variant={expenseFilter === "sessions" ? "default" : "outline"}
                   onClick={() => setExpenseFilter("sessions")}
                 >
-                  משמרות ({activity.sessions.length})
+                  משמרות ({activitySessions.length})
                 </Button>
               </div>
             ) : null}
@@ -1093,7 +1090,7 @@ export default function PropertyDetailClient({
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
             <CardTitle className="flex items-center gap-1 text-base">
               <TaskIcon className="h-4 w-4" />
-              משימות ({activity.tasks.length})
+              משימות ({activityTasks.length})
             </CardTitle>
             <Button size="sm" onClick={openAddTask}>
               <AddIcon className="h-4 w-4" />
@@ -1101,10 +1098,10 @@ export default function PropertyDetailClient({
             </Button>
           </CardHeader>
           <CardContent className="space-y-2">
-            {activity.tasks.length === 0 ? (
+            {activityTasks.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין משימות לנכס זה.</p>
             ) : (
-              activity.tasks.map((t: PropertyTask) => (
+              activityTasks.map((t: PropertyTask) => (
                 <div key={t.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
                   <div className="min-w-0 text-sm">
                     <div className="truncate font-medium">{t.subject || "משימה"}</div>
@@ -1124,17 +1121,17 @@ export default function PropertyDetailClient({
         {/* Recurring charges — water/electricity/arnona/vaad bayit etc. */}
         <Card>
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
-            <CardTitle className="text-base">הוצאות קבועות ({activity.recurringTemplates.length})</CardTitle>
+            <CardTitle className="text-base">הוצאות קבועות ({activityTemplates.length})</CardTitle>
             <Button size="sm" onClick={openAddTemplate}>
               <AddIcon className="h-4 w-4" />
               הוצאה קבועה
             </Button>
           </CardHeader>
           <CardContent className="space-y-2">
-            {activity.recurringTemplates.length === 0 ? (
+            {activityTemplates.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין הוצאות קבועות לנכס זה (מים, חשמל, ארנונה, ועד בית וכו׳).</p>
             ) : (
-              activity.recurringTemplates.map((t) => (
+              activityTemplates.map((t) => (
                 <div key={t.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
                   <div className="min-w-0 text-sm">
                     <div className="truncate font-medium">{t.templateName || t.category || "הוצאה קבועה"}</div>
@@ -1510,10 +1507,9 @@ export default function PropertyDetailClient({
         open={Boolean(del)}
         onOpenChange={(o) => !o && setDel(null)}
         title="מחיקה"
-        description={del ? `למחוק "${del.label}"? לא ניתן לשחזר.` : ""}
+        description={del ? `למחוק "${del.label}"?` : ""}
         confirmLabel="מחיקה"
         destructive
-        loading={delBusy}
         onConfirm={confirmDelete}
       />
     </>

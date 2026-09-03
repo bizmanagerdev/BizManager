@@ -35,6 +35,7 @@ import type { CustomerReceivable } from "@/lib/collections";
 import { offlineFetch } from "@/lib/offline-queue";
 import { toHebrewError } from "@/lib/error-messages";
 import { appendDictatedText } from "@/lib/dictation";
+import { scheduleDeferredAction } from "@/lib/undo-engine";
 import { getTodayDate } from "@/app/(app)/dashboard/DashboardActions.helpers";
 
 type Debtor = {
@@ -117,7 +118,6 @@ export function CollectPaymentDialog({
   const [checkPhotoFiles, setCheckPhotoFiles] = useState<File[]>([]);
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [clearingId, setClearingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Who owes money — loaded once per open (amounts move, so don't cache it).
@@ -218,28 +218,32 @@ export function CollectPaymentDialog({
 
   // A pending payment (an uncleared check, a future-dated transfer) isn't a new
   // payment — the row already exists, the money just landed. Flip it to cleared.
-  async function markPendingCollected(paymentId: string) {
-    if (clearingId) return;
-    setClearingId(paymentId);
-    try {
-      const response = await fetch("/api/payments/mark-collected", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: paymentId, collected: true }),
-      });
-      if (!response.ok) {
-        const json = (await response.json().catch(() => ({}))) as { error?: string };
-        setError(toHebrewError(json.error, "סימון התשלום כנגבה נכשל."));
-        return;
-      }
-      toast.success("התשלום סומן כנגבה.");
-      onSaved?.();
-      await loadReceivables(customerId);
-    } catch (err: unknown) {
-      setError(toHebrewError(err, "סימון התשלום כנגבה נכשל."));
-    } finally {
-      setClearingId(null);
-    }
+  function markPendingCollected(paymentId: string) {
+    const snapshot = receivables;
+    scheduleDeferredAction({
+      key: `payment-collected:${paymentId}`,
+      message: "התשלום סומן כנגבה.",
+      onApplyOptimistic: () => {
+        setReceivables((prev) =>
+          (prev ?? []).map((r) => ({ ...r, pending_payments: r.pending_payments.filter((p) => p.id !== paymentId) }))
+        );
+      },
+      onRevert: () => setReceivables(snapshot),
+      onCommit: async () => {
+        const response = await fetch("/api/payments/mark-collected", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: paymentId, collected: true }),
+        });
+        if (!response.ok) {
+          const json = (await response.json().catch(() => ({}))) as { error?: string };
+          return { ok: false, error: toHebrewError(json.error, "סימון התשלום כנגבה נכשל.") };
+        }
+        onSaved?.();
+        await loadReceivables(customerId);
+        return { ok: true };
+      },
+    });
   }
 
   // ── Dynamic step list ────────────────────────────────────────────────────
@@ -529,10 +533,9 @@ export function CollectPaymentDialog({
                               size="sm"
                               variant="secondary"
                               className="h-7 text-xs"
-                              disabled={clearingId !== null}
-                              onClick={() => void markPendingCollected(pending.id)}
+                              onClick={() => markPendingCollected(pending.id)}
                             >
-                              {clearingId === pending.id ? "מסמן..." : "סמן כנגבה"}
+                              סמן כנגבה
                             </Button>
                           </div>
                         ))

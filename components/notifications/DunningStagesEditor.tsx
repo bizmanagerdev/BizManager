@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { DeleteButton } from "@/components/ui/icon-button";
 import { fetchDunningStages, saveDunningStages } from "@/lib/notifications/dunningStages";
+import { scheduleDeferredAction } from "@/lib/undo-engine";
 
 type Stage = { day_offset: number; label: string; severity: string; enabled: boolean };
 
@@ -22,7 +22,6 @@ const inputCls = "rounded-lg border bg-background px-2.5 py-1.5 text-sm focus:ou
 // Lives in the alert center; the collection_overdue rule reads these stages.
 export default function DunningStagesEditor() {
   const [stages, setStages] = useState<Stage[] | null>(null);
-  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,18 +45,21 @@ export default function DunningStagesEditor() {
     setStages((prev) => [...(prev ?? []), { day_offset: 0, label: "", severity: "warning", enabled: true }]);
   }
 
-  async function save() {
+  function save() {
     if (!stages) return;
-    setSaving(true);
-    try {
-      const ok = await saveDunningStages([...stages].sort((a, b) => a.day_offset - b.day_offset));
-      if (!ok) throw new Error();
-      toast.success("סולם הגבייה נשמר");
-    } catch {
-      toast.error("שמירה נכשלה");
-    } finally {
-      setSaving(false);
-    }
+    const previousStages = stages;
+    const nextStages = [...stages].sort((a, b) => a.day_offset - b.day_offset);
+    scheduleDeferredAction({
+      key: "settings:dunning-stages",
+      message: "סולם הגבייה נשמר",
+      onApplyOptimistic: () => setStages(nextStages),
+      onRevert: () => setStages(previousStages),
+      onCommit: async () => {
+        const ok = await saveDunningStages(nextStages);
+        if (!ok) return { ok: false, error: "שמירה נכשלה" };
+        return { ok: true };
+      },
+    });
   }
 
   if (!stages) return <div className="text-xs text-muted-foreground">טוען…</div>;
@@ -103,8 +105,8 @@ export default function DunningStagesEditor() {
         <Button variant="outline" size="sm" onClick={add}>
           + הוסף שלב
         </Button>
-        <Button size="sm" onClick={() => void save()} disabled={saving}>
-          {saving ? "שומר…" : "שמור סולם"}
+        <Button size="sm" onClick={save}>
+          שמור סולם
         </Button>
       </div>
     </div>

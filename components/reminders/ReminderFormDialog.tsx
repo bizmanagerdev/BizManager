@@ -10,6 +10,7 @@ import { SummaryRow, SummarySection } from "@/components/ui/summary";
 import { AssigneeSelect } from "@/components/collections/AssigneeSelect";
 import { useAssignableUsers } from "@/hooks/useAssignableUsers";
 import { toHebrewError } from "@/lib/error-messages";
+import { registerReversibleCreate, scheduleDeferredEdit } from "@/lib/undo-engine";
 
 // One dialog for BOTH creating and editing a reminder — reused across the order
 // panel, the worklist, and anywhere else. Create posts to /api/reminders/create
@@ -158,31 +159,72 @@ export default function ReminderFormDialog({
       setError("יש להזין פרטים לתזכורת.");
       return;
     }
-    setSubmitting(true);
-    try {
-      const remindIso = new Date(remindAt).toISOString();
-      const url = mode === "edit" ? "/api/reminders/update" : "/api/reminders/create";
-      const payload =
-        mode === "edit"
-          ? { id: value?.id, remind_at: remindIso, content: note.trim(), assigned_to: assignee || null }
-          : {
-              ...links,
-              remind_at: remindIso,
-              content: note.trim() || undefined,
-              assigned_to: assignee || undefined,
-              action_type: "other",
-              category,
-            };
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(json.error);
-      toast.success(mode === "edit" ? "התזכורת עודכנה." : "התזכורת נוספה.");
+    const remindIso = new Date(remindAt).toISOString();
+    const noteValue = note.trim();
+    const assigneeValue = assignee || null;
+
+    if (mode === "edit") {
+      const id = value?.id;
+      if (!id) return; // defensive — edit mode is always opened with a value
       onSaved?.();
       handleOpenChange(false);
+      scheduleDeferredEdit({
+        scope: "reminder",
+        id,
+        message: "התזכורת עודכנה.",
+        patch: { remindAt: remindIso, content: noteValue, assignedTo: assigneeValue },
+        onCommit: async () => {
+          const res = await fetch("/api/reminders/update", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id, remind_at: remindIso, content: noteValue, assigned_to: assigneeValue }),
+          });
+          const json = (await res.json().catch(() => ({}))) as { error?: string };
+          if (!res.ok) return { ok: false, error: toHebrewError(json.error, "עדכון התזכורת נכשל.") };
+          return { ok: true };
+        },
+      });
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/reminders/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...links,
+          remind_at: remindIso,
+          content: noteValue || undefined,
+          assigned_to: assigneeValue || undefined,
+          action_type: "other",
+          category,
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { id?: string | null; error?: string };
+      if (!res.ok) throw new Error(json.error);
+      onSaved?.();
+      handleOpenChange(false);
+      const newId = json.id;
+      if (!newId) {
+        toast.success("התזכורת נוספה.");
+      } else {
+        registerReversibleCreate({
+          scope: "reminder",
+          id: newId,
+          message: "התזכורת נוספה.",
+          onUndo: async () => {
+            const res2 = await fetch("/api/reminders/update", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: newId, status: "cancelled" }),
+            });
+            const json2 = await res2.json().catch(() => ({}));
+            if (!res2.ok) return { ok: false, error: toHebrewError(json2?.error, "ביטול נכשל.") };
+            return { ok: true };
+          },
+        });
+      }
     } catch (err: unknown) {
       setError(toHebrewError(err, "שמירה נכשלה."));
     } finally {

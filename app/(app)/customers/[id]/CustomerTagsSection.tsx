@@ -1,50 +1,53 @@
 "use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { CloseIcon } from "@/components/ui/icons";
 import { offlineFetch } from "@/lib/offline-queue";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
+import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import { isUndoHidden, scheduleDeferredDelete } from "@/lib/undo-engine";
 
 type CustomerTag = { id: string; name: string; color?: string | null };
 
 /** Customer segment tags (הערות tags block) with an inline erase-tag option. */
 export default function CustomerTagsSection({
   customerId,
-  tags,
+  tags: tagsProp,
 }: {
   customerId: string;
   tags: CustomerTag[];
 }) {
   const router = useRouter();
-  const [removingId, setRemovingId] = useState<string | null>(null);
+  const scope = `customer-tag:${customerId}`;
+  const tags = useUndoOverlay(tagsProp, (t) => t.id, scope);
 
   if (tags.length === 0) return null;
 
-  async function removeTag(tagId: string) {
-    if (removingId) return;
-    setRemovingId(tagId);
-    try {
-      const remaining = tags.filter((t) => t.id !== tagId).map((t) => t.id);
-      const result = await offlineFetch(
-        "/api/customers/update",
-        { id: customerId, tag_ids: remaining },
-        "הסרת תגית"
-      );
-      if (!result.queued && !result.ok) {
-        toast.error("הסרת התגית נכשלה", { description: toHebrewError(result.error, "") });
-        return;
-      }
-      if (!result.queued) toast.success("התגית הוסרה");
-      router.refresh();
-    } catch {
-      toast.error("הסרת התגית נכשלה");
-    } finally {
-      setRemovingId(null);
-    }
+  function removeTag(tagId: string) {
+    scheduleDeferredDelete({
+      scope,
+      id: tagId,
+      message: "התגית הוסרה",
+      onCommit: async () => {
+        // Recomputed at commit time (not captured when scheduled) so two tags
+        // removed within the same undo window don't race and resurrect each
+        // other — isUndoHidden reflects every removal still pending or already
+        // committed, not just this one.
+        const remaining = tagsProp.filter((t) => !isUndoHidden(scope, t.id)).map((t) => t.id);
+        const result = await offlineFetch(
+          "/api/customers/update",
+          { id: customerId, tag_ids: remaining },
+          "הסרת תגית"
+        );
+        if (!result.queued && !result.ok) {
+          return { ok: false, error: toHebrewError(result.error, "הסרת התגית נכשלה.") };
+        }
+        router.refresh();
+        return { ok: true };
+      },
+    });
   }
 
   return (
@@ -54,8 +57,7 @@ export default function CustomerTagsSection({
           {tag.name}
           <button
             type="button"
-            onClick={() => void removeTag(tag.id)}
-            disabled={removingId === tag.id}
+            onClick={() => removeTag(tag.id)}
             className="text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
             aria-label={`הסרת תגית ${tag.name}`}
           >

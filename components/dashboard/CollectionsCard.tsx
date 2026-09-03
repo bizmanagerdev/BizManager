@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { CoinsIcon, PhoneIcon, SuccessIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
 import DashboardCardHeader from "@/components/dashboard/DashboardCardHeader";
@@ -14,6 +13,7 @@ import { formatCurrency } from "@/lib/payroll";
 import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
 import type { CollectionsDebtor, CollectionsSummary } from "@/lib/collections";
+import { scheduleDeferredAction } from "@/lib/undo-engine";
 import { t } from "@/lib/i18n/t";
 import { dashboardDict } from "@/lib/i18n/dictionaries/dashboard";
 import type { Locale } from "@/lib/i18n/types";
@@ -44,7 +44,6 @@ const SHOWN_LIMIT = 8;
 export default function CollectionsCard({ summary, locale }: { summary: CollectionsSummary; locale: Locale }) {
   const router = useRouter();
   const [collectedIds, setCollectedIds] = useState<Set<string>>(() => new Set());
-  const [busyId, setBusyId] = useState<string | null>(null);
   // Late is the louder of the two, so it opens on the list that has something —
   // but never jumps you to an empty tab.
   const [tab, setTab] = useState<"late" | "upcoming">(
@@ -66,30 +65,31 @@ export default function CollectionsCard({ summary, locale }: { summary: Collecti
 
   const rows = tab === "late" ? summary.late : summary.upcoming;
 
-  async function markCollected(id: string) {
-    if (busyId) return;
-    setBusyId(id);
-    try {
-      const res = await fetch("/api/payments/mark-collected", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id, collected: true }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        toast.error(toHebrewError(json.error, t(dashboardDict, locale, "markCollectedError")));
-        return;
-      }
+  function markCollected(id: string) {
+    scheduleDeferredAction({
+      key: `collections:collected:${id}`,
+      message: t(dashboardDict, locale, "markCollectedSuccess"),
       // Optimistic: the row leaves the card now, and the server is asked for the
       // truth in the background.
-      setCollectedIds((prev) => new Set(prev).add(id));
-      toast.success(t(dashboardDict, locale, "markCollectedSuccess"));
-      router.refresh();
-    } catch (err: unknown) {
-      toast.error(toHebrewError(err, t(dashboardDict, locale, "markCollectedError")));
-    } finally {
-      setBusyId(null);
-    }
+      onApplyOptimistic: () => setCollectedIds((prev) => new Set(prev).add(id)),
+      onRevert: () =>
+        setCollectedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        }),
+      onCommit: async () => {
+        const res = await fetch("/api/payments/mark-collected", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id, collected: true }),
+        });
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) return { ok: false, error: toHebrewError(json.error, t(dashboardDict, locale, "markCollectedError")) };
+        router.refresh();
+        return { ok: true };
+      },
+    });
   }
 
   return (
@@ -145,11 +145,9 @@ export default function CollectionsCard({ summary, locale }: { summary: Collecti
                         size="sm"
                         variant="outline"
                         className="relative h-8 shrink-0 px-3 text-sm max-md:min-h-[44px]"
-                        disabled={busyId === payment.id}
-                        onClick={() => void markCollected(payment.id)}
+                        onClick={() => markCollected(payment.id)}
                         title={t(dashboardDict, locale, "markCollectedTitle")}
                       >
-                        {busyId === payment.id ? <SuccessIcon className="h-4 w-4" /> : null}
                         {t(dashboardDict, locale, "collectedButtonLabel")}
                       </Button>
                     </div>

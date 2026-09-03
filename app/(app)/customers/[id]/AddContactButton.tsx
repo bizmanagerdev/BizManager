@@ -13,6 +13,7 @@ import { appendDictatedText } from "@/lib/dictation";
 import { offlineFetch } from "@/lib/offline-queue";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { FormDialog } from "@/components/ui/form-dialog";
+import { registerReversibleCreate } from "@/lib/undo-engine";
 
 /** "+ איש קשר" — add a contact straight from the customer details page. */
 export default function AddContactButton({
@@ -75,9 +76,38 @@ export default function AddContactButton({
         setError(toHebrewError(result.error, "יצירת איש קשר נכשלה."));
         return;
       }
-      if (!result.queued) toast.success("איש הקשר נוסף");
       setOpen(false);
       router.refresh();
+      if (!result.queued) {
+        const data = result.data as { contact?: { id?: string } } | null;
+        const contactId = data?.contact?.id;
+        if (contactId) {
+          // Undo replays a genuine reverse call — the contact already exists
+          // server-side (its id came from the response), so this can't be a
+          // deferred create. There's no hard-delete route for contacts; the
+          // app's own "remove contact" flow (EditCustomerDialog) already
+          // reuses this same soft-delete update, so undo does the same.
+          registerReversibleCreate({
+            scope: "customer-contact",
+            id: contactId,
+            message: "איש הקשר נוסף",
+            onUndo: async () => {
+              const undoResult = await offlineFetch(
+                "/api/customer-contacts/update",
+                { id: contactId, active: false, is_primary: false },
+                "ביטול הוספת איש קשר"
+              );
+              if (!undoResult.queued && !undoResult.ok) {
+                return { ok: false, error: toHebrewError(undoResult.error, "ביטול הוספת איש הקשר נכשל.") };
+              }
+              router.refresh();
+              return { ok: true };
+            },
+          });
+        } else {
+          toast.success("איש הקשר נוסף");
+        }
+      }
     } catch (e: unknown) {
       setError(toHebrewError(e, "שגיאה לא ידועה"));
     } finally {

@@ -12,6 +12,8 @@ import { toHebrewError } from "@/lib/error-messages";
 import { formatCurrency } from "@/lib/payroll";
 import { updatePaymentPromise } from "@/lib/collections/paymentPromises";
 import { promiseStatusLabel, type PaymentPromise } from "@/lib/promises";
+import { registerReversibleCreate, scheduleDeferredEdit } from "@/lib/undo-engine";
+import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 
 function statusTone(status: string): "success" | "destructive" | "secondary" | "warning" {
   if (status === "kept") return "success";
@@ -20,8 +22,9 @@ function statusTone(status: string): "success" | "destructive" | "secondary" | "
   return "warning";
 }
 
-export default function PaymentPromises({ customerId, promises }: { customerId: string; promises: PaymentPromise[] }) {
+export default function PaymentPromises({ customerId, promises: promisesProp }: { customerId: string; promises: PaymentPromise[] }) {
   const router = useRouter();
+  const promises = useUndoOverlay(promisesProp, (p) => p.id, "payment-promise");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState("");
   const [notes, setNotes] = useState("");
@@ -44,13 +47,28 @@ export default function PaymentPromises({ customerId, promises }: { customerId: 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ customer_id: customerId, amount: Number(amount), promised_date: date, notes: notes.trim() || undefined }),
       });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      const json = (await res.json().catch(() => ({}))) as { id?: string | null; error?: string };
       if (!res.ok) throw new Error(json.error);
-      toast.success("ההבטחה נוספה.");
       setAmount("");
       setDate("");
       setNotes("");
       router.refresh();
+      const newId = json.id;
+      if (!newId) {
+        toast.success("ההבטחה נוספה.");
+      } else {
+        registerReversibleCreate({
+          scope: "payment-promise",
+          id: newId,
+          message: "ההבטחה נוספה.",
+          onUndo: async () => {
+            const result = await updatePaymentPromise(newId, { status: "cancelled" });
+            router.refresh();
+            if (!result.ok) return { ok: false, error: toHebrewError(result.error, "ביטול נכשל.") };
+            return { ok: true };
+          },
+        });
+      }
     } catch (err) {
       toast.error(toHebrewError(err, "שמירה נכשלה."));
     } finally {
@@ -58,18 +76,19 @@ export default function PaymentPromises({ customerId, promises }: { customerId: 
     }
   }
 
-  async function setStatus(id: string, status: "kept" | "broken" | "cancelled") {
-    setBusy(true);
-    try {
-      const result = await updatePaymentPromise(id, { status });
-      if (!result.ok) throw new Error(result.error);
-      toast.success("ההבטחה עודכנה.");
-      router.refresh();
-    } catch (err) {
-      toast.error(toHebrewError(err, "עדכון נכשל."));
-    } finally {
-      setBusy(false);
-    }
+  function setStatus(id: string, status: "kept" | "broken" | "cancelled") {
+    scheduleDeferredEdit({
+      scope: "payment-promise",
+      id,
+      message: "ההבטחה עודכנה.",
+      patch: { status },
+      onCommit: async () => {
+        const result = await updatePaymentPromise(id, { status });
+        if (!result.ok) return { ok: false, error: toHebrewError(result.error, "עדכון נכשל.") };
+        router.refresh();
+        return { ok: true };
+      },
+    });
   }
 
   return (

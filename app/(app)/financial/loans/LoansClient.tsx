@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { toast } from "sonner";
 import { AddIcon, AttachIcon, ChevronLeftIcon, ReceiptIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,10 +14,13 @@ import { deleteLoan } from "./actions";
 import { LoanDocumentsDialog, LoanFormDialog, RepaymentsDialog } from "./LoanDialogs";
 import { StatBox, formatDate, formatIls, statusColor, todayIso } from "./shared";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import { scheduleDeferredDelete } from "@/lib/undo-engine";
 
 // ── Main ────────────────────────────────────────────────────────────────────
-export default function LoansClient({ loans, summary }: { loans: Loan[]; summary: LoansSummary }) {
+export default function LoansClient({ loans: loansProp, summary }: { loans: Loan[]; summary: LoansSummary }) {
   const router = useRouter();
+  const loans = useUndoOverlay(loansProp, (l) => l.id, "loan");
   const searchParams = useSearchParams();
   const [filter, setFilter] = useState<"all" | "taken" | "given">("all");
   // Repaid / written-off loans are done business — keep them out of the list
@@ -42,7 +44,6 @@ export default function LoansClient({ loans, summary }: { loans: Loan[]; summary
   }, [repayParam, loans]);
   const [docsLoan, setDocsLoan] = useState<Loan | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Loan | null>(null);
-  const [pending, startTransition] = useTransition();
 
   const resolvedCount = useMemo(
     () => loans.filter((l) => l.derivedStatus === "repaid" || l.derivedStatus === "written_off").length,
@@ -71,15 +72,18 @@ export default function LoansClient({ loans, summary }: { loans: Loan[]; summary
 
   function confirmDelete() {
     if (!deleteTarget) return;
-    startTransition(async () => {
-      const res = await deleteLoan(deleteTarget.id);
-      if (res.ok) {
-        toast.success("ההלוואה נמחקה.");
-        setDeleteTarget(null);
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    scheduleDeferredDelete({
+      scope: "loan",
+      id: target.id,
+      message: "ההלוואה נמחקה.",
+      onCommit: async () => {
+        const res = await deleteLoan(target.id);
+        if (!res.ok) return { ok: false, error: res.error };
         router.refresh();
-      } else {
-        toast.error(res.error);
-      }
+        return { ok: true };
+      },
     });
   }
 
@@ -268,10 +272,9 @@ export default function LoansClient({ loans, summary }: { loans: Loan[]; summary
         open={Boolean(deleteTarget)}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         title="מחיקת הלוואה"
-        description="ההלוואה וכל ההחזרים שלה יימחקו. לא ניתן לשחזר."
+        description="ההלוואה וכל ההחזרים שלה יימחקו."
         confirmLabel="מחיקה"
         destructive
-        loading={pending}
         onConfirm={confirmDelete}
       />
     </div>

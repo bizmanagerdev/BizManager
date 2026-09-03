@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { AttachIcon, PhoneIcon } from "@/components/ui/icons";
 import { NavLink } from "@/components/NavLink";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +21,8 @@ import { offlineFetch } from "@/lib/offline-queue";
 import { toHebrewError } from "@/lib/error-messages";
 import { formatShortDate } from "@/lib/date";
 import { checkStatusClasses, checkStatusLabel, type CheckRow } from "@/lib/checks";
+import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import { scheduleDeferredDelete, scheduleDeferredEdit } from "@/lib/undo-engine";
 
 type Props = { checks: CheckRow[] };
 
@@ -71,16 +72,15 @@ function SummaryCard({
   );
 }
 
-export default function ChecksClient({ checks }: Props) {
+export default function ChecksClient({ checks: checksProp }: Props) {
   const router = useRouter();
+  const checks = useUndoOverlay(checksProp, (c) => c.payment_id, "check");
   const [filter, setFilter] = useState<FilterKey>("open");
   const [sort, setSort] = useState<SortKey>("due");
   const [search, setSearch] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editingCheck, setEditingCheck] = useState<CheckRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CheckRow | null>(null);
-  const [deleteBusy, setDeleteBusy] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const today = todayIso();
   const weekEnd = weekFromNowIso();
@@ -162,34 +162,30 @@ export default function ChecksClient({ checks }: Props) {
     }
   }
 
-  async function deleteCheck(c: CheckRow) {
-    setDeleteBusy(true);
-    setDeleteError(null);
-    try {
-      const { url, body } =
-        c.source_type === "order"
-          ? { url: "/api/orders/payments/delete", body: { id: c.payment_id, order_id: c.source_id } }
-          : c.source_type === "project"
-            ? { url: "/api/payments/delete", body: { id: c.payment_id, project_id: c.source_id } }
-            : { url: "/api/payments/delete", body: { id: c.payment_id } };
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setDeleteError(toHebrewError(json?.error, "מחיקת הצ׳ק נכשלה."));
-        return;
-      }
-      toast.success("הצ׳ק נמחק");
-      setDeleteTarget(null);
-      router.refresh();
-    } catch (err) {
-      setDeleteError(toHebrewError(err, "מחיקת הצ׳ק נכשלה."));
-    } finally {
-      setDeleteBusy(false);
-    }
+  function deleteCheck(c: CheckRow) {
+    setDeleteTarget(null);
+    scheduleDeferredDelete({
+      scope: "check",
+      id: c.payment_id,
+      message: "הצ׳ק נמחק",
+      onCommit: async () => {
+        const { url, body } =
+          c.source_type === "order"
+            ? { url: "/api/orders/payments/delete", body: { id: c.payment_id, order_id: c.source_id } }
+            : c.source_type === "project"
+              ? { url: "/api/payments/delete", body: { id: c.payment_id, project_id: c.source_id } }
+              : { url: "/api/payments/delete", body: { id: c.payment_id } };
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "מחיקת הצ׳ק נכשלה.") };
+        router.refresh();
+        return { ok: true };
+      },
+    });
   }
 
   const tabs: { key: FilterKey; label: string }[] = [
@@ -305,23 +301,13 @@ export default function ChecksClient({ checks }: Props) {
       )}
 
       {editingCheck ? (
-        <EditCheckDialog
-          check={editingCheck}
-          onClose={() => setEditingCheck(null)}
-          onSaved={() => {
-            setEditingCheck(null);
-            router.refresh();
-          }}
-        />
+        <EditCheckDialog check={editingCheck} onClose={() => setEditingCheck(null)} onSaved={() => setEditingCheck(null)} />
       ) : null}
 
       <ConfirmDialog
         open={deleteTarget != null}
         onOpenChange={(open) => {
-          if (!open) {
-            setDeleteTarget(null);
-            setDeleteError(null);
-          }
+          if (!open) setDeleteTarget(null);
         }}
         title="מחיקת צ׳ק"
         description={
@@ -330,11 +316,9 @@ export default function ChecksClient({ checks }: Props) {
             : undefined
         }
         destructive
-        loading={deleteBusy}
         confirmLabel="מחיקה"
-        error={deleteError ?? undefined}
         onConfirm={() => {
-          if (deleteTarget) void deleteCheck(deleteTarget);
+          if (deleteTarget) deleteCheck(deleteTarget);
         }}
       />
     </div>
@@ -518,6 +502,7 @@ function EditCheckDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const router = useRouter();
   const [amount, setAmount] = useState(String(check.amount));
   const [dueDate, setDueDate] = useState(check.due_date ?? "");
   const [checkNumber, setCheckNumber] = useState(check.check_number ?? "");
@@ -525,11 +510,9 @@ function EditCheckDialog({
   const [accountId, setAccountId] = useState(check.account_id ?? "");
   const [accountsList, setAccountsList] = useState<Account[]>([]);
   const [notes, setNotes] = useState(check.notes ?? "");
-  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleSubmit() {
-    if (submitting) return;
+  function handleSubmit() {
     setError(null);
 
     const amountNumber = Number(amount);
@@ -546,41 +529,50 @@ function EditCheckDialog({
       return;
     }
 
-    setSubmitting(true);
-    try {
-      const endpoint = check.source_type === "order" ? "/api/orders/payments/update" : "/api/payments/update";
-      const body: Record<string, unknown> = {
-        id: check.payment_id,
-        payment_date: check.payment_date,
-        payment_method: "check",
-        amount_total: amountNumber,
+    const filesToUpload = photoFiles;
+    onSaved();
+    scheduleDeferredEdit({
+      scope: "check",
+      id: check.payment_id,
+      message: "הצ׳ק עודכן",
+      patch: {
+        amount: amountNumber,
         due_date: dueDate,
-        check_number: checkNumber.trim() || undefined,
-        reference_number: check.reference_number ?? undefined,
-        notes: notes.trim() || undefined,
-        account_id: accountId || undefined,
-      };
-      if (check.source_type === "order") {
-        body.order_id = check.source_id;
-      } else {
-        if (check.source_type === "project") body.project_id = check.source_id;
-        body.requires_split = check.requires_split;
-      }
+        check_number: checkNumber.trim() || null,
+        notes: notes.trim() || null,
+        account_id: accountId || null,
+      },
+      onCommit: async () => {
+        const endpoint = check.source_type === "order" ? "/api/orders/payments/update" : "/api/payments/update";
+        const body: Record<string, unknown> = {
+          id: check.payment_id,
+          payment_date: check.payment_date,
+          payment_method: "check",
+          amount_total: amountNumber,
+          due_date: dueDate,
+          check_number: checkNumber.trim() || undefined,
+          reference_number: check.reference_number ?? undefined,
+          notes: notes.trim() || undefined,
+          account_id: accountId || undefined,
+        };
+        if (check.source_type === "order") {
+          body.order_id = check.source_id;
+        } else {
+          if (check.source_type === "project") body.project_id = check.source_id;
+          body.requires_split = check.requires_split;
+        }
 
-      const result = await offlineFetch(endpoint, body, "עדכון צ׳ק");
-      if (!result.queued && !result.ok) {
-        setError(toHebrewError(result.error, "עדכון הצ׳ק נכשל."));
-        return;
-      }
-      if (photoFiles.length > 0) {
-        await uploadCheckPhotos(check.payment_id, photoFiles);
-      }
-      onSaved();
-    } catch (err) {
-      setError(toHebrewError(err, "שגיאה לא ידועה"));
-    } finally {
-      setSubmitting(false);
-    }
+        const result = await offlineFetch(endpoint, body, "עדכון צ׳ק");
+        if (!result.queued && !result.ok) {
+          return { ok: false, error: toHebrewError(result.error, "עדכון הצ׳ק נכשל.") };
+        }
+        if (filesToUpload.length > 0) {
+          await uploadCheckPhotos(check.payment_id, filesToUpload);
+        }
+        router.refresh();
+        return { ok: true };
+      },
+    });
   }
 
   return (
@@ -591,10 +583,8 @@ function EditCheckDialog({
       }}
       title="עריכת צ׳ק"
       description={check.customer_name}
-      onSubmit={() => void handleSubmit()}
+      onSubmit={handleSubmit}
       submitLabel="שמירת שינויים"
-      busyLabel="שומר..."
-      busy={submitting}
       error={error || undefined}
     >
       <div className="grid gap-3">
@@ -621,7 +611,6 @@ function EditCheckDialog({
           onCheckNumberChange={setCheckNumber}
           photoFiles={photoFiles}
           onPhotoFilesChange={setPhotoFiles}
-          disabled={submitting}
         />
 
         <AccountSelect value={accountId} onChange={setAccountId} onLoaded={setAccountsList} />

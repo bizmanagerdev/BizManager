@@ -132,7 +132,7 @@ function loanFields(input: LoanInput) {
 export async function createLoan(
   input: LoanInput,
   installments?: InstallmentInput[]
-): Promise<ActionResult> {
+): Promise<ActionResult & { id?: string }> {
   try {
     const ctx = await getAdminContext();
     if (!ctx.ok) return { ok: false, error: ctx.error };
@@ -165,7 +165,7 @@ export async function createLoan(
       }
     }
     revalidateLoans();
-    return { ok: true };
+    return { ok: true, id: loanId };
   } catch (error) {
     return { ok: false, error: toHebrewError(error, "שגיאה ביצירת ההלוואה.") };
   }
@@ -229,7 +229,10 @@ export async function deleteLoan(id: string): Promise<ActionResult> {
   }
 }
 
-export async function addRepayment(loanId: string, input: RepaymentInput): Promise<ActionResult> {
+export async function addRepayment(
+  loanId: string,
+  input: RepaymentInput
+): Promise<ActionResult & { id?: string }> {
   try {
     const ctx = await getAdminContext();
     if (!ctx.ok) return { ok: false, error: ctx.error };
@@ -241,20 +244,24 @@ export async function addRepayment(loanId: string, input: RepaymentInput): Promi
       return { ok: false, error: "הריבית לא יכולה לעלות על סכום ההחזר." };
     }
 
-    const { error } = await ctx.supabase.from("loan_repayments").insert({
-      loan_id: loanId,
-      repayment_date: input.repayment_date,
-      amount: input.amount,
-      interest_amount: interest,
-      method: clean(input.method),
-      account_id: typeof input.account_id === "string" && input.account_id ? input.account_id : null,
-      notes: clean(input.notes),
-      created_by: ctx.profile.id,
-    });
+    const { data, error } = await ctx.supabase
+      .from("loan_repayments")
+      .insert({
+        loan_id: loanId,
+        repayment_date: input.repayment_date,
+        amount: input.amount,
+        interest_amount: interest,
+        method: clean(input.method),
+        account_id: typeof input.account_id === "string" && input.account_id ? input.account_id : null,
+        notes: clean(input.notes),
+        created_by: ctx.profile.id,
+      })
+      .select("id")
+      .single();
     if (error) return { ok: false, error: toHebrewError(error.message) };
     await syncLoanStatus(ctx.supabase, loanId);
     revalidateLoans();
-    return { ok: true };
+    return { ok: true, id: (data as { id?: string } | null)?.id };
   } catch (error) {
     return { ok: false, error: toHebrewError(error, "שגיאה בהוספת החזר.") };
   }

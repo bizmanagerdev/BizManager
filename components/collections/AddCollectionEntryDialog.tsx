@@ -15,6 +15,7 @@ import { AssigneeSelect } from "@/components/collections/AssigneeSelect";
 import { useAssignableUsers } from "@/hooks/useAssignableUsers";
 import { offlineFetch } from "@/lib/offline-queue";
 import { appendDictatedText } from "@/lib/dictation";
+import { registerReversibleCreate } from "@/lib/undo-engine";
 
 type Mode = "reminder" | "call";
 type CustomerHit = { id: string; name: string; phone: string | null };
@@ -169,9 +170,59 @@ export default function AddCollectionEntryDialog({
         setError(toHebrewError(result.error, "שמירה נכשלה."));
         return;
       }
-      toast.success(mode === "reminder" ? "התזכורת נוספה." : "השיחה תועדה.");
       onSaved();
       onOpenChange(false);
+      const data = result.data as { id?: string | null; reminder_id?: string | null } | null;
+      const newId = data?.id;
+      if (mode === "reminder") {
+        if (newId) {
+          registerReversibleCreate({
+            scope: "reminder",
+            id: newId,
+            message: "התזכורת נוספה.",
+            onUndo: async () => {
+              const res = await fetch("/api/reminders/update", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: newId, status: "cancelled" }),
+              });
+              const json = await res.json().catch(() => ({}));
+              if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "ביטול נכשל.") };
+              return { ok: true };
+            },
+          });
+        } else {
+          toast.success("התזכורת נוספה.");
+        }
+      } else {
+        const followUpId = data?.reminder_id;
+        if (newId) {
+          registerReversibleCreate({
+            scope: "communication",
+            id: newId,
+            message: "השיחה תועדה.",
+            onUndo: async () => {
+              const res = await fetch("/api/communications/delete", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: newId }),
+              });
+              const json = await res.json().catch(() => ({}));
+              if (followUpId) {
+                await fetch("/api/reminders/update", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ id: followUpId, status: "cancelled" }),
+                });
+              }
+              if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "ביטול נכשל.") };
+              return { ok: true };
+            },
+          });
+        } else {
+          toast.success("השיחה תועדה.");
+        }
+      }
     } catch (err: unknown) {
       setError(toHebrewError(err, "שמירה נכשלה."));
     } finally {

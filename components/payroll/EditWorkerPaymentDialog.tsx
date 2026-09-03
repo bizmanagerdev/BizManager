@@ -15,8 +15,8 @@
 // they're untouched.
 
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { toHebrewError } from "@/lib/error-messages";
+import { registerReversibleAction } from "@/lib/undo-engine";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Input } from "@/components/ui/input";
@@ -63,6 +63,16 @@ export function EditWorkerPaymentDialog({
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Pre-edit snapshot, captured once on load and never mutated by the form —
+  // lets a save be undone by re-PATCHing these exact values back.
+  const [original, setOriginal] = useState<{
+    payment_date: string;
+    amount: string;
+    payment_method: string;
+    account_id: string;
+    reference_number: string;
+    notes: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!paymentId) return;
@@ -95,12 +105,26 @@ export function EditWorkerPaymentDialog({
         setUserId(json.payment.user_id);
         setWorkerName(json.workerName ?? null);
         setAllocations(json.allocations ?? []);
-        setDate(json.payment.payment_date ?? "");
-        setAmount(json.payment.amount != null ? String(json.payment.amount) : "");
-        setMethod(json.payment.payment_method ?? "");
-        setAccountId(json.payment.account_id ?? "");
-        setReference(json.payment.reference_number ?? "");
-        setNotes(json.payment.notes ?? "");
+        const loadedDate = json.payment.payment_date ?? "";
+        const loadedAmount = json.payment.amount != null ? String(json.payment.amount) : "";
+        const loadedMethod = json.payment.payment_method ?? "";
+        const loadedAccountId = json.payment.account_id ?? "";
+        const loadedReference = json.payment.reference_number ?? "";
+        const loadedNotes = json.payment.notes ?? "";
+        setDate(loadedDate);
+        setAmount(loadedAmount);
+        setMethod(loadedMethod);
+        setAccountId(loadedAccountId);
+        setReference(loadedReference);
+        setNotes(loadedNotes);
+        setOriginal({
+          payment_date: loadedDate,
+          amount: loadedAmount,
+          payment_method: loadedMethod,
+          account_id: loadedAccountId,
+          reference_number: loadedReference,
+          notes: loadedNotes,
+        });
       })
       .catch((err: unknown) => {
         if (active) setLoadError(toHebrewError(err, "טעינת התשלום נכשלה."));
@@ -159,7 +183,48 @@ export function EditWorkerPaymentDialog({
         setError(toHebrewError(json.error, "עדכון התשלום נכשל."));
         return;
       }
-      toast.success("התשלום עודכן.");
+      // The PATCH already committed (this dialog resends the untouched
+      // allocations round-trip on every save, so it can't be safely deferred
+      // — see the file header). Undo instead replays the same PATCH with the
+      // pre-edit snapshot captured on load.
+      const committedPaymentId = paymentId;
+      const committedUserId = userId;
+      const committedAllocations = allocations;
+      const committedOriginal = original;
+      registerReversibleAction({
+        key: `worker-payment:edit:${committedPaymentId}`,
+        message: "התשלום עודכן.",
+        onUndo: async () => {
+          if (!committedOriginal) return { ok: true };
+          try {
+            const undoRes = await fetch("/api/payroll/worker-payments", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                payment_id: committedPaymentId,
+                user_id: committedUserId,
+                payment_date: committedOriginal.payment_date,
+                amount: Number(committedOriginal.amount) || 0,
+                payment_method: committedOriginal.payment_method || null,
+                account_id: committedOriginal.account_id || null,
+                reference_number: committedOriginal.reference_number || null,
+                notes: committedOriginal.notes || null,
+                allocations: committedAllocations.map((a) => ({
+                  source_type: a.source_type,
+                  source_id: a.source_type === "session" ? a.attendance_session_id : a.payslip_id,
+                  amount: Number(a.amount) || 0,
+                })),
+              }),
+            });
+            const undoJson = (await undoRes.json().catch(() => ({}))) as { error?: string };
+            if (!undoRes.ok) return { ok: false, error: toHebrewError(undoJson.error, "ביטול העדכון נכשל.") };
+            onSaved();
+            return { ok: true };
+          } catch (undoErr: unknown) {
+            return { ok: false, error: toHebrewError(undoErr, "ביטול העדכון נכשל.") };
+          }
+        },
+      });
       onOpenChange(false);
       onSaved();
     } catch (err: unknown) {

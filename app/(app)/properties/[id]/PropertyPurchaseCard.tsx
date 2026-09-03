@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { AddIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +10,7 @@ import { updateProperty } from "../actions";
 import { PropertyPurchaseFields, propertyToForm, type PropertyInput } from "../PropertyFormFields";
 import { formatCurrency } from "@/lib/payroll";
 import type { Property, PropertyDocument } from "@/lib/properties";
+import { scheduleDeferredAction } from "@/lib/undo-engine";
 
 const PURCHASE_KEYS = [
   "purchased_from",
@@ -26,6 +26,25 @@ function pick<T extends object, K extends keyof T>(obj: T, keys: readonly K[]): 
   const out = {} as Pick<T, K>;
   for (const k of keys) out[k] = obj[k];
   return out;
+}
+
+function numOrNull(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : null;
+}
+
+function buildPurchasePatch(input: PropertyInput): Partial<Property> {
+  return {
+    purchasedFrom: input.purchased_from.trim() || null,
+    purchaseDate: input.purchase_date.trim() || null,
+    purchasePrice: numOrNull(input.purchase_price),
+    purchaseTax: numOrNull(input.purchase_tax),
+    landBlock: input.land_block.trim() || null,
+    landParcel: input.land_parcel.trim() || null,
+    landSubParcel: input.land_sub_parcel.trim() || null,
+  };
 }
 
 function fmtDate(value: string | null) {
@@ -51,42 +70,45 @@ export default function PropertyPurchaseCard({
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
+  const [override, setOverride] = useState<Partial<Property> | null>(null);
+  const displayProperty: Property = override ? { ...property, ...override } : property;
   const [draft, setDraft] = useState<PropertyInput>(() => propertyToForm(property));
-  const [busy, setBusy] = useState(false);
 
   function setField<K extends keyof PropertyInput>(key: K, value: PropertyInput[K]) {
     setDraft((prev) => ({ ...prev, [key]: value }));
   }
 
   function openEdit() {
-    setDraft(propertyToForm(property));
+    setDraft(propertyToForm(displayProperty));
     setEditing(true);
   }
 
-  async function save() {
-    setBusy(true);
-    try {
-      const result = await updateProperty(propertyId, { ...propertyToForm(property), ...pick(draft, PURCHASE_KEYS) });
-      if (!result.ok) {
-        toast.error(result.error);
-        return;
-      }
-      toast.success("הנכס עודכן.");
-      setEditing(false);
-      router.refresh();
-    } finally {
-      setBusy(false);
-    }
+  function save() {
+    const snapshotDraft = draft;
+    const patch = buildPurchasePatch(snapshotDraft);
+    setEditing(false);
+    scheduleDeferredAction({
+      key: `property-purchase:${propertyId}`,
+      message: "הנכס עודכן.",
+      onApplyOptimistic: () => setOverride(patch),
+      onRevert: () => setOverride(null),
+      onCommit: async () => {
+        const result = await updateProperty(propertyId, { ...propertyToForm(property), ...pick(snapshotDraft, PURCHASE_KEYS) });
+        if (!result.ok) return { ok: false, error: result.error };
+        router.refresh();
+        return { ok: true };
+      },
+    });
   }
 
   const hasPurchaseInfo = Boolean(
-    property.purchasedFrom ||
-      property.purchaseDate ||
-      property.purchasePrice != null ||
-      property.purchaseTax != null ||
-      property.landBlock ||
-      property.landParcel ||
-      property.landSubParcel
+    displayProperty.purchasedFrom ||
+      displayProperty.purchaseDate ||
+      displayProperty.purchasePrice != null ||
+      displayProperty.purchaseTax != null ||
+      displayProperty.landBlock ||
+      displayProperty.landParcel ||
+      displayProperty.landSubParcel
   );
 
   return (
@@ -108,16 +130,15 @@ export default function PropertyPurchaseCard({
           <>
             <PropertyPurchaseFields form={draft} set={setField} />
             <div className="flex gap-2">
-              <Button type="button" size="sm" disabled={busy} onClick={() => void save()}>
-                {busy ? "שומר..." : "שמירה"}
+              <Button type="button" size="sm" onClick={save}>
+                שמירה
               </Button>
               <Button
                 type="button"
                 size="sm"
                 variant="secondary"
-                disabled={busy}
                 onClick={() => {
-                  setDraft(propertyToForm(property));
+                  setDraft(propertyToForm(displayProperty));
                   setEditing(false);
                 }}
               >
@@ -129,34 +150,36 @@ export default function PropertyPurchaseCard({
           <p className="text-sm text-muted-foreground">לא הוזנו פרטי רכישה.</p>
         ) : (
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-            {property.purchasedFrom ? (
+            {displayProperty.purchasedFrom ? (
               <div>
                 <span className="text-muted-foreground">נרכש מ-: </span>
-                {property.purchasedFrom}
+                {displayProperty.purchasedFrom}
               </div>
             ) : null}
-            {property.purchaseDate ? (
+            {displayProperty.purchaseDate ? (
               <div>
                 <span className="text-muted-foreground">תאריך רכישה: </span>
-                {fmtDate(property.purchaseDate)}
+                {fmtDate(displayProperty.purchaseDate)}
               </div>
             ) : null}
-            {property.purchasePrice != null ? (
+            {displayProperty.purchasePrice != null ? (
               <div>
                 <span className="text-muted-foreground">מחיר רכישה: </span>
-                {formatCurrency(property.purchasePrice)}
+                {formatCurrency(displayProperty.purchasePrice)}
               </div>
             ) : null}
-            {property.purchaseTax != null ? (
+            {displayProperty.purchaseTax != null ? (
               <div>
                 <span className="text-muted-foreground">מס רכישה: </span>
-                {formatCurrency(property.purchaseTax)}
+                {formatCurrency(displayProperty.purchaseTax)}
               </div>
             ) : null}
-            {property.landBlock || property.landParcel || property.landSubParcel ? (
+            {displayProperty.landBlock || displayProperty.landParcel || displayProperty.landSubParcel ? (
               <div className="col-span-2">
                 <span className="text-muted-foreground">גוש/חלקה/תת-חלקה: </span>
-                {[property.landBlock, property.landParcel, property.landSubParcel].filter(Boolean).join(" / ")}
+                {[displayProperty.landBlock, displayProperty.landParcel, displayProperty.landSubParcel]
+                  .filter(Boolean)
+                  .join(" / ")}
               </div>
             ) : null}
           </div>

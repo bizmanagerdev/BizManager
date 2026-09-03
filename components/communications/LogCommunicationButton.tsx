@@ -15,6 +15,7 @@ import { useAssignableUsers } from "@/hooks/useAssignableUsers";
 import { offlineFetch } from "@/lib/offline-queue";
 import { toHebrewError } from "@/lib/error-messages";
 import { appendDictatedText } from "@/lib/dictation";
+import { registerReversibleCreate } from "@/lib/undo-engine";
 
 // A logged call is inherently customer-related, so these entities all resolve to
 // a customer_id plus (optionally) their own FK on the communication log.
@@ -149,10 +150,30 @@ export default function LogCommunicationButton({
         setError(toHebrewError(result.error, "שמירה נכשלה."));
         return;
       }
-      toast.success("השיחה תועדה.");
       onSaved?.();
       setOpen(false);
       router.refresh();
+      const newId = (result.data as { id?: string } | null)?.id;
+      if (!newId) {
+        toast.success("השיחה תועדה.");
+      } else {
+        registerReversibleCreate({
+          scope: "communication",
+          id: newId,
+          message: "השיחה תועדה.",
+          onUndo: async () => {
+            const res = await fetch("/api/communications/delete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: newId }),
+            });
+            const json = await res.json().catch(() => ({}));
+            router.refresh();
+            if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "ביטול נכשל.") };
+            return { ok: true };
+          },
+        });
+      }
     } catch (err: unknown) {
       setError(toHebrewError(err, "שמירה נכשלה."));
     } finally {

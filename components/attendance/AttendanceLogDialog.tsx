@@ -21,6 +21,7 @@ import { commonDict } from "@/lib/i18n/dictionaries/common";
 import { profileDict } from "@/lib/i18n/dictionaries/profile";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { closePhoneReport, updatePhoneReportClockIn } from "@/lib/attendance/phoneReportActions";
+import { scheduleDeferredAction } from "@/lib/undo-engine";
 
 export type AttendanceLogWorker = { id: string; label: string };
 
@@ -217,14 +218,24 @@ function AttendanceLogBody({
     if (!atLocal || Number.isNaN(d.getTime())) return setError(t(profileDict, locale, "errInvalidClockOutTime"));
     if (!state?.id) return;
     setError("");
-    startTransition(async () => {
-      try {
-        const result = await closePhoneReport(state.id, d, note.trim());
-        if (!result.ok) return setError(toHebrewError(result.error, t(profileDict, locale, "clockOutReportFailed")));
-        afterSuccess(t(profileDict, locale, "shiftClosedForTemplate").replace("{name}", workerLabel));
-      } catch (err: unknown) {
-        setError(toHebrewError(err, t(profileDict, locale, "clockOutReportFailed")));
-      }
+    const reportId = state.id;
+    const noteSnapshot = note.trim();
+    const successMsg = t(profileDict, locale, "shiftClosedForTemplate").replace("{name}", workerLabel);
+    // Close the dialog now (optimistic) — the real close is deferred, same as
+    // every other undoable action; nothing has reached the server until it fires.
+    onClose();
+    scheduleDeferredAction({
+      key: `phone-report:close:${reportId}`,
+      message: successMsg,
+      onApplyOptimistic: () => {},
+      onRevert: () => {},
+      onCommit: async () => {
+        const result = await closePhoneReport(reportId, d, noteSnapshot);
+        if (!result.ok) return { ok: false, error: toHebrewError(result.error, t(profileDict, locale, "clockOutReportFailed")) };
+        onSaved?.();
+        router.refresh();
+        return { ok: true };
+      },
     });
   }
 
@@ -234,18 +245,25 @@ function AttendanceLogBody({
     if (d.getTime() > Date.now() + 60_000) return setError(t(profileDict, locale, "errClockInFuture"));
     if (!state?.id) return;
     setError("");
-    startTransition(async () => {
-      try {
-        const result = await updatePhoneReportClockIn(state.id, d);
-        if (!result.ok) return setError(toHebrewError(result.error, t(profileDict, locale, "updateClockInFailed")));
-        toast.success(t(profileDict, locale, "clockInUpdatedTemplate").replace("{name}", workerLabel));
+    const reportId = state.id;
+    const previousClockIn = state.clock_in;
+    const nextClockIn = d.toISOString();
+    const successMsg = t(profileDict, locale, "clockInUpdatedTemplate").replace("{name}", workerLabel);
+    setEditEntry(false);
+    scheduleDeferredAction({
+      key: `phone-report:clock-in:${reportId}`,
+      message: successMsg,
+      // The shown "כניסה ב-…" line reflects the new time right away; reverts
+      // to the previous time if undone within the window.
+      onApplyOptimistic: () => setState((s) => (s && s.id === reportId ? { ...s, clock_in: nextClockIn } : s)),
+      onRevert: () => setState((s) => (s && s.id === reportId ? { ...s, clock_in: previousClockIn } : s)),
+      onCommit: async () => {
+        const result = await updatePhoneReportClockIn(reportId, d);
+        if (!result.ok) return { ok: false, error: toHebrewError(result.error, t(profileDict, locale, "updateClockInFailed")) };
         onSaved?.();
         router.refresh();
-        setEditEntry(false);
-        selectWorker(workerId); // re-load state so the shown entry time updates
-      } catch (err: unknown) {
-        setError(toHebrewError(err, t(profileDict, locale, "updateClockInFailed")));
-      }
+        return { ok: true };
+      },
     });
   }
 

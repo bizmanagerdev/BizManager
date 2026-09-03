@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ApprovedUserIcon,
@@ -16,7 +16,6 @@ import {
   UsersIcon,
 } from "@/components/ui/icons";
 import type { IconComponent } from "@/components/ui/icons";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,6 +33,8 @@ import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
 import type { OpenPhoneReport, PendingPhoneReport } from "@/lib/attendance/phone-reports";
 import type { SalaryCenterProjectOption } from "@/lib/payroll-center";
+import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import { scheduleDeferredDelete, scheduleDeferredEdit } from "@/lib/undo-engine";
 
 
 type Props = {
@@ -122,11 +123,15 @@ function QueueStat({
  * Nothing here counts toward payroll until it's approved.
  */
 export default function AttendanceQueuePanel({
-  pending,
-  open,
+  pending: pendingProp,
+  open: openProp,
   projectOptions,
   propertyOptions,
 }: Props) {
+  // Overlaid so a close/reject/reopen/edit anywhere below (this panel or
+  // PendingReportCard) can hide/patch a row optimistically without a local copy.
+  const pending = useUndoOverlay(pendingProp, (r) => r.id, "phone-report-pending");
+  const open = useUndoOverlay(openProp, (r) => r.id, "phone-report-open");
   const [workerFilter, setWorkerFilter] = useState("");
   const [guideOpen, setGuideOpen] = useState(false);
   // Only workers who actually appear in the queue are worth filtering by.
@@ -302,7 +307,6 @@ export default function AttendanceQueuePanel({
 /** A worker currently clocked in (open shift). Admin can close it now / at a set time → pending. */
 function OpenRow({ report }: { report: OpenPhoneReport }) {
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
   const [closing, setClosing] = useState(false);
   const [closeLocal, setCloseLocal] = useState(() => nowLocal());
   /** "מה העובד עשה" — the same thing the worker writes when closing his own shift. */
@@ -318,16 +322,18 @@ function OpenRow({ report }: { report: OpenPhoneReport }) {
     if (!entryLocal || Number.isNaN(clockIn.getTime())) return setError("שעת כניסה אינה תקינה.");
     if (clockIn.getTime() > Date.now() + 60_000) return setError("שעת הכניסה לא יכולה להיות בעתיד.");
 
-    startTransition(async () => {
-      try {
+    setEditing(false);
+    scheduleDeferredEdit({
+      scope: "phone-report-open",
+      id: report.id,
+      message: "שעת הכניסה עודכנה.",
+      patch: { clock_in: clockIn.toISOString() },
+      onCommit: async () => {
         const result = await updatePhoneReportClockIn(report.id, clockIn);
-        if (!result.ok) return setError(toHebrewError(result.error, "עדכון שעת הכניסה נכשל."));
-        toast.success("שעת הכניסה עודכנה.");
-        setEditing(false);
+        if (!result.ok) return { ok: false, error: toHebrewError(result.error, "עדכון שעת הכניסה נכשל.") };
         router.refresh();
-      } catch (err: unknown) {
-        setError(toHebrewError(err, "עדכון שעת הכניסה נכשל."));
-      }
+        return { ok: true };
+      },
     });
   }
 
@@ -337,15 +343,18 @@ function OpenRow({ report }: { report: OpenPhoneReport }) {
     if (!closeLocal || Number.isNaN(clockOut.getTime())) return setError("שעת יציאה אינה תקינה.");
     if (clockOut <= new Date(report.clock_in)) return setError("שעת היציאה חייבת להיות אחרי הכניסה.");
 
-    startTransition(async () => {
-      try {
-        const result = await closePhoneReport(report.id, clockOut, closeNote.trim());
-        if (!result.ok) return setError(toHebrewError(result.error, "סגירת המשמרת נכשלה."));
-        toast.success("המשמרת נסגרה וממתינה לאישור.");
+    const noteSnapshot = closeNote.trim();
+    setClosing(false);
+    scheduleDeferredDelete({
+      scope: "phone-report-open",
+      id: report.id,
+      message: "המשמרת נסגרה וממתינה לאישור.",
+      onCommit: async () => {
+        const result = await closePhoneReport(report.id, clockOut, noteSnapshot);
+        if (!result.ok) return { ok: false, error: toHebrewError(result.error, "סגירת המשמרת נכשלה.") };
         router.refresh();
-      } catch (err: unknown) {
-        setError(toHebrewError(err, "סגירת המשמרת נכשלה."));
-      }
+        return { ok: true };
+      },
     });
   }
 
@@ -406,11 +415,11 @@ function OpenRow({ report }: { report: OpenPhoneReport }) {
           <div className="w-44">
             <DateTimeInput value={entryLocal} onChange={(e) => setEntryLocal(e.target.value)} />
           </div>
-          <Button type="button" size="sm" onClick={saveEntry} disabled={isPending}>
+          <Button type="button" size="sm" onClick={saveEntry}>
             <SaveIcon className="h-4 w-4" />
-            {isPending ? "..." : "שמירה"}
+            שמירה
           </Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => setEditing(false)} disabled={isPending}>
+          <Button type="button" variant="outline" size="sm" onClick={() => setEditing(false)}>
             <CloseIcon className="h-4 w-4" />
             ביטול
           </Button>
@@ -432,20 +441,19 @@ function OpenRow({ report }: { report: OpenPhoneReport }) {
           <label className="block space-y-1">
             <span className="block text-xs text-muted-foreground">מה העובד עשה במשמרת?</span>
             <div className="relative">
-              <Textarea value={closeNote} onChange={(e) => setCloseNote(e.target.value)} rows={2} disabled={isPending} className="pe-11" />
+              <Textarea value={closeNote} onChange={(e) => setCloseNote(e.target.value)} rows={2} className="pe-11" />
               <DictateButton
                 onTranscript={(text) => setCloseNote((prev) => appendDictatedText(prev, text))}
-                disabled={isPending}
                 className="absolute bottom-1 end-1 h-8 w-8"
               />
             </div>
           </label>
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" size="sm" onClick={closeShift} disabled={isPending}>
+            <Button type="button" size="sm" onClick={closeShift}>
               <LogoutIcon className="h-4 w-4" />
-              {isPending ? "..." : "סגירה"}
+              סגירה
             </Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => setClosing(false)} disabled={isPending}>
+            <Button type="button" variant="outline" size="sm" onClick={() => setClosing(false)}>
               <CloseIcon className="h-4 w-4" />
               ביטול
             </Button>

@@ -40,6 +40,9 @@ import { AttendanceLogDialog } from "@/components/attendance/AttendanceLogDialog
 import { OrderDeliveryDateDialog } from "@/components/orders/OrderDeliveryDateDialog";
 import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions } from "@/lib/payroll-worker-type";
 import type { QuickCreateAction, QuickCreateData } from "@/components/layout/quick-create-types";
+import { toHebrewError } from "@/lib/error-messages";
+import { offlineFetch } from "@/lib/offline-queue";
+import { registerReversibleCreate } from "@/lib/undo-engine";
 
 export default function QuickCreateDialogs({
   action,
@@ -198,13 +201,6 @@ export default function QuickCreateDialogs({
     [canManageWorkerSessions, data.currentUserId]
   );
 
-  // Saved → the underlying page re-renders in place; the user never left it.
-  function done(message: string) {
-    onClose();
-    router.refresh();
-    toast.success(message);
-  }
-
   return (
     <>
       <TaskUpsertDialog
@@ -285,9 +281,24 @@ export default function QuickCreateDialogs({
                 setSubmitLocked(false);
                 onClose();
               }}
-              onSubmitted={() => {
+              onSubmitted={(orderId) => {
                 setSubmitLocked(false);
-                done(HEBREW.orderSaved);
+                onClose();
+                router.refresh();
+                registerReversibleCreate({
+                  scope: "order",
+                  id: orderId,
+                  message: HEBREW.orderSaved,
+                  onUndo: async () => {
+                    const result = await offlineFetch("/api/orders/delete", { order_id: orderId }, "מחיקת הזמנה");
+                    router.refresh();
+                    if (!result.queued) {
+                      if (!result.ok) return { ok: false, error: toHebrewError(result.error, "מחיקת הזמנה נכשלה.") };
+                      if (!(result.data as { ok?: boolean })?.ok) return { ok: false, error: "מחיקת הזמנה נכשלה." };
+                    }
+                    return { ok: true };
+                  },
+                });
               }}
             />
           ) : null}
@@ -323,9 +334,31 @@ export default function QuickCreateDialogs({
                 setSubmitLocked(false);
                 onClose();
               }}
-              onSubmitted={() => {
+              onSubmitted={(project) => {
                 setSubmitLocked(false);
-                done(HEBREW.projectSaved);
+                onClose();
+                router.refresh();
+                const projectId = typeof project?.id === "string" ? project.id : "";
+                if (!projectId) {
+                  toast.success(HEBREW.projectSaved);
+                  return;
+                }
+                registerReversibleCreate({
+                  scope: "project",
+                  id: projectId,
+                  message: HEBREW.projectSaved,
+                  onUndo: async () => {
+                    const res = await fetch("/api/projects/delete", {
+                      method: "POST",
+                      headers: { "content-type": "application/json" },
+                      body: JSON.stringify({ id: projectId }),
+                    });
+                    const json = await res.json().catch(() => ({}));
+                    router.refresh();
+                    if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "מחיקת הפרויקט נכשלה.") };
+                    return { ok: true };
+                  },
+                });
               }}
             />
           ) : null}
@@ -368,9 +401,21 @@ export default function QuickCreateDialogs({
         onOpenChange={(open) => {
           if (!open) onClose();
         }}
-        onCreated={() => {
+        onCreated={(customer) => {
           router.refresh();
-          toast.success("הלקוח נשמר.");
+          registerReversibleCreate({
+            scope: "customer",
+            id: customer.id,
+            message: "הלקוח נשמר.",
+            onUndo: async () => {
+              const result = await offlineFetch("/api/customers/delete", { id: customer.id }, "מחיקת לקוח");
+              router.refresh();
+              if (!result.queued && !result.ok) return { ok: false, error: toHebrewError(result.error, "מחיקת לקוח נכשלה.") };
+              const json = result.queued ? null : (result.data as { ok?: boolean } | null);
+              if (json && !json.ok) return { ok: false, error: "מחיקת לקוח נכשלה." };
+              return { ok: true };
+            },
+          });
         }}
       />
 

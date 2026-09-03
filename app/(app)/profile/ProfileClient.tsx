@@ -22,6 +22,7 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { InitialsAvatar, isHexColor } from "@/components/dashboard/InitialsAvatar";
 import { setAvatarColorCache } from "@/lib/ui/avatar-color";
 import { setMyAvatarColor, setMyProfileDetails, setMyFontScale } from "@/lib/profile/selfSettings";
+import { scheduleDeferredAction } from "@/lib/undo-engine";
 import type { UserProfile } from "@/lib/auth/requireProfile";
 import { EXPENSE_BUSINESS_DOMAINS, WORK_SESSION_BUSINESS_DOMAINS, type ExpenseBusinessDomain } from "@/lib/expenses";
 import { DomainSelect } from "@/components/financial/DomainSelect";
@@ -183,34 +184,42 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
   const [editingDetails, setEditingDetails] = useState(false);
   const [detailsNameDraft, setDetailsNameDraft] = useState(profile.full_name ?? "");
   const [detailsPhoneDraft, setDetailsPhoneDraft] = useState(profile.phone ?? "");
-  const [savingDetails, setSavingDetails] = useState(false);
   const [detailsError, setDetailsError] = useState("");
 
-  async function saveDetails() {
+  function saveDetails() {
     const name = detailsNameDraft.trim();
     if (!name) {
       setDetailsError(t(profileDict, locale, "errNameRequired"));
       return;
     }
-    setSavingDetails(true);
+    const phone = detailsPhoneDraft.trim() || null;
+    const previousName = detailsName;
+    const previousPhone = detailsPhone;
     setDetailsError("");
-    try {
-      const phone = detailsPhoneDraft.trim() || null;
-      const result = await setMyProfileDetails(name, phone);
-      if (!result.ok) throw new Error(result.error);
-      setDetailsName(name);
-      setDetailsPhone(phone ?? "");
-      setDetailsNameDraft(name);
-      setDetailsPhoneDraft(phone ?? "");
-      setEditingDetails(false);
-      toast.success(t(profileDict, locale, "detailsSavedToast"));
-      // The name shows in the top bar / presence too — refresh the server tree.
-      router.refresh();
-    } catch (err) {
-      setDetailsError(toHebrewError(err, t(profileDict, locale, "detailsSaveFailed")));
-    } finally {
-      setSavingDetails(false);
-    }
+    setEditingDetails(false);
+    scheduleDeferredAction({
+      key: "profile:details",
+      message: t(profileDict, locale, "detailsSavedToast"),
+      onApplyOptimistic: () => {
+        setDetailsName(name);
+        setDetailsPhone(phone ?? "");
+        setDetailsNameDraft(name);
+        setDetailsPhoneDraft(phone ?? "");
+      },
+      onRevert: () => {
+        setDetailsName(previousName);
+        setDetailsPhone(previousPhone);
+        setDetailsNameDraft(previousName);
+        setDetailsPhoneDraft(previousPhone);
+      },
+      onCommit: async () => {
+        const result = await setMyProfileDetails(name, phone);
+        if (!result.ok) return { ok: false, error: toHebrewError(result.error, t(profileDict, locale, "detailsSaveFailed")) };
+        // The name shows in the top bar / presence too — refresh the server tree.
+        router.refresh();
+        return { ok: true };
+      },
+    });
   }
 
   const [changingPassword, setChangingPassword] = useState(false);
@@ -944,7 +953,6 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={savingDetails}
                   onClick={() => {
                     setEditingDetails(false);
                     setDetailsNameDraft(detailsName);
@@ -954,8 +962,8 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
                 >
                   {t(commonDict, locale, "cancel")}
                 </Button>
-                <Button size="sm" disabled={savingDetails} onClick={() => void saveDetails()}>
-                  {savingDetails ? t(profileDict, locale, "savingEllipsis") : t(commonDict, locale, "save")}
+                <Button size="sm" onClick={saveDetails}>
+                  {t(commonDict, locale, "save")}
                 </Button>
               </div>
             </div>

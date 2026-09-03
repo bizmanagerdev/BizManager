@@ -22,6 +22,7 @@ import { type LeaseAgreement, type PropertyPayment } from "@/lib/properties";
 import { toHebrewError } from "@/lib/error-messages";
 import { scheduleRentPayments } from "../actions";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { scheduleDeferredEdit } from "@/lib/undo-engine";
 
 function monthLabel(dateStr: string | null): string {
   if (!dateStr) return "—";
@@ -96,9 +97,6 @@ export default function RentScheduleSection({
     checkNumber: "",
     accountId: "",
   });
-  const [editBusy, setEditBusy] = useState(false);
-
-  const [clearingId, setClearingId] = useState<string | null>(null);
 
   function openGenerator() {
     setGenForm({
@@ -220,58 +218,63 @@ export default function RentScheduleSection({
       toast.error("יש לבחור חשבון.");
       return;
     }
-    setEditBusy(true);
-    (async () => {
-      try {
+    const targetId = editTarget.id;
+    const snapshotForm = editForm;
+    setEditTarget(null);
+    scheduleDeferredEdit({
+      scope: "property-payment",
+      id: targetId,
+      message: "התשלום עודכן.",
+      patch: {
+        date: snapshotForm.paymentDate,
+        dueDate: snapshotForm.dueDate,
+        amount: Number(snapshotForm.amount),
+        method: snapshotForm.paymentMethod,
+        checkNumber: isCheck(snapshotForm.paymentMethod) ? snapshotForm.checkNumber || null : null,
+        accountId: snapshotForm.accountId || null,
+      },
+      onCommit: async () => {
         const res = await fetch("/api/payments/update", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            id: editTarget.id,
+            id: targetId,
             business_domain: "property_management",
-            payment_date: editForm.paymentDate,
-            due_date: editForm.dueDate,
-            amount_total: Number(editForm.amount),
-            payment_method: editForm.paymentMethod,
-            check_number: isCheck(editForm.paymentMethod) ? editForm.checkNumber || null : null,
-            account_id: editForm.accountId || null,
+            payment_date: snapshotForm.paymentDate,
+            due_date: snapshotForm.dueDate,
+            amount_total: Number(snapshotForm.amount),
+            payment_method: snapshotForm.paymentMethod,
+            check_number: isCheck(snapshotForm.paymentMethod) ? snapshotForm.checkNumber || null : null,
+            account_id: snapshotForm.accountId || null,
           }),
         });
         const json = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          toast.error("שגיאה בעדכון התשלום", { description: toHebrewError(json?.error, "") });
-          return;
-        }
-        toast.success("התשלום עודכן.");
-        setEditTarget(null);
+        if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "") };
         refresh();
-      } finally {
-        setEditBusy(false);
-      }
-    })();
+        return { ok: true };
+      },
+    });
   }
 
   function toggleCleared(payment: PropertyPayment) {
     const collected = normalizeCheckStatus(payment.paymentStatus) !== "cleared";
-    setClearingId(payment.id);
-    (async () => {
-      try {
+    scheduleDeferredEdit({
+      scope: "property-payment",
+      id: payment.id,
+      message: collected ? "התשלום סומן כנפרע." : "הסימון בוטל.",
+      patch: { paymentStatus: collected ? "cleared" : "pending" },
+      onCommit: async () => {
         const res = await fetch("/api/payments/mark-collected", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ id: payment.id, collected }),
         });
         const json = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          toast.error("שגיאה בעדכון הסטטוס", { description: toHebrewError(json?.error, "") });
-          return;
-        }
-        toast.success(collected ? "התשלום סומן כנפרע." : "הסימון בוטל.");
+        if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "") };
         refresh();
-      } finally {
-        setClearingId(null);
-      }
-    })();
+        return { ok: true };
+      },
+    });
   }
 
   return (
@@ -320,7 +323,6 @@ export default function RentScheduleSection({
                     size="sm"
                     variant={status === "cleared" ? "secondary" : "default"}
                     onClick={() => toggleCleared(p)}
-                    disabled={clearingId === p.id}
                   >
                     <CheckIcon className="h-4 w-4" />
                     {status === "cleared" ? "בטל סימון" : "נפרע"}
@@ -461,8 +463,6 @@ export default function RentScheduleSection({
         size="formMd"
         onSubmit={submitEdit}
         submitLabel="שמירה"
-        busyLabel="שומר..."
-        busy={editBusy}
       >
         <div className="mt-4 space-y-4">
           <label className="space-y-1 text-sm">

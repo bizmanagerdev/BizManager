@@ -2,7 +2,6 @@
 import { toHebrewError } from "@/lib/error-messages";
 
 import { useState } from "react";
-import { toast } from "sonner";
 import { ChatIcon, CommentIcon, MailIcon, PhoneIcon, PhoneInIcon, PhoneOutIcon, UsersIcon } from "@/components/ui/icons";
 import { NavLink } from "@/components/NavLink";
 import { Button } from "@/components/ui/button";
@@ -18,6 +17,7 @@ import {
 import { offlineFetch } from "@/lib/offline-queue";
 import { appendDictatedText } from "@/lib/dictation";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { scheduleDeferredDelete, scheduleDeferredEdit } from "@/lib/undo-engine";
 
 type LogItem = CommunicationLog & {
   customer_name?: string | null;
@@ -76,53 +76,44 @@ export default function CommunicationLogItem({
   const [channel, setChannel] = useState(log.channel);
   const [direction, setDirection] = useState(log.direction);
   const [content, setContent] = useState(log.content ?? "");
-  const [busy, setBusy] = useState(false);
 
-  async function save() {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const result = await offlineFetch(
-        "/api/communications/update",
-        { id: log.id, channel, direction, content: content.trim() || null },
-        "עדכון שיחה"
-      );
-      if (result.queued) {
-        setEditing(false);
+  function save() {
+    const id = log.id;
+    const snapshotChannel = channel;
+    const snapshotDirection = direction;
+    const snapshotContent = content.trim() || null;
+    setEditing(false);
+    scheduleDeferredEdit({
+      scope: "communication",
+      id,
+      message: "השיחה עודכנה",
+      patch: { channel: snapshotChannel, direction: snapshotDirection, content: snapshotContent },
+      onCommit: async () => {
+        const result = await offlineFetch(
+          "/api/communications/update",
+          { id, channel: snapshotChannel, direction: snapshotDirection, content: snapshotContent },
+          "עדכון שיחה"
+        );
+        if (!result.queued && !result.ok) return { ok: false, error: toHebrewError(result.error, "עדכון השיחה נכשל.") };
         onChanged();
-        return;
-      }
-      if (result.ok) {
-        toast.success("השיחה עודכנה");
-        setEditing(false);
-        onChanged();
-      } else {
-        toast.error("עדכון השיחה נכשל", { description: toHebrewError(result.error, "") });
-      }
-    } finally {
-      setBusy(false);
-    }
+        return { ok: true };
+      },
+    });
   }
 
-  async function remove() {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const result = await offlineFetch("/api/communications/delete", { id: log.id }, "מחיקת שיחה");
-      if (result.queued) {
+  function remove() {
+    setConfirmDelete(false);
+    scheduleDeferredDelete({
+      scope: "communication",
+      id: log.id,
+      message: "השיחה נמחקה",
+      onCommit: async () => {
+        const result = await offlineFetch("/api/communications/delete", { id: log.id }, "מחיקת שיחה");
+        if (!result.queued && !result.ok) return { ok: false, error: toHebrewError(result.error, "מחיקת השיחה נכשלה.") };
         onChanged();
-        return;
-      }
-      if (result.ok) {
-        toast.success("השיחה נמחקה");
-        onChanged();
-      } else {
-        toast.error("מחיקת השיחה נכשלה", { description: toHebrewError(result.error, "") });
-      }
-    } finally {
-      setBusy(false);
-      setConfirmDelete(false);
-    }
+        return { ok: true };
+      },
+    });
   }
 
   if (editing) {
@@ -157,7 +148,6 @@ export default function CommunicationLogItem({
           />
           <DictateButton
             onTranscript={(text) => setContent((prev) => appendDictatedText(prev, text))}
-            disabled={busy}
             className="absolute bottom-1 end-1 h-8 w-8"
           />
         </div>
@@ -167,10 +157,9 @@ export default function CommunicationLogItem({
             size="sm"
             variant="outline"
             className="h-8 text-xs"
-            onClick={() => void save()}
-            disabled={busy}
+            onClick={save}
           >
-            {busy ? "שומר..." : "שמירה"}
+            שמירה
           </Button>
           <Button
             type="button"
@@ -183,7 +172,6 @@ export default function CommunicationLogItem({
               setDirection(log.direction);
               setContent(log.content ?? "");
             }}
-            disabled={busy}
           >
             ביטול
           </Button>
@@ -240,10 +228,9 @@ export default function CommunicationLogItem({
                 size="sm"
                 variant="destructive"
                 className="h-7 text-xs"
-                onClick={() => void remove()}
-                disabled={busy}
+                onClick={remove}
               >
-                {busy ? "מוחק..." : "אישור"}
+                אישור
               </Button>
               <Button
                 type="button"
@@ -251,7 +238,6 @@ export default function CommunicationLogItem({
                 variant="ghost"
                 className="h-7 text-xs"
                 onClick={() => setConfirmDelete(false)}
-                disabled={busy}
               >
                 ביטול
               </Button>

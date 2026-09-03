@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { DeleteButton } from "@/components/ui/icon-button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,6 +10,7 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toHebrewError } from "@/lib/error-messages";
 import { appendDictatedText } from "@/lib/dictation";
+import { scheduleDeferredEdit, scheduleDeferredDelete } from "@/lib/undo-engine";
 
 export type EditableCommunication = {
   id: string;
@@ -35,95 +36,86 @@ const TOPICS = [
   { value: "general", label: "כללי" },
 ];
 
+/** Only mounted (by the caller) while there's a log to edit, so local state
+ *  initializes fresh from `log` on every open — no prop-change reset effect. */
 export default function EditCommunicationDialog({
   log,
-  open,
-  onOpenChange,
+  onClose,
   onSaved,
-  onDeleted,
 }: {
-  log: EditableCommunication | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  log: EditableCommunication;
+  onClose: () => void;
   onSaved: () => void;
-  onDeleted: (id: string) => void;
 }) {
-  const [channel, setChannel] = useState("phone");
-  const [direction, setDirection] = useState("outgoing");
-  const [topic, setTopic] = useState("general");
-  const [content, setContent] = useState("");
-  const [busy, setBusy] = useState(false);
+  const router = useRouter();
+  const [channel, setChannel] = useState(log.channel);
+  const [direction, setDirection] = useState(log.direction);
+  const [topic, setTopic] = useState(log.category);
+  const [content, setContent] = useState(log.content ?? "");
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!open || !log) return;
-    setChannel(log.channel);
-    setDirection(log.direction);
-    setTopic(log.category);
-    setContent(log.content ?? "");
-    setError(null);
-  }, [open, log]);
-
-  async function save() {
-    if (!log || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/communications/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: log.id, channel, direction, category: topic, content: content.trim() || null }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(json.error);
-      toast.success("הפנייה עודכנה.");
-      onSaved();
-      onOpenChange(false);
-    } catch (err) {
-      setError(toHebrewError(err, "עדכון נכשל."));
-    } finally {
-      setBusy(false);
-    }
+  function save() {
+    const id = log.id;
+    const snapshotChannel = channel;
+    const snapshotDirection = direction;
+    const snapshotTopic = topic;
+    const snapshotContent = content.trim() || null;
+    onClose();
+    scheduleDeferredEdit({
+      scope: "communication",
+      id,
+      message: "הפנייה עודכנה.",
+      patch: { channel: snapshotChannel, direction: snapshotDirection, category: snapshotTopic, content: snapshotContent },
+      onCommit: async () => {
+        const res = await fetch("/api/communications/update", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, channel: snapshotChannel, direction: snapshotDirection, category: snapshotTopic, content: snapshotContent }),
+        });
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) return { ok: false, error: toHebrewError(json.error, "עדכון נכשל.") };
+        onSaved();
+        return { ok: true };
+      },
+    });
   }
 
-  async function remove() {
-    if (!log || busy) return;
-    setBusy(true);
-    try {
-      const res = await fetch("/api/communications/delete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: log.id }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(json.error);
-      toast.success("הפנייה נמחקה.");
-      onDeleted(log.id);
-      onOpenChange(false);
-    } catch (err) {
-      toast.error(toHebrewError(err, "מחיקה נכשלה."));
-    } finally {
-      setBusy(false);
-      setConfirmDelete(false);
-    }
+  function remove() {
+    const id = log.id;
+    onClose();
+    setConfirmDelete(false);
+    scheduleDeferredDelete({
+      scope: "communication",
+      id,
+      message: "הפנייה נמחקה.",
+      onCommit: async () => {
+        const res = await fetch("/api/communications/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id }),
+        });
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) return { ok: false, error: toHebrewError(json.error, "מחיקה נכשלה.") };
+        router.refresh();
+        return { ok: true };
+      },
+    });
   }
 
   return (
     <>
       <FormDialog
-        open={open}
-        onOpenChange={onOpenChange}
+        open
+        onOpenChange={(open) => {
+          if (!open) onClose();
+        }}
         title="עריכת פנייה"
         description="עדכון פרטי השיחה או מחיקתה."
         size="formMd"
-        onSubmit={() => void save()}
+        onSubmit={save}
         submitLabel="שמירה"
-        busyLabel="שומר..."
-        busy={busy}
-        error={error || undefined}
         footerStart={
-          <DeleteButton onClick={() => setConfirmDelete(true)} disabled={busy} size="default" />
+          <DeleteButton onClick={() => setConfirmDelete(true)} size="default" />
         }
       >
 
@@ -169,7 +161,6 @@ export default function EditCommunicationDialog({
                 />
                 <DictateButton
                   onTranscript={(text) => setContent((prev) => appendDictatedText(prev, text))}
-                  disabled={busy}
                   className="absolute bottom-1 end-1 h-8 w-8"
                 />
               </div>
@@ -181,10 +172,9 @@ export default function EditCommunicationDialog({
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title="מחיקת פנייה"
-        description="הפנייה תימחק. פעולה זו אינה הפיכה."
+        description="הפנייה תימחק."
         confirmLabel="מחיקה"
         destructive
-        loading={busy}
         onConfirm={remove}
       />
     </>

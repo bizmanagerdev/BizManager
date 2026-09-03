@@ -2,11 +2,11 @@
 import { toHebrewError } from "@/lib/error-messages";
 
 import { useState } from "react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MorningDocumentType } from "@/lib/morning/types";
 import type { MorningSettings } from "@/lib/morning/settings";
+import { scheduleDeferredAction } from "@/lib/undo-engine";
 
 type Props = {
   initial: MorningSettings;
@@ -21,31 +21,38 @@ export default function MorningAutoIssueForm({ initial }: Props) {
   const [receiptType, setReceiptType] = useState<MorningSettings["receiptTypeOnPayment"]>(
     initial.receiptTypeOnPayment
   );
-  const [saving, setSaving] = useState(false);
 
-  async function handleSave() {
-    setSaving(true);
-    try {
-      const response = await fetch("/api/morning/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          autoInvoiceOnOrderCompletion: autoInvoice,
-          invoiceTypeOnCompletion: invoiceType,
-          autoReceiptOnPayment: autoReceipt,
-          receiptTypeOnPayment: receiptType,
-        }),
-      });
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(toHebrewError(body?.error, "שמירת ההגדרות נכשלה."));
-      }
-      toast.success("ההגדרות נשמרו.");
-    } catch (error) {
-      toast.error(toHebrewError(error, "שמירת ההגדרות נכשלה."));
-    } finally {
-      setSaving(false);
-    }
+  function handleSave() {
+    const previous = { autoInvoice, invoiceType, autoReceipt, receiptType };
+    const payload = {
+      autoInvoiceOnOrderCompletion: autoInvoice,
+      invoiceTypeOnCompletion: invoiceType,
+      autoReceiptOnPayment: autoReceipt,
+      receiptTypeOnPayment: receiptType,
+    };
+    scheduleDeferredAction({
+      key: "settings:morning-auto-issue",
+      message: "ההגדרות נשמרו.",
+      onApplyOptimistic: () => {}, // the fields already show the values being saved
+      onRevert: () => {
+        setAutoInvoice(previous.autoInvoice);
+        setInvoiceType(previous.invoiceType);
+        setAutoReceipt(previous.autoReceipt);
+        setReceiptType(previous.receiptType);
+      },
+      onCommit: async () => {
+        const response = await fetch("/api/morning/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          const body = (await response.json().catch(() => null)) as { error?: string } | null;
+          return { ok: false, error: toHebrewError(body?.error, "שמירת ההגדרות נכשלה.") };
+        }
+        return { ok: true };
+      },
+    });
   }
 
   return (
@@ -145,9 +152,7 @@ export default function MorningAutoIssueForm({ initial }: Props) {
       </Card>
 
       <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving}>
-          {saving ? "שומר..." : "שמור הגדרות"}
-        </Button>
+        <Button onClick={handleSave}>שמור הגדרות</Button>
       </div>
     </div>
   );

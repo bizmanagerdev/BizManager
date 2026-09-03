@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
 import { AddIcon, ClockIcon, NotificationIcon, NotificationOffIcon, ReminderIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import ReminderFormDialog, { type ReminderFormValue } from "@/components/reminders/ReminderFormDialog";
 import { toHebrewError } from "@/lib/error-messages";
 import { EditButton } from "@/components/ui/icon-button";
 import { fetchEntityReminders } from "@/lib/reminders/fetchEntityReminders";
+import { scheduleDeferredDelete } from "@/lib/undo-engine";
+import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 
 // Shows ALL open reminders attached to one entity (order / project / customer /
 // task…) with inline add / edit / done / cancel. Drop it on any details page:
@@ -61,8 +62,8 @@ export default function EntityReminders({
   /** Fires whenever the list is (re)loaded — lets a wrapping section fold itself when empty. */
   onCountChange?: (count: number) => void;
 }) {
-  const [items, setItems] = useState<ReminderRow[] | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [itemsRaw, setItemsRaw] = useState<ReminderRow[] | null>(null);
+  const items = useUndoOverlay(itemsRaw ?? [], (r) => r.id, "reminder");
   const [addOpenState, setAddOpenState] = useState(false);
   const addOpen = addOpenProp ?? addOpenState;
   const setAddOpen = (next: boolean) => {
@@ -74,15 +75,18 @@ export default function EntityReminders({
   const load = useCallback(async () => {
     try {
       const next = await fetchEntityReminders(queryKey, queryId);
-      setItems(next);
+      setItemsRaw(next);
       onCountChange?.(next.length);
     } catch {
-      setItems([]);
+      setItemsRaw([]);
       onCountChange?.(0);
     }
   }, [queryKey, queryId, onCountChange]);
 
   useEffect(() => {
+    // load() awaits a fetch before any setState, so this is async I/O, not the
+    // synchronous cascading render the lint rule guards against.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 
@@ -93,26 +97,26 @@ export default function EntityReminders({
     return () => window.removeEventListener("focus", onFocus);
   }, [load]);
 
-  async function act(id: string, action: "done" | "dismiss") {
-    setBusy(id);
-    try {
-      const res = await fetch("/api/reminders/action", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, action }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(json.error);
-      toast.success(action === "done" ? "סומן כבוצע" : "התזכורת בוטלה");
-      await load();
-    } catch (err) {
-      toast.error(toHebrewError(err, "הפעולה נכשלה."));
-    } finally {
-      setBusy(null);
-    }
+  function act(id: string, action: "done" | "dismiss") {
+    scheduleDeferredDelete({
+      scope: "reminder",
+      id,
+      message: action === "done" ? "סומן כבוצע" : "התזכורת בוטלה",
+      onCommit: async () => {
+        const res = await fetch("/api/reminders/action", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, action }),
+        });
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) return { ok: false, error: toHebrewError(json.error, "הפעולה נכשלה.") };
+        await load();
+        return { ok: true };
+      },
+    });
   }
 
-  if (items === null) return <p className="text-sm text-muted-foreground">טוען תזכורות…</p>;
+  if (itemsRaw === null) return <p className="text-sm text-muted-foreground">טוען תזכורות…</p>;
 
   return (
     <div className="space-y-2">
@@ -156,11 +160,11 @@ export default function EntityReminders({
                   <div className="flex items-center gap-1.5">
                     <EditButton onClick={() =>
                         setEditing({ id: r.id, remindAt: r.remindAt, content: r.content, assignedTo: r.assignedTo })
-                      } disabled={busy === r.id} label="עריכת תזכורת" />
-                    <Button size="sm" onClick={() => act(r.id, "done")} disabled={busy === r.id}>
+                      } label="עריכת תזכורת" />
+                    <Button size="sm" onClick={() => act(r.id, "done")}>
                       בוצע
                     </Button>
-                    <Button size="sm" variant="secondary" onClick={() => act(r.id, "dismiss")} disabled={busy === r.id}>
+                    <Button size="sm" variant="secondary" onClick={() => act(r.id, "dismiss")}>
                       בטל
                     </Button>
                   </div>

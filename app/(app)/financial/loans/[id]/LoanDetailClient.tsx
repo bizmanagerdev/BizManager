@@ -1,10 +1,9 @@
 "use client";
 
 import type React from "react";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { AttachIcon, ChevronLeftIcon, PhoneIcon, ReceiptIcon, UserIcon } from "@/components/ui/icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +16,8 @@ import { deleteLoan } from "../actions";
 import { LoanDocumentsDialog, LoanFormDialog, LoanRepaymentsPanel } from "../LoanDialogs";
 import { METHOD_OPTIONS, formatDate, formatIls, statusColor } from "../shared";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
+import { scheduleDeferredDelete } from "@/lib/undo-engine";
 
 function methodLabel(value: string | null) {
   if (!value) return null;
@@ -38,22 +39,25 @@ export default function LoanDetailClient({ loan }: { loan: Loan }) {
   const [formOpen, setFormOpen] = useState(false);
   const [docsOpen, setDocsOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [pending, startTransition] = useTransition();
 
   const counterparty =
     (loan.direction === "taken" ? loan.lender : loan.borrower)?.trim() || "ללא שם";
   const ourSide = (loan.direction === "taken" ? loan.borrower : loan.lender)?.trim() || null;
 
   function confirmDelete() {
-    startTransition(async () => {
-      const res = await deleteLoan(loan.id);
-      if (res.ok) {
-        toast.success("ההלוואה נמחקה.");
-        router.push("/financial/loans");
-      } else {
-        toast.error(res.error);
-        setDeleteOpen(false);
-      }
+    setDeleteOpen(false);
+    emitNavigationStart();
+    router.push("/financial/loans");
+    scheduleDeferredDelete({
+      scope: "loan",
+      id: loan.id,
+      message: "ההלוואה נמחקה.",
+      onCommit: async () => {
+        const res = await deleteLoan(loan.id);
+        if (!res.ok) return { ok: false, error: res.error };
+        router.refresh();
+        return { ok: true };
+      },
     });
   }
 
@@ -150,10 +154,9 @@ export default function LoanDetailClient({ loan }: { loan: Loan }) {
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title="מחיקת הלוואה"
-        description="ההלוואה וכל ההחזרים שלה יימחקו. לא ניתן לשחזר."
+        description="ההלוואה וכל ההחזרים שלה יימחקו."
         confirmLabel="מחיקה"
         destructive
-        loading={pending}
         onConfirm={confirmDelete}
       />
     </div>

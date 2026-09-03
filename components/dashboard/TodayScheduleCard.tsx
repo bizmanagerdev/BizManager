@@ -3,7 +3,6 @@
 import { useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { AddIcon, CalendarIcon, CheckIcon, SuccessIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { toHebrewError } from "@/lib/error-messages";
 import { offlineFetch } from "@/lib/offline-queue";
+import { scheduleDeferredAction } from "@/lib/undo-engine";
 import { refreshAlerts } from "@/lib/ui/alerts-store";
 import { buildWeekView } from "@/lib/dashboard/week";
 import { formatToday } from "@/lib/dashboard/greeting";
@@ -170,7 +170,6 @@ export default function TodayScheduleCard({
 
   // Resolved rows (task done / reminder done) drop out instantly rather than
   // waiting on the router.refresh() below to re-fetch the calendar feed.
-  const [busyKey, setBusyKey] = useState<string | null>(null);
   const [resolvedKeys, setResolvedKeys] = useState<Set<string>>(() => new Set());
   const rowKey = (entry: CalendarEntry) => `${entry.kind}-${entry.id}`;
   const todayEntries = useMemo(
@@ -178,44 +177,46 @@ export default function TodayScheduleCard({
     [rawTodayEntries, resolvedKeys]
   );
 
-  async function resolveEntry(entry: CalendarEntry) {
-    if (busyKey) return;
+  function resolveEntry(entry: CalendarEntry) {
     const key = rowKey(entry);
-    setBusyKey(key);
-    try {
-      if (entry.kind === "task") {
-        const result = await offlineFetch(
-          "/api/tasks/update-status",
-          { id: entry.id, status: "done" },
-          t(dashboardDict, locale, "markTaskDoneQueued")
-        );
-        if (result.queued) {
-          setResolvedKeys((prev) => new Set(prev).add(key));
-          return;
+    const message =
+      entry.kind === "task"
+        ? t(dashboardDict, locale, "taskMarkedDone")
+        : t(dashboardDict, locale, "reminderMarkedDone");
+    scheduleDeferredAction({
+      key: `today-schedule:${key}`,
+      message,
+      onApplyOptimistic: () => setResolvedKeys((prev) => new Set(prev).add(key)),
+      onRevert: () =>
+        setResolvedKeys((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        }),
+      onCommit: async () => {
+        if (entry.kind === "task") {
+          const result = await offlineFetch(
+            "/api/tasks/update-status",
+            { id: entry.id, status: "done" },
+            t(dashboardDict, locale, "markTaskDoneQueued")
+          );
+          if (!result.queued && !result.ok) {
+            return { ok: false, error: toHebrewError(result.error, t(dashboardDict, locale, "actionFailed")) };
+          }
+        } else {
+          const res = await fetch("/api/reminders/action", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: entry.id, action: "done" }),
+          });
+          const json = (await res.json().catch(() => ({}))) as { error?: string };
+          if (!res.ok) return { ok: false, error: toHebrewError(json.error, t(dashboardDict, locale, "actionFailed")) };
         }
-        if (!result.ok) {
-          toast.error(toHebrewError(result.error, t(dashboardDict, locale, "actionFailed")));
-          return;
-        }
-        toast.success(t(dashboardDict, locale, "taskMarkedDone"));
-      } else {
-        const res = await fetch("/api/reminders/action", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: entry.id, action: "done" }),
-        });
-        const json = (await res.json().catch(() => ({}))) as { error?: string };
-        if (!res.ok) throw new Error(json.error);
-        toast.success(t(dashboardDict, locale, "reminderMarkedDone"));
-      }
-      setResolvedKeys((prev) => new Set(prev).add(key));
-      refreshAlerts();
-      router.refresh();
-    } catch (err: unknown) {
-      toast.error(toHebrewError(err, t(dashboardDict, locale, "actionFailed")));
-    } finally {
-      setBusyKey(null);
-    }
+        refreshAlerts();
+        router.refresh();
+        return { ok: true };
+      },
+    });
   }
 
   const empty = todayEntries.length === 0 && ongoing.length === 0;
@@ -339,7 +340,6 @@ export default function TodayScheduleCard({
           {shown.length > 0 ? (
             <ul className="space-y-2 px-3 pb-3">
               {shown.map((entry) => {
-                const busy = busyKey === rowKey(entry);
                 return (
                   <li
                     key={rowKey(entry)}
@@ -378,15 +378,14 @@ export default function TodayScheduleCard({
                           size="sm"
                           variant="outline"
                           className="pointer-events-auto relative h-7 shrink-0 px-2 text-xs max-md:min-h-[44px]"
-                          onClick={() => void resolveEntry(entry)}
-                          disabled={busy}
+                          onClick={() => resolveEntry(entry)}
                           title={
                             entry.kind === "task"
                               ? t(dashboardDict, locale, "markTaskDoneTitle")
                               : t(dashboardDict, locale, "markReminderDoneTitle")
                           }
                         >
-                          {busy ? <SuccessIcon className="h-3.5 w-3.5" /> : <CheckIcon className="h-3.5 w-3.5" />}
+                          <CheckIcon className="h-3.5 w-3.5" />
                           {t(dashboardDict, locale, "doneButtonLabel")}
                         </Button>
                       ) : null}

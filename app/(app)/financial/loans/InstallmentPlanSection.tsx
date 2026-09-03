@@ -23,6 +23,8 @@ import RepaymentPlanPicker, {
 } from "./RepaymentPlanPicker";
 import { Field, METHOD_OPTIONS, formatDate, formatIls, todayIso } from "./shared";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import { scheduleDeferredDelete, scheduleDeferredEdit } from "@/lib/undo-engine";
 
 // ════════════════════════════════════════════════════════════════════════════
 // The repayment schedule of one loan, inside the החזרים dialog: the list of
@@ -47,7 +49,10 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
   const [editTarget, setEditTarget] = useState<LoanRepayment | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<LoanRepayment | null>(null);
 
-  const planned = loan.plannedInstallments;
+  // Planned (not-yet-paid) installments never affect repaidPrincipal/outstanding —
+  // only marking one paid does — so a deferred hide/patch here can't drift out of
+  // sync with the balance figures shown elsewhere on the loan.
+  const planned = useUndoOverlay(loan.plannedInstallments, (i) => i.id, "loan-installment");
   const overdueCount = planned.filter((i) => i.repayment_date < today).length;
 
   function openEditor() {
@@ -91,15 +96,17 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
   function removeInstallment() {
     const target = deleteTarget;
     if (!target) return;
-    startTransition(async () => {
-      const res = await deleteRepayment(target.id, loan.id);
-      if (res.ok) {
-        toast.success("התשלום נמחק.");
-        setDeleteTarget(null);
+    setDeleteTarget(null);
+    scheduleDeferredDelete({
+      scope: "loan-installment",
+      id: target.id,
+      message: "התשלום נמחק.",
+      onCommit: async () => {
+        const res = await deleteRepayment(target.id, loan.id);
+        if (!res.ok) return { ok: false, error: res.error };
         router.refresh();
-      } else {
-        toast.error(res.error);
-      }
+        return { ok: true };
+      },
     });
   }
 
@@ -469,7 +476,6 @@ function EditInstallmentDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
   const [form, setForm] = useState({ date: "", amount: "", interest: "", notes: "" });
 
   const [seedKey, setSeedKey] = useState("");
@@ -494,20 +500,29 @@ function EditInstallmentDialog({
       toast.error("חובה להזין סכום.");
       return;
     }
-    startTransition(async () => {
-      const res = await updateInstallment(installment.id, loan.id, {
-        repayment_date: form.date,
-        amount: Number(form.amount),
-        interest_amount: Number(form.interest) || 0,
-        notes: form.notes,
-      });
-      if (res.ok) {
-        toast.success("התשלום עודכן.");
-        onOpenChange(false);
+    const id = installment.id;
+    const loanId = loan.id;
+    const repaymentDate = form.date;
+    const amount = Number(form.amount);
+    const interestAmount = Number(form.interest) || 0;
+    const notes = form.notes;
+    onOpenChange(false);
+    scheduleDeferredEdit({
+      scope: "loan-installment",
+      id,
+      message: "התשלום עודכן.",
+      patch: { repayment_date: repaymentDate, amount, interest_amount: interestAmount, notes },
+      onCommit: async () => {
+        const res = await updateInstallment(id, loanId, {
+          repayment_date: repaymentDate,
+          amount,
+          interest_amount: interestAmount,
+          notes,
+        });
+        if (!res.ok) return { ok: false, error: res.error };
         router.refresh();
-      } else {
-        toast.error(res.error);
-      }
+        return { ok: true };
+      },
     });
   }
 
@@ -520,8 +535,6 @@ function EditInstallmentDialog({
       size="formMd"
       onSubmit={submit}
       submitLabel="שמירה"
-      busyLabel="שומר..."
-      busy={pending}
     >
 
         <div className="space-y-3">

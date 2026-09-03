@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { SpinnerIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { DateTimeInput } from "@/components/ui/date-input";
@@ -11,6 +10,7 @@ import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
 import { toHebrewError } from "@/lib/error-messages";
 import type { WorkSessionRow } from "@/lib/payroll";
+import { scheduleDeferredDelete } from "@/lib/undo-engine";
 
 /** An ISO instant as a datetime-local value, to prefill the editor. */
 function isoToLocal(iso: string | null | undefined) {
@@ -33,14 +33,10 @@ function isoToLocal(iso: string | null | undefined) {
 export function useSessionEdit(session: WorkSessionRow) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
-  const [saving, startSaving] = useTransition();
-  const [busy, setBusy] = useState(false);
   const [startLocal, setStartLocal] = useState("");
   const [endLocal, setEndLocal] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
-
-  const working = busy || saving;
 
   function openEditor() {
     setStartLocal(isoToLocal(session.clock_in));
@@ -50,7 +46,7 @@ export function useSessionEdit(session: WorkSessionRow) {
     setEditing(true);
   }
 
-  async function save() {
+  function save() {
     const start = startLocal ? new Date(startLocal) : null;
     const end = endLocal ? new Date(endLocal) : null;
     if (!start || Number.isNaN(start.getTime())) return setError("שעת התחלה אינה תקינה.");
@@ -58,36 +54,38 @@ export function useSessionEdit(session: WorkSessionRow) {
     if (end <= start) return setError("שעת הסיום חייבת להיות אחרי שעת ההתחלה.");
 
     setError("");
-    setBusy(true);
-    try {
-      const response = await fetch("/api/attendance/my/session-edit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: session.id,
-          clock_in: start.toISOString(),
-          clock_out: end.toISOString(),
-          notes: note.trim() || null,
-        }),
-      });
-      const json = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) {
-        setError(toHebrewError(json.error ?? "", "עדכון המשמרת נכשל."));
-        return;
-      }
-      setEditing(false);
-      toast.success("התיקון נשלח לאישור הלר.");
-      startSaving(() => router.refresh());
-    } catch (err: unknown) {
-      setError(toHebrewError(err, "אין חיבור לשרת."));
-    } finally {
-      setBusy(false);
-    }
+    const sessionId = session.id;
+    const noteSnapshot = note.trim();
+    setEditing(false);
+    // The session leaves the approved list the moment this commits (withdrawn
+    // from payroll, re-queued as a fresh pending report) — so "delete from this
+    // view" is the right optimistic shape, not a field patch in place.
+    scheduleDeferredDelete({
+      scope: "work-session",
+      id: sessionId,
+      message: "התיקון נשלח לאישור הלר.",
+      onCommit: async () => {
+        const response = await fetch("/api/attendance/my/session-edit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: sessionId,
+            clock_in: start.toISOString(),
+            clock_out: end.toISOString(),
+            notes: noteSnapshot || null,
+          }),
+        });
+        const json = (await response.json().catch(() => ({}))) as { error?: string };
+        if (!response.ok) return { ok: false, error: toHebrewError(json.error ?? "", "עדכון המשמרת נכשל.") };
+        router.refresh();
+        return { ok: true };
+      },
+    });
   }
 
   return {
     editing,
-    working,
+    working: false,
     error,
     startLocal,
     endLocal,

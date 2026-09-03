@@ -28,6 +28,8 @@ import {
 } from "@/lib/communications";
 import { offlineFetch } from "@/lib/offline-queue";
 import { EditButton } from "@/components/ui/icon-button";
+import { registerReversibleCreate, scheduleDeferredAction, scheduleDeferredDelete } from "@/lib/undo-engine";
+import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 
 // A call/reminder here can be about anything (delivery, an order, a question) —
 // not only collection — so the user tags it with a topic.
@@ -80,10 +82,11 @@ export default function CollectionTrackingPanel({
 }: Props) {
   const [showCallForm, setShowCallForm] = useState(!collapsibleForms);
   const [showReminderForm, setShowReminderForm] = useState(!collapsibleForms);
-  const [logs, setLogs] = useState<CommunicationLog[]>([]);
-  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [logsRaw, setLogs] = useState<CommunicationLog[]>([]);
+  const logs = useUndoOverlay(logsRaw, (l) => l.id, "communication");
+  const [remindersRaw, setReminders] = useState<Reminder[]>([]);
+  const reminders = useUndoOverlay(remindersRaw, (r) => r.id, "reminder");
   const [receivables, setReceivables] = useState<CustomerReceivable[]>([]);
-  const [collectingId, setCollectingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -193,10 +196,40 @@ export default function CollectionTrackingPanel({
         setError(toHebrewError(result.error, "שמירה נכשלה"));
         return;
       }
-      toast.success(withFollowUp ? "השיחה תועדה ותזכורת המשך נקבעה" : "השיחה תועדה");
       resetCallForm();
       await load();
       onChanged?.();
+      const data = result.data as { id?: string | null; reminder_id?: string | null } | null;
+      const newId = data?.id;
+      const message = withFollowUp ? "השיחה תועדה ותזכורת המשך נקבעה" : "השיחה תועדה";
+      if (!newId) {
+        toast.success(message);
+      } else {
+        const followUpId = data?.reminder_id;
+        registerReversibleCreate({
+          scope: "communication",
+          id: newId,
+          message,
+          onUndo: async () => {
+            const res = await fetch("/api/communications/delete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: newId }),
+            });
+            const json = await res.json().catch(() => ({}));
+            if (followUpId) {
+              await fetch("/api/reminders/update", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: followUpId, status: "cancelled" }),
+              });
+            }
+            await load();
+            if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "ביטול נכשל.") };
+            return { ok: true };
+          },
+        });
+      }
     } finally {
       setSubmitting(false);
     }
@@ -240,55 +273,83 @@ export default function CollectionTrackingPanel({
         setError(toHebrewError(result.error, "שמירת התזכורת נכשלה"));
         return;
       }
-      toast.success("התזכורת נוספה");
       resetReminderForm();
       await load();
       onChanged?.();
+      const newId = (result.data as { id?: string | null } | null)?.id;
+      if (!newId) {
+        toast.success("התזכורת נוספה");
+      } else {
+        registerReversibleCreate({
+          scope: "reminder",
+          id: newId,
+          message: "התזכורת נוספה",
+          onUndo: async () => {
+            const res = await fetch("/api/reminders/update", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: newId, status: "cancelled" }),
+            });
+            const json = await res.json().catch(() => ({}));
+            await load();
+            if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "ביטול נכשל.") };
+            return { ok: true };
+          },
+        });
+      }
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function updateReminder(id: string, status: "done" | "cancelled") {
-    const result = await offlineFetch(
-      "/api/reminders/update",
-      { id, status },
-      status === "done" ? "סימון תזכורת כבוצעה" : "ביטול תזכורת"
-    );
-    if (result.queued) {
-      onChanged?.();
-      return;
-    }
-    if (result.ok) {
-      toast.success(status === "done" ? "התזכורת סומנה כבוצעה" : "התזכורת בוטלה");
-      await load();
-      onChanged?.();
-    } else {
-      toast.error("עדכון התזכורת נכשל", { description: toHebrewError(result.error, "") });
-    }
-  }
-
-  async function markCollected(paymentId: string) {
-    setCollectingId(paymentId);
-    try {
-      const result = await offlineFetch(
-        "/api/payments/mark-collected",
-        { id: paymentId, collected: true },
-        "סימון תשלום כנגבה"
-      );
-      if (result.queued) {
-        return;
-      }
-      if (result.ok) {
-        toast.success("התשלום סומן כנגבה");
+  function updateReminder(id: string, status: "done" | "cancelled") {
+    scheduleDeferredDelete({
+      scope: "reminder",
+      id,
+      message: status === "done" ? "התזכורת סומנה כבוצעה" : "התזכורת בוטלה",
+      onCommit: async () => {
+        const result = await offlineFetch(
+          "/api/reminders/update",
+          { id, status },
+          status === "done" ? "סימון תזכורת כבוצעה" : "ביטול תזכורת"
+        );
+        if (!result.queued && !result.ok) {
+          return { ok: false, error: toHebrewError(result.error, "עדכון התזכורת נכשל.") };
+        }
         await load();
         onChanged?.();
-      } else {
-        toast.error("סימון התשלום נכשל", { description: toHebrewError(result.error, "") });
-      }
-    } finally {
-      setCollectingId(null);
-    }
+        return { ok: true };
+      },
+    });
+  }
+
+  // A pending payment (an uncleared check, a future-dated transfer) isn't a new
+  // payment — the row already exists, the money just landed. Flip it to cleared.
+  function markCollected(paymentId: string) {
+    const snapshot = receivables;
+    scheduleDeferredAction({
+      key: `payment-collected:${paymentId}`,
+      message: "התשלום סומן כנגבה",
+      onApplyOptimistic: () => {
+        setReceivables((prev) =>
+          prev.map((r) => ({ ...r, pending_payments: r.pending_payments.filter((p) => p.id !== paymentId) }))
+        );
+      },
+      onRevert: () => setReceivables(snapshot),
+      onCommit: async () => {
+        const result = await offlineFetch(
+          "/api/payments/mark-collected",
+          { id: paymentId, collected: true },
+          "סימון תשלום כנגבה"
+        );
+        if (!result.queued && !result.ok) {
+          return { ok: false, error: toHebrewError(result.error, "סימון התשלום נכשל.") };
+        }
+        await load();
+        onChanged?.();
+        return { ok: true };
+      },
+    });
   }
 
 
@@ -529,10 +590,9 @@ export default function CollectionTrackingPanel({
                             size="sm"
                             variant="outline"
                             className="h-7 shrink-0 text-xs"
-                            disabled={collectingId === p.id}
-                            onClick={() => void markCollected(p.id)}
+                            onClick={() => markCollected(p.id)}
                           >
-                            {collectingId === p.id ? "מסמן..." : "סמן כנגבה"}
+                            סמן כנגבה
                           </Button>
                         </div>
                       ))}
@@ -593,7 +653,7 @@ export default function CollectionTrackingPanel({
                       variant="outline"
                       className="h-8 rounded-full px-3 text-xs"
                       title="סימון כבוצע"
-                      onClick={() => void updateReminder(r.id, "done")}
+                      onClick={() => updateReminder(r.id, "done")}
                     >
                       <CheckIcon className="h-3.5 w-3.5" />
                       בוצע
@@ -606,7 +666,7 @@ export default function CollectionTrackingPanel({
                       className="h-8 w-8 rounded-full border border-border/60 bg-background text-muted-foreground"
                       title="ביטול תזכורת"
                       aria-label="ביטול תזכורת"
-                      onClick={() => void updateReminder(r.id, "cancelled")}
+                      onClick={() => updateReminder(r.id, "cancelled")}
                     >
                       <CloseIcon className="h-3.5 w-3.5" />
                     </Button>
@@ -671,17 +731,17 @@ export default function CollectionTrackingPanel({
         </div>
       ) : null}
 
-      <EditReminderDialog
-        reminder={editingReminder}
-        open={Boolean(editingReminder)}
-        onOpenChange={(o) => {
-          if (!o) setEditingReminder(null);
-        }}
-        onSaved={() => {
-          void load();
-          onChanged?.();
-        }}
-      />
+      {editingReminder ? (
+        <EditReminderDialog
+          key={editingReminder.id}
+          reminder={editingReminder}
+          onClose={() => setEditingReminder(null)}
+          onSaved={() => {
+            void load();
+            onChanged?.();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

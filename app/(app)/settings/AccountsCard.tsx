@@ -14,6 +14,7 @@ import { ACCOUNT_KINDS, getAccountKindLabel, type Account } from "@/lib/accounts
 import { fetchAccountsDirect, saveAccountDirect, deleteAccountDirect } from "@/lib/accounts/accountsClient";
 import { toHebrewError } from "@/lib/error-messages";
 import { invalidateAccountsCache } from "@/components/financial/AccountSelect";
+import { scheduleDeferredAction, registerReversibleAction } from "@/lib/undo-engine";
 
 const ils = new Intl.NumberFormat("he-IL", {
   style: "currency",
@@ -53,7 +54,6 @@ export default function AccountsCard({ initialAccounts }: { initialAccounts: Acc
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Account | null>(null);
-  const [deleting, setDeleting] = useState(false);
 
   function openCreate() {
     setForm(emptyForm());
@@ -76,52 +76,107 @@ export default function AccountsCard({ initialAccounts }: { initialAccounts: Acc
     !form.openingDate.trim() ||
     !Number.isFinite(balanceNum);
 
-  async function save() {
-    if (invalid || saving) return;
-    setSaving(true);
-    try {
-      const result = await saveAccountDirect({
-        id: form.id ?? undefined,
-        name: form.name.trim(),
-        kind: form.kind,
-        opening_balance: balanceNum,
-        opening_date: form.openingDate,
-        is_active: form.isActive,
-        notes: form.notes.trim() || null,
-      });
-      if (!result.ok) {
-        toast.error(toHebrewError(result.error, "שמירת החשבון נכשלה."));
-        return;
-      }
-      toast.success(form.id ? "החשבון עודכן" : "החשבון נוצר");
+  function save() {
+    if (invalid) return;
+    const payload = {
+      id: form.id ?? undefined,
+      name: form.name.trim(),
+      kind: form.kind,
+      opening_balance: balanceNum,
+      opening_date: form.openingDate,
+      is_active: form.isActive,
+      notes: form.notes.trim() || null,
+    };
+
+    if (form.id) {
+      const id = form.id;
+      const previous = accounts.find((a) => a.id === id);
+      const patched: Partial<Account> = {
+        name: payload.name,
+        kind: payload.kind as Account["kind"],
+        openingBalance: payload.opening_balance,
+        openingDate: payload.opening_date,
+        isActive: payload.is_active,
+        notes: payload.notes,
+      };
       setDialogOpen(false);
-      invalidateAccountsCache();
-      await refresh();
-    } catch (e: unknown) {
-      toast.error(toHebrewError(e, "שמירת החשבון נכשלה."));
-    } finally {
-      setSaving(false);
+      scheduleDeferredAction({
+        key: `account:edit:${id}`,
+        message: "החשבון עודכן",
+        onApplyOptimistic: () => setAccounts((prev) => prev.map((a) => (a.id === id ? { ...a, ...patched } : a))),
+        onRevert: () => {
+          if (!previous) return;
+          setAccounts((prev) => prev.map((a) => (a.id === id ? previous : a)));
+        },
+        onCommit: async () => {
+          const result = await saveAccountDirect(payload);
+          if (!result.ok) return { ok: false, error: toHebrewError(result.error, "שמירת החשבון נכשלה.") };
+          invalidateAccountsCache();
+          await refresh();
+          return { ok: true };
+        },
+      });
+      return;
     }
+
+    setSaving(true);
+    void (async () => {
+      try {
+        const result = await saveAccountDirect(payload);
+        if (!result.ok) {
+          toast.error(toHebrewError(result.error, "שמירת החשבון נכשלה."));
+          return;
+        }
+        setDialogOpen(false);
+        invalidateAccountsCache();
+        await refresh();
+        const newId = result.id;
+        if (!newId) {
+          toast.success("החשבון נוצר");
+          return;
+        }
+        registerReversibleAction({
+          key: `account:create:${newId}`,
+          message: "החשבון נוצר",
+          onUndo: async () => {
+            const del = await deleteAccountDirect(newId);
+            invalidateAccountsCache();
+            await refresh();
+            return del.ok ? { ok: true } : { ok: false, error: toHebrewError(del.error, "ביטול נכשל.") };
+          },
+        });
+      } catch (e: unknown) {
+        toast.error(toHebrewError(e, "שמירת החשבון נכשלה."));
+      } finally {
+        setSaving(false);
+      }
+    })();
   }
 
-  async function confirmDelete() {
-    if (!deleteTarget || deleting) return;
-    setDeleting(true);
-    try {
-      const result = await deleteAccountDirect(deleteTarget.id);
-      if (!result.ok) {
-        toast.error(toHebrewError(result.error, "מחיקת החשבון נכשלה."));
-        return;
-      }
-      toast.success("החשבון נמחק");
-      setDeleteTarget(null);
-      invalidateAccountsCache();
-      await refresh();
-    } catch (e: unknown) {
-      toast.error(toHebrewError(e, "מחיקת החשבון נכשלה."));
-    } finally {
-      setDeleting(false);
-    }
+  function confirmDelete() {
+    if (!deleteTarget) return;
+    const target = deleteTarget;
+    const index = accounts.findIndex((a) => a.id === target.id);
+    setDeleteTarget(null);
+    scheduleDeferredAction({
+      key: `account:delete:${target.id}`,
+      message: "החשבון נמחק",
+      onApplyOptimistic: () => setAccounts((prev) => prev.filter((a) => a.id !== target.id)),
+      onRevert: () =>
+        setAccounts((prev) => {
+          if (prev.some((a) => a.id === target.id)) return prev;
+          const next = [...prev];
+          next.splice(Math.min(index, next.length), 0, target);
+          return next;
+        }),
+      onCommit: async () => {
+        const result = await deleteAccountDirect(target.id);
+        if (!result.ok) return { ok: false, error: toHebrewError(result.error, "מחיקת החשבון נכשלה.") };
+        invalidateAccountsCache();
+        await refresh();
+        return { ok: true };
+      },
+    });
   }
 
   return (
@@ -179,7 +234,7 @@ export default function AccountsCard({ initialAccounts }: { initialAccounts: Acc
         title={form.id ? "עריכת חשבון" : "חשבון חדש"}
         description="יתרת הפתיחה היא הסכום האמיתי בחשבון בתאריך הפתיחה. תנועות לפני תאריך זה נחשבות כבר ככלולות בה."
         size="formMd"
-        onSubmit={() => void save()}
+        onSubmit={save}
         submitLabel="שמירה"
         busyLabel="שומר..."
         busy={saving}
@@ -262,7 +317,6 @@ export default function AccountsCard({ initialAccounts }: { initialAccounts: Acc
         }
         confirmLabel="מחיקה"
         destructive
-        loading={deleting}
         onConfirm={confirmDelete}
       />
     </Card>

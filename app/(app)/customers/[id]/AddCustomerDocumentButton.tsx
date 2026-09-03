@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -8,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { offlineUpload } from "@/lib/offline-upload";
 import { FormDialog } from "@/components/ui/form-dialog";
+import { registerReversibleAction } from "@/lib/undo-engine";
 
 /** "+ מסמך" — upload documents linked to this customer, from the customer page. */
 export default function AddCustomerDocumentButton({
@@ -46,6 +48,7 @@ export default function AddCustomerDocumentButton({
       // connection returns (ConnectionToasts announces it), so it must not be
       // re-sent.
       let done = 0;
+      const uploadedIds: string[] = [];
       for (const file of files) {
         const fields: Record<string, string> = { customer_id: customerId };
         if (category.trim()) fields.category = category.trim();
@@ -59,14 +62,43 @@ export default function AddCustomerDocumentButton({
         } else if (result.ok) {
           uploaded += 1;
           done += 1;
+          const data = result.data as { document?: { id?: string } } | null;
+          if (data?.document?.id) uploadedIds.push(data.document.id);
         } else {
           setError(result.error || `העלאת ${file.name} נכשלה.`);
           break;
         }
       }
       if (uploaded > 0) {
-        toast.success(uploaded === 1 ? "המסמך הועלה" : `${uploaded} מסמכים הועלו`);
         router.refresh();
+        const message = uploaded === 1 ? "המסמך הועלה" : `${uploaded} מסמכים הועלו`;
+        if (uploadedIds.length > 0) {
+          // The document(s) already exist server-side (uploaded straight to
+          // storage) — can't be a deferred create, so undo replays the same
+          // delete route the documents archive page already uses, once per
+          // uploaded file.
+          registerReversibleAction({
+            key: `customer-document:${customerId}:${Date.now()}`,
+            message,
+            onUndo: async () => {
+              for (const id of uploadedIds) {
+                const res = await fetch("/api/documents/delete", {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ document_id: id }),
+                });
+                if (!res.ok) {
+                  const json = await res.json().catch(() => ({}));
+                  return { ok: false, error: toHebrewError((json as { error?: string })?.error, "ביטול ההעלאה נכשל.") };
+                }
+              }
+              router.refresh();
+              return { ok: true };
+            },
+          });
+        } else {
+          toast.success(message);
+        }
       }
       if (done === files.length) {
         setOpen(false);

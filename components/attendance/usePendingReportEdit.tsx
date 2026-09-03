@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { SpinnerIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { DateTimeInput } from "@/components/ui/date-input";
@@ -12,6 +11,7 @@ import { appendDictatedText } from "@/lib/dictation";
 import { toHebrewError } from "@/lib/error-messages";
 import type { MyShiftReport } from "@/lib/attendance/my-shift";
 import { updatePendingPhoneReport } from "@/lib/attendance/phoneReportActions";
+import { scheduleDeferredEdit } from "@/lib/undo-engine";
 
 /** Only what the editor actually reads — lets an admin-side report type (which
  *  has no `status`) be passed in alongside the worker's own MyShiftReport. */
@@ -42,14 +42,10 @@ function isoToLocal(iso: string | null | undefined) {
 export function usePendingReportEdit(report: EditableReport, mode: "self" | "admin" = "self") {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
-  const [saving, startSaving] = useTransition();
-  const [busy, setBusy] = useState(false);
   const [startLocal, setStartLocal] = useState("");
   const [endLocal, setEndLocal] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
-
-  const working = busy || saving;
 
   function openEditor() {
     setStartLocal(isoToLocal(report.clock_in));
@@ -59,7 +55,7 @@ export function usePendingReportEdit(report: EditableReport, mode: "self" | "adm
     setEditing(true);
   }
 
-  async function save() {
+  function save() {
     const start = startLocal ? new Date(startLocal) : null;
     const end = endLocal ? new Date(endLocal) : null;
     if (!start || Number.isNaN(start.getTime())) return setError("שעת התחלה אינה תקינה.");
@@ -67,44 +63,46 @@ export function usePendingReportEdit(report: EditableReport, mode: "self" | "adm
     if (end <= start) return setError("שעת הסיום חייבת להיות אחרי שעת ההתחלה.");
 
     setError("");
-    setBusy(true);
-    try {
-      if (mode === "admin") {
-        const result = await updatePendingPhoneReport(report.id, start, end, note.trim());
-        if (!result.ok) {
-          setError(toHebrewError(result.error, "עדכון הדיווח נכשל."));
-          return;
+    const reportId = report.id;
+    const noteSnapshot = note.trim();
+    // Admin edits patch the SAME "phone-report-pending" scope the queue page
+    // overlays (AttendanceQueuePanel/PendingReportCard) so the corrected times
+    // show immediately there; the worker's own view has no such list here yet,
+    // so the patch is simply inert until the real commit + refresh land.
+    const scope = mode === "admin" ? "phone-report-pending" : "my-pending-report";
+    setEditing(false);
+    scheduleDeferredEdit({
+      scope,
+      id: reportId,
+      message: "הדיווח עודכן.",
+      patch: { clock_in: start.toISOString(), clock_out: end.toISOString(), notes: noteSnapshot || null },
+      onCommit: async () => {
+        if (mode === "admin") {
+          const result = await updatePendingPhoneReport(reportId, start, end, noteSnapshot);
+          if (!result.ok) return { ok: false, error: toHebrewError(result.error, "עדכון הדיווח נכשל.") };
+        } else {
+          const response = await fetch("/api/attendance/my/pending-report-edit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              report_id: reportId,
+              clock_in: start.toISOString(),
+              clock_out: end.toISOString(),
+              notes: noteSnapshot || null,
+            }),
+          });
+          const json = (await response.json().catch(() => ({}))) as { error?: string };
+          if (!response.ok) return { ok: false, error: toHebrewError(json.error ?? "", "עדכון הדיווח נכשל.") };
         }
-      } else {
-        const response = await fetch("/api/attendance/my/pending-report-edit", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            report_id: report.id,
-            clock_in: start.toISOString(),
-            clock_out: end.toISOString(),
-            notes: note.trim() || null,
-          }),
-        });
-        const json = (await response.json().catch(() => ({}))) as { error?: string };
-        if (!response.ok) {
-          setError(toHebrewError(json.error ?? "", "עדכון הדיווח נכשל."));
-          return;
-        }
-      }
-      setEditing(false);
-      toast.success("הדיווח עודכן.");
-      startSaving(() => router.refresh());
-    } catch (err: unknown) {
-      setError(toHebrewError(err, "אין חיבור לשרת."));
-    } finally {
-      setBusy(false);
-    }
+        router.refresh();
+        return { ok: true };
+      },
+    });
   }
 
   return {
     editing,
-    working,
+    working: false,
     error,
     startLocal,
     endLocal,

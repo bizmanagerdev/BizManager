@@ -20,6 +20,7 @@ import { t } from "@/lib/i18n/t";
 import type { Locale } from "@/lib/i18n/types";
 import { commonDict } from "@/lib/i18n/dictionaries/common";
 import { profileDict } from "@/lib/i18n/dictionaries/profile";
+import { scheduleDeferredAction } from "@/lib/undo-engine";
 
 /** Now as a datetime-local value ("YYYY-MM-DDTHH:mm"), the format DateTimeInput reads. */
 function nowLocal() {
@@ -36,7 +37,7 @@ function nowLocal() {
  * The optional note is the one thing he can add to help that call.
  */
 export default function MyShiftCard({
-  openShift,
+  openShift: openShiftProp,
   pendingCount,
   locale = "he",
 }: {
@@ -50,6 +51,10 @@ export default function MyShiftCard({
   const [note, setNote] = useState("");
   const [saving, startSaving] = useTransition();
   const [busy, setBusy] = useState(false);
+  // Closing is deferred (see closeShift): the card reflects "not on shift"
+  // immediately, before the real close call has actually gone out.
+  const [closedOptimistically, setClosedOptimistically] = useState(false);
+  const openShift = closedOptimistically ? null : openShiftProp;
   // "עכשיו" or a time he types in — a driver who only remembers to clock in at
   // 10:00 shouldn't lose the two hours he already worked, and one who remembers
   // to clock out at 20:00 shouldn't be paid for the three he spent at home.
@@ -139,16 +144,38 @@ export default function MyShiftCard({
   }
 
   function closeShift() {
-    if (endMode === "now") {
-      void call("/api/attendance/my/close", t(profileDict, locale, "shiftSubmittedToast"));
-      return;
+    if (!openShift) return;
+    let clockOutIso: string | undefined;
+    if (endMode !== "now") {
+      const parsed = endLocal ? new Date(endLocal) : null;
+      if (!parsed || Number.isNaN(parsed.getTime())) {
+        toast.error(t(profileDict, locale, "errSelectEndTime"));
+        return;
+      }
+      clockOutIso = parsed.toISOString();
     }
-    const parsed = endLocal ? new Date(endLocal) : null;
-    if (!parsed || Number.isNaN(parsed.getTime())) {
-      toast.error(t(profileDict, locale, "errSelectEndTime"));
-      return;
-    }
-    void call("/api/attendance/my/close", t(profileDict, locale, "shiftSubmittedToast"), { clock_out: parsed.toISOString() });
+    const noteSnapshot = note.trim();
+    setNote("");
+    setEndMode("now");
+    setEndLocal("");
+    setClosing(false);
+    scheduleDeferredAction({
+      key: `phone-report:close:${openShift.id}`,
+      message: t(profileDict, locale, "shiftSubmittedToast"),
+      onApplyOptimistic: () => setClosedOptimistically(true),
+      onRevert: () => setClosedOptimistically(false),
+      onCommit: async () => {
+        const response = await fetch("/api/attendance/my/close", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ notes: noteSnapshot || null, ...(clockOutIso ? { clock_out: clockOutIso } : {}) }),
+        });
+        const json = (await response.json().catch(() => ({}))) as { error?: string };
+        if (!response.ok) return { ok: false, error: toHebrewError(json.error ?? "", t(profileDict, locale, "actionFailed")) };
+        startSaving(() => router.refresh());
+        return { ok: true };
+      },
+    });
   }
 
   const working = busy || saving;

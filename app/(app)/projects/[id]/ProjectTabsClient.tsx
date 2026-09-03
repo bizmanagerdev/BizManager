@@ -32,6 +32,8 @@ import { paymentTermsLabel } from "@/lib/paymentTerms";
 import { applyProjectVatToBase } from "@/lib/projects/vat";
 import { offlineFetch } from "@/lib/offline-queue";
 import { offlineUpload } from "@/lib/offline-upload";
+import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import { scheduleDeferredAction, scheduleDeferredDelete, scheduleDeferredEdit } from "@/lib/undo-engine";
 import {
   type PaymentRow,
   type FinancialAttachment,
@@ -214,7 +216,7 @@ export default function ProjectTabsClient({
   financials,
   tasks,
   projectTasks,
-  projectDocuments,
+  projectDocuments: projectDocumentsProp,
   projectDocumentsError,
   assignableUsers,
   expenses,
@@ -282,6 +284,7 @@ export default function ProjectTabsClient({
   activitySection?: ReactNode;
 }) {
   const router = useRouter();
+  const projectDocuments = useUndoOverlay(projectDocumentsProp, (d) => d.document_id, "project-document");
   // Top bar: "פרויקט" over the project's name. The name goes on the SUBTITLE
   // line, which has room for it — as the title it came out clipped ("תובל
   // אחזקה 6…") in the bar's single fixed-height row.
@@ -364,13 +367,11 @@ export default function ProjectTabsClient({
   const docsRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const docsStuckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [editTagOpen, setEditTagOpen] = useState(false);
-  const [editTagSaving, setEditTagSaving] = useState(false);
   const [editTagDocumentId, setEditTagDocumentId] = useState<string | null>(null);
   const [editTagValue, setEditTagValue] = useState("");
   const [deleteDocOpen, setDeleteDocOpen] = useState(false);
   const [deleteDocId, setDeleteDocId] = useState<string | null>(null);
   const [deleteDocName, setDeleteDocName] = useState<string>("");
-  const [deleteDocDeleting, setDeleteDocDeleting] = useState(false);
 
   const existingCategories = useMemo(() => {
     const set = new Set<string>();
@@ -599,7 +600,7 @@ export default function ProjectTabsClient({
     setEditTagOpen(true);
   }
 
-  async function saveEditTag() {
+  function saveEditTag() {
     const documentId = editTagDocumentId;
     const value = editTagValue.trim();
     if (!documentId) return;
@@ -608,23 +609,21 @@ export default function ProjectTabsClient({
       return;
     }
 
-    setEditTagSaving(true);
-    try {
-      const result = await updateDocumentTag(documentId, value);
-      if (!result.ok) {
-        toast.error("שגיאה בעדכון תג", { description: toHebrewError(result.error, "") });
-        return;
-      }
-      toast.success("התג עודכן");
-      setEditTagOpen(false);
-      setEditTagDocumentId(null);
-      setEditTagValue("");
-      router.refresh();
-    } catch (e: unknown) {
-      toast.error("שגיאה בעדכון תג", { description: getErrorMessage(e) });
-    } finally {
-      setEditTagSaving(false);
-    }
+    setEditTagOpen(false);
+    setEditTagDocumentId(null);
+    setEditTagValue("");
+    scheduleDeferredEdit({
+      scope: "project-document",
+      id: documentId,
+      message: "התג עודכן",
+      patch: { document_type: value },
+      onCommit: async () => {
+        const result = await updateDocumentTag(documentId, value);
+        if (!result.ok) return { ok: false, error: toHebrewError(result.error, "") };
+        router.refresh();
+        return { ok: true };
+      },
+    });
   }
 
   function openDeleteDocument(documentId: string) {
@@ -635,42 +634,36 @@ export default function ProjectTabsClient({
     setDeleteDocOpen(true);
   }
 
-  async function confirmDeleteDocument() {
+  function confirmDeleteDocument() {
     if (!deleteDocId) return;
-    setDeleteDocDeleting(true);
-    try {
-      const res = await fetch("/api/documents/delete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ document_id: deleteDocId }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error("שגיאה במחיקה", { description: toHebrewError(json?.error, "") });
-        return;
-      }
-      toast.success("המסמך נמחק");
-      setDeleteDocOpen(false);
-      setDeleteDocId(null);
-      setDeleteDocName("");
-      router.refresh();
-    } catch (e: unknown) {
-      toast.error("שגיאה במחיקה", { description: getErrorMessage(e) });
-    } finally {
-      setDeleteDocDeleting(false);
-    }
+    const documentId = deleteDocId;
+    setDeleteDocOpen(false);
+    setDeleteDocId(null);
+    setDeleteDocName("");
+    scheduleDeferredDelete({
+      scope: "project-document",
+      id: documentId,
+      message: "המסמך נמחק",
+      onCommit: async () => {
+        const res = await fetch("/api/documents/delete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ document_id: documentId }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "") };
+        router.refresh();
+        return { ok: true };
+      },
+    });
   }
 
   const [addExpenseOpen, setAddExpenseOpen] = useState(false);
   const [addIncomeOpen, setAddIncomeOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<ExpenseListItem | null>(null);
   const [editingPayment, setEditingPayment] = useState<PaymentRow | null>(null);
-  const [deletingExpenseId, setDeletingExpenseId] = useState<string | null>(null);
-  const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null);
-  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [pendingDeletion, setPendingDeletion] = useState<PendingProjectDeletion | null>(null);
   const [updateBasePriceOpen, setUpdateBasePriceOpen] = useState(false);
-  const [updateBasePriceSaving, setUpdateBasePriceSaving] = useState(false);
   const [updateBasePriceValue, setUpdateBasePriceValue] = useState<string>("");
   const completedFromList = projectTasksUi.filter(
     (t) => getFirstString(t, ["status"]) === "done"
@@ -902,93 +895,76 @@ export default function ProjectTabsClient({
   );
 
 
-  async function deleteExpense(item: ExpenseListItem) {
+  function deleteExpense(item: ExpenseListItem) {
     const expenseId = getString(item.project_expense, "expense_id") ?? getString(item.expense, "id");
-    if (!expenseId || deletingExpenseId) return;
-
-    setDeletingExpenseId(expenseId);
-    try {
-      const result = await offlineFetch(
-        "/api/expenses/delete",
-        { id: expenseId, project_id: overview.id },
-        "מחיקת חיוב"
-      );
-      if (!result.queued && !result.ok) {
-        toast.error("שגיאה במחיקת ההוצאה", { description: toHebrewError(result.error, "") });
-        return;
-      }
-      setExpensesUi((prev) =>
-        prev.filter((row) => {
-          const rowId = getString(row.project_expense, "expense_id") ?? getString(row.expense, "id");
-          return rowId !== expenseId;
-        })
-      );
-      if (!result.queued) toast.success("ההוצאה נמחקה");
-      startTransition(() => router.refresh());
-    } catch (e: unknown) {
-      toast.error("שגיאה במחיקת ההוצאה", {
-        description: getErrorMessage(e),
-      });
-    } finally {
-      setDeletingExpenseId(null);
-    }
+    if (!expenseId) return;
+    scheduleDeferredAction({
+      key: `project-expense:delete:${expenseId}`,
+      message: "ההוצאה נמחקה",
+      onApplyOptimistic: () =>
+        setExpensesUi((prev) =>
+          prev.filter((row) => {
+            const rowId = getString(row.project_expense, "expense_id") ?? getString(row.expense, "id");
+            return rowId !== expenseId;
+          })
+        ),
+      onRevert: () => setExpensesUi((prev) => (prev.includes(item) ? prev : [...prev, item])),
+      onCommit: async () => {
+        const result = await offlineFetch(
+          "/api/expenses/delete",
+          { id: expenseId, project_id: overview.id },
+          "מחיקת חיוב"
+        );
+        if (!result.queued && !result.ok) return { ok: false, error: toHebrewError(result.error, "") };
+        startTransition(() => router.refresh());
+        return { ok: true };
+      },
+    });
   }
 
-  async function deleteSession(item: ExpenseListItem) {
+  function deleteSession(item: ExpenseListItem) {
     const sessionId = item.session?.id ?? "";
-    if (!sessionId || deletingSessionId) return;
-
-    setDeletingSessionId(sessionId);
-    try {
-      const isAdminViewer = viewerRole === "admin";
-      const result = await offlineFetch(
-        isAdminViewer ? "/api/payroll/sessions/delete" : "/api/profile/session/delete",
-        isAdminViewer ? { session_id: sessionId } : { session_id: sessionId, project_id: overview.id },
-        "מחיקת משמרת"
-      );
-      if (!result.queued && !result.ok) {
-        toast.error("שגיאה במחיקת המשמרת", { description: toHebrewError(result.error, "") });
-        return;
-      }
-
-      setExpensesUi((prev) =>
-        prev.filter((row) => !(row.source_type === "session" && row.session?.id === sessionId))
-      );
-      if (!result.queued) toast.success("המשמרת נמחקה");
-      startTransition(() => router.refresh());
-    } catch (e: unknown) {
-      toast.error("שגיאה במחיקת המשמרת", {
-        description: getErrorMessage(e),
-      });
-    } finally {
-      setDeletingSessionId(null);
-    }
+    if (!sessionId) return;
+    const isAdminViewer = viewerRole === "admin";
+    scheduleDeferredAction({
+      key: `project-session:delete:${sessionId}`,
+      message: "המשמרת נמחקה",
+      onApplyOptimistic: () =>
+        setExpensesUi((prev) =>
+          prev.filter((row) => !(row.source_type === "session" && row.session?.id === sessionId))
+        ),
+      onRevert: () => setExpensesUi((prev) => (prev.includes(item) ? prev : [...prev, item])),
+      onCommit: async () => {
+        const result = await offlineFetch(
+          isAdminViewer ? "/api/payroll/sessions/delete" : "/api/profile/session/delete",
+          isAdminViewer ? { session_id: sessionId } : { session_id: sessionId, project_id: overview.id },
+          "מחיקת משמרת"
+        );
+        if (!result.queued && !result.ok) return { ok: false, error: toHebrewError(result.error, "") };
+        startTransition(() => router.refresh());
+        return { ok: true };
+      },
+    });
   }
 
-  async function deletePayment(payment: PaymentRow) {
-    if (!payment.id || deletingPaymentId) return;
-
-    setDeletingPaymentId(payment.id);
-    try {
-      const result = await offlineFetch(
-        "/api/payments/delete",
-        { id: payment.id, project_id: overview.id },
-        "מחיקת הכנסה"
-      );
-      if (!result.queued && !result.ok) {
-        toast.error("שגיאה במחיקת ההכנסה", { description: toHebrewError(result.error, "") });
-        return;
-      }
-      setPaymentsUi((prev) => prev.filter((row) => row.id !== payment.id));
-      if (!result.queued) toast.success("ההכנסה נמחקה");
-      startTransition(() => router.refresh());
-    } catch (e: unknown) {
-      toast.error("שגיאה במחיקת ההכנסה", {
-        description: getErrorMessage(e),
-      });
-    } finally {
-      setDeletingPaymentId(null);
-    }
+  function deletePayment(payment: PaymentRow) {
+    if (!payment.id) return;
+    scheduleDeferredAction({
+      key: `project-payment:delete:${payment.id}`,
+      message: "ההכנסה נמחקה",
+      onApplyOptimistic: () => setPaymentsUi((prev) => prev.filter((row) => row.id !== payment.id)),
+      onRevert: () => setPaymentsUi((prev) => (prev.includes(payment) ? prev : [...prev, payment])),
+      onCommit: async () => {
+        const result = await offlineFetch(
+          "/api/payments/delete",
+          { id: payment.id, project_id: overview.id },
+          "מחיקת הכנסה"
+        );
+        if (!result.queued && !result.ok) return { ok: false, error: toHebrewError(result.error, "") };
+        startTransition(() => router.refresh());
+        return { ok: true };
+      },
+    });
   }
 
   function requestDeleteExpense(item: ExpenseListItem) {
@@ -1003,45 +979,21 @@ export default function ProjectTabsClient({
     setPendingDeletion({ kind: "payment", payment });
   }
 
-  async function confirmPendingDeletion() {
+  function confirmPendingDeletion() {
     const pending = pendingDeletion;
     if (!pending) return;
+    setPendingDeletion(null);
 
     if (pending.kind === "expense") {
-      await deleteExpense(pending.item);
+      deleteExpense(pending.item);
       return;
     }
     if (pending.kind === "session") {
-      await deleteSession(pending.item);
+      deleteSession(pending.item);
       return;
     }
-    await deletePayment(pending.payment);
+    deletePayment(pending.payment);
   }
-
-  useEffect(() => {
-    if (!deletingExpenseId && !deletingSessionId && !deletingPaymentId) {
-      setPendingDeletion((current) => {
-        if (!current) return null;
-        if (current.kind === "expense") {
-          const expenseId =
-            getString(current.item.project_expense, "expense_id") ?? getString(current.item.expense, "id");
-          return expenseId && expensesUi.some((row) => {
-            const rowId = getString(row.project_expense, "expense_id") ?? getString(row.expense, "id");
-            return rowId === expenseId;
-          })
-            ? current
-            : null;
-        }
-        if (current.kind === "session") {
-          const sessionId = current.item.session?.id ?? "";
-          return sessionId && expensesUi.some((row) => row.source_type === "session" && row.session?.id === sessionId)
-            ? current
-            : null;
-        }
-        return paymentsUi.some((row) => row.id === current.payment.id) ? current : null;
-      });
-    }
-  }, [deletingExpenseId, deletingPaymentId, deletingSessionId, expensesUi, paymentsUi]);
 
   const pendingDeletionDetails = useMemo(() => {
     if (!pendingDeletion) return null;
@@ -1054,7 +1006,6 @@ export default function ProjectTabsClient({
         title: "מחיקת הוצאה",
         description: "הפעולה תמחק את ההוצאה מהפרויקט ומהפיננסי.",
         label: expenseName,
-        busy: Boolean(deletingExpenseId),
       };
     }
     if (pendingDeletion.kind === "session") {
@@ -1065,7 +1016,6 @@ export default function ProjectTabsClient({
         title: "מחיקת משמרת",
         description: "הפעולה תמחק את המשמרת מהפרויקט ומרישומי השכר.",
         label: workerName,
-        busy: Boolean(deletingSessionId),
       };
     }
     return {
@@ -1073,43 +1023,30 @@ export default function ProjectTabsClient({
       description: "הפעולה תמחק את ההכנסה מרשימת התשלומים של הפרויקט.",
       label:
         `${formatIls(toNumber(pendingDeletion.payment.amount_total) ?? null)} • ${formatDate(pendingDeletion.payment.payment_date ?? null)}`,
-      busy: Boolean(deletingPaymentId),
     };
-  }, [deletingExpenseId, deletingPaymentId, deletingSessionId, pendingDeletion]);
+  }, [pendingDeletion]);
 
-  async function updateBasePrice(next: number) {
-    setUpdateBasePriceSaving(true);
-    const toastId = "update-base-price";
-    toast.loading("מעדכן מחיר בסיס...", { id: toastId });
-    try {
-      const result = await offlineFetch(
-        "/api/projects/update-agreed-base-price",
-        { project_id: overview.id, agreed_base_price: next },
-        "עדכון מחיר בסיס"
-      );
-      if (!result.queued && !result.ok) {
-        toast.error("שגיאה בעדכון מחיר בסיס", { id: toastId, description: toHebrewError(result.error, "") });
-        return;
-      }
-      const json = result.queued ? null : (result.data as { project?: { agreed_base_price?: unknown } } | null);
-      const updatedBasePrice =
-        json?.project && typeof json.project.agreed_base_price !== "undefined"
-          ? toNumber(json.project.agreed_base_price)
-          : result.queued
-            ? next
-            : null;
-
-      setAgreedBasePriceUi(updatedBasePrice);
-      if (!result.queued) toast.success("מחיר בסיס עודכן", { id: toastId });
-      setUpdateBasePriceOpen(false);
-      // Setting a price resolves the "closed unbilled" alert — resync now.
-      void resyncAlerts();
-      startTransition(() => router.refresh());
-    } catch (e: unknown) {
-      toast.error("שגיאה בעדכון מחיר בסיס", { id: toastId, description: getErrorMessage(e) });
-    } finally {
-      setUpdateBasePriceSaving(false);
-    }
+  function updateBasePrice(next: number) {
+    const previous = agreedBasePriceUi;
+    setUpdateBasePriceOpen(false);
+    scheduleDeferredAction({
+      key: `project-base-price:edit:${overview.id}`,
+      message: "מחיר בסיס עודכן",
+      onApplyOptimistic: () => setAgreedBasePriceUi(next),
+      onRevert: () => setAgreedBasePriceUi(previous),
+      onCommit: async () => {
+        const result = await offlineFetch(
+          "/api/projects/update-agreed-base-price",
+          { project_id: overview.id, agreed_base_price: next },
+          "עדכון מחיר בסיס"
+        );
+        if (!result.queued && !result.ok) return { ok: false, error: toHebrewError(result.error, "") };
+        // Setting a price resolves the "closed unbilled" alert — resync now.
+        void resyncAlerts();
+        startTransition(() => router.refresh());
+        return { ok: true };
+      },
+    });
   }
 
 
@@ -1366,7 +1303,6 @@ export default function ProjectTabsClient({
         hint: paymentHint,
         extras,
         attachments: Array.isArray(payment.attachments) ? payment.attachments : [],
-        busy: deletingPaymentId === payment.id,
         onEdit: () => {
           setEditingPayment(payment);
           setAddIncomeOpen(true);
@@ -1442,7 +1378,6 @@ export default function ProjectTabsClient({
           : Array.isArray(item.expense?.attachments)
             ? (item.expense.attachments as FinancialAttachment[])
             : [],
-        busy: session ? deletingSessionId === session.id : deletingExpenseId === expenseId,
         onEdit: () => {
           setEditingExpense(item);
           setAddExpenseOpen(true);
@@ -1487,9 +1422,6 @@ export default function ProjectTabsClient({
     expensesUi,
     monthlySalaryRows,
     usersById,
-    deletingPaymentId,
-    deletingExpenseId,
-    deletingSessionId,
   ]);
 
   // The ledger's own actions. Declared once and placed twice: in the section
@@ -1828,10 +1760,8 @@ export default function ProjectTabsClient({
         title="ערוך קטגוריה"
         description="עדכון קטגוריה למסמך (documents.document_type)."
         size="formMd"
-        onSubmit={() => void saveEditTag()}
+        onSubmit={saveEditTag}
         submitLabel="שמירה"
-        busyLabel="שומר..."
-        busy={editTagSaving}
         submitDisabled={!editTagValue.trim()}
       >
           <div className="space-y-2">
@@ -1858,8 +1788,7 @@ export default function ProjectTabsClient({
         title="מחיקת מסמך"
         description="פעולה זו תמחק את הרשומה ואת הקובץ מ־Storage (אם יש הרשאה)."
         confirmLabel="מחיקה"
-        loading={deleteDocDeleting}
-        onConfirm={() => void confirmDeleteDocument()}
+        onConfirm={confirmDeleteDocument}
       >
         <p className="text-sm">
           למחוק את: <span className="font-medium">{deleteDocName || "מסמך"}</span> ?
@@ -1875,8 +1804,7 @@ export default function ProjectTabsClient({
         title={pendingDeletionDetails?.title ?? "אישור מחיקה"}
         description={pendingDeletionDetails?.description ?? "הפעולה תתבצע רק לאחר אישור."}
         confirmLabel="מחיקה"
-        loading={Boolean(pendingDeletionDetails?.busy)}
-        onConfirm={() => void confirmPendingDeletion()}
+        onConfirm={confirmPendingDeletion}
       >
         <p className="text-sm">
           למחוק את <span className="font-medium">{pendingDeletionDetails?.label ?? "הרשומה"}</span>?
@@ -1892,10 +1820,8 @@ export default function ProjectTabsClient({
         title="עדכון מחיר בסיס"
         description="מחיר בפועל מחושב ממחיר הבסיס בתוספת החיובים שמסומנים ללקוח."
         size="formMd"
-        onSubmit={() => void updateBasePrice(updateBasePriceNumber)}
+        onSubmit={() => updateBasePrice(updateBasePriceNumber)}
         submitLabel="שמירה"
-        busyLabel="שומר..."
-        busy={updateBasePriceSaving}
         submitDisabled={!canSaveBasePrice}
         error={updateBasePriceError || undefined}
       >

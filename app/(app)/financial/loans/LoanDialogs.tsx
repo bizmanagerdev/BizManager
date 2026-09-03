@@ -26,12 +26,15 @@ import { type Loan, type LoanDirection, type LoanRepayment } from "@/lib/loans";
 import {
   addRepayment,
   createLoan,
+  deleteLoan,
   deleteRepayment,
   unmarkInstallmentPaid,
   updateLoan,
   updateRepayment,
   type LoanInput,
 } from "./actions";
+import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import { registerReversibleCreate, scheduleDeferredDelete, scheduleDeferredEdit } from "@/lib/undo-engine";
 import InstallmentPlanSection from "./InstallmentPlanSection";
 import RepaymentPlanPicker, {
   emptyPlanState,
@@ -188,20 +191,48 @@ export function LoanFormDialog({
     // date but no scheduled payment yet, so saving it once fills that in.
     const sendPlan =
       planDirty || (loan ? loan.plannedInstallments.length === 0 && installments.length > 0 : true);
+    if (loan) {
+      // Editing an existing loan can also replace its whole repayment plan in
+      // the same call (see `sendPlan` above) — a compound field-edit +
+      // destructive plan-replace that recomputes the loan's status from the
+      // full repayment set server-side. Too much to safely represent as one
+      // optimistic patch, so this path keeps committing immediately (left
+      // unconverted — see the batch's report for the full reasoning).
+      const loanId = loan.id;
+      startTransition(async () => {
+        const res = await updateLoan(loanId, payload, sendPlan ? installments : undefined);
+        if (res.ok) {
+          toast.success("ההלוואה עודכנה.");
+          onOpenChange(false);
+          router.refresh();
+        } else {
+          toast.error(res.error);
+        }
+      });
+      return;
+    }
     startTransition(async () => {
-      const res = loan
-        ? await updateLoan(loan.id, payload, sendPlan ? installments : undefined)
-        : await createLoan(payload, installments);
+      const res = await createLoan(payload, installments);
       if (res.ok) {
-        toast.success(
-          loan
-            ? "ההלוואה עודכנה."
-            : installments.length > 1
-              ? `ההלוואה נוספה עם ${installments.length} תשלומים.`
-              : "ההלוואה נוספה."
-        );
         onOpenChange(false);
         router.refresh();
+        const newLoanId = res.id;
+        const message =
+          installments.length > 1 ? `ההלוואה נוספה עם ${installments.length} תשלומים.` : "ההלוואה נוספה.";
+        if (!newLoanId) {
+          toast.success(message);
+          return;
+        }
+        registerReversibleCreate({
+          scope: "loan",
+          id: newLoanId,
+          message,
+          onUndo: async () => {
+            const del = await deleteLoan(newLoanId);
+            router.refresh();
+            return del;
+          },
+        });
       } else {
         toast.error(res.error);
       }
@@ -351,6 +382,7 @@ export function LoanFormDialog({
 export function LoanRepaymentsPanel({ loan }: { loan: Loan }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const paidRepayments = useUndoOverlay(loan.paidRepayments, (r) => r.id, "loan-repayment");
   const [date, setDate] = useState(todayIso());
   const [amount, setAmount] = useState("");
   const [interest, setInterest] = useState("");
@@ -387,13 +419,27 @@ export function LoanRepaymentsPanel({ loan }: { loan: Loan }) {
         notes,
       });
       if (res.ok) {
-        toast.success("ההחזר נרשם.");
         setAdHocOpen(false);
         setAmount("");
         setInterest("");
         setAccountId("");
         setNotes("");
         router.refresh();
+        const newRepaymentId = res.id;
+        if (!newRepaymentId) {
+          toast.success("ההחזר נרשם.");
+          return;
+        }
+        registerReversibleCreate({
+          scope: "loan-repayment",
+          id: newRepaymentId,
+          message: "ההחזר נרשם.",
+          onUndo: async () => {
+            const del = await deleteRepayment(newRepaymentId, loan.id);
+            router.refresh();
+            return del;
+          },
+        });
       } else {
         toast.error(res.error);
       }
@@ -401,14 +447,16 @@ export function LoanRepaymentsPanel({ loan }: { loan: Loan }) {
   }
 
   function removeRepayment(id: string) {
-    startTransition(async () => {
-      const res = await deleteRepayment(id, loan.id);
-      if (res.ok) {
-        toast.success("ההחזר נמחק.");
+    scheduleDeferredDelete({
+      scope: "loan-repayment",
+      id,
+      message: "ההחזר נמחק.",
+      onCommit: async () => {
+        const res = await deleteRepayment(id, loan.id);
+        if (!res.ok) return { ok: false, error: res.error };
         router.refresh();
-      } else {
-        toast.error(res.error);
-      }
+        return { ok: true };
+      },
     });
   }
 
@@ -442,10 +490,10 @@ export function LoanRepaymentsPanel({ loan }: { loan: Loan }) {
 
       <div className="space-y-2">
         <div className="text-sm font-semibold">היסטוריית החזרים ששולמו</div>
-        {loan.paidRepayments.length === 0 ? (
+        {paidRepayments.length === 0 ? (
           <div className="text-sm text-muted-foreground">עדיין לא נרשמו החזרים.</div>
         ) : (
-          loan.paidRepayments
+          paidRepayments
             .slice()
             .sort((a, b) => b.repayment_date.localeCompare(a.repayment_date))
             .map((r) => (
@@ -575,7 +623,6 @@ export function EditPaidRepaymentDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
   const [accountsList, setAccountsList] = useState<Account[]>([]);
   const [form, setForm] = useState({ date: "", amount: "", interest: "", method: "", accountId: "", notes: "" });
 
@@ -613,22 +660,32 @@ export function EditPaidRepaymentDialog({
       toast.error("יש לבחור חשבון לתנועה.");
       return;
     }
-    startTransition(async () => {
-      const res = await updateRepayment(repayment.id, loan.id, {
-        repayment_date: form.date,
-        amount,
-        interest_amount: Number(form.interest) || 0,
-        method: form.method,
-        account_id: form.accountId || null,
-        notes: form.notes,
-      });
-      if (res.ok) {
-        toast.success("ההחזר עודכן.");
-        onOpenChange(false);
+    const id = repayment.id;
+    const loanId = loan.id;
+    const interestAmount = Number(form.interest) || 0;
+    const method = form.method;
+    const accountId = form.accountId || null;
+    const notes = form.notes;
+    const repaymentDate = form.date;
+    onOpenChange(false);
+    scheduleDeferredEdit({
+      scope: "loan-repayment",
+      id,
+      message: "ההחזר עודכן.",
+      patch: { repayment_date: repaymentDate, amount, interest_amount: interestAmount, method, account_id: accountId, notes },
+      onCommit: async () => {
+        const res = await updateRepayment(id, loanId, {
+          repayment_date: repaymentDate,
+          amount,
+          interest_amount: interestAmount,
+          method,
+          account_id: accountId,
+          notes,
+        });
+        if (!res.ok) return { ok: false, error: res.error };
         router.refresh();
-      } else {
-        toast.error(res.error);
-      }
+        return { ok: true };
+      },
     });
   }
 
@@ -640,8 +697,6 @@ export function EditPaidRepaymentDialog({
       size="formMd"
       onSubmit={submit}
       submitLabel="שמירה"
-      busyLabel="שומר..."
-      busy={pending}
     >
         <div className="space-y-3">
           <AdaptiveGrid variant="formTwo">
@@ -738,6 +793,7 @@ export function LoanDocumentsDialog({
 }) {
   const loanId = loan?.id ?? null;
   const [docs, setDocs] = useState<LoanDoc[]>([]);
+  const visibleDocs = useUndoOverlay(docs, (d) => d.id, "loan-document");
   const [loading, setLoading] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
@@ -812,25 +868,24 @@ export function LoanDocumentsDialog({
     }
   }
 
-  async function removeDoc(id: string) {
-    if (!loanId) return;
-    setBusy(true);
-    try {
-      const res = await fetch("/api/documents/delete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ document_id: id }),
-      });
-      if (res.ok) {
-        toast.success("המסמך נמחק.");
-        await loadDocs(loanId);
-      } else {
-        const json = (await res.json().catch(() => ({}))) as { error?: string };
-        toast.error(toHebrewError(json.error, "מחיקת המסמך נכשלה."));
-      }
-    } finally {
-      setBusy(false);
-    }
+  function removeDoc(id: string) {
+    scheduleDeferredDelete({
+      scope: "loan-document",
+      id,
+      message: "המסמך נמחק.",
+      onCommit: async () => {
+        const res = await fetch("/api/documents/delete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ document_id: id }),
+        });
+        if (!res.ok) {
+          const json = (await res.json().catch(() => ({}))) as { error?: string };
+          return { ok: false, error: toHebrewError(json.error, "מחיקת המסמך נכשלה.") };
+        }
+        return { ok: true };
+      },
+    });
   }
 
   const counterparty = loan
@@ -866,10 +921,10 @@ export function LoanDocumentsDialog({
             <div className="text-sm font-semibold">קבצים מצורפים</div>
             {loading ? (
               <div className="text-sm text-muted-foreground">טוען...</div>
-            ) : docs.length === 0 ? (
+            ) : visibleDocs.length === 0 ? (
               <div className="text-sm text-muted-foreground">אין מסמכים מצורפים עדיין.</div>
             ) : (
-              docs.map((doc) => (
+              visibleDocs.map((doc) => (
                 <div
                   key={doc.id}
                   className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm"
@@ -892,8 +947,7 @@ export function LoanDocumentsDialog({
                     ) : null}
                   </div>
                   <DeleteButton
-                    onClick={() => void removeDoc(doc.id)}
-                    disabled={busy}
+                    onClick={() => removeDoc(doc.id)}
                     label="מחיקת מסמך"
                   />
                 </div>

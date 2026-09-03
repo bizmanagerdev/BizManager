@@ -14,6 +14,7 @@ import EditCommunicationDialog, { type EditableCommunication } from "@/component
 import { channelLabel, directionLabel, type CommunicationLogWithCustomer } from "@/lib/communications";
 import { formatShortDateTime } from "@/lib/date";
 import { EditButton } from "@/components/ui/icon-button";
+import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 
 const TOPICS = [
   { value: "all", label: "כל הנושאים" },
@@ -61,19 +62,18 @@ function directionRowClass(direction: string | null | undefined): string {
 // Shared column template so every row (and the header) lines up into a table.
 const GRID = "grid grid-cols-[1.5rem_minmax(9rem,1.4fr)_7rem_4.5rem_minmax(0,3fr)_9rem_2rem] items-center gap-x-3";
 
-export default function CommunicationsClient({ logs }: { logs: CommunicationLogWithCustomer[] }) {
+export default function CommunicationsClient({ logs: logsProp }: { logs: CommunicationLogWithCustomer[] }) {
   const router = useRouter();
+  const logs = useUndoOverlay(logsProp, (l) => l.id, "communication");
   const [topic, setTopic] = useState("all");
   const [channel, setChannel] = useState("all");
   const [search, setSearch] = useState("");
   const [addCallOpen, setAddCallOpen] = useState(false);
   const [editing, setEditing] = useState<EditableCommunication | null>(null);
-  const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set());
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return logs.filter((l) => {
-      if (deletedIds.has(l.id)) return false;
       if (topic !== "all" && (l.category ?? "general") !== topic) return false;
       if (channel !== "all" && l.channel !== channel) return false;
       if (q) {
@@ -82,7 +82,7 @@ export default function CommunicationsClient({ logs }: { logs: CommunicationLogW
       }
       return true;
     });
-  }, [logs, topic, channel, search, deletedIds]);
+  }, [logs, topic, channel, search]);
 
   return (
     <div className="space-y-4">
@@ -110,13 +110,14 @@ export default function CommunicationsClient({ logs }: { logs: CommunicationLogW
       </div>
 
       <AddCollectionEntryDialog mode="call" open={addCallOpen} onOpenChange={setAddCallOpen} onSaved={() => router.refresh()} />
-      <EditCommunicationDialog
-        log={editing}
-        open={Boolean(editing)}
-        onOpenChange={(o) => !o && setEditing(null)}
-        onSaved={() => router.refresh()}
-        onDeleted={(id) => setDeletedIds((prev) => new Set(prev).add(id))}
-      />
+      {editing ? (
+        <EditCommunicationDialog
+          key={editing.id}
+          log={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => router.refresh()}
+        />
+      ) : null}
 
       {filtered.length === 0 ? (
         <Card>

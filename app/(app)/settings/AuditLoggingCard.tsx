@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toHebrewError } from "@/lib/error-messages";
+import { scheduleDeferredAction } from "@/lib/undo-engine";
 
 /**
  * Admin switch for the global audit log (Settings → System).
@@ -13,33 +13,27 @@ import { toHebrewError } from "@/lib/error-messages";
  */
 export default function AuditLoggingCard({ initialEnabled }: { initialEnabled: boolean }) {
   const [enabled, setEnabled] = useState(initialEnabled);
-  const [saving, setSaving] = useState(false);
 
-  async function toggle() {
-    if (saving) return;
+  function toggle() {
+    const previous = enabled;
     const next = !enabled;
-    setSaving(true);
-    setEnabled(next); // optimistic
-    try {
-      const res = await fetch("/api/settings/audit-logging", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ enabled: next }),
-      });
-      const json = (await res.json().catch(() => null)) as { enabled?: boolean; error?: string } | null;
-      if (!res.ok) {
-        setEnabled(!next); // rollback
-        toast.error(toHebrewError(json?.error, "עדכון מצב התיעוד נכשל."));
-        return;
-      }
-      setEnabled(typeof json?.enabled === "boolean" ? json.enabled : next);
-      toast.success(next ? "תיעוד הפעולות הופעל" : "תיעוד הפעולות כובה");
-    } catch (e: unknown) {
-      setEnabled(!next); // rollback
-      toast.error(toHebrewError(e, "עדכון מצב התיעוד נכשל."));
-    } finally {
-      setSaving(false);
-    }
+    scheduleDeferredAction({
+      key: "settings:audit-logging",
+      message: next ? "תיעוד הפעולות הופעל" : "תיעוד הפעולות כובה",
+      onApplyOptimistic: () => setEnabled(next),
+      onRevert: () => setEnabled(previous),
+      onCommit: async () => {
+        const res = await fetch("/api/settings/audit-logging", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ enabled: next }),
+        });
+        const json = (await res.json().catch(() => null)) as { enabled?: boolean; error?: string } | null;
+        if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "עדכון מצב התיעוד נכשל.") };
+        setEnabled(typeof json?.enabled === "boolean" ? json.enabled : next);
+        return { ok: true };
+      },
+    });
   }
 
   return (
@@ -60,13 +54,8 @@ export default function AuditLoggingCard({ initialEnabled }: { initialEnabled: b
               {enabled ? "פעיל" : "כבוי"}
             </span>
           </div>
-          <Button
-            type="button"
-            variant={enabled ? "secondary" : "default"}
-            onClick={() => void toggle()}
-            disabled={saving}
-          >
-            {saving ? "מעדכן..." : enabled ? "כיבוי תיעוד" : "הפעלת תיעוד"}
+          <Button type="button" variant={enabled ? "secondary" : "default"} onClick={toggle}>
+            {enabled ? "כיבוי תיעוד" : "הפעלת תיעוד"}
           </Button>
         </div>
       </CardContent>

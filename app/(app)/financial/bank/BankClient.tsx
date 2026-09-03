@@ -3,7 +3,6 @@
 import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { ChevronDownIcon, DeleteIcon, EditIcon, MoreIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,6 +37,7 @@ import { deleteCardCharge } from "@/lib/financial/cardChargesClient";
 import { deleteAccountTransfer } from "@/lib/financial/transfersClient";
 import type { Loan } from "@/lib/loans";
 import { formatMoneyRounded } from "@/lib/money";
+import { scheduleDeferredAction } from "@/lib/undo-engine";
 
 // Was a local Intl-currency-style formatter — exactly the anti-pattern
 // lib/money.ts's own docstring warns about ("every hand-written
@@ -399,27 +399,46 @@ export default function BankClient({
   // The transfer being edited from the register; null = the dialog is creating.
   const [transferToEdit, setTransferToEdit] = useState<AccountTransferRef | null>(null);
   // A transfer row the user asked to delete — both its legs go together.
-  const [transferToDelete, setTransferToDelete] = useState<{ id: string; label: string } | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | undefined>(undefined);
+  // rowId is the ledger entry's own id (see AccountLedgerEntry.id), used to hide
+  // this exact row optimistically — it isn't necessarily the same string as the
+  // raw account_transfers id used to actually delete it.
+  const [transferToDelete, setTransferToDelete] = useState<{ id: string; label: string; rowId: string } | null>(
+    null
+  );
 
-  async function deleteTransfer(id: string) {
-    setDeleting(true);
-    setDeleteError(undefined);
-    try {
-      const result = await deleteAccountTransfer(id);
-      if (!result.ok) {
-        setDeleteError(toHebrewError(result.error, "מחיקת ההעברה נכשלה."));
-        return;
-      }
-      setTransferToDelete(null);
-      router.refresh();
-      toast.success("ההעברה נמחקה.");
-    } catch (error: unknown) {
-      setDeleteError(toHebrewError(error, "מחיקת ההעברה נכשלה."));
-    } finally {
-      setDeleting(false);
-    }
+  // Ledger rows hidden during their undo grace window — a lighter, purely local
+  // stand-in for useUndoOverlay: the register is a single merged view across 6+
+  // source tables (payment/expense/worker_payment/loan/loan_repayment/card_charge/
+  // transfer) with server-computed running balances, so there's no safe way to
+  // reconstruct an EDITED row's derived label/sublabel/amount client-side — only
+  // hiding a deleted row (which needs no reconstruction at all) is done here.
+  const [hiddenLedgerRowIds, setHiddenLedgerRowIds] = useState<Set<string>>(new Set());
+
+  function confirmDeleteTransfer() {
+    if (!transferToDelete) return;
+    const { id, rowId } = transferToDelete;
+    setTransferToDelete(null);
+    scheduleDeferredAction({
+      key: `bank-row:delete:${rowId}`,
+      message: "ההעברה נמחקה.",
+      onApplyOptimistic: () => setHiddenLedgerRowIds((prev) => new Set(prev).add(rowId)),
+      onRevert: () =>
+        setHiddenLedgerRowIds((prev) => {
+          const next = new Set(prev);
+          next.delete(rowId);
+          return next;
+        }),
+      onCommit: async () => {
+        try {
+          const result = await deleteAccountTransfer(id);
+          if (!result.ok) return { ok: false, error: toHebrewError(result.error, "מחיקת ההעברה נכשלה.") };
+          router.refresh();
+          return { ok: true };
+        } catch (error: unknown) {
+          return { ok: false, error: toHebrewError(error, "מחיקת ההעברה נכשלה.") };
+        }
+      },
+    });
   }
 
   // ── Inline edit/delete for every OTHER row kind (payment, expense, worker
@@ -434,9 +453,9 @@ export default function BankClient({
   const [editingRepaymentRef, setEditingRepaymentRef] = useState<Extract<AccountEditRef, { kind: "loan_repayment" }> | null>(null);
   const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
   const [editingWorkerPaymentId, setEditingWorkerPaymentId] = useState<string | null>(null);
-  const [rowToDelete, setRowToDelete] = useState<{ ref: AccountDeleteRef; label: string } | null>(null);
-  const [rowDeleting, setRowDeleting] = useState(false);
-  const [rowDeleteError, setRowDeleteError] = useState<string | undefined>(undefined);
+  const [rowToDelete, setRowToDelete] = useState<{ ref: AccountDeleteRef; label: string; rowId: string } | null>(
+    null
+  );
   // One row's swipe-revealed actions open at a time, like every other swipe
   // list in this app (see ProjectMovements.tsx) — mobile-only; desktop keeps
   // the "⋮" menu (user, 2026-08-31: "put the actions in a row swipe instead
@@ -462,66 +481,66 @@ export default function BankClient({
     return "התנועה תימחק מהתזרים.";
   }
 
-  async function deleteRow() {
+  function deleteRow() {
     if (!rowToDelete) return;
-    const { ref } = rowToDelete;
-    setRowDeleting(true);
-    setRowDeleteError(undefined);
-    try {
-      if (ref.kind === "loan") {
-        const result = await deleteLoan(ref.id);
-        if (!result.ok) {
-          setRowDeleteError(result.error);
-          return;
+    const { ref, rowId } = rowToDelete;
+    setRowToDelete(null);
+    scheduleDeferredAction({
+      key: `bank-row:delete:${rowId}`,
+      message: "הרשומה נמחקה.",
+      onApplyOptimistic: () => setHiddenLedgerRowIds((prev) => new Set(prev).add(rowId)),
+      onRevert: () =>
+        setHiddenLedgerRowIds((prev) => {
+          const next = new Set(prev);
+          next.delete(rowId);
+          return next;
+        }),
+      onCommit: async () => {
+        try {
+          if (ref.kind === "loan") {
+            const result = await deleteLoan(ref.id);
+            if (!result.ok) return { ok: false, error: result.error };
+          } else if (ref.kind === "loan_repayment") {
+            const result = await deleteRepayment(ref.id, ref.loanId);
+            if (!result.ok) return { ok: false, error: result.error };
+          } else if (ref.kind === "card_charge") {
+            const result = await deleteCardCharge(ref.id);
+            if (!result.ok) return { ok: false, error: toHebrewError(result.error, "המחיקה נכשלה.") };
+          } else {
+            const request =
+              ref.kind === "payment"
+                ? ref.orderId
+                  ? { url: "/api/orders/payments/delete", body: { id: ref.id, order_id: ref.orderId } }
+                  : { url: "/api/payments/delete", body: { id: ref.id, project_id: ref.projectId || undefined } }
+                : ref.kind === "expense"
+                  ? {
+                      url: "/api/expenses/delete",
+                      body: {
+                        id: ref.id,
+                        project_id: ref.projectId || undefined,
+                        order_id: ref.orderId || undefined,
+                        property_id: ref.propertyId || undefined,
+                      },
+                    }
+                  : {
+                      url: "/api/payroll/worker-payments",
+                      body: { payment_id: ref.id, user_id: ref.userId || undefined },
+                    };
+            const res = await fetch(request.url, {
+              method: ref.kind === "worker_payment" ? "DELETE" : "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(request.body),
+            });
+            const json = (await res.json().catch(() => ({}))) as { error?: string };
+            if (!res.ok) return { ok: false, error: toHebrewError(json.error, "המחיקה נכשלה.") };
+          }
+          router.refresh();
+          return { ok: true };
+        } catch (error: unknown) {
+          return { ok: false, error: toHebrewError(error, "המחיקה נכשלה.") };
         }
-      } else if (ref.kind === "loan_repayment") {
-        const result = await deleteRepayment(ref.id, ref.loanId);
-        if (!result.ok) {
-          setRowDeleteError(result.error);
-          return;
-        }
-      } else if (ref.kind === "card_charge") {
-        const result = await deleteCardCharge(ref.id);
-        if (!result.ok) {
-          setRowDeleteError(toHebrewError(result.error, "המחיקה נכשלה."));
-          return;
-        }
-      } else {
-        const request =
-          ref.kind === "payment"
-            ? ref.orderId
-              ? { url: "/api/orders/payments/delete", body: { id: ref.id, order_id: ref.orderId } }
-              : { url: "/api/payments/delete", body: { id: ref.id, project_id: ref.projectId || undefined } }
-            : ref.kind === "expense"
-              ? {
-                  url: "/api/expenses/delete",
-                  body: {
-                    id: ref.id,
-                    project_id: ref.projectId || undefined,
-                    order_id: ref.orderId || undefined,
-                    property_id: ref.propertyId || undefined,
-                  },
-                }
-              : { url: "/api/payroll/worker-payments", body: { payment_id: ref.id, user_id: ref.userId || undefined } };
-        const res = await fetch(request.url, {
-          method: ref.kind === "worker_payment" ? "DELETE" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(request.body),
-        });
-        const json = (await res.json().catch(() => ({}))) as { error?: string };
-        if (!res.ok) {
-          setRowDeleteError(toHebrewError(json.error, "המחיקה נכשלה."));
-          return;
-        }
-      }
-      setRowToDelete(null);
-      router.refresh();
-      toast.success("הרשומה נמחקה.");
-    } catch (error: unknown) {
-      setRowDeleteError(toHebrewError(error, "המחיקה נכשלה."));
-    } finally {
-      setRowDeleting(false);
-    }
+      },
+    });
   }
 
   if (accounts.length === 0) {
@@ -764,7 +783,9 @@ export default function BankClient({
                     </span>
                   </button>
                   {open &&
-                  group.items.map((row) => {
+                  group.items
+                    .filter((row) => !hiddenLedgerRowIds.has(row.id))
+                    .map((row) => {
                     const inner = (
                       <>
                         {/* flex-1 so the amount (and the delete button on a
@@ -851,7 +872,7 @@ export default function BankClient({
                               key: "delete",
                               label: "מחיקה",
                               icon: <DeleteIcon className="h-4 w-4" />,
-                              onSelect: () => setRowToDelete({ ref: row.deleteRef!, label: rowLabel }),
+                              onSelect: () => setRowToDelete({ ref: row.deleteRef!, label: rowLabel, rowId: row.id }),
                               className: "bg-destructive text-destructive-foreground",
                             },
                           ]
@@ -861,7 +882,7 @@ export default function BankClient({
                                 key: "delete-transfer",
                                 label: "מחיקת העברה",
                                 icon: <DeleteIcon className="h-4 w-4" />,
-                                onSelect: () => setTransferToDelete({ id: transfer.id, label: rowLabel }),
+                                onSelect: () => setTransferToDelete({ id: transfer.id, label: rowLabel, rowId: row.id }),
                                 className: "bg-destructive text-destructive-foreground",
                               },
                             ]
@@ -911,7 +932,7 @@ export default function BankClient({
                               )}
                               {row.deleteRef && (
                                 <DropdownMenuItem
-                                  onClick={() => setRowToDelete({ ref: row.deleteRef!, label: rowLabel })}
+                                  onClick={() => setRowToDelete({ ref: row.deleteRef!, label: rowLabel, rowId: row.id })}
                                   className="text-destructive focus:text-destructive"
                                 >
                                   <DeleteIcon className="me-2 h-4 w-4" />
@@ -920,7 +941,7 @@ export default function BankClient({
                               )}
                               {transfer && (
                                 <DropdownMenuItem
-                                  onClick={() => setTransferToDelete({ id: transfer.id, label: rowLabel })}
+                                  onClick={() => setTransferToDelete({ id: transfer.id, label: rowLabel, rowId: row.id })}
                                   className="text-destructive focus:text-destructive"
                                 >
                                   <DeleteIcon className="me-2 h-4 w-4" />
@@ -1015,21 +1036,12 @@ export default function BankClient({
 
       <ConfirmDialog
         open={transferToDelete !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setTransferToDelete(null);
-            setDeleteError(undefined);
-          }
-        }}
+        onOpenChange={(open) => !open && setTransferToDelete(null)}
         title="מחיקת העברה"
         description="ההעברה תימחק משני החשבונות והיתרות יחזרו למצבן הקודם."
         confirmLabel="מחיקה"
         destructive
-        loading={deleting}
-        error={deleteError}
-        onConfirm={() => {
-          if (transferToDelete) void deleteTransfer(transferToDelete.id);
-        }}
+        onConfirm={confirmDeleteTransfer}
       >
         {transferToDelete ? (
           <div className="text-sm font-medium">{transferToDelete.label}</div>
@@ -1095,19 +1107,12 @@ export default function BankClient({
 
       <ConfirmDialog
         open={rowToDelete !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setRowToDelete(null);
-            setRowDeleteError(undefined);
-          }
-        }}
+        onOpenChange={(open) => !open && setRowToDelete(null)}
         title="מחיקת תנועה"
         description={rowToDelete ? deleteRowLabel(rowToDelete.ref) : ""}
         confirmLabel="מחיקה"
         destructive
-        loading={rowDeleting}
-        error={rowDeleteError}
-        onConfirm={() => void deleteRow()}
+        onConfirm={deleteRow}
       >
         {rowToDelete ? <div className="text-sm font-medium">{rowToDelete.label}</div> : null}
       </ConfirmDialog>

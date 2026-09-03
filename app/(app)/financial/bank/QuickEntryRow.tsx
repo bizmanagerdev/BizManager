@@ -44,6 +44,7 @@ import { norm, type MerchantMemory } from "@/lib/financial/cardImport";
 import { useSidebarCollapse } from "@/components/layout/sidebar-collapse-context";
 import { cn } from "@/lib/utils";
 import type { Account } from "@/lib/accounts";
+import { registerReversibleCreate } from "@/lib/undo-engine";
 
 // No reactive source — this only answers "are we on the client yet" (same
 // pattern as DesktopQuickCreateFab, for the same reason below).
@@ -213,19 +214,55 @@ export default function QuickEntryRow({
               }),
             });
 
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        expense?: { id?: string };
+        payment?: { id?: string };
+      };
       if (!res.ok) {
         toast.error(toHebrewError(json.error, "השמירה נכשלה."));
         return;
       }
 
-      toast.success(kind === "expense" ? "ההוצאה נרשמה." : "ההכנסה נרשמה.");
       // The date, the domain and the category stay — a run of lines off one
       // statement page is usually the same day and the same kind of thing.
       setDescription("");
       setAmount("");
       descriptionRef.current?.focus();
       onSaved();
+
+      const message = kind === "expense" ? "ההוצאה נרשמה." : "ההכנסה נרשמה.";
+      const createdId = kind === "expense" ? json.expense?.id : json.payment?.id;
+      if (!createdId) {
+        toast.success(message);
+        return;
+      }
+      // Undo = a real reverse delete call, not a deferred commit — this quick
+      // row writes through the same /api/expenses|payments/create endpoints
+      // everywhere else does, and undo replays their existing delete route
+      // (same reasoning as ExpenseDialog's / IncomeDialog's create-undo).
+      const undoProjectId = businessDomain === "logistics_projects" ? projectId || undefined : undefined;
+      const undoPropertyId = businessDomain === "property_management" ? propertyId || undefined : undefined;
+      registerReversibleCreate({
+        scope: kind === "expense" ? "expense" : "payment",
+        id: createdId,
+        message,
+        onUndo: async () => {
+          const delRes = await fetch(kind === "expense" ? "/api/expenses/delete" : "/api/payments/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(
+              kind === "expense"
+                ? { id: createdId, project_id: undoProjectId, property_id: undoPropertyId }
+                : { id: createdId, project_id: undoProjectId }
+            ),
+          });
+          const delJson = (await delRes.json().catch(() => ({}))) as { error?: string };
+          if (!delRes.ok) return { ok: false, error: toHebrewError(delJson.error, "ביטול נכשל.") };
+          onSaved();
+          return { ok: true };
+        },
+      });
     } catch (err: unknown) {
       toast.error(toHebrewError(err, "השמירה נכשלה."));
     } finally {

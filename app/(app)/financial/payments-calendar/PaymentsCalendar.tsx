@@ -31,6 +31,8 @@ import MonthCalendar, {
 } from "@/components/ui/month-calendar";
 import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
 import { SplitPaymentDialog } from "./SplitPaymentDialog";
+import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import { scheduleDeferredDelete } from "@/lib/undo-engine";
 
 function fmtIls(value: number) {
   return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 }).format(value);
@@ -50,31 +52,38 @@ function addDaysIso(iso: string, n: number): string {
 }
 
 // Delete an expense-origin payment row (e.g. an orphaned recurring bill left
-// behind after its template was deleted). Real expenses only.
-async function deleteExpenseItem(item: PaymentCalendarItem): Promise<boolean> {
-  if (!item.expenseId) return false;
-  try {
-    const res = await fetch("/api/expenses/delete", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        id: item.expenseId,
-        project_id: item.expenseProjectId,
-        order_id: item.expenseOrderId,
-        property_id: item.expensePropertyId,
-      }),
-    });
-    if (!res.ok) {
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      toast.error(toHebrewError(json.error, "מחיקת התשלום נכשלה."));
-      return false;
-    }
-    toast.success("התשלום נמחק");
-    return true;
-  } catch (err) {
-    toast.error(toHebrewError(err, "מחיקת התשלום נכשלה."));
-    return false;
-  }
+// behind after its template was deleted). Real expenses only. Deferred: the
+// row hides immediately (via the "payment-calendar-item" undo scope) and the
+// real delete only fires if the toast's "בטל" isn't clicked in time.
+function scheduleExpenseItemDelete(item: PaymentCalendarItem, onMutate: () => void) {
+  if (!item.expenseId) return;
+  scheduleDeferredDelete({
+    scope: "payment-calendar-item",
+    id: item.id,
+    message: "התשלום נמחק",
+    onCommit: async () => {
+      try {
+        const res = await fetch("/api/expenses/delete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            id: item.expenseId,
+            project_id: item.expenseProjectId,
+            order_id: item.expenseOrderId,
+            property_id: item.expensePropertyId,
+          }),
+        });
+        if (!res.ok) {
+          const json = (await res.json().catch(() => ({}))) as { error?: string };
+          return { ok: false, error: toHebrewError(json.error, "מחיקת התשלום נכשלה.") };
+        }
+        onMutate();
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: toHebrewError(err, "מחיקת התשלום נכשלה.") };
+      }
+    },
+  });
 }
 
 // A pre-filled note for a reminder created from a payment.
@@ -122,8 +131,9 @@ type Props = {
   accounts: Account[];
 };
 
-export default function PaymentsCalendar({ items, todayIso, projects, properties, orders, accounts }: Props) {
+export default function PaymentsCalendar({ items: itemsProp, todayIso, projects, properties, orders, accounts }: Props) {
   const router = useRouter();
+  const items = useUndoOverlay(itemsProp, (i) => i.id, "payment-calendar-item");
   const [showPaid, setShowPaid] = useState(false);
   const [recurringOnly, setRecurringOnly] = useState(false);
   const [accountFilter, setAccountFilter] = useState("");
@@ -757,7 +767,6 @@ function PaymentsMonthList({
   const [markItem, setMarkItem] = useState<PaymentCalendarItem | null>(null);
   const [remindItem, setRemindItem] = useState<PaymentCalendarItem | null>(null);
   const [deleteItem, setDeleteItem] = useState<PaymentCalendarItem | null>(null);
-  const [deleting, setDeleting] = useState(false);
 
   // Only this month's payments, sorted by date ascending.
   const monthItems = useMemo(() => {
@@ -899,21 +908,16 @@ function PaymentsMonthList({
 
       <ConfirmDialog
         open={Boolean(deleteItem)}
-        onOpenChange={(o) => { if (!o && !deleting) setDeleteItem(null); }}
+        onOpenChange={(o) => { if (!o) setDeleteItem(null); }}
         title="מחיקת תשלום"
-        description={deleteItem ? `למחוק את "${deleteItem.label}"? הפעולה אינה הפיכה.` : ""}
+        description={deleteItem ? `למחוק את "${deleteItem.label}"?` : ""}
         confirmLabel="מחיקה"
         destructive
-        loading={deleting}
-        onConfirm={async () => {
+        onConfirm={() => {
           if (!deleteItem) return;
-          setDeleting(true);
-          const ok = await deleteExpenseItem(deleteItem);
-          setDeleting(false);
-          if (ok) {
-            setDeleteItem(null);
-            onMutate();
-          }
+          const target = deleteItem;
+          setDeleteItem(null);
+          scheduleExpenseItemDelete(target, onMutate);
         }}
       />
     </div>
@@ -950,7 +954,6 @@ function PaymentsDayPanel({
   const [markItem, setMarkItem] = useState<PaymentCalendarItem | null>(null);
   const [remindItem, setRemindItem] = useState<PaymentCalendarItem | null>(null);
   const [deleteItem, setDeleteItem] = useState<PaymentCalendarItem | null>(null);
-  const [deleting, setDeleting] = useState(false);
 
   const dayIso = isoLocal(day);
 
@@ -1073,21 +1076,16 @@ function PaymentsDayPanel({
       {/* Delete this expense (e.g. an orphaned recurring bill) */}
       <ConfirmDialog
         open={Boolean(deleteItem)}
-        onOpenChange={(o) => { if (!o && !deleting) setDeleteItem(null); }}
+        onOpenChange={(o) => { if (!o) setDeleteItem(null); }}
         title="מחיקת תשלום"
-        description={deleteItem ? `למחוק את "${deleteItem.label}"? הפעולה אינה הפיכה.` : ""}
+        description={deleteItem ? `למחוק את "${deleteItem.label}"?` : ""}
         confirmLabel="מחיקה"
         destructive
-        loading={deleting}
-        onConfirm={async () => {
+        onConfirm={() => {
           if (!deleteItem) return;
-          setDeleting(true);
-          const ok = await deleteExpenseItem(deleteItem);
-          setDeleting(false);
-          if (ok) {
-            setDeleteItem(null);
-            onMutate();
-          }
+          const target = deleteItem;
+          setDeleteItem(null);
+          scheduleExpenseItemDelete(target, onMutate);
         }}
       />
     </div>

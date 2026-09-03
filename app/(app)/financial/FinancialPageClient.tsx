@@ -70,6 +70,8 @@ import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import { scheduleDeferredDelete, scheduleDeferredEdit, registerReversibleCreate } from "@/lib/undo-engine";
 
 const useIsomorphicLayoutEffect =
   typeof window !== "undefined" ? useLayoutEffect : useEffect;
@@ -306,8 +308,12 @@ export default function FinancialPageClient({
     type !== "all" ? type : "",
     stage !== "all" ? stage : "",
   ].filter(Boolean).length;
-  const upcomingEntries = data.upcomingEntries;
-  const ledgerEntries = data.ledgerEntries;
+  // Overlaid with pending undo-engine hide/patch state so an in-flight delete
+  // or mark-paid disappears/updates instantly without waiting on router.refresh().
+  // Same scope on both arrays: an entry can appear in either (or both), and the
+  // overlay is keyed by entry.id regardless of which array holds it.
+  const upcomingEntries = useUndoOverlay(data.upcomingEntries, (e) => e.id, "financial-entry");
+  const ledgerEntries = useUndoOverlay(data.ledgerEntries, (e) => e.id, "financial-entry");
 
   // Deep link from the activity feed: /financial?focus=expense:<uuid> must OPEN
   // that expense's own dialog — the whole record, exactly as if it had been
@@ -582,13 +588,11 @@ export default function FinancialPageClient({
   // deep link asked us to open.
   const activeEditingExpense = editingExpense ?? focusExpense;
   const [deletingExpense, setDeletingExpense] = useState<EditableExpenseEntry | null>(null);
-  const [isDeletingExpense, setIsDeletingExpense] = useState(false);
   const [markPaidExpense, setMarkPaidExpense] = useState<EditableExpenseEntry | null>(null);
   const [markPaidMethod, setMarkPaidMethod] = useState<string>("");
   const [markPaidAccountId, setMarkPaidAccountId] = useState<string>("");
   const [markPaidAccountsList, setMarkPaidAccountsList] = useState<Account[]>([]);
   const [markPaidDate, setMarkPaidDate] = useState<string>(todayIsoDate());
-  const [isMarkingPaid, setIsMarkingPaid] = useState(false);
   const [expenseCreateOpen, setExpenseCreateOpen] = useState(false);
   const [incomeCreateOpen, setIncomeCreateOpen] = useState(false);
   const [incomeAccountsList, setIncomeAccountsList] = useState<Account[]>([]);
@@ -643,73 +647,72 @@ export default function FinancialPageClient({
     setMarkPaidExpense(entry);
   };
 
-  const confirmMarkPaid = async () => {
+  const confirmMarkPaid = () => {
     if (!markPaidExpense) return;
     if (markPaidAccountsList.length > 0 && !markPaidAccountId) {
       toast.error("יש לבחור חשבון לתנועה.");
       return;
     }
-    setIsMarkingPaid(true);
-    try {
-      const res = await fetch("/api/expenses/mark-paid", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          id: markPaidExpense.expenseId,
-          payment_method: markPaidMethod || null,
-          account_id: markPaidAccountId || null,
-          paid_date: markPaidDate || null,
-        }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        toast.error("שגיאה בסימון ההוצאה כשולמה", {
-          description: typeof json?.error === "string" ? json.error : "",
+    const target = markPaidExpense;
+    const method = markPaidMethod;
+    const accountId = markPaidAccountId;
+    const paidDate = markPaidDate;
+    setMarkPaidExpense(null);
+    scheduleDeferredEdit({
+      scope: "financial-entry",
+      id: target.id,
+      message: "ההוצאה סומנה כשולמה",
+      // Only the fields this list actually renders (status badge + method
+      // label) — stage/flowDate stay as-is for the undo window and catch up on
+      // the router.refresh() below once the real mutation lands.
+      patch: { paymentStatus: "paid", expensePaymentMethod: method || null },
+      onCommit: async () => {
+        const res = await fetch("/api/expenses/mark-paid", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            id: target.expenseId,
+            payment_method: method || null,
+            account_id: accountId || null,
+            paid_date: paidDate || null,
+          }),
         });
-        return;
-      }
-      setMarkPaidExpense(null);
-      toast.success("ההוצאה סומנה כשולמה");
-      router.refresh();
-    } catch (error) {
-      toast.error("שגיאה בסימון ההוצאה כשולמה", {
-        description: toHebrewError(error, ""),
-      });
-    } finally {
-      setIsMarkingPaid(false);
-    }
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) {
+          return { ok: false, error: toHebrewError(json?.error, "סימון ההוצאה כשולמה נכשל.") };
+        }
+        router.refresh();
+        return { ok: true };
+      },
+    });
   };
 
-  const confirmExpenseDelete = async () => {
+  const confirmExpenseDelete = () => {
     if (!deletingExpense) return;
-
-    setIsDeletingExpense(true);
-    try {
-      const result = await offlineFetch(
-        "/api/expenses/delete",
-        {
-          id: deletingExpense.expenseId,
-          project_id: deletingExpense.expenseProjectId,
-          order_id: deletingExpense.expenseOrderId,
-          property_id: deletingExpense.expensePropertyId,
-        },
-        "מחיקת חיוב"
-      );
-      if (!result.queued && !result.ok) {
-        toast.error("שגיאה במחיקת החיוב", { description: toHebrewError(result.error, "") });
-        return;
-      }
-
-      if (!result.queued) toast.success("החיוב נמחק");
-      setDeletingExpense(null);
-      router.refresh();
-    } catch (error) {
-      toast.error("שגיאה במחיקת החיוב", {
-        description: toHebrewError(error, ""),
-      });
-    } finally {
-      setIsDeletingExpense(false);
-    }
+    const target = deletingExpense;
+    setDeletingExpense(null);
+    scheduleDeferredDelete({
+      scope: "financial-entry",
+      id: target.id,
+      message: "החיוב נמחק",
+      onCommit: async () => {
+        const result = await offlineFetch(
+          "/api/expenses/delete",
+          {
+            id: target.expenseId,
+            project_id: target.expenseProjectId,
+            order_id: target.expenseOrderId,
+            property_id: target.expensePropertyId,
+          },
+          "מחיקת חיוב"
+        );
+        if (!result.queued && !result.ok) {
+          return { ok: false, error: toHebrewError(result.error, "מחיקת החיוב נכשלה.") };
+        }
+        router.refresh();
+        return { ok: true };
+      },
+    });
   };
 
   const createIncome = async () => {
@@ -781,12 +784,43 @@ export default function FinancialPageClient({
         await uploadCheckPhotos(createdPaymentId, incomeCheckPhotoFiles);
       }
 
-      toast.success("ההכנסה נוספה");
+      // Undo = a real reverse delete (not a deferred commit) — the create
+      // already went through (check photos needed the real payment id to
+      // upload to), same reasoning as ExpenseDialog's/IncomeDialog's create-undo.
+      const undoOrderId = incomeCreateForm.businessDomain === "sales" ? incomeCreateForm.orderId : "";
+      const undoProjectId =
+        !undoOrderId && incomeCreateForm.businessDomain === "logistics_projects" ? incomeCreateForm.projectId : "";
+
       setIncomeCreateOpen(false);
       clearDraft("income-create");
       setIncomeCreateForm(createIncomeFormState());
       setIncomeCheckPhotoFiles([]);
       router.refresh();
+
+      if (!createdPaymentId) {
+        toast.success("ההכנסה נוספה");
+      } else {
+        registerReversibleCreate({
+          scope: "payment",
+          id: createdPaymentId,
+          message: "ההכנסה נוספה",
+          onUndo: async () => {
+            const res = await fetch(undoOrderId ? "/api/orders/payments/delete" : "/api/payments/delete", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(
+                undoOrderId
+                  ? { id: createdPaymentId, order_id: undoOrderId }
+                  : { id: createdPaymentId, project_id: undoProjectId || undefined }
+              ),
+            });
+            const errJson = await res.json().catch(() => ({}));
+            if (!res.ok) return { ok: false, error: toHebrewError(errJson?.error, "ביטול נכשל.") };
+            router.refresh();
+            return { ok: true };
+          },
+        });
+      }
     } catch (error) {
       toast.error("שגיאה ביצירת ההכנסה", {
         description: toHebrewError(error, ""),
@@ -2314,8 +2348,7 @@ export default function FinancialPageClient({
         title="מחיקת חיוב"
         description="הפעולה תמחק את ההוצאה מהתזרים ומהקישור שלה למקור, אם קיים."
         confirmLabel="מחיקה"
-        loading={isDeletingExpense}
-        onConfirm={() => void confirmExpenseDelete()}
+        onConfirm={confirmExpenseDelete}
       >
           {deletingExpense ? (
             <div className="mt-4 space-y-3">
@@ -2338,10 +2371,8 @@ export default function FinancialPageClient({
         title="סימון כשולם"
         description="אישור שההוצאה אכן שולמה. היא תעבור לתזרים בפועל בתאריך התשלום."
         size="formMd"
-        onSubmit={() => void confirmMarkPaid()}
+        onSubmit={confirmMarkPaid}
         submitLabel="אישור תשלום"
-        busyLabel="מסמן..."
-        busy={isMarkingPaid}
       >
           {markPaidExpense ? (
             <div className="mt-4 space-y-3" dir="rtl">

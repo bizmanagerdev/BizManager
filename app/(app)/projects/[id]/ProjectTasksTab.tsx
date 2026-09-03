@@ -36,6 +36,7 @@ import {
 } from "@/components/layout/TopNavigationProgress";
 import { offlineFetch } from "@/lib/offline-queue";
 import { offlineUpload } from "@/lib/offline-upload";
+import { scheduleDeferredAction, registerReversibleCreate } from "@/lib/undo-engine";
 import { toHebrewError } from "@/lib/error-messages";
 import { formatShortDate } from "@/lib/date";
 import { getStatusDotClasses } from "@/lib/ui/status-color-classes";
@@ -121,13 +122,10 @@ export function ProjectTasksTab({
 }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
   // Deleting asks through the styled ConfirmDialog, never window.confirm.
   const [pendingDelete, setPendingDelete] = useState<{ id: string; subject: string } | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const [savingStatus, setSavingStatus] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingStatus, setPendingStatus] = useState<{
     id: string;
@@ -136,7 +134,6 @@ export function ProjectTasksTab({
     current: string;
   } | null>(null);
   const [confirmPriorityOpen, setConfirmPriorityOpen] = useState(false);
-  const [savingPriority, setSavingPriority] = useState(false);
   const [pendingPriority, setPendingPriority] = useState<{
     id: string;
     next: TaskPriority;
@@ -283,7 +280,6 @@ export function ProjectTasksTab({
         }
       }
 
-      toast.success("המשימה נוצרה");
       setCreateOpen(false);
       setSubject("");
       setDescription("");
@@ -294,6 +290,23 @@ export function ProjectTasksTab({
       setStatus("");
       setCreateFiles([]);
       onChange();
+      if (createdTaskId) {
+        // The create already committed (attachments needed the real id to upload
+        // to) — undo replays a real reverse call via the existing delete route.
+        registerReversibleCreate({
+          scope: "project-task",
+          id: createdTaskId,
+          message: "המשימה נוצרה",
+          onUndo: async () => {
+            const result = await offlineFetch("/api/tasks/delete", { id: createdTaskId }, "מחיקת משימה");
+            if (!result.queued && !result.ok) return { ok: false, error: toHebrewError(result.error, "ביטול נכשל.") };
+            onChange();
+            return { ok: true };
+          },
+        });
+      } else {
+        toast.success("המשימה נוצרה");
+      }
     } catch (e: unknown) {
       toast.error("שגיאה ביצירת משימה", { description: getErrorMessage(e) });
     } finally {
@@ -302,70 +315,66 @@ export function ProjectTasksTab({
     }
   }
 
-  async function updateStatus(id: string, status: TaskStatus) {
-    setUpdatingId(id);
-    emitProgressActivityStart();
-    try {
-      const result = await offlineFetch(
-        "/api/tasks/update-status",
-        { id, status },
-        "עדכון סטטוס משימה"
-      );
-      if (!result.queued && !result.ok) {
-        toast.error("שגיאה בעדכון סטטוס", { description: toHebrewError(result.error, "") });
-        return false;
-      }
-      if (!result.queued) toast.success("הסטטוס עודכן");
-      setLocalTasks((prev) =>
-        prev.map((row) => {
-          const rowId = getFirstString(row, ["task_id", "id"]);
-          if (rowId !== id) return row;
-          return { ...row, status };
-        })
-      );
-      onTaskUpdated?.(id, { status });
-      onChange();
-      return true;
-    } catch (e: unknown) {
-      toast.error("שגיאה בעדכון סטטוס", { description: getErrorMessage(e) });
-      return false;
-    } finally {
-      emitProgressActivityEnd();
-      setUpdatingId(null);
-    }
+  function updateStatus(id: string, status: TaskStatus, previousStatus: TaskStatus) {
+    scheduleDeferredAction({
+      key: `project-task:status:${id}`,
+      message: "הסטטוס עודכן",
+      onApplyOptimistic: () => {
+        setLocalTasks((prev) =>
+          prev.map((row) => (getFirstString(row, ["task_id", "id"]) === id ? { ...row, status } : row))
+        );
+        onTaskUpdated?.(id, { status });
+      },
+      onRevert: () => {
+        setLocalTasks((prev) =>
+          prev.map((row) =>
+            getFirstString(row, ["task_id", "id"]) === id ? { ...row, status: previousStatus } : row
+          )
+        );
+        onTaskUpdated?.(id, { status: previousStatus });
+      },
+      onCommit: async () => {
+        const result = await offlineFetch(
+          "/api/tasks/update-status",
+          { id, status },
+          "עדכון סטטוס משימה"
+        );
+        if (!result.queued && !result.ok) return { ok: false, error: toHebrewError(result.error, "") };
+        onChange();
+        return { ok: true };
+      },
+    });
   }
 
-  async function updatePriority(id: string, priority: TaskPriority) {
-    setUpdatingId(id);
-    emitProgressActivityStart();
-    try {
-      const result = await offlineFetch(
-        "/api/tasks/update-priority",
-        { id, priority },
-        "עדכון עדיפות משימה"
-      );
-      if (!result.queued && !result.ok) {
-        toast.error("שגיאה בעדכון עדיפות", { description: toHebrewError(result.error, "") });
-        return false;
-      }
-      if (!result.queued) toast.success("העדיפות עודכנה");
-      setLocalTasks((prev) =>
-        prev.map((row) => {
-          const rowId = getFirstString(row, ["task_id", "id"]);
-          if (rowId !== id) return row;
-          return { ...row, priority };
-        })
-      );
-      onTaskUpdated?.(id, { priority });
-      onChange();
-      return true;
-    } catch (e: unknown) {
-      toast.error("שגיאה בעדכון עדיפות", { description: getErrorMessage(e) });
-      return false;
-    } finally {
-      emitProgressActivityEnd();
-      setUpdatingId(null);
-    }
+  function updatePriority(id: string, priority: TaskPriority, previousPriority: TaskPriority) {
+    scheduleDeferredAction({
+      key: `project-task:priority:${id}`,
+      message: "העדיפות עודכנה",
+      onApplyOptimistic: () => {
+        setLocalTasks((prev) =>
+          prev.map((row) => (getFirstString(row, ["task_id", "id"]) === id ? { ...row, priority } : row))
+        );
+        onTaskUpdated?.(id, { priority });
+      },
+      onRevert: () => {
+        setLocalTasks((prev) =>
+          prev.map((row) =>
+            getFirstString(row, ["task_id", "id"]) === id ? { ...row, priority: previousPriority } : row
+          )
+        );
+        onTaskUpdated?.(id, { priority: previousPriority });
+      },
+      onCommit: async () => {
+        const result = await offlineFetch(
+          "/api/tasks/update-priority",
+          { id, priority },
+          "עדכון עדיפות משימה"
+        );
+        if (!result.queued && !result.ok) return { ok: false, error: toHebrewError(result.error, "") };
+        onChange();
+        return { ok: true };
+      },
+    });
   }
 
   function requestStatusChange(args: {
@@ -378,21 +387,12 @@ export function ProjectTasksTab({
     setConfirmOpen(true);
   }
 
-  async function confirmStatusChange() {
+  function confirmStatusChange() {
     if (!pendingStatus) return;
-    setSavingStatus(true);
-    try {
-      const ok = await updateStatus(
-        pendingStatus.id,
-        pendingStatus.next as TaskStatus
-      );
-      if (ok) {
-        setConfirmOpen(false);
-        setPendingStatus(null);
-      }
-    } finally {
-      setSavingStatus(false);
-    }
+    const { id, next, current } = pendingStatus;
+    setConfirmOpen(false);
+    setPendingStatus(null);
+    updateStatus(id, next as TaskStatus, current as TaskStatus);
   }
 
   function requestPriorityChange(args: {
@@ -405,42 +405,31 @@ export function ProjectTasksTab({
     setConfirmPriorityOpen(true);
   }
 
-  async function confirmPriorityChange() {
+  function confirmPriorityChange() {
     if (!pendingPriority) return;
-    setSavingPriority(true);
-    try {
-      const ok = await updatePriority(pendingPriority.id, pendingPriority.next);
-      if (ok) {
-        setConfirmPriorityOpen(false);
-        setPendingPriority(null);
-      }
-    } finally {
-      setSavingPriority(false);
-    }
+    const { id, next, current } = pendingPriority;
+    setConfirmPriorityOpen(false);
+    setPendingPriority(null);
+    updatePriority(id, next, current);
   }
 
-  async function deleteTask(id: string) {
+  function deleteTask(id: string) {
     setPendingDelete(null);
-    setDeletingTaskId(id);
-    emitProgressActivityStart();
-    try {
-      const result = await offlineFetch("/api/tasks/delete", { id }, "מחיקת משימה");
-      if (!result.queued && !result.ok) {
-        toast.error("שגיאה במחיקת משימה", { description: toHebrewError(result.error, "") });
-        return;
-      }
-
-      if (!result.queued) toast.success("המשימה נמחקה");
-      setLocalTasks((prev) =>
-        prev.filter((row) => (getFirstString(row, ["task_id", "id"]) ?? "") !== id)
-      );
-      onChange();
-    } catch (e: unknown) {
-      toast.error("שגיאה במחיקת משימה", { description: getErrorMessage(e) });
-    } finally {
-      emitProgressActivityEnd();
-      setDeletingTaskId(null);
-    }
+    const target = localTasks.find((row) => (getFirstString(row, ["task_id", "id"]) ?? "") === id);
+    scheduleDeferredAction({
+      key: `project-task:delete:${id}`,
+      message: "המשימה נמחקה",
+      onApplyOptimistic: () =>
+        setLocalTasks((prev) => prev.filter((row) => (getFirstString(row, ["task_id", "id"]) ?? "") !== id)),
+      onRevert: () =>
+        setLocalTasks((prev) => (target && !prev.includes(target) ? [...prev, target] : prev)),
+      onCommit: async () => {
+        const result = await offlineFetch("/api/tasks/delete", { id }, "מחיקת משימה");
+        if (!result.queued && !result.ok) return { ok: false, error: toHebrewError(result.error, "") };
+        onChange();
+        return { ok: true };
+      },
+    });
   }
 
   return (
@@ -600,7 +589,7 @@ export function ProjectTasksTab({
                         </div>
                         <div className="flex justify-end gap-2">
                           <EditButton
-                            disabled={!taskId || deletingTaskId === taskId}
+                            disabled={!taskId}
                             onClick={() => {
                               setEditId(taskId);
                               setEditOpen(true);
@@ -608,7 +597,7 @@ export function ProjectTasksTab({
                             label="עריכת משימה"
                           />
                           <DeleteButton
-                            disabled={!taskId || deletingTaskId === taskId}
+                            disabled={!taskId}
                             onClick={() => setPendingDelete({ id: taskId, subject: title })}
                             label="מחיקת משימה"
                           />
@@ -663,7 +652,7 @@ export function ProjectTasksTab({
                         })() ??
                         null;
 
-                      const disabled = !taskId || updatingId === taskId || deletingTaskId === taskId;
+                      const disabled = !taskId;
 
                       return (
                         <tr key={taskId || title} className="hover:bg-muted/30">
@@ -724,7 +713,7 @@ export function ProjectTasksTab({
                           <td className="px-3 py-2 whitespace-nowrap">
                             <div className="flex gap-2">
                               <EditButton
-                                disabled={!taskId || deletingTaskId === taskId}
+                                disabled={!taskId}
                                 onClick={() => {
                                   setEditId(taskId);
                                   setEditOpen(true);
@@ -732,7 +721,7 @@ export function ProjectTasksTab({
                                 label="עריכת משימה"
                               />
                               <DeleteButton
-                                disabled={!taskId || deletingTaskId === taskId}
+                                disabled={!taskId}
                                 onClick={() => setPendingDelete({ id: taskId, subject: title })}
                                 label="מחיקת משימה"
                               />
@@ -761,8 +750,7 @@ export function ProjectTasksTab({
             : undefined
         }
         confirmLabel="אישור"
-        loading={savingStatus}
-        onConfirm={() => void confirmStatusChange()}
+        onConfirm={confirmStatusChange}
       />
 
       <ConfirmDialog
@@ -778,8 +766,7 @@ export function ProjectTasksTab({
             : undefined
         }
         confirmLabel="אישור"
-        loading={savingPriority}
-        onConfirm={() => void confirmPriorityChange()}
+        onConfirm={confirmPriorityChange}
       />
 
       <FormDialog
@@ -1009,9 +996,8 @@ export function ProjectTasksTab({
         title="מחיקת משימה"
         description={pendingDelete ? `המשימה "${pendingDelete.subject}" תימחק.` : undefined}
         confirmLabel="מחיקה"
-        loading={deletingTaskId !== null}
         onConfirm={() => {
-          if (pendingDelete) void deleteTask(pendingDelete.id);
+          if (pendingDelete) deleteTask(pendingDelete.id);
         }}
       />
     </>

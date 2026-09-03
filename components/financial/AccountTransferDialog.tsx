@@ -34,7 +34,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
 import { toHebrewError } from "@/lib/error-messages";
-import { saveAccountTransfer } from "@/lib/financial/transfersClient";
+import { saveAccountTransfer, deleteAccountTransfer } from "@/lib/financial/transfersClient";
+import { registerReversibleCreate } from "@/lib/undo-engine";
 import { getAccountKindLabel, type Account, type AccountTransferRef } from "@/lib/accounts";
 import { loadAccounts as loadActiveAccounts } from "@/components/financial/AccountSelect";
 import { getTodayDate, normalizeDateOnly } from "@/app/(app)/dashboard/DashboardActions.helpers";
@@ -318,15 +319,29 @@ export function AccountTransferDialog({
       }
       handleOpenChange(false);
       onSaved?.();
-      toast.success(
-        transfer
-          ? "ההעברה עודכנה."
-          : mode === "withdraw"
-            ? "המשיכה נרשמה."
-            : mode === "deposit"
-              ? "ההפקדה נרשמה."
-              : "ההעברה נרשמה."
-      );
+      if (transfer) {
+        // Edit: left as an immediate save (not deferred) — the transfers list
+        // that opens this dialog for editing doesn't overlay undo-engine
+        // patches, so a deferred edit would just show stale data until the
+        // commit lands. Same reasoning as ExpenseDialog's edit path.
+        toast.success("ההעברה עודכנה.");
+      } else {
+        const createdMessage =
+          mode === "withdraw" ? "המשיכה נרשמה." : mode === "deposit" ? "ההפקדה נרשמה." : "ההעברה נרשמה.";
+        const newId = result.id;
+        if (newId) {
+          // Undo = a real reverse delete, not a deferred commit — the create
+          // already went through by the time this dialog closes.
+          registerReversibleCreate({
+            scope: "account-transfer",
+            id: newId,
+            message: createdMessage,
+            onUndo: async () => deleteAccountTransfer(newId),
+          });
+        } else {
+          toast.success(createdMessage);
+        }
+      }
     } catch (err: unknown) {
       setError(toHebrewError(err, transfer ? "עדכון ההעברה נכשל." : "שמירת ההעברה נכשלה."));
     } finally {

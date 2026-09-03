@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useDeferredValue, useEffect, useMemo, useState, useTransition } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DocumentIcon, ExternalLinkIcon, FolderIcon, ImageIcon, LayersIcon, ProductIcon, SearchIcon, TagIcon, UploadIcon } from "@/components/ui/icons";
 import { DeleteButton } from "@/components/ui/icon-button";
@@ -32,6 +32,8 @@ import { getBusinessDomainLabel } from "@/lib/expenses";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { UploadDocumentDialog } from "@/components/documents/UploadDocumentDialog";
 import { DOCUMENT_CATEGORIES, getDocumentCategoryLabel } from "@/lib/documents";
+import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import { scheduleDeferredDelete, scheduleDeferredEdit } from "@/lib/undo-engine";
 
 export type DocumentArchiveFilters = {
   customer_id: string;
@@ -204,7 +206,7 @@ function SelectField({
 }
 
 export default function DocumentsArchiveClient({
-  documents,
+  documents: documentsProp,
   error,
   initialFilters,
   focusDocumentId = null,
@@ -226,7 +228,7 @@ export default function DocumentsArchiveClient({
   isTruncated: boolean;
 }) {
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
+  const documents = useUndoOverlay(documentsProp, (d) => d.id, "document");
   const [query, setQuery] = useState(initialFilters.q);
   const [businessDomain, setBusinessDomain] = useState(initialFilters.business_domain);
   const [documentType, setDocumentType] = useState(initialFilters.type);
@@ -450,84 +452,78 @@ export default function DocumentsArchiveClient({
     setGroupBy("entity");
   }
 
-  async function saveTag() {
+  function saveTag() {
     if (!editDialogDoc) return;
+    const target = editDialogDoc;
     const nextValue = editTagValue.trim();
-
-    startTransition(async () => {
-      try {
-        const result = await updateDocumentTag(editDialogDoc.id, nextValue);
-        if (!result.ok) {
-          toast.error("שגיאה בעדכון הקטגוריה", { description: toHebrewError(result.error, "") });
-          return;
-        }
-        toast.success("הקטגוריה עודכנה");
-        setEditDialogDoc(null);
-        setEditTagValue("");
+    setEditDialogDoc(null);
+    setEditTagValue("");
+    scheduleDeferredEdit({
+      scope: "document",
+      id: target.id,
+      message: "הקטגוריה עודכנה",
+      patch: { document_type: nextValue || null },
+      onCommit: async () => {
+        const result = await updateDocumentTag(target.id, nextValue);
+        if (!result.ok) return { ok: false, error: toHebrewError(result.error, "עדכון הקטגוריה נכשל.") };
         router.refresh();
-      } catch (errorValue: unknown) {
-        const description = toHebrewError(errorValue);
-        toast.error("שגיאה בעדכון הקטגוריה", { description });
-      }
+        return { ok: true };
+      },
     });
   }
 
-  async function saveDomain() {
+  function saveDomain() {
     if (!editDomainDoc) return;
+    const target = editDomainDoc;
     const nextValue = editDomainValue.trim();
     if (!nextValue) {
       toast.error("יש לבחור תחום");
       return;
     }
-
-    startTransition(async () => {
-      try {
+    setEditDomainDoc(null);
+    setEditDomainValue("");
+    scheduleDeferredEdit({
+      scope: "document",
+      id: target.id,
+      message: "התחום עודכן",
+      patch: { business_domains: [nextValue] },
+      onCommit: async () => {
         const response = await fetch("/api/documents/domain", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            document_id: editDomainDoc.id,
+            document_id: target.id,
             business_domain: nextValue,
           }),
         });
         const json = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          toast.error("שגיאה בעדכון התחום", { description: toHebrewError(json?.error, "") });
-          return;
-        }
-        toast.success("התחום עודכן");
-        setEditDomainDoc(null);
-        setEditDomainValue("");
+        if (!response.ok) return { ok: false, error: toHebrewError(json?.error, "עדכון התחום נכשל.") };
         router.refresh();
-      } catch (errorValue: unknown) {
-        const description = toHebrewError(errorValue);
-        toast.error("שגיאה בעדכון התחום", { description });
-      }
+        return { ok: true };
+      },
     });
   }
 
-  async function deleteDocument() {
+  function deleteDocument() {
     if (!deleteDialogDoc) return;
-
-    startTransition(async () => {
-      try {
+    const target = deleteDialogDoc;
+    setDeleteDialogDoc(null);
+    if (previewDoc?.id === target.id) setPreviewDoc(null);
+    scheduleDeferredDelete({
+      scope: "document",
+      id: target.id,
+      message: "המסמך נמחק",
+      onCommit: async () => {
         const response = await fetch("/api/documents/delete", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ document_id: deleteDialogDoc.id }),
+          body: JSON.stringify({ document_id: target.id }),
         });
         const json = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          toast.error("שגיאה במחיקת המסמך", { description: toHebrewError(json?.error, "") });
-          return;
-        }
-        toast.success("המסמך נמחק");
-        setDeleteDialogDoc(null);
+        if (!response.ok) return { ok: false, error: toHebrewError(json?.error, "מחיקת המסמך נכשלה.") };
         router.refresh();
-      } catch (errorValue: unknown) {
-        const description = toHebrewError(errorValue);
-        toast.error("שגיאה במחיקת המסמך", { description });
-      }
+        return { ok: true };
+      },
     });
   }
 
@@ -1015,10 +1011,8 @@ export default function DocumentsArchiveClient({
         title="עדכון קטגוריית מסמך"
         description="שינוי הקטגוריה של המסמך הנבחר."
         size="formMd"
-        onSubmit={() => void saveTag()}
+        onSubmit={saveTag}
         submitLabel="שמירה"
-        busyLabel="שומר..."
-        busy={isPending}
       >
           <div className="mt-4 space-y-3">
             <div className="text-sm font-medium">{editDialogDoc?.title ?? "מסמך"}</div>
@@ -1047,10 +1041,8 @@ export default function DocumentsArchiveClient({
         title="שינוי תחום"
         description="בחירת התחום העסקי שאליו ישויך המסמך."
         size="formMd"
-        onSubmit={() => void saveDomain()}
+        onSubmit={saveDomain}
         submitLabel="שמירה"
-        busyLabel="שומר..."
-        busy={isPending}
       >
           <div className="space-y-3">
             <div className="text-sm font-medium">{editDomainDoc?.title ?? "מסמך"}</div>
@@ -1067,8 +1059,7 @@ export default function DocumentsArchiveClient({
         title="מחיקת מסמך"
         description="הפעולה תמחק את קובץ האחסון ואת כל הקישורים של המסמך."
         confirmLabel="מחיקה"
-        loading={isPending}
-        onConfirm={() => void deleteDocument()}
+        onConfirm={deleteDocument}
       >
         <p className="text-sm">
           האם למחוק את <span className="font-medium">{deleteDialogDoc?.title ?? "המסמך"}</span>?

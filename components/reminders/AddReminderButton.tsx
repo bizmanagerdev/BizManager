@@ -11,6 +11,7 @@ import { AssigneeSelect } from "@/components/collections/AssigneeSelect";
 import { useAssignableUsers } from "@/hooks/useAssignableUsers";
 import { offlineFetch } from "@/lib/offline-queue";
 import { toHebrewError } from "@/lib/error-messages";
+import { registerReversibleCreate } from "@/lib/undo-engine";
 
 // The entities a reminder can attach to. Each maps to its FK column + a category
 // so a reminder set anywhere surfaces in the worklist / bell / push exactly like
@@ -103,10 +104,30 @@ export default function AddReminderButton({
         setError(toHebrewError(result.error, "שמירה נכשלה."));
         return;
       }
-      toast.success("התזכורת נוספה.");
       onSaved?.();
       setOpen(false);
       router.refresh();
+      const newId = (result.data as { id?: string | null } | null)?.id;
+      if (!newId) {
+        toast.success("התזכורת נוספה.");
+      } else {
+        registerReversibleCreate({
+          scope: "reminder",
+          id: newId,
+          message: "התזכורת נוספה.",
+          onUndo: async () => {
+            const res = await fetch("/api/reminders/update", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: newId, status: "cancelled" }),
+            });
+            const json = await res.json().catch(() => ({}));
+            router.refresh();
+            if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "ביטול נכשל.") };
+            return { ok: true };
+          },
+        });
+      }
     } catch (err: unknown) {
       setError(toHebrewError(err, "שמירה נכשלה."));
     } finally {

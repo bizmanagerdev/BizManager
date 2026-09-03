@@ -15,6 +15,7 @@
 // same reasoning as ExpenseDialog's `expressSteps`.
 
 import { useMemo, useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { toHebrewError } from "@/lib/error-messages";
 import { StepWizardDialog, useStepFlow } from "@/components/ui/step-wizard";
@@ -34,6 +35,7 @@ import { TagPicker } from "@/components/tags/TagPicker";
 import { BankIcon, CardIcon, CashIcon } from "@/components/ui/icons";
 import { defaultAccountForMethod, getAccountKindLabel, type Account } from "@/lib/accounts";
 import { offlineFetch } from "@/lib/offline-queue";
+import { registerReversibleCreate } from "@/lib/undo-engine";
 import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel, type ExpenseBusinessDomain } from "@/lib/expenses";
 import { type FinancialAttachment } from "@/lib/payments";
 import { HEBREW } from "@/app/(app)/dashboard/DashboardActions.constants";
@@ -135,6 +137,7 @@ export function IncomeDialog({
   lockedPropertyId?: string | null;
   onSaved?: () => void;
 }) {
+  const router = useRouter();
   const isSourceLocked = Boolean(lockedPropertyId);
   const [accountsList, setAccountsList] = useState<Account[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -398,7 +401,33 @@ export function IncomeDialog({
 
       handleOpenChange(false);
       onSaved?.();
-      toast.success(HEBREW.incomeSaved);
+      if (!paymentId) {
+        toast.success(HEBREW.incomeSaved);
+      } else {
+        // Undo = a real reverse delete (not a deferred commit) — attachments
+        // already needed the real server id to upload to, same reasoning as
+        // ExpenseDialog's create-undo.
+        const undoOrderId = linkedOrderId || undefined;
+        const undoProjectId = !undoOrderId && linkedProjectId ? linkedProjectId : undefined;
+        registerReversibleCreate({
+          scope: "payment",
+          id: paymentId,
+          message: HEBREW.incomeSaved,
+          onUndo: async () => {
+            const res = await fetch(undoOrderId ? "/api/orders/payments/delete" : "/api/payments/delete", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(
+                undoOrderId ? { id: paymentId, order_id: undoOrderId } : { id: paymentId, project_id: undoProjectId }
+              ),
+            });
+            const errJson = await res.json().catch(() => ({}));
+            if (!res.ok) return { ok: false, error: toHebrewError(errJson?.error, "ביטול נכשל.") };
+            router.refresh();
+            return { ok: true };
+          },
+        });
+      }
     } catch (err: unknown) {
       setError(toHebrewError(err, HEBREW.saveErrorUnknown));
     } finally {

@@ -26,6 +26,7 @@ import { computeInsertSortOrder } from "@/lib/tasks/sortOrder";
 import { AddIcon, AttachIcon, BuildingIcon, ClockIcon, CloseIcon, CommentIcon, DragIcon, FilterIcon, LockIcon, NotificationIcon, ProjectIcon, RecurringIcon, SearchIcon, SuccessIcon, UncheckedIcon, UserIcon, WazeIcon, ZoomInIcon, ZoomOutIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { offlineFetch } from "@/lib/offline-queue";
+import { scheduleDeferredAction } from "@/lib/undo-engine";
 import { BOARD_STATUSES, type TaskBoardItem } from "@/app/(app)/tasks/loadTasks";
 import { AddressLink } from "@/components/ui/address-link";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -643,7 +644,6 @@ export default function TasksPageClient(props: Props) {
 
   const [editId, setEditId] = useState<string | null>(null);
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null);
-  const [deletingTask, setDeletingTask] = useState(false);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const justDraggedRef = useRef(false);
@@ -1090,29 +1090,32 @@ export default function TasksPageClient(props: Props) {
     setMenu({ id, x, y });
   }
 
-  async function performDeleteTask() {
+  function performDeleteTask() {
     const id = deleteTaskId;
     if (!id) return;
-    setDeletingTask(true);
     const previous = tasks;
-    setTasks((prev) => prev.filter((t) => t.id !== id));
-    emitProgressActivityStart();
-    try {
-      const result = await offlineFetch("/api/tasks/delete", { id }, t(tasksDict, props.locale, "deleteTaskLabel"));
-      if (!result.queued && !result.ok) {
-        toast.error(t(tasksDict, props.locale, "toastErrorDeleteTask"), { description: toHebrewError(result.error, "") });
-        setTasks(previous);
-        return;
-      }
-      if (!result.queued) toast.success(t(tasksDict, props.locale, "toastTaskDeleted"));
-      setDeleteTaskId(null);
-    } catch (error: unknown) {
-      toast.error(t(tasksDict, props.locale, "toastErrorDeleteTask"), { description: toHebrewError(error, "") });
-      setTasks(previous);
-    } finally {
-      emitProgressActivityEnd();
-      setDeletingTask(false);
-    }
+    setDeleteTaskId(null);
+    scheduleDeferredAction({
+      key: `task:delete:${id}`,
+      message: t(tasksDict, props.locale, "toastTaskDeleted"),
+      onApplyOptimistic: () => setTasks((prev) => prev.filter((t) => t.id !== id)),
+      onRevert: () => setTasks(previous),
+      onCommit: async () => {
+        emitProgressActivityStart();
+        try {
+          const result = await offlineFetch("/api/tasks/delete", { id }, t(tasksDict, props.locale, "deleteTaskLabel"));
+          if (!result.queued && !result.ok) {
+            return {
+              ok: false,
+              error: `${t(tasksDict, props.locale, "toastErrorDeleteTask")}: ${toHebrewError(result.error, "")}`,
+            };
+          }
+          return { ok: true };
+        } finally {
+          emitProgressActivityEnd();
+        }
+      },
+    });
   }
 
   // Quick-add creates the card immediately from just the typed name (Trello-style):
@@ -1711,8 +1714,7 @@ export default function TasksPageClient(props: Props) {
         }
         confirmLabel={t(commonDict, props.locale, "delete")}
         destructive
-        loading={deletingTask}
-        onConfirm={() => void performDeleteTask()}
+        onConfirm={performDeleteTask}
       />
     </div>
   );

@@ -10,6 +10,8 @@ import { SwipeActions } from "@/components/ui/swipe-actions";
 import { NativeSelect } from "@/components/ui/native-select";
 import { toHebrewError } from "@/lib/error-messages";
 import { deleteRecurringTaskTemplate } from "@/lib/recurring/deleteTemplate";
+import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import { scheduleDeferredDelete, scheduleDeferredEdit, registerReversibleCreate } from "@/lib/undo-engine";
 import { Card, CardContent } from "@/components/ui/card";
 import { DateInput } from "@/components/ui/date-input";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
@@ -100,8 +102,27 @@ function createEmptyForm(): FormState {
   };
 }
 
+function templatePatchFromForm(f: FormState): Partial<TemplateItem> {
+  return {
+    subject_template: f.subject_template.trim(),
+    description_template: f.description_template.trim() || null,
+    business_domain: f.business_domain,
+    project_id: f.project_id || null,
+    property_id: f.property_id || null,
+    default_priority: f.default_priority,
+    default_status: f.default_status,
+    create_day_of_month: f.create_day_of_month,
+    due_day_of_month: f.due_day_of_month,
+    start_date: f.start_date || null,
+    end_date: f.end_date || null,
+    is_active: f.is_active,
+    assignee_user_ids: f.assignee_user_ids,
+  };
+}
+
 export default function RecurringTasksClient(props: Props) {
   const router = useRouter();
+  const templates = useUndoOverlay(props.templates, (t) => t.id, "recurring-task-template");
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<FormState>(createEmptyForm());
@@ -168,52 +189,97 @@ export default function RecurringTasksClient(props: Props) {
     }));
   }
 
-  async function save() {
+  function save() {
     if (!canSave) return;
-    setSaving(true);
-    try {
-      const res = await fetch("/api/recurring-tasks/save", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          id: form.id,
-          subject_template: form.subject_template.trim(),
-          description_template: form.description_template.trim() || null,
-          business_domain: form.business_domain,
-          project_id: requirement === "project" ? form.project_id : null,
-          property_id: requirement === "property" ? form.property_id : null,
-          default_priority: form.default_priority,
-          default_status: form.default_status,
-          create_day_of_month: form.create_day_of_month,
-          due_day_of_month: form.due_day_of_month,
-          start_date: form.start_date || null,
-          end_date: form.end_date || null,
-          is_active: form.is_active,
-          assignee_user_ids: form.assignee_user_ids,
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error("שגיאה בשמירת משימה קבועה", { description: toHebrewError(json?.error, "") });
-        return;
-      }
-      setOpen(false);
-      router.refresh();
-      toast.success("המשימה הקבועה נשמרה");
-    } finally {
-      setSaving(false);
-    }
-  }
+    const payload = {
+      id: form.id,
+      subject_template: form.subject_template.trim(),
+      description_template: form.description_template.trim() || null,
+      business_domain: form.business_domain,
+      project_id: requirement === "project" ? form.project_id : null,
+      property_id: requirement === "property" ? form.property_id : null,
+      default_priority: form.default_priority,
+      default_status: form.default_status,
+      create_day_of_month: form.create_day_of_month,
+      due_day_of_month: form.due_day_of_month,
+      start_date: form.start_date || null,
+      end_date: form.end_date || null,
+      is_active: form.is_active,
+      assignee_user_ids: form.assignee_user_ids,
+    };
 
-  async function remove(id: string) {
-    const result = await deleteRecurringTaskTemplate(id);
-    if (!result.ok) {
-      toast.error("שגיאה במחיקת משימה קבועה", { description: toHebrewError(result.error, "") });
+    if (form.id) {
+      const id = form.id;
+      setOpen(false);
+      scheduleDeferredEdit({
+        scope: "recurring-task-template",
+        id,
+        message: "המשימה הקבועה נשמרה",
+        patch: templatePatchFromForm(form),
+        onCommit: async () => {
+          const res = await fetch("/api/recurring-tasks/save", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "שגיאה בשמירת משימה קבועה") };
+          router.refresh();
+          return { ok: true };
+        },
+      });
       return;
     }
-    router.refresh();
-    toast.success("המשימה הקבועה נמחקה");
+
+    setSaving(true);
+    void (async () => {
+      try {
+        const res = await fetch("/api/recurring-tasks/save", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error("שגיאה בשמירת משימה קבועה", { description: toHebrewError(json?.error, "") });
+          return;
+        }
+        setOpen(false);
+        router.refresh();
+        const newId = typeof json?.id === "string" ? json.id : undefined;
+        if (!newId) {
+          toast.success("המשימה הקבועה נשמרה");
+          return;
+        }
+        registerReversibleCreate({
+          scope: "recurring-task-template",
+          id: newId,
+          message: "המשימה הקבועה נשמרה",
+          onUndo: async () => {
+            const del = await deleteRecurringTaskTemplate(newId);
+            router.refresh();
+            return del.ok ? { ok: true } : { ok: false, error: toHebrewError(del.error, "ביטול נכשל.") };
+          },
+        });
+      } finally {
+        setSaving(false);
+      }
+    })();
+  }
+
+  function remove(id: string) {
     setPendingDeleteId(null);
+    scheduleDeferredDelete({
+      scope: "recurring-task-template",
+      id,
+      message: "המשימה הקבועה נמחקה",
+      onCommit: async () => {
+        const result = await deleteRecurringTaskTemplate(id);
+        if (!result.ok) return { ok: false, error: toHebrewError(result.error, "שגיאה במחיקת משימה קבועה") };
+        router.refresh();
+        return { ok: true };
+      },
+    });
   }
 
   return (
@@ -246,7 +312,7 @@ export default function RecurringTasksClient(props: Props) {
             צריך קודם להריץ את `db/sql/create_recurring_task_templates.sql` במסד הנתונים.
           </CardContent>
         </Card>
-      ) : props.templates.length === 0 ? (
+      ) : templates.length === 0 ? (
         <Card>
           <CardContent className="p-4 text-sm text-muted-foreground">
             אין עדיין משימות קבועות. אפשר להתחיל ממשימה חודשית כמו חשמל, שכירות או משכורות.
@@ -258,7 +324,7 @@ export default function RecurringTasksClient(props: Props) {
             {/* Same hint the customers list carries — a swipe is invisible until
                 someone tells you it's there. */}
             <p className="px-1 text-[11px] text-muted-foreground">החלק כרטיס ימינה לעריכה ומחיקה</p>
-            {props.templates.map((template) => {
+            {templates.map((template) => {
               const linkedLabel =
                 template.project_id
                   ? props.projects.find((item) => item.id === template.project_id)?.label ?? "פרויקט"
@@ -358,7 +424,7 @@ export default function RecurringTasksClient(props: Props) {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {props.templates.map((template) => {
+                {templates.map((template) => {
                   const linkedLabel =
                     template.project_id
                       ? props.projects.find((item) => item.id === template.project_id)?.label ?? "פרויקט"
@@ -416,7 +482,7 @@ export default function RecurringTasksClient(props: Props) {
         onOpenChange={setOpen}
         title={form.id ? "עריכת משימה קבועה" : "משימה קבועה חדשה"}
         description="אפשר להשתמש בטוקנים {{month_label}}, {{month_key}}, {{due_date}}."
-        onSubmit={() => void save()}
+        onSubmit={save}
         submitLabel="שמירה"
         busyLabel="שומר..."
         busy={saving}
@@ -591,7 +657,7 @@ export default function RecurringTasksClient(props: Props) {
         description="המשימות שכבר נוצרו מהתבנית יישארו. התבנית לא תיצור משימות חדשות."
         confirmLabel="מחיקה"
         onConfirm={() => {
-          if (pendingDeleteId) void remove(pendingDeleteId);
+          if (pendingDeleteId) remove(pendingDeleteId);
         }}
       />
     </div>

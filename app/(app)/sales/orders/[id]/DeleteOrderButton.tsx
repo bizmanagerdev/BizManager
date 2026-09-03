@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { toHebrewError } from "@/lib/error-messages";
 
 import { useState } from "react";
@@ -7,6 +7,7 @@ import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { DeleteButton } from "@/components/ui/icon-button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { offlineFetch } from "@/lib/offline-queue";
+import { scheduleDeferredDelete } from "@/lib/undo-engine";
 
 export default function DeleteOrderButton({
   orderId,
@@ -24,66 +25,50 @@ export default function DeleteOrderButton({
   onOpenChange?: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
   const [confirmOpenState, setConfirmOpenState] = useState(false);
   const confirmOpen = openProp ?? confirmOpenState;
   const setConfirmOpen = (next: boolean) => {
     setConfirmOpenState(next);
     onOpenChange?.(next);
   };
-  const [error, setError] = useState<string | null>(null);
 
-  async function onDelete() {
-    if (loading) return;
-
-    setError(null);
-    setLoading(true);
-
-    try {
-      const result = await offlineFetch("/api/orders/delete", { order_id: orderId }, "מחיקת הזמנה");
-      if (!result.queued) {
-        if (!result.ok) {
-          setError(toHebrewError(result.error, "מחיקת הזמנה נכשלה."));
-          return;
+  function onDelete() {
+    setConfirmOpen(false);
+    emitNavigationStart();
+    router.push("/sales");
+    // Nothing here — cascade to payments/documents/inventory movements — runs
+    // until this actually commits, so undo is completely safe even for the
+    // heaviest-cascade delete in the app.
+    scheduleDeferredDelete({
+      scope: "order",
+      id: orderId,
+      message: "ההזמנה נמחקה",
+      onCommit: async () => {
+        const result = await offlineFetch("/api/orders/delete", { order_id: orderId }, "מחיקת הזמנה");
+        if (!result.queued) {
+          if (!result.ok) return { ok: false, error: toHebrewError(result.error, "מחיקת הזמנה נכשלה.") };
+          if (!(result.data as { ok?: boolean })?.ok) return { ok: false, error: "מחיקת הזמנה נכשלה." };
         }
-        if (!(result.data as { ok?: boolean })?.ok) {
-          setError("מחיקת הזמנה נכשלה.");
-          return;
-        }
-      }
-
-      setConfirmOpen(false);
-      emitNavigationStart();
-      router.push("/sales");
-      router.refresh();
-    } catch (e: unknown) {
-      setError(toHebrewError(e, "שגיאה לא ידועה"));
-    } finally {
-      setLoading(false);
-    }
+        router.refresh();
+        return { ok: true };
+      },
+    });
   }
 
   return (
     <div className="space-y-1">
       {hideTrigger ? null : (
-        <DeleteButton
-          label="מחיקת הזמנה"
-          className={className}
-          loading={loading}
-          onClick={() => setConfirmOpen(true)}
-        />
+        <DeleteButton label="מחיקת הזמנה" className={className} onClick={() => setConfirmOpen(true)} />
       )}
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
       <ConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title="מחיקת הזמנה"
-        description="ההזמנה, התשלומים והמסמכים המשויכים יימחקו לצמיתות. הפעולה אינה הפיכה."
+        description="ההזמנה, התשלומים והמסמכים המשויכים יימחקו."
         confirmLabel="מחיקה"
         cancelLabel="ביטול"
         destructive
-        loading={loading}
-        onConfirm={() => void onDelete()}
+        onConfirm={onDelete}
       />
     </div>
   );

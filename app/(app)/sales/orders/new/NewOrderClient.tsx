@@ -9,6 +9,7 @@ import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { cn } from "@/lib/utils";
 import { toHebrewError } from "@/lib/error-messages";
 import { saveDraft, loadDraft, clearDraft } from "@/lib/offline-queue";
+import { registerReversibleCreate } from "@/lib/undo-engine";
 import { EmptyState } from "@/components/ui/empty-state";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
@@ -867,13 +868,39 @@ export default function NewOrderClient({
       }
 
       if (canDraft) clearDraft(draftKey!);
+      const newOrderId = json.order_id;
       if (embedded) {
-        onSubmitted?.(json.order_id);
+        onSubmitted?.(newOrderId);
         router.refresh();
       } else {
         emitNavigationStart();
         router.push("/sales");
         router.refresh();
+      }
+      if (!isEditMode) {
+        // Undo = a real reverse delete (not a deferred commit) — items/payments/
+        // check-photo uploads already went through and needed the real order id,
+        // same reasoning as ExpenseDialog's create-undo. Reuses the exact same
+        // cascade-safe delete route DeleteOrderButton uses.
+        registerReversibleCreate({
+          scope: "order",
+          id: newOrderId,
+          message: "ההזמנה נוצרה",
+          onUndo: async () => {
+            const delRes = await fetch("/api/orders/delete", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ order_id: newOrderId }),
+            });
+            const delJson = await delRes.json().catch(() => ({}));
+            if (!delRes.ok || !(delJson as { ok?: boolean })?.ok) {
+              return { ok: false, error: toHebrewError((delJson as { error?: string })?.error, "ביטול נכשל.") };
+            }
+            if (!embedded) router.push("/sales");
+            router.refresh();
+            return { ok: true };
+          },
+        });
       }
     } catch (error: unknown) {
       const message = toHebrewError(error, "שגיאה לא ידועה");

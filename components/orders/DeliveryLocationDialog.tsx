@@ -22,6 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
 import { toHebrewError } from "@/lib/error-messages";
+import { registerReversibleAction } from "@/lib/undo-engine";
 import {
   formatPin,
   isShortenedMapLink,
@@ -109,15 +110,19 @@ export function DeliveryLocationDialog({
   async function save() {
     setSaving(true);
     setError(null);
+    const previousInstructions = initialInstructions ?? null;
+    const previousPin = initialPin;
+    const nextInstructions = instructions.trim() || null;
+    const nextPin = pin;
     try {
       const response = await fetch("/api/customers/delivery-location", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           customer_id: customerId,
-          instructions: instructions.trim() || null,
-          lat: pin?.lat ?? null,
-          lng: pin?.lng ?? null,
+          instructions: nextInstructions,
+          lat: nextPin?.lat ?? null,
+          lng: nextPin?.lng ?? null,
         }),
       });
       const json = (await response.json().catch(() => ({}))) as { error?: string };
@@ -125,9 +130,31 @@ export function DeliveryLocationDialog({
         setError(toHebrewError(json.error, "שמירת המיקום נכשלה."));
         return;
       }
-      onSaved?.({ instructions: instructions.trim() || null, pin });
+      onSaved?.({ instructions: nextInstructions, pin: nextPin });
       onOpenChange(false);
-      toast.success("פרטי ההגעה נשמרו ללקוח.");
+      // No dedicated "delete" for these customer fields — undo replays the same
+      // save endpoint with the pre-edit snapshot, and notifies the caller via the
+      // same onSaved callback so its own display reverts too.
+      registerReversibleAction({
+        key: `delivery-location:${customerId}`,
+        message: "פרטי ההגעה נשמרו ללקוח.",
+        onUndo: async () => {
+          const res = await fetch("/api/customers/delivery-location", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              customer_id: customerId,
+              instructions: previousInstructions,
+              lat: previousPin?.lat ?? null,
+              lng: previousPin?.lng ?? null,
+            }),
+          });
+          const revertJson = await res.json().catch(() => ({}));
+          if (!res.ok) return { ok: false, error: toHebrewError(revertJson?.error, "ביטול נכשל.") };
+          onSaved?.({ instructions: previousInstructions, pin: previousPin });
+          return { ok: true };
+        },
+      });
     } catch (err: unknown) {
       setError(toHebrewError(err, "שמירת המיקום נכשלה."));
     } finally {

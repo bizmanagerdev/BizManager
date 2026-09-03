@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { NOTIF_BUCKETS } from "@/lib/notifications/categories";
 import { inboxBucket, inboxOrigin, type InboxView, type WorklistItem, type WorklistSeverity } from "@/lib/reminders/worklist";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { scheduleDeferredAction } from "@/lib/undo-engine";
 import { EditButton } from "@/components/ui/icon-button";
 import type { Locale } from "@/lib/i18n/types";
 import { t } from "@/lib/i18n/t";
@@ -127,7 +128,6 @@ export default function InboxClient({
   const router = useRouter();
   const [bucket, setBucket] = useState<string>("all");
   const [hidden, setHidden] = useState<Set<string>>(new Set());
-  const [busy, setBusy] = useState<string | null>(null);
   const [snoozeOpen, setSnoozeOpen] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [marking, setMarking] = useState(false);
@@ -164,39 +164,39 @@ export default function InboxClient({
     return out;
   }, [visible]);
 
-  async function act(id: string, action: "done" | "dismiss" | "snooze" | "reopen", snoozeUntil?: string) {
-    setBusy(id);
+  function act(id: string, action: "done" | "dismiss" | "snooze" | "reopen", snoozeUntil?: string) {
     setSnoozeOpen(null);
-    setHidden((prev) => new Set(prev).add(id));
-    try {
-      const res = await fetch("/api/reminders/action", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, action, snooze_until: snoozeUntil }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(json.error);
-      toast.success(
-        action === "done"
-          ? t(inboxDict, locale, "toastDone")
-          : action === "snooze"
-            ? t(inboxDict, locale, "snoozedLabel")
-            : action === "reopen"
-              ? t(inboxDict, locale, "toastReopened")
-              : t(inboxDict, locale, "toastDismissed")
-      );
-      refreshAlerts();
-      router.refresh();
-    } catch (err) {
-      setHidden((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-      toast.error(toHebrewError(err, t(inboxDict, locale, "toastActionFailed")));
-    } finally {
-      setBusy(null);
-    }
+    const message =
+      action === "done"
+        ? t(inboxDict, locale, "toastDone")
+        : action === "snooze"
+          ? t(inboxDict, locale, "snoozedLabel")
+          : action === "reopen"
+            ? t(inboxDict, locale, "toastReopened")
+            : t(inboxDict, locale, "toastDismissed");
+    scheduleDeferredAction({
+      key: `reminder-act:${id}`,
+      message,
+      onApplyOptimistic: () => setHidden((prev) => new Set(prev).add(id)),
+      onRevert: () =>
+        setHidden((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        }),
+      onCommit: async () => {
+        const res = await fetch("/api/reminders/action", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, action, snooze_until: snoozeUntil }),
+        });
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) return { ok: false, error: toHebrewError(json.error, t(inboxDict, locale, "toastActionFailed")) };
+        refreshAlerts();
+        router.refresh();
+        return { ok: true };
+      },
+    });
   }
 
   async function markAllSeen() {
@@ -277,13 +277,13 @@ export default function InboxClient({
               </Link>
               {snoozeOpen === item.id ? (
                 <>
-                  <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" onClick={() => act(item.id, "snooze", preset("hour"))} disabled={busy === item.id}>
+                  <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" onClick={() => act(item.id, "snooze", preset("hour"))}>
                     {t(inboxDict, locale, "presetHour")}
                   </Button>
-                  <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" onClick={() => act(item.id, "snooze", preset("tomorrow"))} disabled={busy === item.id}>
+                  <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" onClick={() => act(item.id, "snooze", preset("tomorrow"))}>
                     {t(inboxDict, locale, "presetTomorrow")}
                   </Button>
-                  <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" onClick={() => act(item.id, "snooze", preset("week"))} disabled={busy === item.id}>
+                  <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" onClick={() => act(item.id, "snooze", preset("week"))}>
                     {t(inboxDict, locale, "presetWeek")}
                   </Button>
                   <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setSnoozeOpen(null)}>
@@ -295,7 +295,7 @@ export default function InboxClient({
                   {mine ? (
                     <EditButton onClick={() =>
                         setEditing({ id: item.id, remindAt: item.remindAt, content: item.content, assignedTo: item.assignedTo })
-                      } disabled={busy === item.id} label={t(inboxDict, locale, "editReminder")} />
+                      } label={t(inboxDict, locale, "editReminder")} />
                   ) : null}
                   <Button
                     variant="ghost"
@@ -304,7 +304,6 @@ export default function InboxClient({
                     title={t(inboxDict, locale, "done")}
                     aria-label={t(inboxDict, locale, "markDoneAria")}
                     onClick={() => act(item.id, "done")}
-                    disabled={busy === item.id}
                   >
                     <CheckIcon className="h-4 w-4" />
                   </Button>
@@ -315,7 +314,6 @@ export default function InboxClient({
                     title={t(inboxDict, locale, "snoozeTitle")}
                     aria-label={t(inboxDict, locale, "snoozeAria")}
                     onClick={() => setSnoozeOpen(item.id)}
-                    disabled={busy === item.id}
                   >
                     <ClockIcon className="h-4 w-4" />
                   </Button>
@@ -469,10 +467,10 @@ export default function InboxClient({
                     </div>
                   </div>
                   <div className="flex gap-1">
-                    <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" onClick={() => act(item.id, "reopen")} disabled={busy === item.id}>
+                    <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" onClick={() => act(item.id, "reopen")}>
                       {t(inboxDict, locale, "restore")}
                     </Button>
-                    <Button size="sm" className="h-7 px-2 text-xs" onClick={() => act(item.id, "done")} disabled={busy === item.id}>
+                    <Button size="sm" className="h-7 px-2 text-xs" onClick={() => act(item.id, "done")}>
                       {t(inboxDict, locale, "done")}
                     </Button>
                   </div>

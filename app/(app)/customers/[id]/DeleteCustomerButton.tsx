@@ -3,11 +3,11 @@ import { toHebrewError } from "@/lib/error-messages";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { DeleteButton } from "@/components/ui/icon-button";
 import { offlineFetch } from "@/lib/offline-queue";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { scheduleDeferredDelete } from "@/lib/undo-engine";
 
 export default function DeleteCustomerButton({
   customerId,
@@ -22,63 +22,42 @@ export default function DeleteCustomerButton({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   function openConfirm() {
-    setError(null);
     setOpen(true);
   }
 
-  function handleOpenChange(next: boolean) {
-    if (loading) return;
-    if (!next) setError(null);
-    setOpen(next);
-  }
-
-  async function onConfirm() {
-    if (loading) return;
-    setError(null);
-    setLoading(true);
-
-    try {
-      const result = await offlineFetch("/api/customers/delete", { id: customerId }, "מחיקת לקוח");
-      if (!result.queued && !result.ok) {
-        setError(toHebrewError(result.error, "מחיקת לקוח נכשלה."));
-        return;
-      }
-      const json = result.queued ? null : (result.data as { ok?: boolean } | null);
-      if (json && !json.ok) {
-        setError("מחיקת לקוח נכשלה.");
-        return;
-      }
-
-      if (!result.queued) toast.success("הלקוח נמחק");
-      emitNavigationStart();
-      setOpen(false);
-      router.push(returnHref);
-      router.refresh();
-    } catch (e: unknown) {
-      setError(toHebrewError(e, "שגיאה לא ידועה"));
-    } finally {
-      setLoading(false);
-    }
+  function onConfirm() {
+    setOpen(false);
+    emitNavigationStart();
+    router.push(returnHref);
+    scheduleDeferredDelete({
+      scope: "customer",
+      id: customerId,
+      message: "הלקוח נמחק",
+      onCommit: async () => {
+        const result = await offlineFetch("/api/customers/delete", { id: customerId }, "מחיקת לקוח");
+        if (!result.queued && !result.ok) return { ok: false, error: toHebrewError(result.error, "מחיקת לקוח נכשלה.") };
+        const json = result.queued ? null : (result.data as { ok?: boolean } | null);
+        if (json && !json.ok) return { ok: false, error: "מחיקת לקוח נכשלה." };
+        router.refresh();
+        return { ok: true };
+      },
+    });
   }
 
   return (
     <>
-      <DeleteButton label="מחיקת לקוח" className={className} loading={loading} onClick={openConfirm} />
+      <DeleteButton label="מחיקת לקוח" className={className} onClick={openConfirm} />
 
       <ConfirmDialog
         open={open}
-        onOpenChange={handleOpenChange}
+        onOpenChange={setOpen}
         destructive
         title="מחיקת לקוח"
-        description={`האם למחוק את הלקוח "${customerName}"? הפעולה אינה הפיכה.`}
+        description={`האם למחוק את הלקוח "${customerName}"?`}
         confirmLabel="מחיקה"
-        loading={loading}
-        error={error || undefined}
-        onConfirm={() => void onConfirm()}
+        onConfirm={onConfirm}
       />
     </>
   );

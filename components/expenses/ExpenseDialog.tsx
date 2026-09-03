@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { BackspaceIcon, BankIcon, CardIcon, CashIcon, RecurringIcon, SpinnerIcon, SplitIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ import {
 } from "@/lib/expenses";
 import { getBusinessDomainIcon } from "@/components/financial/DomainSelect";
 import { offlineFetch } from "@/lib/offline-queue";
+import { registerReversibleCreate } from "@/lib/undo-engine";
 import { offlineUpload } from "@/lib/offline-upload";
 import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
@@ -364,6 +366,7 @@ export function ExpenseDialog({
   currentUserRole,
   onSaved,
 }: Props) {
+  const router = useRouter();
   const isEditingSession = Boolean(editingSession);
   const isEditingTemplate = Boolean(editingRecurringTemplate);
   const isEditing = Boolean(editingExpense) || isEditingSession;
@@ -1261,7 +1264,6 @@ export function ExpenseDialog({
         expenseData = json?.expense ?? {};
         expenseId = (expenseData.id as string) ?? "";
         projectExpenseData = json?.projectExpense ?? null;
-        toast.success("ההוצאה נוספה");
       }
 
       const uploadedAttachments: FinancialAttachment[] = [];
@@ -1284,6 +1286,38 @@ export function ExpenseDialog({
       });
       if (savedResult instanceof Promise) await savedResult;
       onOpenChange(false);
+      if (isEditing) {
+        toast.success("ההוצאה עודכנה");
+      } else if (expenseId) {
+        // Undo = a real reverse delete call, not a deferred commit — this create
+        // already went through (attachments needed the real server id to upload
+        // to), so "undo" replays the existing delete path instead of holding
+        // anything back.
+        const undoProjectId = effectiveProjectId || undefined;
+        const undoOrderId = effectiveOrderId || undefined;
+        const undoPropertyId = effectivePropertyId || undefined;
+        registerReversibleCreate({
+          scope: "expense",
+          id: expenseId,
+          message: "ההוצאה נוספה",
+          onUndo: async () => {
+            const res = await fetch("/api/expenses/delete", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                id: expenseId,
+                project_id: undoProjectId,
+                order_id: undoOrderId,
+                property_id: undoPropertyId,
+              }),
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "ביטול נכשל.") };
+            router.refresh();
+            return { ok: true };
+          },
+        });
+      }
     } catch (error) {
       const hebrewMessage = toHebrewError(
         error,

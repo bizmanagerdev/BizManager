@@ -4,7 +4,6 @@ import { toHebrewError } from "@/lib/error-messages";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { NotificationIcon, PhoneIcon, TaskIcon, WalletIcon } from "@/components/ui/icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,6 +12,7 @@ import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import { actionTypeLabel } from "@/lib/communications";
 import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import type { TodayInboxData } from "@/lib/today-inbox";
+import { scheduleDeferredAction } from "@/lib/undo-engine";
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("he-IL", {
@@ -34,7 +34,6 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
   const [doneTaskIds, setDoneTaskIds] = useState<Set<string>>(() => new Set());
   const [doneReminderIds, setDoneReminderIds] = useState<Set<string>>(() => new Set());
   const [collectedIds, setCollectedIds] = useState<Set<string>>(() => new Set());
-  const [busyId, setBusyId] = useState<string | null>(null);
 
   const tasks = data.tasks.filter((t) => !doneTaskIds.has(t.id));
   const reminders = data.reminders.filter((r) => !doneReminderIds.has(r.id));
@@ -45,34 +44,36 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
 
   const today = todayIso();
 
-  async function act(
+  function act(
     id: string,
     url: string,
     body: Record<string, unknown>,
-    onSuccess: () => void,
-    successMsg: string
+    setIds: (updater: (prev: Set<string>) => Set<string>) => void,
+    successMsg: string,
+    scope: string
   ) {
-    if (busyId) return;
-    setBusyId(id);
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        toast.error(toHebrewError(json.error, "הפעולה נכשלה."));
-        return;
-      }
-      onSuccess();
-      toast.success(successMsg);
-      router.refresh();
-    } catch (err: unknown) {
-      toast.error(toHebrewError(err, "הפעולה נכשלה."));
-    } finally {
-      setBusyId(null);
-    }
+    scheduleDeferredAction({
+      key: `${scope}:${id}`,
+      message: successMsg,
+      onApplyOptimistic: () => setIds((prev) => new Set(prev).add(id)),
+      onRevert: () =>
+        setIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        }),
+      onCommit: async () => {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) return { ok: false, error: toHebrewError(json.error, "הפעולה נכשלה.") };
+        router.refresh();
+        return { ok: true };
+      },
+    });
   }
 
   return (
@@ -112,14 +113,14 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
                 size="sm"
                 variant="outline"
                 className="h-8 text-xs"
-                disabled={busyId === task.id}
                 onClick={() =>
-                  void act(
+                  act(
                     task.id,
                     "/api/tasks/update-status",
                     { id: task.id, status: "done" },
-                    () => setDoneTaskIds((prev) => new Set(prev).add(task.id)),
-                    "המשימה סומנה כבוצעה."
+                    setDoneTaskIds,
+                    "המשימה סומנה כבוצעה.",
+                    "today-task"
                   )
                 }
               >
@@ -169,14 +170,14 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
                 size="sm"
                 variant="outline"
                 className="h-8 text-xs"
-                disabled={busyId === r.id}
                 onClick={() =>
-                  void act(
+                  act(
                     r.id,
                     "/api/reminders/update",
                     { id: r.id, status: "done" },
-                    () => setDoneReminderIds((prev) => new Set(prev).add(r.id)),
-                    "התזכורת סומנה כבוצעה."
+                    setDoneReminderIds,
+                    "התזכורת סומנה כבוצעה.",
+                    "today-reminder"
                   )
                 }
               >
@@ -222,14 +223,14 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
               size="sm"
               variant="outline"
               className="h-8 text-xs"
-              disabled={busyId === p.id}
               onClick={() =>
-                void act(
+                act(
                   p.id,
                   "/api/payments/mark-collected",
                   { id: p.id, collected: true },
-                  () => setCollectedIds((prev) => new Set(prev).add(p.id)),
-                  "התשלום סומן כנגבה."
+                  setCollectedIds,
+                  "התשלום סומן כנגבה.",
+                  "today-payment"
                 )
               }
             >

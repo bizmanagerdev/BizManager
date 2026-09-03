@@ -28,6 +28,8 @@ import { taskStatusLabel, type VehicleActivity, type VehicleExpense } from "@/li
 import { toHebrewError } from "@/lib/error-messages";
 import { offlineUpload } from "@/lib/offline-upload";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import { scheduleDeferredDelete, registerReversibleCreate } from "@/lib/undo-engine";
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -89,6 +91,11 @@ export default function VehicleActivityClient({
   const router = useRouter();
   const refresh = () => router.refresh();
 
+  const expenses = useUndoOverlay(activity.expenses, (e) => e.id, "vehicle-expense");
+  const payments = useUndoOverlay(activity.payments, (p) => p.id, "vehicle-payment");
+  const tasks = useUndoOverlay(activity.tasks, (t) => t.id, "vehicle-task");
+  const documents = useUndoOverlay(activity.documents, (d) => d.id, "vehicle-document");
+
   // expense
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<EditingExpenseData | null>(null);
@@ -112,7 +119,6 @@ export default function VehicleActivityClient({
   const [docBusy, setDocBusy] = useState(false);
   // delete
   const [del, setDel] = useState<{ kind: string; id: string; label: string } | null>(null);
-  const [delBusy, setDelBusy] = useState(false);
 
   function openAddExpense() {
     setEditingExpense(null);
@@ -178,9 +184,29 @@ export default function VehicleActivityClient({
         toast.error("שגיאה ביצירת ההכנסה", { description: toHebrewError(json?.error, "") });
         return;
       }
-      toast.success("ההכנסה נוספה");
       setIncomeOpen(false);
       refresh();
+      const newId = (json?.payment as { id?: string } | null)?.id;
+      if (!newId) {
+        toast.success("ההכנסה נוספה");
+        return;
+      }
+      registerReversibleCreate({
+        scope: "vehicle-payment",
+        id: newId,
+        message: "ההכנסה נוספה",
+        onUndo: async () => {
+          const delRes = await fetch("/api/payments/delete", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ id: newId }),
+          });
+          const delJson = await delRes.json().catch(() => ({}));
+          refresh();
+          if (!delRes.ok) return { ok: false, error: toHebrewError(delJson?.error, "ביטול נכשל.") };
+          return { ok: true };
+        },
+      });
     } finally {
       setIncBusy(false);
     }
@@ -231,34 +257,42 @@ export default function VehicleActivityClient({
     }
   }
 
-  async function confirmDelete() {
+  function confirmDelete() {
     if (!del) return;
-    setDelBusy(true);
-    try {
-      const endpoint =
-        del.kind === "expense"
-          ? ["/api/expenses/delete", { id: del.id }]
-          : del.kind === "payment"
-            ? ["/api/payments/delete", { id: del.id }]
-            : del.kind === "task"
-              ? ["/api/tasks/delete", { id: del.id }]
-              : ["/api/documents/delete", { document_id: del.id }];
-      const res = await fetch(endpoint[0] as string, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(endpoint[1]),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error("שגיאה במחיקה", { description: toHebrewError(json?.error, "") });
-        return;
-      }
-      toast.success("נמחק");
-      setDel(null);
-      refresh();
-    } finally {
-      setDelBusy(false);
-    }
+    const target = del;
+    setDel(null);
+    const scope =
+      target.kind === "expense"
+        ? "vehicle-expense"
+        : target.kind === "payment"
+          ? "vehicle-payment"
+          : target.kind === "task"
+            ? "vehicle-task"
+            : "vehicle-document";
+    scheduleDeferredDelete({
+      scope,
+      id: target.id,
+      message: "נמחק",
+      onCommit: async () => {
+        const endpoint =
+          target.kind === "expense"
+            ? ["/api/expenses/delete", { id: target.id }]
+            : target.kind === "payment"
+              ? ["/api/payments/delete", { id: target.id }]
+              : target.kind === "task"
+                ? ["/api/tasks/delete", { id: target.id }]
+                : ["/api/documents/delete", { document_id: target.id }];
+        const res = await fetch(endpoint[0] as string, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(endpoint[1]),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "המחיקה נכשלה.") };
+        refresh();
+        return { ok: true };
+      },
+    });
   }
 
   return (
@@ -267,17 +301,17 @@ export default function VehicleActivityClient({
         {/* Expenses */}
         <Card>
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
-            <CardTitle className="text-base">הוצאות ({activity.expenses.length})</CardTitle>
+            <CardTitle className="text-base">הוצאות ({expenses.length})</CardTitle>
             <Button size="sm" onClick={openAddExpense}>
               <AddIcon className="h-4 w-4" />
               הוצאה
             </Button>
           </CardHeader>
           <CardContent className="space-y-2">
-            {activity.expenses.length === 0 ? (
+            {expenses.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין הוצאות מתויגות לרכב זה.</p>
             ) : (
-              activity.expenses.map((e) => (
+              expenses.map((e) => (
                 <div key={e.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
                   <div className="min-w-0 text-sm">
                     <div className="truncate font-medium">{e.description || e.category || "הוצאה"}</div>
@@ -299,17 +333,17 @@ export default function VehicleActivityClient({
         {/* Income */}
         <Card>
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
-            <CardTitle className="text-base">הכנסות ({activity.payments.length})</CardTitle>
+            <CardTitle className="text-base">הכנסות ({payments.length})</CardTitle>
             <Button size="sm" onClick={openAddIncome}>
               <AddIcon className="h-4 w-4" />
               הכנסה
             </Button>
           </CardHeader>
           <CardContent className="space-y-2">
-            {activity.payments.length === 0 ? (
+            {payments.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין הכנסות מתויגות לרכב זה.</p>
             ) : (
-              activity.payments.map((p) => (
+              payments.map((p) => (
                 <div key={p.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
                   <div className="min-w-0 text-sm">
                     <div className="truncate font-medium">{p.method || "תשלום"}</div>
@@ -332,7 +366,7 @@ export default function VehicleActivityClient({
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
             <CardTitle className="flex items-center gap-1 text-base">
               <TaskIcon className="h-4 w-4" />
-              משימות ({activity.tasks.length})
+              משימות ({tasks.length})
             </CardTitle>
             <Button size="sm" onClick={openAddTask}>
               <AddIcon className="h-4 w-4" />
@@ -340,10 +374,10 @@ export default function VehicleActivityClient({
             </Button>
           </CardHeader>
           <CardContent className="space-y-2">
-            {activity.tasks.length === 0 ? (
+            {tasks.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין משימות מתויגות לרכב זה.</p>
             ) : (
-              activity.tasks.map((t) => (
+              tasks.map((t) => (
                 <div key={t.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
                   <div className="min-w-0 text-sm">
                     <div className="truncate font-medium">{t.subject || "משימה"}</div>
@@ -365,7 +399,7 @@ export default function VehicleActivityClient({
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
             <CardTitle className="flex items-center gap-1 text-base">
               <DocumentIcon className="h-4 w-4" />
-              מסמכים ({activity.documents.length})
+              מסמכים ({documents.length})
             </CardTitle>
             <Button size="sm" onClick={openAddDoc}>
               <AddIcon className="h-4 w-4" />
@@ -373,10 +407,10 @@ export default function VehicleActivityClient({
             </Button>
           </CardHeader>
           <CardContent className="space-y-2">
-            {activity.documents.length === 0 ? (
+            {documents.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין מסמכים מתויגים לרכב זה.</p>
             ) : (
-              activity.documents.map((d) => (
+              documents.map((d) => (
                 <div key={d.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
                   <div className="min-w-0 text-sm">
                     <div className="truncate font-medium">{d.title || d.fileName || "מסמך"}</div>
@@ -530,10 +564,9 @@ export default function VehicleActivityClient({
         open={Boolean(del)}
         onOpenChange={(o) => !o && setDel(null)}
         title="מחיקה"
-        description={del ? `למחוק "${del.label}"? לא ניתן לשחזר.` : ""}
+        description={del ? `למחוק "${del.label}"?` : ""}
         confirmLabel="מחיקה"
         destructive
-        loading={delBusy}
         onConfirm={confirmDelete}
       />
     </>

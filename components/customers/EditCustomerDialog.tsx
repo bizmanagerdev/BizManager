@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   AdaptiveGrid,
 } from "@/components/layout/page-layout";
@@ -21,6 +21,7 @@ import { WorkerLinkField } from "@/components/customers/WorkerLinkField";
 import { fetchCustomerCore } from "@/lib/customers/fetchCustomerCore";
 import { fetchCustomerContactsDirect, fetchCustomerBranchesDirect, updateCustomerBranchDirect } from "@/lib/customers/branchesContacts";
 import { TagIcon } from "@/components/ui/icons";
+import { registerReversibleAction } from "@/lib/undo-engine";
 
 function splitAddressIntoCityAndStreet(address: string | null): { city: string; street: string } {
   if (!address) return { city: "", street: "" };
@@ -61,6 +62,27 @@ export type EditCustomerInput = {
 export type EditCustomerSavedPayload = {
   customer: Row;
   contacts: Row[];
+};
+
+// Snapshot of every field this dialog can write, captured as it's loaded
+// (before the user edits anything) so a successful save can register a full
+// undo — reverting the customer's own fields plus every contact/branch this
+// save actually touched, using the exact same update routes save() itself
+// uses, just with the pre-edit values.
+type OriginalCustomerFields = {
+  name: string;
+  name_for_invoice: string | null;
+  registration_number: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  email: string | null;
+  address: string | null;
+  notes: string | null;
+  active: boolean;
+  requires_prepayment: boolean;
+  linked_user_id: string | null;
+  linkLoaded: boolean;
+  tag_ids: string[];
 };
 
 type EditContactDraft = {
@@ -166,8 +188,16 @@ export interface EditCustomerDialogProps {
 }
 
 export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: EditCustomerDialogProps) {
+  const router = useRouter();
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Pre-edit snapshots for undo (see OriginalCustomerFields above) — not
+  // React state, since they must never trigger a re-render and must survive
+  // being read from inside the save() closure without going stale.
+  const originalCustomerRef = useRef<OriginalCustomerFields | null>(null);
+  const originalContactsRef = useRef<EditContactDraft[]>([]);
+  const originalBranchesRef = useRef<EditBranchDraft[]>([]);
 
   const [name, setName] = useState("");
   const [invoiceName, setInvoiceName] = useState("");
@@ -224,25 +254,59 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
     setBranches([]);
     setTagIds([]);
 
+    originalCustomerRef.current = {
+      name: customer.name ?? "",
+      name_for_invoice: customer.name_for_invoice ?? null,
+      registration_number: customer.registration_number ?? null,
+      phone: customer.phone ?? null,
+      whatsapp: typeof customer.whatsapp === "number" ? String(customer.whatsapp) : (customer.whatsapp ?? null),
+      email: customer.email ?? null,
+      address: customer.address ?? null,
+      notes: customer.notes ?? null,
+      active: customer.active,
+      requires_prepayment: customer.requires_prepayment,
+      linked_user_id: customer.linked_user_id ?? null,
+      linkLoaded: customer.linked_user_id !== undefined,
+      tag_ids: [],
+    };
+    originalContactsRef.current = (customer.contacts ?? []).map(contactRowToDraft);
+    originalBranchesRef.current = [];
+
     if (!customer.id) return;
-    void fetchExistingTagIds("customer", customer.id).then(setTagIds);
+    void fetchExistingTagIds("customer", customer.id).then((ids) => {
+      setTagIds(ids);
+      if (originalCustomerRef.current) originalCustomerRef.current.tag_ids = ids;
+    });
     // Authoritative worker link, whatever the caller happened to pass.
     void fetchCustomerCore(customer.id)
       .then((row) => {
         if (!row) return;
         const linked = (row as Row).linked_user_id;
-        setLinkedUserId(typeof linked === "string" ? linked : "");
+        const linkedId = typeof linked === "string" ? linked : "";
+        setLinkedUserId(linkedId);
         setLinkLoaded(true);
+        if (originalCustomerRef.current) {
+          originalCustomerRef.current.linked_user_id = linkedId || null;
+          originalCustomerRef.current.linkLoaded = true;
+        }
       })
       .catch(() => { /* ignore — the link stays out of the payload */ });
     setContactsLoading(true);
     void fetchCustomerContactsDirect(customer.id)
-      .then((rows) => setContacts(rows.map(contactRowToDraft)))
+      .then((rows) => {
+        const drafts = rows.map(contactRowToDraft);
+        setContacts(drafts);
+        originalContactsRef.current = drafts;
+      })
       .catch(() => { /* ignore */ })
       .finally(() => setContactsLoading(false));
     setBranchesLoading(true);
     void fetchCustomerBranchesDirect(customer.id)
-      .then((rows) => setBranches(rows.map(branchRowToDraft)))
+      .then((rows) => {
+        const drafts = rows.map(branchRowToDraft);
+        setBranches(drafts);
+        originalBranchesRef.current = drafts;
+      })
       .catch(() => { /* ignore */ })
       .finally(() => setBranchesLoading(false));
   }, [open, customer]);
@@ -342,6 +406,31 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
         return setErr(toHebrewError(json.error, "עדכון לקוח נכשל."));
       }
 
+      // Undo plan for this save — one op per contact/branch actually written,
+      // built as we go so it exactly matches what was committed (not what was
+      // attempted; an early return above stops before anything gets queued).
+      const contactUndoOps: (
+        | { kind: "un-create"; id: string }
+        | {
+            kind: "restore";
+            id: string;
+            original: {
+              full_name: string;
+              role: string | null;
+              phone: string | null;
+              email: string | null;
+              whatsapp: string | null;
+              notes: string | null;
+              is_primary: boolean;
+              active: boolean;
+            };
+          }
+      )[] = [];
+      const branchUndoOps: (
+        | { kind: "un-create"; id: string }
+        | { kind: "restore"; id: string; original: { name: string; address: string | null; phone: string | null; active: boolean } }
+      )[] = [];
+
       const savedContacts: Row[] = [];
       for (const contact of contacts) {
         if (contact._deleted) {
@@ -354,6 +443,23 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
           if (!delRes.ok) {
             const delJson = (await delRes.json().catch(() => ({}))) as { error?: string };
             return setErr(toHebrewError(delJson.error, `הסרת איש קשר נכשלה (${contact.full_name || contact.id}).`));
+          }
+          const originalContact = originalContactsRef.current.find((c) => c.id === contact.id);
+          if (originalContact) {
+            contactUndoOps.push({
+              kind: "restore",
+              id: contact.id,
+              original: {
+                full_name: originalContact.full_name,
+                role: originalContact.role || null,
+                phone: originalContact.phone || null,
+                email: originalContact.email || null,
+                whatsapp: originalContact.whatsapp || null,
+                notes: originalContact.notes || null,
+                is_primary: originalContact.is_primary,
+                active: originalContact.active,
+              },
+            });
           }
           continue;
         }
@@ -380,6 +486,23 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
             return setErr(toHebrewError(upJson.error, `עדכון איש קשר נכשל (${payload.full_name}).`));
           }
           savedContacts.push(upJson.contact);
+          const originalContact = originalContactsRef.current.find((c) => c.id === contact.id);
+          if (originalContact) {
+            contactUndoOps.push({
+              kind: "restore",
+              id: contact.id,
+              original: {
+                full_name: originalContact.full_name,
+                role: originalContact.role || null,
+                phone: originalContact.phone || null,
+                email: originalContact.email || null,
+                whatsapp: originalContact.whatsapp || null,
+                notes: originalContact.notes || null,
+                is_primary: originalContact.is_primary,
+                active: originalContact.active,
+              },
+            });
+          }
         } else {
           const crRes = await fetch("/api/customer-contacts/create", {
             method: "POST",
@@ -391,6 +514,10 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
             return setErr(toHebrewError(crJson.error, `יצירת איש קשר נכשלה (${payload.full_name}).`));
           }
           savedContacts.push(crJson.contact);
+          const newContactId = crJson.contact.id;
+          if (typeof newContactId === "string") {
+            contactUndoOps.push({ kind: "un-create", id: newContactId });
+          }
         }
       }
 
@@ -400,6 +527,19 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
           const delResult = await updateCustomerBranchDirect(branch.id, { active: false });
           if (!delResult.ok) {
             return setErr(toHebrewError(delResult.error, `הסרת סניף נכשלה (${branch.name || branch.id}).`));
+          }
+          const originalBranch = originalBranchesRef.current.find((b) => b.id === branch.id);
+          if (originalBranch) {
+            branchUndoOps.push({
+              kind: "restore",
+              id: branch.id,
+              original: {
+                name: originalBranch.name,
+                address: originalBranch.address || null,
+                phone: originalBranch.phone || null,
+                active: originalBranch.active,
+              },
+            });
           }
           continue;
         }
@@ -416,22 +556,96 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
           if (!upResult.ok) {
             return setErr(toHebrewError(upResult.error, `עדכון סניף נכשל (${branchPayload.name}).`));
           }
+          const originalBranch = originalBranchesRef.current.find((b) => b.id === branch.id);
+          if (originalBranch) {
+            branchUndoOps.push({
+              kind: "restore",
+              id: branch.id,
+              original: {
+                name: originalBranch.name,
+                address: originalBranch.address || null,
+                phone: originalBranch.phone || null,
+                active: originalBranch.active,
+              },
+            });
+          }
         } else {
           const crRes = await fetch("/api/customer-branches/create", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ customer_id: customer.id, ...branchPayload }),
           });
+          const crJson = (await crRes.json().catch(() => ({}))) as { error?: string; branch?: Row };
           if (!crRes.ok) {
-            const crJson = (await crRes.json().catch(() => ({}))) as { error?: string };
             return setErr(toHebrewError(crJson.error, `יצירת סניף נכשלה (${branchPayload.name}).`));
+          }
+          const newBranchId = crJson.branch?.id;
+          if (typeof newBranchId === "string") {
+            branchUndoOps.push({ kind: "un-create", id: newBranchId });
           }
         }
       }
 
-      toast.success("פרטי הלקוח נשמרו");
       onSaved({ customer: json.customer, contacts: savedContacts.filter((c) => c.active !== false) });
       onOpenChange(false);
+
+      const originalFields = originalCustomerRef.current;
+      const customerId = customer.id;
+      registerReversibleAction({
+        key: `customer-edit:${customerId}:${Date.now()}`,
+        message: "פרטי הלקוח נשמרו",
+        onUndo: async () => {
+          if (originalFields) {
+            const revertRes = await fetch("/api/customers/update", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                id: customerId,
+                name: originalFields.name,
+                name_for_invoice: originalFields.name_for_invoice,
+                registration_number: originalFields.registration_number,
+                phone: originalFields.phone,
+                whatsapp: originalFields.whatsapp,
+                email: originalFields.email,
+                address: originalFields.address,
+                notes: originalFields.notes,
+                active: originalFields.active,
+                requires_prepayment: originalFields.requires_prepayment,
+                ...(originalFields.linkLoaded ? { linked_user_id: originalFields.linked_user_id } : {}),
+                tag_ids: originalFields.tag_ids,
+              }),
+            });
+            if (!revertRes.ok) {
+              const revertJson = (await revertRes.json().catch(() => ({}))) as { error?: string };
+              return { ok: false, error: toHebrewError(revertJson.error, "ביטול השינויים בלקוח נכשל.") };
+            }
+          }
+
+          for (const op of contactUndoOps) {
+            const body = op.kind === "un-create" ? { id: op.id, active: false, is_primary: false } : { id: op.id, ...op.original };
+            const res = await fetch("/api/customer-contacts/update", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(body),
+            });
+            if (!res.ok) {
+              const undoJson = (await res.json().catch(() => ({}))) as { error?: string };
+              return { ok: false, error: toHebrewError(undoJson.error, "ביטול השינויים באנשי הקשר נכשל.") };
+            }
+          }
+
+          for (const op of branchUndoOps) {
+            const patch = op.kind === "un-create" ? { active: false } : op.original;
+            const result = await updateCustomerBranchDirect(op.id, patch);
+            if (!result.ok) {
+              return { ok: false, error: toHebrewError(result.error, "ביטול השינויים בסניפים נכשל.") };
+            }
+          }
+
+          router.refresh();
+          return { ok: true };
+        },
+      });
     } catch (e: unknown) {
       setErr(toHebrewError(e));
     } finally {

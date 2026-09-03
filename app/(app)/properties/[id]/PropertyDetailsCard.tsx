@@ -11,6 +11,7 @@ import { invalidateQuickCreateCache } from "@/components/layout/QuickCreateMenu"
 import { updateProperty } from "../actions";
 import { PropertyBasicFields, propertyToForm, type PropertyInput } from "../PropertyFormFields";
 import { propertyHasRoomLayout, propertyTypeLabel, type Property } from "@/lib/properties";
+import { scheduleDeferredAction } from "@/lib/undo-engine";
 
 const BASIC_KEYS = [
   "name",
@@ -38,6 +39,37 @@ function pick<T extends object, K extends keyof T>(obj: T, keys: readonly K[]): 
   return out;
 }
 
+function numOrNull(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Mirrors actions.ts's propertyFields() parsing, so the optimistic patch shown
+ *  during the undo grace window matches what the server will end up saving. */
+function buildDetailsPatch(input: PropertyInput): Partial<Property> {
+  return {
+    name: input.name.trim() || null,
+    address: input.address.trim(),
+    assetDescription: input.asset_description.trim() || null,
+    isActive: input.is_active,
+    propertyType: input.property_type.trim() || null,
+    apartmentsCount: numOrNull(input.apartments_count),
+    rooms: numOrNull(input.rooms),
+    squareMeters: numOrNull(input.square_meters),
+    floor: numOrNull(input.floor),
+    bathrooms: numOrNull(input.bathrooms),
+    mezuzahCount: numOrNull(input.mezuzah_count),
+    lightBulbCount: numOrNull(input.light_bulb_count),
+    keyCount: numOrNull(input.key_count),
+    hasPrivateEntrance: input.has_private_entrance,
+    hasStorageRoom: input.has_storage_room,
+    hasParking: input.has_parking,
+    hasElevator: input.has_elevator,
+  };
+}
+
 /**
  * "פרטי הנכס" — name/address/description/physical facts/amenities, edited IN
  * PLACE (no popup). The header above still carries the name+address as the
@@ -55,19 +87,20 @@ function pick<T extends object, K extends keyof T>(obj: T, keys: readonly K[]): 
 export default function PropertyDetailsCard({ propertyId, property }: { propertyId: string; property: Property }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
+  const [override, setOverride] = useState<Partial<Property> | null>(null);
+  const displayProperty: Property = override ? { ...property, ...override } : property;
   const [draft, setDraft] = useState<PropertyInput>(() => propertyToForm(property));
-  const [busy, setBusy] = useState(false);
 
   function setField<K extends keyof PropertyInput>(key: K, value: PropertyInput[K]) {
     setDraft((prev) => ({ ...prev, [key]: value }));
   }
 
   function openEdit() {
-    setDraft(propertyToForm(property));
+    setDraft(propertyToForm(displayProperty));
     setEditing(true);
   }
 
-  async function save() {
+  function save() {
     if (!draft.address.trim()) {
       toast.error("יש להזין כתובת.");
       return;
@@ -76,20 +109,22 @@ export default function PropertyDetailsCard({ propertyId, property }: { property
       toast.error("יש להזין שם לנכס.");
       return;
     }
-    setBusy(true);
-    try {
-      const result = await updateProperty(propertyId, { ...propertyToForm(property), ...pick(draft, BASIC_KEYS) });
-      if (!result.ok) {
-        toast.error(result.error);
-        return;
-      }
-      toast.success("הנכס עודכן.");
-      setEditing(false);
-      invalidateQuickCreateCache();
-      router.refresh();
-    } finally {
-      setBusy(false);
-    }
+    const snapshotDraft = draft;
+    const patch = buildDetailsPatch(snapshotDraft);
+    setEditing(false);
+    scheduleDeferredAction({
+      key: `property-details:${propertyId}`,
+      message: "הנכס עודכן.",
+      onApplyOptimistic: () => setOverride(patch),
+      onRevert: () => setOverride(null),
+      onCommit: async () => {
+        const result = await updateProperty(propertyId, { ...propertyToForm(property), ...pick(snapshotDraft, BASIC_KEYS) });
+        if (!result.ok) return { ok: false, error: result.error };
+        invalidateQuickCreateCache();
+        router.refresh();
+        return { ok: true };
+      },
+    });
   }
 
   if (editing) {
@@ -101,16 +136,15 @@ export default function PropertyDetailsCard({ propertyId, property }: { property
         <CardContent className="space-y-3">
           <PropertyBasicFields form={draft} set={setField} />
           <div className="flex gap-2">
-            <Button type="button" size="sm" disabled={busy} onClick={() => void save()}>
-              {busy ? "שומר..." : "שמירה"}
+            <Button type="button" size="sm" onClick={save}>
+              שמירה
             </Button>
             <Button
               type="button"
               size="sm"
               variant="secondary"
-              disabled={busy}
               onClick={() => {
-                setDraft(propertyToForm(property));
+                setDraft(propertyToForm(displayProperty));
                 setEditing(false);
               }}
             >
@@ -125,32 +159,34 @@ export default function PropertyDetailsCard({ propertyId, property }: { property
   // A building has apartments, not a room count; a מחסן has neither — it is just
   // floor area. Everything else keeps showing rooms exactly as before (including
   // an unset type, unchanged behavior).
-  const hasRoomLayout = propertyHasRoomLayout(property.propertyType);
+  const hasRoomLayout = propertyHasRoomLayout(displayProperty.propertyType);
   const facts = [
-    property.propertyType === "building"
-      ? property.apartmentsCount != null
-        ? `${property.apartmentsCount} דירות`
+    displayProperty.propertyType === "building"
+      ? displayProperty.apartmentsCount != null
+        ? `${displayProperty.apartmentsCount} דירות`
         : null
-      : hasRoomLayout && property.rooms != null
-        ? `${property.rooms} חדרים`
+      : hasRoomLayout && displayProperty.rooms != null
+        ? `${displayProperty.rooms} חדרים`
         : null,
-    property.floor != null ? `קומה ${property.floor}` : null,
-    property.squareMeters != null ? `${property.squareMeters} מ״ר` : null,
-    hasRoomLayout && property.bathrooms != null ? `${property.bathrooms} חדרי רחצה` : null,
-    hasRoomLayout && property.mezuzahCount != null ? `${property.mezuzahCount} מזוזות` : null,
-    property.lightBulbCount != null ? `${property.lightBulbCount} נורות` : null,
-    property.keyCount != null ? `${property.keyCount} מפתחות` : null,
+    displayProperty.floor != null ? `קומה ${displayProperty.floor}` : null,
+    displayProperty.squareMeters != null ? `${displayProperty.squareMeters} מ״ר` : null,
+    hasRoomLayout && displayProperty.bathrooms != null ? `${displayProperty.bathrooms} חדרי רחצה` : null,
+    hasRoomLayout && displayProperty.mezuzahCount != null ? `${displayProperty.mezuzahCount} מזוזות` : null,
+    displayProperty.lightBulbCount != null ? `${displayProperty.lightBulbCount} נורות` : null,
+    displayProperty.keyCount != null ? `${displayProperty.keyCount} מפתחות` : null,
   ].filter(Boolean);
   const badges = [
-    property.propertyType ? { label: propertyTypeLabel(property.propertyType), variant: "outline" as const } : null,
-    !property.isActive ? { label: "לא פעיל", variant: "neutral" as const } : null,
-    property.hasPrivateEntrance ? { label: "כניסה פרטית", variant: "outline" as const } : null,
-    property.hasStorageRoom ? { label: "מחסן", variant: "outline" as const } : null,
-    property.hasParking ? { label: "חניה", variant: "outline" as const } : null,
-    property.hasElevator ? { label: "מעלית", variant: "outline" as const } : null,
-    property.isFurnished ? { label: "מרוהט", variant: "outline" as const } : null,
+    displayProperty.propertyType
+      ? { label: propertyTypeLabel(displayProperty.propertyType), variant: "outline" as const }
+      : null,
+    !displayProperty.isActive ? { label: "לא פעיל", variant: "neutral" as const } : null,
+    displayProperty.hasPrivateEntrance ? { label: "כניסה פרטית", variant: "outline" as const } : null,
+    displayProperty.hasStorageRoom ? { label: "מחסן", variant: "outline" as const } : null,
+    displayProperty.hasParking ? { label: "חניה", variant: "outline" as const } : null,
+    displayProperty.hasElevator ? { label: "מעלית", variant: "outline" as const } : null,
+    displayProperty.isFurnished ? { label: "מרוהט", variant: "outline" as const } : null,
   ].filter((b): b is { label: string; variant: "neutral" | "outline" } => Boolean(b));
-  const hasDetails = Boolean(property.assetDescription) || facts.length > 0 || badges.length > 0;
+  const hasDetails = Boolean(displayProperty.assetDescription) || facts.length > 0 || badges.length > 0;
 
   return (
     <Card>
@@ -163,7 +199,7 @@ export default function PropertyDetailsCard({ propertyId, property }: { property
           <p className="text-sm text-muted-foreground">לא הוזנו פרטים נוספים לנכס זה.</p>
         ) : (
           <>
-            {property.assetDescription ? <p className="text-sm">{property.assetDescription}</p> : null}
+            {displayProperty.assetDescription ? <p className="text-sm">{displayProperty.assetDescription}</p> : null}
             {facts.length > 0 ? <p className="text-sm text-muted-foreground">{facts.join(" · ")}</p> : null}
             {badges.length > 0 ? (
               <div className="flex flex-wrap items-center gap-2 pt-1">

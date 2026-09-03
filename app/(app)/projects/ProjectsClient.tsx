@@ -49,6 +49,8 @@ import LogCommunicationButton from "@/components/communications/LogCommunication
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import NewProjectClient, { type ProjectCustomerOption, type InitialProject } from "@/app/(app)/projects/NewProjectClient";
 import { EditButton } from "@/components/ui/icon-button";
+import { offlineFetch } from "@/lib/offline-queue";
+import { registerReversibleCreate } from "@/lib/undo-engine";
 
 type ProjectRow = Record<string, unknown>;
 type Option = { id: string; label: string; phone?: string | null; whatsapp?: string | null; email?: string | null; name_for_invoice?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> };
@@ -573,6 +575,18 @@ export default function ProjectsClient({
         return rowId !== id;
       })
     );
+  }
+
+  /** Puts a row removed by removeProject back, at (as close as possible to) its
+   *  original position — used to undo a pending delete before it commits. */
+  function restoreProject(row: ProjectRow, index: number) {
+    const id = getString(row, "id") ?? "";
+    setProjects((prev) => {
+      if (prev.some((r) => (getString(r, "id") ?? "") === id)) return prev;
+      const next = [...prev];
+      next.splice(Math.min(index, next.length), 0, row);
+      return next;
+    });
   }
 
   // Online, the server already applied tab/status/sort/search across the full
@@ -1146,6 +1160,7 @@ export default function ProjectsClient({
                           projectName={projectDisplayName(row)}
                           triggerLabel={currentStatus === "quote" ? "מחיקת הצעת מחיר" : "מחיקת פרויקט"}
                           onDeleted={() => removeProject(id)}
+                          onRestore={() => restoreProject(row, projects.indexOf(row))}
                         />
                       </div>
                     </td>
@@ -1410,7 +1425,31 @@ export default function ProjectsClient({
                 setCreateOpen(false);
                 setCreatePrefillCustomerId(undefined);
                 router.refresh();
-                toast.success(createStatus === "quote" ? "הצעת המחיר נוצרה." : "הפרויקט נוצר.");
+                const message = createStatus === "quote" ? "הצעת המחיר נוצרה." : "הפרויקט נוצר.";
+                if (id) {
+                  // The wizard already committed the create — undo replays the same
+                  // delete route DeleteProjectButton uses, same as VehiclesClient's
+                  // registerReversibleCreate around its own full-form create.
+                  registerReversibleCreate({
+                    scope: "project",
+                    id,
+                    message,
+                    onUndo: async () => {
+                      const result = await offlineFetch("/api/projects/delete", { id }, "מחיקת פרויקט");
+                      if (!result.queued && !result.ok) {
+                        return { ok: false, error: toHebrewError(result.error, "ביטול נכשל.") };
+                      }
+                      const json = result.queued ? null : (result.data as { ok?: boolean } | null);
+                      if (json && !json.ok) return { ok: false, error: "ביטול נכשל." };
+                      removeProject(id);
+                      router.refresh();
+                      return { ok: true };
+                    },
+                  });
+                } else {
+                  // Offline create (queued) — no id yet to build an undo around.
+                  toast.success(message);
+                }
               }}
             />
           ) : null}
@@ -1454,6 +1493,12 @@ export default function ProjectsClient({
                 }
                 setEditOpen(false);
                 router.refresh();
+                // Not made undoable: the wizard already committed a many-field update
+                // (name/customer/dates/pricing/addresses/items…) before this callback
+                // fires, and there's no safe way to replay the PREVIOUS full payload
+                // from here without duplicating NewProjectClient's own submit() logic —
+                // same call left unconverted on ExpenseDialog's and PropertyDetailClient's
+                // own full-form edit paths.
                 toast.success("הפרויקט עודכן.");
               }}
             />

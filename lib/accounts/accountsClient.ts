@@ -23,7 +23,9 @@ export type SaveAccountInput = {
   notes?: string | null;
 };
 
-export async function saveAccountDirect(input: SaveAccountInput): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function saveAccountDirect(
+  input: SaveAccountInput
+): Promise<{ ok: true; id?: string } | { ok: false; error: string }> {
   if (!input.name.trim()) return { ok: false, error: "יש להזין שם לחשבון." };
   if (!ALLOWED_KINDS.has(input.kind)) return { ok: false, error: "סוג חשבון אינו תקין." };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.opening_date)) return { ok: false, error: "יש לבחור תאריך פתיחה." };
@@ -47,16 +49,20 @@ export async function saveAccountDirect(input: SaveAccountInput): Promise<{ ok: 
     return { ok: true };
   }
 
-  const { error } = await supabase.from("accounts").insert({
-    name: input.name.trim(),
-    kind: input.kind,
-    opening_balance: input.opening_balance,
-    opening_date: input.opening_date,
-    notes: input.notes?.trim() || null,
-    sort_order: input.sort_order ?? 0,
-  });
+  const { data, error } = await supabase
+    .from("accounts")
+    .insert({
+      name: input.name.trim(),
+      kind: input.kind,
+      opening_balance: input.opening_balance,
+      opening_date: input.opening_date,
+      notes: input.notes?.trim() || null,
+      sort_order: input.sort_order ?? 0,
+    })
+    .select("id")
+    .single();
   if (error) return { ok: false, error: error.message };
-  return { ok: true };
+  return { ok: true, id: (data as { id: string } | null)?.id };
 }
 
 export async function deleteAccountDirect(id: string): Promise<{ ok: true } | { ok: false; error: string }> {

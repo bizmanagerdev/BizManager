@@ -4,8 +4,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { ChecklistIcon, SuccessIcon } from "@/components/ui/icons";
+import { ChecklistIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
 import DashboardCardHeader from "@/components/dashboard/DashboardCardHeader";
 import DashboardCardFooter from "@/components/dashboard/DashboardCardFooter";
@@ -16,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatShortDate } from "@/lib/date";
 import { offlineFetch } from "@/lib/offline-queue";
+import { scheduleDeferredAction } from "@/lib/undo-engine";
 import type { DashboardTask } from "@/lib/dashboard/tasks-overview";
 import { t } from "@/lib/i18n/t";
 import { dashboardDict } from "@/lib/i18n/dictionaries/dashboard";
@@ -68,7 +68,6 @@ function displaySubject(task: DashboardTask, locale: Locale) {
 export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: DashboardTask[]; locale: Locale }) {
   const router = useRouter();
   const [doneIds, setDoneIds] = useState<Set<string>>(() => new Set());
-  const [busyId, setBusyId] = useState<string | null>(null);
   const [tab, setTab] = useState<TabKey>("all");
   const TABS = tabs(locale);
   const PRIORITY = priorityMeta(locale);
@@ -103,31 +102,30 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
     }
   }, [tab, tasks, today]);
 
-  async function markDone(id: string) {
-    if (busyId) return;
-    setBusyId(id);
-    try {
-      const result = await offlineFetch(
-        "/api/tasks/update-status",
-        { id, status: "done" },
-        t(dashboardDict, locale, "markTaskDoneQueued")
-      );
-      if (result.queued) {
-        setDoneIds((prev) => new Set(prev).add(id));
-        return;
-      }
-      if (!result.ok) {
-        toast.error(toHebrewError(result.error, t(dashboardDict, locale, "actionFailed")));
-        return;
-      }
-      setDoneIds((prev) => new Set(prev).add(id));
-      toast.success(t(dashboardDict, locale, "taskMarkedDone"));
-      router.refresh();
-    } catch (err: unknown) {
-      toast.error(toHebrewError(err, t(dashboardDict, locale, "actionFailed")));
-    } finally {
-      setBusyId(null);
-    }
+  function markDone(id: string) {
+    scheduleDeferredAction({
+      key: `dashboard-task:done:${id}`,
+      message: t(dashboardDict, locale, "taskMarkedDone"),
+      onApplyOptimistic: () => setDoneIds((prev) => new Set(prev).add(id)),
+      onRevert: () =>
+        setDoneIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        }),
+      onCommit: async () => {
+        const result = await offlineFetch(
+          "/api/tasks/update-status",
+          { id, status: "done" },
+          t(dashboardDict, locale, "markTaskDoneQueued")
+        );
+        if (!result.queued && !result.ok) {
+          return { ok: false, error: toHebrewError(result.error, t(dashboardDict, locale, "actionFailed")) };
+        }
+        router.refresh();
+        return { ok: true };
+      },
+    });
   }
 
   function dueLabel(task: DashboardTask) {
@@ -203,7 +201,6 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
           <ul className="board-list divide-y">
             {visible.map((task) => {
               const priority = PRIORITY[task.priority ?? ""] ?? null;
-              const busy = busyId === task.id;
               const subject = displaySubject(task, locale);
               return (
                 <li
@@ -261,11 +258,9 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
                       size="sm"
                       variant="outline"
                       className="relative h-8 shrink-0 self-center px-3 text-sm max-md:min-h-[44px]"
-                      onClick={() => void markDone(task.id)}
-                      disabled={busy}
+                      onClick={() => markDone(task.id)}
                       title={t(dashboardDict, locale, "markTaskDoneTitle")}
                     >
-                      {busy ? <SuccessIcon className="h-4 w-4" /> : null}
                       {t(dashboardDict, locale, "doneButtonLabel")}
                     </Button>
                   </div>

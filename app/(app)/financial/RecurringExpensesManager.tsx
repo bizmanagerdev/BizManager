@@ -16,6 +16,8 @@ import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
 import ReminderFormDialog from "@/components/reminders/ReminderFormDialog";
 import type { Account } from "@/lib/accounts";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import { scheduleDeferredDelete } from "@/lib/undo-engine";
 
 type Option = {
   id: string;
@@ -168,10 +170,10 @@ function secondaryLines(t: RecurringExpenseTemplateItem): string[] {
 
 export default function RecurringExpensesManager(props: Props) {
   const router = useRouter();
+  const templates = useUndoOverlay(props.templates, (t) => t.id, "recurring-expense-template");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<RecurringExpenseTemplateItem | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
   const [remindTemplate, setRemindTemplate] = useState<RecurringExpenseTemplateItem | null>(null);
   const [accountFilter, setAccountFilter] = useState("");
 
@@ -237,8 +239,8 @@ export default function RecurringExpensesManager(props: Props) {
 
   // Bank-account scope for the list + summary.
   const filteredTemplates = useMemo(
-    () => (accountFilter ? props.templates.filter((t) => t.account_id === accountFilter) : props.templates),
-    [props.templates, accountFilter]
+    () => (accountFilter ? templates.filter((t) => t.account_id === accountFilter) : templates),
+    [templates, accountFilter]
   );
   // Ordered by the day of the month the payment falls on (2nd, 9th, 10th …), then
   // by next occurrence as a tiebreaker.
@@ -272,28 +274,27 @@ export default function RecurringExpensesManager(props: Props) {
     setDialogOpen(true);
   }
 
-  async function remove() {
+  function remove() {
     const id = confirmDeleteId;
     if (!id) return;
-    setDeleting(true);
-    try {
-      const result = await deleteRecurringExpenseTemplate(id);
-      if (!result.ok) {
-        toast.error("שגיאה במחיקת הוצאה קבועה", { description: toHebrewError(result.error, "") });
-        return;
-      }
-      setConfirmDeleteId(null);
-      router.refresh();
-      toast.success("ההוצאה הקבועה נמחקה");
-    } finally {
-      setDeleting(false);
-    }
+    setConfirmDeleteId(null);
+    scheduleDeferredDelete({
+      scope: "recurring-expense-template",
+      id,
+      message: "ההוצאה הקבועה נמחקה",
+      onCommit: async () => {
+        const result = await deleteRecurringExpenseTemplate(id);
+        if (!result.ok) return { ok: false, error: toHebrewError(result.error, "מחיקת ההוצאה הקבועה נכשלה.") };
+        router.refresh();
+        return { ok: true };
+      },
+    });
   }
 
   return (
     <div dir="rtl" className="space-y-4 text-right">
       {/* Summary bar — total monthly recurring commitment + counts */}
-      {!props.missingSchema && props.templates.length > 0 ? (
+      {!props.missingSchema && templates.length > 0 ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-foreground p-4 text-background">
           <div>
             <div className="text-xs opacity-70">סה״כ התחייבות חודשית קבועה</div>
@@ -309,7 +310,7 @@ export default function RecurringExpensesManager(props: Props) {
       ) : null}
 
       {/* Bank-account filter + the catch-up action for every template at once */}
-      {!props.missingSchema && props.templates.length > 0 ? (
+      {!props.missingSchema && templates.length > 0 ? (
         <div className="flex justify-end">
           <Button
             type="button"
@@ -323,7 +324,7 @@ export default function RecurringExpensesManager(props: Props) {
         </div>
       ) : null}
 
-      {!props.missingSchema && props.templates.length > 0 && props.accounts.length > 0 ? (
+      {!props.missingSchema && templates.length > 0 && props.accounts.length > 0 ? (
         <div className="flex items-center justify-end gap-2">
           <span className="text-xs text-muted-foreground">חשבון:</span>
           <NativeSelect dense
@@ -345,7 +346,7 @@ export default function RecurringExpensesManager(props: Props) {
             צריך קודם להריץ את [db/sql/create_recurring_expense_templates.sql] כדי לנהל הוצאות קבועות.
           </CardContent>
         </Card>
-      ) : props.templates.length === 0 ? (
+      ) : templates.length === 0 ? (
         <Card>
           <CardContent className="p-4 text-sm text-muted-foreground">
             אין עדיין הוצאות קבועות. אפשר להתחיל משכירות, משכורות, ביטוחים, רכב, אינטרנט או כל הוצאה שחוזרת כל חודש או כל שנה.
@@ -556,8 +557,7 @@ export default function RecurringExpensesManager(props: Props) {
         description="ההוצאה הקבועה תימחק ולא ייווצרו ממנה הוצאות חדשות. הוצאות שכבר נוצרו יישארו."
         confirmLabel="מחיקה"
         destructive
-        loading={deleting}
-        onConfirm={() => void remove()}
+        onConfirm={remove}
       />
 
       {/* Preview first, then create — a catch-up that silently invents rows in

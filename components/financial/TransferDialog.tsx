@@ -15,6 +15,7 @@ import { type ExpenseBusinessDomain } from "@/lib/expenses";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { toHebrewError } from "@/lib/error-messages";
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
+import { registerReversibleAction } from "@/lib/undo-engine";
 
 type SourceOption = { id: string; label: string };
 
@@ -230,7 +231,9 @@ export function TransferDialog({
           payment_method: paymentMethod,
         }),
       });
-      const expenseJson = (await expenseRes.json().catch(() => null)) as { error?: string } | null;
+      const expenseJson = (await expenseRes.json().catch(() => null)) as
+        | { error?: string; expense?: { id?: string } }
+        | null;
       if (!expenseRes.ok) {
         return fail(toHebrewError(expenseJson?.error, "יצירת צד ההוצאה נכשלה."));
       }
@@ -254,7 +257,9 @@ export function TransferDialog({
           notes: notes.trim() || null,
         }),
       });
-      const incomeJson = (await incomeRes.json().catch(() => null)) as { error?: string } | null;
+      const incomeJson = (await incomeRes.json().catch(() => null)) as
+        | { error?: string; payment?: { id?: string } }
+        | null;
       if (!incomeRes.ok) {
         // The expense already saved — make that explicit so nothing is silently half-done.
         return fail(
@@ -262,10 +267,64 @@ export function TransferDialog({
         );
       }
 
-      toast.success("ההעברה נשמרה — נוצרו הוצאה והכנסה.");
       const result = onSaved();
       if (result instanceof Promise) await result;
       onOpenChange(false);
+
+      const expenseId = typeof expenseJson?.expense?.id === "string" ? expenseJson.expense.id : null;
+      const paymentId = typeof incomeJson?.payment?.id === "string" ? incomeJson.payment.id : null;
+      const savedMessage = "ההעברה נשמרה — נוצרו הוצאה והכנסה.";
+      if (expenseId && paymentId) {
+        // Undo = real reverse deletes on both sides (not a deferred commit) —
+        // both records already went through by the time this fires. Mirrors
+        // ExpenseDialog/IncomeDialog's single-record create-undo, extended to
+        // the expense+payment pair this dialog creates together.
+        const undoExpenseProjectId =
+          expenseSide.businessDomain === "logistics_projects" ? expenseSide.projectId || undefined : undefined;
+        const undoExpenseOrderId =
+          expenseSide.businessDomain === "sales" ? expenseSide.orderId || undefined : undefined;
+        const undoExpensePropertyId =
+          expenseSide.businessDomain === "property_management" ? expenseSide.propertyId || undefined : undefined;
+        const undoIncomeOrderId =
+          incomeSide.businessDomain === "sales" ? incomeSide.orderId || undefined : undefined;
+        const undoIncomeProjectId =
+          !undoIncomeOrderId && incomeSide.businessDomain === "logistics_projects"
+            ? incomeSide.projectId || undefined
+            : undefined;
+        registerReversibleAction({
+          key: `transfer:create:${expenseId}:${paymentId}`,
+          message: savedMessage,
+          onUndo: async () => {
+            const [expenseDelRes, incomeDelRes] = await Promise.all([
+              fetch("/api/expenses/delete", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  id: expenseId,
+                  project_id: undoExpenseProjectId,
+                  order_id: undoExpenseOrderId,
+                  property_id: undoExpensePropertyId,
+                }),
+              }),
+              fetch(undoIncomeOrderId ? "/api/orders/payments/delete" : "/api/payments/delete", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(
+                  undoIncomeOrderId
+                    ? { id: paymentId, order_id: undoIncomeOrderId }
+                    : { id: paymentId, project_id: undoIncomeProjectId }
+                ),
+              }),
+            ]);
+            if (!expenseDelRes.ok || !incomeDelRes.ok) {
+              return { ok: false, error: "ביטול ההעברה נכשל באופן חלקי — יש לבדוק ולתקן ידנית." };
+            }
+            return { ok: true };
+          },
+        });
+      } else {
+        toast.success(savedMessage);
+      }
     } catch (error) {
       fail(toHebrewError(error, "שמירת ההעברה נכשלה."));
     } finally {

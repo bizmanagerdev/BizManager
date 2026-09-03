@@ -65,6 +65,7 @@ import {
   getWorkerAccessLabel,
   isPayrollPeriodEditable,
   type SalaryCenterProtectedPayload,
+  type SalaryCenterUserRow,
   type SessionEffectivePaymentRow,
   type SessionPublicRow,
   type WorkerPaymentAllocationRow,
@@ -79,6 +80,12 @@ import {
 import { toHebrewError } from "@/lib/error-messages";
 import { createWorkerAbsences, deleteWorkerAbsence } from "@/lib/payroll/absencesClient";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import {
+  scheduleDeferredDelete,
+  registerReversibleAction,
+  registerReversibleCreate,
+} from "@/lib/undo-engine";
 import type {
   Props,
   AbsenceFormState,
@@ -216,6 +223,26 @@ const DEFAULT_ABSENCE_FORM: AbsenceFormState = {
   applyToAll: false,
 };
 
+/** Same defaulting rules the worker-access form uses to hydrate from a user row —
+ *  shared so an undo of a worker-access edit/deactivation can resend the exact
+ *  pre-edit snapshot through the same /api/payroll/workers/update route. */
+function workerFormFromUser(user: SalaryCenterUserRow): WorkerFormState {
+  return {
+    full_name: user.full_name ?? "",
+    email: user.email ?? "",
+    phone: user.phone ?? "",
+    role:
+      user.role === "admin" || user.role === "office" || user.role === "worker_no_access"
+        ? user.role
+        : "worker",
+    active: user.active !== false,
+    system_access: user.system_access !== false && user.role !== "worker_no_access",
+    payroll_worker_type: normalizePayrollWorkerType(user.payroll_worker_type, user.pay_tracking_mode),
+    locale: user.locale === "ar" ? "ar" : "he",
+    deliveries_access: user.deliveries_access !== false,
+  };
+}
+
 const DEFAULT_WORKER_PRINT_FILTERS: WorkerPrintFilters = {
   projectId: "",
   // Empty = "all months / all years" (no filter applied).
@@ -267,10 +294,15 @@ export default function SalaryCenterClient({
   const [sessionMode, setSessionMode] = useState<"create" | "edit">("create");
   const [workerPaymentDialogOpen, setWorkerPaymentDialogOpen] = useState(false);
   const [workerPaymentForm, setWorkerPaymentForm] = useState<WorkerPaymentFormState>(DEFAULT_WORKER_PAYMENT_FORM);
+  // Pre-edit snapshot of the payment being edited (null in "create" mode) — lets
+  // an edit's undo resend the exact prior payment + allocations.
+  const [editingWorkerPaymentSnapshot, setEditingWorkerPaymentSnapshot] = useState<{
+    payment: WorkerPaymentRow;
+    allocations: { source_type: "session" | "payslip"; source_id: string; amount: number }[];
+  } | null>(null);
   const [workerPaymentAccountsList, setWorkerPaymentAccountsList] = useState<Account[]>([]);
   const [workerPaymentError, setWorkerPaymentError] = useState("");
   const [pendingDeletion, setPendingDeletion] = useState<PendingSalaryDeletion | null>(null);
-  const [locallyDeletedSessionIds, setLocallyDeletedSessionIds] = useState<string[]>([]);
   const [protectedData, setProtectedData] = useState<SalaryCenterProtectedPayload | null>(null);
   const [protectedError, setProtectedError] = useState("");
   const [loadingProtected, setLoadingProtected] = useState(false);
@@ -287,6 +319,9 @@ export default function SalaryCenterClient({
     deliveries_access: true,
   });
   const [agreementForm, setAgreementForm] = useState<AgreementFormState>(DEFAULT_AGREEMENT_FORM);
+  // Pre-edit snapshot of the agreement being edited (null when the dialog is in
+  // "create" mode) — lets an edit's undo resend the exact prior row.
+  const [editingAgreementSnapshot, setEditingAgreementSnapshot] = useState<SalaryAgreementRow | null>(null);
   const [overrideForm, setOverrideForm] = useState<OverrideFormState>(DEFAULT_OVERRIDE_FORM);
   const [periodMonth, setPeriodMonth] = useState(getCurrentMonthKey());
   const [selectedPeriodId, setSelectedPeriodId] = useState("");
@@ -402,13 +437,15 @@ export default function SalaryCenterClient({
   const selectedSalariedExportHref = `/api/payroll/salaried-hours-export?period_month=${encodeURIComponent(
     selectedPeriodForExport?.period_month ?? currentMonthKey
   )}`;
-  const agreements = useMemo(() => protectedData?.agreements ?? [], [protectedData]);
+  const rawAgreements = useMemo(() => protectedData?.agreements ?? [], [protectedData]);
+  const agreements = useUndoOverlay(rawAgreements, (agreement) => agreement.id, "salary-agreement");
   const payslips = useMemo(() => protectedData?.payslips ?? [], [protectedData]);
-  const payslipItems = useMemo(() => protectedData?.payslipItems ?? [], [protectedData]);
-  const visibleSessions = useMemo(
-    () => publicSessions.filter((session) => !locallyDeletedSessionIds.includes(session.id)),
-    [locallyDeletedSessionIds, publicSessions]
-  );
+  const rawPayslipItems = useMemo(() => protectedData?.payslipItems ?? [], [protectedData]);
+  // Bonuses use the same undo scope as generic payslip items — a bonus IS a
+  // payslip_items row (item_type = 'bonus'), just created/deleted via a
+  // different route (see saveBonus / the "bonus" pendingDeletion branch).
+  const payslipItems = useUndoOverlay(rawPayslipItems, (item) => item.id, "payslip-item");
+  const visibleSessions = useUndoOverlay(publicSessions, (session) => session.id, "payroll-session");
   const selectedSummaryMonthOptions = useMemo(() => {
     const months = new Set<string>();
     months.add(currentMonthKey);
@@ -500,7 +537,8 @@ export default function SalaryCenterClient({
         item.item_date <= selectedPayslipPeriod.end_date
     );
   }, [payslipItems, selectedPayslipPeriod]);
-  const workerAbsences = useMemo(() => protectedData?.workerAbsences ?? [], [protectedData]);
+  const rawWorkerAbsences = useMemo(() => protectedData?.workerAbsences ?? [], [protectedData]);
+  const workerAbsences = useUndoOverlay(rawWorkerAbsences, (absence) => absence.id, "worker-absence");
   // Effective per-session paid status (folds in payslip coverage), from the central
   // session_effective_payment_view. See db/sql/create_session_effective_payment_view.sql.
   const sessionEffectivePaymentBySessionId = useMemo(() => {
@@ -552,25 +590,22 @@ export default function SalaryCenterClient({
     workerBalancesByUserId,
     workerDebtItemsByUserId,
   ]);
-  useEffect(() => {
-    setLocallyDeletedSessionIds((current) =>
-      current.filter((sessionId) => publicSessions.some((session) => session.id === sessionId))
-    );
-  }, [publicSessions]);
+  const rawWorkerPayments = useMemo(() => protectedData?.workerPayments ?? [], [protectedData]);
+  const workerPayments = useUndoOverlay(rawWorkerPayments, (payment) => payment.id, "worker-payment");
   const workerPaymentsByUserId = useMemo(() => {
     const next = new Map<string, WorkerPaymentRow[]>();
-    (protectedData?.workerPayments ?? []).forEach((payment) => {
+    workerPayments.forEach((payment) => {
       const list = next.get(payment.user_id) ?? [];
       list.push(payment);
       next.set(payment.user_id, list);
     });
     return next;
-  }, [protectedData]);
+  }, [workerPayments]);
   const workerPaymentRecordedByNameById = protectedData?.workerPaymentRecordedByNameById ?? {};
   const sessionRecordedByNameById = protectedData?.sessionRecordedByNameById ?? {};
   const workerPaymentsById = useMemo(
-    () => new Map((protectedData?.workerPayments ?? []).map((payment) => [payment.id, payment])),
-    [protectedData]
+    () => new Map(workerPayments.map((payment) => [payment.id, payment])),
+    [workerPayments]
   );
   const workerPaymentAllocationsBySessionId = useMemo(() => {
     const next = new Map<string, WorkerPaymentAllocationRow[]>();
@@ -678,25 +713,7 @@ export default function SalaryCenterClient({
 
   useEffect(() => {
     if (!selectedWorker) return;
-    setWorkerForm({
-      full_name: selectedWorker.full_name ?? "",
-      email: selectedWorker.email ?? "",
-      phone: selectedWorker.phone ?? "",
-      role:
-        selectedWorker.role === "admin" ||
-        selectedWorker.role === "office" ||
-        selectedWorker.role === "worker_no_access"
-          ? selectedWorker.role
-          : "worker",
-      active: selectedWorker.active !== false,
-      system_access: selectedWorker.system_access !== false && selectedWorker.role !== "worker_no_access",
-      payroll_worker_type: normalizePayrollWorkerType(
-        selectedWorker.payroll_worker_type,
-        selectedWorker.pay_tracking_mode
-      ),
-      locale: selectedWorker.locale === "ar" ? "ar" : "he",
-      deliveries_access: selectedWorker.deliveries_access !== false,
-    });
+    setWorkerForm(workerFormFromUser(selectedWorker));
   }, [selectedWorker]);
 
   const filteredWorkers = useMemo(() => {
@@ -999,11 +1016,37 @@ export default function SalaryCenterClient({
     setPendingDeletion({ kind: "session", sessionId, workerLabel });
   }
 
+  /** Resends a worker-access snapshot through the same update route — used to
+   *  undo both a worker-access edit and a worker deactivation (which is really
+   *  the same route with active/system_access flipped off). */
+  async function applyWorkerAccessSnapshot(userId: string, snapshot: WorkerFormState) {
+    try {
+      await postJson("/api/payroll/workers/update", {
+        user_id: userId,
+        full_name: snapshot.full_name,
+        email: snapshot.email || null,
+        phone: snapshot.phone || null,
+        role: snapshot.role,
+        active: snapshot.active,
+        system_access: snapshot.role === "worker_no_access" ? false : snapshot.system_access,
+        payroll_worker_type: snapshot.payroll_worker_type,
+        locale: snapshot.locale,
+        deliveries_access: snapshot.deliveries_access,
+      });
+      await refreshAll({ reloadProtected: false });
+      return { ok: true as const };
+    } catch (undoError: unknown) {
+      return { ok: false as const, error: toHebrewError(undoError, "הביטול נכשל.") };
+    }
+  }
+
   function saveWorkerAccess() {
     if (!selectedWorker) return;
+    const workerId = selectedWorker.id;
+    const previousSnapshot = workerFormFromUser(selectedWorker);
     runAction(async () => {
       await postJson("/api/payroll/workers/update", {
-        user_id: selectedWorker.id,
+        user_id: workerId,
         full_name: workerForm.full_name,
         email: workerForm.email || null,
         phone: workerForm.phone || null,
@@ -1014,9 +1057,13 @@ export default function SalaryCenterClient({
         locale: workerForm.locale,
         deliveries_access: workerForm.deliveries_access,
       });
-      toast.success("פרטי הגישה עודכנו.");
       await refreshAll({ reloadProtected: false });
       setWorkerAccessDialogOpen(false);
+      registerReversibleAction({
+        key: `worker-access:edit:${workerId}`,
+        message: "פרטי הגישה עודכנו.",
+        onUndo: () => applyWorkerAccessSnapshot(workerId, previousSnapshot),
+      });
     });
   }
 
@@ -1043,20 +1090,83 @@ export default function SalaryCenterClient({
       toast.error("יש להזין יום תשלום תקין בין 1 ל-31.");
       return;
     }
+    const editingAgreementId = agreementForm.agreement_id;
+    const previousAgreement = editingAgreementId ? editingAgreementSnapshot : null;
     runAction(async () => {
-      await postJson("/api/payroll/salary-agreements", {
+      const result = (await postJson("/api/payroll/salary-agreements", {
         ...agreementForm,
         agreement_id: agreementForm.agreement_id || undefined,
         user_id: targetUserId,
-      });
+      })) as { agreement?: SalaryAgreementRow };
       setAgreementForm(DEFAULT_AGREEMENT_FORM);
+      setEditingAgreementSnapshot(null);
       setAgreementDialogOpen(false);
-      toast.success("הסכם השכר נשמר.");
       await refreshAll();
+
+      if (editingAgreementId && previousAgreement) {
+        // EDIT — undo resends the exact pre-edit row through the same route.
+        registerReversibleAction({
+          key: `salary-agreement:edit:${editingAgreementId}`,
+          message: "הסכם השכר נשמר.",
+          onUndo: async () => {
+            try {
+              await postJson("/api/payroll/salary-agreements", {
+                agreement_id: previousAgreement.id,
+                user_id: previousAgreement.user_id,
+                salary_type: previousAgreement.salary_type,
+                hourly_rate: previousAgreement.hourly_rate,
+                monthly_salary: previousAgreement.monthly_salary,
+                overtime_rate: previousAgreement.overtime_rate,
+                standard_daily_hours: previousAgreement.standard_daily_hours,
+                due_day_of_next_month: previousAgreement.due_day_of_next_month,
+                valid_from: previousAgreement.valid_from,
+                notes: previousAgreement.notes,
+                business_domain: previousAgreement.business_domain,
+                project_id: previousAgreement.project_id,
+                property_id: previousAgreement.property_id,
+                is_billable_to_customer: previousAgreement.is_billable_to_customer,
+                bill_to_customer_amount: previousAgreement.bill_to_customer_amount,
+              });
+            } catch (undoError: unknown) {
+              return { ok: false, error: toHebrewError(undoError, "הביטול נכשל.") };
+            }
+            await refreshAll();
+            return { ok: true };
+          },
+        });
+        return;
+      }
+
+      // CREATE — undo deletes the newly-created agreement via the existing
+      // "delete" action on this same route.
+      const newAgreementId = result.agreement?.id;
+      if (!newAgreementId) {
+        toast.success("הסכם השכר נשמר.");
+        return;
+      }
+      registerReversibleCreate({
+        scope: "salary-agreement",
+        id: newAgreementId,
+        message: "הסכם השכר נשמר.",
+        onUndo: async () => {
+          try {
+            await postJson("/api/payroll/salary-agreements", {
+              action: "delete",
+              agreement_id: newAgreementId,
+              user_id: targetUserId,
+            });
+          } catch (undoError: unknown) {
+            return { ok: false, error: toHebrewError(undoError, "הביטול נכשל.") };
+          }
+          await refreshAll();
+          return { ok: true };
+        },
+      });
     });
   }
 
   function openNewAgreementDialog(userId = "", currentAgreement?: SalaryAgreementRow | null) {
+    setEditingAgreementSnapshot(null);
     const targetWorker = userId ? usersById.get(userId) ?? null : selectedWorker;
     const targetWorkerType = targetWorker
       ? normalizePayrollWorkerType(targetWorker.payroll_worker_type, targetWorker.pay_tracking_mode)
@@ -1091,6 +1201,7 @@ export default function SalaryCenterClient({
   }
 
   function openEditAgreementDialog(agreement: SalaryAgreementRow) {
+    setEditingAgreementSnapshot(agreement);
     setAgreementForm({
       agreement_id: agreement.id,
       user_id: agreement.user_id,
@@ -1173,37 +1284,84 @@ export default function SalaryCenterClient({
   }
 
   function updatePayslip(payslipId: string) {
+    // Full pre-edit snapshot of the one field this actually changes — lets
+    // undo resend the exact prior value through the same route.
+    const previousManualAdjustments = payslipsById.get(payslipId)?.manual_adjustments ?? 0;
     runAction(async () => {
       await postJson("/api/payroll/payslips", {
         action: "update",
         payslip_id: payslipId,
         manual_adjustments: payslipAdjustmentDrafts[payslipId] ?? "0",
       });
-      toast.success("התלוש עודכן.");
       await refreshAll();
+      registerReversibleAction({
+        key: `payslip:edit:${payslipId}`,
+        message: "התלוש עודכן.",
+        onUndo: async () => {
+          try {
+            await postJson("/api/payroll/payslips", {
+              action: "update",
+              payslip_id: payslipId,
+              manual_adjustments: previousManualAdjustments,
+            });
+          } catch (undoError: unknown) {
+            return { ok: false, error: toHebrewError(undoError, "הביטול נכשל.") };
+          }
+          await refreshAll();
+          return { ok: true };
+        },
+      });
     });
   }
 
   function addPayslipItem() {
+    const payslipId = payslipItemForm.payslip_id;
     runAction(async () => {
-      await postJson("/api/payroll/payslip-items", payslipItemForm);
+      const result = (await postJson("/api/payroll/payslip-items", payslipItemForm)) as unknown as {
+        item?: { id?: string };
+      };
       setPayslipItemForm(DEFAULT_PAYSLIP_ITEM_FORM);
-      toast.success("פריט התלוש נוסף.");
       await refreshAll();
+      const newItemId = result.item?.id;
+      if (!newItemId) {
+        toast.success("פריט התלוש נוסף.");
+        return;
+      }
+      registerReversibleCreate({
+        scope: "payslip-item",
+        id: newItemId,
+        message: "פריט התלוש נוסף.",
+        onUndo: async () => {
+          const response = await fetch("/api/payroll/payslip-items", {
+            method: "DELETE",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ item_id: newItemId, payslip_id: payslipId }),
+          });
+          const json = (await response.json().catch(() => ({}))) as { error?: string };
+          if (!response.ok) return { ok: false, error: toHebrewError(json.error, "הביטול נכשל.") };
+          await refreshAll();
+          return { ok: true };
+        },
+      });
     });
   }
 
   function deletePayslipItem(itemId: string, payslipId: string) {
-    runAction(async () => {
-      const response = await fetch("/api/payroll/payslip-items", {
-        method: "DELETE",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ item_id: itemId, payslip_id: payslipId }),
-      });
-      const json = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) throw new Error(toHebrewError(json.error, "Request failed."));
-      toast.success("פריט התלוש נמחק.");
-      await refreshAll();
+    scheduleDeferredDelete({
+      scope: "payslip-item",
+      id: itemId,
+      message: "פריט התלוש נמחק.",
+      onCommit: async () => {
+        const response = await fetch("/api/payroll/payslip-items", {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ item_id: itemId, payslip_id: payslipId }),
+        });
+        const json = (await response.json().catch(() => ({}))) as { error?: string };
+        if (!response.ok) return { ok: false, error: toHebrewError(json.error, "המחיקה נכשלה.") };
+        await refreshAll();
+        return { ok: true };
+      },
     });
   }
 
@@ -1244,12 +1402,32 @@ export default function SalaryCenterClient({
           notes: bonusForm.notes,
         }),
       });
-      const json = (await response.json().catch(() => ({}))) as { error?: string };
+      const json = (await response.json().catch(() => ({}))) as { error?: string; item?: { id?: string } };
       if (!response.ok) throw new Error(toHebrewError(json.error, "שמירת הבונוס נכשלה."));
       setBonusDialogOpen(false);
       setBonusForm(DEFAULT_BONUS_FORM);
-      toast.success("הבונוס נוסף לתלוש של אותו חודש.");
       await refreshAll();
+      const newBonusId = json.item?.id;
+      if (!newBonusId) {
+        toast.success("הבונוס נוסף לתלוש של אותו חודש.");
+        return;
+      }
+      registerReversibleCreate({
+        scope: "payslip-item",
+        id: newBonusId,
+        message: "הבונוס נוסף לתלוש של אותו חודש.",
+        onUndo: async () => {
+          const undoResponse = await fetch("/api/payroll/bonuses", {
+            method: "DELETE",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ item_id: newBonusId }),
+          });
+          const undoJson = (await undoResponse.json().catch(() => ({}))) as { error?: string };
+          if (!undoResponse.ok) return { ok: false, error: toHebrewError(undoJson.error, "הביטול נכשל.") };
+          await refreshAll();
+          return { ok: true };
+        },
+      });
     });
   }
 
@@ -1327,6 +1505,7 @@ export default function SalaryCenterClient({
     }));
     const normalizedDefaultAmount = defaultAmount && defaultAmount > 0 ? String(defaultAmount) : "";
     setWorkerPaymentError("");
+    setEditingWorkerPaymentSnapshot(null);
     setWorkerPaymentForm({
       ...DEFAULT_WORKER_PAYMENT_FORM,
       user_id: userId,
@@ -1352,7 +1531,25 @@ export default function SalaryCenterClient({
   }
 
   function openEditWorkerPaymentDialog(payment: WorkerPaymentRow) {
-    const allocations = (workerPaymentAllocationsByPaymentId.get(payment.id) ?? [])
+    const existingAllocations = workerPaymentAllocationsByPaymentId.get(payment.id) ?? [];
+    setEditingWorkerPaymentSnapshot({
+      payment,
+      allocations: existingAllocations
+        .map((allocation) => {
+          const sourceId =
+            allocation.source_type === "session" ? allocation.attendance_session_id : allocation.payslip_id;
+          if (!sourceId) return null;
+          return {
+            source_type: allocation.source_type,
+            source_id: sourceId,
+            amount: toNumber(allocation.amount),
+          };
+        })
+        .filter((allocation): allocation is { source_type: "session" | "payslip"; source_id: string; amount: number } =>
+          Boolean(allocation)
+        ),
+    });
+    const allocations = existingAllocations
       .map((allocation) => {
         const sourceId =
           allocation.source_type === "session" ? allocation.attendance_session_id : allocation.payslip_id;
@@ -1462,14 +1659,17 @@ export default function SalaryCenterClient({
       return;
     }
 
+    const editingPaymentId = workerPaymentForm.payment_id;
+    const previousSnapshot = editingPaymentId ? editingWorkerPaymentSnapshot : null;
+    const editedUserId = workerPaymentForm.user_id;
     runAction(async () => {
       const path = "/api/payroll/worker-payments";
       const response = await fetch(path, {
-        method: workerPaymentForm.payment_id ? "PATCH" : "POST",
+        method: editingPaymentId ? "PATCH" : "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          payment_id: workerPaymentForm.payment_id || undefined,
-          user_id: workerPaymentForm.user_id,
+          payment_id: editingPaymentId || undefined,
+          user_id: editedUserId,
           payment_date: workerPaymentForm.payment_date,
           amount,
           payment_method: workerPaymentForm.payment_method.trim() || null,
@@ -1483,15 +1683,75 @@ export default function SalaryCenterClient({
           })),
         }),
       });
-      const json = (await response.json().catch(() => ({}))) as { error?: string };
+      const json = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        payment?: { id?: string };
+      };
       if (!response.ok) {
         throw new Error(toHebrewError(json.error, "Request failed."));
       }
       setWorkerPaymentDialogOpen(false);
       setWorkerPaymentForm(DEFAULT_WORKER_PAYMENT_FORM);
+      setEditingWorkerPaymentSnapshot(null);
       setWorkerPaymentError("");
-      toast.success(workerPaymentForm.payment_id ? "תשלום לעובד עודכן." : "תשלום לעובד נשמר.");
       await refreshAll();
+
+      if (editingPaymentId && previousSnapshot) {
+        // EDIT — undo resends the exact pre-edit payment + allocations
+        // through the same route (see EditWorkerPaymentDialog for the same
+        // pattern on the bank-register version of this edit).
+        registerReversibleAction({
+          key: `worker-payment:edit:${editingPaymentId}`,
+          message: "תשלום לעובד עודכן.",
+          onUndo: async () => {
+            const previousPayment = previousSnapshot.payment;
+            const undoResponse = await fetch("/api/payroll/worker-payments", {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                payment_id: editingPaymentId,
+                user_id: previousPayment.user_id,
+                payment_date: previousPayment.payment_date,
+                amount: toNumber(previousPayment.amount),
+                payment_method: previousPayment.payment_method,
+                account_id: previousPayment.account_id,
+                reference_number: previousPayment.reference_number,
+                notes: previousPayment.notes,
+                allocations: previousSnapshot.allocations,
+              }),
+            });
+            const undoJson = (await undoResponse.json().catch(() => ({}))) as { error?: string };
+            if (!undoResponse.ok) return { ok: false, error: toHebrewError(undoJson.error, "הביטול נכשל.") };
+            await refreshAll();
+            return { ok: true };
+          },
+        });
+        return;
+      }
+
+      // CREATE — undo deletes the newly-created payment via the existing
+      // delete route (same one deleteWorkerPayment uses).
+      const newPaymentId = json.payment?.id;
+      if (!newPaymentId) {
+        toast.success("תשלום לעובד נשמר.");
+        return;
+      }
+      registerReversibleCreate({
+        scope: "worker-payment",
+        id: newPaymentId,
+        message: "תשלום לעובד נשמר.",
+        onUndo: async () => {
+          const undoResponse = await fetch("/api/payroll/worker-payments", {
+            method: "DELETE",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ payment_id: newPaymentId, user_id: editedUserId }),
+          });
+          const undoJson = (await undoResponse.json().catch(() => ({}))) as { error?: string };
+          if (!undoResponse.ok) return { ok: false, error: toHebrewError(undoJson.error, "הביטול נכשל.") };
+          await refreshAll();
+          return { ok: true };
+        },
+      });
     });
   }
 
@@ -1508,95 +1768,150 @@ export default function SalaryCenterClient({
     const pending = pendingDeletion;
     if (!pending) return;
 
-    runAction(async () => {
-      if (pending.kind === "session") {
-        await postJson("/api/payroll/sessions/delete", { session_id: pending.sessionId });
-        setLocallyDeletedSessionIds((current) =>
-          current.includes(pending.sessionId) ? current : [...current, pending.sessionId]
-        );
-        if (sessionForm.session_id === pending.sessionId) {
-          setSessionDialogOpen(false);
-        }
-        toast.success("המשמרת נמחקה.");
-        setPendingDeletion(null);
-        await refreshAll();
-        return;
+    // Session/agreement/absence/bonus/payment deletes are DEFERRED: the row
+    // hides immediately via the matching useUndoOverlay scope, and the real
+    // delete call only fires ~6s later (in onCommit) unless undone — nothing
+    // reaches the server if the user hits "בטל". Worker deactivation stays
+    // commit-immediate below (it isn't a list-hide operation — see saveWorkerAccess).
+    if (pending.kind === "session") {
+      const sessionId = pending.sessionId;
+      setPendingDeletion(null);
+      if (sessionForm.session_id === sessionId) {
+        setSessionDialogOpen(false);
       }
+      scheduleDeferredDelete({
+        scope: "payroll-session",
+        id: sessionId,
+        message: "המשמרת נמחקה.",
+        onCommit: async () => {
+          try {
+            await postJson("/api/payroll/sessions/delete", { session_id: sessionId });
+          } catch (deleteError: unknown) {
+            return { ok: false, error: toHebrewError(deleteError, "המחיקה נכשלה.") };
+          }
+          await refreshAll();
+          return { ok: true };
+        },
+      });
+      return;
+    }
 
-      if (pending.kind === "worker") {
+    if (pending.kind === "agreement") {
+      const { agreementId, userId } = pending;
+      setPendingDeletion(null);
+      scheduleDeferredDelete({
+        scope: "salary-agreement",
+        id: agreementId,
+        message: "המשכורת נמחקה.",
+        onCommit: async () => {
+          try {
+            await postJson("/api/payroll/salary-agreements", {
+              action: "delete",
+              agreement_id: agreementId,
+              user_id: userId,
+            });
+          } catch (deleteError: unknown) {
+            return { ok: false, error: toHebrewError(deleteError, "המחיקה נכשלה.") };
+          }
+          await refreshAll();
+          return { ok: true };
+        },
+      });
+      return;
+    }
+
+    if (pending.kind === "absence") {
+      const absenceId = pending.absenceId;
+      setPendingDeletion(null);
+      scheduleDeferredDelete({
+        scope: "worker-absence",
+        id: absenceId,
+        message: "ההיעדרות נמחקה.",
+        onCommit: async () => {
+          const result = await deleteWorkerAbsence(absenceId);
+          if (!result.ok) return { ok: false, error: toHebrewError(result.error, "המחיקה נכשלה.") };
+          await refreshAll();
+          return { ok: true };
+        },
+      });
+      return;
+    }
+
+    if (pending.kind === "bonus") {
+      const bonusId = pending.bonusId;
+      setPendingDeletion(null);
+      scheduleDeferredDelete({
+        scope: "payslip-item",
+        id: bonusId,
+        message: "הבונוס נמחק.",
+        onCommit: async () => {
+          const response = await fetch("/api/payroll/bonuses", {
+            method: "DELETE",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ item_id: bonusId }),
+          });
+          const json = (await response.json().catch(() => ({}))) as { error?: string };
+          if (!response.ok) return { ok: false, error: toHebrewError(json.error, "המחיקה נכשלה.") };
+          await refreshAll();
+          return { ok: true };
+        },
+      });
+      return;
+    }
+
+    if (pending.kind === "worker") {
+      const workerId = pending.userId;
+      const worker = usersById.get(workerId) ?? null;
+      const previousSnapshot = worker ? workerFormFromUser(worker) : null;
+      runAction(async () => {
         await postJson("/api/payroll/workers/delete", {
-          user_id: pending.userId,
+          user_id: workerId,
         });
         setWorkerAccessDialogOpen(false);
         setSelectedWorkerId("");
-        toast.success("העובד הוסר מהרשימה הפעילה.");
         setPendingDeletion(null);
+        if (previousSnapshot) {
+          registerReversibleAction({
+            key: `worker-access:edit:${workerId}`,
+            message: "העובד הוסר מהרשימה הפעילה.",
+            onUndo: () => applyWorkerAccessSnapshot(workerId, previousSnapshot),
+          });
+        } else {
+          toast.success("העובד הוסר מהרשימה הפעילה.");
+        }
         if (isWorkerDetailMode) {
           router.push("/payroll");
           return;
         }
         await refreshAll();
-        return;
-      }
+      });
+      return;
+    }
 
-      if (pending.kind === "agreement") {
-        await postJson("/api/payroll/salary-agreements", {
-          action: "delete",
-          agreement_id: pending.agreementId,
-          user_id: pending.userId,
-        });
-        toast.success("המשכורת נמחקה.");
-        setPendingDeletion(null);
-        await refreshAll();
-        return;
-      }
-
-      if (pending.kind === "absence") {
-        if (!pending.absenceId) throw new Error("חסר מזהה היעדרות.");
-        const result = await deleteWorkerAbsence(pending.absenceId);
-        if (!result.ok) throw new Error(toHebrewError(result.error, "המחיקה נכשלה."));
-        toast.success("ההיעדרות נמחקה.");
-        setPendingDeletion(null);
-        await refreshAll();
-        return;
-      }
-
-      if (pending.kind === "bonus") {
-        const response = await fetch("/api/payroll/bonuses", {
+    // payment
+    const paymentId = pending.paymentId;
+    const userId = pending.userId;
+    if (workerPaymentForm.payment_id === paymentId) {
+      setWorkerPaymentDialogOpen(false);
+      setWorkerPaymentForm(DEFAULT_WORKER_PAYMENT_FORM);
+      setWorkerPaymentError("");
+    }
+    setPendingDeletion(null);
+    scheduleDeferredDelete({
+      scope: "worker-payment",
+      id: paymentId,
+      message: "תשלום לעובד נמחק.",
+      onCommit: async () => {
+        const response = await fetch("/api/payroll/worker-payments", {
           method: "DELETE",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ item_id: pending.bonusId }),
+          body: JSON.stringify({ payment_id: paymentId, user_id: userId }),
         });
         const json = (await response.json().catch(() => ({}))) as { error?: string };
-        if (!response.ok) throw new Error(toHebrewError(json.error, "המחיקה נכשלה."));
-        toast.success("הבונוס נמחק.");
-        setPendingDeletion(null);
+        if (!response.ok) return { ok: false, error: toHebrewError(json.error, "המחיקה נכשלה.") };
         await refreshAll();
-        return;
-      }
-
-      const response = await fetch("/api/payroll/worker-payments", {
-        method: "DELETE",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          payment_id: pending.paymentId,
-          user_id: pending.userId,
-        }),
-      });
-      const json = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) {
-        throw new Error(toHebrewError(json.error, "Request failed."));
-      }
-
-      if (workerPaymentForm.payment_id === pending.paymentId) {
-        setWorkerPaymentDialogOpen(false);
-        setWorkerPaymentForm(DEFAULT_WORKER_PAYMENT_FORM);
-        setWorkerPaymentError("");
-      }
-
-      toast.success("תשלום לעובד נמחק.");
-      setPendingDeletion(null);
-      await refreshAll();
+        return { ok: true };
+      },
     });
   }
 

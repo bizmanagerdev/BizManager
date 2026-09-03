@@ -18,6 +18,7 @@ import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
 import type { TaxToPay } from "@/lib/financial/taxes";
+import { registerReversibleCreate } from "@/lib/undo-engine";
 
 function formatIls(amount: number) {
   return new Intl.NumberFormat("he-IL", {
@@ -109,14 +110,36 @@ export default function TaxesClient({ data }: { data: TaxToPay }) {
           account_id: accountId || null,
         }),
       });
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      const json = (await res.json().catch(() => null)) as { error?: string; expense?: { id?: string } } | null;
       if (!res.ok) {
         toast.error(toHebrewError(json?.error, "רישום תשלום המס נכשל."));
         return;
       }
-      toast.success("תשלום המס נרשם");
       setOpen(false);
       router.refresh();
+      const expenseId = typeof json?.expense?.id === "string" ? json.expense.id : null;
+      if (expenseId) {
+        // Undo = a real reverse delete call, not a deferred commit — mirrors
+        // ExpenseDialog's create-undo (the create already went through).
+        registerReversibleCreate({
+          scope: "expense",
+          id: expenseId,
+          message: "תשלום המס נרשם",
+          onUndo: async () => {
+            const delRes = await fetch("/api/expenses/delete", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ id: expenseId }),
+            });
+            const delJson = await delRes.json().catch(() => ({}));
+            if (!delRes.ok) return { ok: false, error: toHebrewError(delJson?.error, "ביטול נכשל.") };
+            router.refresh();
+            return { ok: true };
+          },
+        });
+      } else {
+        toast.success("תשלום המס נרשם");
+      }
     } catch (e: unknown) {
       toast.error(toHebrewError(e, "רישום תשלום המס נכשל."));
     } finally {

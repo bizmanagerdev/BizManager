@@ -23,6 +23,37 @@ import { createProperty, updateProperty, deleteProperty } from "./actions";
 import { EMPTY_PROPERTY_FORM, propertyToForm, PropertyFormFields, type PropertyInput } from "./PropertyFormFields";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { invalidateQuickCreateCache } from "@/components/layout/QuickCreateMenu";
+import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import { scheduleDeferredDelete, scheduleDeferredEdit, registerReversibleCreate } from "@/lib/undo-engine";
+
+function numOrNullFromForm(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : null;
+}
+
+function buildPropertyPatch(input: PropertyInput) {
+  return {
+    name: input.name.trim() || null,
+    address: input.address.trim(),
+    assetDescription: input.asset_description.trim() || null,
+    isActive: input.is_active,
+    propertyType: input.property_type || null,
+    apartmentsCount: numOrNullFromForm(input.apartments_count),
+    rooms: numOrNullFromForm(input.rooms),
+    squareMeters: numOrNullFromForm(input.square_meters),
+    floor: numOrNullFromForm(input.floor),
+    bathrooms: numOrNullFromForm(input.bathrooms),
+    mezuzahCount: numOrNullFromForm(input.mezuzah_count),
+    lightBulbCount: numOrNullFromForm(input.light_bulb_count),
+    hasPrivateEntrance: input.has_private_entrance,
+    hasStorageRoom: input.has_storage_room,
+    hasParking: input.has_parking,
+    hasElevator: input.has_elevator,
+    isFurnished: input.is_furnished,
+  };
+}
 
 /** "3 חדרים · קומה 2 · 65 מ״ר · 2 חדרי רחצה" — only the parts that are set. */
 function factsLine(p: PropertyWithLease): string {
@@ -57,8 +88,9 @@ function amenityBadges(p: PropertyWithLease) {
   return items;
 }
 
-export default function PropertiesClient({ properties }: { properties: PropertyWithLease[] }) {
+export default function PropertiesClient({ properties: propertiesProp }: { properties: PropertyWithLease[] }) {
   const router = useRouter();
+  const properties = useUndoOverlay(propertiesProp, (p) => p.id, "property");
   const [pending, startTransition] = useTransition();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -86,31 +118,65 @@ export default function PropertiesClient({ properties }: { properties: PropertyW
       toast.error("יש להזין כתובת.");
       return;
     }
+    if (editId) {
+      const id = editId;
+      const snapshotForm = form;
+      setDialogOpen(false);
+      scheduleDeferredEdit({
+        scope: "property",
+        id,
+        message: "הנכס עודכן.",
+        patch: buildPropertyPatch(snapshotForm),
+        onCommit: async () => {
+          const result = await updateProperty(id, snapshotForm);
+          if (!result.ok) return { ok: false, error: result.error };
+          invalidateQuickCreateCache();
+          router.refresh();
+          return { ok: true };
+        },
+      });
+      return;
+    }
     startTransition(async () => {
-      const result = editId ? await updateProperty(editId, form) : await createProperty(form);
-      if (result.ok) {
-        toast.success(editId ? "הנכס עודכן." : "הנכס נוסף.");
-        setDialogOpen(false);
-        invalidateQuickCreateCache();
-        router.refresh();
-      } else {
+      const result = await createProperty(form);
+      if (!result.ok) {
         toast.error(result.error);
+        return;
       }
+      setDialogOpen(false);
+      invalidateQuickCreateCache();
+      router.refresh();
+      const newId = result.id;
+      if (!newId) return; // defensive — createProperty always returns an id on success
+      registerReversibleCreate({
+        scope: "property",
+        id: newId,
+        message: "הנכס נוסף.",
+        onUndo: async () => {
+          const del = await deleteProperty(newId);
+          invalidateQuickCreateCache();
+          router.refresh();
+          return del;
+        },
+      });
     });
   }
 
   function confirmDelete() {
     if (!deleteTarget) return;
-    startTransition(async () => {
-      const result = await deleteProperty(deleteTarget.id);
-      if (result.ok) {
-        toast.success("הנכס נמחק.");
-        setDeleteTarget(null);
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    scheduleDeferredDelete({
+      scope: "property",
+      id: target.id,
+      message: "הנכס נמחק.",
+      onCommit: async () => {
+        const result = await deleteProperty(target.id);
+        if (!result.ok) return { ok: false, error: result.error };
         invalidateQuickCreateCache();
         router.refresh();
-      } else {
-        toast.error(result.error);
-      }
+        return { ok: true };
+      },
     });
   }
 

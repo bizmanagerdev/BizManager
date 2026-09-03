@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
 import type { MorningLocalDocument } from "@/lib/morning/types";
+import { scheduleDeferredAction } from "@/lib/undo-engine";
 
 type IssueKind = "quote" | "invoice" | "receipt" | "invoice-receipt";
 
@@ -182,21 +183,29 @@ export default function MorningDocumentsPanel({
     }
   }
 
-  async function deleteDocument(localId: string) {
+  function deleteDocument(localId: string) {
     setPendingDeleteId(null);
-    setBusyKey(`delete:${localId}`);
-    try {
-      const response = await fetch(`/api/morning/documents/${localId}`, { method: "DELETE" });
-      const json = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) throw new Error(toHebrewError(json.error, "מחיקת מסמך Morning נכשלה."));
-      setDocs((current) => current.filter((item) => item.id !== localId));
-      toast.success("המסמך הוסר מ-BizH");
-      onChanged?.();
-    } catch (error) {
-      toast.error(toHebrewError(error, "מחיקת מסמך Morning נכשלה."));
-    } finally {
-      setBusyKey("");
-    }
+    const index = docs.findIndex((item) => item.id === localId);
+    const target = index !== -1 ? docs[index] : null;
+    scheduleDeferredAction({
+      key: `morning-document:delete:${localId}`,
+      message: "המסמך הוסר מ-BizH",
+      onApplyOptimistic: () => setDocs((current) => current.filter((item) => item.id !== localId)),
+      onRevert: () =>
+        setDocs((current) => {
+          if (!target || current.some((item) => item.id === localId)) return current;
+          const next = [...current];
+          next.splice(Math.min(index, next.length), 0, target);
+          return next;
+        }),
+      onCommit: async () => {
+        const response = await fetch(`/api/morning/documents/${localId}`, { method: "DELETE" });
+        const json = (await response.json().catch(() => ({}))) as { error?: string };
+        if (!response.ok) return { ok: false, error: toHebrewError(json.error, "מחיקת מסמך Morning נכשלה.") };
+        onChanged?.();
+        return { ok: true };
+      },
+    });
   }
 
   function startEdit(document: MorningLocalDocument) {
@@ -204,32 +213,40 @@ export default function MorningDocumentsPanel({
     setEditNotes(document.notes ?? "");
   }
 
-  async function saveEdit() {
+  function saveEdit() {
     if (!editing) return;
-    setBusyKey(`edit:${editing.id}`);
-    try {
-      const response = await fetch(`/api/morning/documents/${editing.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes: editNotes.trim() ? editNotes.trim() : null }),
-      });
-      const json = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        document?: MorningLocalDocument;
-      };
-      if (!response.ok) throw new Error(toHebrewError(json.error, "עדכון מסמך Morning נכשל."));
-      if (json.document) {
-        setDocs((current) => current.map((item) => (item.id === editing.id ? json.document! : item)));
-      }
-      toast.success("המסמך עודכן");
-      setEditing(null);
-      setEditNotes("");
-      onChanged?.();
-    } catch (error) {
-      toast.error(toHebrewError(error, "עדכון מסמך Morning נכשל."));
-    } finally {
-      setBusyKey("");
-    }
+    const target = editing;
+    const previousNotes = target.notes ?? null;
+    const nextNotes = editNotes.trim() ? editNotes.trim() : null;
+    setEditing(null);
+    setEditNotes("");
+    scheduleDeferredAction({
+      key: `morning-document:edit:${target.id}`,
+      message: "המסמך עודכן",
+      onApplyOptimistic: () =>
+        setDocs((current) => current.map((item) => (item.id === target.id ? { ...item, notes: nextNotes } : item))),
+      onRevert: () =>
+        setDocs((current) =>
+          current.map((item) => (item.id === target.id ? { ...item, notes: previousNotes } : item))
+        ),
+      onCommit: async () => {
+        const response = await fetch(`/api/morning/documents/${target.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ notes: nextNotes }),
+        });
+        const json = (await response.json().catch(() => ({}))) as {
+          error?: string;
+          document?: MorningLocalDocument;
+        };
+        if (!response.ok) return { ok: false, error: toHebrewError(json.error, "עדכון מסמך Morning נכשל.") };
+        if (json.document) {
+          setDocs((current) => current.map((item) => (item.id === target.id ? json.document! : item)));
+        }
+        onChanged?.();
+        return { ok: true };
+      },
+    });
   }
 
   async function closeDocument(localId: string) {
@@ -393,10 +410,8 @@ export default function MorningDocumentsPanel({
         title="עריכת הערה למסמך"
         description="ההערה נשמרת ב-BizH בלבד ולא מתעדכנת ב-Morning. שימושי לסימון פנימי."
         size="formMd"
-        onSubmit={() => void saveEdit()}
+        onSubmit={saveEdit}
         submitLabel="שמירה"
-        busyLabel="שומר..."
-        busy={editing !== null && busyKey === `edit:${editing.id}`}
       >
           <div className="relative">
             <Textarea
@@ -408,7 +423,6 @@ export default function MorningDocumentsPanel({
             />
             <DictateButton
               onTranscript={(text) => setEditNotes((prev) => appendDictatedText(prev, text))}
-              disabled={editing !== null && busyKey === `edit:${editing.id}`}
               className="absolute bottom-1 end-1 h-8 w-8"
             />
           </div>
@@ -423,9 +437,8 @@ export default function MorningDocumentsPanel({
         title="הסרת מסמך"
         description="המסמך יוסר מ-BizH בלבד. הוא ימשיך להתקיים ב-Morning ולא יבוטל שם."
         confirmLabel="הסרה"
-        loading={busyKey.startsWith("delete:")}
         onConfirm={() => {
-          if (pendingDeleteId) void deleteDocument(pendingDeleteId);
+          if (pendingDeleteId) deleteDocument(pendingDeleteId);
         }}
       />
     </div>

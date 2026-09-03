@@ -21,6 +21,8 @@ import { expiryStatus, type VehicleWithRollup } from "@/lib/vehicles";
 import AddReminderButton from "@/components/reminders/AddReminderButton";
 import { createVehicle, updateVehicle, deleteVehicle, type VehicleInput } from "./actions";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import { scheduleDeferredDelete, scheduleDeferredEdit, registerReversibleCreate } from "@/lib/undo-engine";
 
 const EMPTY_FORM: VehicleInput = {
   name: "",
@@ -50,6 +52,30 @@ function toForm(v: VehicleWithRollup): VehicleInput {
   };
 }
 
+/** Mirrors actions.ts's server-side deriveName, so the optimistic patch shown
+ *  during the undo grace window matches what the server will end up saving. */
+function deriveDisplayName(input: VehicleInput): string {
+  const explicit = input.name.trim();
+  if (explicit) return explicit;
+  const parts = [input.make_model.trim(), input.license_plate.trim()].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "רכב";
+}
+
+function buildVehiclePatch(input: VehicleInput) {
+  const yearNum = Number(input.year);
+  return {
+    name: deriveDisplayName(input),
+    licensePlate: input.license_plate.trim() || null,
+    makeModel: input.make_model.trim() || null,
+    year: Number.isInteger(yearNum) && yearNum >= 1900 && yearNum <= 2100 ? yearNum : null,
+    testDueDate: input.test_due_date.trim() || null,
+    insuranceDueDate: input.insurance_due_date.trim() || null,
+    licenseDueDate: input.license_due_date.trim() || null,
+    ownerName: input.owner_name.trim() || null,
+    notes: input.notes.trim() || null,
+  };
+}
+
 function ExpiryRow({ label, date }: { label: string; date: string | null }) {
   const status = expiryStatus(date);
   return (
@@ -67,8 +93,9 @@ function ExpiryRow({ label, date }: { label: string; date: string | null }) {
   );
 }
 
-export default function VehiclesClient({ vehicles }: { vehicles: VehicleWithRollup[] }) {
+export default function VehiclesClient({ vehicles: vehiclesProp }: { vehicles: VehicleWithRollup[] }) {
   const router = useRouter();
+  const vehicles = useUndoOverlay(vehiclesProp, (v) => v.tagId, "vehicle");
   const [pending, startTransition] = useTransition();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTagId, setEditTagId] = useState<string | null>(null);
@@ -96,29 +123,65 @@ export default function VehiclesClient({ vehicles }: { vehicles: VehicleWithRoll
       toast.error("יש להזין לפחות שם, דגם או מספר רישוי.");
       return;
     }
+    if (editTagId) {
+      const id = editTagId;
+      const snapshotForm = form;
+      setDialogOpen(false);
+      scheduleDeferredEdit({
+        scope: "vehicle",
+        id,
+        message: "הרכב עודכן.",
+        patch: buildVehiclePatch(snapshotForm),
+        onCommit: async () => {
+          const result = await updateVehicle(id, snapshotForm);
+          if (result.ok) {
+            router.refresh();
+            return { ok: true };
+          }
+          return { ok: false, error: result.error };
+        },
+      });
+      return;
+    }
     startTransition(async () => {
-      const result = editTagId ? await updateVehicle(editTagId, form) : await createVehicle(form);
-      if (result.ok) {
-        toast.success(editTagId ? "הרכב עודכן." : "הרכב נוסף.");
-        setDialogOpen(false);
-        router.refresh();
-      } else {
+      const result = await createVehicle(form);
+      if (!result.ok) {
         toast.error(result.error);
+        return;
       }
+      setDialogOpen(false);
+      router.refresh();
+      const newTagId = result.tagId;
+      if (!newTagId) return; // defensive — createVehicle always returns a tagId on success
+      registerReversibleCreate({
+        scope: "vehicle",
+        id: newTagId,
+        message: "הרכב נוסף.",
+        onUndo: async () => {
+          const del = await deleteVehicle(newTagId);
+          router.refresh();
+          return del;
+        },
+      });
     });
   }
 
   function confirmDelete() {
     if (!deleteTarget) return;
-    startTransition(async () => {
-      const result = await deleteVehicle(deleteTarget.tagId);
-      if (result.ok) {
-        toast.success("הרכב נמחק.");
-        setDeleteTarget(null);
-        router.refresh();
-      } else {
-        toast.error(result.error);
-      }
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    scheduleDeferredDelete({
+      scope: "vehicle",
+      id: target.tagId,
+      message: "הרכב נמחק.",
+      onCommit: async () => {
+        const result = await deleteVehicle(target.tagId);
+        if (result.ok) {
+          router.refresh();
+          return { ok: true };
+        }
+        return { ok: false, error: result.error };
+      },
     });
   }
 

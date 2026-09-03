@@ -8,6 +8,7 @@ import { AssigneeSelect } from "@/components/collections/AssigneeSelect";
 import { useAssignableUsers } from "@/hooks/useAssignableUsers";
 import { offlineFetch } from "@/lib/offline-queue";
 import { toHebrewError } from "@/lib/error-messages";
+import { registerReversibleCreate } from "@/lib/undo-engine";
 
 // Create a follow-up reminder attached to an order. Writes to the shared
 // `reminders` table (order_id set, category "order") via /api/reminders/create,
@@ -82,9 +83,28 @@ export default function OrderReminderDialog({
         setError(toHebrewError(result.error, "שמירה נכשלה."));
         return;
       }
-      toast.success("התזכורת נוספה.");
       onSaved?.();
       onOpenChange(false);
+      const newId = (result.data as { id?: string | null } | null)?.id;
+      if (!newId) {
+        toast.success("התזכורת נוספה.");
+      } else {
+        registerReversibleCreate({
+          scope: "reminder",
+          id: newId,
+          message: "התזכורת נוספה.",
+          onUndo: async () => {
+            const res = await fetch("/api/reminders/update", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: newId, status: "cancelled" }),
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "ביטול נכשל.") };
+            return { ok: true };
+          },
+        });
+      }
     } catch (err: unknown) {
       setError(toHebrewError(err, "שמירה נכשלה."));
     } finally {
