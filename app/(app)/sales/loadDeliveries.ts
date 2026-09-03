@@ -38,6 +38,9 @@ export type DeliveryItem = {
   paymentStatus: PaymentStatus;
   /** Driver collects the payment on delivery (orders.collect_payment_on_delivery). */
   collectOnDelivery: boolean;
+  /** The date the customer actually asked for (orders.requested_delivery_date) —
+   *  distinct from order_date/delivery_confirmed_at. Null when never set. */
+  requestedDeliveryDate: string | null;
   notes: string | null;
   customerName: string;
   /** Set only when the order is for a specific one of the customer's branches. */
@@ -124,6 +127,7 @@ export async function loadDeliveriesPage(
       totalPaid: 0,
       paymentStatus: "unpaid" as PaymentStatus,
       collectOnDelivery: false,
+      requestedDeliveryDate: null as string | null,
       notes: getString(row, "notes"),
       customerName: getString(row, "customer_name") ?? "לקוח",
       customerBranchName: getString(row, "customer_branch_name"),
@@ -216,21 +220,22 @@ export async function loadDeliveriesPage(
         }
       })(),
 
-      // Best-effort flag read straight from orders (the column only exists after
-      // db/sql/add_collect_payment_on_delivery.sql; on error everything stays false).
+      // Best-effort fields read straight from orders: collect_payment_on_delivery
+      // (the column only exists after db/sql/add_collect_payment_on_delivery.sql)
+      // and requested_delivery_date (the customer's own asked-for date). On error
+      // everything stays at its default (false / null).
       (async () => {
-        const { data: collectRows } = await supabase
+        const { data: orderRows } = await supabase
           .from("orders")
-          .select("id,collect_payment_on_delivery")
-          .in("id", orderIds)
-          .eq("collect_payment_on_delivery", true);
-        const collectIds = new Set(
-          ((collectRows ?? []) as Row[])
-            .map((row) => (typeof row.id === "string" ? row.id : ""))
-            .filter(Boolean)
+          .select("id,collect_payment_on_delivery,requested_delivery_date")
+          .in("id", orderIds);
+        const byId = new Map(
+          ((orderRows ?? []) as Row[]).map((row) => [getString(row, "id") ?? "", row])
         );
         for (const delivery of deliveries) {
-          delivery.collectOnDelivery = collectIds.has(delivery.id);
+          const row = byId.get(delivery.id);
+          delivery.collectOnDelivery = row?.collect_payment_on_delivery === true;
+          delivery.requestedDeliveryDate = row ? getString(row, "requested_delivery_date") : null;
         }
       })(),
 

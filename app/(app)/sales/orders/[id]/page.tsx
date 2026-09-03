@@ -10,6 +10,7 @@ import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { getEntityAuditTrail, getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import DeleteOrderButton from "@/app/(app)/sales/orders/[id]/DeleteOrderButton";
 import OrderRemindersSection from "@/app/(app)/sales/orders/[id]/OrderRemindersSection";
+import DeliveryImagesCard from "@/app/(app)/sales/orders/[id]/DeliveryImagesCard";
 import { SectionCard } from "@/components/ui/section-card";
 import LogCommunicationButton from "@/components/communications/LogCommunicationButton";
 import OrderPaymentDialog from "@/app/(app)/sales/orders/OrderPaymentDialog";
@@ -759,70 +760,19 @@ export default async function SalesOrderPage({
               />
             </div>
 
-            {/* Nothing to say until the delivery actually happens — an empty
-                "טרם אושרה" card is noise. It appears once there's a confirmation,
-                a photo, or the order is closed as delivered (where this card
-                carries the only way to add delivery photos). A cancelled order
-                was never delivered and never will be, so it gets no card. */}
-            {orderDeliveryConfirmedAt ||
-            deliveryImagesResolved.length > 0 ||
-            (!needsDeliveryAction && !orderIsCancelled) ? (
-            <SectionCard
-              icon={<DeliveryIcon className="h-4 w-4" />}
-              title="אספקה"
-              aside={
-                deliveryImagesResolved.length > 0 ? (
-                  <span className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-xs text-muted-foreground">
-                    {deliveryImagesResolved.length} תמונות
-                  </span>
-                ) : null
-              }
-            >
-              {/* Never contradict the status card: an order marked סופק WAS
-                  delivered — it just has no confirmation date, because the
-                  status was set directly instead of through אישור אספקה. */}
-              <div className="text-xs text-muted-foreground">
-                {orderDeliveryConfirmedAt
-                  ? `אספקה אושרה בתאריך ${formatDate(orderDeliveryConfirmedAt)}`
-                  : needsDeliveryAction
-                    ? "האספקה טרם אושרה."
-                    : `ההזמנה מסומנת כ"${getOrderStatusLabel(orderStatusValue)}" — לא נרשם תאריך אספקה.`}
-              </div>
-              {deliveryImagesResolved.length === 0 ? (
-                <p className="text-xs text-muted-foreground">לא צורפו תמונות אספקה.</p>
-              ) : (
-                <div className="grid grid-cols-2 gap-2">
-                  {deliveryImagesResolved.map((image) => (
-                    <a
-                      key={image.id}
-                      href={image.url ?? "#"}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="overflow-hidden rounded-xl border border-border/70 bg-background/70"
-                    >
-                      {image.url ? (
-                        <img
-                          src={image.url}
-                          alt={image.file_name ?? "Delivery image"}
-                          className="h-28 w-full object-cover"
-                        />
-                      ) : null}
-                      <div className="px-2 py-1 text-[10px] text-muted-foreground">
-                        {formatDate(image.uploaded_at)}
-                      </div>
-                    </a>
-                  ))}
-                </div>
-              )}
-              {!needsDeliveryAction ? (
-                <OrderConfirmDialog
-                  orderId={id}
-                  buttonLabel="אספקת הזמנה"
-                  buttonClassName={FULL_SECONDARY_TRIGGER_CLASSES}
-                  authorName={profile.full_name ?? profile.email ?? null}
-                />
-              ) : null}
-            </SectionCard>
+            {/* A cancelled order was never delivered and never will be, so it
+                gets no card. Otherwise the card always shows — it's the home
+                for managing delivery photos (add/replace/delete), not just a
+                post-delivery record. */}
+            {!orderIsCancelled ? (
+              <DeliveryImagesCard
+                orderId={id}
+                images={deliveryImagesResolved}
+                deliveryConfirmedAt={orderDeliveryConfirmedAt}
+                needsDeliveryAction={needsDeliveryAction}
+                orderStatus={orderStatusValue}
+                authorName={profile.full_name ?? profile.email ?? null}
+              />
             ) : null}
           </div>
 

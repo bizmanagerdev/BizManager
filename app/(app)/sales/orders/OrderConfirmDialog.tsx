@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BackspaceIcon, LocationIcon, SpinnerIcon } from "@/components/ui/icons";
+import { BackspaceIcon, LocationIcon, SpinnerIcon, WarningIcon } from "@/components/ui/icons";
 import * as Sentry from "@sentry/nextjs";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -28,7 +28,7 @@ import {
 } from "@/lib/orders/paymentStatus";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
-import { formatShortDate } from "@/lib/date";
+import { formatRelativeDateLabel, formatShortDate } from "@/lib/date";
 import { appendOrderComment, formatOrderCommentTimestamp } from "@/lib/orders/comments";
 
 type OrderItem = {
@@ -77,6 +77,9 @@ type EditPayload = {
     payment_status: string;
     discount_amount: number;
     notes: string;
+    /** The date the customer actually asked for — compared against the chosen
+     *  deliveryDate below so a mismatch can be flagged before confirming. */
+    requested_delivery_date: string | null;
     items: OrderItem[];
   };
   initialPayments: PaymentRow[];
@@ -998,13 +1001,34 @@ export default function OrderConfirmDialog({
             )}
           </div>
         );
-      case "deliveryDate":
+      case "deliveryDate": {
+        const requestedDate = data.initialOrder.requested_delivery_date;
+        const dateMismatch = Boolean(requestedDate && requestedDate !== deliveryDate);
         return (
-          <div className="mx-auto max-w-xs space-y-1">
-            <label className="text-sm font-medium">תאריך אספקה</label>
-            <DateInput value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} />
+          <div className="mx-auto max-w-xs space-y-2">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">תאריך אספקה</label>
+              <DateInput value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} />
+            </div>
+            {requestedDate ? (
+              <p className="text-xs text-muted-foreground">
+                תאריך למשלוח: <span className="font-medium text-foreground">{formatDate(requestedDate)}</span>
+                {" · "}
+                {formatRelativeDateLabel(requestedDate)}
+              </p>
+            ) : null}
+            {dateMismatch ? (
+              <p className="flex items-start gap-1.5 rounded-lg border border-warning/40 bg-warning-soft/60 p-2 text-xs text-warning-soft-foreground">
+                <WarningIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>
+                  זה לא התאריך למשלוח שהלקוח ביקש — {formatDate(requestedDate)} ({formatRelativeDateLabel(requestedDate)}) —
+                  אספקה בתאריך אחר עלולה להגיע בזמן שלא מתאים לו.
+                </span>
+              </p>
+            ) : null}
           </div>
         );
+      }
       case "images":
         return (
           <div className="space-y-4">

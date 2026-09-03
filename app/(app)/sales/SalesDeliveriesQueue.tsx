@@ -24,6 +24,7 @@ import {
 } from "@/lib/orders/prepayment";
 import { combinedCustomerName, type DeliveryItem, type DeliveryOrderItem } from "@/app/(app)/sales/loadDeliveries";
 import { pinFrom, wazeLinkForPin, type DeliveryPin } from "@/lib/delivery-location";
+import { dueUrgencyChipClass, formatShortDate, getDueUrgency } from "@/lib/date";
 import { DeliveryLocationDialog } from "@/components/orders/DeliveryLocationDialog";
 import { rowNavigateProps } from "@/lib/ui/row-navigation";
 import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
@@ -131,6 +132,24 @@ function formatCurrency(value: number | null) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+// The customer's own asked-for date, shown right on the queue card/row so a
+// driver never has to open the order to see it — and colored the same way
+// task due-dates are (red once it's already passed) so an overdue request
+// actually stands out instead of reading as a plain label.
+function RequestedDeliveryDateBadge({ date }: { date: string | null }) {
+  if (!date) return null;
+  const urgencyClass = dueUrgencyChipClass(getDueUrgency(date));
+  return (
+    <span
+      className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+        urgencyClass || "border-border bg-muted/40 text-muted-foreground"
+      }`}
+    >
+      תאריך למשלוח: {formatShortDate(date)}
+    </span>
+  );
 }
 
 export default function SalesDeliveriesQueue({
@@ -412,6 +431,7 @@ export default function SalesDeliveriesQueue({
                                 <div className="space-y-1">
                                   <div className="font-semibold">{formatCurrency(delivery.totalAmount)}</div>
                                   <div className="flex flex-wrap gap-1">
+                                    <RequestedDeliveryDateBadge date={delivery.requestedDeliveryDate} />
                                     {unpaidPrepayment ? (
                                       <span
                                         className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${prepaymentBadgeClasses}`}
@@ -643,6 +663,7 @@ export default function SalesDeliveriesQueue({
                                           <span className="text-sm font-bold">
                                             {formatCurrency(delivery.totalAmount)}
                                           </span>
+                                          <RequestedDeliveryDateBadge date={delivery.requestedDeliveryDate} />
                                           {/* Pay-ahead customer, still owing: do NOT hand over
                                               the goods before it's paid. */}
                                           {unpaidPrepayment ? (
