@@ -1328,14 +1328,9 @@ export default function FinancialPageClient({
             <TabsList variant="underline">
               <TabsTrigger value="history"><HistoryIcon className="h-4 w-4 shrink-0" />היסטוריה</TabsTrigger>
               <TabsTrigger value="ledger"><LedgerIcon className="h-4 w-4 shrink-0" />יומן מלא</TabsTrigger>
-              <TabsTrigger value="upcoming">
+              <TabsTrigger value="upcoming" count={upcomingCount > 0 ? upcomingCount : undefined}>
                 <ClockIcon className="h-4 w-4 shrink-0" />
                 תזרים עתידי
-                {upcomingCount > 0 ? (
-                  <span className="ms-2 inline-flex items-center rounded-full bg-foreground/10 px-1.5 text-[11px] font-semibold leading-5">
-                    {upcomingCount}
-                  </span>
-                ) : null}
               </TabsTrigger>
             </TabsList>
           </div>

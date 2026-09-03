@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  isDueSoon,
   daysSince,
   whatsappLink,
   severityTint,
@@ -14,6 +13,7 @@ import {
   filterAndSortDebtors,
   groupReminders,
   filterExpectedReceipts,
+  overdueAgingBreakdown,
 } from "@/app/(app)/collections/CollectionsClient.helpers";
 import type { CollectionCustomerGroup } from "@/lib/collections";
 import type { Reminder } from "@/lib/communications";
@@ -29,19 +29,24 @@ function makeSource(overrides: Partial<Source> = {}): Source {
     source_id: "o1",
     business_domain: "sales",
     pending_payments: [],
+    actionable_amount: 0,
     ...overrides,
   } as unknown as Source;
 }
 
 function makeGroup(overrides: Partial<CollectionCustomerGroup> = {}): CollectionCustomerGroup {
+  const outstanding = overrides.outstanding_amount ?? 0;
   return {
     customer_id: "c1",
     customer_name: "לקוח",
     customer_phone: null,
     customer_whatsapp: null,
-    outstanding_amount: 0,
+    outstanding_amount: outstanding,
     overdue_amount: 0,
     pending_amount: 0,
+    // Defaults to the outstanding amount (money due now) unless a test overrides
+    // it to exercise the "future-only, not actionable" case explicitly.
+    actionable_amount: outstanding,
     next_due_date: null,
     last_contact_at: null,
     oldest_days_late: 0,
@@ -52,14 +57,7 @@ function makeGroup(overrides: Partial<CollectionCustomerGroup> = {}): Collection
   } as unknown as CollectionCustomerGroup;
 }
 
-describe("isDueSoon / daysSince (deterministic with a fixed reference date)", () => {
-  const today = new Date("2024-05-01T00:00:00Z");
-  it("isDueSoon: within 14 days true, beyond false, null/invalid false", () => {
-    expect(isDueSoon("2024-05-10", today)).toBe(true);
-    expect(isDueSoon("2024-06-01", today)).toBe(false);
-    expect(isDueSoon(null, today)).toBe(false);
-    expect(isDueSoon("not-a-date", today)).toBe(false);
-  });
+describe("daysSince (deterministic with a fixed reference date)", () => {
   it("daysSince: counts whole days, floors future at 0, null for empty", () => {
     const now = new Date("2024-05-10T12:00:00Z");
     expect(daysSince("2024-05-01", now)).toBe(9);
@@ -89,6 +87,31 @@ describe("severityTint", () => {
     expect(severityTint(makeGroup({ aging: { d30: 0, d60: 0, d90: 0, d90plus: 5 } } as Partial<CollectionCustomerGroup>))).toBe("bg-destructive/5");
     expect(severityTint(makeGroup({ aging: { d30: 0, d60: 3, d90: 0, d90plus: 0 } } as Partial<CollectionCustomerGroup>))).toBe("bg-warning/5");
     expect(severityTint(makeGroup())).toBe("");
+  });
+});
+
+describe("overdueAgingBreakdown", () => {
+  it("returns one exact-days entry when every late source shares the same day count", () => {
+    const group = makeGroup({
+      sources: [makeSource({ overdue_amount: 3, days_late: 5 }), makeSource({ overdue_amount: 7, days_late: 5 })],
+    });
+    expect(overdueAgingBreakdown(group)).toEqual([{ daysLate: 5, amount: 10 }]);
+  });
+  it("splits by EXACT days late (not a bucket range) when the debt spans different ages — e.g. mostly 3 days late, a bit 34 days late", () => {
+    const group = makeGroup({
+      sources: [
+        makeSource({ source_id: "o1", overdue_amount: 48570, days_late: 3 }),
+        makeSource({ source_id: "o2", overdue_amount: 6077, days_late: 34 }),
+      ],
+    });
+    expect(overdueAgingBreakdown(group)).toEqual([
+      { daysLate: 34, amount: 6077 },
+      { daysLate: 3, amount: 48570 },
+    ]);
+  });
+  it("ignores sources with nothing overdue and returns an empty list when nothing is late", () => {
+    const group = makeGroup({ sources: [makeSource({ overdue_amount: 0, days_late: 0 })] });
+    expect(overdueAgingBreakdown(group)).toEqual([]);
   });
 });
 
@@ -126,6 +149,51 @@ describe("flattenExpectedReceipts", () => {
     const receipts = flattenExpectedReceipts(customers);
     expect(receipts.map((r) => r.paymentId)).toEqual(["p1", "p2"]); // loan skipped, sorted by due date
     expect(receipts[0].methodKey).toBe("bank_transfer");
+    expect(receipts.every((r) => r.isScheduled)).toBe(true);
+  });
+
+  it("adds an unscheduled row for money that's not yet due but has nothing registered", () => {
+    const customers = [
+      makeGroup({
+        customer_name: "ג",
+        sources: [
+          makeSource({
+            source_type: "order",
+            source_id: "o3",
+            collection_key: "order:o3",
+            pending_amount: 300,
+            due_date: "2024-07-01",
+            pending_payments: [pending("p3", "2024-06-15", "check")] as unknown as Source["pending_payments"],
+          }),
+        ],
+      }),
+    ];
+    const receipts = flattenExpectedReceipts(customers);
+    expect(receipts.map((r) => r.paymentId)).toEqual(["p3", "unscheduled:order:o3"]);
+    expect(receipts[1]).toMatchObject({
+      amount: 200, // pending_amount (300) minus the registered p3 (100)
+      dueDate: "2024-07-01",
+      methodKey: "unscheduled",
+      isScheduled: false,
+    });
+    expect(receipts[0].isScheduled).toBe(true);
+  });
+
+  it("adds no unscheduled row when registered payments already cover the whole pending amount", () => {
+    const customers = [
+      makeGroup({
+        sources: [
+          makeSource({
+            source_type: "order",
+            source_id: "o4",
+            collection_key: "order:o4",
+            pending_amount: 100,
+            pending_payments: [pending("p4", "2024-06-01", "check")] as unknown as Source["pending_payments"],
+          }),
+        ],
+      }),
+    ];
+    expect(flattenExpectedReceipts(customers).map((r) => r.paymentId)).toEqual(["p4"]);
   });
 });
 
@@ -161,11 +229,20 @@ describe("filterAndSortDebtors", () => {
   const a = makeGroup({ customer_id: "a", customer_name: "אבי", customer_phone: "050", outstanding_amount: 100, overdue_amount: 50, oldest_days_late: 5, next_due_date: "2024-05-20" });
   const b = makeGroup({ customer_id: "b", customer_name: "בני", outstanding_amount: 900, pending_amount: 30, oldest_days_late: 2, last_contact_at: "2024-04-01", next_due_date: "2024-05-10", sources: [makeSource({ business_domain: "logistics_projects" })] });
 
+  it("excludes a debtor whose whole balance is future/not-yet-due, even under filter=all", () => {
+    // e.g. a tenant with next month's rent already scheduled but nothing due now —
+    // outstanding_amount > 0 but actionable_amount is 0, so they don't belong in
+    // the action list at all (that money lives in תקבולים צפויים instead).
+    const futureOnly = makeGroup({
+      customer_id: "c",
+      customer_name: "גימל",
+      outstanding_amount: 500,
+      actionable_amount: 0,
+    });
+    expect(filterAndSortDebtors([a, b, futureOnly], base).map((g) => g.customer_id)).toEqual(["b", "a"]);
+  });
   it("filter=overdue keeps only debtors with overdue debt", () => {
     expect(filterAndSortDebtors([a, b], { ...base, filter: "overdue" }).map((g) => g.customer_id)).toEqual(["a"]);
-  });
-  it("filter=expected keeps only debtors with pending amount", () => {
-    expect(filterAndSortDebtors([a, b], { ...base, filter: "expected" }).map((g) => g.customer_id)).toEqual(["b"]);
   });
   it("filter=uncontacted excludes debtors with a last_contact_at", () => {
     expect(filterAndSortDebtors([a, b], { ...base, filter: "uncontacted" }).map((g) => g.customer_id)).toEqual(["a"]);

@@ -779,9 +779,9 @@ export default function ProjectsClient({
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <div className="hidden md:block">
           <TabsList variant="underline" className="justify-start">
-            <TabsTrigger value="quotes"><DocumentIcon className="h-4 w-4" />הצעות ({quoteCount})</TabsTrigger>
-            <TabsTrigger value="projects"><ProjectIcon className="h-4 w-4" />פרויקטים ({projectCount})</TabsTrigger>
-            <TabsTrigger value="closed"><SuccessIcon className="h-4 w-4" />סגורים ({closedCount})</TabsTrigger>
+            <TabsTrigger value="quotes" count={quoteCount}><DocumentIcon className="h-4 w-4" />הצעות</TabsTrigger>
+            <TabsTrigger value="projects" count={projectCount}><ProjectIcon className="h-4 w-4" />פרויקטים</TabsTrigger>
+            <TabsTrigger value="closed" count={closedCount}><SuccessIcon className="h-4 w-4" />סגורים</TabsTrigger>
           </TabsList>
         </div>
 
@@ -825,14 +825,14 @@ export default function ProjectsClient({
             above, so these tabs are the first thing under it — the requested order
             — without adding a third navy row to an already heavy header. */}
         <TabsList variant="underline" className="justify-start md:hidden">
-          <TabsTrigger value="quotes" className="!text-sm">
-            <DocumentIcon className="h-4 w-4" />הצעות ({quoteCount})
+          <TabsTrigger value="quotes" count={quoteCount} className="!text-sm">
+            <DocumentIcon className="h-4 w-4" />הצעות
           </TabsTrigger>
-          <TabsTrigger value="projects" className="!text-sm">
-            <ProjectIcon className="h-4 w-4" />פרויקטים ({projectCount})
+          <TabsTrigger value="projects" count={projectCount} className="!text-sm">
+            <ProjectIcon className="h-4 w-4" />פרויקטים
           </TabsTrigger>
-          <TabsTrigger value="closed" className="!text-sm">
-            <SuccessIcon className="h-4 w-4" />סגורים ({closedCount})
+          <TabsTrigger value="closed" count={closedCount} className="!text-sm">
+            <SuccessIcon className="h-4 w-4" />סגורים
           </TabsTrigger>
         </TabsList>
       </Tabs>

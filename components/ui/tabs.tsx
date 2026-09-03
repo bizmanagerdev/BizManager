@@ -27,6 +27,19 @@ const TRIGGER_CLASSES: Record<TabsVariant, string> = {
     "-mb-px inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-t-md border-b-[3px] border-transparent bg-transparent px-2 pb-2 pt-1 text-base font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 data-[state=active]:border-primary data-[state=active]:font-bold data-[state=active]:text-primary",
 };
 
+// A small rounded-pill count badge — e.g. "לקוחות [27]" instead of "לקוחות
+// (27)". Matches app/(app)/sales/SalesTabsNav.tsx's own count pill (that file
+// predates the shared underline variant and re-derives it by hand); this is
+// the one place it now lives, so every TabsTrigger count looks the same.
+// Colors invert per variant: "pill"'s active state already fills the whole
+// button with bg-primary, so its badge uses a translucent primary-foreground
+// tint there instead of literally bg-primary (which would just disappear).
+const COUNT_BADGE_CLASSES: Record<TabsVariant, string> = {
+  pill: "ms-1 inline-flex min-w-4 items-center justify-center rounded-full bg-background/60 px-1 text-[10px] font-semibold leading-4 text-muted-foreground group-data-[state=active]:bg-primary-foreground/20 group-data-[state=active]:text-primary-foreground",
+  underline:
+    "ms-1 inline-flex min-w-4 items-center justify-center rounded-full bg-muted px-1 text-[10px] font-semibold leading-4 text-muted-foreground group-data-[state=active]:bg-primary group-data-[state=active]:text-primary-foreground",
+};
+
 export const TabsList = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.List>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.List> & { variant?: TabsVariant }
@@ -44,15 +57,26 @@ TabsList.displayName = TabsPrimitive.List.displayName;
 
 export const TabsTrigger = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>
->(({ className, ...props }, ref) => {
+  React.ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger> & {
+    /** Shown as a rounded-pill badge after the label instead of "(N)" text.
+     *  Omit to show no badge at all — callers wanting a "hide at zero" rule
+     *  (e.g. an upcoming-items count) just pass `count={n > 0 ? n : undefined}`. */
+    count?: number;
+  }
+>(({ className, count, children, ...props }, ref) => {
   const variant = React.useContext(TabsVariantContext);
   return (
     <TabsPrimitive.Trigger
       ref={ref}
-      className={cn(TRIGGER_CLASSES[variant], className)}
+      // "group" so the count badge can react to THIS trigger's own
+      // data-state=active via group-data-[state=active]: (Radix sets that
+      // attribute on the trigger itself, not on any ancestor we control).
+      className={cn(TRIGGER_CLASSES[variant], "group", className)}
       {...props}
-    />
+    >
+      {children}
+      {count !== undefined ? <span className={COUNT_BADGE_CLASSES[variant]}>{count}</span> : null}
+    </TabsPrimitive.Trigger>
   );
 });
 TabsTrigger.displayName = TabsPrimitive.Trigger.displayName;

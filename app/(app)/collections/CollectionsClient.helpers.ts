@@ -11,7 +11,7 @@ import type { CollectionCustomerGroup } from "@/lib/collections";
 import type { Reminder } from "@/lib/communications";
 
 export type View = "debtors" | "reminders" | "activity";
-export type FilterKey = "all" | "overdue" | "due_soon" | "expected" | "uncontacted";
+export type FilterKey = "all" | "overdue" | "uncontacted";
 export type SortKey = "amount" | "oldest" | "name" | "due";
 
 export type ExpectedReceipt = {
@@ -27,6 +27,11 @@ export type ExpectedReceipt = {
   customerPhone: string | null;
   sourceType: "order" | "project";
   sourceId: string;
+  /** false = there's no actual payment record behind this row — it's the
+   *  not-yet-due remainder of a source with nothing registered yet (no check,
+   *  no scheduled transfer). Read-only: there's no payment id to mark
+   *  collected against. True for a real row from pending_payments. */
+  isScheduled: boolean;
 };
 
 // Method chips. Only those actually present in the data are shown (plus "הכל").
@@ -55,16 +60,6 @@ export function todayIso(today: Date = new Date()) {
   return today.toISOString().slice(0, 10);
 }
 
-/** Due within the next 14 days (inclusive of today's window). */
-export function isDueSoon(dateIso: string | null, today: Date = new Date()) {
-  if (!dateIso) return false;
-  const due = new Date(dateIso);
-  if (Number.isNaN(due.getTime())) return false;
-  const in14 = new Date(today);
-  in14.setDate(in14.getDate() + 14);
-  return due <= in14;
-}
-
 export function daysSince(dateIso: string | null, now: Date = new Date()): number | null {
   if (!dateIso) return null;
   const d = new Date(dateIso);
@@ -87,8 +82,30 @@ export function severityTint(group: CollectionCustomerGroup): string {
   return "";
 }
 
+export type OverdueByDays = { daysLate: number; amount: number };
+
+/** This customer's overdue money grouped by its EXACT days-late (not a
+ *  1-30/31-60/… bucket range — "1-30 יום" is still too vague to tell a 3-day
+ *  debt from a 29-day one apart). Empty when nothing is overdue, a single
+ *  entry when every late source shares the same day count (the common case,
+ *  where "X ימים באיחור" alone is accurate). More than one entry means the
+ *  debt genuinely spans different ages — e.g. one source 3 days late and
+ *  another 34 days late — so a single "34 ימים באיחור" headline would
+ *  misrepresent the money that's barely late as if all of it were that old.
+ *  Sorted oldest first. */
+export function overdueAgingBreakdown(group: CollectionCustomerGroup): OverdueByDays[] {
+  const byDays = new Map<number, number>();
+  for (const source of group.sources) {
+    if (!(source.overdue_amount > 0.009) || !(source.days_late > 0)) continue;
+    byDays.set(source.days_late, (byDays.get(source.days_late) ?? 0) + source.overdue_amount);
+  }
+  return Array.from(byDays, ([daysLate, amount]) => ({ daysLate, amount })).sort(
+    (a, b) => b.daysLate - a.daysLate
+  );
+}
+
 export function buildWaMessage(group: CollectionCustomerGroup): string {
-  return `שלום, נותרה יתרה לתשלום בסך ${formatCurrency(group.outstanding_amount)}. נשמח להסדרת התשלום. תודה!`;
+  return `שלום, נותרה יתרה לתשלום בסך ${formatCurrency(group.actionable_amount)}. נשמח להסדרת התשלום. תודה!`;
 }
 
 /** Does this debtor have an expected payment that's a check? (so: no cash to chase) */
@@ -96,16 +113,28 @@ export function groupHasPendingCheck(group: CollectionCustomerGroup): boolean {
   return group.sources.some((s) => s.pending_payments.some((p) => p.payment_method === "check"));
 }
 
-/** Flatten every customer's future-dated / uncleared receivables into one list,
- *  earliest due date first. Loans are repaid on the loans page, and rent (property)
- *  checks are managed on the property's own page — both are skipped (and both
- *  carry an empty pending_payments list anyway, so this loop never runs for them). */
+/** Flatten every customer's future-dated / not-yet-due receivables into one
+ *  list, earliest due date first. Loans are repaid on the loans page, and rent
+ *  (property) checks are managed on the property's own page — both are
+ *  skipped (and both carry an empty pending_payments list anyway, so this loop
+ *  never runs for them).
+ *
+ *  Two kinds of row: a REAL registered payment (a post-dated check, a
+ *  scheduled transfer — one per source.pending_payments entry), and an
+ *  UNSCHEDULED remainder — money that's genuinely not due yet but has nothing
+ *  registered at all (a brand-new order on שוטף+30 with no deposit logged).
+ *  Without the second kind, that money only ever showed up inside the totals
+ *  — it contributed to pending_amount but had no row anywhere naming whose it
+ *  was. `isScheduled: false` marks it so the UI can skip "סמן כנגבה" (there's
+ *  no payment id to mark collected) and label its method "לא נקבע". */
 export function flattenExpectedReceipts(customers: CollectionCustomerGroup[]): ExpectedReceipt[] {
   const out: ExpectedReceipt[] = [];
   for (const group of customers) {
     for (const source of group.sources) {
       if (source.source_type === "loan" || source.source_type === "property") continue;
+      let registeredTotal = 0;
       for (const p of source.pending_payments) {
+        registeredTotal += p.amount;
         out.push({
           paymentId: p.id,
           amount: p.amount,
@@ -119,6 +148,25 @@ export function flattenExpectedReceipts(customers: CollectionCustomerGroup[]): E
           customerPhone: group.customer_phone,
           sourceType: source.source_type,
           sourceId: source.source_id,
+          isScheduled: true,
+        });
+      }
+      const unscheduled = Math.max(source.pending_amount - registeredTotal, 0);
+      if (unscheduled > 0.009) {
+        out.push({
+          paymentId: `unscheduled:${source.collection_key}`,
+          amount: unscheduled,
+          dueDate: source.due_date ?? source.next_due_date,
+          methodKey: "unscheduled",
+          methodRaw: null,
+          checkNumber: null,
+          overdue: false,
+          customerId: group.customer_id,
+          customerName: group.customer_name,
+          customerPhone: group.customer_phone,
+          sourceType: source.source_type,
+          sourceId: source.source_id,
+          isScheduled: false,
         });
       }
     }
@@ -147,7 +195,7 @@ export function presentReceiptMethodChips(receipts: ExpectedReceipt[]) {
 }
 
 const VIEWS: View[] = ["debtors", "reminders", "activity"];
-const FILTERS: FilterKey[] = ["all", "overdue", "due_soon", "expected", "uncontacted"];
+const FILTERS: FilterKey[] = ["all", "overdue", "uncontacted"];
 
 /** Deep-link ?view= parsing; unknown values land on the call log. */
 export function parseInitialView(value: string | null | undefined): View {
@@ -159,19 +207,19 @@ export function parseInitialFilter(value: string | null | undefined): FilterKey 
   return FILTERS.includes(value as FilterKey) ? (value as FilterKey) : "all";
 }
 
-/** The חייבים worklist engine: filter by status/domain/search, then sort. */
+/** The חייבים worklist engine: an ACTION LIST of who owes money right now — a
+ *  customer whose whole balance is future/not-yet-due (post-dated checks, next
+ *  months' rent or loan installments) doesn't belong here at all, no matter which
+ *  status filter is picked; that money lives in the תקבולים צפויים sub-view
+ *  instead. Filters by status/domain/search within that, then sorts. */
 export function filterAndSortDebtors(
   customers: CollectionCustomerGroup[],
-  opts: { filter: FilterKey; search: string; domain: string; sort: SortKey; now?: Date }
+  opts: { filter: FilterKey; search: string; domain: string; sort: SortKey }
 ): CollectionCustomerGroup[] {
   const q = opts.search.trim().toLowerCase();
-  const today = opts.now ?? new Date();
   const list = customers.filter((c) => {
+    if (!(c.actionable_amount > 0.009)) return false;
     if (opts.filter === "overdue" && !(c.overdue_amount > 0.009)) return false;
-    if (opts.filter === "due_soon" && !(isDueSoon(c.next_due_date, today) || c.overdue_amount > 0.009)) {
-      return false;
-    }
-    if (opts.filter === "expected" && !(c.pending_amount > 0.009)) return false;
     if (opts.filter === "uncontacted" && c.last_contact_at) return false;
     if (opts.domain !== "all" && !c.sources.some((s) => s.business_domain === opts.domain)) return false;
     if (q) {
@@ -184,7 +232,7 @@ export function filterAndSortDebtors(
   switch (opts.sort) {
     case "oldest":
       sorted.sort(
-        (a, b) => b.oldest_days_late - a.oldest_days_late || b.outstanding_amount - a.outstanding_amount
+        (a, b) => b.oldest_days_late - a.oldest_days_late || b.actionable_amount - a.actionable_amount
       );
       break;
     case "name":
@@ -194,7 +242,7 @@ export function filterAndSortDebtors(
       sorted.sort((a, b) => (a.next_due_date ?? "9999").localeCompare(b.next_due_date ?? "9999"));
       break;
     default:
-      sorted.sort((a, b) => b.outstanding_amount - a.outstanding_amount);
+      sorted.sort((a, b) => b.actionable_amount - a.actionable_amount);
   }
   return sorted;
 }

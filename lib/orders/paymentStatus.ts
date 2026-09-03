@@ -302,6 +302,12 @@ function getCollectionStatusColor(status: string): StatusColor {
       return "warning";
     case "overdue":
       return "danger";
+    // "unpaid" reads amber, not red: it just means nothing is registered yet
+    // (often a brand-new immediate-terms order, not necessarily late by any
+    // measurable number of days). Sharing red with "overdue" made the two
+    // impossible to tell apart at a glance in a mixed list.
+    case "unpaid":
+      return "warning";
     default:
       return "danger";
   }

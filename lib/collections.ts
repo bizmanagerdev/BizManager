@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchAllPaged } from "@/lib/supabase/paginate";
 import { getCollectionActivityByCustomer } from "@/lib/communications";
-import { fetchLoans } from "@/lib/loans";
+import { fetchLoans, overdueInstallments } from "@/lib/loans";
 
 // Data for the גבייה (collections) worklist. Reads collections_view — one row per
 // open receivable source (order / project) that still has money not yet collected
@@ -33,6 +33,11 @@ export type CollectionSourceRow = {
   pending_amount: number;
   overdue_amount: number;
   outstanding_amount: number;
+  /** Money actually due NOW (outstanding minus the not-yet-due/future portion) —
+   *  the figure the חייבים action list filters and displays on. Excludes future-
+   *  scheduled installments (post-dated checks, next months' rent/loan payments,
+   *  שוטף+N money not yet due) even though those are still part of outstanding_amount. */
+  actionable_amount: number;
   next_due_date: string | null;
   last_payment_date: string | null;
   /** Effective due date from the order/project payment term (or manual override). */
@@ -67,6 +72,10 @@ export type CollectionCustomerGroup = {
   outstanding_amount: number;
   pending_amount: number;
   overdue_amount: number;
+  /** Sum of sources' actionable_amount — what this customer owes NOW, excluding
+   *  not-yet-due future money. Drives the חייבים action list (who's in it, and
+   *  the "total debt" figure shown). */
+  actionable_amount: number;
   next_due_date: string | null;
   sources: CollectionSourceRow[];
   /** Worst status across this customer's sources, for sorting/coloring. */
@@ -87,6 +96,10 @@ export type CollectionsData = {
     outstanding: number;
     pending: number;
     overdue: number;
+    /** Sum of every customer's actionable_amount. */
+    actionable: number;
+    /** Count of customers with actionable_amount > 0 — who's actually in the
+     *  action list, not everyone who has any debt (incl. purely-future). */
     customerCount: number;
   };
   loadError: string | null;
@@ -412,14 +425,26 @@ async function buildLoanSourceRows(
   return open.map((loan) => {
     const cust = loan.counterparty_customer_id ? customerById.get(loan.counterparty_customer_id) : null;
     const name = cust?.name || loan.borrower || "הלוואה";
+    // Installment-aware, same rule as rent: a planned installment already past its
+    // due date is overdue; the rest of the plan (plus any un-planned remainder,
+    // via the loan's own due_date) is expected/future — not "due now". Before
+    // this, a loan repaid via a monthly installment plan compared its ENTIRE
+    // outstanding balance against one loan-level due_date, so months of
+    // not-yet-due installments could all read as overdue (or vice versa).
+    const overdueList = overdueInstallments(loan, today);
+    const overdueAmount = overdueList.reduce(
+      (sum, r) => sum + Math.max(r.amount - r.interest_amount, 0),
+      0
+    );
     const sm = computeSourceCollection({
       total: loan.amount,
       collected: loan.repaidPrincipal,
-      pending: 0,
-      overdue: 0,
+      pending: loan.scheduledPrincipal,
+      overdue: overdueAmount,
       outstanding: loan.outstanding,
-      nextDueDate: loan.due_date,
-      // No due-date fallback for loans — an undated loan isn't automatically late.
+      nextDueDate: overdueList[0]?.repayment_date ?? loan.due_date,
+      // No reference-date fallback for loans — an undated, unscheduled loan isn't
+      // automatically late.
       referenceDate: null,
       dueDate: loan.due_date,
       today,
@@ -439,6 +464,7 @@ async function buildLoanSourceRows(
       pending_amount: sm.expected,
       overdue_amount: sm.late,
       outstanding_amount: loan.outstanding,
+      actionable_amount: Math.max(loan.outstanding - sm.expected, 0),
       next_due_date: loan.due_date,
       last_payment_date: null,
       due_date: loan.due_date,
@@ -571,6 +597,7 @@ async function buildRentSourceRows(supabase: SupabaseClient, today: string): Pro
       pending_amount: sm.expected,
       overdue_amount: sm.late,
       outstanding_amount: outstanding,
+      actionable_amount: Math.max(outstanding - sm.expected, 0),
       next_due_date: agg.nextDueDate,
       last_payment_date: null,
       due_date: agg.nextDueDate,
@@ -601,7 +628,7 @@ export async function getCollectionsData(supabase: SupabaseClient): Promise<Coll
     return {
       rows: [],
       customers: [],
-      totals: { outstanding: 0, pending: 0, overdue: 0, customerCount: 0 },
+      totals: { outstanding: 0, pending: 0, overdue: 0, actionable: 0, customerCount: 0 },
       loadError: error instanceof Error ? error.message : "load failed",
     };
   }
@@ -659,6 +686,7 @@ export async function getCollectionsData(supabase: SupabaseClient): Promise<Coll
       pending_amount: sm.expected,
       overdue_amount: sm.late,
       outstanding_amount: outstanding,
+      actionable_amount: Math.max(outstanding - sm.expected, 0),
       next_due_date: nextDueDate,
       last_payment_date: str(row, "last_payment_date"),
       due_date: dueDate,
@@ -700,6 +728,7 @@ export async function getCollectionsData(supabase: SupabaseClient): Promise<Coll
         outstanding_amount: 0,
         pending_amount: 0,
         overdue_amount: 0,
+        actionable_amount: 0,
         next_due_date: null,
         sources: [],
         status: row.collection_status,
@@ -713,6 +742,7 @@ export async function getCollectionsData(supabase: SupabaseClient): Promise<Coll
     group.outstanding_amount += row.outstanding_amount;
     group.pending_amount += row.pending_amount;
     group.overdue_amount += row.overdue_amount;
+    group.actionable_amount += row.actionable_amount;
     group.sources.push(row);
     if (row.next_due_date && (!group.next_due_date || row.next_due_date < group.next_due_date)) {
       group.next_due_date = row.next_due_date;
@@ -757,9 +787,18 @@ export async function getCollectionsData(supabase: SupabaseClient): Promise<Coll
       acc.outstanding += group.outstanding_amount;
       acc.pending += group.pending_amount;
       acc.overdue += group.overdue_amount;
+      acc.actionable += group.actionable_amount;
       return acc;
     },
-    { outstanding: 0, pending: 0, overdue: 0, customerCount: customers.length }
+    {
+      outstanding: 0,
+      pending: 0,
+      overdue: 0,
+      actionable: 0,
+      // Who's actually in the action list — not everyone who has any debt,
+      // including customers whose whole balance is future/not-yet-due.
+      customerCount: customers.filter((c) => c.actionable_amount > 0.009).length,
+    }
   );
 
   return { rows, customers, totals, loadError: null };
@@ -838,6 +877,7 @@ export async function getCustomerReceivables(
       pending_amount: sm.expected,
       overdue_amount: sm.late,
       outstanding_amount: outstanding,
+      actionable_amount: Math.max(outstanding - sm.expected, 0),
       next_due_date: nextDueDate,
       last_payment_date: null,
       due_date: dueDate,

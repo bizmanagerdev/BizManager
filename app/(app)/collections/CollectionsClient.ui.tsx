@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { ChatIcon, ChevronDownIcon, PhoneIcon, ReminderIcon, WarningIcon } from "@/components/ui/icons";
+import { ChatIcon, ChevronDownIcon, CloseIcon, CoinsIcon, FilterIcon, PhoneIcon, ReminderIcon, UsersIcon, WarningIcon } from "@/components/ui/icons";
 import type { IconComponent } from "@/components/ui/icons";
 import { NavLink } from "@/components/NavLink";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,8 @@ import { Input } from "@/components/ui/input";
 import { DateInput } from "@/components/ui/date-input";
 import { clickableRowProps } from "@/lib/ui/row-navigation";
 import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
+import { SwipeActions, type SwipeAction } from "@/components/ui/swipe-actions";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import {
   collectionStatusClasses,
@@ -43,6 +45,7 @@ import {
   formatDate,
   groupHasPendingCheck,
   groupReminders,
+  overdueAgingBreakdown,
   presentReceiptMethodChips,
   severityTint,
   todayIso,
@@ -54,16 +57,52 @@ import {
 
 // "Who haven't I chased" signal. The never-contacted warning shows only when the
 // customer actually has overdue debt (no point flagging a not-yet-due customer).
-function LastContactSignal({ lastContactAt, overdue }: { lastContactAt: string | null; overdue: boolean }) {
+function LastContactSignal({
+  lastContactAt,
+  overdue,
+  compact = false,
+}: {
+  lastContactAt: string | null;
+  overdue: boolean;
+  /** Bare date, no "נוצר קשר" prefix — for the desktop table, where the
+   *  "יצירת קשר" column header already says what this date means. */
+  compact?: boolean;
+}) {
   if (!lastContactAt) {
     if (!overdue) return <span className="text-muted-foreground/40">—</span>;
     return <span className="text-[11px] font-medium text-warning-strong"><WarningIcon className="inline h-3 w-3 align-text-bottom" /> טרם נוצר קשר</span>;
   }
   const days = daysSince(lastContactAt);
-  const label = days === 0 ? "היום" : formatDate(lastContactAt);
+  const label = compact
+    ? days === 0
+      ? "היום"
+      : formatDate(lastContactAt)
+    : days === 0
+      ? "נוצר קשר היום"
+      : `נוצר קשר ב: ${formatDate(lastContactAt)}`;
   const stale = (days ?? 0) >= 7;
   return (
     <span className={`text-xs ${stale ? "text-warning-strong" : "text-muted-foreground"}`}>{label}</span>
+  );
+}
+
+// "X ימים באיחור" is only accurate when every late source is exactly that
+// many days late. A customer with one debt 3 days late and another 34 days
+// late would otherwise headline as "34 ימים באיחור" against their WHOLE
+// balance — reading as if all of it were that old. Falls back to the plain
+// single line in the common case (every late source shares one exact count).
+function DaysLateSummary({ group, className }: { group: CollectionCustomerGroup; className: string }) {
+  if (!(group.oldest_days_late > 0)) return null;
+  const breakdown = overdueAgingBreakdown(group);
+  if (breakdown.length <= 1) {
+    return <div className={className}>{group.oldest_days_late} ימים באיחור</div>;
+  }
+  return (
+    <div className={`${className} space-y-0.5`}>
+      {breakdown.map((b) => (
+        <div key={b.daysLate}>{formatCurrency(b.amount)} · {b.daysLate} ימים באיחור</div>
+      ))}
+    </div>
   );
 }
 
@@ -295,26 +334,18 @@ function LoanRepaymentLink({ loanId }: { loanId: string }) {
   );
 }
 
+// Desktop-only now — the mobile card exposes the same two actions via a
+// side-swipe strip instead (see CustomerCard). Calling is no longer a
+// separate icon anywhere; the phone number itself is the tap target.
 function CustomerActions({
   group,
   wa,
-  withCall = false,
 }: {
   group: CollectionCustomerGroup;
   wa: string | null;
-  withCall?: boolean;
 }) {
   return (
     <div className="flex items-center gap-1">
-      {withCall && group.customer_phone ? (
-        <a
-          href={`tel:${group.customer_phone}`}
-          title="התקשרות"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input hover:bg-muted"
-        >
-          <PhoneIcon className="h-4 w-4" />
-        </a>
-      ) : null}
       {wa ? (
         <a
           href={wa}
@@ -344,18 +375,23 @@ function CustomerActions({
 function SourceDetail({ source }: { source: CollectionCustomerGroup["sources"][number] }) {
   const isOrder = source.source_type === "order";
   const isLoan = source.source_type === "loan";
+  const isProperty = source.source_type === "property";
   const href = isLoan
     ? `/financial/loans/${source.source_id}`
     : isOrder
       ? `/sales/orders/${source.source_id}`
-      : `/projects/${source.source_id}`;
+      : isProperty
+        ? `/properties/${source.source_id}`
+        : `/projects/${source.source_id}`;
   const linkText = isLoan
     ? source.title
       ? `הלוואה — ${source.title}`
       : "הלוואה"
     : isOrder
       ? `הזמנה #${source.source_id.slice(0, 8)}`
-      : source.title ?? `פרויקט #${source.source_id.slice(0, 8)}`;
+      : isProperty
+        ? (source.title ?? "נכס")
+        : (source.title ?? `פרויקט #${source.source_id.slice(0, 8)}`);
   const pendingIds = source.pending_payments.map((p) => p.id);
   const checkPayment = source.pending_payments.find((p) => p.payment_method === "check");
   const methods = Array.from(
@@ -381,7 +417,7 @@ function SourceDetail({ source }: { source: CollectionCustomerGroup["sources"][n
           </Badge>
         ) : null}
         <span className="text-muted-foreground">תאריך: {formatDate(source.reference_date)}</span>
-        <span className="font-semibold text-foreground">{formatCurrency(source.outstanding_amount)}</span>
+        <span className="font-semibold text-foreground">{formatCurrency(source.actionable_amount)}</span>
         {source.payment_terms ? (
           <span className="text-muted-foreground">צורת תשלום: {paymentTermsLabel(source.payment_terms)}</span>
         ) : null}
@@ -429,7 +465,37 @@ function CustomerCard({
   onOpenReminders: (customerId: string | null) => void;
 }) {
   const tint = severityTint(group);
-  return (
+  const [swipeOpen, setSwipeOpen] = useState(false);
+
+  // Same two actions as the desktop row, revealed by a side-swipe instead of
+  // inline buttons — calling isn't one of them, since the phone number itself
+  // (below) is now the tap target for that.
+  const actions: SwipeAction[] = [];
+  if (wa) {
+    actions.push({
+      key: "whatsapp",
+      label: "וואטסאפ",
+      icon: <ChatIcon className="h-5 w-5" />,
+      className: "bg-success",
+      onSelect: () => window.open(wa, "_blank", "noopener,noreferrer"),
+    });
+  }
+  if (group.customer_id) {
+    actions.push({
+      key: "track",
+      node: (
+        <CustomerCollectionButton
+          customerId={group.customer_id}
+          customerName={group.customer_name}
+          customerPhone={group.customer_phone}
+          label="מעקב"
+          refreshOnClose
+        />
+      ),
+    });
+  }
+
+  const card = (
     <div className={`rounded-2xl border border-border/70 p-3 ${tint}`}>
       <div className="flex items-start gap-2">
         {onToggleSelect ? (
@@ -451,7 +517,6 @@ function CustomerCard({
                 className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
               />
               <span className="font-semibold">{group.customer_name}</span>
-              <Badge className={collectionStatusClasses(group.status)}>{collectionStatusLabel(group.status)}</Badge>
               {groupHasPendingCheck(group) ? (
                 <Badge variant="info" className="gap-1 text-[10px]">צ׳ק</Badge>
               ) : null}
@@ -465,40 +530,50 @@ function CustomerCard({
                 <PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}{group.customer_phone}
               </ContactTapZone>
             ) : null}
-            {group.oldest_days_late > 0 ? (
-              <div className="text-xs text-destructive">{group.oldest_days_late} ימים באיחור</div>
-            ) : null}
             <div className="mt-0.5">
               <LastContactSignal
                 lastContactAt={group.last_contact_at}
                 overdue={group.overdue_amount > 0.009}
               />
             </div>
+            {group.next_reminder_at ? (
+              <button
+                type="button"
+                onClick={() => onOpenReminders(group.customer_id)}
+                title="מעבר לתזכורת"
+                className="mt-0.5 block text-xs text-primary hover:underline"
+              >
+                <ReminderIcon className="inline h-3 w-3 align-text-bottom" />{" "}תזכורת {formatDate(group.next_reminder_at)}
+              </button>
+            ) : null}
           </div>
-          <div className="shrink-0 text-lg font-semibold">{formatCurrency(group.outstanding_amount)}</div>
+          {/* Price + payment status stacked together on the left — days-late
+              rides right under the status badge it explains. */}
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <div className="text-lg font-semibold">{formatCurrency(group.actionable_amount)}</div>
+            <Badge className={collectionStatusClasses(group.status)}>{collectionStatusLabel(group.status)}</Badge>
+            <DaysLateSummary group={group} className="text-xs text-destructive" />
+          </div>
         </div>
-      </div>
-      <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-border/50 pt-2">
-        <CustomerActions group={group} wa={wa} withCall />
-        {group.next_reminder_at ? (
-          <button
-            type="button"
-            onClick={() => onOpenReminders(group.customer_id)}
-            title="מעבר לתזכורת"
-            className="ms-auto text-xs text-primary hover:underline"
-          >
-            <ReminderIcon className="inline h-3 w-3 align-text-bottom" />{" "}תזכורת {formatDate(group.next_reminder_at)}
-          </button>
-        ) : null}
       </div>
       {isOpen ? (
         <div className="mt-2 space-y-2 border-t border-border/50 pt-2">
-          {group.sources.map((source) => (
-            <SourceDetail key={source.collection_key} source={source} />
-          ))}
+          {group.sources
+            .filter((source) => source.actionable_amount > 0.009)
+            .map((source) => (
+              <SourceDetail key={source.collection_key} source={source} />
+            ))}
         </div>
       ) : null}
     </div>
+  );
+
+  if (actions.length === 0) return card;
+
+  return (
+    <SwipeActions open={swipeOpen} onOpenChange={setSwipeOpen} actions={actions}>
+      {card}
+    </SwipeActions>
   );
 }
 
@@ -506,16 +581,101 @@ function CustomerCard({
 // A flat, payment-centric view of every future-dated / uncleared receivable.
 
 function ExpectedReceiptRow({ receipt }: { receipt: ExpectedReceipt }) {
+  const [swipeOpen, setSwipeOpen] = useState(false);
   const href =
     receipt.sourceType === "order"
       ? `/sales/orders/${receipt.sourceId}`
       : `/projects/${receipt.sourceId}`;
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/60 bg-background/60 p-3 text-sm">
-      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="shrink-0 rounded-md border border-border/70 px-1.5 py-0.5 text-xs text-muted-foreground">
-          {paymentMethodLabel(receipt.methodRaw)}
+  // Not-yet-due rows get NO status badge at all — the tab is already called
+  // תקבולים צפויים, so "צפוי" on every single row just repeats the tab title.
+  // "באיחור" still shows: that's the exception worth flagging within a list
+  // that's otherwise entirely expected/future money.
+  //
+  // "תשלום על הזמנה/פרויקט" — fixed wording, not the order's item list (that
+  // read as an unexplained dump of product names: "פח 1×S, שקיות קטן ×1...").
+  // The link itself is what answers "which one" — click through to see it.
+  const linkLabel = receipt.sourceType === "order" ? "תשלום על הזמנה" : "תשלום על פרויקט";
+
+  const card = (
+    <div className="flex items-start justify-between gap-2 rounded-2xl border border-border/70 bg-background/60 p-3">
+      <div className="min-w-0">
+        {receipt.customerId ? (
+          <NavLink to={`/customers/${receipt.customerId}`} className="font-semibold hover:underline">
+            {receipt.customerName}
+          </NavLink>
+        ) : (
+          <span className="font-semibold">{receipt.customerName}</span>
+        )}
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+          {receipt.customerPhone ? (
+            <ContactTapZone kind="tel" value={receipt.customerPhone} className="hover:underline">
+              <PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}{receipt.customerPhone}
+            </ContactTapZone>
+          ) : null}
+          {receipt.checkNumber ? <span>מס׳ צ׳ק {receipt.checkNumber}</span> : null}
+          <NavLink to={href} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+            {linkLabel}
+          </NavLink>
+        </div>
+      </div>
+      {/* Price, then the method badge next to the status badge (when there is
+          one), then the due date under them — same corner as the חייבים
+          cards' price+status. */}
+      <div className="flex shrink-0 flex-col items-end gap-1">
+        <span className="text-lg font-semibold">{formatCurrency(receipt.amount)}</span>
+        <div className="flex items-center gap-1">
+          {receipt.isScheduled ? (
+            <Badge variant="info" className="gap-1 text-[10px]">{paymentMethodLabel(receipt.methodRaw)}</Badge>
+          ) : (
+            <Badge variant="neutral" className="gap-1 text-[10px]">לא נקבע</Badge>
+          )}
+          {receipt.overdue ? (
+            <Badge className={collectionStatusClasses("overdue")}>{collectionStatusLabel("overdue")}</Badge>
+          ) : null}
+        </div>
+        <span className={`text-xs ${receipt.overdue ? "font-medium text-destructive" : "text-muted-foreground"}`}>
+          פירעון {receipt.dueDate ? formatShortDate(receipt.dueDate) : "—"}
         </span>
+      </div>
+    </div>
+  );
+
+  // Nothing scheduled → nothing to mark collected. A plain card, no swipe strip.
+  if (!receipt.isScheduled) return card;
+
+  return (
+    <SwipeActions
+      open={swipeOpen}
+      onOpenChange={setSwipeOpen}
+      actions={[{ key: "collect", node: <MarkCollectedButton paymentIds={[receipt.paymentId]} /> }]}
+    >
+      {card}
+    </SwipeActions>
+  );
+}
+
+// Desktop table row — same data as ExpectedReceiptRow, columns instead of a
+// stacked card (there's room; swiping isn't needed when the button just sits
+// in its own column).
+function ExpectedReceiptTableRow({ receipt }: { receipt: ExpectedReceipt }) {
+  const href =
+    receipt.sourceType === "order"
+      ? `/sales/orders/${receipt.sourceId}`
+      : `/projects/${receipt.sourceId}`;
+  const linkLabel = receipt.sourceType === "order" ? "תשלום על הזמנה" : "תשלום על פרויקט";
+  return (
+    <tr className="border-b border-border/50 hover:bg-muted/30">
+      <td className="px-3 py-2">
+        {receipt.isScheduled ? (
+          <Badge variant="info" className="gap-1 text-[10px]">{paymentMethodLabel(receipt.methodRaw)}</Badge>
+        ) : (
+          <Badge variant="neutral" className="gap-1 text-[10px]">לא נקבע</Badge>
+        )}
+        {receipt.checkNumber ? (
+          <div className="mt-0.5 text-xs text-muted-foreground">מס׳ צ׳ק {receipt.checkNumber}</div>
+        ) : null}
+      </td>
+      <td className="px-3 py-2">
         {receipt.customerId ? (
           <NavLink to={`/customers/${receipt.customerId}`} className="font-medium hover:underline">
             {receipt.customerName}
@@ -523,27 +683,34 @@ function ExpectedReceiptRow({ receipt }: { receipt: ExpectedReceipt }) {
         ) : (
           <span className="font-medium">{receipt.customerName}</span>
         )}
+      </td>
+      <td className="px-3 py-2 text-muted-foreground">
         {receipt.customerPhone ? (
-          <a href={`tel:${receipt.customerPhone}`} className="text-muted-foreground hover:underline">
-            <PhoneIcon className="inline h-3 w-3 align-text-bottom" />{" "}{receipt.customerPhone}
-          </a>
-        ) : null}
-        {receipt.checkNumber ? (
-          <span className="font-mono text-xs text-muted-foreground">מס׳ {receipt.checkNumber}</span>
-        ) : null}
+          <ContactTapZone kind="tel" value={receipt.customerPhone} className="hover:underline">
+            {receipt.customerPhone}
+          </ContactTapZone>
+        ) : (
+          <span className="text-muted-foreground/50">—</span>
+        )}
+      </td>
+      <td className="px-3 py-2">
         <NavLink to={href} target="_blank" rel="noreferrer" className="text-primary hover:underline">
-          {receipt.sourceType === "order" ? "הזמנה" : "פרויקט"}
+          {linkLabel}
         </NavLink>
-        <span className={receipt.overdue ? "font-medium text-destructive" : "text-muted-foreground"}>
-          {receipt.overdue ? "באיחור · " : "פירעון "}
-          {receipt.dueDate ? formatShortDate(receipt.dueDate) : "—"}
-        </span>
-      </div>
-      <div className="flex items-center gap-3">
-        <span className="font-semibold">{formatCurrency(receipt.amount)}</span>
-        <MarkCollectedButton paymentIds={[receipt.paymentId]} />
-      </div>
-    </div>
+      </td>
+      <td className={`px-3 py-2 ${receipt.overdue ? "font-medium text-destructive" : "text-muted-foreground"}`}>
+        {receipt.dueDate ? formatShortDate(receipt.dueDate) : "—"}
+      </td>
+      <td className="px-3 py-2">
+        {receipt.overdue ? (
+          <Badge className={collectionStatusClasses("overdue")}>{collectionStatusLabel("overdue")}</Badge>
+        ) : null}
+      </td>
+      <td className="px-3 py-2 text-center font-semibold">{formatCurrency(receipt.amount)}</td>
+      <td className="px-2 py-2 text-center">
+        {receipt.isScheduled ? <MarkCollectedButton paymentIds={[receipt.paymentId]} /> : null}
+      </td>
+    </tr>
   );
 }
 
@@ -559,6 +726,7 @@ function ExpectedReceiptsView({
   const [method, setMethod] = useState("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const methodChips = useMemo(() => presentReceiptMethodChips(receipts), [receipts]);
   const filtered = useMemo(
@@ -567,11 +735,33 @@ function ExpectedReceiptsView({
   );
 
   const total = filtered.reduce((sum, r) => sum + r.amount, 0);
+  const dateRangeActive = Boolean(from || to);
+
+  const dateRangeFields = (
+    <>
+      <div className="flex items-center gap-1">
+        <span className="text-xs text-muted-foreground">מ־</span>
+        <DateInput value={from} onChange={(e) => setFrom(e.target.value)} className="h-9 w-full sm:w-32" />
+      </div>
+      <div className="flex items-center gap-1">
+        <span className="text-xs text-muted-foreground">עד</span>
+        <DateInput value={to} onChange={(e) => setTo(e.target.value)} className="h-9 w-full sm:w-32" />
+      </div>
+    </>
+  );
 
   return (
     <div className="space-y-3">
-      {/* Payment-method chips — horizontally scrollable on mobile */}
-      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+      {/* Totals — same spot as the חייבים tab's totals: right under the tab
+          bar, above search/filters, so switching tabs never moves either. */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+        <span className="text-muted-foreground">{filtered.length} תקבולים</span>
+        <span className="text-border">·</span>
+        <span className="font-semibold">סה״כ {formatCurrency(total)}</span>
+      </div>
+
+      {/* Desktop: method chips + search + due-date range, all in one row */}
+      <div className="hidden items-center gap-2 sm:flex sm:flex-wrap">
         {methodChips.map((m) => (
           <Button
             key={m.key}
@@ -584,19 +774,14 @@ function ExpectedReceiptsView({
             {m.label}
           </Button>
         ))}
-      </div>
-
-      {/* Due-date range + search */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1">
-          <span className="text-xs text-muted-foreground">מ־</span>
-          <DateInput value={from} onChange={(e) => setFrom(e.target.value)} className="h-9 w-32" />
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="text-xs text-muted-foreground">עד</span>
-          <DateInput value={to} onChange={(e) => setTo(e.target.value)} className="h-9 w-32" />
-        </div>
-        {from || to ? (
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="חיפוש לפי שם או טלפון..."
+          className="h-9 w-56"
+        />
+        {dateRangeFields}
+        {dateRangeActive ? (
           <Button
             type="button"
             size="sm"
@@ -609,19 +794,84 @@ function ExpectedReceiptsView({
             נקה תאריך
           </Button>
         ) : null}
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="חיפוש לפי שם / טלפון / מס׳ צ׳ק..."
-          className="h-9 w-full sm:w-56"
-        />
       </div>
 
-      {/* Totals for the current filter */}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-        <span className="text-muted-foreground">{filtered.length} תקבולים</span>
-        <span className="text-border">·</span>
-        <span className="font-semibold">סה״כ {formatCurrency(total)}</span>
+      {/* Mobile: search + a filter button. The panel — method + due-date range —
+          opens as an OVERLAY above the totals/list below it, not inline (an
+          inline panel used to push the whole list down every time it opened). */}
+      <div className="relative sm:hidden">
+        <div className="flex items-center gap-2">
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="חיפוש לפי שם או טלפון..."
+            className="h-9 flex-1"
+          />
+          <Button
+            type="button"
+            size="icon"
+            variant={method !== "all" || dateRangeActive ? "default" : "outline"}
+            className="h-9 w-9 shrink-0"
+            aria-label={mobileFiltersOpen ? "הסתרת סינון" : "סינון"}
+            aria-expanded={mobileFiltersOpen}
+            onClick={() => setMobileFiltersOpen((v) => !v)}
+          >
+            <FilterIcon className="h-4 w-4" />
+          </Button>
+        </div>
+        {mobileFiltersOpen ? (
+          <>
+            <button
+              type="button"
+              aria-label="סגירת סינון"
+              className="fixed inset-0 z-30 bg-black/30"
+              onClick={() => setMobileFiltersOpen(false)}
+            />
+            <div className="absolute inset-x-0 top-full z-40 mt-2 space-y-3 rounded-xl border border-border/60 bg-card p-3 shadow-lg">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">סינון</span>
+                <button
+                  type="button"
+                  aria-label="סגירת סינון"
+                  className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground"
+                  onClick={() => setMobileFiltersOpen(false)}
+                >
+                  <CloseIcon className="h-4 w-4" />
+                </button>
+              </div>
+              <div>
+                <div className="mb-1 text-xs text-muted-foreground">אמצעי תשלום</div>
+                <div className="flex flex-wrap gap-2">
+                  {methodChips.map((m) => (
+                    <Button
+                      key={m.key}
+                      type="button"
+                      size="sm"
+                      variant={method === m.key ? "default" : "outline"}
+                      onClick={() => setMethod(m.key)}
+                    >
+                      {m.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">{dateRangeFields}</div>
+              {dateRangeActive ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="h-9 w-full"
+                  onClick={() => {
+                    setFrom("");
+                    setTo("");
+                  }}
+                >
+                  נקה תאריך
+                </Button>
+              ) : null}
+            </div>
+          </>
+        ) : null}
       </div>
 
       {filtered.length === 0 ? (
@@ -629,11 +879,48 @@ function ExpectedReceiptsView({
           {receipts.length === 0 ? "אין תקבולים צפויים." : "אין תקבולים שתואמים לסינון."}
         </div>
       ) : (
-        <div className="space-y-2">
-          {filtered.map((r) => (
-            <ExpectedReceiptRow key={r.paymentId} receipt={r} />
-          ))}
-        </div>
+        <ResponsiveDataView
+          breakpoint="sm"
+          desktop={
+            <div className="max-h-[70vh] overflow-auto rounded-2xl border border-border/70">
+              <table className="w-full min-w-[720px] border-collapse text-sm">
+                <thead className="sticky top-0 z-10 bg-muted">
+                  <tr className="border-b border-border/70 text-xs text-muted-foreground">
+                    <th className="px-3 py-2 text-right font-medium">אמצעי</th>
+                    <th className="px-3 py-2 text-right font-medium">לקוח</th>
+                    <th className="px-3 py-2 text-right font-medium">טלפון</th>
+                    <th className="px-3 py-2 text-right font-medium">הפניה</th>
+                    <th className="px-3 py-2 text-right font-medium">פירעון</th>
+                    <th className="px-3 py-2 text-right font-medium">סטטוס</th>
+                    <th className="px-3 py-2 text-center font-medium">סכום</th>
+                    <th className="px-2 py-2 text-center font-medium">פעולות</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((r) => (
+                    <ExpectedReceiptTableRow key={r.paymentId} receipt={r} />
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-border/70 bg-muted/30 text-xs font-semibold">
+                    <td className="px-3 py-2 text-right" colSpan={6}>
+                      סה״כ ({filtered.length} תקבולים)
+                    </td>
+                    <td className="px-3 py-2 text-center">{formatCurrency(total)}</td>
+                    <td className="px-2 py-2" />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          }
+          mobile={
+            <div data-swipe-owner="" className="space-y-2">
+              {filtered.map((r) => (
+                <ExpectedReceiptRow key={r.paymentId} receipt={r} />
+              ))}
+            </div>
+          }
+        />
       )}
     </div>
   );
@@ -654,7 +941,7 @@ export function DebtorsTable({
   filtered,
   onOpenReminders,
 }: {
-  totals: { outstanding: number; pending: number; overdue: number; customerCount: number };
+  totals: { outstanding: number; pending: number; overdue: number; actionable: number; customerCount: number };
   customers: CollectionCustomerGroup[];
   filter: FilterKey;
   setFilter: (f: FilterKey) => void;
@@ -670,6 +957,7 @@ export function DebtorsTable({
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   // Sub-view inside חייבים: the customer worklist, or a flat list of all the
   // expected (future-dated) receipts filterable by payment method + due date.
   const [subView, setSubView] = useState<"customers" | "receipts">("customers");
@@ -677,8 +965,6 @@ export function DebtorsTable({
   const tabs: { key: FilterKey; label: string }[] = [
     { key: "all", label: "הכל" },
     { key: "overdue", label: "באיחור" },
-    { key: "due_soon", label: "לגבייה בקרוב" },
-    { key: "expected", label: "תשלום צפוי" },
     { key: "uncontacted", label: "טרם נוצר קשר" },
   ];
 
@@ -716,69 +1002,63 @@ export function DebtorsTable({
 
   const footer = filtered.reduce(
     (acc, c) => {
-      acc.outstanding += c.outstanding_amount;
+      acc.actionable += c.actionable_amount;
       return acc;
     },
-    { outstanding: 0 }
+    { actionable: 0 }
   );
 
   return (
     <div className="space-y-3">
-      {/* Compact stats line — replaces the old 4-card grid */}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-        <span className="text-muted-foreground">סה״כ לגבייה</span>
-        <span className="font-semibold">{formatCurrency(totals.outstanding)}</span>
-        <span className="text-border">·</span>
-        <span className="text-muted-foreground">באיחור</span>
-        <span className="font-semibold text-destructive">{formatCurrency(totals.overdue)}</span>
-        <span className="text-border">·</span>
-        <span className="text-muted-foreground">צפוי</span>
-        <span className="font-semibold text-warning-strong">{formatCurrency(totals.pending)}</span>
-        <span className="text-border">·</span>
-        <span className="text-muted-foreground">{totals.customerCount} לקוחות</span>
-      </div>
+      {/* Same underline Tabs used everywhere else in the app (Projects, Tasks, …)
+          — a fixed-height bar that never moves. The totals line right under it is
+          tab-specific (customers vs. receipts have their own), so switching tabs
+          never shifts the tab bar itself the way a totals line ABOVE it used to. */}
+      <Tabs value={subView} onValueChange={(v) => setSubView(v as "customers" | "receipts")}>
+        <TabsList variant="underline">
+          <TabsTrigger value="customers" count={totals.customerCount}>
+            <UsersIcon className="h-4 w-4" />
+            לקוחות
+          </TabsTrigger>
+          <TabsTrigger value="receipts" count={expectedReceipts.length}>
+            <CoinsIcon className="h-4 w-4" />
+            תקבולים צפויים
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
-      {/* Switch between the per-customer worklist and the flat expected-receipts list */}
-      <div className="flex w-fit rounded-xl border bg-secondary/40 p-0.5 text-sm">
-        <button
-          type="button"
-          onClick={() => setSubView("customers")}
-          className={`rounded-lg px-3 py-1 transition-colors ${
-            subView === "customers"
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:bg-secondary/10"
-          }`}
-        >
-          לקוחות ({totals.customerCount})
-        </button>
-        <button
-          type="button"
-          onClick={() => setSubView("receipts")}
-          className={`rounded-lg px-3 py-1 transition-colors ${
-            subView === "receipts"
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:bg-secondary/10"
-          }`}
-        >
-          תקבולים צפויים ({expectedReceipts.length})
-        </button>
-      </div>
+      {subView === "customers" ? (
+        // Action-list totals only — no customer count here, the tab label above
+        // already says it; the expected/future money lives entirely in the
+        // תקבולים צפויים tab now.
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          <span className="text-muted-foreground">סה״כ לגבייה</span>
+          <span className="font-semibold">{formatCurrency(totals.actionable)}</span>
+          <span className="text-border">·</span>
+          <span className="text-muted-foreground">באיחור</span>
+          <span className="font-semibold text-destructive">{formatCurrency(totals.overdue)}</span>
+        </div>
+      ) : null}
 
       {subView === "receipts" ? (
         <ExpectedReceiptsView receipts={expectedReceipts} search={search} setSearch={setSearch} />
       ) : (
         <>
-          {/* All filters in one row: search, then status / sort / domain dropdowns */}
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Desktop: search + status / sort / domain dropdowns, one row.
+              w-auto on every select overrides NativeSelect's own w-full
+              default — without it each one claims the full row width and they
+              stack one per line instead of sitting side by side. */}
+          <div className="hidden items-center gap-2 sm:flex sm:flex-wrap">
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="חיפוש לפי שם או טלפון..."
-              className="h-9 w-full sm:w-56"
+              className="h-9 w-56"
             />
             <NativeSelect dense
               value={filter}
               onChange={(e) => setFilter(e.target.value as FilterKey)}
+              className="w-auto"
             >
               {tabs.map((tab) => (
                 <option key={tab.key} value={tab.key}>
@@ -789,6 +1069,7 @@ export function DebtorsTable({
             <NativeSelect dense
               value={sort}
               onChange={(e) => setSort(e.target.value as SortKey)}
+              className="w-auto"
             >
               <option value="amount">מיון: סכום</option>
               <option value="oldest">מיון: ותק החוב</option>
@@ -799,6 +1080,7 @@ export function DebtorsTable({
               <NativeSelect dense
                 value={domain}
                 onChange={(e) => setDomain(e.target.value)}
+                className="w-auto"
               >
                 <option value="all">כל התחומים</option>
                 {domainOptions.map((d) => (
@@ -807,6 +1089,97 @@ export function DebtorsTable({
                   </option>
                 ))}
               </NativeSelect>
+            ) : null}
+          </div>
+
+          {/* Mobile: search + a filter button. The panel opens as an OVERLAY
+              above the list below it, not inline. */}
+          <div className="relative sm:hidden">
+            <div className="flex items-center gap-2">
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="חיפוש לפי שם או טלפון..."
+                className="h-9 flex-1"
+              />
+              <Button
+                type="button"
+                size="icon"
+                variant={filter !== "all" || domain !== "all" || sort !== "amount" ? "default" : "outline"}
+                className="h-9 w-9 shrink-0"
+                aria-label={mobileFiltersOpen ? "הסתרת סינון" : "סינון"}
+                aria-expanded={mobileFiltersOpen}
+                onClick={() => setMobileFiltersOpen((v) => !v)}
+              >
+                <FilterIcon className="h-4 w-4" />
+              </Button>
+            </div>
+            {mobileFiltersOpen ? (
+              <>
+                <button
+                  type="button"
+                  aria-label="סגירת סינון"
+                  className="fixed inset-0 z-30 bg-black/30"
+                  onClick={() => setMobileFiltersOpen(false)}
+                />
+                <div className="absolute inset-x-0 top-full z-40 mt-2 grid grid-cols-1 gap-3 rounded-xl border border-border/60 bg-card p-3 shadow-lg">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">סינון ומיון</span>
+                    <button
+                      type="button"
+                      aria-label="סגירת סינון"
+                      className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground"
+                      onClick={() => setMobileFiltersOpen(false)}
+                    >
+                      <CloseIcon className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">הצג</label>
+                    <NativeSelect dense
+                      value={filter}
+                      onChange={(e) => setFilter(e.target.value as FilterKey)}
+                      className="mt-1"
+                    >
+                      {tabs.map((tab) => (
+                        <option key={tab.key} value={tab.key}>
+                          {tab.label}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">מיון</label>
+                    <NativeSelect dense
+                      value={sort}
+                      onChange={(e) => setSort(e.target.value as SortKey)}
+                      className="mt-1"
+                    >
+                      <option value="amount">סכום</option>
+                      <option value="oldest">ותק החוב</option>
+                      <option value="due">תאריך פירעון</option>
+                      <option value="name">שם</option>
+                    </NativeSelect>
+                  </div>
+                  {domainOptions.length > 1 ? (
+                    <div>
+                      <label className="text-xs text-muted-foreground">תחום</label>
+                      <NativeSelect dense
+                        value={domain}
+                        onChange={(e) => setDomain(e.target.value)}
+                        className="mt-1"
+                      >
+                        <option value="all">כל התחומים</option>
+                        {domainOptions.map((d) => (
+                          <option key={d.value} value={d.value}>
+                            {d.label}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </div>
+                  ) : null}
+                </div>
+              </>
             ) : null}
           </div>
 
@@ -872,7 +1245,7 @@ export function DebtorsTable({
                   <td className="px-3 py-2 text-right" colSpan={5}>
                     סה״כ ({filtered.length} לקוחות)
                   </td>
-                  <td className="px-3 py-2 text-center">{formatCurrency(footer.outstanding)}</td>
+                  <td className="px-3 py-2 text-center">{formatCurrency(footer.actionable)}</td>
                   <td className="px-2 py-2" />
                 </tr>
               </tfoot>
@@ -880,8 +1253,10 @@ export function DebtorsTable({
             </div>
           }
           mobile={
-            // Cards.
-            <div className="space-y-3">
+            // Cards. data-swipe-owner on the whole list (not just each card) so a
+            // drag starting in the gap BETWEEN cards is still claimed as ours —
+            // see components/ui/swipe-actions.tsx and SessionList.tsx's own note.
+            <div data-swipe-owner="" className="space-y-3">
             {filtered.map((group) => {
               const key = group.customer_id ?? group.customer_name;
               const cid = group.customer_id;
@@ -899,7 +1274,7 @@ export function DebtorsTable({
               );
             })}
             <div className="rounded-2xl border border-border/70 bg-muted/30 p-3 text-sm font-semibold">
-              סה״כ ({filtered.length} לקוחות): {formatCurrency(footer.outstanding)}
+              סה״כ ({filtered.length} לקוחות): {formatCurrency(footer.actionable)}
             </div>
             </div>
           }
@@ -975,16 +1350,13 @@ function FragmentRow({
               <Badge variant="info" className="gap-1 text-[10px]">צ׳ק</Badge>
             ) : null}
           </div>
-          {group.oldest_days_late > 0 ? (
-            <div className="mt-0.5 text-[11px] text-destructive">
-              {group.oldest_days_late} ימים באיחור
-            </div>
-          ) : null}
+          <DaysLateSummary group={group} className="mt-0.5 text-[11px] text-destructive" />
         </td>
         <td className="px-3 py-2">
           <LastContactSignal
             lastContactAt={group.last_contact_at}
             overdue={group.overdue_amount > 0.009}
+            compact
           />
         </td>
         <td className="px-3 py-2">
@@ -1001,7 +1373,7 @@ function FragmentRow({
             <span className="text-muted-foreground/40">—</span>
           )}
         </td>
-        <td className="px-3 py-2 text-center font-semibold">{formatCurrency(group.outstanding_amount)}</td>
+        <td className="px-3 py-2 text-center font-semibold">{formatCurrency(group.actionable_amount)}</td>
         <td className="px-2 py-2">
           <div className="flex items-center justify-center">
             <CustomerActions group={group} wa={wa} />
@@ -1012,9 +1384,11 @@ function FragmentRow({
         <tr className={`border-b border-border/50 ${tint || "bg-muted/10"}`}>
           <td colSpan={7} className="px-3 py-3">
             <div className="space-y-2">
-              {group.sources.map((source) => (
-                <SourceDetail key={source.collection_key} source={source} />
-              ))}
+              {group.sources
+                .filter((source) => source.actionable_amount > 0.009)
+                .map((source) => (
+                  <SourceDetail key={source.collection_key} source={source} />
+                ))}
             </div>
           </td>
         </tr>
