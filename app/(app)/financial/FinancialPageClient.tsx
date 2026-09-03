@@ -210,6 +210,17 @@ function setOrDelete(params: URLSearchParams, key: string, value: string | numbe
   params.set(key, String(value));
 }
 
+// Stable reference (not an inline arrow at the call site) — useUndoOverlay puts
+// this in a useMemo dependency array, and useRevealOnScroll's items array must
+// keep a stable identity across renders when nothing actually changed. An
+// inline `(e) => e.id` there was a new function every render, so the memo
+// (and the array it returns) "changed" every render even with no real change,
+// which drove useRevealOnScroll's render-phase reset into an infinite loop
+// ("Too many re-renders") on the reports tab, 2026-09-04.
+function getEntryId(entry: FinancialEntry) {
+  return entry.id;
+}
+
 export default function FinancialPageClient({
   data,
   initialFilters,
@@ -312,8 +323,8 @@ export default function FinancialPageClient({
   // or mark-paid disappears/updates instantly without waiting on router.refresh().
   // Same scope on both arrays: an entry can appear in either (or both), and the
   // overlay is keyed by entry.id regardless of which array holds it.
-  const upcomingEntries = useUndoOverlay(data.upcomingEntries, (e) => e.id, "financial-entry");
-  const ledgerEntries = useUndoOverlay(data.ledgerEntries, (e) => e.id, "financial-entry");
+  const upcomingEntries = useUndoOverlay(data.upcomingEntries, getEntryId, "financial-entry");
+  const ledgerEntries = useUndoOverlay(data.ledgerEntries, getEntryId, "financial-entry");
 
   // Deep link from the activity feed: /financial?focus=expense:<uuid> must OPEN
   // that expense's own dialog — the whole record, exactly as if it had been
