@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AddIcon, ChevronDownIcon, DocumentIcon, TaskIcon } from "@/components/ui/icons";
+import { AddIcon, ChevronDownIcon, DocumentIcon, ExternalLinkIcon, TaskIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
@@ -87,7 +87,16 @@ function DocumentYearGroup({
                   {[d.documentType, fmtDate(d.uploadedAt)].filter(Boolean).join(" · ") || "—"}
                 </div>
               </div>
-              <DeleteButton onClick={() => onDelete(d)} label="מחיקת מסמך" />
+              <div className="flex shrink-0 items-center gap-1">
+                {d.url ? (
+                  <Button asChild variant="outline" size="icon" aria-label="פתיחה" title="פתיחה">
+                    <a href={d.url} target="_blank" rel="noreferrer">
+                      <ExternalLinkIcon className="h-4 w-4" />
+                    </a>
+                  </Button>
+                ) : null}
+                <DeleteButton onClick={() => onDelete(d)} label="מחיקת מסמך" />
+              </div>
             </div>
           ))}
         </div>

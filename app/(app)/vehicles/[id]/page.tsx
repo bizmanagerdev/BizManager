@@ -99,7 +99,7 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
       <PageStack>
         <VehicleHeaderCard vehicle={vehicle} />
 
-        <div className="space-y-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <VehicleExpiryRow kind="test" label="טסט" date={vehicle.testDueDate} />
           <VehicleExpiryRow kind="insurance" label="ביטוח" date={vehicle.insuranceDueDate} />
           <VehicleExpiryRow kind="license" label="רישוי" date={vehicle.licenseDueDate} />

@@ -326,6 +326,7 @@ export type VehicleDocument = {
   documentType: string | null;
   uploadedAt: string | null;
   refYear: number | null; // the year this file is FOR (e.g. a 2026 טסט)
+  url: string | null; // resolved signed URL, so the file can be opened from the car page
 };
 
 export type VehicleActivity = {
@@ -390,7 +391,7 @@ export async function fetchVehicleActivity(
       idsBy.document.length
         ? supabase
             .from("documents")
-            .select("id,title,file_name,document_type,uploaded_at")
+            .select("id,title,file_name,document_type,uploaded_at,storage_key")
             .in("id", idsBy.document)
         : Promise.resolve({ data: [] as Row[] }),
     ]);
@@ -431,7 +432,34 @@ export async function fetchVehicleActivity(
       documentType: str(r.document_type),
       uploadedAt: str(r.uploaded_at),
       refYear: refYearByDoc.get(str(r.id) ?? "") ?? null,
+      url: null,
     }));
+
+    // Best-effort: resolve each document to a short-lived signed URL so it can
+    // be opened from the car page. Wrapped separately so a storage hiccup
+    // never wipes the expenses/tasks/payments already fetched above.
+    try {
+      const keyById = new Map<string, string>();
+      for (const r of (dcRes.data ?? []) as Row[]) {
+        const id = str(r.id);
+        const key = str(r.storage_key);
+        if (id && key) keyById.set(id, key);
+      }
+      const keys = Array.from(new Set(keyById.values()));
+      if (keys.length > 0) {
+        const { data: signed } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrls(keys, 60 * 60);
+        const urlByKey = new Map<string, string>();
+        for (const s of signed ?? []) {
+          if (s.path && s.signedUrl) urlByKey.set(s.path, s.signedUrl);
+        }
+        for (const doc of documents) {
+          const key = keyById.get(doc.id);
+          if (key) doc.url = urlByKey.get(key) ?? null;
+        }
+      }
+    } catch {
+      // leave every url null — the list still renders, just without the open link
+    }
 
     // Newest-first for the timeline-style lists.
     expenses.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));

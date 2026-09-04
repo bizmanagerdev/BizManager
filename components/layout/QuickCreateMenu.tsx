@@ -12,9 +12,10 @@
 // answer on every screen.
 
 import dynamic from "next/dynamic";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AddIcon, CashIcon, ClockIcon, CloseIcon, ExpenseIcon, IncomeIcon, NotificationIcon, OrderIcon, PaymentIcon, ProjectIcon, SpinnerIcon, TaskIcon, TimerIcon, TransferIcon, UserIcon } from "@/components/ui/icons";
+import { AddIcon, CashIcon, ClockIcon, CloseIcon, ExpenseIcon, IncomeIcon, NotificationIcon, OrderIcon, PaymentIcon, ProjectIcon, SpinnerIcon, TaskIcon, TimerIcon, TransferIcon, UserIcon, VehicleIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { HoverPanel, HoverPanelContent, HoverPanelTrigger, useHoverPanel } from "@/components/ui/hover-panel";
@@ -161,6 +162,16 @@ export function QuickCreateMenu({
   variant?: "topbar" | "fab" | "desktopFab";
 }) {
   const privileged = viewerRole === "admin" || viewerRole === "office";
+  // On the /vehicles pages, "קליטת תשלום" (a tile this section never uses — cars
+  // aren't billed) is swapped for "רכב" (user request). A one-off, route-scoped
+  // swap rather than a real QuickCreateAction: it bypasses the shared
+  // data-loading/dialog dispatch below entirely and just opens the create-car
+  // dialog that already lives on the vehicles page, via the same
+  // `bizh:quick-create`-style window-event bridge the calendar uses (see
+  // VehiclesClient.tsx's listener) — so it doesn't need a new dialog wired into
+  // QuickCreateDialogs for what's otherwise a one-page tile.
+  const pathname = usePathname();
+  const isVehiclesPage = pathname?.startsWith("/vehicles") ?? false;
   // Hover reveals the whole grid; clicking the + still toggles it, and on touch
   // (where there is no hover) the tap is the only interaction.
   const panel = useHoverPanel();
@@ -263,29 +274,49 @@ export function QuickCreateMenu({
     onDismiss: () => panel.hide(),
   });
 
-  const tiles = items.map((item) => (
-    <Button
-      key={item.action}
-      type="button"
-      variant="outline"
-      className={cn(
-        QUICK_TILE_CLASS_SM,
-        // Phone: tighter than the desktop square — smaller glyph, less padding,
-        // less gap under it. The tile height is whatever the tallest label needs
-        // (see auto-rows-fr below), so trimming these is what actually shrinks
-        // the card.
-        isFab && "h-auto min-h-[3.75rem] w-full gap-1 p-1.5 [&_svg]:!h-6 [&_svg]:!w-6"
-      )}
-      onClick={() => {
-        panel.hide();
-        prefetch();
-        setQuickDate(undefined);
-        setAction(item.action);
-      }}
-    >
-      <QuickTileContent icon={item.icon} label={item.label} tone={TILE_TONE[item.action]} size="sm" />
-    </Button>
-  ));
+  const tileClass = cn(
+    QUICK_TILE_CLASS_SM,
+    // Phone: tighter than the desktop square — smaller glyph, less padding,
+    // less gap under it. The tile height is whatever the tallest label needs
+    // (see auto-rows-fr below), so trimming these is what actually shrinks
+    // the card.
+    isFab && "h-auto min-h-[3.75rem] w-full gap-1 p-1.5 [&_svg]:!h-6 [&_svg]:!w-6"
+  );
+
+  const tiles = items.map((item) => {
+    if (isVehiclesPage && item.action === "collect") {
+      return (
+        <Button
+          key="vehicle"
+          type="button"
+          variant="outline"
+          className={tileClass}
+          onClick={() => {
+            panel.hide();
+            window.dispatchEvent(new CustomEvent("bizh:vehicle-quick-create"));
+          }}
+        >
+          <QuickTileContent icon={VehicleIcon} label="רכב" size="sm" />
+        </Button>
+      );
+    }
+    return (
+      <Button
+        key={item.action}
+        type="button"
+        variant="outline"
+        className={tileClass}
+        onClick={() => {
+          panel.hide();
+          prefetch();
+          setQuickDate(undefined);
+          setAction(item.action);
+        }}
+      >
+        <QuickTileContent icon={item.icon} label={item.label} tone={TILE_TONE[item.action]} size="sm" />
+      </Button>
+    );
+  });
 
   return (
     <>

@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AddIcon, DocumentIcon, TaskIcon, TrendDownIcon, VehicleIcon } from "@/components/ui/icons";
-import { Button } from "@/components/ui/button";
+import { DocumentIcon, TaskIcon, TrendDownIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -45,6 +44,17 @@ export default function VehiclesClient({ vehicles: vehiclesProp }: { vehicles: V
     setForm(EMPTY_VEHICLE_FORM);
     setDialogOpen(true);
   }
+
+  // The + menu's own "רכב" tile (only shown on this route — see
+  // QuickCreateMenu.tsx) opens THIS dialog rather than a generic one, via the
+  // same window-event bridge the calendar's "add to this day" uses.
+  useEffect(() => {
+    function onQuickCreate() {
+      openCreate();
+    }
+    window.addEventListener("bizh:vehicle-quick-create", onQuickCreate);
+    return () => window.removeEventListener("bizh:vehicle-quick-create", onQuickCreate);
+  }, []);
 
   function openEdit(v: VehicleWithRollup) {
     setEditTagId(v.tagId);
@@ -131,22 +141,6 @@ export default function VehiclesClient({ vehicles: vehiclesProp }: { vehicles: V
 
   return (
     <PageStack>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <VehicleIcon className="h-6 w-6" />
-            רכבים
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            תייגו הוצאות, משימות ומסמכים לרכב כדי לראות את כל הפעילות והעלויות שלו במקום אחד.
-          </p>
-        </div>
-        <Button onClick={openCreate}>
-          <AddIcon className="h-4 w-4" />
-          הוספת רכב
-        </Button>
-      </div>
-
       {vehicles.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-muted-foreground">
