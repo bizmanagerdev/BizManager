@@ -5,9 +5,13 @@ import { requireProfile } from "@/lib/auth/requireProfile";
 import { toHebrewError } from "@/lib/error-messages";
 import type { VehicleInput } from "@/lib/vehicles";
 
-export type ActionResult = { ok: true; tagId?: string } | { ok: false; error: string };
-
-export type { VehicleInput };
+// Not exported: "use server" files register every export as a callable
+// server action reference, and a type-only export here (this bit us with
+// `export type { VehicleInput }`, which threw "ReferenceError: VehicleInput
+// is not defined" server-side on every commit) has no runtime value to
+// register. Nothing outside this file imports these types anyway — VehicleInput
+// comes from lib/vehicles directly.
+type ActionResult = { ok: true; tagId?: string } | { ok: false; error: string };
 
 function clean(value: string | null | undefined) {
   const trimmed = typeof value === "string" ? value.trim() : "";
