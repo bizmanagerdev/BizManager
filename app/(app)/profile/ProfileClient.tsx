@@ -51,6 +51,7 @@ import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import MyShiftCard from "@/components/attendance/MyShiftCard";
 import MyBonusCard from "@/components/payroll/MyBonusCard";
 import SessionList from "@/components/attendance/SessionList";
+import MonthlyAttendanceExport from "@/components/attendance/MonthlyAttendanceExport";
 import { PendingReportList } from "@/components/attendance/PendingReportList";
 import type { PayslipItemRow as BonusItemRow } from "@/lib/payroll-bonuses";
 import type { MyShiftReport } from "@/lib/attendance/my-shift";
@@ -1270,6 +1271,19 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
                   {monthOptions.map((summary) => <option key={summary.key} value={summary.key}>{summary.label}</option>)}
                 </NativeSelect>
               </div>
+              {/* Share/download a PDF or print the SAME selected month — the
+                  report mirrors what's on screen (stats + shift rows), not a
+                  separate export shape. */}
+              <MonthlyAttendanceExport
+                workerName={profileName}
+                monthLabel={selectedMonthSummary?.label ?? monthLabelFromKey(selectedMonth, locale)}
+                summary={selectedMonthSummary}
+                items={selectedMonthSessions.map((session) => ({
+                  session,
+                  linkLabel: linkLabelBySessionId[session.id],
+                }))}
+                locale={locale}
+              />
               {/* Three numbers, one row — even on a phone. Stacked, they were
                   three full-width cards for three short figures. */}
               {selectedMonthSummary ? <div className="grid grid-cols-3 gap-2 md:gap-3">

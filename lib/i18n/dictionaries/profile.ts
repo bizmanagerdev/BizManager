@@ -74,6 +74,11 @@ export type ProfileKey =
   | "sessionCountLabel"
   | "openSessionCountLabel"
   | "noHoursDataYet"
+  // Session list card — monthly export/print
+  | "exportShareLabel"
+  | "exportPrintLabel"
+  | "exportReportTitle"
+  | "exportGeneratedAtLabel"
   // Salary tab
   | "currentSalaryTitle"
   | "hourlySuffix"
@@ -333,6 +338,10 @@ export const profileDict: Dictionary<ProfileKey> = {
     sessionCountLabel: "כמות משמרות",
     openSessionCountLabel: "משמרות פתוחות",
     noHoursDataYet: "עדיין אין נתוני שעות.",
+    exportShareLabel: "שיתוף / הורדה",
+    exportPrintLabel: "הדפסה",
+    exportReportTitle: "דוח נוכחות חודשי",
+    exportGeneratedAtLabel: "הופק ב",
     currentSalaryTitle: "שכר נוכחי",
     hourlySuffix: "לשעה",
     salaryTypePrefix: "סוג שכר: ",
@@ -581,6 +590,10 @@ export const profileDict: Dictionary<ProfileKey> = {
     sessionCountLabel: "عدد المناوبات",
     openSessionCountLabel: "مناوبات مفتوحة",
     noHoursDataYet: "لا توجد بعد بيانات ساعات.",
+    exportShareLabel: "مشاركة / تنزيل",
+    exportPrintLabel: "طباعة",
+    exportReportTitle: "تقرير حضور شهري",
+    exportGeneratedAtLabel: "صدر في",
     currentSalaryTitle: "الراتب الحالي",
     hourlySuffix: "لكل ساعة",
     salaryTypePrefix: "نوع الراتب: ",
