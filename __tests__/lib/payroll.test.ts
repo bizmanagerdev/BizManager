@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculateSessionLaborCost } from "@/lib/payroll";
+import { calculateSessionLaborCost, computeSessionPaymentStatus } from "@/lib/payroll";
 import type { SalaryAgreementRow } from "@/lib/payroll";
 
 function makeHourlyAgreement(overrides: Partial<SalaryAgreementRow> = {}): SalaryAgreementRow {
@@ -109,5 +109,32 @@ describe("calculateSessionLaborCost — monthly (proration)", () => {
     const agreement = makeMonthlyAgreement({ monthly_salary: 10000 });
     const result = calculateSessionLaborCost(agreement, 100);
     expect(result).toBe(Math.round((10000 * 100) / 10560 * 100) / 100);
+  });
+});
+
+// Mirrors the CASE in worker_debt_items_view.payment_status
+// (db/sql/create_worker_payment_views.sql) exactly — same thresholds, same
+// precedence — so a session read straight off attendance_sessions never
+// disagrees with what that view would say for a session it actually carries.
+describe("computeSessionPaymentStatus", () => {
+  it("is paid when paid equals earned (within the 1-cent tolerance)", () => {
+    expect(computeSessionPaymentStatus(240, 240)).toBe("paid");
+    expect(computeSessionPaymentStatus(240, 240.005)).toBe("paid");
+  });
+
+  it("is unpaid when nothing has been paid", () => {
+    expect(computeSessionPaymentStatus(150, 0)).toBe("unpaid");
+  });
+
+  it("is partial when something, but not enough, has been paid", () => {
+    expect(computeSessionPaymentStatus(150, 60)).toBe("partial");
+  });
+
+  it("is overpaid when more than earned has been paid", () => {
+    expect(computeSessionPaymentStatus(100, 150)).toBe("overpaid");
+  });
+
+  it("prefers 'paid' over 'overpaid' inside the rounding tolerance", () => {
+    expect(computeSessionPaymentStatus(100, 100.009)).toBe("paid");
   });
 });

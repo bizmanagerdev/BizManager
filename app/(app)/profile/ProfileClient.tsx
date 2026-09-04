@@ -51,7 +51,8 @@ import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import MyShiftCard from "@/components/attendance/MyShiftCard";
 import MyBonusCard from "@/components/payroll/MyBonusCard";
 import SessionList from "@/components/attendance/SessionList";
-import MonthlyAttendanceExport from "@/components/attendance/MonthlyAttendanceExport";
+import WorkerSummaryExport from "@/components/payroll/WorkerSummaryExport";
+import type { MyPaymentAllocationRow, MyPaymentRow } from "@/lib/my-payroll";
 import { PendingReportList } from "@/components/attendance/PendingReportList";
 import type { PayslipItemRow as BonusItemRow } from "@/lib/payroll-bonuses";
 import type { MyShiftReport } from "@/lib/attendance/my-shift";
@@ -99,6 +100,9 @@ type Props = {
   payBySessionId?: Record<string, string>;
   /** session id → the specific project name / property address it was booked to. */
   linkLabelBySessionId?: Record<string, string>;
+  /** His own recorded payments, for the printable summary's "פירוט תשלומים" table. */
+  payments?: MyPaymentRow[];
+  paymentAllocations?: MyPaymentAllocationRow[];
 };
 
 type SplitPartDraft = {
@@ -161,7 +165,7 @@ function toLocalDateTimeValue(date: Date) {
 
 type ProfileTab = "profile" | "notifications" | "sessions" | "salary";
 
-export default function ProfileClient({ profile, locale = "he", initialFontScale, initialFontScaleMobile, initialAvatarColor, sessions, agreements, payslips, periods, monthlySummaries, projectOptions, propertyOptions, isWorker = false, dashboardCustomizer = null, openShiftReport = null, pendingShiftReports = [], myBonuses = [], payTotals = null, payBySessionId = {}, linkLabelBySessionId = {} }: Props) {
+export default function ProfileClient({ profile, locale = "he", initialFontScale, initialFontScaleMobile, initialAvatarColor, sessions, agreements, payslips, periods, monthlySummaries, projectOptions, propertyOptions, isWorker = false, dashboardCustomizer = null, openShiftReport = null, pendingShiftReports = [], myBonuses = [], payTotals = null, payBySessionId = {}, linkLabelBySessionId = {}, payments = [], paymentAllocations = [] }: Props) {
   const router = useRouter();
   // The whole page is the swipe surface, so the gesture works wherever the
   // thumb happens to be rather than only on the tab strip.
@@ -1272,16 +1276,21 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
                 </NativeSelect>
               </div>
               {/* Share/download a PDF or print the SAME selected month — the
-                  report mirrors what's on screen (stats + shift rows), not a
-                  separate export shape. */}
-              <MonthlyAttendanceExport
+                  exact "סיכום עבודה ותשלומים לעובד" report a boss can already
+                  print for any worker from the salary center, just scoped to
+                  this worker's own data (see WorkerSummaryExport). */}
+              <WorkerSummaryExport
                 workerName={profileName}
+                workerPhone={profile.phone}
                 monthLabel={selectedMonthSummary?.label ?? monthLabelFromKey(selectedMonth, locale)}
-                summary={selectedMonthSummary}
-                items={selectedMonthSessions.map((session) => ({
-                  session,
-                  linkLabel: linkLabelBySessionId[session.id],
-                }))}
+                monthKey={selectedMonth}
+                selectedMonthSessions={selectedMonthSessions}
+                linkLabelBySessionId={linkLabelBySessionId}
+                agreements={agreements}
+                payslips={payslips}
+                periods={periods}
+                payments={payments}
+                paymentAllocations={paymentAllocations}
                 locale={locale}
               />
               {/* Three numbers, one row — even on a phone. Stacked, they were

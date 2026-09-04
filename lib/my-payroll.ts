@@ -35,11 +35,32 @@ export type MyDebtItem = {
   status: string;
 };
 
+/** One `worker_payments` row — a payment recorded against the worker, however it's allocated. */
+export type MyPaymentRow = {
+  id: string;
+  paymentDate: string | null;
+  amount: number;
+  method: string | null;
+  referenceNumber: string | null;
+  notes: string | null;
+};
+
+/** One `worker_payment_allocations` row — which session/payslip a payment (or part of it) settles. */
+export type MyPaymentAllocationRow = {
+  workerPaymentId: string;
+  sourceType: "session" | "payslip";
+  attendanceSessionId: string | null;
+  payslipId: string | null;
+  amount: number;
+};
+
 export type MyPayrollData = {
   sessions: WorkSessionRow[];
   months: MonthlyHoursSummary[];
   debtItems: MyDebtItem[];
   totals: { earned: number; paid: number; owed: number };
+  payments: MyPaymentRow[];
+  paymentAllocations: MyPaymentAllocationRow[];
   /** True when the pay figures couldn't be read — the UI says so instead of showing ₪0. */
   payUnavailable: boolean;
 };
@@ -54,7 +75,7 @@ export async function loadMyPayroll(
 ): Promise<MyPayrollData> {
   const sessionLimit = opts?.sessionLimit ?? 300;
 
-  const [sessionsResult, debtResult] = await Promise.all([
+  const [sessionsResult, debtResult, paymentsResult, allocationsResult] = await Promise.all([
     supabase
       .from(WORK_SESSIONS_TABLE)
       .select(SESSION_COLUMNS)
@@ -67,6 +88,20 @@ export async function loadMyPayroll(
       .eq("user_id", userId)
       .order("source_date", { ascending: false })
       .range(0, 499),
+    supabase
+      .from("worker_payments")
+      .select("id,payment_date,amount,payment_method,reference_number,notes")
+      .eq("user_id", userId)
+      .order("payment_date", { ascending: false })
+      .range(0, 199),
+    // Not filtered by worker_payment_id: the RLS policy on this table already
+    // restricts rows to allocations of THIS caller's own payments, so a plain
+    // select reads exactly the same set a `.in(...)` on the payment ids above
+    // would — without a second round trip to get those ids first.
+    supabase
+      .from("worker_payment_allocations")
+      .select("worker_payment_id,source_type,attendance_session_id,payslip_id,amount")
+      .range(0, 999),
   ]);
 
   const sessions = ((sessionsResult.data ?? []) as WorkSessionRow[]).filter((row) => row.id);
@@ -92,11 +127,32 @@ export async function loadMyPayroll(
     { earned: 0, paid: 0, owed: 0 }
   );
 
+  const payments: MyPaymentRow[] = ((paymentsResult.data ?? []) as Record<string, unknown>[]).map((row) => ({
+    id: String(row.id ?? ""),
+    paymentDate: typeof row.payment_date === "string" ? row.payment_date : null,
+    amount: num(row.amount),
+    method: typeof row.payment_method === "string" ? row.payment_method : null,
+    referenceNumber: typeof row.reference_number === "string" ? row.reference_number : null,
+    notes: typeof row.notes === "string" ? row.notes : null,
+  }));
+
+  const paymentAllocations: MyPaymentAllocationRow[] = ((allocationsResult.data ?? []) as Record<string, unknown>[]).map(
+    (row) => ({
+      workerPaymentId: String(row.worker_payment_id ?? ""),
+      sourceType: row.source_type === "payslip" ? "payslip" : "session",
+      attendanceSessionId: typeof row.attendance_session_id === "string" ? row.attendance_session_id : null,
+      payslipId: typeof row.payslip_id === "string" ? row.payslip_id : null,
+      amount: num(row.amount),
+    })
+  );
+
   return {
     sessions,
     months: buildMonthlyHoursSummary(sessions),
     debtItems,
     totals,
+    payments,
+    paymentAllocations,
     payUnavailable: Boolean(debtResult.error),
   };
 }

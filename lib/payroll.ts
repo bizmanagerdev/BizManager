@@ -161,6 +161,23 @@ export function sessionWorkedMinutes(
   return minutesBetween(session.clock_in, session.clock_out);
 }
 
+/**
+ * A single session's paid/unpaid/partial/overpaid status, given what it's
+ * worth and what's actually been paid against it. Mirrors the CASE in
+ * worker_debt_items_view's payment_status column exactly (db/sql/create_worker_payment_views.sql)
+ * — same thresholds, same precedence — so a session-level read from
+ * attendance_sessions.labor_cost + worker_payment_allocations never disagrees
+ * with what the view would say IF that worker's session showed up in it (the
+ * view only carries a session when pay_tracking_mode = 'session', so a
+ * payslip-tracked worker's sessions never appear there at all).
+ */
+export function computeSessionPaymentStatus(earnedAmount: number, paidAmount: number): string {
+  if (Math.abs(paidAmount - earnedAmount) < 0.01) return "paid";
+  if (paidAmount > earnedAmount + 0.009) return "overpaid";
+  if (paidAmount > 0 && paidAmount + 0.009 < earnedAmount) return "partial";
+  return "unpaid";
+}
+
 export function minutesBetween(startValue: string | Date, endValue: string | Date) {
   const start = typeof startValue === "string" ? new Date(startValue).getTime() : startValue.getTime();
   const end = typeof endValue === "string" ? new Date(endValue).getTime() : endValue.getTime();

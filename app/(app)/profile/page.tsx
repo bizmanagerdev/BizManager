@@ -3,6 +3,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import {
   buildMonthlyHoursSummary,
+  computeSessionPaymentStatus,
+  toNumber,
   type PayrollPeriodRow,
   type PayslipRow,
   type SalaryAgreementRow,
@@ -53,7 +55,7 @@ export default async function ProfilePage() {
 
   const { data: sessionRows, error: sessionsError } = await supabase
     .from(WORK_SESSIONS_TABLE)
-    .select("id,user_id,clock_in,clock_out,worked_minutes,notes,notes_he,business_domain,project_id,property_id")
+    .select("id,user_id,clock_in,clock_out,worked_minutes,labor_cost,notes,notes_he,business_domain,project_id,property_id")
     .eq("user_id", profile.id)
     .order("clock_in", { ascending: false })
     .limit(300);
@@ -201,6 +203,29 @@ export default async function ProfilePage() {
   const payslips = asPayslips(payslipRows);
   const periods = asPeriods(periodRows);
   const monthlySummaries = buildMonthlyHoursSummary(sessions, profile.locale);
+
+  // Per-shift paid/unpaid/partial status, straight off attendance_sessions.labor_cost
+  // + worker_payment_allocations — NOT worker_debt_items_view, which only carries a
+  // session at all when the worker's pay_tracking_mode is exactly 'session' (see
+  // computeSessionPaymentStatus). Reading the raw columns directly means the badge
+  // shows up regardless of that mode, matching what the printable summary now shows.
+  const paidAmountBySessionId = new Map<string, number>();
+  for (const allocation of myPayroll.paymentAllocations) {
+    if (allocation.sourceType !== "session" || !allocation.attendanceSessionId) continue;
+    paidAmountBySessionId.set(
+      allocation.attendanceSessionId,
+      (paidAmountBySessionId.get(allocation.attendanceSessionId) ?? 0) + allocation.amount
+    );
+  }
+  const payBySessionId: Record<string, string> = {};
+  for (const session of sessions) {
+    const earnedAmount = toNumber(session.labor_cost);
+    if (earnedAmount <= 0) continue;
+    payBySessionId[session.id] = computeSessionPaymentStatus(
+      earnedAmount,
+      paidAmountBySessionId.get(session.id) ?? 0
+    );
+  }
   const projectOptions: LinkedOption[] = ((projectRows ?? []) as Row[])
     .map((row) => ({
       id: typeof row.id === "string" ? row.id : "",
@@ -276,15 +301,9 @@ export default async function ProfilePage() {
             myBonuses={myBonuses}
             linkLabelBySessionId={linkLabelBySessionId}
             payTotals={myPayroll.payUnavailable ? null : myPayroll.totals}
-            payBySessionId={
-              myPayroll.payUnavailable
-                ? {}
-                : Object.fromEntries(
-                    myPayroll.debtItems
-                      .filter((item) => item.sourceType === "session")
-                      .map((item) => [item.sourceId, item.status])
-                  )
-            }
+            payBySessionId={myPayroll.payUnavailable ? {} : payBySessionId}
+            payments={myPayroll.payUnavailable ? [] : myPayroll.payments}
+            paymentAllocations={myPayroll.payUnavailable ? [] : myPayroll.paymentAllocations}
           />
         )}
       </div>
