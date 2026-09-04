@@ -128,6 +128,24 @@ export type AccountLedgerEntry = {
    *  an edit doesn't silently wipe them — see accounts-layer memory) since
    *  that context is too expensive to preload for every ledger row. */
   editRef?: AccountEditRef;
+  /** Set only on an "אשראי משולם (גרואו)" Grow batch row — every individual
+   *  payment folded into it, so the register can expand the row in place and
+   *  show which payments it's made of instead of needing a separate summary
+   *  elsewhere on the page (user, 2026-09-03: "the accounts page should just
+   *  be the in and outs of the account... all the payments that went towards
+   *  grow should be listed there [on the row itself]"). */
+  breakdown?: LedgerBreakdownItem[];
+};
+
+/** One payment folded into a ledger row's `breakdown` — enough to render it
+ *  as its own nested row (date, who/what it was for, a link to the order). */
+export type LedgerBreakdownItem = {
+  id: string;
+  date: string; // the day the money actually moved for THIS item, not the parent row's date
+  amount: number;
+  label: string;
+  sublabel: string | null;
+  href: string | null;
 };
 
 export type AccountDeleteRef =
@@ -260,6 +278,7 @@ type RawLedgerEntry = {
   transfer?: AccountTransferRef;
   deleteRef?: AccountDeleteRef;
   editRef?: AccountEditRef;
+  breakdown?: LedgerBreakdownItem[];
 };
 
 /**
@@ -655,7 +674,14 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
   // which fills due_date from the order payment dialogs' quick-fill.
   const growthBatches = new Map<
     string,
-    { accountId: string; dueDate: string; amount: number; count: number; minPaymentDate: string }
+    {
+      accountId: string;
+      dueDate: string;
+      amount: number;
+      count: number;
+      minPaymentDate: string;
+      payments: LedgerBreakdownItem[];
+    }
   >();
 
   // ── Payments: inflows, EXCEPT refunds (negative amount_total = money out) ────
@@ -679,10 +705,29 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     if (isDeferredCardBatch) {
       if (dueDate! >= account.openingDate) {
         const key = `${account.id}|${dueDate}`;
-        const g = growthBatches.get(key) ?? { accountId: account.id, dueDate: dueDate!, amount: 0, count: 0, minPaymentDate: recordedDate! };
+        const g =
+          growthBatches.get(key) ??
+          { accountId: account.id, dueDate: dueDate!, amount: 0, count: 0, minPaymentDate: recordedDate!, payments: [] };
         g.amount += amount;
         g.count += 1;
         if (recordedDate! < g.minPaymentDate) g.minPaymentDate = recordedDate!;
+        g.payments.push({
+          id: str(row.id) ?? "",
+          date: recordedDate!,
+          amount,
+          label: str(row.notes)?.trim() || "תקבול",
+          sublabel: composeSublabel({
+            domain: str(row.business_domain),
+            customerId: paymentCustomerId(row),
+            projectId: str(row.project_id),
+            propertyId: str(row.property_id),
+          }),
+          href: str(row.order_id)
+            ? `/sales/orders/${str(row.order_id)}`
+            : str(row.project_id)
+              ? `/projects/${str(row.project_id)}`
+              : null,
+        });
         growthBatches.set(key, g);
       }
       continue;
@@ -753,7 +798,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     b.rows.push({
       id: `ccb:${g.accountId}:${g.dueDate}`,
       date: g.dueDate,
-      label: "תקבולי אשראי (סליקה)",
+      label: "אשראי משולם (גרואו)",
       sublabel:
         `${g.count} תשלומים מ-${g.minPaymentDate.slice(5, 7)}/${g.minPaymentDate.slice(2, 4)}` +
         (feeAmount > 0 ? ` · עמלת סליקה ${feePercentLabel} (${formatIls(feeAmount)})` : ""),
@@ -761,6 +806,9 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       type: "in",
       amount: netAmount,
       posted,
+      // Expand-in-place, right on this row — every payment that fed into it,
+      // newest first (see LedgerBreakdownItem/BankClient's row expansion).
+      breakdown: [...g.payments].sort((a, b2) => b2.date.localeCompare(a.date) || b2.id.localeCompare(a.id)),
     });
   }
 

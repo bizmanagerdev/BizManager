@@ -461,6 +461,12 @@ export default function BankClient({
   // the "⋮" menu (user, 2026-08-31: "put the actions in a row swipe instead
   // of 3 dots on mobile").
   const [swipedRowId, setSwipedRowId] = useState<string | null>(null);
+  // An "אשראי משולם (גרואו)" Grow batch row expands in place to show every
+  // payment folded into it — no separate summary card elsewhere on the page
+  // (user, 2026-09-03: "the accounts page should just be the in and outs of
+  // the account... all the payments that went towards grow should be listed
+  // there [on the row itself]").
+  const [expandedBreakdownIds, setExpandedBreakdownIds] = useState<Set<string>>(new Set());
 
   function openEdit(ref: AccountEditRef) {
     if (ref.kind === "expense") setEditingExpenseRef(ref);
@@ -786,6 +792,8 @@ export default function BankClient({
                   group.items
                     .filter((row) => !hiddenLedgerRowIds.has(row.id))
                     .map((row) => {
+                    const hasBreakdown = Boolean(row.breakdown && row.breakdown.length > 0);
+                    const breakdownOpen = expandedBreakdownIds.has(row.id);
                     const inner = (
                       <>
                         {/* flex-1 so the amount (and the delete button on a
@@ -797,6 +805,14 @@ export default function BankClient({
                               <span className="shrink-0 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
                                 צפוי
                               </span>
+                            )}
+                            {hasBreakdown && (
+                              <ChevronDownIcon
+                                className={cn(
+                                  "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+                                  breakdownOpen && "rotate-180"
+                                )}
+                              />
                             )}
                           </div>
                           <div className="text-xs break-words text-muted-foreground">
@@ -830,10 +846,25 @@ export default function BankClient({
                     // edit/delete cluster sits OUTSIDE this link so the buttons
                     // stay their own click target, not nested inside an <a>.
                     const transfer = row.transfer;
+                    const toggleBreakdown = () =>
+                      setExpandedBreakdownIds((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(row.id)) next.delete(row.id);
+                        else next.add(row.id);
+                        return next;
+                      });
                     const content = row.href ? (
                       <Link href={row.href} className="flex min-w-0 flex-1 items-center gap-3">
                         {inner}
                       </Link>
+                    ) : hasBreakdown ? (
+                      <button
+                        type="button"
+                        onClick={toggleBreakdown}
+                        className="flex min-w-0 flex-1 items-center gap-3 text-right"
+                      >
+                        {inner}
+                      </button>
                     ) : (
                       <div className="flex min-w-0 flex-1 items-center gap-3">{inner}</div>
                     );
@@ -979,6 +1010,42 @@ export default function BankClient({
                             rowContent
                           )}
                         </div>
+                        {/* Every payment folded into an "אשראי משולם (גרואו)"
+                            Grow batch row — expanded in place instead of a
+                            separate summary card elsewhere on the page. */}
+                        {hasBreakdown && breakdownOpen && (
+                          <div className="space-y-1 border-t bg-muted/20 px-3 py-2 ps-8">
+                            {row.breakdown!.map((payment) => {
+                              const paymentInner = (
+                                <>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="break-words text-sm">{payment.label}</div>
+                                    <div className="text-xs break-words text-muted-foreground">
+                                      <span dir="ltr">{formatDate(payment.date)}</span>
+                                      {payment.sublabel && <span> · {payment.sublabel}</span>}
+                                    </div>
+                                  </div>
+                                  <div dir="ltr" className="shrink-0 text-sm font-medium tabular-nums text-success">
+                                    +{formatMoneyRounded(payment.amount)}
+                                  </div>
+                                </>
+                              );
+                              return payment.href ? (
+                                <Link
+                                  key={payment.id}
+                                  href={payment.href}
+                                  className="flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-background"
+                                >
+                                  {paymentInner}
+                                </Link>
+                              ) : (
+                                <div key={payment.id} className="flex items-center gap-2 px-1.5 py-1">
+                                  {paymentInner}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
