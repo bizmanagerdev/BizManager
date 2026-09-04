@@ -6,7 +6,7 @@ import { SwipeActions } from "@/components/ui/swipe-actions";
 import { Badge } from "@/components/ui/badge";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { formatMinutes, sessionWorkedMinutes, type WorkSessionRow } from "@/lib/payroll";
+import { formatCurrency, formatMinutes, sessionWorkedMinutes, toNumber, type WorkSessionRow } from "@/lib/payroll";
 import { getBusinessDomainLabel } from "@/lib/expenses";
 import { DayTile, shiftHoursText } from "@/components/attendance/DayTile";
 import { SessionEditFields, useSessionEdit } from "@/components/attendance/useSessionEdit";
@@ -46,6 +46,11 @@ export type SessionListItem = {
 /** Whose job was it — the specific project/address, else the domain. */
 function whatFor(item: SessionListItem) {
   return item.linkLabel || getBusinessDomainLabel(item.session.business_domain);
+}
+
+/** What the shift is worth — straight off attendance_sessions.labor_cost. */
+function sessionAmount(session: WorkSessionRow) {
+  return toNumber(session.labor_cost);
 }
 
 /**
@@ -174,6 +179,7 @@ function SessionSwipeRow({
   const [swipeOpen, setSwipeOpen] = useState(false);
   const payMeta = payStatusMeta(item.paymentStatus, locale);
   const editable = isEditable(item, canEdit);
+  const amount = sessionAmount(session);
 
   const row = (
     <div className="bg-card px-3 py-2 text-right text-xs">
@@ -193,6 +199,7 @@ function SessionSwipeRow({
         ) : null}
         <div className="min-w-0">
           <div className="break-words">{whatFor(item)}</div>
+          {amount > 0 ? <div className="mt-0.5 font-semibold tabular-nums">{formatCurrency(amount)}</div> : null}
           {payMeta ? (
             <Badge variant={payMeta.variant} className="mt-1">
               {payMeta.label}
@@ -280,6 +287,7 @@ function SessionTableRow({
   const edit = useSessionEdit(session);
   const payMeta = payStatusMeta(item.paymentStatus, locale);
   const editable = isEditable(item, canEdit);
+  const amount = sessionAmount(session);
   const hasActions = canEdit || Boolean(staffActions);
   // date + שיוך + payment, plus the (merged) timing column and the action column
   // when they're rendered — the editor row spans all of them.
@@ -301,8 +309,9 @@ function SessionTableRow({
           <div className="break-words">{whatFor(item)}</div>
           {session.notes ? <div className="text-xs text-muted-foreground">{session.notes}</div> : null}
         </td>
-        <td className="px-1 py-2 md:px-3">
-          {payMeta ? <Badge variant={payMeta.variant}>{payMeta.label}</Badge> : null}
+        <td className="whitespace-nowrap px-1 py-2 tabular-nums md:px-3">
+          {amount > 0 ? <div className="font-semibold">{formatCurrency(amount)}</div> : null}
+          {payMeta ? <Badge variant={payMeta.variant} className={amount > 0 ? "mt-1" : undefined}>{payMeta.label}</Badge> : null}
         </td>
         {hasActions ? (
           <td className="px-1 py-2 md:px-3">
