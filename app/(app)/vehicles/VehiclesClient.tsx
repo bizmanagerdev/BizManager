@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AddIcon, DocumentIcon, TaskIcon, VehicleIcon } from "@/components/ui/icons";
@@ -21,6 +20,7 @@ import { expiryStatus, type VehicleWithRollup } from "@/lib/vehicles";
 import AddReminderButton from "@/components/reminders/AddReminderButton";
 import { createVehicle, updateVehicle, deleteVehicle, type VehicleInput } from "./actions";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { rowNavigateProps } from "@/lib/ui/row-navigation";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete, scheduleDeferredEdit, registerReversibleCreate } from "@/lib/undo-engine";
 
@@ -214,18 +214,22 @@ export default function VehiclesClient({ vehicles: vehiclesProp }: { vehicles: V
           {vehicles.map((v) => {
             const net = v.rollup.totalIncomeAmount - v.rollup.paidExpenseAmount;
             return (
-              <Card key={v.tagId} className="flex flex-col">
+              <Card
+                key={v.tagId}
+                className="flex cursor-pointer flex-col transition-colors hover:bg-muted/20"
+                {...rowNavigateProps(router, `/vehicles/${v.tagId}`)}
+              >
                 <CardContent className="flex flex-1 flex-col gap-3 p-4">
                   <div className="flex items-start justify-between gap-2">
-                    <Link href={`/vehicles/${v.tagId}`} className="min-w-0 flex-1">
-                      <div className="truncate text-lg font-semibold hover:underline">{v.name}</div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-lg font-semibold">{v.name}</div>
                       <div className="truncate text-sm text-muted-foreground">
                         {[v.makeModel, v.licensePlate, v.year].filter(Boolean).join(" · ") || "—"}
                       </div>
                       {v.ownerName ? (
                         <div className="truncate text-xs text-muted-foreground">רשום על שם: {v.ownerName}</div>
                       ) : null}
-                    </Link>
+                    </div>
                     <div className="flex shrink-0 gap-1">
                       <AddReminderButton entityType="vehicle" entityId={v.tagId} label={v.name} className="h-9 w-9 p-0" iconOnly />
                       <EditButton onClick={() => openEdit(v)} label="עריכה" />
