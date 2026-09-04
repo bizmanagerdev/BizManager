@@ -86,7 +86,12 @@ export default function VehiclesClient({ vehicles: vehiclesProp }: { vehicles: V
         onCommit: async () => {
           const result = await updateVehicle(id, snapshotForm);
           if (result.ok) {
-            router.refresh();
+            // The write already landed — don't let a refresh hiccup read as a failed edit.
+            try {
+              router.refresh();
+            } catch {
+              // best-effort; the next real navigation picks up the fresh data
+            }
             return { ok: true };
           }
           return { ok: false, error: result.error };
@@ -128,7 +133,12 @@ export default function VehiclesClient({ vehicles: vehiclesProp }: { vehicles: V
       onCommit: async () => {
         const result = await deleteVehicle(target.tagId);
         if (result.ok) {
-          router.refresh();
+          // The delete already landed — don't let a refresh hiccup read as a failed delete.
+          try {
+            router.refresh();
+          } catch {
+            // best-effort; the next real navigation picks up the fresh data
+          }
           return { ok: true };
         }
         return { ok: false, error: result.error };

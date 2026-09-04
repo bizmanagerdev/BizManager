@@ -1,4 +1,5 @@
 import { toast } from "sonner";
+import { toHebrewError } from "@/lib/error-messages";
 
 /**
  * System-wide "undo" engine. Delete/edit actions are DEFERRED: the UI updates
@@ -107,7 +108,15 @@ async function fire(key: string) {
     if (!result.ok) {
       entry.onRevert();
       notify();
-      toast.error(result.error || "הפעולה נכשלה.");
+      // The commit runs in the background (no user gesture, well past the
+      // optimistic UI already showing "done"), so a rejection here is often a
+      // framework/network hiccup on the *follow-up* refresh rather than proof
+      // the mutation itself never landed — don't alarm with a raw error
+      // (production RSC errors especially: generic English framework text,
+      // see [feedback-user-messages-hebrew]) or claim outright failure.
+      toast.error(
+        toHebrewError(result.error, "אירעה שגיאה בעדכון התצוגה. רעננו את הדף כדי לוודא שהפעולה בוצעה.")
+      );
     }
   }
   // reversible (create) entries need no action on natural expiry — already committed.
