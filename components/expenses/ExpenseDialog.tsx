@@ -30,6 +30,7 @@ import {
   EXPENSE_BUSINESS_DOMAINS,
   EXPENSE_CATEGORY_OPTIONS,
   EXPENSE_PROPERTY_CATEGORIES,
+  EXPENSE_VEHICLE_CATEGORIES,
   EXPENSE_WORKER_WAGE_CATEGORY,
   EXPENSE_OTHER_CATEGORY,
   EXPENSE_CARS_CATEGORY,
@@ -72,7 +73,13 @@ const OTHER_CATEGORY = EXPENSE_OTHER_CATEGORY;
 const CARS_CATEGORY = EXPENSE_CARS_CATEGORY;
 const BASE_EXPENSE_CATEGORIES = [...EXPENSE_CATEGORY_OPTIONS];
 const PROPERTY_EXPENSE_CATEGORIES = [...EXPENSE_PROPERTY_CATEGORIES];
-const KNOWN_CATEGORIES = new Set([WORKER_WAGE_CATEGORY, ...BASE_EXPENSE_CATEGORIES, ...PROPERTY_EXPENSE_CATEGORIES]);
+const VEHICLE_EXPENSE_CATEGORIES = [...EXPENSE_VEHICLE_CATEGORIES];
+const KNOWN_CATEGORIES = new Set([
+  WORKER_WAGE_CATEGORY,
+  ...BASE_EXPENSE_CATEGORIES,
+  ...PROPERTY_EXPENSE_CATEGORIES,
+  ...VEHICLE_EXPENSE_CATEGORIES,
+]);
 // Domains where a worker session can be billed back to a customer/tenant, so the
 // "חיוב הלקוח" section is offered (form + express stay in sync via this list).
 const WORKER_BILLABLE_DOMAINS: readonly string[] = ["logistics_projects", "sales", "property_management"];
@@ -234,7 +241,7 @@ type Props = {
   // payments calendar). Falls back to today when omitted.
   defaultDate?: string;
 
-  // Default category for a NEW expense (e.g. "רכבים" from a car's page).
+  // Default category for a NEW expense.
   defaultCategory?: string;
   // Pre-select the account the money leaves from (opened from that account's
   // page on /financial/bank). Only applies to a NEW expense.
@@ -481,13 +488,26 @@ export function ExpenseDialog({
   const canManageWorkerSessions = currentUserRole === "admin" || currentUserRole === "office";
   const isWorkerPayment = workerSupport && category === WORKER_WAGE_CATEGORY;
 
+  // Opened from a vehicle's page (presetTagLabel = the car's name) — the tag
+  // link is already fixed there regardless of category (see the "trigger rule"
+  // in the vehicles feature), so the category list is swapped for car-upkeep
+  // types instead of the generic picklist. Applies to both add and edit.
+  const isVehicleContext = Boolean(presetTagLabel);
+  // A NEW expense from that page also already carries a category + tag — the
+  // domain (which "book" this cost is charged to) doesn't follow from that, so
+  // it's not asked; car costs default to שוטף (general_business) like any other
+  // quick add. Editing keeps the full form's normal, editable domain field.
+  const isVehicleQuickAdd = isVehicleContext && !isEditing && !isEditingTemplate;
+
   const lockedDomain: ExpenseBusinessDomain | null = lockedProjectId
     ? "logistics_projects"
     : lockedOrderId
       ? "sales"
       : lockedPropertyId
         ? "property_management"
-        : null;
+        : isVehicleQuickAdd
+          ? "general_business"
+          : null;
   const isSourceLocked = Boolean(lockedProjectId || lockedOrderId || lockedPropertyId);
   const effectiveDomain: ExpenseBusinessDomain | "" = lockedDomain ?? businessDomain;
   const effectiveProjectId = lockedProjectId ?? (effectiveDomain === "logistics_projects" ? projectId : "");
@@ -495,9 +515,11 @@ export function ExpenseDialog({
   const effectivePropertyId = lockedPropertyId ?? (effectiveDomain === "property_management" ? propertyId : "");
   const categoryOptions = workerSupport
     ? [WORKER_WAGE_CATEGORY, ...BASE_EXPENSE_CATEGORIES]
-    : effectiveDomain === "property_management"
-      ? [...PROPERTY_EXPENSE_CATEGORIES, ...BASE_EXPENSE_CATEGORIES]
-      : BASE_EXPENSE_CATEGORIES;
+    : isVehicleContext
+      ? [...VEHICLE_EXPENSE_CATEGORIES, OTHER_CATEGORY]
+      : effectiveDomain === "property_management"
+        ? [...PROPERTY_EXPENSE_CATEGORIES, ...BASE_EXPENSE_CATEGORIES]
+        : BASE_EXPENSE_CATEGORIES;
   const showBillingOptions = Boolean(effectiveProjectId);
 
   // Worker-session computed values.
@@ -1361,7 +1383,7 @@ export function ExpenseDialog({
       // category) so back-navigation stays consistent and the user can always
       // return to earlier steps; the worker-specific steps follow the category.
       const s: string[] = ["amount"];
-      if (!isSourceLocked) s.push("domain");
+      if (!lockedDomain) s.push("domain");
       if (needsSourcePicker) s.push("source");
       s.push("category");
       if (canManageWorkerSessions) s.push("worker");
@@ -1391,12 +1413,14 @@ export function ExpenseDialog({
     const s: string[] = ["amount"];
 
     // — What is it — classification + identity
-    if (!isSourceLocked) s.push("domain");
+    if (!lockedDomain) s.push("domain");
     if (needsSourcePicker) s.push("source");
     if (effectiveDomain) s.push("category");
     if (category === OTHER_CATEGORY) s.push("otherCategory");
     if (finalCategory === CARS_CATEGORY && !presetTagLabel) s.push("tags");
-    s.push("description");
+    // The car page's category chip ("רכבים") already names the expense well
+    // enough for the list (falls back to category there) — skip asking again.
+    if (!isVehicleQuickAdd) s.push("description");
     // One-time vs recurring: the choice reshapes the rest of the flow. Hidden when
     // the entry point already fixes it (template edit, or the "new recurring" creator).
     // Kept BEFORE every isRecurring-dependent step so switching adds them AHEAD.
@@ -1441,7 +1465,7 @@ export function ExpenseDialog({
     s.push("review");
     return s;
   }, [
-    isSourceLocked, needsSourcePicker, effectiveDomain, category, isWorkerPayment,
+    lockedDomain, isVehicleQuickAdd, needsSourcePicker, effectiveDomain, category, isWorkerPayment,
     finalCategory, presetTagLabel, paymentStatus, isEditing, installmentsMode,
     showBillingOptions, showAttachments, canManageWorkerSessions,
     showSessionTimingFields, showSessionPriceField, selectedWorkerType,
@@ -1722,7 +1746,14 @@ export function ExpenseDialog({
       case "category": {
         return (
           <>
-            {expTitle("איזו קטגוריה?", isRecurring ? "לסיווג ולדוחות — לא השם שיוצג" : "קטגוריות מתוך התחום שבחרת")}
+            {expTitle(
+              "איזו קטגוריה?",
+              isRecurring
+                ? "לסיווג ולדוחות — לא השם שיוצג"
+                : lockedDomain
+                  ? undefined
+                  : "קטגוריות מתוך התחום שבחרת"
+            )}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {categoryOptions.map((c, i) =>
                 expCard({

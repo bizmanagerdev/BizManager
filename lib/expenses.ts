@@ -89,6 +89,19 @@ export const EXPENSE_PROPERTY_CATEGORIES = [
   "ועד בית",
 ] as const;
 
+// Vehicle (car page) expense categories — REPLACE the base list rather than add
+// to it: a car's own page already establishes "this is a car cost", so generic
+// options (food, VAT/tax remittance, general purchase...) don't apply. טסט/
+// ביטוח/רישוי mirror the due-date fields already tracked per vehicle.
+export const EXPENSE_VEHICLE_CATEGORIES = [
+  "דלק",
+  "ניקיון",
+  "מוסך ותיקונים",
+  "ביטוח",
+  "טסט",
+  "רישוי",
+] as const;
+
 export function getBusinessDomainLabel(value: string | null | undefined) {
   if (value === "general_business") return "שוטף";
   if (value === "property_management") return "ניהול נכסים";

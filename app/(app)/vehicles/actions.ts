@@ -3,21 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { toHebrewError } from "@/lib/error-messages";
+import type { VehicleInput } from "@/lib/vehicles";
 
 export type ActionResult = { ok: true; tagId?: string } | { ok: false; error: string };
 
-export type VehicleInput = {
-  name: string;
-  license_plate: string;
-  make_model: string;
-  year: string; // raw from the input; parsed here
-  test_due_date: string;
-  insurance_due_date: string;
-  license_due_date: string;
-  owner_name: string;
-  color: string;
-  notes: string;
-};
+export type { VehicleInput };
 
 function clean(value: string | null | undefined) {
   const trimmed = typeof value === "string" ? value.trim() : "";

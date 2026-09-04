@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowRightIcon, TaskIcon, TrendDownIcon, TrendUpIcon, VehicleIcon } from "@/components/ui/icons";
+import { TaskIcon, TrendDownIcon } from "@/components/ui/icons";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +10,7 @@ import { expiryStatus, fetchVehicle, fetchVehicleActivity } from "@/lib/vehicles
 import { propertyDisplayName } from "@/lib/properties";
 import type { UserOption } from "@/components/tasks/TaskUpsertDialog";
 import VehicleActivityClient from "./VehicleActivityClient";
+import VehicleHeaderCard from "./VehicleHeaderCard";
 
 export const revalidate = 30;
 
@@ -39,11 +39,10 @@ function StatCard({
 }: {
   label: string;
   value: string;
-  tone?: "income" | "expense" | "neutral";
+  tone?: "expense" | "neutral";
   icon?: React.ReactNode;
 }) {
-  const color =
-    tone === "income" ? "text-emerald-600" : tone === "expense" ? "text-destructive" : "";
+  const color = tone === "expense" ? "text-destructive" : "";
   return (
     <Card>
       <CardContent className="p-4">
@@ -112,31 +111,10 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
     }))
     .filter((p) => p.id);
 
-  const net = activity.rollup.totalIncomeAmount - activity.rollup.paidExpenseAmount;
-
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <PageStack>
-        <Link
-          href="/vehicles"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"
-        >
-          <ArrowRightIcon className="h-4 w-4" />
-          חזרה לרכבים
-        </Link>
-
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <VehicleIcon className="h-6 w-6" />
-            {vehicle.name}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {[vehicle.makeModel, vehicle.licensePlate, vehicle.year].filter(Boolean).join(" · ") || "—"}
-          </p>
-          {vehicle.ownerName ? (
-            <p className="text-sm text-muted-foreground">רשום על שם: {vehicle.ownerName}</p>
-          ) : null}
-        </div>
+        <VehicleHeaderCard vehicle={vehicle} />
 
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <ExpiryBadge label="טסט" date={vehicle.testDueDate} />
@@ -144,20 +122,13 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
           <ExpiryBadge label="רישוי" date={vehicle.licenseDueDate} />
         </div>
 
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3">
           <StatCard
             label="הוצאות ששולמו"
             value={formatCurrency(activity.rollup.paidExpenseAmount)}
             tone="expense"
             icon={<TrendDownIcon className="h-3.5 w-3.5" />}
           />
-          <StatCard
-            label="הכנסות"
-            value={formatCurrency(activity.rollup.totalIncomeAmount)}
-            tone="income"
-            icon={<TrendUpIcon className="h-3.5 w-3.5" />}
-          />
-          <StatCard label="נטו" value={formatCurrency(net)} tone={net >= 0 ? "income" : "expense"} />
           <StatCard
             label="משימות פתוחות"
             value={`${activity.rollup.openTaskCount}/${activity.rollup.taskCount}`}

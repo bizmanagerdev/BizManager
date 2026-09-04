@@ -38,6 +38,72 @@ export type VehicleRollup = {
 
 export type VehicleWithRollup = Vehicle & { rollup: VehicleRollup };
 
+// ── Shared create/edit form shape — used by both the vehicles list dialog
+// and the detail page's own edit affordance, so they never drift apart. ──
+export type VehicleInput = {
+  name: string;
+  license_plate: string;
+  make_model: string;
+  year: string; // raw from the input; parsed by the server action
+  test_due_date: string;
+  insurance_due_date: string;
+  license_due_date: string;
+  owner_name: string;
+  color: string;
+  notes: string;
+};
+
+export const EMPTY_VEHICLE_FORM: VehicleInput = {
+  name: "",
+  license_plate: "",
+  make_model: "",
+  year: "",
+  test_due_date: "",
+  insurance_due_date: "",
+  license_due_date: "",
+  owner_name: "",
+  color: "",
+  notes: "",
+};
+
+export function vehicleToForm(v: Vehicle): VehicleInput {
+  return {
+    name: v.name ?? "",
+    license_plate: v.licensePlate ?? "",
+    make_model: v.makeModel ?? "",
+    year: v.year ? String(v.year) : "",
+    test_due_date: v.testDueDate ?? "",
+    insurance_due_date: v.insuranceDueDate ?? "",
+    license_due_date: v.licenseDueDate ?? "",
+    owner_name: v.ownerName ?? "",
+    color: v.color ?? "",
+    notes: v.notes ?? "",
+  };
+}
+
+function deriveVehicleName(input: VehicleInput): string {
+  const explicit = input.name.trim();
+  if (explicit) return explicit;
+  const parts = [input.make_model.trim(), input.license_plate.trim()].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "רכב";
+}
+
+/** Optimistic patch shown during the undo grace window — mirrors actions.ts's server-side deriveName/vehicleFields. */
+export function buildVehiclePatch(input: VehicleInput): Partial<Vehicle> {
+  const yearNum = Number(input.year);
+  return {
+    name: deriveVehicleName(input),
+    licensePlate: input.license_plate.trim() || null,
+    makeModel: input.make_model.trim() || null,
+    year: Number.isInteger(yearNum) && yearNum >= 1900 && yearNum <= 2100 ? yearNum : null,
+    testDueDate: input.test_due_date.trim() || null,
+    insuranceDueDate: input.insurance_due_date.trim() || null,
+    licenseDueDate: input.license_due_date.trim() || null,
+    ownerName: input.owner_name.trim() || null,
+    notes: input.notes.trim() || null,
+  };
+}
+
 const EMPTY_ROLLUP: VehicleRollup = {
   totalExpenseAmount: 0,
   paidExpenseAmount: 0,

@@ -3,37 +3,26 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AddIcon, DocumentIcon, TaskIcon } from "@/components/ui/icons";
+import { AddIcon, ChevronDownIcon, DocumentIcon, TaskIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { DictateButton } from "@/components/ui/dictate-button";
-import { appendDictatedText } from "@/lib/dictation";
-import { DateInput } from "@/components/ui/date-input";
-import { CurrencyInput } from "@/components/ui/currency-input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { ExpenseDialog, type EditingExpenseData } from "@/components/expenses/ExpenseDialog";
-import AccountSelect from "@/components/financial/AccountSelect";
-import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { TaskUpsertDialog, type UserOption } from "@/components/tasks/TaskUpsertDialog";
-import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
 import { DOCUMENT_CATEGORIES, inferDefaultDocumentCategory } from "@/lib/documents";
 import { formatCurrency } from "@/lib/payroll";
-import { taskStatusLabel, type VehicleActivity, type VehicleExpense } from "@/lib/vehicles";
+import { taskStatusLabel, type VehicleActivity, type VehicleDocument, type VehicleExpense } from "@/lib/vehicles";
 import { toHebrewError } from "@/lib/error-messages";
 import { offlineUpload } from "@/lib/offline-upload";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
-import { scheduleDeferredDelete, registerReversibleCreate } from "@/lib/undo-engine";
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
+import { scheduleDeferredDelete } from "@/lib/undo-engine";
+import { cn } from "@/lib/utils";
 
 function fmtDate(value: string | null) {
   if (!value) return "";
@@ -42,9 +31,70 @@ function fmtDate(value: string | null) {
   return new Intl.DateTimeFormat("he-IL", { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
 }
 
-// Income methods that don't require a due-date/check-number (kept simple here;
-// check income is still added from the financial screen).
-const SIMPLE_METHODS = PAYMENT_METHOD_OPTIONS.filter((m) => m.value !== "check");
+// Groups documents by the year they're FOR (refYear — e.g. a 2026 טסט
+// certificate), falling back to the upload year when it's not set. Newest
+// year first, with "ללא שנה" (unset on both) always last — so an archive
+// that grows to many years stays scannable instead of one long flat list.
+function groupDocumentsByYear(documents: VehicleDocument[]): Array<{ year: number | null; docs: VehicleDocument[] }> {
+  const groups = new Map<number | null, VehicleDocument[]>();
+  for (const doc of documents) {
+    const year = doc.refYear ?? (doc.uploadedAt ? new Date(doc.uploadedAt).getFullYear() : null);
+    const key = Number.isFinite(year) ? (year as number) : null;
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(doc);
+    else groups.set(key, [doc]);
+  }
+  return Array.from(groups.entries()).sort(([a], [b]) => {
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return b - a;
+  }).map(([year, docs]) => ({ year, docs }));
+}
+
+function DocumentYearGroup({
+  year,
+  docs,
+  defaultOpen,
+  onDelete,
+}: {
+  year: number | null;
+  docs: VehicleDocument[];
+  defaultOpen: boolean;
+  onDelete: (doc: VehicleDocument) => void;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="overflow-hidden rounded-lg border">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-2 bg-muted/30 px-3 py-2 text-start"
+      >
+        <span className="flex items-center gap-2 text-sm font-medium">
+          {year ?? "ללא שנה"}
+          <Badge variant="neutral">{docs.length}</Badge>
+        </span>
+        <ChevronDownIcon className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
+      </button>
+      {open ? (
+        <div className="space-y-2 p-3 pt-2">
+          {docs.map((d) => (
+            <div key={d.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
+              <div className="min-w-0 text-sm">
+                <div className="truncate font-medium">{d.title || d.fileName || "מסמך"}</div>
+                <div className="text-xs text-muted-foreground">
+                  {[d.documentType, fmtDate(d.uploadedAt)].filter(Boolean).join(" · ") || "—"}
+                </div>
+              </div>
+              <DeleteButton onClick={() => onDelete(d)} label="מחיקת מסמך" />
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 type SourceOption = { id: string; label: string };
 
@@ -92,7 +142,6 @@ export default function VehicleActivityClient({
   const refresh = () => router.refresh();
 
   const expenses = useUndoOverlay(activity.expenses, (e) => e.id, "vehicle-expense");
-  const payments = useUndoOverlay(activity.payments, (p) => p.id, "vehicle-payment");
   const tasks = useUndoOverlay(activity.tasks, (t) => t.id, "vehicle-task");
   const documents = useUndoOverlay(activity.documents, (d) => d.id, "vehicle-document");
 
@@ -102,15 +151,6 @@ export default function VehicleActivityClient({
   // task
   const [taskOpen, setTaskOpen] = useState(false);
   const [editTaskId, setEditTaskId] = useState<string | null>(null);
-  // income
-  const [incomeOpen, setIncomeOpen] = useState(false);
-  const [incAmount, setIncAmount] = useState("");
-  const [incDate, setIncDate] = useState(todayIso());
-  const [incMethod, setIncMethod] = useState("bank_transfer");
-  const [incAccountId, setIncAccountId] = useState("");
-  const [incAccountsList, setIncAccountsList] = useState<Account[]>([]);
-  const [incNotes, setIncNotes] = useState("");
-  const [incBusy, setIncBusy] = useState(false);
   // document
   const [docOpen, setDocOpen] = useState(false);
   const [docFiles, setDocFiles] = useState<File[]>([]);
@@ -136,80 +176,11 @@ export default function VehicleActivityClient({
     setEditTaskId(id);
     setTaskOpen(true);
   }
-  function openAddIncome() {
-    setIncAmount("");
-    setIncDate(todayIso());
-    setIncMethod("bank_transfer");
-    setIncNotes("");
-    setIncomeOpen(true);
-  }
   function openAddDoc() {
     setDocFiles([]);
     setDocYear("");
     setDocCategory("");
     setDocOpen(true);
-  }
-
-  async function submitIncome() {
-    const amount = Number(incAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      toast.error("יש להזין סכום תקין");
-      return;
-    }
-    if (!incDate) {
-      toast.error("יש לבחור תאריך");
-      return;
-    }
-    if (incAccountsList.length > 0 && !incAccountId) {
-      toast.error("יש לבחור חשבון לתנועה.");
-      return;
-    }
-    setIncBusy(true);
-    try {
-      const res = await fetch("/api/payments/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          business_domain: "general_business",
-          amount_total: amount,
-          payment_date: incDate,
-          payment_method: incMethod,
-          account_id: incAccountId || null,
-          notes: incNotes.trim() || null,
-          tag_ids: [tagId],
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error("שגיאה ביצירת ההכנסה", { description: toHebrewError(json?.error, "") });
-        return;
-      }
-      setIncomeOpen(false);
-      refresh();
-      const newId = (json?.payment as { id?: string } | null)?.id;
-      if (!newId) {
-        toast.success("ההכנסה נוספה");
-        return;
-      }
-      registerReversibleCreate({
-        scope: "vehicle-payment",
-        id: newId,
-        message: "ההכנסה נוספה",
-        onUndo: async () => {
-          const delRes = await fetch("/api/payments/delete", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ id: newId }),
-          });
-          const delJson = await delRes.json().catch(() => ({}));
-          refresh();
-          if (!delRes.ok) return { ok: false, error: toHebrewError(delJson?.error, "ביטול נכשל.") };
-          return { ok: true };
-        },
-      });
-    } finally {
-      setIncBusy(false);
-    }
   }
 
   async function submitDoc() {
@@ -262,13 +233,7 @@ export default function VehicleActivityClient({
     const target = del;
     setDel(null);
     const scope =
-      target.kind === "expense"
-        ? "vehicle-expense"
-        : target.kind === "payment"
-          ? "vehicle-payment"
-          : target.kind === "task"
-            ? "vehicle-task"
-            : "vehicle-document";
+      target.kind === "expense" ? "vehicle-expense" : target.kind === "task" ? "vehicle-task" : "vehicle-document";
     scheduleDeferredDelete({
       scope,
       id: target.id,
@@ -277,11 +242,9 @@ export default function VehicleActivityClient({
         const endpoint =
           target.kind === "expense"
             ? ["/api/expenses/delete", { id: target.id }]
-            : target.kind === "payment"
-              ? ["/api/payments/delete", { id: target.id }]
-              : target.kind === "task"
-                ? ["/api/tasks/delete", { id: target.id }]
-                : ["/api/documents/delete", { document_id: target.id }];
+            : target.kind === "task"
+              ? ["/api/tasks/delete", { id: target.id }]
+              : ["/api/documents/delete", { document_id: target.id }];
         const res = await fetch(endpoint[0] as string, {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -330,37 +293,6 @@ export default function VehicleActivityClient({
           </CardContent>
         </Card>
 
-        {/* Income */}
-        <Card>
-          <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
-            <CardTitle className="text-base">הכנסות ({payments.length})</CardTitle>
-            <Button size="sm" onClick={openAddIncome}>
-              <AddIcon className="h-4 w-4" />
-              הכנסה
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {payments.length === 0 ? (
-              <p className="text-sm text-muted-foreground">אין הכנסות מתויגות לרכב זה.</p>
-            ) : (
-              payments.map((p) => (
-                <div key={p.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
-                  <div className="min-w-0 text-sm">
-                    <div className="truncate font-medium">{p.method || "תשלום"}</div>
-                    <div className="text-xs text-muted-foreground">{fmtDate(p.date) || "—"}</div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <span className="font-semibold text-emerald-600">{formatCurrency(p.amount)}</span>
-                    {p.projectId ? null : (
-                      <DeleteButton onClick={() => setDel({ kind: "payment", id: p.id, label: "הכנסה" })} label="מחיקת הכנסה" />
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-
         {/* Tasks */}
         <Card>
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
@@ -395,7 +327,7 @@ export default function VehicleActivityClient({
         </Card>
 
         {/* Documents */}
-        <Card>
+        <Card className="lg:col-span-2">
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
             <CardTitle className="flex items-center gap-1 text-base">
               <DocumentIcon className="h-4 w-4" />
@@ -410,19 +342,14 @@ export default function VehicleActivityClient({
             {documents.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין מסמכים מתויגים לרכב זה.</p>
             ) : (
-              documents.map((d) => (
-                <div key={d.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
-                  <div className="min-w-0 text-sm">
-                    <div className="truncate font-medium">{d.title || d.fileName || "מסמך"}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {[d.documentType, fmtDate(d.uploadedAt)].filter(Boolean).join(" · ") || "—"}
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    {d.refYear ? <Badge variant="neutral">{d.refYear}</Badge> : null}
-                    <DeleteButton onClick={() => setDel({ kind: "document", id: d.id, label: d.title || "מסמך" })} label="מחיקת מסמך" />
-                  </div>
-                </div>
+              groupDocumentsByYear(documents).map((group, i) => (
+                <DocumentYearGroup
+                  key={group.year ?? "none"}
+                  year={group.year}
+                  docs={group.docs}
+                  defaultOpen={i === 0}
+                  onDelete={(d) => setDel({ kind: "document", id: d.id, label: d.title || "מסמך" })}
+                />
               ))
             )}
           </CardContent>
@@ -434,7 +361,6 @@ export default function VehicleActivityClient({
         open={expenseOpen}
         onOpenChange={setExpenseOpen}
         editingExpense={editingExpense}
-        defaultCategory="רכבים"
         presetTagIds={[tagId]}
         presetTagLabel={vehicleName}
         recurringProjects={projects}
@@ -455,68 +381,6 @@ export default function VehicleActivityClient({
         presetTagIds={[tagId]}
         onSaved={() => refresh()}
       />
-
-      {/* Income dialog (add) */}
-      <FormDialog
-        open={incomeOpen}
-        onOpenChange={setIncomeOpen}
-        title={`הוספת הכנסה לרכב: ${vehicleName}`}
-        description="ההכנסה נרשמת ומתויגת לרכב הזה."
-        size="formMd"
-        onSubmit={() => void submitIncome()}
-        submitLabel="הוספה"
-        busyLabel="שומר..."
-        busy={incBusy}
-      >
-          <div className="mt-4 space-y-4">
-            <div className="space-y-1">
-              <div className="text-sm font-medium">סכום *</div>
-              <CurrencyInput type="number" min="0" step="0.01" value={incAmount} onChange={(e) => setIncAmount(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <div className="text-sm font-medium">תאריך</div>
-              <DateInput value={incDate} onChange={(e) => setIncDate(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <div className="text-sm font-medium">אמצעי תשלום</div>
-              <NativeSelect
-                value={incMethod}
-                onChange={(e) => {
-                  const m = e.target.value;
-                  setIncMethod(m);
-                  setIncAccountId((prev) => prev || defaultAccountForMethod(incAccountsList, m));
-                }}
-              >
-                {SIMPLE_METHODS.map((m) => (
-                  <option key={m.value} value={m.value}>{m.label}</option>
-                ))}
-              </NativeSelect>
-            </div>
-            <AccountSelect
-              required
-              value={incAccountId}
-              onChange={setIncAccountId}
-              onLoaded={(list) => {
-                setIncAccountsList(list);
-                setIncAccountId((prev) => prev || defaultAccountForMethod(list, incMethod));
-              }}
-            />
-            <div className="space-y-1">
-              <div className="text-sm font-medium">הערות</div>
-              <div className="relative">
-                <Textarea
-                  value={incNotes}
-                  onChange={(e) => setIncNotes(e.target.value)}
-                  className="pe-11"
-                />
-                <DictateButton
-                  onTranscript={(text) => setIncNotes((prev) => appendDictatedText(prev, text))}
-                  className="absolute bottom-1 end-1 h-8 w-8"
-                />
-              </div>
-            </div>
-          </div>
-      </FormDialog>
 
       {/* Document upload dialog (add) */}
       <FormDialog
