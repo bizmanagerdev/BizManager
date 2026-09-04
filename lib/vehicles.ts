@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchAllPaged } from "@/lib/supabase/paginate";
+import { STORAGE_BUCKET } from "@/lib/storage";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Vehicles (רכבים) — a structured "asset" built on the generic tags backbone.
@@ -25,6 +26,8 @@ export type Vehicle = {
   licenseDueDate: string | null; // רישוי
   ownerName: string | null; // רשום על שם
   createdAt: string | null;
+  photoDocumentId: string | null; // FK to documents — the car's single cover photo, not a gallery
+  photoUrl: string | null; // resolved signed URL (short-lived; see resolveVehiclePhotoUrls)
 };
 
 export type VehicleRollup = {
@@ -150,7 +153,44 @@ function normalizeVehicle(row: Row): Vehicle {
     licenseDueDate: str(row.license_due_date),
     ownerName: str(row.owner_name),
     createdAt: str(tag.created_at),
+    photoDocumentId: str(row.photo_document_id),
+    photoUrl: null,
   };
+}
+
+/**
+ * Batch-resolve every vehicle's cover photo to a short-lived signed URL — ONE
+ * `documents` lookup + ONE storage `createSignedUrls` call regardless of fleet
+ * size (mirrors lib/properties.ts's attachLeaseDocumentUrls). Resilient: any
+ * failure just leaves photoUrl null instead of breaking the page.
+ */
+async function resolveVehiclePhotoUrls<T extends Vehicle>(supabase: SupabaseClient, vehicles: T[]): Promise<T[]> {
+  const docIds = Array.from(new Set(vehicles.map((v) => v.photoDocumentId).filter((id): id is string => Boolean(id))));
+  if (docIds.length === 0) return vehicles;
+  try {
+    const { data: docs } = await supabase.from("documents").select("id,storage_key").in("id", docIds);
+    const keyByDocId = new Map<string, string>();
+    for (const row of (docs ?? []) as Row[]) {
+      const id = str(row.id);
+      const key = str(row.storage_key);
+      if (id && key) keyByDocId.set(id, key);
+    }
+    const keys = Array.from(new Set(keyByDocId.values()));
+    const urlByKey = new Map<string, string>();
+    if (keys.length > 0) {
+      const { data: signed } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrls(keys, 60 * 60);
+      for (const s of signed ?? []) {
+        if (s.path && s.signedUrl) urlByKey.set(s.path, s.signedUrl);
+      }
+    }
+    return vehicles.map((v) => {
+      if (!v.photoDocumentId) return v;
+      const key = keyByDocId.get(v.photoDocumentId);
+      return { ...v, photoUrl: (key ? urlByKey.get(key) : null) ?? null };
+    });
+  } catch {
+    return vehicles;
+  }
 }
 
 /**
@@ -165,16 +205,31 @@ export async function fetchVehicles(supabase: SupabaseClient): Promise<VehicleWi
         supabase
           .from("vehicles")
           .select(
-            "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,tag:tags!inner(id,name,color,is_active,notes,created_at)"
+            "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,photo_document_id,tag:tags!inner(id,name,color,is_active,notes,created_at)"
           )
           .eq("tag.kind", "vehicle")
           .range(lo, hi)
       );
     } catch {
-      return [];
+      // Pre-migration: `photo_document_id` may not exist yet (db/sql/create_vehicle_photo.sql
+      // not run). Retry without it rather than showing an empty fleet — a missing
+      // column must never look like missing data (see fetchAllPagedResult's note).
+      try {
+        data = await fetchAllPaged<Row>((lo, hi) =>
+          supabase
+            .from("vehicles")
+            .select(
+              "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,tag:tags!inner(id,name,color,is_active,notes,created_at)"
+            )
+            .eq("tag.kind", "vehicle")
+            .range(lo, hi)
+        );
+      } catch {
+        return [];
+      }
     }
 
-    const vehicles = data.map(normalizeVehicle).filter((v) => v.tagId);
+    const vehicles = await resolveVehiclePhotoUrls(supabase, data.map(normalizeVehicle).filter((v) => v.tagId));
 
     // One global rollup call (SECURITY DEFINER → not per-role). Keyed by tag_id.
     const rollupByTag = new Map<string, VehicleRollup>();
@@ -205,16 +260,28 @@ export async function fetchVehicle(
   tagId: string
 ): Promise<Vehicle | null> {
   try {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("vehicles")
       .select(
-        "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,tag:tags!inner(id,name,color,is_active,notes,created_at)"
+        "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,photo_document_id,tag:tags!inner(id,name,color,is_active,notes,created_at)"
       )
       .eq("tag_id", tagId)
       .maybeSingle();
+    if (error) {
+      // Pre-migration fallback — see the matching comment in fetchVehicles.
+      ({ data, error } = await supabase
+        .from("vehicles")
+        .select(
+          "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,tag:tags!inner(id,name,color,is_active,notes,created_at)"
+        )
+        .eq("tag_id", tagId)
+        .maybeSingle());
+    }
     if (error || !data) return null;
     const v = normalizeVehicle(data as Row);
-    return v.tagId ? v : null;
+    if (!v.tagId) return null;
+    const [resolved] = await resolveVehiclePhotoUrls(supabase, [v]);
+    return resolved ?? v;
   } catch {
     return null;
   }

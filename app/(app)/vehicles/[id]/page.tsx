@@ -2,34 +2,17 @@ import { notFound, redirect } from "next/navigation";
 import { TaskIcon, TrendDownIcon } from "@/components/ui/icons";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageStack } from "@/components/layout/page-layout";
 import { formatCurrency } from "@/lib/payroll";
-import { expiryStatus, fetchVehicle, fetchVehicleActivity } from "@/lib/vehicles";
+import { fetchVehicle, fetchVehicleActivity } from "@/lib/vehicles";
 import { propertyDisplayName } from "@/lib/properties";
 import type { UserOption } from "@/components/tasks/TaskUpsertDialog";
+import { VehicleExpiryRow } from "@/components/vehicles/VehicleExpiryRow";
 import VehicleActivityClient from "./VehicleActivityClient";
 import VehicleHeaderCard from "./VehicleHeaderCard";
 
 export const revalidate = 30;
-
-function ExpiryBadge({ label, date }: { label: string; date: string | null }) {
-  const status = expiryStatus(date);
-  return (
-    <div className="flex items-center gap-2 rounded-md border bg-muted/20 px-3 py-2 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      {date ? (
-        <>
-          <span className="font-medium">{date}</span>
-          {status ? <Badge variant={status.tone}>{status.label}</Badge> : null}
-        </>
-      ) : (
-        <span className="text-muted-foreground">לא הוגדר</span>
-      )}
-    </div>
-  );
-}
 
 function StatCard({
   label,
@@ -116,10 +99,10 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
       <PageStack>
         <VehicleHeaderCard vehicle={vehicle} />
 
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <ExpiryBadge label="טסט" date={vehicle.testDueDate} />
-          <ExpiryBadge label="ביטוח" date={vehicle.insuranceDueDate} />
-          <ExpiryBadge label="רישוי" date={vehicle.licenseDueDate} />
+        <div className="space-y-2">
+          <VehicleExpiryRow kind="test" label="טסט" date={vehicle.testDueDate} />
+          <VehicleExpiryRow kind="insurance" label="ביטוח" date={vehicle.insuranceDueDate} />
+          <VehicleExpiryRow kind="license" label="רישוי" date={vehicle.licenseDueDate} />
         </div>
 
         <div className="grid grid-cols-2 gap-3">

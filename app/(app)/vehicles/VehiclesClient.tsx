@@ -5,14 +5,12 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AddIcon, DocumentIcon, TaskIcon, TrendDownIcon, VehicleIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { PageStack, AdaptiveGrid } from "@/components/layout/page-layout";
 import { formatCurrency } from "@/lib/payroll";
 import {
-  expiryStatus,
   EMPTY_VEHICLE_FORM,
   vehicleToForm,
   buildVehiclePatch,
@@ -20,29 +18,14 @@ import {
   type VehicleWithRollup,
 } from "@/lib/vehicles";
 import VehicleFormFields from "@/components/vehicles/VehicleFormFields";
+import VehiclePhotoAvatar from "@/components/vehicles/VehiclePhotoAvatar";
+import { VehicleExpiryRow } from "@/components/vehicles/VehicleExpiryRow";
 import AddReminderButton from "@/components/reminders/AddReminderButton";
 import { createVehicle, updateVehicle, deleteVehicle } from "./actions";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { rowNavigateProps } from "@/lib/ui/row-navigation";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete, scheduleDeferredEdit, registerReversibleCreate } from "@/lib/undo-engine";
-
-function ExpiryRow({ label, date }: { label: string; date: string | null }) {
-  const status = expiryStatus(date);
-  return (
-    <div className="flex items-center justify-between gap-2 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      {date ? (
-        <span className="flex items-center gap-2">
-          <span>{date}</span>
-          {status ? <Badge variant={status.tone}>{status.label}</Badge> : null}
-        </span>
-      ) : (
-        <span className="text-muted-foreground">—</span>
-      )}
-    </div>
-  );
-}
 
 export default function VehiclesClient({ vehicles: vehiclesProp }: { vehicles: VehicleWithRollup[] }) {
   const router = useRouter();
@@ -180,15 +163,15 @@ export default function VehiclesClient({ vehicles: vehiclesProp }: { vehicles: V
                 {...rowNavigateProps(router, `/vehicles/${v.tagId}`)}
               >
                 <CardContent className="flex flex-1 flex-col gap-3 p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-lg font-semibold">{v.name}</div>
-                      <div className="truncate text-sm text-muted-foreground">
-                        {[v.makeModel, v.licensePlate, v.year].filter(Boolean).join(" · ") || "—"}
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="flex min-w-0 flex-1 items-start gap-3">
+                      <VehiclePhotoAvatar tagId={v.tagId} name={v.name} photoUrl={v.photoUrl} size="sm" />
+                      <div className="min-w-0 break-words">
+                        <div className="text-lg font-semibold">{v.name}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {[v.makeModel, v.licensePlate, v.year].filter(Boolean).join(" · ") || "—"}
+                        </div>
                       </div>
-                      {v.ownerName ? (
-                        <div className="truncate text-xs text-muted-foreground">רשום על שם: {v.ownerName}</div>
-                      ) : null}
                     </div>
                     <div className="flex shrink-0 gap-1">
                       <AddReminderButton entityType="vehicle" entityId={v.tagId} label={v.name} className="h-9 w-9 p-0" iconOnly />
@@ -197,10 +180,10 @@ export default function VehiclesClient({ vehicles: vehiclesProp }: { vehicles: V
                     </div>
                   </div>
 
-                  <div className="space-y-1 rounded-md border bg-muted/20 p-2">
-                    <ExpiryRow label="טסט" date={v.testDueDate} />
-                    <ExpiryRow label="ביטוח" date={v.insuranceDueDate} />
-                    <ExpiryRow label="רישוי" date={v.licenseDueDate} />
+                  <div className="space-y-2">
+                    <VehicleExpiryRow kind="test" label="טסט" date={v.testDueDate} />
+                    <VehicleExpiryRow kind="insurance" label="ביטוח" date={v.insuranceDueDate} />
+                    <VehicleExpiryRow kind="license" label="רישוי" date={v.licenseDueDate} />
                   </div>
 
                   <div className="mt-auto flex items-center gap-3 text-xs text-muted-foreground">

@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { VehicleIcon } from "@/components/ui/icons";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
@@ -17,6 +16,7 @@ import {
   type VehicleInput,
 } from "@/lib/vehicles";
 import VehicleFormFields from "@/components/vehicles/VehicleFormFields";
+import VehiclePhotoAvatar from "@/components/vehicles/VehiclePhotoAvatar";
 import { deleteVehicle, updateVehicle } from "../actions";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete, scheduleDeferredEdit } from "@/lib/undo-engine";
@@ -77,18 +77,15 @@ export default function VehicleHeaderCard({ vehicle }: { vehicle: Vehicle }) {
   }
 
   return (
-    <div className="flex items-start justify-between gap-2">
-      <div className="min-w-0">
-        <h1 className="flex items-center gap-2 text-2xl font-semibold">
-          <VehicleIcon className="h-6 w-6 shrink-0" />
-          <span className="truncate">{display.name}</span>
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {[display.makeModel, display.licensePlate, display.year].filter(Boolean).join(" · ") || "—"}
-        </p>
-        {display.ownerName ? (
-          <p className="text-sm text-muted-foreground">רשום על שם: {display.ownerName}</p>
-        ) : null}
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <VehiclePhotoAvatar tagId={vehicle.tagId} name={display.name} photoUrl={display.photoUrl} size="lg" editable />
+        <div className="min-w-0 break-words">
+          <h1 className="text-2xl font-semibold">{display.name}</h1>
+          <p className="text-sm text-muted-foreground">
+            {[display.makeModel, display.licensePlate, display.year].filter(Boolean).join(" · ") || "—"}
+          </p>
+        </div>
       </div>
       <div className="flex shrink-0 gap-1">
         <AddReminderButton entityType="vehicle" entityId={vehicle.tagId} label={display.name} className="h-9 w-9 p-0" iconOnly />
