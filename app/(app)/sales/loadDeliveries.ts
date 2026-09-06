@@ -50,6 +50,10 @@ export type DeliveryItem = {
   address: string;
   /** The order's products, so the driver sees what to load/deliver. */
   items: DeliveryOrderItem[];
+  /** True when at least one line's product is oversold (on-hand − reserved <
+   *  0) — same "available < 0" signal the orders list uses. Warns the driver
+   *  before they attempt a delivery that may not actually be in stock. */
+  outOfStock: boolean;
   /** Customer is flagged "pay ahead" (customers.requires_prepayment). */
   requiresPrepayment: boolean;
   /** Standing arrival directions for this customer ("around the corner, blue gate"). */
@@ -138,6 +142,7 @@ export async function loadDeliveriesPage(
       city: getString(row, "branch_city") ?? getString(row, "customer_city") ?? "ללא עיר",
       address: getString(row, "branch_address") ?? getString(row, "customer_address") ?? "-",
       items: [] as DeliveryOrderItem[],
+      outOfStock: false,
       requiresPrepayment: false,
       deliveryInstructions: null as string | null,
       deliveryLat: null as number | null,
@@ -188,18 +193,34 @@ export async function loadDeliveriesPage(
               .filter((value): value is string => Boolean(value))
           )
         );
-        const { data: productRows } =
+        const [{ data: productRows }, { data: inventoryRows }] = await Promise.all([
           productIds.length > 0
-            ? await supabase.from("products").select("id,name,sku").in("id", productIds)
-            : { data: [] as Row[] };
+            ? supabase.from("products").select("id,name,sku").in("id", productIds)
+            : Promise.resolve({ data: [] as Row[] }),
+          // Same "available = on_hand − reserved" formula loadOrders.ts uses for
+          // the orders list' "חוסר במלאי" badge — reused here so a driver sees the
+          // same risk signal before ever opening the order.
+          productIds.length > 0
+            ? supabase.from("inventory").select("product_id,quantity_on_hand,quantity_reserved").in("product_id", productIds)
+            : Promise.resolve({ data: [] as Row[] }),
+        ]);
         const productNameById = new Map(
           ((productRows ?? []) as Row[]).map((row) => [
             getString(row, "id") ?? "",
             getString(row, "name") ?? getString(row, "sku") ?? "מוצר",
           ])
         );
+        const availableByProduct = new Map<string, number>();
+        for (const row of (inventoryRows ?? []) as Row[]) {
+          const productId = getString(row, "product_id");
+          if (!productId) continue;
+          const onHand = getNumber(row, "quantity_on_hand") ?? 0;
+          const reserved = getNumber(row, "quantity_reserved") ?? 0;
+          availableByProduct.set(productId, onHand - reserved);
+        }
 
         const itemsByOrder = new Map<string, DeliveryOrderItem[]>();
+        const outOfStockOrderIds = new Set<string>();
         for (const row of (itemRows ?? []) as Row[]) {
           const orderId = getString(row, "order_id");
           if (!orderId) continue;
@@ -214,9 +235,12 @@ export async function loadDeliveriesPage(
             notes: getString(row, "notes"),
           });
           itemsByOrder.set(orderId, list);
+          const available = availableByProduct.get(productId);
+          if (available !== undefined && available < 0) outOfStockOrderIds.add(orderId);
         }
         for (const delivery of deliveries) {
           delivery.items = itemsByOrder.get(delivery.id) ?? [];
+          delivery.outOfStock = outOfStockOrderIds.has(delivery.id);
         }
       })(),
 

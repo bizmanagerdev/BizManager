@@ -18,6 +18,7 @@ import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { loadMoreDeliveries } from "@/app/(app)/sales/actions";
 import { paymentStatusClasses } from "@/lib/orders/paymentStatus";
 import { getPaymentStatusLabel } from "@/lib/ui/status-colors";
+import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import {
   prepaymentBadgeClasses,
   PREPAYMENT_ROW_CLASSES,
@@ -149,6 +150,17 @@ function RequestedDeliveryDateBadge({ date }: { date: string | null }) {
     >
       תאריך למשלוח: {formatShortDate(date)}
     </span>
+  );
+}
+
+// Same "חוסר במלאי" wording/styling as the orders list — reused here so a
+// driver sees the risk before attempting a delivery that isn't actually
+// in stock.
+const lowStockBadgeClasses = getStatusColorClasses("danger");
+function LowStockBadge({ outOfStock }: { outOfStock: boolean }) {
+  if (!outOfStock) return null;
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${lowStockBadgeClasses}`}>חוסר במלאי</span>
   );
 }
 
@@ -432,6 +444,7 @@ export default function SalesDeliveriesQueue({
                                   <div className="font-semibold">{formatCurrency(delivery.totalAmount)}</div>
                                   <div className="flex flex-wrap gap-1">
                                     <RequestedDeliveryDateBadge date={delivery.requestedDeliveryDate} />
+                                    <LowStockBadge outOfStock={delivery.outOfStock} />
                                     {unpaidPrepayment ? (
                                       <span
                                         className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${prepaymentBadgeClasses}`}
@@ -664,6 +677,7 @@ export default function SalesDeliveriesQueue({
                                             {formatCurrency(delivery.totalAmount)}
                                           </span>
                                           <RequestedDeliveryDateBadge date={delivery.requestedDeliveryDate} />
+                                          <LowStockBadge outOfStock={delivery.outOfStock} />
                                           {/* Pay-ahead customer, still owing: do NOT hand over
                                               the goods before it's paid. */}
                                           {unpaidPrepayment ? (

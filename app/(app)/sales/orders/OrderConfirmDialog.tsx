@@ -13,6 +13,7 @@ import { offlineUpload } from "@/lib/offline-upload";
 import { toHebrewError } from "@/lib/error-messages";
 import { DateInput } from "@/components/ui/date-input";
 import { StepWizardDialog } from "@/components/ui/step-wizard";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
@@ -37,6 +38,8 @@ type OrderItem = {
   quantity_ordered: number;
   /** How much of this line has already been delivered in prior partial deliveries. */
   quantity_delivered: number;
+  /** on_hand − reserved for this product right now. Null = untracked (never warn). */
+  available_quantity: number | null;
   unit_price: number;
   discount_amount: number;
   notes: string;
@@ -66,6 +69,7 @@ type ProductSearchResult = {
   name: string;
   sku: string | null;
   base_price: number | null;
+  available_quantity: number | null;
 };
 
 type EditPayload = {
@@ -220,6 +224,7 @@ export default function OrderConfirmDialog({
   const [productQuery, setProductQuery] = useState("");
   const [productResults, setProductResults] = useState<ProductSearchResult[]>([]);
   const [productSearching, setProductSearching] = useState(false);
+  const [stockConfirmOpen, setStockConfirmOpen] = useState(false);
 
   // On-demand product search (only runs when the driver actually types here) so a
   // forgotten item can be added on the spot — searched lazily via searchProducts()
@@ -376,10 +381,15 @@ export default function OrderConfirmDialog({
         const already = Math.max(line.quantity_delivered || 0, 0);
         const remaining = Math.max(line.quantity_ordered - already, 0);
         const now = Math.min(Math.max(line.delivered_now || 0, 0), remaining);
-        return { line, already, remaining, now, finalDelivered: already + now };
+        // Handing over more than what's currently on hand right now — same
+        // "available < 0" family of signal as the orders list' out-of-stock
+        // badge, but per-line and against THIS delivery's own quantity.
+        const shortfall = typeof line.available_quantity === "number" && now > line.available_quantity;
+        return { line, already, remaining, now, finalDelivered: already + now, shortfall };
       }),
     [lines]
   );
+  const hasStockShortfall = deliveryLines.some((d) => d.shortfall);
   const totalOrdered = lines.reduce((sum, line) => sum + line.quantity_ordered, 0);
   const totalFinalDelivered = deliveryLines.reduce((sum, d) => sum + d.finalDelivered, 0);
   const totalDeliveredNow = deliveryLines.reduce((sum, d) => sum + d.now, 0);
@@ -429,6 +439,7 @@ export default function OrderConfirmDialog({
           product_name: product.name,
           quantity_ordered: 1,
           quantity_delivered: 0,
+          available_quantity: product.available_quantity,
           unit_price: product.base_price ?? 0,
           discount_amount: 0,
           notes: "",
@@ -440,7 +451,7 @@ export default function OrderConfirmDialog({
     setProductResults([]);
   }
 
-  async function submit() {
+  async function submit(confirmedShortfall = false) {
     if (!data || submitting) return;
     setError(null);
 
@@ -451,6 +462,11 @@ export default function OrderConfirmDialog({
 
     if (!alreadyFullyDelivered && totalDeliveredNow <= 0) {
       setError("יש לסמן כמות שנמסרה בפריט אחד לפחות.");
+      return;
+    }
+
+    if (!confirmedShortfall && hasStockShortfall) {
+      setStockConfirmOpen(true);
       return;
     }
 
@@ -718,7 +734,7 @@ export default function OrderConfirmDialog({
             {lines.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין פריטים בהזמנה זו.</p>
             ) : null}
-            {deliveryLines.map(({ line, already, remaining, now }, index) => (
+            {deliveryLines.map(({ line, already, remaining, now, shortfall }, index) => (
               <div
                 key={`${line.product_id}-${index}`}
                 className="grid grid-cols-1 gap-3 rounded-xl border border-border/70 bg-background/70 p-3 sm:grid-cols-[1fr_130px]"
@@ -732,6 +748,11 @@ export default function OrderConfirmDialog({
                     <span className={remaining > 0 ? "font-semibold text-foreground" : ""}>{remaining}</span>
                   </div>
                   {line.notes ? <div className="mt-1 text-xs text-muted-foreground">הערות: {line.notes}</div> : null}
+                  {shortfall ? (
+                    <p className="mt-1 text-xs font-medium text-destructive-soft-foreground">
+                      חוסר במלאי — במלאי {line.available_quantity}, נמסר כעת {now}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-medium">נמסר כעת</label>
@@ -750,6 +771,12 @@ export default function OrderConfirmDialog({
             {!isFullyDelivered && totalDeliveredNow > 0 ? (
               <p className="rounded-lg border border-warning/40 bg-warning-soft/60 p-2 text-xs text-warning-soft-foreground">
                 אספקה חלקית — ההזמנה תישאר פתוחה (סופק חלקית) ותמשיך להופיע במשלוחים עד להשלמת היתרה.
+              </p>
+            ) : null}
+            {hasStockShortfall ? (
+              <p className="flex items-start gap-1.5 rounded-lg border border-destructive/40 bg-destructive-soft/60 p-2 text-xs text-destructive-soft-foreground">
+                <WarningIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>יש חוסר במלאי בפריט אחד או יותר (מסומן למעלה). אפשר לאשר בכל זאת בסוף התהליך.</span>
               </p>
             ) : null}
 
@@ -1147,6 +1174,14 @@ export default function OrderConfirmDialog({
                 </span>
               </div>
             ) : null}
+            {hasStockShortfall ? (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">מלאי</span>
+                <span className="rounded-full border border-destructive bg-destructive-soft px-2 py-1 text-xs text-destructive-soft-foreground">
+                  חוסר במלאי
+                </span>
+              </div>
+            ) : null}
             <div className="flex items-center justify-between gap-2">
               <span className="text-muted-foreground">סטטוס תשלום</span>
               <span className={`rounded-full border px-2 py-1 text-xs ${paymentStatusClasses(finalPaymentStatus)}`}>
@@ -1241,6 +1276,21 @@ export default function OrderConfirmDialog({
           </div>
         ) : null}
       </StepWizardDialog>
+
+      <ConfirmDialog
+        open={stockConfirmOpen}
+        onOpenChange={setStockConfirmOpen}
+        destructive
+        title="חוסר במלאי"
+        description="יש פריט אחד או יותר שהכמות שנמסרת עולה על מה שנמצא במלאי כרגע. אישור בכל זאת עלול להשאיר מלאי שלילי. לסגור את האספקה בכל זאת?"
+        confirmLabel="סגור בכל זאת"
+        cancelLabel="לבדוק שוב"
+        loading={submitting}
+        onConfirm={() => {
+          setStockConfirmOpen(false);
+          void submit(true);
+        }}
+      />
     </>
   );
 }

@@ -148,10 +148,12 @@ export async function GET(
             .filter(([key]) => key)
         ).values()
       );
-  // Confirm scope only needs product_name for the order's own lines — skip the
-  // stock lookup, it's unused there.
+  // Confirm scope skips the customer/catalog lists (never used there) but still
+  // needs stock — attachProductStock only queries `inventory` for the order's
+  // own (small) product-id set here, so it stays cheap; it's the full-catalog
+  // products_with_last_used scan above that was slow, not this.
   const products = isConfirmScope
-    ? ((selectedProducts ?? []) as Row[])
+    ? await attachProductStock(supabase, (selectedProducts ?? []) as Row[])
     : await attachProductStock(
         supabase,
         Array.from(
@@ -207,6 +209,8 @@ export async function GET(
         description,
         product_name:
           getString(product as Row, ["name", "product_name", "title", "sku"]) ?? (description || productId),
+        // null = untracked (no inventory row) — the confirm dialog never warns on those.
+        available_quantity: getNumber(product as Row, ["available_quantity"]),
         quantity_ordered: getNumber(item as Row, ["quantity_ordered"]) ?? 1,
         quantity_delivered: getNumber(item as Row, ["quantity_delivered"]) ?? 0,
         unit_price: getNumber(item as Row, ["unit_price"]) ?? 0,
