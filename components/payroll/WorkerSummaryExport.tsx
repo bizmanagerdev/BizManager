@@ -21,8 +21,9 @@ import {
 import { getBusinessDomainLabel } from "@/lib/expenses";
 import { formatLocalDate, formatLocalTime, formatWorkerPaymentMethodLabel } from "@/app/(app)/payroll/SalaryCenterUi";
 import {
+  PAGINATION_CSS,
   WORKER_SUMMARY_CONTENT_CSS,
-  buildWorkerSummaryFlatMarkup,
+  buildWorkerSummaryPages,
   buildWorkerSummaryPrintDocument,
   escapeSummaryHtml,
   openWorkerSummaryPrintWindow,
@@ -234,12 +235,15 @@ export default function WorkerSummaryExport(props: ReportInputs & { locale?: Loc
 
     const report = buildReport(props);
 
-    // The flat markup uses the SAME class names as the print document, so it
-    // needs the same content CSS actually applied — inject it, scoped to this
-    // capture, and remove it again in `finally`.
+    // The generated pages use the SAME class names as the print document, so
+    // they need the same content + pagination CSS actually applied — inject
+    // both, scoped to this capture, and remove them again in `finally`. The
+    // pagination CSS is what makes `.page-content`'s height actually clamp,
+    // which is what lets buildWorkerSummaryPages() detect overflow and start
+    // a new page instead of letting a row spill across the page boundary.
     const styleEl = document.createElement("style");
     styleEl.setAttribute("data-worker-summary-print", "");
-    styleEl.textContent = WORKER_SUMMARY_CONTENT_CSS;
+    styleEl.textContent = WORKER_SUMMARY_CONTENT_CSS + PAGINATION_CSS;
     document.head.appendChild(styleEl);
 
     // Off-screen but laid out (not display:none), parked at the origin inside
@@ -250,12 +254,15 @@ export default function WorkerSummaryExport(props: ReportInputs & { locale?: Loc
     wrapper.style.cssText =
       "position:fixed;top:0;left:0;width:0;height:0;overflow:hidden;opacity:0;z-index:-1;pointer-events:none;";
 
+    // 190mm = A4 width minus a 10mm margin each side, matching the print
+    // document's own printable area — see CONTENT_WIDTH_MM/MARGIN_MM below.
     const node = document.createElement("div");
     node.setAttribute("dir", "rtl");
-    node.style.cssText = "width:794px;box-sizing:border-box;padding:24px;background:#ffffff;";
-    node.innerHTML = buildWorkerSummaryFlatMarkup(report);
+    node.style.cssText = "width:190mm;background:#ffffff;";
     wrapper.appendChild(node);
     document.body.appendChild(wrapper);
+
+    const pages = buildWorkerSummaryPages(node, report);
 
     // The whole build must not spin the button forever if a step never
     // settles — race it against a hard timeout instead. (The report uses only
@@ -271,33 +278,32 @@ export default function WorkerSummaryExport(props: ReportInputs & { locale?: Loc
         import("jspdf"),
       ]);
 
-      const canvas = await toCanvas(node, {
-        pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
-        backgroundColor: "#ffffff",
-        skipFonts: true,
-        width: node.offsetWidth,
-        height: node.offsetHeight,
-      });
-
-      if (isBlankCapture(canvas)) {
-        throw new Error("יצירת ה-PDF נכשלה: הדף שנוצר יצא ריק. נסו שוב.");
-      }
-
       const pdf = new jsPDF({ orientation: "p", unit: "mm", format: "a4", compress: true });
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const imageData = canvas.toDataURL("image/jpeg", 0.95);
-      const imageHeight = (canvas.height * pageWidth) / canvas.width;
+      // Matches PAGINATION_CSS's own page geometry (10mm margin, 277mm of
+      // content height) — each `.page` from buildWorkerSummaryPages() is
+      // captured on its own, so a page break here is always between two
+      // rows, never through the middle of one.
+      const CONTENT_WIDTH_MM = 190;
+      const MARGIN_MM = 10;
 
-      let heightLeft = imageHeight;
-      let position = 0;
-      pdf.addImage(imageData, "JPEG", 0, position, pageWidth, imageHeight);
-      heightLeft -= pageHeight;
-      while (heightLeft > 0) {
-        position -= pageHeight;
-        pdf.addPage();
-        pdf.addImage(imageData, "JPEG", 0, position, pageWidth, imageHeight);
-        heightLeft -= pageHeight;
+      for (let index = 0; index < pages.length; index += 1) {
+        const page = pages[index];
+        const canvas = await toCanvas(page, {
+          pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+          backgroundColor: "#ffffff",
+          skipFonts: true,
+          width: page.offsetWidth,
+          height: page.offsetHeight,
+        });
+
+        if (isBlankCapture(canvas)) {
+          throw new Error("יצירת ה-PDF נכשלה: הדף שנוצר יצא ריק. נסו שוב.");
+        }
+
+        const imageData = canvas.toDataURL("image/jpeg", 0.95);
+        const imageHeight = (canvas.height * CONTENT_WIDTH_MM) / canvas.width;
+        if (index > 0) pdf.addPage();
+        pdf.addImage(imageData, "JPEG", MARGIN_MM, MARGIN_MM, CONTENT_WIDTH_MM, imageHeight);
       }
 
       const pdfBlob = pdf.output("blob");

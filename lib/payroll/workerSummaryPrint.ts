@@ -37,7 +37,7 @@ export const WORKER_SUMMARY_CONTENT_CSS = `
   .empty { margin-top: 12px; border: 1px dashed #BAE6FD; border-radius: 12px; padding: 12px; color: #0369A1; }
 `;
 
-const PAGINATION_CSS = `
+export const PAGINATION_CSS = `
   @page { size: A4; margin: 10mm; }
   .page {
     position: relative;
@@ -213,20 +213,92 @@ export function openWorkerSummaryPrintWindow(html: string) {
 }
 
 /**
- * A flat (unpaginated) version of the same content — headerHtml followed by
- * each table in full, one after another. Used off-screen for a direct PDF
- * capture, where pages are cut by pixel height (see html-to-image + jsPDF at
- * the call site) rather than by measuring real row overflow, so there is no
- * pagination script to run here.
+ * Same row-overflow pagination as the print document above (one `<tr>` at a
+ * time, moved to a fresh page the moment it overflows), but building real DOM
+ * nodes inside `container` instead of a JS string destined for a foreign
+ * print-window document. Used off-screen ahead of a per-page canvas capture,
+ * so every PDF page boundary lands between rows instead of through one —
+ * `container` must already have `WORKER_SUMMARY_CONTENT_CSS` and
+ * `PAGINATION_CSS` in effect (e.g. via an injected `<style>`), since the
+ * overflow check depends on `.page-content`'s CSS height actually clamping.
  */
-export function buildWorkerSummaryFlatMarkup(params: { headerHtml: string; tables: WorkerSummaryPrintTable[] }) {
-  const sections = params.tables
-    .map((table) => {
-      const body = table.rows.length
-        ? `<table class="data"><thead><tr>${table.headers}</tr></thead><tbody>${table.rows.join("")}</tbody></table>`
-        : `<div class="empty">${escapeSummaryHtml(table.empty)}</div>`;
-      return `<h2 class="section-title">${escapeSummaryHtml(table.title)}</h2>${body}`;
-    })
-    .join("");
-  return `${params.headerHtml}${sections}`;
+export function buildWorkerSummaryPages(
+  container: HTMLElement,
+  params: { headerHtml: string; tables: WorkerSummaryPrintTable[] }
+): HTMLDivElement[] {
+  const pages: HTMLDivElement[] = [];
+
+  function makePage() {
+    const page = document.createElement("div");
+    page.className = "page";
+    const content = document.createElement("div");
+    content.className = "page-content";
+    page.appendChild(content);
+    container.appendChild(page);
+    pages.push(page);
+    return content;
+  }
+
+  function addHeader(content: HTMLElement) {
+    const wrap = document.createElement("div");
+    wrap.innerHTML = params.headerHtml;
+    content.appendChild(wrap);
+  }
+
+  function addTitle(content: HTMLElement, text: string) {
+    const heading = document.createElement("h2");
+    heading.className = "section-title";
+    heading.textContent = text;
+    content.appendChild(heading);
+  }
+
+  function makeTable(content: HTMLElement, headers: string) {
+    const table = document.createElement("table");
+    table.className = "data";
+    table.innerHTML = `<thead><tr>${headers}</tr></thead><tbody></tbody>`;
+    content.appendChild(table);
+    return table.querySelector("tbody")!;
+  }
+
+  function overflowing(content: HTMLElement) {
+    return content.scrollHeight > content.clientHeight;
+  }
+
+  params.tables.forEach((table) => {
+    let content = makePage();
+    addHeader(content);
+    addTitle(content, table.title);
+
+    if (!table.rows.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = table.empty;
+      content.appendChild(empty);
+      return;
+    }
+
+    let tbody = makeTable(content, table.headers);
+
+    table.rows.forEach((rowHtml) => {
+      tbody.insertAdjacentHTML("beforeend", rowHtml);
+      if (overflowing(content) && tbody.children.length > 1) {
+        tbody.removeChild(tbody.lastElementChild!);
+        content = makePage();
+        addHeader(content);
+        addTitle(content, `${table.title} (המשך)`);
+        tbody = makeTable(content, table.headers);
+        tbody.insertAdjacentHTML("beforeend", rowHtml);
+      }
+    });
+  });
+
+  const total = pages.length;
+  pages.forEach((page, index) => {
+    const footer = document.createElement("div");
+    footer.className = "page-footer";
+    footer.textContent = `עמוד ${index + 1} מתוך ${total}`;
+    page.appendChild(footer);
+  });
+
+  return pages;
 }
