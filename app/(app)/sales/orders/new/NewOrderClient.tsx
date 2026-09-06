@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AddIcon, AddUserIcon, AiIcon, CardIcon, CheckIcon, CloseIcon, DocumentIcon, EditIcon, OrderIcon, RemoveIcon, SearchIcon, UserIcon, WazeIcon } from "@/components/ui/icons";
+import { toast } from "sonner";
+import { AddIcon, AddUserIcon, AiIcon, CardIcon, CheckIcon, CloseIcon, DocumentIcon, EditIcon, OrderIcon, RemoveIcon, SearchIcon, UserIcon, WarningIcon, WazeIcon } from "@/components/ui/icons";
 import { DeleteButton } from "@/components/ui/icon-button";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { cn } from "@/lib/utils";
@@ -540,6 +541,14 @@ export default function NewOrderClient({
     () => new Map(productOptions.map((p) => [p.id, p.stock])),
     [productOptions]
   );
+  const hasStockShortfall = useMemo(
+    () =>
+      lines.some((line) => {
+        const available = availableByProductId.get(line.product_id);
+        return typeof available === "number" && line.quantity_ordered > available;
+      }),
+    [lines, availableByProductId]
+  );
 
   const subtotal = useMemo(
     () =>
@@ -571,9 +580,23 @@ export default function NewOrderClient({
   const remainingBalance = Math.max(totalAmount - combinedPaidTotal, 0);
   const paymentStatus = derivePaymentStatus(totalAmount, combinedPaidTotal);
 
+  // Same id every time so repeated clicks on the same product replace the
+  // toast instead of stacking a new one per click.
+  function warnIfShortfall(productId: string, productName: string, nextQuantity: number) {
+    const available = availableByProductId.get(productId);
+    if (typeof available !== "number" || nextQuantity <= available) return;
+    toast.warning(
+      available > 0 ? `נשארו רק ${available} במלאי מ${productName}` : `אין מלאי זמין מ${productName}`,
+      { id: `stock-shortfall-${productId}` }
+    );
+  }
+
   function addProduct(productId: string) {
     const product = productOptions.find((p) => p.id === productId);
     if (!product) return;
+
+    const existingLine = lines.find((line) => line.product_id === productId);
+    warnIfShortfall(productId, product.name, (existingLine?.quantity_ordered ?? 0) + 1);
 
     setLines((prev) => {
       const existing = prev.find((line) => line.product_id === productId);
@@ -642,10 +665,10 @@ export default function NewOrderClient({
   }
 
   function incrementLine(index: number) {
+    const line = lines[index];
+    if (line) warnIfShortfall(line.product_id, line.product_name, line.quantity_ordered + 1);
     setLines((prev) =>
-      prev.map((line, i) =>
-        i === index ? { ...line, quantity_ordered: line.quantity_ordered + 1 } : line
-      )
+      prev.map((l, i) => (i === index ? { ...l, quantity_ordered: l.quantity_ordered + 1 } : l))
     );
   }
 
@@ -868,6 +891,9 @@ export default function NewOrderClient({
       }
 
       if (canDraft) clearDraft(draftKey!);
+      // Backorders are allowed by design (no hard block here) — just a heads-up
+      // that the order was saved with a shortfall, without naming which line.
+      if (hasStockShortfall) toast.warning("שימו לב: קיים חוסר במלאי בהזמנה זו.");
       const newOrderId = json.order_id;
       if (embedded) {
         onSubmitted?.(newOrderId);
@@ -2097,14 +2123,31 @@ export default function NewOrderClient({
             >
                 {lines.map((line, index) => {
                   const lineTotal = line.quantity_ordered * line.unit_price - line.discount_amount;
+                  const available = availableByProductId.get(line.product_id);
+                  const shortfall = typeof available === "number" && line.quantity_ordered > available;
                   return (
                     <SummaryRow
                       key={`${line.product_id}-${index}`}
-                      label={`${line.quantity_ordered}× ${line.product_name}`}
+                      label={
+                        <span>
+                          {`${line.quantity_ordered}× ${line.product_name}`}
+                          {shortfall ? (
+                            <span className="mt-0.5 block text-xs font-medium text-destructive-soft-foreground">
+                              חסר במלאי — במלאי {available}
+                            </span>
+                          ) : null}
+                        </span>
+                      }
                       value={formatCurrency(lineTotal)}
                     />
                   );
                 })}
+                {hasStockShortfall ? (
+                  <div className="flex items-start gap-1.5 border-t border-border/70 bg-destructive-soft/60 px-3 py-2 text-xs text-destructive-soft-foreground">
+                    <WarningIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>יש חוסר במלאי בהזמנה זו. אפשר לשמור בכל זאת — ההזמנה תסומן כחוסר במלאי.</span>
+                  </div>
+                ) : null}
                 <div className="mt-2 space-y-1 border-t border-border/70 pt-2">
                   <SummaryRow label="סכום ביניים" value={formatCurrency(subtotal)} />
                   {effectiveOrderDiscount > 0 ? (

@@ -95,24 +95,31 @@ async function fetchProductNames(
 }
 
 /**
- * Orders (open only) containing at least one oversold line — available < 0.
- * Backorders are allowed, so a negative available is how we flag "out of stock".
+ * For each order (open only) containing at least one oversold line — available
+ * < 0 — the distinct names of the short product(s), so the list can say WHAT is
+ * missing instead of just flagging that something is. Backorders are allowed,
+ * so a negative available is how we flag "out of stock".
  */
-function deriveOutOfStockOrderIds(
+function deriveOutOfStockDetails(
   itemRows: Row[],
   openOrderIds: Set<string>,
-  availableByProduct: Map<string, number>
-): Set<string> {
-  const oos = new Set<string>();
+  availableByProduct: Map<string, number>,
+  nameByProduct: Map<string, string>
+): Map<string, string[]> {
+  const byOrder = new Map<string, string[]>();
   for (const it of itemRows) {
     const orderId = typeof it.order_id === "string" ? it.order_id : null;
     if (!orderId || !openOrderIds.has(orderId)) continue;
     const pid = typeof it.product_id === "string" ? it.product_id : null;
     if (!pid) continue;
     const avail = availableByProduct.get(pid);
-    if (avail !== undefined && avail < 0) oos.add(orderId);
+    if (avail === undefined || avail >= 0) continue;
+    const name = nameByProduct.get(pid) || "פריט";
+    const names = byOrder.get(orderId) ?? [];
+    if (!names.includes(name)) names.push(name);
+    byOrder.set(orderId, names);
   }
-  return oos;
+  return byOrder;
 }
 
 /** Compact per-order product list (name + ordered quantity) for the list view. */
@@ -335,17 +342,19 @@ async function enrichOrderRows(supabase: SupabaseClient, rows: Row[]): Promise<R
       fetchPrepaymentCustomerIds(supabase, customerIds),
     ]);
 
-  const outOfStockIds = deriveOutOfStockOrderIds(itemRows, openOrderIds, availableByProduct);
+  const outOfStockByOrder = deriveOutOfStockDetails(itemRows, openOrderIds, availableByProduct, nameByProduct);
   const productsByOrder = buildOrderProductSummaries(itemRows, nameByProduct);
 
   return rows.map((r) => {
     const orderId = typeof r.order_id === "string" ? r.order_id : "";
     const customerId = typeof r.customer_id === "string" ? r.customer_id : "";
     const pending = pendingMethodsByOrder.get(orderId);
+    const outOfStockItems = outOfStockByOrder.get(orderId) ?? [];
     return {
       ...r,
       due_date: orderDueById.get(orderId)?.dueDate ?? null,
-      out_of_stock: outOfStockIds.has(orderId),
+      out_of_stock: outOfStockItems.length > 0,
+      out_of_stock_items: outOfStockItems,
       products: productsByOrder.get(orderId) ?? [],
       pending_payment_methods: pending?.methods ?? [],
       pending_check_number: pending?.checkNumber ?? null,

@@ -26,6 +26,7 @@ import { OrderPaymentActionsClient } from "@/app/(app)/sales/orders/OrderPayment
 import type { PaymentItem } from "@/app/(app)/sales/orders/OrderPaymentActionsClient";
 import { splitPaymentAmounts, orderCollectionStatusLabel, paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { computeSourceCollection, isOpenOrderStatus } from "@/lib/collections";
+import { attachProductStock } from "@/lib/orders/productStock";
 import { paymentTermsLabel } from "@/lib/paymentTerms";
 import { formatRelativeDateLabel, formatShortDate, formatShortDateTime } from "@/lib/date";
 import type { MorningLocalDocument } from "@/lib/morning/types";
@@ -246,8 +247,12 @@ export default async function SalesOrderPage({
 
   const orderCreatedByName = orderCreatedBy ? paymentRecordedByNameByValue[orderCreatedBy] ?? null : null;
 
+  // Live stock (on-hand − reserved) per line, so the item list can name exactly
+  // which product is short — same signal/formula as the orders list badge and
+  // the create/confirm wizards.
+  const productsWithStock = await attachProductStock(supabase, (products ?? []) as Row[]);
   const productMap = new Map<string, Row>();
-  (products ?? []).forEach((row) => {
+  productsWithStock.forEach((row) => {
     if (typeof row?.id === "string") {
       productMap.set(row.id, row as Row);
     }
@@ -809,6 +814,11 @@ export default async function SalesOrderPage({
                       // Show fulfillment only while a line is unfinished — a fully
                       // delivered (or untouched) line doesn't need "נמסר X מתוך Y".
                       const showDelivery = delivered > 0 && delivered < quantity;
+                      // Only meaningful while the order is still open — a closed/
+                      // delivered order already consumed whatever stock it had.
+                      const availableStock = getNumber((product ?? {}) as Row, "available_quantity");
+                      const shortfall =
+                        orderIsActive && typeof availableStock === "number" && quantity > availableStock;
 
                       return (
                         <div
@@ -830,6 +840,11 @@ export default async function SalesOrderPage({
                               {showDelivery ? (
                                 <div className="mt-0.5 text-xs font-medium text-warning-soft-foreground">
                                   נמסר {delivered} מתוך {quantity} · נותר {quantity - delivered}
+                                </div>
+                              ) : null}
+                              {shortfall ? (
+                                <div className="mt-0.5 text-xs font-medium text-destructive-soft-foreground">
+                                  חוסר במלאי — במלאי {availableStock}, הוזמנו {quantity}
                                 </div>
                               ) : null}
                               {lineNotes ? (

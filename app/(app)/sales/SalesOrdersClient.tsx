@@ -120,6 +120,8 @@ type OrderView = {
   invoiceSentAt: string | null;
   deliveryConfirmedAt: string | null;
   outOfStock: boolean;
+  /** Names of the specific short product(s) — what to show instead of a bare flag. */
+  outOfStockItems: string[];
   /** Customer is flagged "pay ahead" (customers.requires_prepayment). */
   requiresPrepayment: boolean;
   products: { name: string; quantity: number; delivered: number }[];
@@ -342,6 +344,7 @@ function toBasicOrderRow(entry: OrderSearchIndexEntry): Row {
     invoice_sent_at: entry.invoice_sent_at,
     delivery_confirmed_at: null,
     out_of_stock: false,
+    out_of_stock_items: [],
     customer_requires_prepayment: false,
     products: [],
     pending_payment_methods: [],
@@ -632,6 +635,9 @@ export default function SalesOrdersClient({
         invoiceSentAt: getString(row, ["invoice_sent_at"]),
         deliveryConfirmedAt: getString(row, ["delivery_confirmed_at"]),
         outOfStock: row.out_of_stock === true,
+        outOfStockItems: Array.isArray(row.out_of_stock_items)
+          ? (row.out_of_stock_items as unknown[]).filter((v): v is string => typeof v === "string")
+          : [],
         requiresPrepayment: row.customer_requires_prepayment === true,
         products: Array.isArray(row.products)
           ? (row.products as unknown[])
@@ -869,7 +875,14 @@ export default function SalesOrdersClient({
                       {anyOutOfStock ? (
                         <td className="px-4 py-4">
                           {row.outOfStock ? (
-                            <Badge className={outOfStockBadgeClasses}>חוסר במלאי</Badge>
+                            <div className="space-y-1">
+                              <Badge className={outOfStockBadgeClasses}>חוסר במלאי</Badge>
+                              {row.outOfStockItems.length > 0 ? (
+                                <div className="text-xs text-destructive-soft-foreground">
+                                  {row.outOfStockItems.join(", ")}
+                                </div>
+                              ) : null}
+                            </div>
                           ) : null}
                         </td>
                       ) : null}
@@ -1076,7 +1089,14 @@ export default function SalesOrdersClient({
                                 />
                               ) : null}
                               {row.outOfStock ? (
-                                <Badge className={`${outOfStockBadgeClasses} px-2 py-0 text-[11px]`}>חוסר במלאי</Badge>
+                                <>
+                                  <Badge className={`${outOfStockBadgeClasses} px-2 py-0 text-[11px]`}>חוסר במלאי</Badge>
+                                  {row.outOfStockItems.length > 0 ? (
+                                    <span className="text-[11px] font-medium text-destructive-soft-foreground">
+                                      {row.outOfStockItems.join(", ")}
+                                    </span>
+                                  ) : null}
+                                </>
                               ) : null}
                             </div>
                           ) : null}

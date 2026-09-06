@@ -5,6 +5,7 @@ import { getScheduleEntries, type CalendarEntry } from "@/lib/projectSchedule";
 import { isPayrollWorkerType } from "@/lib/payroll-worker-type";
 import type { SalaryAgreementRow } from "@/lib/payroll";
 import { EMPTY_QUICK_ACTIONS, type QuickActionsData } from "@/app/(app)/dashboard/quick-actions-types";
+import { attachProductStock } from "@/lib/orders/productStock";
 
 export { EMPTY_QUICK_ACTIONS, type QuickActionsData };
 
@@ -168,9 +169,16 @@ export async function loadQuickActionsData(
       }))
       .filter((row) => row.id) as unknown as Row[];
 
+    // Attach live stock (on-hand − reserved) so the quick-create order dialog's
+    // catalog tiles can warn on shortfalls the same way the full /sales/orders/new
+    // page does — this loader previously returned products_with_last_used rows
+    // as-is, with no stock field, so the shortfall warning silently never fired
+    // when adding items from the dashboard's "+" quick-create dialog.
+    const productsWithStock = await attachProductStock(supabase, (productRows ?? []) as Row[]);
+
     return {
       customers,
-      products: (productRows ?? []) as Row[],
+      products: productsWithStock,
       projects,
       orders,
       properties,
