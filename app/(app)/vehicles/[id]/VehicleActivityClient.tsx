@@ -528,7 +528,7 @@ export default function VehicleActivityClient({
               הוצאה
             </Button>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="space-y-2 px-3">
             {expenses.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין הוצאות מתויגות לרכב זה.</p>
             ) : (
@@ -564,7 +564,7 @@ export default function VehicleActivityClient({
               משימה
             </Button>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="space-y-2 px-3">
             {tasks.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין משימות מתויגות לרכב זה.</p>
             ) : (
@@ -642,7 +642,7 @@ export default function VehicleActivityClient({
               מסמך
             </Button>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="space-y-2 px-3">
             {documents.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין מסמכים מתויגים לרכב זה.</p>
             ) : (
