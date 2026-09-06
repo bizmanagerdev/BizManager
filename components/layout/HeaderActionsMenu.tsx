@@ -14,22 +14,29 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { TOPBAR_ICON_BUTTON, TOPBAR_ICON_STROKE } from "@/components/layout/topbar-icon";
+import { cn } from "@/lib/utils";
 
 export function HeaderActionsMenu({ children }: { children: ReactNode }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button
+        {/* Same fixed-px shell as every other top-bar icon (see topbar-icon.ts) —
+            this used to be its own `h-8 w-8` (rem) button, which grows with the
+            per-account text-size setting ([[responsive-text-scaling]]) same as
+            the old title bug did: at a big scale this trigger ballooned and ate
+            the space the title needed, squeezing it to a couple of letters. */}
+        <Button
           type="button"
+          variant="ghost"
+          size="icon-sm"
           aria-label="פעולות"
           title="פעולות"
-          // The bar is white (2026-08-19; see TopBar), so this took the
-          // sidebar's light sky-200 text — nearly invisible on a light bar. It
-          // needs the same secondary blue every other button in the app wears.
-          className="flex h-8 w-8 items-center justify-center rounded-md text-secondary transition-colors hover:bg-accent lg:hidden"
+          className={cn(TOPBAR_ICON_BUTTON, "lg:hidden")}
         >
-          <MoreIcon className="h-5 w-5" />
-        </button>
+          <MoreIcon strokeWidth={TOPBAR_ICON_STROKE} />
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"

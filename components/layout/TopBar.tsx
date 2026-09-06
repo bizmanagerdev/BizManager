@@ -220,7 +220,7 @@ export function TopBar({
     // background as the page, with nothing between them, is what makes the two
     // read as one surface. It stays OPAQUE (not /95) so content scrolling under
     // it disappears cleanly instead of ghosting through.
-    <header className="sticky top-0 z-30 flex h-[60px] shrink-0 items-center gap-2 bg-background px-4 text-foreground">
+    <header className="sticky top-0 z-30 flex h-[60px] shrink-0 items-center gap-[8px] bg-background px-[16px] text-foreground">
       {/* RTL: the first child sits on the RIGHT. The brand corner is the top of
           the SIDEBAR, not part of the bar — same dark surface, so the rail reads
           as one column from the logo down. Its width tracks the rail's so the two
@@ -283,7 +283,7 @@ export function TopBar({
       ) : headerTitle ? (
         <div
           className={cn(
-            "flex min-w-0 flex-1 flex-col justify-center overflow-hidden px-3 leading-tight",
+            "flex min-w-0 flex-1 flex-col justify-center overflow-hidden px-[12px] leading-tight",
             // PHONE ONLY, unless the page asks otherwise (user, 2026-08-19).
             // There's no sidebar on a phone, so the bar has to say where you are;
             // past `lg` the sidebar says it, and repeating it in a bar that is
@@ -296,8 +296,14 @@ export function TopBar({
         >
           {/* One line, always: the title SHRINKS to fit the middle slot rather than
               wrapping mid-word ("עובדי / ם") or clipping. clamp() scales it with the
-              viewport down to a still-legible floor. */}
-          <span className="w-full whitespace-nowrap text-[clamp(0.75rem,3.4vw,1.0625rem)] font-semibold text-foreground">
+              viewport down to a still-legible floor.
+              PX bounds, not rem — this is bar CHROME (see topbar-icon.ts), so the
+              per-account text-size setting ([[responsive-text-scaling]]) must not
+              grow it. rem bounds used to inflate right along with the icon
+              buttons they used to also ignore, so at a big scale the "floor" and
+              "ceiling" both rose and the title stopped shrinking at exactly the
+              size it needed to. */}
+          <span className="w-full whitespace-nowrap text-[clamp(12.75px,3.4vw,18px)] font-semibold text-foreground">
             {headerTitle.title}
           </span>
           {headerTitle.subtitle ? (
@@ -323,12 +329,16 @@ export function TopBar({
           headerAction above) — e.g. חשבונות' "ניהול חשבונות" button. */}
       {trailingAction ? <div className="shrink-0">{trailingAction}</div> : null}
 
-      {/* ms-3 (RTL → space on the RIGHT, i.e. toward the title): the search glyph
-          leads this cluster on a phone and sat flush against the page title, so
-          the magnifier read as part of the words. The gap lives here rather than
-          as yet more title padding so it only ever separates the title from the
-          icons — the icons keep their own tighter gap-1 between themselves. */}
-      <div className="ms-3 flex items-center gap-1">
+      {/* ms-[12px] (RTL → space on the RIGHT, i.e. toward the title): the search
+          glyph leads this cluster on a phone and sat flush against the page
+          title, so the magnifier read as part of the words. The gap lives here
+          rather than as yet more title padding so it only ever separates the
+          title from the icons — the icons keep their own tighter gap-[4px]
+          between themselves. PX, not rem: this row is bar chrome (see
+          topbar-icon.ts) — a rem gap would widen at a big text scale and eat
+          into the title's space instead of leaving the icons "squished"
+          together the way chrome should stay. */}
+      <div className="ms-[12px] flex items-center gap-[4px]">
         {/* Search is a GLYPH at every width now — the 20rem desktop box is gone and
             the middle slot belongs to the title. The magnifier opens the same
             full-screen search dialog on a phone and on a desktop. */}
@@ -440,7 +450,7 @@ export function TopBar({
         <PwaInstallButton locale={viewerLocale} />
 
       {/* Hairline between the tools and you. */}
-      <span aria-hidden className="mx-0.5 h-6 w-px shrink-0 bg-border" />
+      <span aria-hidden className="mx-[2px] h-[24px] w-px shrink-0 bg-border" />
 
       {/* Hover reveals the account menu, same as the inbox and the + — and for
           the same reason those use HoverPanel rather than a real menu: a menu
