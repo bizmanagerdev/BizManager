@@ -35,6 +35,10 @@ export default function VehicleFormFields({
           <Input inputMode="numeric" value={form.year} onChange={(e) => set("year", e.target.value)} />
         </label>
         <label className="space-y-1 text-sm">
+          <span className="font-medium">קילומטראז׳</span>
+          <Input inputMode="numeric" value={form.mileage} onChange={(e) => set("mileage", e.target.value)} />
+        </label>
+        <label className="space-y-1 text-sm">
           <span className="font-medium">טסט הבא</span>
           <DateInput value={form.test_due_date} onChange={(e) => set("test_due_date", e.target.value)} />
         </label>

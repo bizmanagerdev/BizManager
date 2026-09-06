@@ -43,6 +43,9 @@ export default function AddReminderButton({
   className,
   iconOnly = false,
   onSaved,
+  hideTrigger = false,
+  open: openProp,
+  onOpenChange,
 }: {
   entityType: ReminderEntityType;
   entityId: string;
@@ -51,11 +54,17 @@ export default function AddReminderButton({
   className?: string;
   iconOnly?: boolean;
   onSaved?: () => void;
+  /** Render only the dialog — caller drives it via `open`/`onOpenChange` (e.g. from a "⋮" menu item). */
+  hideTrigger?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const router = useRouter();
   const cfg = ENTITY_CONFIG[entityType];
   const { currentUserId } = useAssignableUsers();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = openProp ?? internalOpen;
+  const setOpen = onOpenChange ?? setInternalOpen;
   const [remindAt, setRemindAt] = useState("");
   const [note, setNote] = useState("");
   const [assignee, setAssignee] = useState("");
@@ -137,18 +146,20 @@ export default function AddReminderButton({
 
   return (
     <>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        className={className ?? (iconOnly ? "h-9 w-9 p-0" : "h-9")}
-        title={`תזכורת ל${cfg.noun}`}
-        aria-label={`תזכורת ל${cfg.noun}`}
-        onClick={() => setOpen(true)}
-      >
-        <NotificationIcon className="h-4 w-4 text-warning" />
-        {iconOnly ? null : <span className="ms-1">תזכורת</span>}
-      </Button>
+      {!hideTrigger && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className={className ?? (iconOnly ? "h-9 w-9 p-0" : "h-9")}
+          title={`תזכורת ל${cfg.noun}`}
+          aria-label={`תזכורת ל${cfg.noun}`}
+          onClick={() => setOpen(true)}
+        >
+          <NotificationIcon className="h-4 w-4 text-warning" />
+          {iconOnly ? null : <span className="ms-1">תזכורת</span>}
+        </Button>
+      )}
 
       <FormDialog
         open={open}

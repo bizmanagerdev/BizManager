@@ -23,6 +23,11 @@ function yearOrNull(value: string) {
   return Number.isInteger(n) && n >= 1900 && n <= 2100 ? n : null;
 }
 
+function mileageOrNull(value: string) {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 0 ? n : null;
+}
+
 async function getStaffContext() {
   const { profile, supabase } = await requireProfile();
   if (profile.role !== "admin" && profile.role !== "office") {
@@ -46,6 +51,7 @@ function vehicleFields(input: VehicleInput) {
     license_due_date: clean(input.license_due_date),
     owner_name: clean(input.owner_name),
     notes: clean(input.notes),
+    mileage: mileageOrNull(input.mileage),
   };
 }
 

@@ -3,8 +3,15 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { DocumentIcon, TaskIcon, TrendDownIcon } from "@/components/ui/icons";
+import { DocumentIcon, EditIcon, DeleteIcon, ExpenseIcon, MoreIcon, NotificationIcon, TaskIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { PageStack, AdaptiveGrid } from "@/components/layout/page-layout";
@@ -13,15 +20,16 @@ import {
   EMPTY_VEHICLE_FORM,
   vehicleToForm,
   buildVehiclePatch,
+  formatMileage,
   type VehicleInput,
   type VehicleWithRollup,
 } from "@/lib/vehicles";
 import VehicleFormFields from "@/components/vehicles/VehicleFormFields";
 import VehiclePhotoAvatar from "@/components/vehicles/VehiclePhotoAvatar";
-import { VehicleExpiryRow } from "@/components/vehicles/VehicleExpiryRow";
+import { VehicleExpiryRow, type VehicleExpiryKind } from "@/components/vehicles/VehicleExpiryRow";
+import { VehicleExpiryQuickEditDialog } from "@/components/vehicles/VehicleExpiryQuickEditDialog";
 import AddReminderButton from "@/components/reminders/AddReminderButton";
 import { createVehicle, updateVehicle, deleteVehicle } from "./actions";
-import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { rowNavigateProps } from "@/lib/ui/row-navigation";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete, scheduleDeferredEdit, registerReversibleCreate } from "@/lib/undo-engine";
@@ -34,6 +42,8 @@ export default function VehiclesClient({ vehicles: vehiclesProp }: { vehicles: V
   const [editTagId, setEditTagId] = useState<string | null>(null);
   const [form, setForm] = useState<VehicleInput>(EMPTY_VEHICLE_FORM);
   const [deleteTarget, setDeleteTarget] = useState<VehicleWithRollup | null>(null);
+  const [reminderTarget, setReminderTarget] = useState<VehicleWithRollup | null>(null);
+  const [quickEdit, setQuickEdit] = useState<{ vehicle: VehicleWithRollup; kind: VehicleExpiryKind } | null>(null);
 
   function set<K extends keyof VehicleInput>(key: K, value: VehicleInput[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -163,26 +173,52 @@ export default function VehiclesClient({ vehicles: vehiclesProp }: { vehicles: V
                       <div className="min-w-0 break-words">
                         <div className="text-lg font-semibold">{v.name}</div>
                         <div className="text-sm text-muted-foreground">
-                          {[v.makeModel, v.licensePlate, v.year].filter(Boolean).join(" · ") || "—"}
+                          {[v.makeModel, v.licensePlate, v.year, formatMileage(v.mileage)].filter(Boolean).join(" · ") || "—"}
                         </div>
                       </div>
                     </div>
-                    <div className="flex shrink-0 gap-1">
-                      <AddReminderButton entityType="vehicle" entityId={v.tagId} label={v.name} className="h-9 w-9 p-0" iconOnly />
-                      <EditButton onClick={() => openEdit(v)} label="עריכה" />
-                      <DeleteButton onClick={() => setDeleteTarget(v)} label="מחיקת רכב" />
-                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+                          title="פעולות"
+                          aria-label="פעולות"
+                        >
+                          <MoreIcon className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-40">
+                        <DropdownMenuItem onClick={() => setReminderTarget(v)}>
+                          <NotificationIcon className="me-2 h-4 w-4 text-warning" />
+                          תזכורת
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => openEdit(v)}>
+                          <EditIcon className="me-2 h-4 w-4" />
+                          עריכה
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setDeleteTarget(v)}
+                          className="text-destructive focus:text-destructive"
+                        >
+                          <DeleteIcon className="me-2 h-4 w-4" />
+                          מחיקה
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
 
                   <div className="space-y-2">
-                    <VehicleExpiryRow kind="test" label="טסט" date={v.testDueDate} />
-                    <VehicleExpiryRow kind="insurance" label="ביטוח" date={v.insuranceDueDate} />
-                    <VehicleExpiryRow kind="license" label="רישוי" date={v.licenseDueDate} />
+                    <VehicleExpiryRow kind="test" label="טסט" date={v.testDueDate} onEdit={() => setQuickEdit({ vehicle: v, kind: "test" })} />
+                    <VehicleExpiryRow kind="insurance" label="ביטוח" date={v.insuranceDueDate} onEdit={() => setQuickEdit({ vehicle: v, kind: "insurance" })} />
+                    <VehicleExpiryRow kind="license" label="רישוי" date={v.licenseDueDate} onEdit={() => setQuickEdit({ vehicle: v, kind: "license" })} />
                   </div>
 
                   <div className="mt-auto flex items-center gap-3 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1 font-semibold text-destructive">
-                      <TrendDownIcon className="h-3.5 w-3.5" />
+                    <span className="flex items-center gap-1 font-semibold text-foreground">
+                      <ExpenseIcon className="h-3.5 w-3.5" />
                       {formatCurrency(v.rollup.paidExpenseAmount)}
                     </span>
                     <span className="flex items-center gap-1">
@@ -223,6 +259,22 @@ export default function VehiclesClient({ vehicles: vehiclesProp }: { vehicles: V
         destructive
         loading={pending}
         onConfirm={confirmDelete}
+      />
+
+      <AddReminderButton
+        entityType="vehicle"
+        entityId={reminderTarget?.tagId ?? ""}
+        label={reminderTarget?.name}
+        hideTrigger
+        open={Boolean(reminderTarget)}
+        onOpenChange={(open) => !open && setReminderTarget(null)}
+      />
+
+      <VehicleExpiryQuickEditDialog
+        vehicle={quickEdit?.vehicle ?? null}
+        kind={quickEdit?.kind ?? null}
+        open={Boolean(quickEdit)}
+        onOpenChange={(open) => !open && setQuickEdit(null)}
       />
     </PageStack>
   );

@@ -117,15 +117,20 @@ export default function VehiclePhotoAvatar({ tagId, name, photoUrl, size = "sm",
               if (file) void handleFile(file);
             }}
           />
+          {/* The whole tile is the target, not a small badge bolted onto its
+              corner — bigger to tap, and the camera glyph sits inset as an
+              overlay instead of overflowing past the tile's own edge. */}
           <button
             type="button"
             aria-label={photoUrl ? "החלפת תמונה" : "הוספת תמונה"}
             title={photoUrl ? "החלפת תמונה" : "הוספת תמונה"}
             disabled={busy}
             onClick={() => inputRef.current?.click()}
-            className="absolute -bottom-1.5 -end-1.5 flex h-7 w-7 items-center justify-center rounded-full border-2 border-background bg-secondary text-secondary-foreground shadow-md disabled:opacity-60"
+            className="absolute inset-0 flex items-end justify-center overflow-hidden rounded-xl disabled:cursor-default"
           >
-            {busy ? <SpinnerIcon className="h-3.5 w-3.5 animate-spin" /> : <CameraIcon className="h-3.5 w-3.5" />}
+            <span className="mb-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white">
+              {busy ? <SpinnerIcon className="h-3.5 w-3.5 animate-spin" /> : <CameraIcon className="h-3.5 w-3.5" />}
+            </span>
           </button>
           {photoUrl ? (
             <button

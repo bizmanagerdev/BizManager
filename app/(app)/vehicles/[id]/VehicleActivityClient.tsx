@@ -3,8 +3,24 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AddIcon, ChevronDownIcon, DocumentIcon, ExternalLinkIcon, TaskIcon } from "@/components/ui/icons";
+import {
+  AddIcon,
+  ChevronDownIcon,
+  DeleteIcon,
+  DocumentIcon,
+  EditIcon,
+  ExternalLinkIcon,
+  MoreIcon,
+  TaskIcon,
+} from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { SwipeActions } from "@/components/ui/swipe-actions";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -16,13 +32,61 @@ import { ExpenseDialog, type EditingExpenseData } from "@/components/expenses/Ex
 import { TaskUpsertDialog, type UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { DOCUMENT_CATEGORIES, inferDefaultDocumentCategory } from "@/lib/documents";
 import { formatCurrency } from "@/lib/payroll";
-import { taskStatusLabel, type VehicleActivity, type VehicleDocument, type VehicleExpense } from "@/lib/vehicles";
+import {
+  isVehicleTaskOpen,
+  paidVehicleExpenseAmount,
+  taskStatusLabel,
+  type VehicleActivity,
+  type VehicleDocument,
+  type VehicleExpense,
+  type VehicleTask,
+} from "@/lib/vehicles";
 import { toHebrewError } from "@/lib/error-messages";
 import { offlineUpload } from "@/lib/offline-upload";
-import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
-import { scheduleDeferredDelete } from "@/lib/undo-engine";
+import { scheduleDeferredDelete, scheduleDeferredEdit } from "@/lib/undo-engine";
 import { cn } from "@/lib/utils";
+
+// Mobile: swipe a row to reveal עריכה/מחיקה, same as every other list in the
+// app. Desktop: no swipe gesture, so the same two actions collapse into a "⋮".
+function RowActionsMenu({
+  onEdit,
+  onDelete,
+  deleteLabel,
+}: {
+  onEdit?: () => void;
+  onDelete: () => void;
+  deleteLabel: string;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+          title="פעולות"
+          aria-label="פעולות"
+        >
+          <MoreIcon className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-36">
+        {onEdit ? (
+          <DropdownMenuItem onClick={onEdit}>
+            <EditIcon className="me-2 h-4 w-4" />
+            עריכה
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuItem onClick={onDelete} className="text-destructive focus:text-destructive">
+          <DeleteIcon className="me-2 h-4 w-4" />
+          {deleteLabel}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 function fmtDate(value: string | null) {
   if (!value) return "";
@@ -63,8 +127,10 @@ function DocumentYearGroup({
   onDelete: (doc: VehicleDocument) => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  // One row's swipe strip open at a time, scoped to this year group.
+  const [swipedId, setSwipedId] = useState<string | null>(null);
   return (
-    <div className="overflow-hidden rounded-lg border">
+    <div className="border-b last:border-0">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -79,26 +145,173 @@ function DocumentYearGroup({
       </button>
       {open ? (
         <div className="space-y-2 p-3 pt-2">
-          {docs.map((d) => (
-            <div key={d.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
-              <div className="min-w-0 text-sm">
-                <div className="truncate font-medium">{d.title || d.fileName || "מסמך"}</div>
-                <div className="text-xs text-muted-foreground">
-                  {[d.documentType, fmtDate(d.uploadedAt)].filter(Boolean).join(" · ") || "—"}
+          {docs.map((d) => {
+            const body = (
+              <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                <div className="min-w-0 text-sm">
+                  <div className="truncate font-medium">{d.title || d.fileName || "מסמך"}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {[d.documentType, fmtDate(d.uploadedAt)].filter(Boolean).join(" · ") || "—"}
+                  </div>
                 </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
                 {d.url ? (
-                  <Button asChild variant="outline" size="icon" aria-label="פתיחה" title="פתיחה">
+                  <Button asChild variant="outline" size="icon" aria-label="פתיחה" title="פתיחה" className="shrink-0">
                     <a href={d.url} target="_blank" rel="noreferrer">
                       <ExternalLinkIcon className="h-4 w-4" />
                     </a>
                   </Button>
                 ) : null}
-                <DeleteButton onClick={() => onDelete(d)} label="מחיקת מסמך" />
               </div>
-            </div>
-          ))}
+            );
+            return (
+              <div key={d.id} className="border-b last:border-0">
+                <div className="lg:hidden">
+                  <SwipeActions
+                    className="rounded-none"
+                    open={swipedId === d.id}
+                    onOpenChange={(next) => setSwipedId(next ? d.id : null)}
+                    actions={[
+                      {
+                        key: "delete",
+                        label: "מחיקה",
+                        icon: <DeleteIcon className="h-4 w-4" />,
+                        onSelect: () => onDelete(d),
+                        className: "bg-destructive text-destructive-foreground",
+                      },
+                    ]}
+                  >
+                    <div className="bg-card py-2">{body}</div>
+                  </SwipeActions>
+                </div>
+                <div className="hidden items-center gap-2 py-2 lg:flex">
+                  {body}
+                  <RowActionsMenu onDelete={() => onDelete(d)} deleteLabel="מחיקת מסמך" />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function monthLabel(monthKey: string): string {
+  if (!monthKey) return "ללא תאריך";
+  const [year, month] = monthKey.split("-").map(Number);
+  return new Intl.DateTimeFormat("he-IL", { month: "long", year: "numeric" }).format(new Date(year, month - 1, 1));
+}
+
+// Groups expenses by calendar month, newest first, each with its own
+// subtotal — the same "statement" shape as the bank ledger (BankClient.tsx),
+// so a car with years of history stays scannable instead of one flat list.
+function groupExpensesByMonth(
+  expenses: VehicleExpense[]
+): Array<{ key: string; label: string; items: VehicleExpense[]; subtotal: number }> {
+  const groups = new Map<string, VehicleExpense[]>();
+  for (const e of expenses) {
+    const key = e.date ? e.date.slice(0, 7) : "";
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(e);
+    else groups.set(key, [e]);
+  }
+  return Array.from(groups.entries())
+    .sort(([a], [b]) => {
+      if (a === "") return 1;
+      if (b === "") return -1;
+      return b.localeCompare(a);
+    })
+    .map(([key, items]) => ({
+      key,
+      label: monthLabel(key),
+      items,
+      subtotal: items.reduce((sum, e) => sum + e.amount, 0),
+    }));
+}
+
+function ExpenseMonthGroup({
+  label,
+  items,
+  subtotal,
+  defaultOpen,
+  onEdit,
+  onDelete,
+}: {
+  label: string;
+  items: VehicleExpense[];
+  subtotal: number;
+  defaultOpen: boolean;
+  onEdit: (expense: VehicleExpense) => void;
+  onDelete: (expense: VehicleExpense) => void;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  // One row's swipe strip open at a time, scoped to this month group.
+  const [swipedId, setSwipedId] = useState<string | null>(null);
+  return (
+    <div className="border-b last:border-0">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-2 bg-muted/30 px-3 py-2 text-start"
+      >
+        <span className="flex items-center gap-2 text-sm font-medium">
+          {label}
+          <Badge variant="neutral">{items.length}</Badge>
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="text-sm font-semibold">{formatCurrency(subtotal)}</span>
+          <ChevronDownIcon className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
+        </span>
+      </button>
+      {open ? (
+        <div className="p-2">
+          {items.map((e) => {
+            const body = (
+              <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                <div className="min-w-0 text-sm">
+                  <div className="truncate font-medium">{e.description || e.category || "הוצאה"}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {[e.description ? e.category : null, fmtDate(e.date)].filter(Boolean).join(" · ") || "—"}
+                  </div>
+                </div>
+                <span className="shrink-0 font-semibold">{formatCurrency(e.amount)}</span>
+              </div>
+            );
+            return (
+              <div key={e.id} className="border-b last:border-0">
+                <div className="lg:hidden">
+                  <SwipeActions
+                    className="rounded-none"
+                    open={swipedId === e.id}
+                    onOpenChange={(next) => setSwipedId(next ? e.id : null)}
+                    actions={[
+                      {
+                        key: "edit",
+                        label: "עריכה",
+                        icon: <EditIcon className="h-4 w-4" />,
+                        onSelect: () => onEdit(e),
+                        className: "bg-secondary text-secondary-foreground",
+                      },
+                      {
+                        key: "delete",
+                        label: "מחיקה",
+                        icon: <DeleteIcon className="h-4 w-4" />,
+                        onSelect: () => onDelete(e),
+                        className: "bg-destructive text-destructive-foreground",
+                      },
+                    ]}
+                  >
+                    <div className="bg-card py-2">{body}</div>
+                  </SwipeActions>
+                </div>
+                <div className="hidden items-center gap-2 py-2 lg:flex">
+                  {body}
+                  <RowActionsMenu onEdit={() => onEdit(e)} onDelete={() => onDelete(e)} deleteLabel="מחיקת הוצאה" />
+                </div>
+              </div>
+            );
+          })}
         </div>
       ) : null}
     </div>
@@ -168,6 +381,11 @@ export default function VehicleActivityClient({
   const [docBusy, setDocBusy] = useState(false);
   // delete
   const [del, setDel] = useState<{ kind: string; id: string; label: string } | null>(null);
+  // one swiped-open row at a time (expenses scope this per month group instead — see ExpenseMonthGroup)
+  const [taskSwipedId, setTaskSwipedId] = useState<string | null>(null);
+
+  const paidExpenseTotal = paidVehicleExpenseAmount(expenses);
+  const openTaskCount = tasks.filter((t) => isVehicleTaskOpen(t.status)).length;
 
   function openAddExpense() {
     setEditingExpense(null);
@@ -267,14 +485,45 @@ export default function VehicleActivityClient({
     });
   }
 
+  // Quick done/not-done toggle, right from the checkbox — mirrors ProjectTasksMini's
+  // checkbox but through this file's own optimistic-patch + undo pattern (matches
+  // how edit/delete already work here) instead of separate local state.
+  function toggleTaskDone(t: VehicleTask) {
+    const nextStatus = t.status === "done" ? "todo" : "done";
+    scheduleDeferredEdit({
+      scope: "vehicle-task",
+      id: t.id,
+      message: nextStatus === "done" ? "המשימה סומנה כהושלמה." : "המשימה הוחזרה לביצוע.",
+      patch: { status: nextStatus },
+      onCommit: async () => {
+        const res = await fetch("/api/tasks/update-status", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: t.id, status: nextStatus }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "עדכון הסטטוס נכשל.") };
+        refresh();
+        return { ok: true };
+      },
+    });
+  }
+
   return (
     <>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Expenses */}
         <Card>
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
-            <CardTitle className="text-base">הוצאות ({expenses.length})</CardTitle>
-            <Button size="sm" onClick={openAddExpense}>
+            <div>
+              <CardTitle className="text-base">הוצאות ({expenses.length})</CardTitle>
+              {expenses.length > 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  סה״כ שולם: <span className="font-semibold text-foreground">{formatCurrency(paidExpenseTotal)}</span>
+                </p>
+              ) : null}
+            </div>
+            <Button size="sm" variant="outline" onClick={openAddExpense}>
               <AddIcon className="h-4 w-4" />
               הוצאה
             </Button>
@@ -283,20 +532,16 @@ export default function VehicleActivityClient({
             {expenses.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין הוצאות מתויגות לרכב זה.</p>
             ) : (
-              expenses.map((e) => (
-                <div key={e.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
-                  <div className="min-w-0 text-sm">
-                    <div className="truncate font-medium">{e.description || e.category || "הוצאה"}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {[e.description ? e.category : null, fmtDate(e.date)].filter(Boolean).join(" · ") || "—"}
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <span className="font-semibold text-destructive">{formatCurrency(e.amount)}</span>
-                    <EditButton onClick={() => openEditExpense(e)} label="עריכה" />
-                    <DeleteButton onClick={() => setDel({ kind: "expense", id: e.id, label: e.category || "הוצאה" })} label="מחיקת הוצאה" />
-                  </div>
-                </div>
+              groupExpensesByMonth(expenses).map((group, i) => (
+                <ExpenseMonthGroup
+                  key={group.key || "none"}
+                  label={group.label}
+                  items={group.items}
+                  subtotal={group.subtotal}
+                  defaultOpen={i === 0}
+                  onEdit={openEditExpense}
+                  onDelete={(e) => setDel({ kind: "expense", id: e.id, label: e.category || "הוצאה" })}
+                />
               ))
             )}
           </CardContent>
@@ -305,11 +550,16 @@ export default function VehicleActivityClient({
         {/* Tasks */}
         <Card>
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
-            <CardTitle className="flex items-center gap-1 text-base">
-              <TaskIcon className="h-4 w-4" />
-              משימות ({tasks.length})
-            </CardTitle>
-            <Button size="sm" onClick={openAddTask}>
+            <div>
+              <CardTitle className="flex items-center gap-1 text-base">
+                <TaskIcon className="h-4 w-4" />
+                משימות ({tasks.length})
+              </CardTitle>
+              {tasks.length > 0 ? (
+                <p className="text-xs text-muted-foreground">{openTaskCount}/{tasks.length} פתוחות</p>
+              ) : null}
+            </div>
+            <Button size="sm" variant="outline" onClick={openAddTask}>
               <AddIcon className="h-4 w-4" />
               משימה
             </Button>
@@ -318,19 +568,64 @@ export default function VehicleActivityClient({
             {tasks.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין משימות מתויגות לרכב זה.</p>
             ) : (
-              tasks.map((t) => (
-                <div key={t.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
-                  <div className="min-w-0 text-sm">
-                    <div className="truncate font-medium">{t.subject || "משימה"}</div>
-                    <div className="text-xs text-muted-foreground">{fmtDate(t.dueDate) || "—"}</div>
+              tasks.map((t) => {
+                const done = t.status === "done";
+                const body = (
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={done}
+                      onChange={() => toggleTaskDone(t)}
+                      aria-label={done ? "סימון כלא הושלמה" : "סימון כהושלמה"}
+                      className="h-4 w-4 shrink-0 accent-[rgb(var(--green-4))]"
+                    />
+                    <div className="min-w-0 flex-1 text-sm">
+                      <div className={cn("truncate font-medium", done && "text-muted-foreground line-through")}>
+                        {t.subject || "משימה"}
+                      </div>
+                      <div className="text-xs text-muted-foreground">{fmtDate(t.dueDate) || "—"}</div>
+                    </div>
+                    <Badge variant="outline" className="shrink-0">{taskStatusLabel(t.status)}</Badge>
                   </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <Badge variant="outline">{taskStatusLabel(t.status)}</Badge>
-                    <EditButton onClick={() => openEditTask(t.id)} label="עריכה" />
-                    <DeleteButton onClick={() => setDel({ kind: "task", id: t.id, label: t.subject || "משימה" })} label="מחיקת משימה" />
+                );
+                return (
+                  <div key={t.id} className="border-b last:border-0">
+                    <div className="lg:hidden">
+                      <SwipeActions
+                        className="rounded-none"
+                        open={taskSwipedId === t.id}
+                        onOpenChange={(next) => setTaskSwipedId(next ? t.id : null)}
+                        actions={[
+                          {
+                            key: "edit",
+                            label: "עריכה",
+                            icon: <EditIcon className="h-4 w-4" />,
+                            onSelect: () => openEditTask(t.id),
+                            className: "bg-secondary text-secondary-foreground",
+                          },
+                          {
+                            key: "delete",
+                            label: "מחיקה",
+                            icon: <DeleteIcon className="h-4 w-4" />,
+                            onSelect: () => setDel({ kind: "task", id: t.id, label: t.subject || "משימה" }),
+                            className: "bg-destructive text-destructive-foreground",
+                          },
+                        ]}
+                      >
+                        <div className="bg-card py-2">{body}</div>
+                      </SwipeActions>
+                    </div>
+                    <div className="hidden items-center gap-2 py-2 lg:flex">
+                      {body}
+                      <RowActionsMenu
+                        onEdit={() => openEditTask(t.id)}
+                        onDelete={() => setDel({ kind: "task", id: t.id, label: t.subject || "משימה" })}
+                        deleteLabel="מחיקת משימה"
+                      />
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </CardContent>
         </Card>
@@ -342,7 +637,7 @@ export default function VehicleActivityClient({
               <DocumentIcon className="h-4 w-4" />
               מסמכים ({documents.length})
             </CardTitle>
-            <Button size="sm" onClick={openAddDoc}>
+            <Button size="sm" variant="outline" onClick={openAddDoc}>
               <AddIcon className="h-4 w-4" />
               מסמך
             </Button>

@@ -1,43 +1,14 @@
 import { notFound, redirect } from "next/navigation";
-import { TaskIcon, TrendDownIcon } from "@/components/ui/icons";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
-import { Card, CardContent } from "@/components/ui/card";
 import { PageStack } from "@/components/layout/page-layout";
-import { formatCurrency } from "@/lib/payroll";
 import { fetchVehicle, fetchVehicleActivity } from "@/lib/vehicles";
 import { propertyDisplayName } from "@/lib/properties";
 import type { UserOption } from "@/components/tasks/TaskUpsertDialog";
-import { VehicleExpiryRow } from "@/components/vehicles/VehicleExpiryRow";
 import VehicleActivityClient from "./VehicleActivityClient";
 import VehicleHeaderCard from "./VehicleHeaderCard";
 
 export const revalidate = 30;
-
-function StatCard({
-  label,
-  value,
-  tone,
-  icon,
-}: {
-  label: string;
-  value: string;
-  tone?: "expense" | "neutral";
-  icon?: React.ReactNode;
-}) {
-  const color = tone === "expense" ? "text-destructive" : "";
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          {icon}
-          {label}
-        </div>
-        <div className={`mt-1 text-xl font-semibold ${color}`}>{value}</div>
-      </CardContent>
-    </Card>
-  );
-}
 
 export default async function VehicleDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -98,26 +69,6 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <PageStack>
         <VehicleHeaderCard vehicle={vehicle} />
-
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <VehicleExpiryRow kind="test" label="טסט" date={vehicle.testDueDate} />
-          <VehicleExpiryRow kind="insurance" label="ביטוח" date={vehicle.insuranceDueDate} />
-          <VehicleExpiryRow kind="license" label="רישוי" date={vehicle.licenseDueDate} />
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <StatCard
-            label="הוצאות ששולמו"
-            value={formatCurrency(activity.rollup.paidExpenseAmount)}
-            tone="expense"
-            icon={<TrendDownIcon className="h-3.5 w-3.5" />}
-          />
-          <StatCard
-            label="משימות פתוחות"
-            value={`${activity.rollup.openTaskCount}/${activity.rollup.taskCount}`}
-            icon={<TaskIcon className="h-3.5 w-3.5" />}
-          />
-        </div>
 
         <VehicleActivityClient
           tagId={id}

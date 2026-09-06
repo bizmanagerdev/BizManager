@@ -28,6 +28,7 @@ export type Vehicle = {
   createdAt: string | null;
   photoDocumentId: string | null; // FK to documents — the car's single cover photo, not a gallery
   photoUrl: string | null; // resolved signed URL (short-lived; see resolveVehiclePhotoUrls)
+  mileage: number | null; // ק"מ — odometer reading; feeds future service-interval logic
 };
 
 export type VehicleRollup = {
@@ -54,6 +55,7 @@ export type VehicleInput = {
   owner_name: string;
   color: string;
   notes: string;
+  mileage: string; // raw from the input; parsed by the server action
 };
 
 export const EMPTY_VEHICLE_FORM: VehicleInput = {
@@ -67,6 +69,7 @@ export const EMPTY_VEHICLE_FORM: VehicleInput = {
   owner_name: "",
   color: "",
   notes: "",
+  mileage: "",
 };
 
 export function vehicleToForm(v: Vehicle): VehicleInput {
@@ -81,6 +84,7 @@ export function vehicleToForm(v: Vehicle): VehicleInput {
     owner_name: v.ownerName ?? "",
     color: v.color ?? "",
     notes: v.notes ?? "",
+    mileage: v.mileage != null ? String(v.mileage) : "",
   };
 }
 
@@ -94,6 +98,7 @@ function deriveVehicleName(input: VehicleInput): string {
 /** Optimistic patch shown during the undo grace window — mirrors actions.ts's server-side deriveName/vehicleFields. */
 export function buildVehiclePatch(input: VehicleInput): Partial<Vehicle> {
   const yearNum = Number(input.year);
+  const mileageNum = Number(input.mileage);
   return {
     name: deriveVehicleName(input),
     licensePlate: input.license_plate.trim() || null,
@@ -104,6 +109,7 @@ export function buildVehiclePatch(input: VehicleInput): Partial<Vehicle> {
     licenseDueDate: input.license_due_date.trim() || null,
     ownerName: input.owner_name.trim() || null,
     notes: input.notes.trim() || null,
+    mileage: Number.isInteger(mileageNum) && mileageNum >= 0 ? mileageNum : null,
   };
 }
 
@@ -155,6 +161,7 @@ function normalizeVehicle(row: Row): Vehicle {
     createdAt: str(tag.created_at),
     photoDocumentId: str(row.photo_document_id),
     photoUrl: null,
+    mileage: intOrNull(row.mileage),
   };
 }
 
@@ -205,13 +212,13 @@ export async function fetchVehicles(supabase: SupabaseClient): Promise<VehicleWi
         supabase
           .from("vehicles")
           .select(
-            "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,photo_document_id,tag:tags!inner(id,name,color,is_active,notes,created_at)"
+            "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,photo_document_id,mileage,tag:tags!inner(id,name,color,is_active,notes,created_at)"
           )
           .eq("tag.kind", "vehicle")
           .range(lo, hi)
       );
     } catch {
-      // Pre-migration: `photo_document_id` may not exist yet (db/sql/create_vehicle_photo.sql
+      // Pre-migration: `mileage` may not exist yet (20260906113949_add_vehicle_mileage.sql
       // not run). Retry without it rather than showing an empty fleet — a missing
       // column must never look like missing data (see fetchAllPagedResult's note).
       try {
@@ -219,13 +226,27 @@ export async function fetchVehicles(supabase: SupabaseClient): Promise<VehicleWi
           supabase
             .from("vehicles")
             .select(
-              "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,tag:tags!inner(id,name,color,is_active,notes,created_at)"
+              "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,photo_document_id,tag:tags!inner(id,name,color,is_active,notes,created_at)"
             )
             .eq("tag.kind", "vehicle")
             .range(lo, hi)
         );
       } catch {
-        return [];
+        // Pre-migration: `photo_document_id` may not exist yet either (db/sql/create_vehicle_photo.sql
+        // not run). Retry without both.
+        try {
+          data = await fetchAllPaged<Row>((lo, hi) =>
+            supabase
+              .from("vehicles")
+              .select(
+                "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,tag:tags!inner(id,name,color,is_active,notes,created_at)"
+              )
+              .eq("tag.kind", "vehicle")
+              .range(lo, hi)
+          );
+        } catch {
+          return [];
+        }
       }
     }
 
@@ -263,12 +284,21 @@ export async function fetchVehicle(
     let { data, error } = await supabase
       .from("vehicles")
       .select(
-        "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,photo_document_id,tag:tags!inner(id,name,color,is_active,notes,created_at)"
+        "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,photo_document_id,mileage,tag:tags!inner(id,name,color,is_active,notes,created_at)"
       )
       .eq("tag_id", tagId)
       .maybeSingle();
     if (error) {
       // Pre-migration fallback — see the matching comment in fetchVehicles.
+      ({ data, error } = await supabase
+        .from("vehicles")
+        .select(
+          "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,photo_document_id,tag:tags!inner(id,name,color,is_active,notes,created_at)"
+        )
+        .eq("tag_id", tagId)
+        .maybeSingle());
+    }
+    if (error) {
       ({ data, error } = await supabase
         .from("vehicles")
         .select(
@@ -337,8 +367,15 @@ export type VehicleActivity = {
   rollup: VehicleRollup;
 };
 
-const OPEN_TASK_STATUSES = (status: string | null) =>
-  !["done", "cancelled"].includes(status ?? "todo");
+/** A task counts as "open" unless it's done or cancelled — shared by the server rollup and the client card header. */
+export function isVehicleTaskOpen(status: string | null) {
+  return !["done", "cancelled"].includes(status ?? "todo");
+}
+
+/** Cash actually spent: the full amount once paid, otherwise just what's been paid so far. */
+export function paidVehicleExpenseAmount(expenses: VehicleExpense[]): number {
+  return expenses.reduce((sum, e) => sum + (e.paymentStatus === "paid" ? e.amount : e.paidAmount ?? 0), 0);
+}
 
 /**
  * Pull everything tagged to one vehicle and compute its rollup in JS (so the
@@ -466,17 +503,12 @@ export async function fetchVehicleActivity(
     payments.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
     documents.sort((a, b) => (b.uploadedAt ?? "").localeCompare(a.uploadedAt ?? ""));
 
-    const paidExpenseAmount = ((exRes.data ?? []) as Row[]).reduce(
-      (sum, r) =>
-        sum + (str(r.payment_status) === "paid" ? num(r.amount) : num(r.paid_amount)),
-      0
-    );
     const rollup: VehicleRollup = {
       totalExpenseAmount: expenses.reduce((s, e) => s + e.amount, 0),
-      paidExpenseAmount,
+      paidExpenseAmount: paidVehicleExpenseAmount(expenses),
       totalIncomeAmount: payments.reduce((s, p) => s + p.amount, 0),
       taskCount: tasks.length,
-      openTaskCount: tasks.filter((t) => OPEN_TASK_STATUSES(t.status)).length,
+      openTaskCount: tasks.filter((t) => isVehicleTaskOpen(t.status)).length,
       documentCount: documents.length,
     };
 
@@ -502,6 +534,12 @@ export function expiryStatus(dueDate: string | null): ExpiryStatus {
   if (days < 0) return { tone: "destructive", label: `פג לפני ${Math.abs(days)} ימים`, days };
   if (days <= 30) return { tone: "warning", label: days === 0 ? "פג היום" : `בעוד ${days} ימים`, days };
   return { tone: "success", label: "בתוקף", days };
+}
+
+/** "123456" → `123,456 ק"מ`, or null when unset (so callers can drop it from a joined subtitle line). */
+export function formatMileage(mileage: number | null): string | null {
+  if (mileage == null) return null;
+  return `${new Intl.NumberFormat("he-IL").format(mileage)} ק"מ`;
 }
 
 export function taskStatusLabel(status: string | null): string {
