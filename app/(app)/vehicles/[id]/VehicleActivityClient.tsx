@@ -265,7 +265,7 @@ function ExpenseMonthGroup({
         </span>
       </button>
       {open ? (
-        <div className="p-2">
+        <div className="px-3">
           {items.map((e) => {
             const body = (
               <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
@@ -528,7 +528,7 @@ export default function VehicleActivityClient({
               הוצאה
             </Button>
           </CardHeader>
-          <CardContent className="space-y-2 px-3">
+          <CardContent className="space-y-2 px-0">
             {expenses.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין הוצאות מתויגות לרכב זה.</p>
             ) : (
@@ -564,7 +564,7 @@ export default function VehicleActivityClient({
               משימה
             </Button>
           </CardHeader>
-          <CardContent className="space-y-2 px-3">
+          <CardContent className="space-y-2 px-0">
             {tasks.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין משימות מתויגות לרכב זה.</p>
             ) : (
@@ -612,10 +612,10 @@ export default function VehicleActivityClient({
                           },
                         ]}
                       >
-                        <div className="bg-card py-2">{body}</div>
+                        <div className="bg-card px-3 py-2">{body}</div>
                       </SwipeActions>
                     </div>
-                    <div className="hidden items-center gap-2 py-2 lg:flex">
+                    <div className="hidden items-center gap-2 px-3 py-2 lg:flex">
                       {body}
                       <RowActionsMenu
                         onEdit={() => openEditTask(t.id)}
@@ -642,7 +642,7 @@ export default function VehicleActivityClient({
               מסמך
             </Button>
           </CardHeader>
-          <CardContent className="space-y-2 px-3">
+          <CardContent className="space-y-2 px-0">
             {documents.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין מסמכים מתויגים לרכב זה.</p>
             ) : (
