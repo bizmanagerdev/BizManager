@@ -292,11 +292,9 @@ export default async function SalesPage({
             {/* No "הזמנה חדשה" button — the app's one quick-create + carries it. */}
           </div>
         </div>
-        {/* One plain wrapper (no space-y class), not two direct children of the
-            space-y-4 above — that CSS adds margin-top to any sibling with a
-            preceding one, even a zero-height one, so {content} used to get a
-            phantom extra gap only while alerts existed (user, 2026-08-27:
-            "there is a white section until i x them"). */}
+        {/* PageAlertBar is `position: fixed` — floats above the whole page
+            (see the component), not part of this flow — so it can sit right
+            next to {content} with no spacing concerns either way. */}
         <div>
           <PageAlertBar keys={["low_stock"]} />
           {content}

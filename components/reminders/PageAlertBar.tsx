@@ -12,12 +12,17 @@ type PageAlert = { id: string; title: string; href: string; severity: "danger" |
 // alerts for the given rule keys (e.g. <PageAlertBar keys={["low_stock"]} /> on
 // /sales). Renders nothing when there's nothing to show. Dismissal is per view.
 //
-// Floats OVER the page instead of sitting in normal flow: the outer wrapper is
-// zero-height (`h-0`), so whatever the page renders next starts exactly where
-// it always would; the actual banners are `absolute`-positioned inside it and
-// visually overlap that content instead of shoving it down. Dismissing one
-// just removes it — nothing underneath ever moved, so nothing needs to
-// "settle back" (user report: alerts were pushing the page's own content down).
+// `position: fixed`, docked just under the 60px top bar, full width (like the
+// top bar itself, over the sidebar too) — NOT positioned relative to whatever
+// a given page happens to render nearby. It used to be an absolutely-positioned
+// overlay sandwiched between a page's own sticky search/tabs row and its list,
+// which pushed nothing down but tangled with that row's own sticky/z-index math
+// (user reports, 2026-09-05: sat on top of the tabs bar on scroll, then tucked
+// under it at rest). Fixed positioning sidesteps all of that — it doesn't
+// participate in any page's flow or stacking context, so dismissing one just
+// removes it with nothing to "settle back", and it now floats clearly above
+// the tabs/search row instead of looking wedged into it (user, 2026-09-05:
+// "put it either above or under... has to be on top of stuff").
 const TONE: Record<string, string> = {
   danger: "border-destructive/30 bg-destructive-soft text-destructive shadow-md",
   warning: "border-warning/30 bg-warning-soft text-warning-strong shadow-md",
@@ -79,28 +84,29 @@ export default function PageAlertBar({ keys, locale = "he" }: { keys: string[]; 
   if (shown.length === 0) return null;
 
   return (
-    <div className="relative z-20 h-0 overflow-visible">
-      <div className="absolute inset-x-0 top-0 space-y-2 pb-2">
-        {shown.map((a) => (
-          <div
-            key={a.id}
-            className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 text-[13px] sm:text-sm ${TONE[a.severity] ?? TONE.warning}`}
+    // z-[60]: above every other fixed/sticky chrome piece in the app (top bar
+    // z-30, sticky page toolbars/tabs z-20, bottom nav z-50) so it's always
+    // the topmost thing on screen, never fought over by a page's own stacking.
+    <div className="fixed inset-x-0 top-[60px] z-[60] flex flex-col gap-2 px-4 py-2">
+      {shown.map((a) => (
+        <div
+          key={a.id}
+          className={`mx-auto flex w-full max-w-[1600px] items-center gap-2 rounded-xl border px-3 py-1.5 text-[13px] sm:text-sm ${TONE[a.severity] ?? TONE.warning}`}
+        >
+          <WarningIcon className="h-4 w-4 shrink-0" />
+          <Link href={a.href} title={a.title} className="min-w-0 flex-1 font-medium hover:underline">
+            {a.title}
+          </Link>
+          <button
+            type="button"
+            onClick={() => dismiss(a.id)}
+            className="shrink-0 rounded-md p-0.5 opacity-60 transition-opacity hover:opacity-100"
+            aria-label={locale === "ar" ? "إغلاق التنبيه" : "סגור התראה"}
           >
-            <WarningIcon className="h-4 w-4 shrink-0" />
-            <Link href={a.href} title={a.title} className="min-w-0 flex-1 font-medium hover:underline">
-              {a.title}
-            </Link>
-            <button
-              type="button"
-              onClick={() => dismiss(a.id)}
-              className="shrink-0 rounded-md p-0.5 opacity-60 transition-opacity hover:opacity-100"
-              aria-label={locale === "ar" ? "إغلاق التنبيه" : "סגור התראה"}
-            >
-              <CloseIcon className="h-4 w-4" />
-            </button>
-          </div>
-        ))}
-      </div>
+            <CloseIcon className="h-4 w-4" />
+          </button>
+        </div>
+      ))}
     </div>
   );
 }
