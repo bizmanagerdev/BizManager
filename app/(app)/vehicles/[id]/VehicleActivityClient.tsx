@@ -156,6 +156,16 @@ function DocumentYearGroup({
                   <div className="min-w-0 text-sm">
                     <div className="truncate font-medium">{d.documentType || d.title || "מסמך"}</div>
                     <div className="text-xs text-muted-foreground">{fmtDate(d.uploadedAt) || "—"}</div>
+                    {d.fileName ? (
+                      // `dir="ltr"` isolates the filename from the surrounding RTL
+                      // flow — without it a ".pdf"/".jpeg" extension can land
+                      // mid-string (bidi reordering) instead of at the true end.
+                      // Small and muted on purpose: it's a secondary detail now,
+                      // not the row's primary line the way it used to be.
+                      <div dir="ltr" className="break-words text-right text-[11px] text-muted-foreground/70">
+                        {d.fileName}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
                 {d.url ? (

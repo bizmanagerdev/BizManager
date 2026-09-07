@@ -6,10 +6,11 @@
 "use client";
 
 import { useState } from "react";
-import { AddIcon, ApprovedDocumentIcon, EditIcon, IdCardIcon, ShieldIcon, type IconComponent } from "@/components/ui/icons";
+import Link from "next/link";
+import { AddIcon, ApprovedDocumentIcon, EditIcon, IdCardIcon, ShieldIcon, TaskIcon, type IconComponent } from "@/components/ui/icons";
 import { Badge } from "@/components/ui/badge";
 import { SwipeActions } from "@/components/ui/swipe-actions";
-import { expiryStatus } from "@/lib/vehicles";
+import { expiryStatus, type VehicleSourceTask } from "@/lib/vehicles";
 
 export type VehicleExpiryKind = "test" | "insurance" | "license";
 
@@ -31,12 +32,15 @@ export function VehicleExpiryRow({
   label,
   date,
   onEdit,
+  sourceTask,
 }: {
   kind: VehicleExpiryKind;
   label: string;
   date: string | null;
   /** Swipe-to-edit (phone only) — opens the vehicle's edit form. Omit to keep the row read-only. */
   onEdit?: () => void;
+  /** The task that led to this date, if one was picked in the quick-edit dialog — links "valid until X" back to "why". Only ever set on the detail page (fetchVehicle resolves it; the fleet list doesn't). */
+  sourceTask?: VehicleSourceTask;
 }) {
   const status = expiryStatus(date);
   const Icon = KIND_ICONS[kind];
@@ -71,15 +75,33 @@ export function VehicleExpiryRow({
   }
 
   const content = (
-    <div className="flex items-center justify-between gap-3 rounded-xl bg-muted/40 px-3 py-2.5">
-      <div className="flex items-center gap-2 text-sm font-medium">
-        <span>{label}</span>
-        <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+    <div className="rounded-xl bg-muted/40 px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <span>{label}</span>
+          <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium">{formatExpiryDate(date)}</span>
+          {status ? <Badge variant={status.tone}>{status.label}</Badge> : null}
+        </div>
       </div>
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-medium">{formatExpiryDate(date)}</span>
-        {status ? <Badge variant={status.tone}>{status.label}</Badge> : null}
-      </div>
+      {/* The causal link the task-done checkmark and this date otherwise have
+          no visible connection to — "why is this valid until 16.02.2027?
+          because this task got done." Stopping propagation keeps a tap here
+          from also triggering the row's swipe-to-edit on phone. */}
+      {sourceTask ? (
+        <div className="mt-1 flex justify-end">
+          <Link
+            href={`/tasks/${sourceTask.id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex min-w-0 items-center gap-1 text-xs text-secondary hover:underline"
+          >
+            <TaskIcon className="h-3 w-3 shrink-0" />
+            <span className="truncate">מהמשימה: {sourceTask.subject || "משימה"}</span>
+          </Link>
+        </div>
+      ) : null}
     </div>
   );
 

@@ -5,9 +5,15 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { DeleteButton, EditButton } from "@/components/ui/icon-button";
-import { DeleteIcon, EditIcon, NotificationIcon } from "@/components/ui/icons";
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { EditButton } from "@/components/ui/icon-button";
+import { DeleteIcon, EditIcon, MoreIcon, NotificationIcon } from "@/components/ui/icons";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { HeaderActionsMenu } from "@/components/layout/HeaderActionsMenu";
 import { useSetHeaderAction } from "@/components/layout/page-title-context";
 import AddReminderButton from "@/components/reminders/AddReminderButton";
@@ -19,6 +25,7 @@ import {
   formatMileage,
   type Vehicle,
   type VehicleInput,
+  type VehicleTask,
 } from "@/lib/vehicles";
 import VehicleFormFields from "@/components/vehicles/VehicleFormFields";
 import VehiclePhotoAvatar from "@/components/vehicles/VehiclePhotoAvatar";
@@ -29,7 +36,7 @@ import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete, scheduleDeferredEdit } from "@/lib/undo-engine";
 
 /** The vehicle detail page's own header — lets you edit the car right here, not only from the /vehicles list. */
-export default function VehicleHeaderCard({ vehicle }: { vehicle: Vehicle }) {
+export default function VehicleHeaderCard({ vehicle, tasks }: { vehicle: Vehicle; tasks: VehicleTask[] }) {
   const router = useRouter();
   const [display] = useUndoOverlay([vehicle], (v) => v.tagId, "vehicle");
   const [open, setOpen] = useState(false);
@@ -131,7 +138,7 @@ export default function VehicleHeaderCard({ vehicle }: { vehicle: Vehicle }) {
             </p>
           </div>
         </div>
-        <div className="hidden shrink-0 gap-1 lg:flex">
+        <div className="hidden shrink-0 items-center gap-1 lg:flex">
           <AddReminderButton
             entityType="vehicle"
             entityId={vehicle.tagId}
@@ -142,14 +149,59 @@ export default function VehicleHeaderCard({ vehicle }: { vehicle: Vehicle }) {
             onOpenChange={setReminderOpen}
           />
           <EditButton onClick={openEdit} label="עריכת רכב" />
-          <DeleteButton onClick={() => setDeleteOpen(true)} label="מחיקת רכב" />
+          {/* Delete is a rare, destructive action — same "demote it into a ⋯"
+              rule as every list row in this app (RowActionsMenu below), not a
+              third same-weight button beside reminder/edit. A solid red-outline
+              icon sitting first in the group (visually leftmost, RTL) was the
+              loudest thing on the page. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 text-muted-foreground hover:text-foreground"
+                title="פעולות נוספות"
+                aria-label="פעולות נוספות"
+              >
+                <MoreIcon className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem
+                className="gap-2 text-destructive focus:text-destructive"
+                onSelect={() => setDeleteOpen(true)}
+              >
+                <DeleteIcon className="h-4 w-4" />
+                <span>מחיקת רכב</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        <VehicleExpiryRow kind="test" label="טסט" date={display.testDueDate} onEdit={() => setQuickEditKind("test")} />
-        <VehicleExpiryRow kind="insurance" label="ביטוח" date={display.insuranceDueDate} onEdit={() => setQuickEditKind("insurance")} />
-        <VehicleExpiryRow kind="license" label="רישוי" date={display.licenseDueDate} onEdit={() => setQuickEditKind("license")} />
+        <VehicleExpiryRow
+          kind="test"
+          label="טסט"
+          date={display.testDueDate}
+          onEdit={() => setQuickEditKind("test")}
+          sourceTask={display.testSourceTask}
+        />
+        <VehicleExpiryRow
+          kind="insurance"
+          label="ביטוח"
+          date={display.insuranceDueDate}
+          onEdit={() => setQuickEditKind("insurance")}
+          sourceTask={display.insuranceSourceTask}
+        />
+        <VehicleExpiryRow
+          kind="license"
+          label="רישוי"
+          date={display.licenseDueDate}
+          onEdit={() => setQuickEditKind("license")}
+          sourceTask={display.licenseSourceTask}
+        />
       </div>
 
       <FormDialog
@@ -177,6 +229,7 @@ export default function VehicleHeaderCard({ vehicle }: { vehicle: Vehicle }) {
       <VehicleExpiryQuickEditDialog
         vehicle={display}
         kind={quickEditKind}
+        tasks={tasks}
         open={quickEditKind !== null}
         onOpenChange={(open) => !open && setQuickEditKind(null)}
       />

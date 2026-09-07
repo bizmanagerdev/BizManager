@@ -69,7 +69,7 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <PageStack>
-        <VehicleHeaderCard vehicle={vehicle} />
+        <VehicleHeaderCard vehicle={vehicle} tasks={activity.tasks} />
 
         <VehicleActivityClient
           tagId={id}

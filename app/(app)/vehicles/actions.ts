@@ -53,6 +53,9 @@ function vehicleFields(input: VehicleInput) {
     owner_name: clean(input.owner_name),
     notes: clean(input.notes),
     mileage: mileageOrNull(input.mileage),
+    test_source_task_id: clean(input.test_source_task_id),
+    insurance_source_task_id: clean(input.insurance_source_task_id),
+    license_source_task_id: clean(input.license_source_task_id),
   };
 }
 

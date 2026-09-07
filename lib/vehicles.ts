@@ -12,6 +12,9 @@ import { STORAGE_BUCKET } from "@/lib/storage";
 // entity_tags), because that's what activity links to.
 // ════════════════════════════════════════════════════════════════════════════
 
+/** The task that led to an expiry date update ("did the טסט") — resolved for display/linking. */
+export type VehicleSourceTask = { id: string; subject: string | null; status: string | null } | null;
+
 export type Vehicle = {
   tagId: string; // tags.id — the canonical id used in routes + entity_tags
   name: string;
@@ -29,6 +32,11 @@ export type Vehicle = {
   photoDocumentId: string | null; // FK to documents — the car's single cover photo, not a gallery
   photoUrl: string | null; // resolved signed URL (short-lived; see resolveVehiclePhotoUrls)
   mileage: number | null; // ק"מ — odometer reading; feeds future service-interval logic
+  // Only resolved by fetchVehicle (the detail page) — fetchVehicles (the fleet
+  // list) leaves these null, the list card has no room/need for the link.
+  testSourceTask: VehicleSourceTask;
+  insuranceSourceTask: VehicleSourceTask;
+  licenseSourceTask: VehicleSourceTask;
 };
 
 export type VehicleRollup = {
@@ -56,6 +64,13 @@ export type VehicleInput = {
   color: string;
   notes: string;
   mileage: string; // raw from the input; parsed by the server action
+  // Empty string = no link. Only VehicleExpiryQuickEditDialog exposes an input
+  // for these; the general edit form (VehicleFormFields) has none, so
+  // vehicleToForm()'s round-trip is what preserves an existing link when the
+  // full form is submitted instead.
+  test_source_task_id: string;
+  insurance_source_task_id: string;
+  license_source_task_id: string;
 };
 
 export const EMPTY_VEHICLE_FORM: VehicleInput = {
@@ -70,6 +85,9 @@ export const EMPTY_VEHICLE_FORM: VehicleInput = {
   color: "",
   notes: "",
   mileage: "",
+  test_source_task_id: "",
+  insurance_source_task_id: "",
+  license_source_task_id: "",
 };
 
 export function vehicleToForm(v: Vehicle): VehicleInput {
@@ -85,6 +103,9 @@ export function vehicleToForm(v: Vehicle): VehicleInput {
     color: v.color ?? "",
     notes: v.notes ?? "",
     mileage: v.mileage != null ? String(v.mileage) : "",
+    test_source_task_id: v.testSourceTask?.id ?? "",
+    insurance_source_task_id: v.insuranceSourceTask?.id ?? "",
+    license_source_task_id: v.licenseSourceTask?.id ?? "",
   };
 }
 
@@ -162,6 +183,12 @@ function normalizeVehicle(row: Row): Vehicle {
     photoDocumentId: str(row.photo_document_id),
     photoUrl: null,
     mileage: intOrNull(row.mileage),
+    // Resolved below by resolveVehicleSourceTasks (fetchVehicle only) — a
+    // default of null here is exactly right for fetchVehicles (the fleet
+    // list), which never calls it.
+    testSourceTask: null,
+    insuranceSourceTask: null,
+    licenseSourceTask: null,
   };
 }
 
@@ -276,6 +303,39 @@ export async function fetchVehicles(supabase: SupabaseClient): Promise<VehicleWi
   }
 }
 
+/**
+ * The (at most 3) tasks a vehicle's expiry dates point at, resolved to
+ * {id,subject,status} for display + a /tasks/[id] link. RLS-safe by
+ * construction: a task the viewer can't see (e.g. someone else's private
+ * task) simply won't come back from this select, so the link silently
+ * doesn't render for them rather than leaking its subject.
+ */
+async function resolveVehicleSourceTasks(supabase: SupabaseClient, vehicle: Vehicle, row: Row): Promise<Vehicle> {
+  const rawIds = {
+    test: str(row.test_source_task_id),
+    insurance: str(row.insurance_source_task_id),
+    license: str(row.license_source_task_id),
+  };
+  const ids = Array.from(new Set(Object.values(rawIds).filter((id): id is string => Boolean(id))));
+  if (ids.length === 0) return vehicle;
+  try {
+    const { data } = await supabase.from("tasks").select("id,subject,status").in("id", ids);
+    const byId = new Map<string, VehicleSourceTask>();
+    for (const r of (data ?? []) as Row[]) {
+      const id = str(r.id);
+      if (id) byId.set(id, { id, subject: str(r.subject), status: str(r.status) });
+    }
+    return {
+      ...vehicle,
+      testSourceTask: rawIds.test ? byId.get(rawIds.test) ?? null : null,
+      insuranceSourceTask: rawIds.insurance ? byId.get(rawIds.insurance) ?? null : null,
+      licenseSourceTask: rawIds.license ? byId.get(rawIds.license) ?? null : null,
+    };
+  } catch {
+    return vehicle;
+  }
+}
+
 export async function fetchVehicle(
   supabase: SupabaseClient,
   tagId: string
@@ -284,10 +344,20 @@ export async function fetchVehicle(
     let { data, error } = await supabase
       .from("vehicles")
       .select(
-        "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,photo_document_id,mileage,tag:tags!inner(id,name,color,is_active,notes,created_at)"
+        "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,photo_document_id,mileage,test_source_task_id,insurance_source_task_id,license_source_task_id,tag:tags!inner(id,name,color,is_active,notes,created_at)"
       )
       .eq("tag_id", tagId)
       .maybeSingle();
+    if (error) {
+      // Pre-migration: 20260907125946_add_vehicle_expiry_source_task.sql not run yet.
+      ({ data, error } = await supabase
+        .from("vehicles")
+        .select(
+          "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,photo_document_id,mileage,tag:tags!inner(id,name,color,is_active,notes,created_at)"
+        )
+        .eq("tag_id", tagId)
+        .maybeSingle());
+    }
     if (error) {
       // Pre-migration fallback — see the matching comment in fetchVehicles.
       ({ data, error } = await supabase
@@ -308,10 +378,11 @@ export async function fetchVehicle(
         .maybeSingle());
     }
     if (error || !data) return null;
-    const v = normalizeVehicle(data as Row);
+    const row = data as Row;
+    const v = normalizeVehicle(row);
     if (!v.tagId) return null;
     const [resolved] = await resolveVehiclePhotoUrls(supabase, [v]);
-    return resolved ?? v;
+    return resolveVehicleSourceTasks(supabase, resolved ?? v, row);
   } catch {
     return null;
   }
