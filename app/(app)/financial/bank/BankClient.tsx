@@ -920,7 +920,10 @@ export default function BankClient({
                           : []),
                     ];
                     const rowContent = (
-                      <div className="flex items-center gap-3 px-3 py-2.5 text-sm transition-colors hover:bg-muted/50">
+                      <div
+                        data-focus-id={transfer?.id}
+                        className="flex items-center gap-3 px-3 py-2.5 text-sm transition-colors hover:bg-muted/50"
+                      >
                         {content}
                         {/* Desktop: a single "⋮" menu instead of separate
                             edit/delete icon buttons (user, 2026-08-31) — same

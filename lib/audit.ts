@@ -804,8 +804,14 @@ export function buildHref(
     case "payments": return buildFocusHref("/financial", `payment:${recordId}`);
     case "recurring_expense_templates":
     case "accounts": return "/financial";
-    // A transfer only exists inside the accounts register.
-    case "account_transfers": return "/financial/bank";
+    // A transfer only exists inside the accounts register, split across two
+    // rows (one per leg) — land on the FROM account's register, where the
+    // transfer's own row also carries data-focus-id.
+    case "account_transfers": {
+      const fromAccount = fk("from_account_id");
+      const base = fromAccount ? `/financial/bank?account=${encodeURIComponent(fromAccount)}` : "/financial/bank";
+      return buildFocusHref(base, recordId);
+    }
     // An installment shows up in the calendar under its parent expense's entry id.
     case "expense_installments": {
       const e = fk("expense_id");
