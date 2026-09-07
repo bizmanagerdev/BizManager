@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   AddIcon,
+  CheckboxCheckedIcon,
+  CheckboxUncheckedIcon,
   ChevronDownIcon,
   DeleteIcon,
   DocumentIcon,
@@ -528,7 +530,7 @@ export default function VehicleActivityClient({
               הוצאה
             </Button>
           </CardHeader>
-          <CardContent className="space-y-2 px-0">
+          <CardContent className="space-y-2 px-1">
             {expenses.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין הוצאות מתויגות לרכב זה.</p>
             ) : (
@@ -564,7 +566,7 @@ export default function VehicleActivityClient({
               משימה
             </Button>
           </CardHeader>
-          <CardContent className="space-y-2 px-0">
+          <CardContent className="space-y-2 px-1">
             {tasks.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין משימות מתויגות לרכב זה.</p>
             ) : (
@@ -572,13 +574,18 @@ export default function VehicleActivityClient({
                 const done = t.status === "done";
                 const body = (
                   <div className="flex min-w-0 flex-1 items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={done}
-                      onChange={() => toggleTaskDone(t)}
+                    <button
+                      type="button"
+                      onClick={() => toggleTaskDone(t)}
                       aria-label={done ? "סימון כלא הושלמה" : "סימון כהושלמה"}
-                      className="h-4 w-4 shrink-0 accent-[rgb(var(--green-4))]"
-                    />
+                      className="shrink-0 text-muted-foreground transition hover:text-success"
+                    >
+                      {done ? (
+                        <CheckboxCheckedIcon className="h-4 w-4 text-success" />
+                      ) : (
+                        <CheckboxUncheckedIcon className="h-4 w-4" />
+                      )}
+                    </button>
                     <div className="min-w-0 flex-1 text-sm">
                       <div className={cn("truncate font-medium", done && "text-muted-foreground line-through")}>
                         {t.subject || "משימה"}
@@ -642,7 +649,7 @@ export default function VehicleActivityClient({
               מסמך
             </Button>
           </CardHeader>
-          <CardContent className="space-y-2 px-0">
+          <CardContent className="space-y-2 px-1">
             {documents.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין מסמכים מתויגים לרכב זה.</p>
             ) : (

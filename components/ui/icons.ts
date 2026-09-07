@@ -78,6 +78,7 @@ export {
   Hourglass as PendingIcon,
   Circle as UncheckedIcon,
   CheckSquare as CheckboxCheckedIcon,
+  Square as CheckboxUncheckedIcon,
   Square as StopIcon,
   ToggleRight as ToggleOnIcon,
   ToggleLeft as ToggleOffIcon,
