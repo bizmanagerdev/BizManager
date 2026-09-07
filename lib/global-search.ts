@@ -246,7 +246,7 @@ function buildGroups(results: GlobalSearchResult[]): GlobalSearchResponse["group
   }));
 }
 
-function customerResult(row: Row): GlobalSearchResult | null {
+export function customerResult(row: Row): GlobalSearchResult | null {
   const id = text(row.customer_id) || text(row.id);
   const name = text(row.customer_name) || text(row.name) || text(row.name_for_invoice);
   if (!id || !name) return null;
@@ -261,7 +261,7 @@ function customerResult(row: Row): GlobalSearchResult | null {
   };
 }
 
-function projectResult(row: Row): GlobalSearchResult | null {
+export function projectResult(row: Row): GlobalSearchResult | null {
   const id = text(row.id);
   const name = text(row.name);
   if (!id || !name) return null;
@@ -280,7 +280,7 @@ function projectResult(row: Row): GlobalSearchResult | null {
   };
 }
 
-function taskResult(row: Row): GlobalSearchResult | null {
+export function taskResult(row: Row): GlobalSearchResult | null {
   const id = text(row.task_id) || text(row.id);
   const subject = text(row.subject);
   if (!id || !subject) return null;
@@ -295,7 +295,7 @@ function taskResult(row: Row): GlobalSearchResult | null {
   };
 }
 
-function orderResult(row: Row): GlobalSearchResult | null {
+export function orderResult(row: Row): GlobalSearchResult | null {
   const id = text(row.order_id) || text(row.id);
   if (!id) return null;
   const customerName = text(row.customer_name);
@@ -310,7 +310,7 @@ function orderResult(row: Row): GlobalSearchResult | null {
   };
 }
 
-function productResult(row: Row): GlobalSearchResult | null {
+export function productResult(row: Row): GlobalSearchResult | null {
   const id = text(row.id);
   const name = text(row.name);
   if (!id || !name) return null;
@@ -325,7 +325,7 @@ function productResult(row: Row): GlobalSearchResult | null {
   };
 }
 
-function documentResult(row: Row): GlobalSearchResult | null {
+export function documentResult(row: Row): GlobalSearchResult | null {
   const id = text(row.id);
   const title = text(row.title) || text(row.file_name);
   if (!id || !title) return null;
@@ -340,7 +340,7 @@ function documentResult(row: Row): GlobalSearchResult | null {
   };
 }
 
-function propertyResult(row: Row): GlobalSearchResult | null {
+export function propertyResult(row: Row): GlobalSearchResult | null {
   const id = text(row.id);
   const address = text(row.address);
   if (!id || !address) return null;
@@ -355,7 +355,7 @@ function propertyResult(row: Row): GlobalSearchResult | null {
   };
 }
 
-function paymentResult(row: Row): GlobalSearchResult | null {
+export function paymentResult(row: Row): GlobalSearchResult | null {
   const id = text(row.id);
   if (!id) return null;
   return {
@@ -369,7 +369,7 @@ function paymentResult(row: Row): GlobalSearchResult | null {
   };
 }
 
-function expenseResult(row: Row): GlobalSearchResult | null {
+export function expenseResult(row: Row): GlobalSearchResult | null {
   const id = text(row.id);
   if (!id) return null;
   return {
@@ -383,7 +383,7 @@ function expenseResult(row: Row): GlobalSearchResult | null {
   };
 }
 
-function contactResult(row: Row, customerNameById: Map<string, string>): GlobalSearchResult | null {
+export function contactResult(row: Row, customerNameById: Map<string, string>): GlobalSearchResult | null {
   const id = text(row.id);
   const customerId = text(row.customer_id);
   const name = text(row.full_name);
@@ -400,7 +400,7 @@ function contactResult(row: Row, customerNameById: Map<string, string>): GlobalS
   };
 }
 
-function tagResult(row: Row): GlobalSearchResult | null {
+export function tagResult(row: Row): GlobalSearchResult | null {
   const id = text(row.id);
   const name = text(row.name);
   if (!id || !name) return null;
@@ -417,7 +417,7 @@ function tagResult(row: Row): GlobalSearchResult | null {
   };
 }
 
-function userResult(row: Row): GlobalSearchResult | null {
+export function userResult(row: Row): GlobalSearchResult | null {
   const id = text(row.id);
   const name = text(row.full_name) || text(row.email);
   if (!id || !name) return null;

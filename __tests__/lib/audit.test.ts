@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   buildAuditFeedItem,
   buildDetails,
+  buildFocusHref,
+  buildHref,
+  buildParentKey,
   invalidateAuditFlagCache,
   logAuditEvent,
   resolvePrivateTaskIds,
@@ -207,6 +210,102 @@ describe("buildDetails — payslips / payslip_items", () => {
   it("shows a negative amount for a deduction item", () => {
     const details = buildDetails("payslip_items", { item_type: "deduction", amount: -200, notes: "איחור" });
     expect(details).toBe(`ניכוי · ${formatMoney(-200)} · איחור`);
+  });
+});
+
+describe("buildFocusHref", () => {
+  it("appends ?focus= when the path has no query string yet", () => {
+    expect(buildFocusHref("/documents", "doc-1")).toBe("/documents?focus=doc-1");
+  });
+  it("appends &focus= when the path already has a query string", () => {
+    expect(buildFocusHref("/collections?filter=overdue", "cust-1")).toBe(
+      "/collections?filter=overdue&focus=cust-1"
+    );
+  });
+  it("URL-encodes the id", () => {
+    expect(buildFocusHref("/financial", "expense:abc def")).toBe("/financial?focus=expense%3Aabc%20def");
+  });
+  it("is a no-op (returns the bare path) when the id is falsy", () => {
+    expect(buildFocusHref("/documents", null)).toBe("/documents");
+    expect(buildFocusHref("/documents", undefined)).toBe("/documents");
+    expect(buildFocusHref("/documents", "")).toBe("/documents");
+  });
+});
+
+// buildHref is what every activity-feed row (and lib/global-search.ts, via the
+// same convention) uses to decide where a click lands. A table missing a case
+// — or a case that drops the id it already has — is the single most common bug
+// class in this file (documented at length in the [[activity-audit-system]]
+// project memory): the row renders fine, but clicking it dumps the reader on
+// the TOP of a list instead of the record it's actually about.
+describe("buildHref", () => {
+  it("properties: links straight to the record, not the bare list", () => {
+    expect(buildHref("properties", "prop-1", null, null)).toBe("/properties/prop-1");
+  });
+
+  it("reminders: a task-linked reminder goes to the task, not /inbox", () => {
+    expect(buildHref("reminders", "rem-1", null, { task_id: "task-9" })).toBe("/tasks/task-9");
+  });
+  it("reminders: falls back to /inbox with no task/customer/project/order link", () => {
+    expect(buildHref("reminders", "rem-1", null, {})).toBe("/inbox");
+    expect(buildHref("reminders", "rem-1", null, null)).toBe("/inbox");
+  });
+
+  it("product_categories: lands on the inventory list WITHOUT a focus id (a category id doesn't match any row's data-focus-id)", () => {
+    expect(buildHref("product_categories", "cat-1", null, null)).toBe("/sales?tab=inventory");
+  });
+  it("products: focuses the specific product row", () => {
+    expect(buildHref("products", "prod-1", null, null)).toBe("/sales?tab=inventory&focus=prod-1");
+  });
+
+  it("account_transfers: opens the FROM account's register at the transfer's own row", () => {
+    expect(buildHref("account_transfers", "transfer-1", null, { from_account_id: "acc-1" })).toBe(
+      "/financial/bank?account=acc-1&focus=transfer-1"
+    );
+  });
+  it("account_transfers: still safe (no id-less crash) with no from_account_id on the row", () => {
+    expect(buildHref("account_transfers", "transfer-1", null, {})).toBe("/financial/bank?focus=transfer-1");
+  });
+
+  it("phone_attendance_reports: focuses the specific report on the attendance queue", () => {
+    expect(buildHref("phone_attendance_reports", "report-1", null, null)).toBe(
+      "/payroll/attendance?focus=report-1"
+    );
+  });
+
+  it("recurring_task_templates: focuses the specific template", () => {
+    expect(buildHref("recurring_task_templates", "tpl-1", null, null)).toBe("/tasks/recurring?focus=tpl-1");
+  });
+
+  it("communications / communication_logs / inquiries: focus the specific row", () => {
+    expect(buildHref("communications", "log-1", null, null)).toBe("/communications?focus=log-1");
+    expect(buildHref("communication_logs", "log-2", null, null)).toBe("/communications?focus=log-2");
+    expect(buildHref("inquiries", "log-3", null, null)).toBe("/communications?focus=log-3");
+  });
+
+  it("auth (login/logout) has nowhere to go — stays a dead link on purpose", () => {
+    expect(buildHref("auth", "row-1", null, null)).toBeNull();
+  });
+
+  it("loan_repayments: goes to the parent loan when its id is known, else the bare loans list", () => {
+    expect(buildHref("loan_repayments", "repay-1", null, { loan_id: "loan-1" })).toBe(
+      "/financial/loans/loan-1"
+    );
+    expect(buildHref("loan_repayments", "repay-1", null, {})).toBe("/financial/loans");
+  });
+});
+
+// A worker-adjacent table only has a user_id, never a page of its own — the
+// route has to be inferred by resolving to `worker:<user_id>` first.
+describe("buildParentKey — worker resolution", () => {
+  it.each(["worker_payments", "attendance_sessions", "payslips", "salary_agreements", "hourly_salary_overrides", "worker_absences"])(
+    "%s resolves to worker:<user_id>",
+    (table) => {
+      expect(buildParentKey(table, "row-1", { user_id: "user-1" }, null)).toBe("worker:user-1");
+    }
+  );
+  it("worker_payment_allocations never resolves (no synchronous join available)", () => {
+    expect(buildParentKey("worker_payment_allocations", "row-1", { worker_payment_id: "wp-1" }, null)).toBeNull();
   });
 });
 
