@@ -142,6 +142,7 @@ export default function CommunicationsClient({ logs: logsProp }: { logs: Communi
               return (
                 <div
                   key={l.id}
+                  data-focus-id={l.id}
                   title={`${directionLabel(l.direction)} · ${channelLabel(l.channel)}`}
                   className={`${GRID} rounded-lg border px-2.5 py-1.5 text-sm ${directionRowClass(l.direction)}`}
                 >

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { UserRole } from "@/lib/auth/requireProfile";
+import { buildFocusHref } from "@/lib/audit";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import { customerMatchesQuery, fuzzyTextMatch, phoneMatchesQuery } from "@/lib/search/customerMatch";
 import {
@@ -320,11 +321,11 @@ function productResult(row: Row): GlobalSearchResult | null {
     title: name,
     subtitle: text(row.description) || null,
     meta: [text(row.sku), text(row.barcode), formatCurrency(num(row.base_price))].filter(Boolean) as string[],
-    href: "/sales?tab=price-list",
+    href: buildFocusHref("/sales?tab=inventory", id),
   };
 }
 
-function documentResult(row: Row, query: string): GlobalSearchResult | null {
+function documentResult(row: Row): GlobalSearchResult | null {
   const id = text(row.id);
   const title = text(row.title) || text(row.file_name);
   if (!id || !title) return null;
@@ -335,7 +336,7 @@ function documentResult(row: Row, query: string): GlobalSearchResult | null {
     title,
     subtitle: text(row.file_name) || null,
     meta: [text(row.document_type), text(row.uploaded_at)].filter(Boolean),
-    href: `/documents?q=${encodeURIComponent(query)}`,
+    href: buildFocusHref("/documents", id),
   };
 }
 
@@ -350,26 +351,13 @@ function propertyResult(row: Row): GlobalSearchResult | null {
     title: address,
     subtitle: row.is_active === false ? "נכס לא פעיל" : "נכס",
     meta: [],
-    href: "/properties",
+    href: `/properties/${encodeURIComponent(id)}`,
   };
 }
 
 function paymentResult(row: Row): GlobalSearchResult | null {
   const id = text(row.id);
   if (!id) return null;
-  const domain = text(row.business_domain);
-  const sourceId =
-    domain === "logistics_projects"
-      ? text(row.project_id)
-      : domain === "sales"
-        ? text(row.order_id)
-        : domain === "property_management"
-          ? text(row.property_id)
-          : "";
-  const params = new URLSearchParams({ type: "inflow" });
-  if (domain) params.set("domain", domain);
-  if (sourceId) params.set("sourceId", sourceId);
-
   return {
     id,
     group: "payments",
@@ -377,26 +365,13 @@ function paymentResult(row: Row): GlobalSearchResult | null {
     title: text(row.notes) || text(row.reference_number) || `תשלום #${shortId(id)}`,
     subtitle: text(row.payment_date) || null,
     meta: [formatCurrency(num(row.amount_total)), text(row.payment_method), text(row.business_domain)].filter(Boolean) as string[],
-    href: `/financial?${params.toString()}`,
+    href: buildFocusHref("/financial", `payment:${id}`),
   };
 }
 
 function expenseResult(row: Row): GlobalSearchResult | null {
   const id = text(row.id);
   if (!id) return null;
-  const domain = text(row.business_domain);
-  const sourceId =
-    domain === "logistics_projects"
-      ? text(row.project_id)
-      : domain === "sales"
-        ? text(row.order_id)
-        : domain === "property_management"
-          ? text(row.property_id)
-          : "";
-  const params = new URLSearchParams({ type: "outflow" });
-  if (domain) params.set("domain", domain);
-  if (sourceId) params.set("sourceId", sourceId);
-
   return {
     id,
     group: "expenses",
@@ -404,7 +379,7 @@ function expenseResult(row: Row): GlobalSearchResult | null {
     title: text(row.description) || text(row.category) || `הוצאה #${shortId(id)}`,
     subtitle: text(row.expense_date) || null,
     meta: [formatCurrency(num(row.amount)), text(row.category), text(row.business_domain)].filter(Boolean) as string[],
-    href: `/financial?${params.toString()}`,
+    href: buildFocusHref("/financial", `expense:${id}`),
   };
 }
 
@@ -1022,7 +997,7 @@ export async function performGlobalSearch(
     ...(documents
       .map((row) =>
         attachMatch(
-          documentResult(row, query),
+          documentResult(row),
           buildMatch(query, [
             ["הערה", text(row.notes)],
             ["סוג", text(row.document_type)],

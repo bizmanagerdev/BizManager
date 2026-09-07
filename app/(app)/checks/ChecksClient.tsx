@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AttachIcon, PhoneIcon } from "@/components/ui/icons";
 import { NavLink } from "@/components/NavLink";
 import { Badge } from "@/components/ui/badge";
@@ -74,6 +74,7 @@ function SummaryCard({
 
 export default function ChecksClient({ checks: checksProp }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const checks = useUndoOverlay(checksProp, (c) => c.payment_id, "check");
   const [filter, setFilter] = useState<FilterKey>("open");
   const [sort, setSort] = useState<SortKey>("due");
@@ -81,6 +82,20 @@ export default function ChecksClient({ checks: checksProp }: Props) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editingCheck, setEditingCheck] = useState<CheckRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CheckRow | null>(null);
+  const [focusDismissed, setFocusDismissed] = useState(false);
+
+  // `?focus=<payment_id>` (from the activity feed / the check-deposit alert)
+  // opens this check's editor directly instead of just landing on the list.
+  const focusId = searchParams.get("focus");
+  const focusCheck = useMemo(
+    () => (focusId && !focusDismissed ? (checks.find((c) => c.payment_id === focusId) ?? null) : null),
+    [checks, focusId, focusDismissed]
+  );
+  const activeEditingCheck = editingCheck ?? focusCheck;
+
+  useEffect(() => {
+    setFocusDismissed(false);
+  }, [focusId]);
 
   const today = todayIso();
   const weekEnd = weekFromNowIso();
@@ -300,8 +315,18 @@ export default function ChecksClient({ checks: checksProp }: Props) {
         </>
       )}
 
-      {editingCheck ? (
-        <EditCheckDialog check={editingCheck} onClose={() => setEditingCheck(null)} onSaved={() => setEditingCheck(null)} />
+      {activeEditingCheck ? (
+        <EditCheckDialog
+          check={activeEditingCheck}
+          onClose={() => {
+            setEditingCheck(null);
+            setFocusDismissed(true);
+          }}
+          onSaved={() => {
+            setEditingCheck(null);
+            setFocusDismissed(true);
+          }}
+        />
       ) : null}
 
       <ConfirmDialog
@@ -410,7 +435,7 @@ function CheckRowDesktop({
   onDeleteRequest: (c: CheckRow) => void;
 }) {
   return (
-    <tr className="border-b border-border/50 hover:bg-muted/30">
+    <tr data-focus-id={c.payment_id} className="border-b border-border/50 hover:bg-muted/30">
       <td className="px-3 py-2">
         {c.customer_id ? (
           <NavLink to={`/customers/${c.customer_id}`} className="font-medium hover:underline">
@@ -462,7 +487,7 @@ function CheckCard({
   onDeleteRequest: (c: CheckRow) => void;
 }) {
   return (
-    <div className="rounded-2xl border border-border/70 p-3">
+    <div data-focus-id={c.payment_id} className="rounded-2xl border border-border/70 p-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           {c.customer_id ? (

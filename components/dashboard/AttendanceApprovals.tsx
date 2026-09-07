@@ -155,15 +155,20 @@ export default function AttendanceApprovals({
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                 {open.map((report) => (
                   <span key={report.id} className="inline-flex items-center gap-1">
-                    <InitialsAvatar
-                      name={report.worker_name ?? t(dashboardDict, locale, "workerFallback")}
-                      color={report.worker_avatar_color}
-                      colorKey={report.user_id}
-                      size="sm"
-                    />
-                    <span className="font-medium text-foreground">
-                      {report.worker_name ?? t(dashboardDict, locale, "workerUnknownFallback")}
-                    </span>
+                    <Link
+                      href={`/payroll/workers/${report.user_id}`}
+                      className="relative z-10 inline-flex items-center gap-1 hover:underline"
+                    >
+                      <InitialsAvatar
+                        name={report.worker_name ?? t(dashboardDict, locale, "workerFallback")}
+                        color={report.worker_avatar_color}
+                        colorKey={report.user_id}
+                        size="sm"
+                      />
+                      <span className="font-medium text-foreground">
+                        {report.worker_name ?? t(dashboardDict, locale, "workerUnknownFallback")}
+                      </span>
+                    </Link>
                     <span className="tabular-nums">
                       {formatMinutes(minutesBetween(report.clock_in, new Date()))} {t(dashboardDict, locale, "hoursAbbrev")}
                     </span>

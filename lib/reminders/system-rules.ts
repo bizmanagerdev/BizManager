@@ -1,6 +1,6 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { logAuditEvent } from "@/lib/audit";
+import { buildFocusHref, logAuditEvent } from "@/lib/audit";
 import {
   computeSourceCollection,
   fetchOrderDueDates,
@@ -225,7 +225,7 @@ const collectionOverdueRule: SystemRule = {
         key: `${getString(row, "source_type")}:${sourceId}:${stage.offset}`,
         title: who ? `${stage.label}: ${who}` : stage.label,
         content: `${ils(sm.late)} באיחור${daysLate ? ` (${daysLate} ימים)` : ""}.`,
-        url: "/collections?view=debtors&filter=overdue",
+        url: buildFocusHref("/collections?filter=overdue", customerId),
         severity: stage.severity as Severity,
         // Worklist-only, no per-debt push. Overdue collections are a daily
         // desk workflow (the debtors page + the collector's own reminders) —
@@ -431,7 +431,7 @@ const checkDepositDueRule: SystemRule = {
         key: id,
         title: num ? `צ׳ק לפירעון #${num}` : "צ׳ק לפירעון",
         content: `${ils(amount)} — מועד הפקדה ${due}${overdueDays > 0 ? ` (לפני ${overdueDays} ימים)` : ""}.`,
-        url: "/checks",
+        url: buildFocusHref("/checks", id),
         severity: (overdueDays > 7 ? "danger" : "warning") as Severity,
         behavior: "ping_once" as Behavior,
         audienceRole: "office" as AudienceRole,
@@ -454,7 +454,7 @@ const paymentDueTodayRule: SystemRule = {
         key: p.id,
         title: p.customer_name ? `תשלום לגבייה: ${p.customer_name}` : "תשלום לגבייה היום",
         content: `${ils(p.amount)} מתוכנן להיום${p.customer_phone ? ` · ${p.customer_phone}` : ""}.`,
-        url: "/collections?view=today",
+        url: buildFocusHref("/collections", p.customer_id),
         severity: "warning" as Severity,
         behavior: "ping_once" as Behavior,
         audienceRole: "office" as AudienceRole,
@@ -499,7 +499,7 @@ const promiseBrokenRule: SystemRule = {
         key: id,
         title: who ? `הבטחת תשלום הופרה: ${who}` : "הבטחת תשלום הופרה",
         content: `הובטחו ${ils(amount)} עד ${date} — טרם שולם.`,
-        url: "/collections?view=debtors",
+        url: buildFocusHref("/collections", getString(r, "customer_id")),
         severity: "danger" as Severity,
         behavior: "ping_once" as Behavior,
         audienceRole: "office" as AudienceRole,
@@ -551,7 +551,7 @@ const paymentOutflowDueRule: SystemRule = {
         key: id,
         title: `תשלום לתשלום: ${label}`,
         content: `${ils(outstanding)} · ${when}.`,
-        url: "/financial/payments-calendar",
+        url: buildFocusHref("/financial/payments-calendar", `expense:${id}`),
         // Worst bill in the group drives the collapsed line's colour.
         severity: (overdue ? "danger" : dueToday ? "warning" : "info") as Severity,
         behavior: "silent" as Behavior,
@@ -585,7 +585,7 @@ const paymentOutflowDueRule: SystemRule = {
         key: `recur:${f.recurringTemplateId}:${f.recurrenceKey}`,
         title: `תשלום לתשלום: ${f.label}`,
         content: `${amountText} · ${when} · הוצאה קבועה שטרם נוצרה.`,
-        url: "/financial/payments-calendar",
+        url: buildFocusHref("/financial/payments-calendar", `recur_proj:${f.recurringTemplateId}:${f.recurrenceKey}`),
         severity: (overdue ? "danger" : dueToday ? "warning" : "info") as Severity,
         behavior: "silent" as Behavior,
         audienceRole: "office" as AudienceRole,
@@ -664,7 +664,7 @@ const recurringPaymentReminderRule: SystemRule = {
         key: `${id}:${occ.key}`,
         title: `תשלום קרוב: ${name}`,
         content: `${amountText} · צפוי ב-${occIso}.`,
-        url: "/financial/payments-calendar",
+        url: buildFocusHref("/financial/payments-calendar", `recur_proj:${id}:${occ.key}`),
         severity: "warning" as Severity,
         behavior: "ping_once" as Behavior,
         audienceRole: "office" as AudienceRole,
@@ -696,7 +696,7 @@ const recurringExpenseConfirmRule: SystemRule = {
         key: id,
         title: "אישור תשלום להוצאה קבועה",
         content: `הוצאה קבועה${when ? ` מ-${when}` : ""} ממתינה לאישור תשלום.`,
-        url: "/financial",
+        url: buildFocusHref("/financial", `expense:${id}`),
         severity: "warning" as Severity,
         behavior: "ping_once" as Behavior,
         audienceRole: "office" as AudienceRole,

@@ -607,7 +607,7 @@ function hrefFromParentKey(parentKey: string | null): string | null {
     case "customer": return `/customers/${id}`;
     case "worker": return `/payroll/workers/${id}`;
     case "task": return `/tasks/${id}`;
-    case "recurring_task_template": return "/tasks/recurring";
+    case "recurring_task_template": return buildFocusHref("/tasks/recurring", id);
     case "vehicle": return `/vehicles/${id}`;
     case "property": return `/properties/${id}`;
     case "document": return buildFocusHref("/documents", id);
@@ -687,7 +687,10 @@ export function buildParentKey(
     }
     case "worker_payments":
     case "attendance_sessions":
-    case "payslips": {
+    case "payslips":
+    case "salary_agreements":
+    case "hourly_salary_overrides":
+    case "worker_absences": {
       const u = fk("user_id");
       return u ? `worker:${u}` : null;
     }
@@ -790,9 +793,11 @@ export function buildHref(
     // worker's session…) — open the file itself in the archive.
     case "document_links": return buildFocusHref("/documents", fk("document_id"));
     case "vehicles": return `/vehicles/${recordId}`;
-    case "properties": return "/properties";
-    case "products":
-    case "product_categories": return buildFocusHref("/sales?tab=inventory", recordId);
+    case "properties": return `/properties/${recordId}`;
+    case "products": return buildFocusHref("/sales?tab=inventory", recordId);
+    // A category has no single row of its own on the inventory list (rows are
+    // keyed by product id) — land on the list rather than flash the wrong item.
+    case "product_categories": return "/sales?tab=inventory";
     case "inventory_movements": return buildFocusHref("/sales?tab=inventory", fk("product_id"));
     // The cash-flow rows are keyed "<kind>:<uuid>" (see lib/financial/entries.ts).
     case "expenses": return buildFocusHref("/financial", `expense:${recordId}`);
@@ -820,8 +825,8 @@ export function buildHref(
     case "payslip_items":
     case "worker_absences":
     case "hourly_salary_overrides": return "/payroll";
-    case "phone_attendance_reports": return "/payroll/attendance";
-    case "recurring_task_templates":
+    case "phone_attendance_reports": return buildFocusHref("/payroll/attendance", recordId);
+    case "recurring_task_templates": return buildFocusHref("/tasks/recurring", recordId);
     case "recurring_task_template_assignees": return "/tasks/recurring";
     case "payment_promises":
     case "dunning_stages": return "/collections";
@@ -833,10 +838,13 @@ export function buildHref(
     // No page of their own, but a row should never be a dead end — send it to
     // the screen that owns the record.
     case "tags": return "/vehicles";
-    case "reminders": return "/inbox";
+    case "reminders": {
+      const t = fk("task_id");
+      return t ? `/tasks/${t}` : "/inbox";
+    }
     case "communications":
     case "communication_logs":
-    case "inquiries": return "/communications";
+    case "inquiries": return buildFocusHref("/communications", recordId);
     case "morning_documents": return "/invoices";
     case "morning_settings": return "/settings/integrations/morning";
     case "business_settings":

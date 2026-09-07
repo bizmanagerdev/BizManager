@@ -268,7 +268,11 @@ export async function getScheduleEntries(
         kind: "reminder" as const,
         title,
         subtitle,
-        href: r.task_id ? `/tasks/${r.task_id}` : "/collections",
+        href: r.task_id
+          ? `/tasks/${r.task_id}`
+          : r.customer_id
+            ? `/collections?focus=${encodeURIComponent(r.customer_id)}`
+            : "/collections",
         startDate: day,
         endDate: day,
         status: r.status,

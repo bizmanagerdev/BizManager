@@ -212,7 +212,7 @@ export function TodayOverview({
   );
 }
 
-function DueTodaySection({
+export function DueTodaySection({
   dueToday,
   collectingId,
   onCollect,
@@ -496,7 +496,7 @@ function CustomerCard({
   }
 
   const card = (
-    <div className={`rounded-2xl border border-border/70 p-3 ${tint}`}>
+    <div data-focus-id={group.customer_id ?? undefined} className={`rounded-2xl border border-border/70 p-3 ${tint}`}>
       <div className="flex items-start gap-2">
         {onToggleSelect ? (
           <input
@@ -939,6 +939,7 @@ export function DebtorsTable({
   sort,
   setSort,
   filtered,
+  focusCustomerId,
   onOpenReminders,
 }: {
   totals: { outstanding: number; pending: number; overdue: number; actionable: number; customerCount: number };
@@ -953,9 +954,15 @@ export function DebtorsTable({
   sort: SortKey;
   setSort: (s: SortKey) => void;
   filtered: CollectionCustomerGroup[];
+  /** `?focus=<customerId>` (activity feed / dashboard / dunning alerts) — the
+   *  matching row starts pre-expanded so its order/project detail is visible,
+   *  not just scrolled-to-but-collapsed; FocusHighlighter still scrolls+flashes it. */
+  focusCustomerId?: string | null;
   onOpenReminders: (customerId: string | null) => void;
 }) {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(() =>
+    focusCustomerId ? new Set([focusCustomerId]) : new Set()
+  );
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   // Sub-view inside חייבים: the customer worklist, or a flat list of all the
@@ -1306,7 +1313,7 @@ function FragmentRow({
   const tint = severityTint(group);
   return (
     <>
-      <tr className={`border-b border-border/50 hover:bg-muted/30 ${tint}`}>
+      <tr data-focus-id={group.customer_id ?? undefined} className={`border-b border-border/50 hover:bg-muted/30 ${tint}`}>
         <td className="px-3 py-2">
           <div className="flex items-start gap-2">
             {onToggleSelect ? (

@@ -370,6 +370,7 @@ export default function RecurringTasksClient(props: Props) {
                 >
                   <button
                     type="button"
+                    data-focus-id={template.id}
                     onClick={() => openEdit(template)}
                     className="w-full space-y-2 p-3 text-right text-sm"
                   >
@@ -437,7 +438,7 @@ export default function RecurringTasksClient(props: Props) {
                     .join(", ");
 
                   return (
-                    <tr key={template.id} className="hover:bg-muted/30 align-top">
+                    <tr key={template.id} data-focus-id={template.id} className="hover:bg-muted/30 align-top">
                       <td className="px-3 py-2">
                         <div className="space-y-1">
                           <div className="font-medium">{template.subject_template}</div>
