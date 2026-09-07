@@ -1322,6 +1322,7 @@ export function ExpenseDialog({
           scope: "expense",
           id: expenseId,
           message: "ההוצאה נוספה",
+          view: { label: "צפייה", onClick: () => router.push(`/financial?focus=${encodeURIComponent(`expense:${expenseId}`)}`) },
           onUndo: async () => {
             const res = await fetch("/api/expenses/delete", {
               method: "POST",

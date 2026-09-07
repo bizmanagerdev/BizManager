@@ -218,7 +218,15 @@ export default function QuickCreateDialogs({
         users={data.users.filter((u) => u.role !== "worker_no_access")}
         projects={projectPickerOptions}
         properties={propertyOptions}
-        onSaved={() => router.refresh()}
+        onSaved={(created) => {
+          router.refresh();
+          const id = created && typeof created.id === "string" ? created.id : "";
+          if (id) {
+            toast.success(HEBREW.taskSaved, {
+              action: { label: "צפייה", onClick: () => router.push(`/tasks/${id}`) },
+            });
+          }
+        }}
       />
 
       <ExpenseDialog
@@ -290,6 +298,7 @@ export default function QuickCreateDialogs({
                   scope: "order",
                   id: orderId,
                   message: HEBREW.orderSaved,
+                  view: { label: "צפייה", onClick: () => router.push(`/sales/orders/${orderId}`) },
                   onUndo: async () => {
                     const result = await offlineFetch("/api/orders/delete", { order_id: orderId }, "מחיקת הזמנה");
                     router.refresh();
@@ -348,6 +357,7 @@ export default function QuickCreateDialogs({
                   scope: "project",
                   id: projectId,
                   message: HEBREW.projectSaved,
+                  view: { label: "צפייה", onClick: () => router.push(`/projects/${projectId}`) },
                   onUndo: async () => {
                     const res = await fetch("/api/projects/delete", {
                       method: "POST",
@@ -408,6 +418,7 @@ export default function QuickCreateDialogs({
             scope: "customer",
             id: customer.id,
             message: "הלקוח נשמר.",
+            view: { label: "צפייה", onClick: () => router.push(`/customers/${customer.id}`) },
             onUndo: async () => {
               const result = await offlineFetch("/api/customers/delete", { id: customer.id }, "מחיקת לקוח");
               router.refresh();

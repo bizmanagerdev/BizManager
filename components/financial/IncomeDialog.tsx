@@ -413,6 +413,7 @@ export function IncomeDialog({
           scope: "payment",
           id: paymentId,
           message: HEBREW.incomeSaved,
+          view: { label: "צפייה", onClick: () => router.push(`/financial?focus=${encodeURIComponent(`payment:${paymentId}`)}`) },
           onUndo: async () => {
             const res = await fetch(undoOrderId ? "/api/orders/payments/delete" : "/api/payments/delete", {
               method: "POST",

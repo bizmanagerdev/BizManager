@@ -183,8 +183,12 @@ function AttendanceLogBody({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function afterSuccess(message: string) {
-    toast.success(message);
+  function afterSuccess(message: string, reportId?: string) {
+    toast.success(message, {
+      action: reportId
+        ? { label: "צפייה", onClick: () => router.push(`/payroll/attendance?focus=${encodeURIComponent(reportId)}`) }
+        : undefined,
+    });
     onSaved?.();
     router.refresh();
     onClose();
@@ -195,9 +199,9 @@ function AttendanceLogBody({
     startTransition(async () => {
       try {
         const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        const json = (await res.json().catch(() => ({}))) as { error?: string; id?: string };
         if (!res.ok) return setError(toHebrewError(json.error, failMsg));
-        afterSuccess(successMsg);
+        afterSuccess(successMsg, json.id ?? undefined);
       } catch (err: unknown) {
         setError(toHebrewError(err, failMsg));
       }

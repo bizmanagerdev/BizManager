@@ -166,6 +166,10 @@ export function registerReversibleAction(args: {
   message: string;
   windowMs?: number;
   onUndo: () => Promise<ActionResult> | void;
+  /** Optional second toast button — e.g. "צפייה" jumping to the new record.
+   *  Sonner renders `action` and `cancel` as two independent buttons, so this
+   *  sits beside "בטל" rather than replacing it. */
+  view?: { label: string; onClick: () => void };
 }) {
   const windowMs = args.windowMs ?? DEFAULT_WINDOW_MS;
   const timer = setTimeout(() => finish(args.key), windowMs);
@@ -181,6 +185,7 @@ export function registerReversibleAction(args: {
     id: args.key,
     duration: windowMs,
     action: { label: "בטל", onClick: () => undoKey(args.key) },
+    cancel: args.view ? { label: args.view.label, onClick: args.view.onClick } : undefined,
   });
 }
 
@@ -246,11 +251,13 @@ export function registerReversibleCreate(args: {
   message: string;
   windowMs?: number;
   onUndo: () => Promise<ActionResult> | void;
+  view?: { label: string; onClick: () => void };
 }) {
   registerReversibleAction({
     key: `${args.scope}:create:${args.id}`,
     message: args.message,
     windowMs: args.windowMs,
     onUndo: args.onUndo,
+    view: args.view,
   });
 }
