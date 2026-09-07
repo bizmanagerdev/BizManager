@@ -1,5 +1,7 @@
+import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
+import { hasSectionAccess, isStaffRole } from "@/lib/auth/roleAccess";
 import { getScheduleEntries, type CalendarEntry } from "@/lib/projectSchedule";
 import { Card, CardContent } from "@/components/ui/card";
 import CalendarSection from "@/app/(app)/calendar/CalendarSection";
@@ -13,6 +15,9 @@ export const revalidate = 60;
 // "when" are separate views, ERP-style.
 export default async function CalendarPage() {
   const { profile, supabase } = await requireProfile();
+  if (!isStaffRole(profile.role) && !hasSectionAccess(profile.role, profile.section_access, "calendar")) {
+    redirect("/no-access");
+  }
   const todayIso = new Date().toISOString().slice(0, 10);
   const canSeeAll = profile.role === "admin" || profile.role === "office";
 

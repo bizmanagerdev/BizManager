@@ -1,4 +1,5 @@
 import { getBusinessDomainLabel, type ExpenseBusinessDomain } from "@/lib/expenses";
+import type { SectionAccess } from "@/lib/auth/sections";
 import {
   getPayTrackingModeForWorkerType,
   normalizePayrollWorkerType,
@@ -38,8 +39,8 @@ export type SalaryCenterUserRow = {
   pay_tracking_mode: "session" | "payslip" | null;
   /** UI language ('he' | 'ar'); admin-set here, only meaningful for a worker. */
   locale: "he" | "ar";
-  /** Per-worker toggle for deliveries access; admin-set here, meaningless for staff. */
-  deliveries_access: boolean;
+  /** Per-worker "which sections can he reach" map; admin-set here, meaningless for staff. */
+  section_access: SectionAccess;
 };
 
 export type SalaryCenterProjectOption = {

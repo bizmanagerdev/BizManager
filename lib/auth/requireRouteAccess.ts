@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import { createSupabaseRouteClient } from "@/lib/supabase/route";
 import type { UserRole } from "@/lib/auth/requireProfile";
+import { sanitizeSectionAccess, type SectionAccess } from "@/lib/auth/sections";
 
 type RouteProfile = {
   id: string;
@@ -12,8 +13,8 @@ type RouteProfile = {
   full_name: string | null;
   /** UI language ('he' | 'ar'); only the worker role is ever offered a toggle. */
   locale: "he" | "ar";
-  /** Per-worker toggle for deliveries access; admin-set, meaningless for staff. */
-  deliveries_access: boolean;
+  /** Per-worker "which sections can he reach" map; admin-set, meaningless for staff. */
+  section_access: SectionAccess;
 };
 
 type RouteAccessOk = {
@@ -66,12 +67,12 @@ export async function requireRouteAccess(options?: {
 
   let { data: profile, error: profileError } = await supabase
     .from("users")
-    .select("id,auth_user_id,role,active,system_access,email,full_name,locale,deliveries_access")
+    .select("id,auth_user_id,role,active,system_access,email,full_name,locale,section_access")
     .eq("auth_user_id", user.id)
     .maybeSingle();
 
   if (profileError) {
-    // Pre-migration: `locale`/`deliveries_access` may not exist yet. Retry
+    // Pre-migration: `locale`/`section_access` may not exist yet. Retry
     // without them rather than locking every route out.
     const legacy = await supabase
       .from("users")
@@ -90,11 +91,11 @@ export async function requireRouteAccess(options?: {
   }
 
   const rawLocale = (profile as { locale?: unknown }).locale;
-  const rawDeliveriesAccess = (profile as { deliveries_access?: unknown }).deliveries_access;
+  const rawSectionAccess = (profile as { section_access?: unknown }).section_access;
   const typed: RouteProfile = {
-    ...(profile as Omit<RouteProfile, "locale" | "deliveries_access">),
+    ...(profile as Omit<RouteProfile, "locale" | "section_access">),
     locale: rawLocale === "ar" ? "ar" : "he",
-    deliveries_access: rawDeliveriesAccess !== false,
+    section_access: sanitizeSectionAccess(rawSectionAccess),
   };
 
   if (!typed.active || !typed.system_access || typed.role === "worker_no_access") {

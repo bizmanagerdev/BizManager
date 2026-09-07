@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import SessionEditorDialog from "@/app/(app)/payroll/SessionEditorDialog";
 import type { SessionFormState } from "@/app/(app)/payroll/SalaryCenter.types";
 import type { SalaryCenterProjectOption, SalaryCenterUserRow } from "@/lib/payroll-center";
+import { DEFAULT_SECTION_ACCESS } from "@/lib/auth/sections";
 import type { SalaryAgreementRow } from "@/lib/payroll";
 import { WorkerPaymentDialog } from "@/components/payroll/WorkerPaymentDialog";
 import { nowLocal } from "@/app/(app)/dashboard/DashboardActions.helpers";
@@ -153,9 +154,9 @@ export default function QuickCreateDialogs({
         pay_tracking_mode: (user.pay_tracking_mode as "session" | "payslip" | null) ?? null,
         // Not carried on this lighter picker shape — irrelevant here, this list
         // only feeds the session editor, never a locale-aware display or a
-        // deliveries-access check.
+        // section-access check.
         locale: "he" as const,
-        deliveries_access: true,
+        section_access: DEFAULT_SECTION_ACCESS,
       })),
     [data.users]
   );

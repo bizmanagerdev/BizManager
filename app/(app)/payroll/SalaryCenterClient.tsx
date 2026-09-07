@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
+import { DEFAULT_SECTION_ACCESS, WORKER_SECTIONS, sanitizeSectionAccess } from "@/lib/auth/sections";
 import { AddIcon, CalendarCheckIcon, CashIcon, CheckIcon, CoinsIcon, DeleteIcon, EditIcon, FilterIcon, LaborIcon, LockIcon, PrintIcon, ReceiptIcon, UsersIcon, WalletIcon, WarningIcon } from "@/components/ui/icons";
 import { SwipeActions, type SwipeAction } from "@/components/ui/swipe-actions";
 import SalaryProtected from "@/components/payroll/SalaryProtected";
@@ -240,7 +241,7 @@ function workerFormFromUser(user: SalaryCenterUserRow): WorkerFormState {
     system_access: user.system_access !== false && user.role !== "worker_no_access",
     payroll_worker_type: normalizePayrollWorkerType(user.payroll_worker_type, user.pay_tracking_mode),
     locale: user.locale === "ar" ? "ar" : "he",
-    deliveries_access: user.deliveries_access !== false,
+    section_access: sanitizeSectionAccess(user.section_access),
   };
 }
 
@@ -317,7 +318,7 @@ export default function SalaryCenterClient({
     system_access: true,
     payroll_worker_type: "session_only",
     locale: "he",
-    deliveries_access: true,
+    section_access: DEFAULT_SECTION_ACCESS,
   });
   const [agreementForm, setAgreementForm] = useState<AgreementFormState>(DEFAULT_AGREEMENT_FORM);
   // Pre-edit snapshot of the agreement being edited (null when the dialog is in
@@ -1032,7 +1033,7 @@ export default function SalaryCenterClient({
         system_access: snapshot.role === "worker_no_access" ? false : snapshot.system_access,
         payroll_worker_type: snapshot.payroll_worker_type,
         locale: snapshot.locale,
-        deliveries_access: snapshot.deliveries_access,
+        section_access: snapshot.section_access,
       });
       await refreshAll({ reloadProtected: false });
       return { ok: true as const };
@@ -1056,7 +1057,7 @@ export default function SalaryCenterClient({
         system_access: workerForm.role === "worker_no_access" ? false : workerForm.system_access,
         payroll_worker_type: workerForm.payroll_worker_type,
         locale: workerForm.locale,
-        deliveries_access: workerForm.deliveries_access,
+        section_access: workerForm.section_access,
       });
       await refreshAll({ reloadProtected: false });
       setWorkerAccessDialogOpen(false);
@@ -4897,22 +4898,33 @@ export default function SalaryCenterClient({
                 </NativeSelect>
               </Field>
             ) : null}
-            {/* Admin-set per worker (2026-08-23): every worker keeps attendance/
-                tasks/calendar/alerts/profile regardless — this is the one route
-                that's individually toggle-able. Meaningless for office/admin,
-                who always have it. */}
+            {/* Admin-set per worker (2026-08-23, generalized 2026-09-07): which
+                business sections this worker can reach — profile/inbox/
+                notifications stay unconditional (account pages, not a section
+                to grant or withhold). Meaningless for office/admin, who always
+                have everything regardless of these checkboxes. */}
             {workerForm.role === "worker" ? (
-              <Field label="גישה למשלוחים">
-                <NativeSelect
-                  value={workerForm.deliveries_access ? "yes" : "no"}
-                  onChange={(event) =>
-                    setWorkerForm((current) => ({ ...current, deliveries_access: event.target.value === "yes" }))
-                  }
-                >
-                  <option value="yes">{"כן"}</option>
-                  <option value="no">{"לא"}</option>
-                </NativeSelect>
-              </Field>
+              <div className="md:col-span-2">
+                <Field label="אילו מסכים העובד יכול לראות">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {WORKER_SECTIONS.map((section) => (
+                      <label key={section.id} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={workerForm.section_access[section.id]}
+                          onChange={(event) =>
+                            setWorkerForm((current) => ({
+                              ...current,
+                              section_access: { ...current.section_access, [section.id]: event.target.checked },
+                            }))
+                          }
+                        />
+                        <span>{section.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </Field>
+              </div>
             ) : null}
           </div>
       </FormDialog>

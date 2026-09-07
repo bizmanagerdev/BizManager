@@ -1,7 +1,9 @@
+import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import AppShell from "@/components/layout/AppShell";
 import { PageStack } from "@/components/layout/page-layout";
 import { requireProfile } from "@/lib/auth/requireProfile";
+import { firstAccessiblePrefix, hasSectionAccess, isStaffRole } from "@/lib/auth/roleAccess";
 import DashboardGreetingTitle from "@/components/dashboard/DashboardGreetingTitle";
 import { firstNameOf, greetingForHour, viewerHour } from "@/lib/dashboard/greeting";
 import { DashboardPanels, PanelsFallback } from "@/app/(app)/dashboard/DashboardSections";
@@ -19,6 +21,17 @@ export default async function DashboardPage() {
   // picker data (customers / products / projects / orders / workers) is now
   // loaded on demand by the menu itself, once, when it's first opened.
   const { profile } = await requireProfile();
+
+  // A worker without the dashboard section would otherwise land here right
+  // after login (middleware's post-login redirect is unconditionally
+  // "/dashboard" — fixing that there would mean fetching section_access on
+  // every request, the exact per-request DB round-trip cost middleware.ts's
+  // own getSession-not-getUser tradeoff already fought hard to avoid). Send
+  // him to his first enabled section instead of bouncing through /no-access
+  // on a route he was never trying to reach.
+  if (!isStaffRole(profile.role) && !hasSectionAccess(profile.role, profile.section_access, "dashboard")) {
+    redirect(firstAccessiblePrefix(profile.section_access) ?? "/no-access");
+  }
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>

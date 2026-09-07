@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { DEFAULT_SECTION_ACCESS, WORKER_SECTIONS, type SectionAccess } from "@/lib/auth/sections";
 
 // useLayoutEffect is client-only (fires before paint, never on the server).
 // Falling back to useEffect on the server means the initial SSR state stays null
@@ -124,16 +125,19 @@ const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
 const ADMIN_ONLY_URLS = new Set(["/activity", "/financial", "/settings", "/financial/loans", "/financial/reports", "/financial/bank"]);
 const ADMIN_OR_OFFICE_URLS = new Set<string>(["/payroll", "/payroll/attendance", "/collections", "/communications", "/checks", "/financial/statements", "/financial/taxes", "/financial/payments-calendar", "/vehicles"]);
 
-// A worker's whole world — the deliveries he drives, his tasks and his calendar.
-// (His hours and pay are on his profile, reached from the avatar, so they don't
-// need a nav slot of their own.) This is NOT the security boundary — that's the
-// server-side guards in lib/auth/roleAccess.ts, which allow the same prefixes;
-// it just keeps him from being shown doors that would bounce him to /no-access.
+// A worker's whole world — the sections an admin has granted him (see
+// WORKER_SECTIONS in lib/auth/sections.ts; every entry here has a matching
+// prefix there). (His hours and pay are on his profile, reached from the
+// avatar, so they don't need a nav slot of their own.) This is NOT the
+// security boundary — that's the server-side guards in lib/auth/roleAccess.ts,
+// which allow the same prefixes; it just keeps him from being shown doors that
+// would bounce him to /no-access.
 const WORKER_NAV_ITEMS: SidebarNavItem[] = [
   { title: "דשבורד", url: "/dashboard", icon: DashboardIcon },
   { title: "משלוחים", url: "/deliveries", icon: DeliveryIcon },
   { title: "משימות", url: "/tasks", icon: TaskIcon },
   { title: "יומן", url: "/calendar", icon: CalendarIcon },
+  { title: "רכבים", url: "/vehicles", icon: VehicleIcon },
 ];
 
 // Arabic labels for a worker who set locale='ar' — no "التوصيلات" (deliveries)
@@ -142,6 +146,7 @@ const WORKER_NAV_ITEMS_AR: SidebarNavItem[] = [
   { title: "الرئيسية", url: "/dashboard", icon: DashboardIcon },
   { title: "المهام", url: "/tasks", icon: TaskIcon },
   { title: "التقويم", url: "/calendar", icon: CalendarIcon },
+  { title: "السيارات", url: "/vehicles", icon: VehicleIcon },
 ];
 
 function filterByRole(items: SidebarNavItem[], isAdmin: boolean, isOffice: boolean): SidebarNavItem[] {
@@ -159,18 +164,19 @@ function filterByRole(items: SidebarNavItem[], isAdmin: boolean, isOffice: boole
 export function useNavItems(
   initialRole?: string | null,
   initialLocale?: string | null,
-  initialDeliveriesAccess = true
+  initialSectionAccess: SectionAccess = DEFAULT_SECTION_ACCESS
 ) {
   // No caching/fetch needed like role: AppShell mounts once per session (see its
   // "persist across navigations" comment) and the locale toggle in /profile
   // calls router.refresh(), which re-runs app/(app)/layout.tsx server-side and
   // feeds a fresh prop straight through — a plain default is enough. Same story
-  // for deliveries access: it's admin-set, so there's no in-session toggle to
+  // for section access: it's admin-set, so there's no in-session toggle to
   // react to either.
   const baseWorkerNavItems = initialLocale === "ar" ? WORKER_NAV_ITEMS_AR : WORKER_NAV_ITEMS;
-  const workerNavItems = initialDeliveriesAccess
-    ? baseWorkerNavItems
-    : baseWorkerNavItems.filter((item) => item.url !== "/deliveries");
+  const workerNavItems = baseWorkerNavItems.filter((item) => {
+    const section = WORKER_SECTIONS.find((s) => s.prefix === item.url);
+    return !section || initialSectionAccess[section.id];
+  });
   const [viewerRole, setViewerRole] = useState<string | null>(() => {
     // Server-provided role takes priority; fall back to localStorage cache.
     if (initialRole) return initialRole;

@@ -91,6 +91,20 @@ function foldTaskReminders(entries: CalendarEntry[]): CalendarEntry[] {
     });
 }
 
+// "תזכורת · משימה · 03:10" reads as three unrelated chips — reminder, task,
+// a bare number that isn't obviously a time out of context (user: "its still
+// not clear ... this is a reminder for a task ... at whatever time"). A
+// task-linked reminder (it routes to /tasks/[id] — see projectSchedule.ts's
+// reminderEntries) says so as one sentence instead: the title already names
+// the task, so this only has to connect "reminder" to it and spell out "at".
+function rowSubtitle(entry: CalendarEntry, kindLabel: string): string {
+  if (entry.kind === "reminder" && entry.href.startsWith("/tasks/")) {
+    const time = /(\d{2}:\d{2})/.exec(entry.subtitle ?? "")?.[1];
+    return time ? `תזכורת למשימה זו, בשעה ${time}` : "תזכורת למשימה זו";
+  }
+  return [kindLabel, entry.subtitle].filter(Boolean).join(" · ");
+}
+
 // Same source of truth as the calendar page's own day panel (app/(app)/calendar/
 // CalendarView.tsx's KIND_META) — this card IS that panel now, so a kind can't
 // wear one color here and another there.
@@ -337,7 +351,7 @@ export default function TodayScheduleCard({
           ) : null}
 
           {shown.length > 0 ? (
-            <ul className="space-y-2 px-3 pb-3">
+            <ul className="space-y-2 p-3">
               {shown.map((entry) => {
                 return (
                   <li
@@ -361,7 +375,7 @@ export default function TodayScheduleCard({
                       aria-label={entry.title}
                       className="pointer-events-auto absolute inset-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     />
-                    <div className="flex items-start gap-2 p-3">
+                    <div className="flex items-start gap-3 p-3">
                       {isResolvableKind(entry.kind) ? (
                         <button
                           type="button"
@@ -382,13 +396,16 @@ export default function TodayScheduleCard({
                         </button>
                       ) : null}
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-start gap-2">
-                          <span className="min-w-0 flex-1 text-sm font-medium">{entry.title}</span>
-                          <span className="shrink-0 text-[11px] text-muted-foreground">{KIND_META[entry.kind].label}</span>
+                        {/* The kind label used to share this line with the title —
+                            on a phone, a checkbox now also eating into the row's
+                            width made that pairing wrap constantly and read
+                            cramped. Title gets the line to itself; the kind label
+                            joins the subtitle line instead (same "wrap, don't
+                            truncate" rule, just less competing for room). */}
+                        <span className="block break-words text-sm font-medium">{entry.title}</span>
+                        <div className="mt-1.5 text-xs text-muted-foreground">
+                          {rowSubtitle(entry, KIND_META[entry.kind].label)}
                         </div>
-                        {entry.subtitle ? (
-                          <div className="mt-0.5 text-xs text-muted-foreground">{entry.subtitle}</div>
-                        ) : null}
                       </div>
                     </div>
                   </li>

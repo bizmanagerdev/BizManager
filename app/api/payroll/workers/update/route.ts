@@ -1,6 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { sanitizeSectionAccess, type SectionAccess } from "@/lib/auth/sections";
 import {
   getPayTrackingModeForWorkerType,
   normalizePayrollWorkerType,
@@ -18,7 +19,7 @@ type UpdateWorkerPayload = {
   payroll_worker_type?: PayrollWorkerType;
   pay_tracking_mode?: "session" | "payslip";
   locale?: "he" | "ar";
-  deliveries_access?: boolean;
+  section_access?: Partial<SectionAccess>;
 };
 
 export async function POST(req: Request) {
@@ -46,9 +47,9 @@ export async function POST(req: Request) {
     // Only workers are ever offered Arabic; force office/admin back to Hebrew
     // rather than trusting a stray client value for a role that shouldn't have one.
     const locale = role === "worker" && body.locale === "ar" ? "ar" : "he";
-    // Meaningless for staff (they always have full access) — only a worker's
-    // choice is ever honored, and it defaults on so admins opt workers OUT.
-    const deliveriesAccess = role !== "worker" || body.deliveries_access !== false;
+    // Meaningless for staff (they always have full access regardless of what's
+    // stored) — only a worker's own choice is ever actually consulted.
+    const sectionAccess = sanitizeSectionAccess(body.section_access);
 
     if (!userId) {
       return NextResponse.json({ error: "Missing user_id." }, { status: 400 });
@@ -86,7 +87,7 @@ export async function POST(req: Request) {
       p_payroll_worker_type: payrollWorkerType,
       p_pay_tracking_mode: payTrackingMode,
       p_locale: locale,
-      p_deliveries_access: deliveriesAccess,
+      p_section_access: sectionAccess,
     });
 
     if (rpcResult.error) {
@@ -95,7 +96,7 @@ export async function POST(req: Request) {
 
     const result = await supabase
       .from("users")
-      .select("id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode,locale,deliveries_access")
+      .select("id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode,locale,section_access")
       .eq("id", userId)
       .maybeSingle();
 

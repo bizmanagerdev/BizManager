@@ -21,7 +21,7 @@ export async function GET(req: Request) {
 
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
-    if (!hasDeliveriesAccess(access.value.profile.role, access.value.profile.deliveries_access)) {
+    if (!hasDeliveriesAccess(access.value.profile.role, access.value.profile.section_access)) {
       return NextResponse.json({ error: "No access" }, { status: 403 });
     }
 
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
     const { supabase, profile } = access.value;
-    if (!hasDeliveriesAccess(profile.role, profile.deliveries_access)) {
+    if (!hasDeliveriesAccess(profile.role, profile.section_access)) {
       return NextResponse.json({ error: "No access" }, { status: 403 });
     }
 

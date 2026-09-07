@@ -1,6 +1,8 @@
+import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import PageAlertBar from "@/components/reminders/PageAlertBar";
 import { requireProfile } from "@/lib/auth/requireProfile";
+import { hasSectionAccess, isStaffRole } from "@/lib/auth/roleAccess";
 import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
 import { propertyDisplayName } from "@/lib/properties";
 import { t } from "@/lib/i18n/t";
@@ -30,6 +32,9 @@ export default async function TasksPage({
   const filterLinkedId = typeof params.linked_id === "string" ? params.linked_id.trim() : "";
 
   const { profile, supabase } = await requireProfile();
+  if (!isStaffRole(profile.role) && !hasSectionAccess(profile.role, profile.section_access, "tasks")) {
+    redirect("/no-access");
+  }
   const canSeeAll = profile.role === "admin" || profile.role === "office";
   // Everyone defaults to their own tasks ("mine" = assigned / member / creator).
   // Admin/office can opt into "all"; workers are always restricted (re-enforced

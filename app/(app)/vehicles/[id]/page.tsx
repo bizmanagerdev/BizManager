@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
+import { hasSectionAccess, isStaffRole } from "@/lib/auth/roleAccess";
 import { PageStack } from "@/components/layout/page-layout";
 import { fetchVehicle, fetchVehicleActivity } from "@/lib/vehicles";
 import { propertyDisplayName } from "@/lib/properties";
@@ -13,7 +14,7 @@ export const revalidate = 30;
 export default async function VehicleDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { profile, supabase } = await requireProfile();
-  if (profile.role !== "admin" && profile.role !== "office") {
+  if (!isStaffRole(profile.role) && !hasSectionAccess(profile.role, profile.section_access, "vehicles")) {
     redirect("/no-access");
   }
 

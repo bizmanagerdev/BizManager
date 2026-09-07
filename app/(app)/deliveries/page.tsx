@@ -35,7 +35,7 @@ export default async function DeliveriesPage({
       : null;
 
   const { profile, supabase } = await requireProfile();
-  if (!hasDeliveriesAccess(profile.role, profile.deliveries_access)) redirect("/no-access");
+  if (!hasDeliveriesAccess(profile.role, profile.section_access)) redirect("/no-access");
   const { deliveries, totalCount, hasMore, error } = await loadDeliveriesPage(supabase, {
     page: 1,
     filters: { customerId },

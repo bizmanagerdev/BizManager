@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireProfile } from "@/lib/auth/requireProfile";
+import { hasSectionAccess, isStaffRole } from "@/lib/auth/roleAccess";
 import { toHebrewError } from "@/lib/error-messages";
 import type { VehicleInput } from "@/lib/vehicles";
 
@@ -28,9 +29,9 @@ function mileageOrNull(value: string) {
   return Number.isInteger(n) && n >= 0 ? n : null;
 }
 
-async function getStaffContext() {
+async function getVehiclesContext() {
   const { profile, supabase } = await requireProfile();
-  if (profile.role !== "admin" && profile.role !== "office") {
+  if (!isStaffRole(profile.role) && !hasSectionAccess(profile.role, profile.section_access, "vehicles")) {
     return { ok: false as const, error: "אין הרשאה לבצע פעולה זו." };
   }
   return { ok: true as const, profile, supabase };
@@ -65,7 +66,7 @@ function deriveName(input: VehicleInput) {
 
 export async function createVehicle(input: VehicleInput): Promise<ActionResult> {
   try {
-    const ctx = await getStaffContext();
+    const ctx = await getVehiclesContext();
     if (!ctx.ok) return { ok: false, error: ctx.error };
 
     // 1) the generic tag (kind='vehicle') — this id is the vehicle's identity.
@@ -102,7 +103,7 @@ export async function createVehicle(input: VehicleInput): Promise<ActionResult> 
 
 export async function updateVehicle(tagId: string, input: VehicleInput): Promise<ActionResult> {
   try {
-    const ctx = await getStaffContext();
+    const ctx = await getVehiclesContext();
     if (!ctx.ok) return { ok: false, error: ctx.error };
     if (!tagId) return { ok: false, error: "חסר מזהה רכב." };
 
@@ -133,7 +134,7 @@ export async function updateVehicle(tagId: string, input: VehicleInput): Promise
  */
 export async function deleteVehicle(tagId: string): Promise<ActionResult> {
   try {
-    const ctx = await getStaffContext();
+    const ctx = await getVehiclesContext();
     if (!ctx.ok) return { ok: false, error: ctx.error };
     if (!tagId) return { ok: false, error: "חסר מזהה רכב." };
 

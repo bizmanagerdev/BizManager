@@ -6,6 +6,7 @@ import {
   catalogForRole,
   type DashboardPrefs,
 } from "@/lib/dashboard/widgets";
+import { DEFAULT_SECTION_ACCESS } from "@/lib/auth/sections";
 
 describe("resolveWidgets — role is the security boundary", () => {
   it("never surfaces office/admin widgets for a worker, even if prefs name them", () => {
@@ -31,13 +32,14 @@ describe("resolveWidgets — role is the security boundary", () => {
 
   it("worker sees deliveries by default, but not when the admin-set toggle is off", () => {
     expect(resolveWidgets("worker", null).map((w) => w.id)).toContain("deliveries");
-    expect(resolveWidgets("worker", null, true).map((w) => w.id)).toContain("deliveries");
-    expect(resolveWidgets("worker", null, false).map((w) => w.id)).not.toContain("deliveries");
+    expect(resolveWidgets("worker", null, { ...DEFAULT_SECTION_ACCESS, deliveries: true }).map((w) => w.id)).toContain("deliveries");
+    expect(resolveWidgets("worker", null, { ...DEFAULT_SECTION_ACCESS, deliveries: false }).map((w) => w.id)).not.toContain("deliveries");
   });
 
   it("the per-worker deliveries toggle never affects office/admin", () => {
-    expect(resolveWidgets("office", null, false).map((w) => w.id)).toContain("deliveries");
-    expect(resolveWidgets("admin", null, false).map((w) => w.id)).toContain("deliveries");
+    const noDeliveries = { ...DEFAULT_SECTION_ACCESS, deliveries: false };
+    expect(resolveWidgets("office", null, noDeliveries).map((w) => w.id)).toContain("deliveries");
+    expect(resolveWidgets("admin", null, noDeliveries).map((w) => w.id)).toContain("deliveries");
   });
 });
 

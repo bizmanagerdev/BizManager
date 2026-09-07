@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { hasSectionAccess, isStaffRole } from "@/lib/auth/roleAccess";
 import { toHebrewError } from "@/lib/error-messages";
 import { withIdempotency } from "@/lib/idempotency";
 import { STORAGE_BUCKET } from "@/lib/storage";
@@ -23,9 +24,12 @@ function safeExtensionFromFilename(name: string) {
  * a failed upload never leaves the car photo-less). DELETE just clears it.
  */
 export async function POST(req: Request, context: { params: Promise<{ id: string }> }) {
-  const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
+  const access = await requireRouteAccess();
   if (!access.ok) return access.response;
   const { supabase, user, profile } = access.value;
+  if (!isStaffRole(profile.role) && !hasSectionAccess(profile.role, profile.section_access, "vehicles")) {
+    return NextResponse.json({ error: "Insufficient role" }, { status: 403 });
+  }
 
   const { id: tagId } = await context.params;
   if (!tagId) return NextResponse.json({ error: "Missing vehicle id" }, { status: 400 });
@@ -130,9 +134,12 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
 }
 
 export async function DELETE(_req: Request, context: { params: Promise<{ id: string }> }) {
-  const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
+  const access = await requireRouteAccess();
   if (!access.ok) return access.response;
   const { supabase, profile } = access.value;
+  if (!isStaffRole(profile.role) && !hasSectionAccess(profile.role, profile.section_access, "vehicles")) {
+    return NextResponse.json({ error: "Insufficient role" }, { status: 403 });
+  }
 
   const { id: tagId } = await context.params;
   if (!tagId) return NextResponse.json({ error: "Missing vehicle id" }, { status: 400 });

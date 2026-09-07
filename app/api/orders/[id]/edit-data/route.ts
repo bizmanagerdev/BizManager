@@ -35,7 +35,7 @@ export async function GET(
   if (!access.ok) return access.response;
 
   const { supabase, profile } = access.value;
-  if (!hasDeliveriesAccess(profile.role, profile.deliveries_access)) {
+  if (!hasDeliveriesAccess(profile.role, profile.section_access)) {
     return NextResponse.json({ error: "No access" }, { status: 403 });
   }
   const { id } = await context.params;

@@ -1,4 +1,5 @@
 import type { UserRole } from "@/lib/auth/requireProfile";
+import type { SectionAccess } from "@/lib/auth/sections";
 import type { ExpenseBusinessDomain } from "@/lib/expenses";
 import type { PayrollWorkerType } from "@/lib/payroll-worker-type";
 import type { PayrollPeriodRow } from "@/lib/payroll";
@@ -63,8 +64,8 @@ export type WorkerFormState = {
   payroll_worker_type: PayrollWorkerType;
   /** UI language ('he' | 'ar'); only meaningful for role="worker". */
   locale: "he" | "ar";
-  /** Per-worker toggle for deliveries access; only meaningful for role="worker". */
-  deliveries_access: boolean;
+  /** Per-worker "which sections can he reach" map; only meaningful for role="worker". */
+  section_access: SectionAccess;
 };
 
 export type CreateUserFormState = {

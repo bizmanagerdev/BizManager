@@ -399,7 +399,7 @@ export async function DashboardPanels() {
   // Computed before digestPromise below so its own "hidden widgets skip
   // fetches" gate can use show().
   const prefs = sanitizePrefs(profile.dashboard_prefs);
-  const ordered = resolveWidgets(role, prefs, profile.deliveries_access);
+  const ordered = resolveWidgets(role, prefs, profile.section_access);
   const visible = new Set(ordered.map((w) => w.id));
   const show = (id: WidgetId) => visible.has(id);
 

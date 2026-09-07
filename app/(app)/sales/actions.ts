@@ -69,7 +69,7 @@ export async function loadMoreInventory(page: number, filters: ProductsFilters) 
 /** Fetch the next page of open deliveries for the infinite-scroll queue. */
 export async function loadMoreDeliveries(page: number, filters: DeliveriesFilters) {
   const { supabase, profile } = await requireProfile();
-  if (!hasDeliveriesAccess(profile.role, profile.deliveries_access)) {
+  if (!hasDeliveriesAccess(profile.role, profile.section_access)) {
     throw new Error("No access");
   }
   const { deliveries, hasMore } = await loadDeliveriesPage(supabase, { page, filters });
@@ -79,7 +79,7 @@ export async function loadMoreDeliveries(page: number, filters: DeliveriesFilter
 /** Every open delivery's outstanding line items, for the warehouse picking list. */
 export async function loadPickingList() {
   const { supabase, profile } = await requireProfile();
-  if (!hasDeliveriesAccess(profile.role, profile.deliveries_access)) {
+  if (!hasDeliveriesAccess(profile.role, profile.section_access)) {
     throw new Error("No access");
   }
   return loadPickingListSource(supabase);

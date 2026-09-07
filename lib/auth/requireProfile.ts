@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import * as Sentry from "@sentry/nextjs";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isPayrollWorkerType, type PayrollWorkerType } from "@/lib/payroll-worker-type";
+import { sanitizeSectionAccess, type SectionAccess } from "@/lib/auth/sections";
 
 export type UserRole = "admin" | "office" | "worker" | "worker_no_access";
 
@@ -25,10 +26,11 @@ export type UserProfile = {
   // UI language ('he' | 'ar'). Only the worker role is ever offered a toggle for
   // this; office/admin always stay 'he'. See lib/i18n.
   locale: "he" | "ar";
-  // Per-worker toggle for /deliveries + the dashboard deliveries widget,
-  // admin-set from the Salary Center worker-edit dialog. Meaningless for
-  // office/admin (they always have full access regardless of this value).
-  deliveries_access: boolean;
+  // Per-worker "which sections can he reach" map (dashboard/deliveries/tasks/
+  // calendar/vehicles), admin-set from the Salary Center worker-edit dialog.
+  // Meaningless for office/admin (they always have full access regardless of
+  // this value) — see lib/auth/sections.ts.
+  section_access: SectionAccess;
 };
 
 export const requireProfile = cache(async () => {
@@ -60,13 +62,13 @@ export const requireProfile = cache(async () => {
   let { data: profile, error } = await supabase
     .from("users")
     .select(
-      "id,auth_user_id,email,full_name,phone,role,active,system_access,payroll_worker_type,dashboard_prefs,digest_seen_at,locale,deliveries_access,avatar_color"
+      "id,auth_user_id,email,full_name,phone,role,active,system_access,payroll_worker_type,dashboard_prefs,digest_seen_at,locale,section_access,avatar_color"
     )
     .eq("auth_user_id", userId)
     .maybeSingle();
 
   if (error) {
-    // Pre-migration: `locale`/`deliveries_access`/`avatar_color` may not exist
+    // Pre-migration: `locale`/`section_access`/`avatar_color` may not exist
     // yet. Retry without them rather than sending every signed-in user to /login.
     const legacy = await supabase
       .from("users")
@@ -86,13 +88,13 @@ export const requireProfile = cache(async () => {
 
   const rawWorkerType = (profile as { payroll_worker_type?: unknown }).payroll_worker_type;
   const rawLocale = (profile as { locale?: unknown }).locale;
-  const rawDeliveriesAccess = (profile as { deliveries_access?: unknown }).deliveries_access;
+  const rawSectionAccess = (profile as { section_access?: unknown }).section_access;
   const rawAvatarColor = (profile as { avatar_color?: unknown }).avatar_color;
   const typed: UserProfile = {
-    ...(profile as Omit<UserProfile, "payroll_worker_type" | "locale" | "deliveries_access" | "avatar_color">),
+    ...(profile as Omit<UserProfile, "payroll_worker_type" | "locale" | "section_access" | "avatar_color">),
     payroll_worker_type: isPayrollWorkerType(rawWorkerType) ? rawWorkerType : null,
     locale: rawLocale === "ar" ? "ar" : "he",
-    deliveries_access: rawDeliveriesAccess !== false,
+    section_access: sanitizeSectionAccess(rawSectionAccess),
     avatar_color: typeof rawAvatarColor === "string" ? rawAvatarColor : null,
   };
   if (!typed.active || !typed.system_access || typed.role === "worker_no_access") {

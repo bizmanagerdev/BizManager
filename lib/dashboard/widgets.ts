@@ -1,6 +1,7 @@
 import { cache } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { UserRole } from "@/lib/auth/requireProfile";
+import { DEFAULT_SECTION_ACCESS, hasSectionAccess, type SectionAccess } from "@/lib/auth/sections";
 
 /**
  * The catalog of dashboard widgets a user can show/hide/reorder via the "התאמת
@@ -451,14 +452,14 @@ export function orderedCatalog(role: UserRole, prefs: DashboardPrefs | null): Wi
 export function resolveWidgets(
   role: UserRole,
   prefs: DashboardPrefs | null,
-  deliveriesAccess = true
+  sectionAccess: SectionAccess = DEFAULT_SECTION_ACCESS
 ): WidgetMeta[] {
   const hidden = new Set(prefs?.hidden ?? []);
   let shown = orderedCatalog(role, prefs).filter((w) => !hidden.has(w.id));
-  // A worker without the admin-set deliveries toggle never gets the widget,
+  // A worker without the admin-set deliveries section never gets the widget,
   // regardless of his own saved prefs — same "role can't be overridden by
   // prefs" guarantee the catalog itself already gives every other widget.
-  if (role === "worker" && !deliveriesAccess) {
+  if (role === "worker" && !hasSectionAccess(role, sectionAccess, "deliveries")) {
     shown = shown.filter((w) => w.id !== "deliveries");
   }
   // A WORKER always leads with "היום", and always has it. He has no customizer

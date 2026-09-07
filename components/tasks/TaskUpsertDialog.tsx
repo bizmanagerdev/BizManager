@@ -840,9 +840,17 @@ export function TaskUpsertDialog(rawProps: Props) {
 
   // Create mode: just stage the reminder locally (no task id yet). It's sent with
   // the create payload and inserted server-side after the task is created.
+  //
+  // Same `new Date(...).toISOString()` conversion addReminder()/saveReminderEdit()
+  // do — this path was missing it (bug: sent the naive "YYYY-MM-DDTHH:MM" local
+  // string straight through), so a reminder staged while CREATING a task landed in
+  // the DB as if that clock time were already UTC. Postgres then stored it 2-3
+  // hours off from Israel local (DST-dependent), and it displayed back exactly that
+  // far off too — reported as "I didn't set a reminder for 3am".
   function stageReminder() {
     if (!reminderAt) return;
-    setPendingReminders((prev) => [...prev, { remind_at: reminderAt, content: reminderNote.trim() }]);
+    const remindIso = new Date(reminderAt).toISOString();
+    setPendingReminders((prev) => [...prev, { remind_at: remindIso, content: reminderNote.trim() }]);
     setReminderAt("");
     setReminderNote("");
   }

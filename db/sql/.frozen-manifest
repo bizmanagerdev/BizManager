@@ -51,6 +51,7 @@ create_salary_center_views.sql
 create_sales_order_rpc.sql
 create_session_effective_payment_view.sql
 create_tags_and_vehicles.sql
+create_vehicle_photo.sql
 create_worker_payment_views.sql
 customers_required_delivery_fields.sql
 decouple_users_from_auth_for_no_access_workers.sql

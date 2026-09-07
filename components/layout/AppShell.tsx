@@ -17,6 +17,7 @@ import FontScaleSync from "@/components/layout/FontScaleSync";
 import FocusHighlighter from "@/components/layout/FocusHighlighter";
 import type { SidebarNavItem } from "@/components/layout/nav-items";
 import { useNavItems } from "@/components/layout/nav-items";
+import { DEFAULT_SECTION_ACCESS, type SectionAccess } from "@/lib/auth/sections";
 import { SidebarCollapseProvider } from "@/components/layout/sidebar-collapse-context";
 import { PageTitleProvider } from "@/components/layout/page-title-context";
 import { PAGE_HEADER_TOOLBAR_ID } from "@/components/layout/PageHeaderToolbar";
@@ -29,8 +30,8 @@ type Props = {
   viewerRole?: string;
   /** Signed-in worker's UI language ('he' | 'ar'); office/admin are always 'he'. */
   viewerLocale?: string | null;
-  /** Per-worker toggle for deliveries access, admin-set; meaningless for staff. */
-  viewerDeliveriesAccess?: boolean;
+  /** Per-worker "which sections can he reach" map, admin-set; meaningless for staff. */
+  viewerSectionAccess?: SectionAccess;
   avatarColor?: string | null;
   /** Server-resolved top-bar user-menu data — see the `Me` comment in TopBar. */
   initialMe?: Me;
@@ -54,7 +55,7 @@ export default function AppShell({
   userName,
   viewerRole,
   viewerLocale,
-  viewerDeliveriesAccess = true,
+  viewerSectionAccess = DEFAULT_SECTION_ACCESS,
   avatarColor,
   initialMe,
   showSearch,
@@ -63,7 +64,7 @@ export default function AppShell({
   bottomNavMoreItems,
 }: Props) {
   const isNested = useContext(NestedAppShellContext);
-  const defaults = useNavItems(viewerRole, viewerLocale, viewerDeliveriesAccess);
+  const defaults = useNavItems(viewerRole, viewerLocale, viewerSectionAccess);
 
   // Nested (a page rendered under the (app) layout): render content only.
   if (isNested) return <>{children}</>;
