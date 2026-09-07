@@ -15,6 +15,7 @@ import type { UserRole } from "@/lib/auth/requireProfile";
 
 export type WidgetId =
   | "todaySchedule"
+  | "activityDigest"
   | "todayAlerts"
   | "myTasks"
   | "payments"
@@ -59,6 +60,12 @@ export const DASHBOARD_WIDGETS: WidgetMeta[] = [
   // "everything else" row. So the list runs most-important first: the day, what
   // needs handling in it, your own work, then everyone else's, then the numbers.
   { id: "todaySchedule", label: "היום — יומן", roles: ALL },
+  // Was hard-pinned right after "היום" regardless of the viewer's own order
+  // (see MissedDigestCard.tsx) — now a real widget, so its position is
+  // whatever the catalog/saved order says, same as everything else. Still
+  // renders nothing on a quiet day (see DashboardSections.tsx), so "shown"
+  // here means "eligible", not "always visible".
+  { id: "activityDigest", label: "פעילות חדשה", roles: BACK_OFFICE },
   { id: "todayAlerts", label: "התראות", roles: ALL },
   { id: "myTasks", label: "המשימות שלי", roles: ALL },
   // Money that LEAVES in the next few days, off the payments calendar: what is

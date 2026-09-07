@@ -4,14 +4,13 @@ import { toHebrewError } from "@/lib/error-messages";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChecklistIcon } from "@/components/ui/icons";
+import { ChecklistIcon, CheckboxUncheckedIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
 import DashboardCardHeader from "@/components/dashboard/DashboardCardHeader";
 import DashboardCardFooter from "@/components/dashboard/DashboardCardFooter";
 import QuietCard from "@/components/dashboard/QuietCard";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatShortDate } from "@/lib/date";
 import { offlineFetch } from "@/lib/offline-queue";
@@ -223,7 +222,19 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
                       the title takes what's left and truncates, the detail keeps
                       its size (shrink-0) because it's the part that's already
                       short. */}
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    {/* Same corner, same shape and the same past tense as the
+                        delivery card's "סופק". `relative` lifts it over the row
+                        link so its own click still lands. */}
+                    <button
+                      type="button"
+                      onClick={() => markDone(task.id)}
+                      title={t(dashboardDict, locale, "markTaskDoneTitle")}
+                      aria-label={t(dashboardDict, locale, "markTaskDoneTitle")}
+                      className="relative shrink-0 text-muted-foreground transition hover:text-success"
+                    >
+                      <CheckboxUncheckedIcon className="h-4 w-4" />
+                    </button>
                     <div className="flex min-w-0 flex-1 items-center gap-1.5">
                       <span className="truncate text-sm font-medium" title={subject}>
                         {subject}
@@ -249,20 +260,6 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
                         </span>
                       ) : null}
                     </div>
-
-                    {/* Same corner, same shape and the same past tense as the
-                        delivery card's "סופק". `relative` lifts it over the row
-                        link so its own click still lands. */}
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="relative h-8 shrink-0 self-center px-3 text-sm max-md:min-h-[44px]"
-                      onClick={() => markDone(task.id)}
-                      title={t(dashboardDict, locale, "markTaskDoneTitle")}
-                    >
-                      {t(dashboardDict, locale, "doneButtonLabel")}
-                    </Button>
                   </div>
                 </li>
               );

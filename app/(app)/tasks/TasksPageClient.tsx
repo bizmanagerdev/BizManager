@@ -23,7 +23,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { computeInsertSortOrder } from "@/lib/tasks/sortOrder";
-import { AddIcon, AttachIcon, BuildingIcon, ClockIcon, CloseIcon, CommentIcon, DragIcon, FilterIcon, LockIcon, NotificationIcon, ProjectIcon, RecurringIcon, SearchIcon, SuccessIcon, UncheckedIcon, UserIcon, WazeIcon, ZoomInIcon, ZoomOutIcon } from "@/components/ui/icons";
+import { AddIcon, AttachIcon, BuildingIcon, CheckboxCheckedIcon, CheckboxUncheckedIcon, ClockIcon, CloseIcon, CommentIcon, DragIcon, FilterIcon, LockIcon, NotificationIcon, ProjectIcon, RecurringIcon, SearchIcon, UserIcon, WazeIcon, ZoomInIcon, ZoomOutIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { offlineFetch } from "@/lib/offline-queue";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
@@ -301,9 +301,9 @@ function TaskCard({
           className="mt-[0.15em] shrink-0 text-muted-foreground transition duration-150 hover:text-success group-hover:scale-110"
         >
           {isDone ? (
-            <SuccessIcon className="h-[1.15em] w-[1.15em] text-success" />
+            <CheckboxCheckedIcon className="h-[1.15em] w-[1.15em] text-success" />
           ) : (
-            <UncheckedIcon className="h-[1.15em] w-[1.15em]" />
+            <CheckboxUncheckedIcon className="h-[1.15em] w-[1.15em]" />
           )}
         </button>
         <div className={`min-w-0 flex-1 font-medium leading-snug ${isDone ? "text-muted-foreground line-through" : ""}`}>

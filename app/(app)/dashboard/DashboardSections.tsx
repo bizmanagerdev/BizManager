@@ -102,12 +102,15 @@ export function PanelsFallback() {
 }
 
 /**
- * A card as the board handles it: the widgets, plus the two cards pinned ahead
- * of the viewer's own order (the activity digest, and a worker's clock-in
- * strip) — neither is a WidgetId, since neither can be hidden or reordered.
+ * A card as the board handles it: the widgets, plus a worker's clock-in strip
+ * pinned ahead of the viewer's own order — that one isn't a WidgetId, since it
+ * can't be hidden or reordered. The activity digest USED to be pinned the same
+ * way; it's a real WidgetId now (see lib/dashboard/widgets.ts), just one whose
+ * content can turn out empty at render time like several others (see the
+ * comment above `present`).
  */
 type WidgetItem = {
-  id: WidgetId | "digest" | "workerShift";
+  id: WidgetId | "workerShift";
   /** Position in the viewer's order; the pinned cards sit ahead of all of it. */
   rank: number;
   node: ReactNode;
@@ -392,11 +395,20 @@ export async function DashboardPanels() {
   const locale = profile.locale;
   const isAdminOrOffice = role === "admin" || role === "office";
 
-  // "What you missed since last here" — admin + office, role-filtered inside.
+  // Prefs come off the profile (loaded by requireProfile) — no extra round-trip.
+  // Computed before digestPromise below so its own "hidden widgets skip
+  // fetches" gate can use show().
+  const prefs = sanitizePrefs(profile.dashboard_prefs);
+  const ordered = resolveWidgets(role, prefs, profile.deliveries_access);
+  const visible = new Set(ordered.map((w) => w.id));
+  const show = (id: WidgetId) => visible.has(id);
+
+  // "What you missed since last here" — admin + office, role-filtered inside,
+  // same "hidden widgets skip fetches" rule every other widget follows.
   // The 2-hop digest chain (anchor → digest) is kicked off here but NOT awaited;
   // it's folded into the Promise.all below so it runs CONCURRENTLY with the widget
   // queries instead of blocking ~2 sequential round-trips ahead of them.
-  const digestPromise: Promise<AuditFeedItem[]> = isAdminOrOffice
+  const digestPromise: Promise<AuditFeedItem[]> = isAdminOrOffice && show("activityDigest")
     ? getDigestAnchor(supabase, profile.id, profile.digest_seen_at)
         .then((sinceIso) =>
           getMissedDigest(supabase, {
@@ -407,12 +419,6 @@ export async function DashboardPanels() {
         )
         .catch(() => [] as AuditFeedItem[])
     : Promise.resolve([] as AuditFeedItem[]);
-
-  // Prefs come off the profile (loaded by requireProfile) — no extra round-trip.
-  const prefs = sanitizePrefs(profile.dashboard_prefs);
-  const ordered = resolveWidgets(role, prefs, profile.deliveries_access);
-  const visible = new Set(ordered.map((w) => w.id));
-  const show = (id: WidgetId) => visible.has(id);
 
   // Recurring-task generation does a write + a few round-trips. Run it
   // concurrently with the reads (awaited below) rather than blocking ahead of
@@ -572,6 +578,12 @@ export async function DashboardPanels() {
     todaySchedule: show("todaySchedule") ? (
       <TodayScheduleCard entries={scheduleEntries} initialDate={formatToday(new Date(), locale)} locale={locale} />
     ) : null,
+    // Renders null on a quiet day (nothing missed) or once dismissed — same
+    // rule as every other widget whose content can turn out empty (see the
+    // comment above `present` for the `empty:hidden` fallback that handles
+    // it), so `show("activityDigest")` alone doesn't guarantee a visible card.
+    activityDigest:
+      digestItems.length > 0 ? <MissedDigestCell initialItems={digestItems} planned locale={locale} /> : null,
     todayAlerts: alertsSlice ? <TodayAlertsCard alerts={alertsSlice.alerts} locale={locale} /> : null,
     myTasks: <MyTasksPanel tasks={myTasks} locale={locale} />,
     // Deliveries is a Hebrew-only feature (user, 2026-08-19: "only Hebrew
@@ -628,30 +640,32 @@ export async function DashboardPanels() {
     ) : null,
   };
 
-  const present: WidgetItem[] = ordered
-    .map((w, rank) => ({ id: w.id as WidgetId | "digest", rank, node: nodes[w.id] }))
+  const orderedWithNodes = ordered
+    .map((w, rank) => ({ id: w.id, rank, node: nodes[w.id] }))
     .filter((e) => e.node != null);
 
   // ── The board's running order ──────────────────────────────────────────────
-  // TWO CARDS ARE PINNED, ahead of whatever the viewer arranged:
-  //   1. "היום" — always the hero: full height, on its own side of the board on
-  //      desktop, first on a phone. It's the card the board exists to show, and a
-  //      board where the day can be buried among six others is a board you have
-  //      to search before you can read.
-  //   2. "פעילות חדשה" — right after it, for the same reason in reverse: what
-  //      changed while you were away is only worth anything if you see it early.
-  //      Landing right after the hero, it's always the first secondary card.
-  // Everything else follows in the viewer's own order, split into the secondary
-  // and tertiary rows by tierCounts() — see splitTiers below.
+  // "היום" is still the one PINNED card, always the hero: full height, on its
+  // own side of the board on desktop, first on a phone. It's the card the
+  // board exists to show, and a board where the day can be buried among six
+  // others is a board you have to search before you can read. resolveWidgets()
+  // only forces this for a worker (his board has no customizer at all); an
+  // admin/office viewer would otherwise see it wherever they last dragged it,
+  // so it's pinned again here regardless of role.
   //
-  // The digest is planned only when it HAS something (it renders null when
-  // empty). Unplanned, it stays mounted purely for its realtime subscription —
-  // see the sentinel near the return, and MissedDigestCard for what happens when
-  // that subscription fires on an unplanned board.
-  const digestPlanned = isAdminOrOffice && digestItems.length > 0;
-  const digestCard: WidgetItem | null = digestPlanned
-    ? { id: "digest", rank: -1, node: <MissedDigestCell initialItems={digestItems} planned locale={locale} /> }
-    : null;
+  // "פעילות חדשה" used to be pinned right after it too. It's a real WidgetId
+  // now (lib/dashboard/widgets.ts) — hidable and reorderable via «התאמת לוח»
+  // like everything else — so its position among "everything else" below is
+  // just wherever the viewer's own order puts it, default right after "היום"
+  // (the registry's own order) for anyone who hasn't touched that. It still
+  // renders null on a quiet day (nothing missed) or once dismissed — see
+  // `nodes.activityDigest` above — so `digestPlanned` is about whether it
+  // actually landed a cell this render, not whether the viewer has it enabled.
+  const present: WidgetItem[] = [
+    ...orderedWithNodes.filter((w) => w.id === "todaySchedule"),
+    ...orderedWithNodes.filter((w) => w.id !== "todaySchedule"),
+  ];
+  const digestPlanned = present.some((w) => w.id === "activityDigest");
 
   // The worker's clock, pinned directly under "היום" (user, 2026-08-18: "I want
   // the clock under today") — INSIDE the hero column, not a tier of its own, so
@@ -670,21 +684,16 @@ export async function DashboardPanels() {
         }
       : null;
 
-  const rankedCards: WidgetItem[] = [
-    ...present.filter((w) => w.id === "todaySchedule"),
-    ...(digestCard ? [digestCard] : []),
-    ...present.filter((w) => w.id !== "todaySchedule"),
-  ];
-  const { hero, secondary, tertiary } = splitTiers(rankedCards);
+  const { hero, secondary, tertiary } = splitTiers(present);
   const hasTertiary = tertiary.length > 0;
   const hasRest = secondary.length > 0 || hasTertiary;
   // Sparse board → the colour moves TO the hero (as a fill) and OFF the
   // secondary row (plain, no tint) — see FEW_CARDS_THRESHOLD and the
-  // HERO_EMPHASIS_FILL_CLASS/HERO_EMPHASIS_HEADER_CLASS pair for why.
-  // rankedCards, not present: this is about how many cards the viewer is
-  // actually looking at (hero + digest + everything after), not just their
-  // raw «התאמת לוח» count.
-  const fewCards = rankedCards.length <= FEW_CARDS_THRESHOLD;
+  // HERO_EMPHASIS_FILL_CLASS/HERO_EMPHASIS_HEADER_CLASS pair for why. `present`
+  // already reflects what the viewer is actually looking at this render (the
+  // digest included, when it landed a cell), not just their raw «התאמת לוח»
+  // count.
+  const fewCards = present.length <= FEW_CARDS_THRESHOLD;
 
   // The running order IS the phone order: every wrapper between a card and the
   // board is display:contents there, so every card ends up a flat sibling and
@@ -739,8 +748,13 @@ export async function DashboardPanels() {
           this costs nothing visually; if activity arrives live it refreshes the
           board itself rather than trying to draw its own cell (see
           MissedDigestCard). When it DOES have something it's a planned cell in
-          the tree above instead, always the first secondary card. */}
-      {isAdminOrOffice && !digestPlanned ? <MissedDigestCell initialItems={digestItems} locale={locale} /> : null}
+          the tree above instead, at whatever position the viewer's order gives
+          it. Gated on show("activityDigest") too — a viewer who's hidden it
+          shouldn't have it silently mounted just to refresh their board the
+          moment activity arrives. */}
+      {isAdminOrOffice && show("activityDigest") && !digestPlanned ? (
+        <MissedDigestCell initialItems={digestItems} locale={locale} />
+      ) : null}
 
       {present.length === 0 ? (
         <Card>

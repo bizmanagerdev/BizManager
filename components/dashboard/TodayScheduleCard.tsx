@@ -3,9 +3,8 @@
 import { useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AddIcon, CalendarIcon, CheckIcon, SuccessIcon } from "@/components/ui/icons";
+import { AddIcon, CalendarIcon, CheckboxUncheckedIcon, SuccessIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import DashboardCardHeader from "@/components/dashboard/DashboardCardHeader";
 import DashboardCardFooter from "@/components/dashboard/DashboardCardFooter";
 import { Badge } from "@/components/ui/badge";
@@ -362,7 +361,26 @@ export default function TodayScheduleCard({
                       aria-label={entry.title}
                       className="pointer-events-auto absolute inset-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     />
-                    <div className="flex items-center gap-2 p-3">
+                    <div className="flex items-start gap-2 p-3">
+                      {isResolvableKind(entry.kind) ? (
+                        <button
+                          type="button"
+                          onClick={() => resolveEntry(entry)}
+                          title={
+                            entry.kind === "task"
+                              ? t(dashboardDict, locale, "markTaskDoneTitle")
+                              : t(dashboardDict, locale, "markReminderDoneTitle")
+                          }
+                          aria-label={
+                            entry.kind === "task"
+                              ? t(dashboardDict, locale, "markTaskDoneTitle")
+                              : t(dashboardDict, locale, "markReminderDoneTitle")
+                          }
+                          className="pointer-events-auto relative mt-[0.1em] shrink-0 text-muted-foreground transition hover:text-success"
+                        >
+                          <CheckboxUncheckedIcon className="h-4 w-4" />
+                        </button>
+                      ) : null}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start gap-2">
                           <span className="min-w-0 flex-1 text-sm font-medium">{entry.title}</span>
@@ -372,23 +390,6 @@ export default function TodayScheduleCard({
                           <div className="mt-0.5 text-xs text-muted-foreground">{entry.subtitle}</div>
                         ) : null}
                       </div>
-                      {isResolvableKind(entry.kind) ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="pointer-events-auto relative h-7 shrink-0 px-2 text-xs max-md:min-h-[44px]"
-                          onClick={() => resolveEntry(entry)}
-                          title={
-                            entry.kind === "task"
-                              ? t(dashboardDict, locale, "markTaskDoneTitle")
-                              : t(dashboardDict, locale, "markReminderDoneTitle")
-                          }
-                        >
-                          <CheckIcon className="h-3.5 w-3.5" />
-                          {t(dashboardDict, locale, "doneButtonLabel")}
-                        </Button>
-                      ) : null}
                     </div>
                   </li>
                 );

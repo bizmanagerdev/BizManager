@@ -52,6 +52,29 @@ function hhmm(value: string | null): string | null {
   return match ? `${match[1]}:${match[2]}` : null;
 }
 
+/**
+ * A UTC timestamp's calendar date/time AS SEEN IN ISRAEL — this runs on the
+ * server (Node's default timezone is UTC), so slicing/regexing the raw ISO
+ * string (the previous approach) printed the UTC hour and could even land on
+ * the wrong UTC calendar day for anything scheduled near Israel midnight.
+ * Mirrors lib/date.ts's hebrewWeekday(), the one other place in this codebase
+ * that already gets this right.
+ */
+function israelDateOnly(iso: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem" }).format(new Date(iso));
+}
+function israelTimeOnly(iso: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Jerusalem",
+  }).formatToParts(new Date(iso));
+  const hour = parts.find((p) => p.type === "hour")?.value ?? "00";
+  const minute = parts.find((p) => p.type === "minute")?.value ?? "00";
+  return `${hour}:${minute}`;
+}
+
 function uniqueIds(rows: Row[], key: string) {
   return [
     ...new Set(rows.map((row) => (typeof row[key] === "string" ? (row[key] as string) : "")).filter(Boolean)),
@@ -225,12 +248,11 @@ export async function getScheduleEntries(
 
   const reminderEntries: CalendarEntry[] = reminders
     .map((r) => {
-      const day = r.remind_at ? r.remind_at.slice(0, 10) : null;
+      const day = r.remind_at ? israelDateOnly(r.remind_at) : null;
       // Same detail the תזכורות panel shows: a task-linked reminder reads as its
       // task subject (+ "משימה"), otherwise the content / customer with the
       // action-type label — never a bare "תזכורת — ללא לקוח".
-      const timeMatch = r.remind_at ? /T(\d{2}:\d{2})/.exec(r.remind_at) : null;
-      const time = timeMatch ? timeMatch[1] : null;
+      const time = r.remind_at ? israelTimeOnly(r.remind_at) : null;
       const title = r.task_subject?.trim() || r.content?.trim() || r.customer_name?.trim() || "תזכורת";
       const typeLabel = r.task_subject ? "משימה" : actionTypeLabel(r.action_type);
       const subtitle = [
