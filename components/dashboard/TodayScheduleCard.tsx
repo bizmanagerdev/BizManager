@@ -99,8 +99,12 @@ function foldTaskReminders(entries: CalendarEntry[]): CalendarEntry[] {
 // the task, so this only has to connect "reminder" to it and spell out "at".
 function rowSubtitle(entry: CalendarEntry, kindLabel: string): string {
   if (entry.kind === "reminder" && entry.href.startsWith("/tasks/")) {
+    // "בשעה" sits right after "תזכורת", not after "למשימה" — so the hour reads
+    // as WHEN THE REMINDER FIRES, not the task's own due time (which isn't even
+    // shown here; this row only exists because the reminder, not the task
+    // itself, falls today — see foldTaskReminders above).
     const time = /(\d{2}:\d{2})/.exec(entry.subtitle ?? "")?.[1];
-    return time ? `תזכורת למשימה זו, בשעה ${time}` : "תזכורת למשימה זו";
+    return time ? `תזכורת בשעה ${time} למשימה זו` : "תזכורת למשימה זו";
   }
   return [kindLabel, entry.subtitle].filter(Boolean).join(" · ");
 }
