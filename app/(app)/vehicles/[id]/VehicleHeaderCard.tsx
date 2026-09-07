@@ -22,12 +22,12 @@ import {
   EMPTY_VEHICLE_FORM,
   vehicleToForm,
   buildVehiclePatch,
-  formatMileage,
   type Vehicle,
   type VehicleInput,
   type VehicleTask,
 } from "@/lib/vehicles";
 import VehicleFormFields from "@/components/vehicles/VehicleFormFields";
+import VehicleMileageCard from "@/components/vehicles/VehicleMileageCard";
 import VehiclePhotoAvatar from "@/components/vehicles/VehiclePhotoAvatar";
 import { VehicleExpiryRow, type VehicleExpiryKind } from "@/components/vehicles/VehicleExpiryRow";
 import { VehicleExpiryQuickEditDialog } from "@/components/vehicles/VehicleExpiryQuickEditDialog";
@@ -132,9 +132,9 @@ export default function VehicleHeaderCard({ vehicle, tasks }: { vehicle: Vehicle
           <div className="min-w-0 break-words">
             <h1 className="text-2xl font-semibold">{display.name}</h1>
             <p className="text-sm text-muted-foreground">
-              {[display.makeModel, display.licensePlate, display.year, formatMileage(display.mileage)]
-                .filter(Boolean)
-                .join(" · ") || "—"}
+              {/* Mileage isn't in this line — it has its own card right below,
+                  not folded into the same list as static identity details. */}
+              {[display.makeModel, display.licensePlate, display.year].filter(Boolean).join(" · ") || "—"}
             </p>
           </div>
         </div>
@@ -179,6 +179,11 @@ export default function VehicleHeaderCard({ vehicle, tasks }: { vehicle: Vehicle
           </DropdownMenu>
         </div>
       </div>
+
+      {/* Directly under the identity block, its own row — not folded into the
+          טסט/ביטוח/רישוי grid below, which is a compliance band (three dates
+          that expire); mileage doesn't expire, it's a property of the car. */}
+      <VehicleMileageCard vehicle={display} />
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         <VehicleExpiryRow

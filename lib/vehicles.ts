@@ -31,7 +31,14 @@ export type Vehicle = {
   createdAt: string | null;
   photoDocumentId: string | null; // FK to documents — the car's single cover photo, not a gallery
   photoUrl: string | null; // resolved signed URL (short-lived; see resolveVehiclePhotoUrls)
-  mileage: number | null; // ק"מ — odometer reading; feeds future service-interval logic
+  // ק"מ — a denormalized cache of the LATEST row in vehicle_mileage_readings,
+  // kept in sync by that table's trigger (see 20260907131007). Never written
+  // directly through updateVehicle/VehicleInput — a bare number with no date
+  // is exactly the thing this log replaced. mileageUpdatedAt is the reading's
+  // own date (not "when someone last touched the vehicle"), for the
+  // "לפני X ימים" / stale styling on the detail page's mileage card.
+  mileage: number | null;
+  mileageUpdatedAt: string | null;
   // Only resolved by fetchVehicle (the detail page) — fetchVehicles (the fleet
   // list) leaves these null, the list card has no room/need for the link.
   testSourceTask: VehicleSourceTask;
@@ -63,7 +70,6 @@ export type VehicleInput = {
   owner_name: string;
   color: string;
   notes: string;
-  mileage: string; // raw from the input; parsed by the server action
   // Empty string = no link. Only VehicleExpiryQuickEditDialog exposes an input
   // for these; the general edit form (VehicleFormFields) has none, so
   // vehicleToForm()'s round-trip is what preserves an existing link when the
@@ -84,7 +90,6 @@ export const EMPTY_VEHICLE_FORM: VehicleInput = {
   owner_name: "",
   color: "",
   notes: "",
-  mileage: "",
   test_source_task_id: "",
   insurance_source_task_id: "",
   license_source_task_id: "",
@@ -102,7 +107,6 @@ export function vehicleToForm(v: Vehicle): VehicleInput {
     owner_name: v.ownerName ?? "",
     color: v.color ?? "",
     notes: v.notes ?? "",
-    mileage: v.mileage != null ? String(v.mileage) : "",
     test_source_task_id: v.testSourceTask?.id ?? "",
     insurance_source_task_id: v.insuranceSourceTask?.id ?? "",
     license_source_task_id: v.licenseSourceTask?.id ?? "",
@@ -119,7 +123,6 @@ function deriveVehicleName(input: VehicleInput): string {
 /** Optimistic patch shown during the undo grace window — mirrors actions.ts's server-side deriveName/vehicleFields. */
 export function buildVehiclePatch(input: VehicleInput): Partial<Vehicle> {
   const yearNum = Number(input.year);
-  const mileageNum = Number(input.mileage);
   return {
     name: deriveVehicleName(input),
     licensePlate: input.license_plate.trim() || null,
@@ -130,7 +133,11 @@ export function buildVehiclePatch(input: VehicleInput): Partial<Vehicle> {
     licenseDueDate: input.license_due_date.trim() || null,
     ownerName: input.owner_name.trim() || null,
     notes: input.notes.trim() || null,
-    mileage: Number.isInteger(mileageNum) && mileageNum >= 0 ? mileageNum : null,
+    // mileage/mileageUpdatedAt are NOT here on purpose — this form has no
+    // field for them (see the VehicleInput comment above); leaving them out
+    // of the patch means the undo-overlay's shallow merge keeps whatever the
+    // mileage card's own optimistic patch already set, instead of clobbering
+    // it back to the pre-edit cached value.
   };
 }
 
@@ -183,6 +190,7 @@ function normalizeVehicle(row: Row): Vehicle {
     photoDocumentId: str(row.photo_document_id),
     photoUrl: null,
     mileage: intOrNull(row.mileage),
+    mileageUpdatedAt: str(row.mileage_updated_at),
     // Resolved below by resolveVehicleSourceTasks (fetchVehicle only) — a
     // default of null here is exactly right for fetchVehicles (the fleet
     // list), which never calls it.
@@ -344,10 +352,20 @@ export async function fetchVehicle(
     let { data, error } = await supabase
       .from("vehicles")
       .select(
-        "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,photo_document_id,mileage,test_source_task_id,insurance_source_task_id,license_source_task_id,tag:tags!inner(id,name,color,is_active,notes,created_at)"
+        "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,photo_document_id,mileage,mileage_updated_at,test_source_task_id,insurance_source_task_id,license_source_task_id,tag:tags!inner(id,name,color,is_active,notes,created_at)"
       )
       .eq("tag_id", tagId)
       .maybeSingle();
+    if (error) {
+      // Pre-migration: 20260907131007_add_vehicle_mileage_log.sql not run yet.
+      ({ data, error } = await supabase
+        .from("vehicles")
+        .select(
+          "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,photo_document_id,mileage,test_source_task_id,insurance_source_task_id,license_source_task_id,tag:tags!inner(id,name,color,is_active,notes,created_at)"
+        )
+        .eq("tag_id", tagId)
+        .maybeSingle());
+    }
     if (error) {
       // Pre-migration: 20260907125946_add_vehicle_expiry_source_task.sql not run yet.
       ({ data, error } = await supabase

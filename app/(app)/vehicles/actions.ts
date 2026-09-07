@@ -24,9 +24,17 @@ function yearOrNull(value: string) {
   return Number.isInteger(n) && n >= 1900 && n <= 2100 ? n : null;
 }
 
-function mileageOrNull(value: string) {
-  const n = Number(value);
-  return Number.isInteger(n) && n >= 0 ? n : null;
+/**
+ * Today's calendar date AS SEEN IN ISRAEL. The server runs UTC, so
+ * `new Date().toISOString().slice(0, 10)` (or Postgres's own `current_date`
+ * default) lands on yesterday's date for the first 2-3 hours of the Israel
+ * day — the same class of bug already fixed for reminders (see
+ * lib/projectSchedule.ts's israelDateOnly). Passed explicitly rather than
+ * relying on the column default so it never depends on the DB session's
+ * timezone setting.
+ */
+function todayInIsrael(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem" }).format(new Date());
 }
 
 async function getVehiclesContext() {
@@ -52,7 +60,9 @@ function vehicleFields(input: VehicleInput) {
     license_due_date: clean(input.license_due_date),
     owner_name: clean(input.owner_name),
     notes: clean(input.notes),
-    mileage: mileageOrNull(input.mileage),
+    // mileage/mileage_updated_at are NOT here — see the VehicleInput comment
+    // in lib/vehicles.ts. They're only ever written by addVehicleMileageReading
+    // below (via the log table's trigger), never by this general update.
     test_source_task_id: clean(input.test_source_task_id),
     insurance_source_task_id: clean(input.insurance_source_task_id),
     license_source_task_id: clean(input.license_source_task_id),
@@ -127,6 +137,35 @@ export async function updateVehicle(tagId: string, input: VehicleInput): Promise
     return { ok: true, tagId };
   } catch (error) {
     return { ok: false, error: toHebrewError(error, "שגיאה בעדכון הרכב.") };
+  }
+}
+
+/**
+ * Log one odometer reading, dated today (the "one-tap update from the
+ * record" capture point). vehicles.mileage/mileage_updated_at update
+ * themselves via the log table's trigger — this never writes to `vehicles`
+ * directly.
+ */
+export async function addVehicleMileageReading(tagId: string, reading: number): Promise<ActionResult> {
+  try {
+    const ctx = await getVehiclesContext();
+    if (!ctx.ok) return { ok: false, error: ctx.error };
+    if (!tagId) return { ok: false, error: "חסר מזהה רכב." };
+    if (!Number.isInteger(reading) || reading < 0) return { ok: false, error: "קילומטראז' לא תקין." };
+
+    const { error } = await ctx.supabase.from("vehicle_mileage_readings").insert({
+      tag_id: tagId,
+      reading,
+      recorded_at: todayInIsrael(),
+      source: "manual",
+      recorded_by: ctx.profile.id,
+    });
+    if (error) return { ok: false, error: toHebrewError(error.message, "שגיאה בשמירת הקילומטראז'.") };
+
+    revalidateVehicles(tagId);
+    return { ok: true, tagId };
+  } catch (error) {
+    return { ok: false, error: toHebrewError(error, "שגיאה בשמירת הקילומטראז'.") };
   }
 }
 
