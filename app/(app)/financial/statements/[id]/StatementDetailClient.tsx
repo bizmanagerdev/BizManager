@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -1206,7 +1207,16 @@ export default function StatementDetailClient({
                       {/* Status / include */}
                       <td className="px-3 py-2">
                         {mode === "created" ? (
-                          <span className="rounded bg-success-soft px-1.5 py-0.5 text-xs text-success-soft-foreground">נוצרה</span>
+                          row.expenseId ? (
+                            <Link
+                              href={`/financial?focus=${encodeURIComponent(`expense:${row.expenseId}`)}`}
+                              className="rounded bg-success-soft px-1.5 py-0.5 text-xs text-success-soft-foreground hover:underline"
+                            >
+                              נוצרה
+                            </Link>
+                          ) : (
+                            <span className="rounded bg-success-soft px-1.5 py-0.5 text-xs text-success-soft-foreground">נוצרה</span>
+                          )
                         ) : mode === "deleted" ? (
                           <span className="rounded bg-warning-soft px-1.5 py-0.5 text-xs text-warning-soft-foreground">נמחקה</span>
                         ) : (
@@ -1265,10 +1275,16 @@ export default function StatementDetailClient({
                             className="h-8 min-w-[9rem] rounded-md px-2 shadow-none"
                             options={properties.map((p) => ({ value: p.id, label: p.name }))}
                           />
+                        ) : row.projectId ? (
+                          <Link href={`/projects/${row.projectId}`} className="text-xs text-secondary hover:underline">
+                            {projectName(row.projectId)}
+                          </Link>
+                        ) : row.propertyId ? (
+                          <Link href={`/properties/${row.propertyId}`} className="text-xs text-secondary hover:underline">
+                            {propertyName(row.propertyId)}
+                          </Link>
                         ) : (
-                          <span className="text-xs text-muted-foreground">
-                            {row.projectId ? projectName(row.projectId) : row.propertyId ? propertyName(row.propertyId) : "—"}
-                          </span>
+                          <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </td>
                       {showDupCol ? (

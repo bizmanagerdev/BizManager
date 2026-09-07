@@ -87,6 +87,7 @@ function freeTextNote(source: string, notes: string | null) {
 
 /** Card head shared by both rows: name, phone. */
 export function WorkerHead({
+  userId,
   name,
   phone,
   clockIn,
@@ -97,6 +98,8 @@ export function WorkerHead({
   chips,
   cost,
 }: {
+  /** When set, the name links to this worker's profile. */
+  userId?: string | null;
   name: string | null;
   phone: string | null;
   clockIn: string;
@@ -127,7 +130,18 @@ export function WorkerHead({
     <div className="flex items-start gap-2.5">
       <div className="min-w-0 flex-1 space-y-0.5">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="truncate text-sm font-medium text-foreground">{name ?? "עובד לא ידוע"}</span>
+          {userId ? (
+            // relative lifts it above the card's own full-bleed link (below) —
+            // same escape hatch the details toggle uses further down this file.
+            <Link
+              href={`/payroll/workers/${userId}`}
+              className="relative truncate text-sm font-medium text-foreground hover:underline"
+            >
+              {name ?? "עובד לא ידוע"}
+            </Link>
+          ) : (
+            <span className="truncate text-sm font-medium text-foreground">{name ?? "עובד לא ידוע"}</span>
+          )}
           {phone ? (
             <span className="shrink-0 text-xs text-muted-foreground" dir="ltr">
               {phone}
@@ -464,6 +478,7 @@ export default function PendingReportCard({
       {/* Who / when / how it got here — the WHEN block is the same shift row the
           worker card shows, so one shift reads identically on both screens. */}
       <WorkerHead
+        userId={report.user_id}
         name={report.worker_name}
         phone={report.worker_phone}
         clockIn={report.clock_in}

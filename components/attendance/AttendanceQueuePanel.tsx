@@ -361,6 +361,7 @@ function OpenRow({ report }: { report: OpenPhoneReport }) {
   return (
     <div className="rounded-xl border border-success/40 bg-card px-3 py-2 shadow-sm">
       <WorkerHead
+        userId={report.user_id}
         name={report.worker_name}
         phone={report.worker_phone}
         clockIn={report.clock_in}

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireProfile } from "@/lib/auth/requireProfile";
@@ -26,7 +27,9 @@ export default async function MorningCustomersSettingsPage() {
             {error ? <div className="text-destructive">{error.message}</div> : null}
             {(customers ?? []).map((customer) => (
               <div key={customer.id} className="rounded-xl border p-3">
-                <div className="font-medium">{customer.name}</div>
+                <Link href={`/customers/${customer.id}`} className="font-medium hover:underline">
+                  {customer.name}
+                </Link>
                 {customer.phone ? (
                   <a href={`tel:${customer.phone}`} className="text-xs text-muted-foreground hover:underline">
                     {customer.phone}

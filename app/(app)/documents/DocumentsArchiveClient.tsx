@@ -51,6 +51,8 @@ export type DocumentArchiveFilters = {
 export type ArchiveRelation = {
   id: string;
   label: string;
+  /** Only tags set (a vehicle tag links to /vehicles/[id]; other kinds have no page yet). */
+  href?: string | null;
 };
 
 export type ArchiveTargetOption = {
@@ -956,8 +958,19 @@ export default function DocumentsArchiveClient({
                 {activePreviewDoc.tags.length > 0 ? (
                   <div>
                     <dt className="text-xs text-muted-foreground">רכב / תגיות</dt>
-                    <dd className="font-medium">
-                      {activePreviewDoc.tags.map((tag) => tag.label).join(", ")}
+                    <dd className="flex flex-wrap gap-x-2 gap-y-1 font-medium">
+                      {activePreviewDoc.tags.map((tag, index) => (
+                        <span key={tag.id}>
+                          {tag.href ? (
+                            <Link href={tag.href} className="text-secondary hover:underline">
+                              {tag.label}
+                            </Link>
+                          ) : (
+                            tag.label
+                          )}
+                          {index < activePreviewDoc.tags.length - 1 ? "," : ""}
+                        </span>
+                      ))}
                     </dd>
                   </div>
                 ) : null}

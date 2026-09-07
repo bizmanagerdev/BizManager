@@ -230,7 +230,11 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
                   <div className="flex flex-wrap items-center gap-2">
                     {p.currentLease ? (
                       <Badge variant="success">
-                        {p.currentLease.customerName ?? "שוכר"} · {formatCurrency(p.currentLease.monthlyRentAmount)}/חודש
+                        <Link href={`/customers/${p.currentLease.customerId}`} className="hover:underline">
+                          {p.currentLease.customerName ?? "שוכר"}
+                        </Link>
+                        {" · "}
+                        {formatCurrency(p.currentLease.monthlyRentAmount)}/חודש
                       </Badge>
                     ) : (
                       <Badge variant="neutral">פנוי</Badge>

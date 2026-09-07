@@ -202,7 +202,7 @@ export function buildSource(args: {
       kind: "property" as const,
       id: propertyId,
       label: propertyAddress || `נכס ${propertyId.slice(0, 8)}`,
-      href: "/properties",
+      href: `/properties/${propertyId}`,
     };
   }
   if (orderId) {

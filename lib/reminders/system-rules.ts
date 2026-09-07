@@ -297,7 +297,7 @@ const wageOverdueRule: SystemRule = {
         key: `${userId}:${sourceDate}`,
         title: `שכר באיחור: ${nameById.get(userId) ?? "עובד"}`,
         content: `${ils(owed)} שטרם שולמו (תלוש ${sourceDate}).`,
-        url: "/payroll",
+        url: `/payroll/workers/${userId}`,
         severity: "danger" as Severity,
         behavior: "ping_repeat" as Behavior,
         repeatRule: "daily",

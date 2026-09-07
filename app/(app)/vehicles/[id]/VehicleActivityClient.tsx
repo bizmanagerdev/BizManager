@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -149,11 +150,12 @@ function DocumentYearGroup({
         <div className="space-y-2 p-3 pt-2">
           {docs.map((d) => {
             const body = (
-              <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
-                <div className="min-w-0 text-sm">
-                  <div className="truncate font-medium">{d.title || d.fileName || "מסמך"}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {[d.documentType, fmtDate(d.uploadedAt)].filter(Boolean).join(" · ") || "—"}
+              <div className="flex min-w-0 flex-1 items-center justify-between gap-2" title={d.fileName ?? undefined}>
+                <div className="flex min-w-0 items-center gap-2">
+                  <DocumentRowThumb doc={d} />
+                  <div className="min-w-0 text-sm">
+                    <div className="truncate font-medium">{d.documentType || d.title || "מסמך"}</div>
+                    <div className="text-xs text-muted-foreground">{fmtDate(d.uploadedAt) || "—"}</div>
                   </div>
                 </div>
                 {d.url ? (
@@ -198,6 +200,28 @@ function DocumentYearGroup({
   );
 }
 
+const IMAGE_EXTENSION_RE = /\.(jpe?g|png|webp|heic|heif|gif|bmp)$/i;
+
+// The filename was the primary line here, which meant a camera-roll name
+// ("...age 2026-08-20 at 14.04.08.jpeg", truncated from the wrong end by
+// `truncate`) or an RTL-mangled one (".pdf" landing mid-string via bidi) was
+// the loudest thing on the row — neither says what the document actually IS.
+// The category (documentType — a controlled Hebrew list, see lib/documents.ts)
+// already answers that; lead with it and drop the raw filename from the row
+// entirely (still reachable via "פתיחה"/the browser tab title once opened).
+function DocumentRowThumb({ doc }: { doc: VehicleDocument }) {
+  const isImage = doc.url && IMAGE_EXTENSION_RE.test(doc.fileName ?? doc.url);
+  if (isImage) {
+    // eslint-disable-next-line @next/next/no-img-element -- remote Supabase storage URL, not a local asset
+    return <img src={doc.url ?? undefined} alt="" className="h-10 w-10 shrink-0 rounded-md border object-cover" />;
+  }
+  return (
+    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted">
+      <DocumentIcon className="h-5 w-5 text-muted-foreground" />
+    </div>
+  );
+}
+
 function monthLabel(monthKey: string): string {
   if (!monthKey) return "ללא תאריך";
   const [year, month] = monthKey.split("-").map(Number);
@@ -238,6 +262,9 @@ function ExpenseMonthGroup({
   defaultOpen,
   onEdit,
   onDelete,
+  projectLabelsById,
+  orderLabelsById,
+  propertyLabelsById,
 }: {
   label: string;
   items: VehicleExpense[];
@@ -245,6 +272,9 @@ function ExpenseMonthGroup({
   defaultOpen: boolean;
   onEdit: (expense: VehicleExpense) => void;
   onDelete: (expense: VehicleExpense) => void;
+  projectLabelsById: Map<string, string>;
+  orderLabelsById: Map<string, string>;
+  propertyLabelsById: Map<string, string>;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   // One row's swipe strip open at a time, scoped to this month group.
@@ -269,6 +299,13 @@ function ExpenseMonthGroup({
       {open ? (
         <div className="px-3">
           {items.map((e) => {
+            const source = e.projectId
+              ? { href: `/projects/${e.projectId}`, label: projectLabelsById.get(e.projectId) ?? "פרויקט" }
+              : e.orderId
+                ? { href: `/sales/orders/${e.orderId}`, label: orderLabelsById.get(e.orderId) ?? "הזמנה" }
+                : e.propertyId
+                  ? { href: `/properties/${e.propertyId}`, label: propertyLabelsById.get(e.propertyId) ?? "נכס" }
+                  : null;
             const body = (
               <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
                 <div className="min-w-0 text-sm">
@@ -276,6 +313,11 @@ function ExpenseMonthGroup({
                   <div className="text-xs text-muted-foreground">
                     {[e.description ? e.category : null, fmtDate(e.date)].filter(Boolean).join(" · ") || "—"}
                   </div>
+                  {source ? (
+                    <Link href={source.href} className="text-xs text-secondary hover:underline">
+                      {source.label}
+                    </Link>
+                  ) : null}
                 </div>
                 <span className="shrink-0 font-semibold">{formatCurrency(e.amount)}</span>
               </div>
@@ -364,6 +406,11 @@ export default function VehicleActivityClient({
 }: Props) {
   const router = useRouter();
   const refresh = () => router.refresh();
+
+  // For linking an expense row back to the project/order/property it's tied to.
+  const projectLabelsById = new Map(projects.map((p) => [p.id, p.label] as const));
+  const orderLabelsById = new Map(orders.map((o) => [o.id, o.label] as const));
+  const propertyLabelsById = new Map(properties.map((p) => [p.id, p.label] as const));
 
   const expenses = useUndoOverlay(activity.expenses, (e) => e.id, "vehicle-expense");
   const tasks = useUndoOverlay(activity.tasks, (t) => t.id, "vehicle-task");
@@ -543,6 +590,9 @@ export default function VehicleActivityClient({
                   defaultOpen={i === 0}
                   onEdit={openEditExpense}
                   onDelete={(e) => setDel({ kind: "expense", id: e.id, label: e.category || "הוצאה" })}
+                  projectLabelsById={projectLabelsById}
+                  orderLabelsById={orderLabelsById}
+                  propertyLabelsById={propertyLabelsById}
                 />
               ))
             )}

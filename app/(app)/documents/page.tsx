@@ -134,11 +134,11 @@ function entityHref(entityType: string, entityId: string) {
     case "project":
       return `/projects/${entityId}?tab=documents`;
     case "property":
-      return "/properties";
+      return `/properties/${entityId}`;
     case "task":
       return `/tasks/${entityId}`;
     case "customer":
-      return `/customers`;
+      return `/customers/${entityId}`;
     case "order":
       return `/sales/orders/${entityId}`;
     default:
@@ -178,7 +178,7 @@ export default async function DocumentsPage({
   const documentUploaderNames = await resolveUserDisplayNamesForValues(supabase, documentUploadedByValues);
 
   // Vehicle/tag links per document (resilient: stays empty before the tags SQL is run).
-  const tagsByDocument = new Map<string, Array<{ id: string; label: string }>>();
+  const tagsByDocument = new Map<string, Array<{ id: string; label: string; href: string | null }>>();
   // The "document year" the file is FOR (e.g. a 2026 טסט), stored on the tag link.
   // A doc can carry several tag rows → keep the latest ref_year present.
   const refYearByDocument = new Map<string, number>();
@@ -195,12 +195,17 @@ export default async function DocumentsPage({
         new Set(tagLinks.map((r) => normalizeString(r.tag_id)).filter(Boolean))
       );
       const { data: tagRows } = tagIdSet.length
-        ? await supabase.from("tags").select("id,name").in("id", tagIdSet)
+        ? await supabase.from("tags").select("id,name,kind").in("id", tagIdSet)
         : { data: [] };
       const tagNameById = new Map<string, string>();
+      // Only 'vehicle' tags have a page of their own (/vehicles/[tagId]) — every
+      // other kind (general/campaign/equipment/…) has nowhere to link to yet.
+      const vehicleTagIds = new Set<string>();
       for (const t of (tagRows ?? []) as Array<Record<string, unknown>>) {
         const tid = normalizeString(t.id);
-        if (tid) tagNameById.set(tid, normalizeString(t.name) || "תגית");
+        if (!tid) continue;
+        tagNameById.set(tid, normalizeString(t.name) || "תגית");
+        if (t.kind === "vehicle") vehicleTagIds.add(tid);
       }
       for (const r of tagLinks) {
         const docId = normalizeString(r.entity_id);
@@ -215,7 +220,7 @@ export default async function DocumentsPage({
         const name = tagNameById.get(tid);
         if (!docId || !tid || !name) continue;
         const list = tagsByDocument.get(docId) ?? [];
-        list.push({ id: tid, label: name });
+        list.push({ id: tid, label: name, href: vehicleTagIds.has(tid) ? `/vehicles/${tid}` : null });
         tagsByDocument.set(docId, list);
       }
       const optMap = new Map<string, string>();
@@ -476,7 +481,7 @@ export default async function DocumentsPage({
             type: entityType,
             id: entityId,
             label,
-            href: `${entityHref(entityType, entityId)}?customer_id=${encodeURIComponent(entityId)}`,
+            href: entityHref(entityType, entityId),
           });
         }
 
