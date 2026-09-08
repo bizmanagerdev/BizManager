@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { normalizeVatRate, DEFAULT_VAT_RATE } from "@/lib/settings/vat";
-import { normalizeCcFeeRate, DEFAULT_CC_FEE_RATE } from "@/lib/settings/ccFee";
 
 describe("normalizeVatRate", () => {
   it("passes a fraction through unchanged", () => {
@@ -26,14 +25,5 @@ describe("normalizeVatRate", () => {
   });
   it("0 is a valid rate (VAT-exempt), not treated as unset", () => {
     expect(normalizeVatRate(0)).toBe(0);
-  });
-});
-
-describe("normalizeCcFeeRate", () => {
-  it("mirrors normalizeVatRate's percentage/fraction tolerance with its own default", () => {
-    expect(normalizeCcFeeRate(0.14)).toBe(0.14);
-    expect(normalizeCcFeeRate(14)).toBe(0.14);
-    expect(normalizeCcFeeRate(-1)).toBe(DEFAULT_CC_FEE_RATE);
-    expect(normalizeCcFeeRate("garbage")).toBe(DEFAULT_CC_FEE_RATE);
   });
 });

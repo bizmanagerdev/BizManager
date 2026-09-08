@@ -181,7 +181,11 @@ const PATTERN_RULES: Array<{ test: RegExp; hebrew: string }> = [
     hebrew: "לא ניתן לבצע את הפעולה — קיים קישור לרשומה אחרת.",
   },
   {
-    test: /violates not-null constraint.*column "([^"]+)"/i,
+    // Postgres's actual wording puts the column name BEFORE this phrase
+    // (`null value in column "x" violates not-null constraint`), so match on
+    // the constraint phrase alone — it's unambiguous on its own, and the
+    // column name was never used in the output anyway.
+    test: /violates not-null constraint/i,
     hebrew: "חסר שדה חובה.",
   },
   {
