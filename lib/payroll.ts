@@ -26,6 +26,8 @@ export type WorkSessionRow = {
   owed_amount?: number | string | null;
   payment_status?: string | null;
   last_payment_date?: string | null;
+  /** Only meaningful when payment_status is "not_due". */
+  due_date?: string | null;
   attachments?: FinancialAttachment[];
 };
 

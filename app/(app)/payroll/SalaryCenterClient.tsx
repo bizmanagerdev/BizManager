@@ -4170,6 +4170,7 @@ export default function SalaryCenterClient({
                                 <PaymentStatusBadge
                                   status={debtItem.payment_status}
                                   owedAmount={debtItem.owed_amount}
+                                  dueDate={debtItem.due_date}
                                 />
                               ) : coveringPayslipDebtItem?.payment_status ? (
                                 <span className="flex items-center gap-1">

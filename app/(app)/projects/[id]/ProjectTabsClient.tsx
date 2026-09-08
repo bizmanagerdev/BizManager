@@ -16,9 +16,28 @@ import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { StatActionCard, collectionStatusTextClass } from "@/components/ui/stat-action-card";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
-import { AddIcon, ChartIcon, ChecklistIcon, DocumentIcon, PaymentIcon, UploadIcon } from "@/components/ui/icons";
+import {
+  AddIcon,
+  ArrowDownIcon,
+  ArrowUpIcon,
+  ChartIcon,
+  CheckIcon,
+  ChecklistIcon,
+  ChevronDownIcon,
+  DocumentIcon,
+  PaymentIcon,
+  UploadIcon,
+} from "@/components/ui/icons";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ClientOnly } from "@/components/ClientOnly";
-import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { resyncAlerts } from "@/lib/ui/alerts-refresh";
 import { toast } from "sonner";
@@ -53,6 +72,12 @@ import type { ExpenseWorkerOption } from "@/components/expenses/ExpenseDialog";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
 import BilledCustomerPrintButton from "./BilledCustomerPrintButton";
 import ProjectMovements, { type Movement } from "./ProjectMovements";
+import {
+  LEDGER_GROUP_BY_LABELS,
+  LEDGER_SORT_BY_LABELS,
+  type LedgerPrefs,
+} from "@/lib/projectLedgerPrefs";
+import { cn } from "@/lib/utils";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 import dynamic from "next/dynamic";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
@@ -209,6 +234,7 @@ type PendingProjectDeletion =
 
 export default function ProjectTabsClient({
   viewerRole,
+  initialLedgerPrefs,
   overview,
   currentVatRate,
   paymentTerms,
@@ -238,6 +264,8 @@ export default function ProjectTabsClient({
   moneyError,
 }: {
   viewerRole: string | null;
+  /** The signed-in user's saved תנועות group-by/sort-by, already sanitized. */
+  initialLedgerPrefs: LedgerPrefs;
   overview: ProjectOverview;
   currentVatRate: number;
   paymentTerms: string | null;
@@ -769,7 +797,7 @@ export default function ProjectTabsClient({
         : null
       : Math.max(expectedCustomerPrice, paymentsTotal);
   const customerPaymentStatus = deriveCustomerPaymentStatus(displayedCustomerPrice, paymentsTotal);
-  const collectionStatus =
+  const collectionComputed =
     displayedCustomerPrice === null
       ? null
       : computeSourceCollection({
@@ -782,7 +810,12 @@ export default function ProjectTabsClient({
           referenceDate: typeof overview.start_date === "string" ? overview.start_date : null,
           dueDate,
           today: new Date().toISOString().slice(0, 10),
-        }).status;
+        });
+  const collectionStatus = collectionComputed?.status ?? null;
+  // Same day-count the collection_overdue reminder already states (both read
+  // computeSourceCollection().daysLate) — so the header badge and the reminder
+  // never disagree on how late the debt is.
+  const collectionDaysLate = collectionComputed?.daysLate ?? 0;
   const tasksSorted = useMemo(() => {
     const copy = [...projectTasksUi];
     copy.sort((a, b) => {
@@ -859,6 +892,7 @@ export default function ProjectTabsClient({
         }
         return {
           payslipId: item.payslip_id,
+          userId: item.user_id ?? null,
           workerName: user?.full_name?.trim() || user?.email || "עובד",
           periodMonth: item.period_month,
           payDate,
@@ -1089,7 +1123,7 @@ export default function ProjectTabsClient({
             <LtrInline>{formatIls(displayedBasePrice)}</LtrInline>
             <Button
               type="button"
-              variant="secondary"
+              variant="outline"
               size="sm"
               className="h-7 px-2 text-xs"
               onClick={() => setUpdateBasePriceOpen(true)}
@@ -1198,7 +1232,9 @@ export default function ProjectTabsClient({
             }
           >
             {collectionStatusValue
-              ? collectionStatusLabel(collectionStatusValue)
+              ? collectionStatusValue === "overdue" && collectionDaysLate > 0
+                ? `${collectionStatusLabel(collectionStatusValue)} (${collectionDaysLate} ימים)`
+                : collectionStatusLabel(collectionStatusValue)
               : customerPaymentStatusLabel(customerPaymentStatus)}
           </span>
         )
@@ -1296,9 +1332,14 @@ export default function ProjectTabsClient({
         key: `payment:${payment.id}`,
         direction: "in",
         date: payment.payment_date ?? payment.created_at ?? null,
-        title: reference ? `הכנסה · אסמכתא ${reference}` : "הכנסה",
+        // No category chip — "הכנסה" is already implied by the row sitting in
+        // the הכנסה column, so repeating the word here would be the same
+        // "same three words down the page" noise this redesign removes.
+        category: null,
+        name: reference ? `אסמכתא ${reference}` : "תשלום",
         status: typeof payment.payment_status === "string" ? payment.payment_status : null,
         billed: false,
+        billedAmount: null,
         amount: toNumber(payment.amount_total),
         hint: paymentHint,
         extras,
@@ -1318,26 +1359,33 @@ export default function ProjectTabsClient({
         ? isSessionBillable(session)
         : Boolean(item.project_expense?.["billed_to_customer"]);
       const extras: { label: string; value: string }[] = [];
+      // For "קיבוץ לפי עובד" — null on a regular expense puts it in the
+      // ungrouped "אחר" bucket instead of a fake one-row "group".
+      const sessionWorker = session ? usersById.get(session.user_id) : null;
+      const sessionEmployeeName = sessionWorker?.full_name?.trim() || sessionWorker?.email || null;
+      // Category becomes the row's chip, name becomes its text — "שכר עובד"
+      // no longer has to be typed out in front of every worker's name.
+      const expenseCategory = session ? null : getString(item.expense, "category");
+      const expenseName = session
+        ? null
+        : getString(item.expense, "description") ??
+          getString(item.expense, "vendor_name") ??
+          getString(item.expense, "vendor") ??
+          (expenseId ? `הוצאה ${expenseId.slice(0, 8)}` : "הוצאה");
 
       if (session) {
-        const worker = usersById.get(session.user_id);
         if (
           shouldShowSessionHours(
-            normalizePayrollWorkerType(worker?.payroll_worker_type, worker?.pay_tracking_mode)
+            normalizePayrollWorkerType(sessionWorker?.payroll_worker_type, sessionWorker?.pay_tracking_mode)
           )
         ) {
           extras.push({ label: "כניסה", value: formatDateTime(session.clock_in) });
           extras.push({ label: "יציאה", value: formatDateTime(session.clock_out) });
           extras.push({ label: "משך", value: formatMinutes(sessionWorkedMinutes(session)) });
         }
-        if (billed && sessionLaborCost(session) !== sessionBillToCustomerAmount(session)) {
-          extras.push({ label: "עלות עבודה", value: formatIls(sessionLaborCost(session)) });
-        }
       } else {
         const method = paymentMethodLabel(getString(item.expense, "payment_method"));
         if (method && method !== "-") extras.push({ label: "אמצעי", value: method });
-        const category = getString(item.expense, "category");
-        if (category) extras.push({ label: "קטגוריה", value: category });
         const paid = toNumber(item.expense?.paid_amount as string | number | null);
         if (item.expense?.payment_status === "partial" && paid) {
           extras.push({ label: "שולם", value: formatIls(paid) });
@@ -1349,11 +1397,13 @@ export default function ProjectTabsClient({
         if (recordedBy) extras.push({ label: "נרשם", value: recordedBy });
       }
 
-      const amount = session
-        ? billed
-          ? sessionBillToCustomerAmount(session)
-          : sessionLaborCost(session)
-        : toNumber(item.expense?.amount);
+      // The headline number is always the real money movement (what the
+      // session/expense actually cost) — never the recharge. When it's also
+      // billed to the customer, that recharge gets its own column: the same
+      // figure as `amount` for a pass-through expense, or the session's own
+      // (possibly marked-up) bill-to-customer amount.
+      const amount = session ? sessionLaborCost(session) : toNumber(item.expense?.amount);
+      const billedAmount = !billed ? null : session ? sessionBillToCustomerAmount(session) : amount;
 
       rows.push({
         key: session ? `session:${session.id}` : `expense:${expenseId ?? item.expense?.id}`,
@@ -1361,12 +1411,17 @@ export default function ProjectTabsClient({
         date: session
           ? session.clock_in
           : getString(item.expense, "expense_date") ?? getString(item.expense, "created_at") ?? null,
-        title: expenseItemTitle(item, usersById),
+        category: session ? "שכר עובד" : expenseCategory,
+        name: session ? sessionEmployeeName ?? "עובד" : expenseName ?? "הוצאה",
         status: session
           ? sessionPaymentStatus(session)
           : String(item.expense?.payment_status ?? "not_paid"),
+        dueDate: session ? session.due_date ?? null : null,
         billed,
+        billedAmount,
         amount,
+        employeeId: session ? session.user_id : null,
+        employeeName: session ? sessionEmployeeName : null,
         hint: session
           ? session.notes?.trim() || null
           : getString(item.expense, "notes") ?? null,
@@ -1392,16 +1447,17 @@ export default function ProjectTabsClient({
         key: `payslip:${row.payslipId}`,
         direction: "out",
         date: row.payDate,
-        title: `שכר — ${row.workerName}`,
+        category: "משכורת חודשית",
+        name: row.workerName,
         status: row.paymentStatus,
         billed: row.billed,
-        amount: row.billed ? row.billToCustomerAmount : row.earned,
-        hint: "משכורת חודשית",
+        billedAmount: row.billed ? row.billToCustomerAmount : null,
+        amount: row.earned,
+        employeeId: row.userId,
+        employeeName: row.workerName,
+        hint: null,
         extras: [
           { label: "חודש", value: row.periodMonth ?? "—" },
-          ...(row.billed && row.billToCustomerAmount !== row.earned
-            ? [{ label: "עלות שכר", value: formatIls(row.earned) }]
-            : []),
           ...(row.paid > 0.009 ? [{ label: "שולם", value: formatIls(row.paid) }] : []),
           ...(row.owed > 0.009 ? [{ label: "יתרה", value: formatIls(row.owed) }] : []),
         ],
@@ -1424,13 +1480,61 @@ export default function ProjectTabsClient({
     usersById,
   ]);
 
+  // תנועות group-by/sort-by — same debounced-save-to-a-jsonb-column shape as
+  // the dashboard layout preference (components/dashboard/DashboardCustomizer.tsx).
+  const [ledgerPrefs, setLedgerPrefsState] = useState<LedgerPrefs>(initialLedgerPrefs);
+  const persistLedgerPrefs = useCallback(async (prefs: LedgerPrefs) => {
+    try {
+      const res = await fetch("/api/profile/ledger-prefs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prefs }),
+        // The save can still be in flight when the page unmounts — keepalive
+        // lets the browser finish it anyway.
+        keepalive: true,
+      });
+      if (!res.ok) throw new Error("save failed");
+      const data = (await res.json().catch(() => ({}))) as { synced?: boolean };
+      if (data.synced === false) {
+        toast.warning("השינויים נשמרו מקומית אך טרם סונכרנו לחשבון");
+      }
+    } catch {
+      toast.error("שמירת ההעדפה נכשלה, נסו שוב");
+    }
+  }, []);
+  const pendingLedgerSave = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleLedgerSave = useCallback(
+    (prefs: LedgerPrefs) => {
+      if (pendingLedgerSave.current) clearTimeout(pendingLedgerSave.current);
+      pendingLedgerSave.current = setTimeout(() => {
+        pendingLedgerSave.current = null;
+        void persistLedgerPrefs(prefs);
+      }, 500);
+    },
+    [persistLedgerPrefs]
+  );
+  // Leaving the page with a save still queued must not lose it. The ref holds
+  // the CURRENT prefs, so the unmount effect can stay [] and still flush.
+  const flushLedgerSave = useRef<() => void>(() => {});
+  flushLedgerSave.current = () => {
+    if (!pendingLedgerSave.current) return;
+    clearTimeout(pendingLedgerSave.current);
+    pendingLedgerSave.current = null;
+    void persistLedgerPrefs(ledgerPrefs);
+  };
+  useEffect(() => () => flushLedgerSave.current(), []);
+  function updateLedgerPrefs(patch: Partial<LedgerPrefs>) {
+    const next = { ...ledgerPrefs, ...patch };
+    setLedgerPrefsState(next);
+    scheduleLedgerSave(next);
+  }
+
   // The ledger's own actions. Declared once and placed twice: in the section
   // header where there's width, and as a row above the list on a phone.
   const movementActions = (
     <>
                 <Button
                   type="button"
-                  variant="secondary"
                   size="sm"
                   className="h-8 px-2 text-xs"
                   onClick={() => {
@@ -1443,7 +1547,7 @@ export default function ProjectTabsClient({
                 </Button>
                 <Button
                   type="button"
-                  variant="secondary"
+                  variant="outline"
                   size="sm"
                   className="h-8 px-2 text-xs"
                   onClick={() => {
@@ -1464,6 +1568,67 @@ export default function ProjectTabsClient({
                     }}
                   />
                 ) : null}
+                <div className="h-5 w-px shrink-0 bg-border" aria-hidden />
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button type="button" variant="outline" size="sm" className="h-8 gap-1 px-2 text-xs">
+                      {ledgerPrefs.groupBy === "none"
+                        ? "תצוגה"
+                        : `קיבוץ: ${LEDGER_GROUP_BY_LABELS[ledgerPrefs.groupBy]}`}
+                      <ChevronDownIcon className="h-3.5 w-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-52">
+                    <DropdownMenuLabel>קיבוץ</DropdownMenuLabel>
+                    {(["none", "employee", "category", "date"] as const).map((value) => (
+                      <DropdownMenuItem
+                        key={value}
+                        className="justify-between gap-2"
+                        onSelect={() => updateLedgerPrefs({ groupBy: value })}
+                      >
+                        <span>{LEDGER_GROUP_BY_LABELS[value]}</span>
+                        {ledgerPrefs.groupBy === value ? <CheckIcon className="h-4 w-4 text-secondary" /> : null}
+                      </DropdownMenuItem>
+                    ))}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>מיון</DropdownMenuLabel>
+                    {(["date", "amount", "status"] as const).map((field) => (
+                      <div key={field} className="flex items-center justify-between gap-2 px-2 py-1.5 text-sm">
+                        <span>{LEDGER_SORT_BY_LABELS[field]}</span>
+                        <div className="flex items-center gap-0.5">
+                          <button
+                            type="button"
+                            title={`${LEDGER_SORT_BY_LABELS[field]} · עולה`}
+                            aria-label={`${LEDGER_SORT_BY_LABELS[field]} · עולה`}
+                            onClick={() => updateLedgerPrefs({ sortBy: field, sortDirection: "asc" })}
+                            className={cn(
+                              "flex h-6 w-6 items-center justify-center rounded-md border",
+                              ledgerPrefs.sortBy === field && ledgerPrefs.sortDirection === "asc"
+                                ? "border-secondary bg-secondary text-secondary-foreground"
+                                : "border-border/70 text-muted-foreground hover:bg-accent/40"
+                            )}
+                          >
+                            <ArrowUpIcon className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            title={`${LEDGER_SORT_BY_LABELS[field]} · יורד`}
+                            aria-label={`${LEDGER_SORT_BY_LABELS[field]} · יורד`}
+                            onClick={() => updateLedgerPrefs({ sortBy: field, sortDirection: "desc" })}
+                            className={cn(
+                              "flex h-6 w-6 items-center justify-center rounded-md border",
+                              ledgerPrefs.sortBy === field && ledgerPrefs.sortDirection === "desc"
+                                ? "border-secondary bg-secondary text-secondary-foreground"
+                                : "border-border/70 text-muted-foreground hover:bg-accent/40"
+                            )}
+                          >
+                            <ArrowDownIcon className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
     </>
   );
 
@@ -1524,24 +1689,31 @@ export default function ProjectTabsClient({
 
           <CollapsibleSection
             collapsible={false}
-            title="תנועות"
-            summary={
-              <span className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-xs text-muted-foreground">
-                {movements.length}
+            title={
+              <span className="flex items-center gap-1.5">
+                תנועות
+                <span className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-xs font-normal text-muted-foreground">
+                  {movements.length}
+                </span>
               </span>
             }
             contentClassName="flex max-h-[32rem] flex-col text-sm"
             action={<div className="hidden items-center gap-1.5 lg:flex">{movementActions}</div>}
           >
-            {/* Phone: one row, three equal columns — these wrapped onto two
-                lines as a flex row and read as a pile. */}
-            <div className="mb-2 grid grid-flow-col auto-cols-fr items-center gap-1.5 lg:hidden [&>*]:w-full [&>*]:px-1">
+            {/* Phone: same actions as the header, wrapping onto as many lines
+                as they need instead of the header's fixed one-line row. */}
+            <div className="mb-2 flex flex-wrap items-center gap-1.5 lg:hidden">
               {movementActions}
             </div>
             {moneyError ? (
               <p className="mb-2 text-sm text-destructive">שגיאה בטעינת תנועות: {moneyError}</p>
             ) : null}
-            <ProjectMovements movements={movements} />
+            <ProjectMovements
+              movements={movements}
+              groupBy={ledgerPrefs.groupBy}
+              sortBy={ledgerPrefs.sortBy}
+              sortDirection={ledgerPrefs.sortDirection}
+            />
           </CollapsibleSection>
           </>
         ) : null}

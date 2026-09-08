@@ -189,7 +189,10 @@ export function getPaymentStatusLabel(status: string, locale: Locale = "he") {
     case "partial":
       return "שולם חלקית";
     case "not_due":
-      return "טרם הגיע מועד התשלום";
+      // Short, same width as the other payment badges — StatusBadge appends
+      // the actual due date ("צפוי 05/09") wherever it has one; this is only
+      // the fallback for callers that don't pass a date.
+      return "צפוי";
     case "not_paid":
     case "unpaid":
       return "לא שולם";

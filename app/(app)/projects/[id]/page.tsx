@@ -4,6 +4,7 @@ import AppShell from "@/components/layout/AppShell";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
 import ProjectDetailsActions, { REMINDERS_SECTION_ID } from "@/app/(app)/projects/[id]/ProjectDetailsActions";
 import { getEntityAuditTrail, getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
+import { sanitizeLedgerPrefs } from "@/lib/projectLedgerPrefs";
 import EntityActivityTimeline from "@/app/(app)/activity/EntityActivityTimeline";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import ProjectMobileHeader from "@/app/(app)/projects/[id]/ProjectMobileHeader";
@@ -544,12 +545,12 @@ export default async function ProjectPage({
   if (attendanceSessionIds.length > 0) {
     const effectiveResult = await supabase
       .from("session_effective_payment_view")
-      .select("session_id,paid_amount,owed_amount,payment_status,last_payment_date")
+      .select("session_id,paid_amount,owed_amount,payment_status,last_payment_date,due_date")
       .in("session_id", attendanceSessionIds);
     if (effectiveResult.error) {
       const fallback = await supabase
         .from("worker_debt_items_view")
-        .select("source_id,paid_amount,owed_amount,payment_status,last_payment_date")
+        .select("source_id,paid_amount,owed_amount,payment_status,last_payment_date,due_date")
         .eq("source_type", "session")
         .in("source_id", attendanceSessionIds);
       sessionPaymentRows = ((fallback.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
@@ -623,6 +624,9 @@ export default async function ProjectPage({
             payment_status: typeof effective?.payment_status === "string" ? effective.payment_status : null,
             last_payment_date:
               typeof effective?.last_payment_date === "string" ? effective.last_payment_date : null,
+            // Only meaningful when payment_status is "not_due" (covered by a
+            // payslip that isn't due yet) — lets the status badge say WHEN.
+            due_date: typeof effective?.due_date === "string" ? effective.due_date : null,
             attachments: sessionAttachmentByEntityId.get(session.id) ?? [],
           },
         };
@@ -992,6 +996,8 @@ export default async function ProjectPage({
       whatsapp={customerWhatsapp}
       email={customerEmail}
       address={customerAddress}
+      entityType="project"
+      entityId={id}
     />
   );
 
@@ -1289,6 +1295,7 @@ export default async function ProjectPage({
         ) : (
           <ProjectTabsClient
             viewerRole={profile.role}
+            initialLedgerPrefs={sanitizeLedgerPrefs(profile.ledger_prefs)}
             overview={overview}
             currentVatRate={currentVatRate}
             paymentTerms={projectPaymentTerms}

@@ -1,4 +1,4 @@
-import { formatShortDate } from "@/lib/date";
+import { formatShortDate, formatTimeOnly } from "@/lib/date";
 import { toHebrewError } from "@/lib/error-messages";
 import { formatMoney } from "@/lib/money";
 import { ORDER_NOTES_SEPARATOR } from "@/lib/orders/comments";
@@ -1349,6 +1349,12 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
   license_due_date: "רישוי",
   owner_name: "רשום על שם",
   notes: "הערות",
+  // worker sessions (attendance_sessions → "שעות עבודה") — without these the
+  // feed just said "עודכן" with no hint of what actually changed.
+  clock_in: "כניסה",
+  clock_out: "יציאה",
+  labor_cost: "עלות עבודה",
+  bill_to_customer_amount: "סכום לחיוב לקוח",
 };
 
 // Order controls how changes are listed; first matches win.
@@ -1394,9 +1400,14 @@ const PAYSLIP_ITEM_TYPE_LABELS: Record<string, string> = {
 
 function formatChangeValue(field: string, value: AuditLogValue): string {
   if (value === null || value === undefined || value === "") return "—";
-  if (field === "amount" || field.endsWith("_price") || field.endsWith("_amount")) {
+  if (field === "amount" || field === "labor_cost" || field.endsWith("_price") || field.endsWith("_amount")) {
     const n = Number(value);
     if (Number.isFinite(n)) return `₪${n.toLocaleString("he-IL")}`;
+  }
+  // Just the clock time, not the full date — the row it's attached to already
+  // states which day the session was.
+  if ((field === "clock_in" || field === "clock_out") && typeof value === "string") {
+    return formatTimeOnly(value, value);
   }
   if (field.endsWith("_date") && typeof value === "string") {
     return formatShortDate(value, value);

@@ -1,7 +1,5 @@
 "use client";
 
-import { PrintIcon, ShareIcon } from "@/components/ui/icons";
-import { Button } from "@/components/ui/button";
 import { whatsappHref } from "@/lib/whatsapp";
 
 export type ProjectShareData = {
@@ -169,40 +167,4 @@ export function printProjectSheet(project: ProjectShareData) {
   if (!win) return;
   win.document.write(buildPrintHtml(project));
   win.document.close();
-}
-
-/**
- * שיתוף / הדפסה for a project — the same pair the order page carries, so both
- * entities offer the same actions in the same order.
- */
-export default function ProjectShareActions({ project }: { project: ProjectShareData }) {
-  const waHref = projectShareHref(project);
-
-  function handlePrint() {
-    printProjectSheet(project);
-  }
-
-  return (
-    <>
-      {waHref ? (
-        <Button asChild size="sm" variant="outline" className="h-9">
-          <a href={waHref} target="_blank" rel="noreferrer" title="שיתוף ללקוח בוואטסאפ">
-            <ShareIcon className="h-4 w-4" />
-            <span>שיתוף</span>
-          </a>
-        </Button>
-      ) : null}
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        className="h-9"
-        onClick={handlePrint}
-        title="הדפסה / PDF"
-      >
-        <PrintIcon className="h-4 w-4" />
-        <span>הדפסה</span>
-      </Button>
-    </>
-  );
 }

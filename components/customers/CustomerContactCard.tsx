@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ContactTapZone } from "@/components/ui/contact-link";
 import { AddressLink } from "@/components/ui/address-link";
 import { StatActionCard } from "@/components/ui/stat-action-card";
+import LogCommunicationButton, { type CommEntityType } from "@/components/communications/LogCommunicationButton";
 
 // The "who is this for" card, shared by every entity that belongs to a customer
 // (an order, a project, …). One component so the two can't drift apart — and
@@ -26,6 +27,13 @@ export type CustomerContactCardProps = {
   whatsapp?: string | null;
   email?: string | null;
   address?: string | null;
+  /** When both are set, the card's own action becomes "תיעוד שיחה" for THIS
+   *  entity (a project, an order…) instead of the plain link to the
+   *  customer's page — which moves to a small corner arrow instead, so the
+   *  two don't compete as two same-weight buttons. Omit either to keep the
+   *  card's original behavior (a caller not opting into logging calls here). */
+  entityType?: CommEntityType;
+  entityId?: string;
 };
 
 function digitsOnly(value: string) {
@@ -50,7 +58,10 @@ export function CustomerContactCard({
   whatsapp,
   email,
   address,
+  entityType,
+  entityId,
 }: CustomerContactCardProps) {
+  const logsCallsHere = Boolean(entityType && entityId);
   const subtitle = [
     branchName ? `סניף: ${branchName}` : null,
     invoiceName && invoiceName !== name ? `שם לחשבונית: ${invoiceName}` : null,
@@ -133,9 +144,19 @@ export function CustomerContactCard({
       value={name}
       subtitles={[subtitle || null]}
       details={details}
+      cornerHref={logsCallsHere && customerId ? `/customers/${customerId}` : undefined}
+      cornerLabel="כרטיס הלקוח"
       action={
-        customerId ? (
-          <Button asChild size="sm" variant="secondary" className="w-full">
+        logsCallsHere && entityType && entityId ? (
+          <LogCommunicationButton
+            entityType={entityType}
+            entityId={entityId}
+            customerId={customerId ?? undefined}
+            defaultTopic="general"
+            className="h-9 w-full"
+          />
+        ) : customerId ? (
+          <Button asChild size="sm" variant="outline" className="w-full">
             <Link href={`/customers/${customerId}`}>כרטיס הלקוח</Link>
           </Button>
         ) : null

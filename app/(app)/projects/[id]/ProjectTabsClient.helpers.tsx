@@ -21,8 +21,8 @@ export function toNumber(value: unknown) {
   return null;
 }
 
-export function formatIls(value: number | null) {
-  if (value === null) return "—";
+export function formatIls(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
   return new Intl.NumberFormat("he-IL", {
     style: "currency",
     currency: "ILS",

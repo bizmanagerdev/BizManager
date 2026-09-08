@@ -5,10 +5,19 @@ import { resyncAlerts } from "@/lib/ui/alerts-refresh";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { DeleteIcon, DocumentIcon, EditIcon, NotificationIcon, PhoneIcon, PrintIcon, ShareIcon } from "@/components/ui/icons";
+import { DeleteIcon, DocumentIcon, EditIcon, MoreIcon, NotificationIcon, PrintIcon, ShareIcon } from "@/components/ui/icons";
 import { HeaderActionsMenu } from "@/components/layout/HeaderActionsMenu";
 import { useSetHeaderAction } from "@/components/layout/page-title-context";
-import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { NativeSelect } from "@/components/ui/native-select";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { offlineFetch } from "@/lib/offline-queue";
@@ -30,9 +39,8 @@ import {
   type MovingEndpointValue,
 } from "@/components/projects/MovingAddressFields";
 import DeleteProjectButton from "@/app/(app)/projects/DeleteProjectButton";
-import LogCommunicationButton from "@/components/communications/LogCommunicationButton";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
-import ProjectShareActions, {
+import {
   printProjectSheet,
   projectShareHref,
   type ProjectShareData,
@@ -194,9 +202,8 @@ export default function ProjectDetailsActions({
 }) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
-  // Only used by layout="menu" — the ⋮ items drive these instead of each
+  // Only used by layout="menu" — the ⋮ items drive this instead of the
   // component's own trigger.
-  const [logOpen, setLogOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -354,25 +361,29 @@ export default function ProjectDetailsActions({
               </Link>
             </DropdownMenuItem>
           )}
-          {shareHref ? (
-            <DropdownMenuItem asChild className="gap-2">
-              <a href={shareHref} target="_blank" rel="noreferrer">
-                <ShareIcon className="h-4 w-4" />
-                <span>שיתוף</span>
-              </a>
-            </DropdownMenuItem>
-          ) : null}
-          <DropdownMenuItem className="gap-2" onSelect={() => printProjectSheet(share)}>
-            <PrintIcon className="h-4 w-4" />
-            <span>הדפסה</span>
-          </DropdownMenuItem>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger className="gap-2">
+              <ShareIcon className="h-4 w-4" />
+              <span>שיתוף / הדפסה</span>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              {shareHref ? (
+                <DropdownMenuItem asChild className="gap-2">
+                  <a href={shareHref} target="_blank" rel="noreferrer">
+                    <ShareIcon className="h-4 w-4" />
+                    <span>שיתוף</span>
+                  </a>
+                </DropdownMenuItem>
+              ) : null}
+              <DropdownMenuItem className="gap-2" onSelect={() => printProjectSheet(share)}>
+                <PrintIcon className="h-4 w-4" />
+                <span>הדפסה</span>
+              </DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
           <DropdownMenuItem className="gap-2" onSelect={() => setEditOpen(true)}>
             <EditIcon className="h-4 w-4" />
             <span>עריכה</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem className="gap-2" onSelect={() => setLogOpen(true)}>
-            <PhoneIcon className="h-4 w-4" />
-            <span>תיעוד שיחה</span>
           </DropdownMenuItem>
           <DropdownMenuItem asChild className="gap-2">
             <a href={`#${REMINDERS_SECTION_ID}`}>
@@ -398,16 +409,73 @@ export default function ProjectDetailsActions({
     <>
       {asMenu ? (
         // Trigger-less: the ⋮ above opens these.
-        <>
-          <LogCommunicationButton
-            entityType="project"
-            entityId={project.id}
-            customerId={project.customer_id}
-            defaultTopic="general"
-            hideTrigger
-            open={logOpen}
-            onOpenChange={setLogOpen}
-          />
+        <DeleteProjectButton
+          projectId={project.id}
+          projectName={project.name}
+          redirectTo="/projects"
+          hideTrigger
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+        />
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <EditButton onClick={() => setEditOpen(true)} label="עריכה" />
+          {/* Everything else here is either rare (delete, the printable
+              sheet) or has moved to where it's actually used (תיעוד שיחה is
+              now on the customer card) — so the row itself stays just the
+              one real action, and the rest waits behind ⋯. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 text-muted-foreground hover:text-foreground"
+                title="פעולות נוספות"
+                aria-label="פעולות נוספות"
+              >
+                <MoreIcon className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              {project.status === "quote" ? null : (
+                <DropdownMenuItem asChild className="gap-2">
+                  <Link href={`/projects/${project.id}/export?mode=worker`} target="_blank" rel="noreferrer">
+                    <DocumentIcon className="h-4 w-4" />
+                    <span>דף עבודה</span>
+                  </Link>
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger className="gap-2">
+                  <ShareIcon className="h-4 w-4" />
+                  <span>שיתוף / הדפסה</span>
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  {shareHref ? (
+                    <DropdownMenuItem asChild className="gap-2">
+                      <a href={shareHref} target="_blank" rel="noreferrer">
+                        <ShareIcon className="h-4 w-4" />
+                        <span>שיתוף</span>
+                      </a>
+                    </DropdownMenuItem>
+                  ) : null}
+                  <DropdownMenuItem className="gap-2" onSelect={() => printProjectSheet(share)}>
+                    <PrintIcon className="h-4 w-4" />
+                    <span>הדפסה</span>
+                  </DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="gap-2 text-destructive focus:text-destructive"
+                onSelect={() => setDeleteOpen(true)}
+              >
+                <DeleteIcon className="h-4 w-4" />
+                <span>מחיקת פרויקט</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <DeleteProjectButton
             projectId={project.id}
             projectName={project.name}
@@ -415,31 +483,6 @@ export default function ProjectDetailsActions({
             hideTrigger
             open={deleteOpen}
             onOpenChange={setDeleteOpen}
-          />
-        </>
-      ) : (
-        <div className="flex flex-wrap items-center gap-2">
-          {project.status === "quote" ? null : (
-            <Button type="button" variant="outline" size="sm" className="h-9" asChild>
-              <Link href={`/projects/${project.id}/export?mode=worker`} target="_blank" rel="noreferrer">
-                <DocumentIcon className="h-4 w-4" />
-                <span>דף עבודה</span>
-              </Link>
-            </Button>
-          )}
-          <ProjectShareActions project={share} />
-          <EditButton onClick={() => setEditOpen(true)} label="עריכה" />
-          <LogCommunicationButton
-            entityType="project"
-            entityId={project.id}
-            customerId={project.customer_id}
-            defaultTopic="general"
-            className="h-9"
-          />
-          <DeleteProjectButton
-            projectId={project.id}
-            projectName={project.name}
-            redirectTo="/projects"
           />
         </div>
       )}

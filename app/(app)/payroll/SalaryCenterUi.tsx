@@ -39,7 +39,7 @@ export function paymentStatusLabel(status: string | null | undefined) {
   if (status === "paid") return "שולם";
   if (status === "partial") return "שולם חלקית";
   if (status === "overpaid") return "שולם יתר";
-  if (status === "not_due") return "טרם הגיע מועד התשלום";
+  if (status === "not_due") return "צפוי";
   if (status === "pending") return "ממתין לתשלום";
   return "לא שולם";
 }
@@ -196,9 +196,12 @@ export function StatusPill({
 export function PaymentStatusBadge({
   status,
   owedAmount,
+  dueDate,
 }: {
   status: string | null | undefined;
   owedAmount?: number | string | null;
+  /** Only meaningful when status is "not_due" — see StatusBadge. */
+  dueDate?: string | null;
 }) {
   const owed = toNumber(owedAmount);
   // Negative balance = the worker was paid ahead (advance / overpayment) → credit, not "paid".
@@ -217,7 +220,7 @@ export function PaymentStatusBadge({
     status === "not_due"
       ? status
       : "unpaid";
-  return <StatusBadge value={normalized} type="payment" />;
+  return <StatusBadge value={normalized} type="payment" dueDate={dueDate} />;
 }
 
 export function RoleBadge({ role }: { role: string | null | undefined }) {

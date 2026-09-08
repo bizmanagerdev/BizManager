@@ -80,7 +80,7 @@ export default function EntityActivityTimeline({
     {collapsed ? (
       <Button
         type="button"
-        variant="secondary"
+        variant="outline"
         size="sm"
         className="mt-3 w-full"
         onClick={() => setExpanded(true)}

@@ -21,6 +21,9 @@ export type UserProfile = {
   // round-trip: dashboard layout prefs (raw jsonb — sanitize before use), the
   // "what you missed" digest anchor, and the top-bar avatar's persisted color.
   dashboard_prefs?: unknown;
+  // Per-user תנועות ledger view (group-by/sort-by) — raw jsonb, sanitize via
+  // sanitizeLedgerPrefs before use. Same reasoning as dashboard_prefs above.
+  ledger_prefs?: unknown;
   digest_seen_at?: string | null;
   avatar_color: string | null;
   // UI language ('he' | 'ar'). Only the worker role is ever offered a toggle for
@@ -62,7 +65,7 @@ export const requireProfile = cache(async () => {
   let { data: profile, error } = await supabase
     .from("users")
     .select(
-      "id,auth_user_id,email,full_name,phone,role,active,system_access,payroll_worker_type,dashboard_prefs,digest_seen_at,locale,section_access,avatar_color"
+      "id,auth_user_id,email,full_name,phone,role,active,system_access,payroll_worker_type,dashboard_prefs,ledger_prefs,digest_seen_at,locale,section_access,avatar_color"
     )
     .eq("auth_user_id", userId)
     .maybeSingle();

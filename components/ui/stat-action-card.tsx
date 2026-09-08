@@ -1,4 +1,6 @@
 import * as React from "react";
+import Link from "next/link";
+import { ExternalLinkIcon } from "@/components/ui/icons";
 
 import { cn } from "@/lib/utils";
 
@@ -22,6 +24,8 @@ export function StatActionCard({
   children,
   action,
   className,
+  cornerHref,
+  cornerLabel,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -35,6 +39,11 @@ export function StatActionCard({
   children?: React.ReactNode;
   action?: React.ReactNode;
   className?: string;
+  /** A quiet arrow-only link in the card's own top corner — for "this card is
+   *  ABOUT something with its own page" navigation, when the main `action`
+   *  slot is busy with the card's real action (so the two never compete). */
+  cornerHref?: string;
+  cornerLabel?: string;
 }) {
   const subs = (subtitles ?? []).filter((line): line is string => Boolean(line));
   return (
@@ -42,10 +51,20 @@ export function StatActionCard({
       className={cn(
         // h-full: the three cards in a row are one block, so they share the
         // tallest one's height and their buttons land on the same line.
-        "flex h-full flex-col gap-2.5 rounded-3xl border border-border/70 bg-card/80 p-3.5 shadow-sm",
+        "relative flex h-full flex-col gap-2.5 rounded-3xl border border-border/70 bg-card/80 p-3.5 shadow-sm",
         className
       )}
     >
+      {cornerHref ? (
+        <Link
+          href={cornerHref}
+          title={cornerLabel}
+          aria-label={cornerLabel}
+          className="absolute end-3 top-3 text-muted-foreground transition-colors hover:text-secondary"
+        >
+          <ExternalLinkIcon className="h-4 w-4" />
+        </Link>
+      ) : null}
       <div className="flex items-start gap-2.5">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
           {icon}

@@ -157,6 +157,8 @@ export type SessionEffectivePaymentRow = {
   owed_amount: number | string | null;
   last_payment_date: string | null;
   is_payslip_covered: boolean | null;
+  /** Only meaningful when payment_status is "not_due". */
+  due_date: string | null;
 };
 
 export type WorkerBalanceRow = {

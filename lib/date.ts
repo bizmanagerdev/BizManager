@@ -35,6 +35,17 @@ export function formatShortDate(value: string | null | undefined, fallback = "-"
   return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${pad(date.getFullYear() % 100)}`;
 }
 
+/**
+ * "05/09" — day/month only, no year. For compact spots (a status badge) where
+ * the year would just widen it without adding anything a reader needs.
+ */
+export function formatDayMonth(value: string | null | undefined, fallback = "-") {
+  if (!value) return fallback;
+  const date = parseDateValue(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}`;
+}
+
 export function formatShortDateTime(value: string | null | undefined, fallback = "-") {
   if (!value) return fallback;
   const date = parseDateValue(value);

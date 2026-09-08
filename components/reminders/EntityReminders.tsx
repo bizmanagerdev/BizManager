@@ -161,10 +161,10 @@ export default function EntityReminders({
                     <EditButton onClick={() =>
                         setEditing({ id: r.id, remindAt: r.remindAt, content: r.content, assignedTo: r.assignedTo })
                       } label="עריכת תזכורת" />
-                    <Button size="sm" onClick={() => act(r.id, "done")}>
+                    <Button size="sm" variant="outline" onClick={() => act(r.id, "done")}>
                       בוצע
                     </Button>
-                    <Button size="sm" variant="secondary" onClick={() => act(r.id, "dismiss")}>
+                    <Button size="sm" variant="outline" onClick={() => act(r.id, "dismiss")}>
                       בטל
                     </Button>
                   </div>
