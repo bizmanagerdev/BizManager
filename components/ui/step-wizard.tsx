@@ -421,26 +421,35 @@ export function StepWizard<TStep extends string | number>({
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
 
-      {/* Wraps when cramped: anything in footerCenter drops to its own row above
-          the buttons on narrow screens and sits inline when there's room. */}
-      <div className="flex flex-wrap items-center gap-2">
+      {/* footerCenter (e.g. the order wizard's running total) gets its OWN row,
+          wrapping freely — kept out of the back/next row below so a wide block
+          there can never crowd that row into wrapping. */}
+      {footerCenter ? (
+        <div className="flex flex-wrap items-center justify-center gap-2">{footerCenter}</div>
+      ) : null}
+
+      {/* Back and next ALWAYS share this one row, however large the text gets
+          (e.g. the accessibility font-scale setting) — never flex-wrap here, so
+          back can never end up stacked above next. Each button shrinks and
+          truncates its own label instead. */}
+      <div className="flex flex-nowrap items-center gap-2">
         {onBack ? (
           <Button
             type="button"
             variant="secondary"
             onClick={onBack}
             disabled={backDisabled}
-            className="me-auto min-w-0"
+            className="me-auto min-w-0 shrink"
           >
-            <ChevronRightIcon className="h-4 w-4" />
-            {backLabel}
+            <ChevronRightIcon className="h-4 w-4 shrink-0" />
+            <span className="min-w-0 truncate">{backLabel}</span>
           </Button>
         ) : (
           (footerStart ?? <div className="me-auto" />)
         )}
 
         {showStepCounter ? (
-          <span className="hidden whitespace-nowrap text-xs text-muted-foreground sm:inline">
+          <span className="hidden shrink whitespace-nowrap text-xs text-muted-foreground sm:inline">
             {/* stepNumber (position), not `current` — current can be a string
                 id (IncomeDialog/CollectPaymentDialog/ExpenseDialog's express
                 mode), which would print literally ("שלב amount מתוך 13"). */}
@@ -448,17 +457,15 @@ export function StepWizard<TStep extends string | number>({
           </span>
         ) : null}
 
-        {footerCenter}
-
         <Button
           type={submitOnEnter ? "submit" : "button"}
           onClick={submitOnEnter ? undefined : onNext}
           disabled={nextDisabled}
-          className="min-w-0 shrink-0"
+          className="min-w-0 shrink"
         >
-          {isLastStep ? <CheckIcon className="h-4 w-4" /> : null}
-          {resolvedNextLabel}
-          {isLastStep ? null : <ChevronLeftIcon className="h-4 w-4" />}
+          {isLastStep ? <CheckIcon className="h-4 w-4 shrink-0" /> : null}
+          <span className="min-w-0 truncate">{resolvedNextLabel}</span>
+          {isLastStep ? null : <ChevronLeftIcon className="h-4 w-4 shrink-0" />}
         </Button>
       </div>
     </>
