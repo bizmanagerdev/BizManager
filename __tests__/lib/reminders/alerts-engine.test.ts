@@ -3,11 +3,18 @@ import {
   visibleAudienceRoles,
   ownAudienceRoles,
   todaySlice,
+  inboxOrigin,
+  inboxBucket,
   type InboxView,
   type WorklistItem,
   type WorklistSeverity,
 } from "@/lib/reminders/worklist";
-import { sanitizeNotificationPrefs, shouldPushNow, DEFAULT_PREFS } from "@/lib/notifications/prefs";
+import {
+  sanitizeNotificationPrefs,
+  shouldPushNow,
+  isSubscribedTo,
+  DEFAULT_PREFS,
+} from "@/lib/notifications/prefs";
 import { reminderBucket } from "@/lib/notifications/categories";
 import { digestTablesForRole } from "@/lib/audit";
 import { getDunningStages } from "@/lib/notifications/alert-config";
@@ -281,5 +288,62 @@ describe("todaySlice — the dashboard's היום card", () => {
 
   it("is empty when the inbox is", () => {
     expect(todaySlice(view({}))).toEqual({ alerts: [], rest: 0 });
+  });
+});
+
+function worklistItem(over: Partial<WorklistItem>): WorklistItem {
+  return {
+    id: "id-1",
+    source: "manual",
+    severity: "warning",
+    behavior: "ping_once",
+    isSummary: false,
+    title: "x",
+    content: null,
+    url: "/x",
+    category: "task",
+    remindAt: "2026-08-16T06:00:00.000Z",
+    snoozedUntil: null,
+    nextPingAt: null,
+    notifiedAt: null,
+    assignedTo: null,
+    audienceRole: null,
+    createdBy: null,
+    customerId: null,
+    customerName: null,
+    customerPhone: null,
+    taskId: null,
+    taskSubject: null,
+    assignedToName: null,
+    dedupeKey: null,
+    ...over,
+  } as unknown as WorklistItem;
+}
+
+describe("inboxOrigin", () => {
+  it("a human-set reminder is 'mine'", () => {
+    expect(inboxOrigin(worklistItem({ source: "manual" }))).toBe("mine");
+  });
+  it("an engine-found system item is 'auto'", () => {
+    expect(inboxOrigin(worklistItem({ source: "system" }))).toBe("auto");
+  });
+});
+
+describe("inboxBucket", () => {
+  it("routes a system item by its dedupeKey's rule prefix", () => {
+    expect(inboxBucket(worklistItem({ source: "system", dedupeKey: "collection_overdue:cust-1:0" }))).toBe(
+      reminderBucket({ source: "system", category: "task", dedupeKey: "collection_overdue:cust-1:0" })
+    );
+  });
+});
+
+describe("isSubscribedTo", () => {
+  it("false by default — role-broadcast buckets are opt-in, not opt-out", () => {
+    expect(isSubscribedTo(DEFAULT_PREFS, "money")).toBe(false);
+  });
+  it("true once the user has subscribed to that bucket", () => {
+    const prefs = { ...DEFAULT_PREFS, subscribe: ["money", "projects"] };
+    expect(isSubscribedTo(prefs, "money")).toBe(true);
+    expect(isSubscribedTo(prefs, "payroll")).toBe(false);
   });
 });
