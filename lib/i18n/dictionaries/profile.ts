@@ -128,7 +128,6 @@ export type ProfileKey =
   | "billCustomerTitle"
   | "billToCustomerLabel"
   | "billAmountLabel"
-  | "billAmountPlaceholderExample"
   | "durationPrefix"
   | "originalDurationPrefix"
   | "suggestedAmountPrefix"
@@ -386,8 +385,7 @@ export const profileDict: Dictionary<ProfileKey> = {
     noSelectionNeeded: "אין צורך בבחירה נוספת.",
     billCustomerTitle: "חיוב הלקוח",
     billToCustomerLabel: "לחיוב לקוח",
-    billAmountLabel: "סכום לחיוב לקוח",
-    billAmountPlaceholderExample: "למשל 650",
+    billAmountLabel: "סכום לחיוב לקוח *",
     durationPrefix: "משך: ",
     originalDurationPrefix: "משך מקורי: ",
     suggestedAmountPrefix: "מגיע לפי המשמרת: ",
@@ -636,8 +634,7 @@ export const profileDict: Dictionary<ProfileKey> = {
     noSelectionNeeded: "لا حاجة لاختيار إضافي.",
     billCustomerTitle: "الفوترة على العميل",
     billToCustomerLabel: "للفوترة على العميل",
-    billAmountLabel: "المبلغ المطلوب من العميل",
-    billAmountPlaceholderExample: "مثال: 650",
+    billAmountLabel: "المبلغ المطلوب من العميل *",
     durationPrefix: "المدة: ",
     originalDurationPrefix: "المدة الأصلية: ",
     suggestedAmountPrefix: "المستحق عن هذه المناوبة: ",

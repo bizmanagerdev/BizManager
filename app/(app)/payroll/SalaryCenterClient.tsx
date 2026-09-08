@@ -1092,6 +1092,13 @@ export default function SalaryCenterClient({
       toast.error("יש להזין יום תשלום תקין בין 1 ל-31.");
       return;
     }
+    if (
+      agreementForm.is_billable_to_customer &&
+      !(Number(agreementForm.bill_to_customer_amount) > 0)
+    ) {
+      toast.error("יש להזין סכום לחיוב לקוח.");
+      return;
+    }
     const editingAgreementId = agreementForm.agreement_id;
     const previousAgreement = editingAgreementId ? editingAgreementSnapshot : null;
     runAction(async () => {
@@ -5060,7 +5067,7 @@ export default function SalaryCenterClient({
                     </label>
                     {agreementForm.is_billable_to_customer ? (
                       <div className="mt-2 space-y-1">
-                        <div className="text-sm font-medium">סכום לחיוב לקוח (חודשי)</div>
+                        <div className="text-sm font-medium">סכום לחיוב לקוח (חודשי) *</div>
                         <CurrencyInput
                           inputMode="decimal"
                           value={agreementForm.bill_to_customer_amount}
@@ -5070,7 +5077,6 @@ export default function SalaryCenterClient({
                               bill_to_customer_amount: event.target.value,
                             }))
                           }
-                          placeholder="למשל 5000"
                         />
                       </div>
                     ) : null}

@@ -1473,14 +1473,13 @@ export default function PayrollAdminClient({
                   <span>לחיוב לקוח</span>
                 </label>
                 {createSessionForm.is_billable_to_customer ? (
-                  <Field label="סכום לחיוב לקוח">
+                  <Field label="סכום לחיוב לקוח *">
                     <CurrencyInput
                       inputMode="decimal"
                       value={createSessionForm.bill_to_customer_amount}
                       onChange={(event) =>
                         setCreateSessionForm((current) => ({ ...current, bill_to_customer_amount: event.target.value }))
                       }
-                      placeholder="למשל 650"
                     />
                   </Field>
                 ) : null}

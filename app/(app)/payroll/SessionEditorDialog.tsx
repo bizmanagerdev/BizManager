@@ -769,7 +769,7 @@ export default function SessionEditorDialog({
       case "price":
         return sessionDialogWorkerType !== "session_only" || sessionSplitEnabled || Boolean(sessionForm.labor_cost.trim());
       case "billing":
-        return !sessionForm.is_billable_to_customer || Boolean(sessionForm.bill_to_customer_amount.trim());
+        return !sessionForm.is_billable_to_customer || Number(sessionForm.bill_to_customer_amount) > 0;
       case "markPaid":
         return !sessionForm.mark_paid_now || accountsList.length === 0 || Boolean(paymentAccountId);
       case "notes":
@@ -1076,7 +1076,7 @@ export default function SessionEditorDialog({
                       </label>
                       {part.billToCustomer ? (
                         <label className="space-y-1 text-right">
-                          <span className="block text-xs text-muted-foreground">{"סכום לחיוב לקוח"}</span>
+                          <span className="block text-xs text-muted-foreground">{"סכום לחיוב לקוח *"}</span>
                           <CurrencyInput
                             inputMode="decimal"
                             className="h-9 w-32"
@@ -1192,7 +1192,7 @@ export default function SessionEditorDialog({
                         </label>
                         {sessionSplitParts[index]?.billToCustomer ? (
                           <label className="mt-2 block space-y-1 text-right">
-                            <span className="block text-xs text-muted-foreground">{"סכום לחיוב לקוח"}</span>
+                            <span className="block text-xs text-muted-foreground">{"סכום לחיוב לקוח *"}</span>
                             <CurrencyInput
                               inputMode="decimal"
                               className="h-9 w-32"
@@ -1246,7 +1246,7 @@ export default function SessionEditorDialog({
           </div>
           {sessionForm.is_billable_to_customer ? (
             <label className="mt-3 block space-y-2 text-sm">
-              <span className="font-medium">{"סכום לחיוב"}</span>
+              <span className="font-medium">{"סכום לחיוב *"}</span>
               <CurrencyInput
                 inputMode="decimal"
                 autoFocus

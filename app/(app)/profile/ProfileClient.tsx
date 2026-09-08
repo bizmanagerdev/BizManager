@@ -808,7 +808,6 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
                 <CurrencyInput
                   value={sessionEditBillToCustomerAmount}
                   onChange={(event) => setSessionEditBillToCustomerAmount(event.target.value)}
-                  placeholder={t(profileDict, locale, "billAmountPlaceholderExample")}
                 />
               </label>
             ) : null}

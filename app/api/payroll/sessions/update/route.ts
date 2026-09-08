@@ -83,7 +83,7 @@ export async function POST(req: Request) {
     if (businessDomain === "property_management" && !propertyId) {
       return NextResponse.json({ error: "Property is required for property work." }, { status: 400 });
     }
-    if (isBillable && (billAmount === null || billAmount < 0)) {
+    if (isBillable && (billAmount === null || billAmount <= 0)) {
       return NextResponse.json({ error: "Bill to customer amount is invalid." }, { status: 400 });
     }
 

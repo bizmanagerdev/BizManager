@@ -1629,6 +1629,8 @@ export function ExpenseDialog({
         };
       case "wlabor":
         return { disabled: sessionPriceRequired && !(Number(laborCost) > 0) };
+      case "wbilling":
+        return { disabled: billedToCustomer && !(Number(billToCustomerAmount) > 0) };
       case "wpayment":
         return { disabled: workerPaymentChoice === "partial" && !(Number(workerPaidAmount) > 0) };
       case "wmethod":
@@ -2230,6 +2232,9 @@ export function ExpenseDialog({
         return (
           <>
             {expTitle("לחייב את הלקוח?", "אפשר לדלג")}
+            {Number(amount) > 0 ? (
+              <div className="mb-2 text-xs text-muted-foreground">סכום ההוצאה שהזנת: {ils(Number(amount))}</div>
+            ) : null}
             <label className="flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm">
               <input
                 type="checkbox"
@@ -2240,8 +2245,8 @@ export function ExpenseDialog({
             </label>
             {billedToCustomer ? (
               <div className="mt-2 space-y-1">
-                <div className="text-sm font-medium">סכום לחיוב לקוח</div>
-                <CurrencyInput value={billToCustomerAmount} onChange={(e) => setBillToCustomerAmount(e.target.value)} placeholder="למשל 650" />
+                <div className="text-sm font-medium">סכום לחיוב לקוח *</div>
+                <CurrencyInput value={billToCustomerAmount} onChange={(e) => setBillToCustomerAmount(e.target.value)} />
               </div>
             ) : null}
           </>
@@ -2810,8 +2815,8 @@ export function ExpenseDialog({
                   </label>
                   {billedToCustomer ? (
                     <div className="space-y-1">
-                      <div className="text-sm font-medium">סכום לחיוב לקוח</div>
-                      <CurrencyInput value={billToCustomerAmount} onChange={(e) => setBillToCustomerAmount(e.target.value)} placeholder="למשל 650" />
+                      <div className="text-sm font-medium">סכום לחיוב לקוח *</div>
+                      <CurrencyInput value={billToCustomerAmount} onChange={(e) => setBillToCustomerAmount(e.target.value)} />
                     </div>
                   ) : null}
                 </section>
