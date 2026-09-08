@@ -85,14 +85,21 @@ allowed_cidrs_v6 = ["::/0"]
 # enabled = true
 
 [realtime]
-enabled = true
+# Trimmed for E2E stability (see e2e/README.md) — this app's realtime
+# subscriptions (presence, live audit feed) degrade gracefully with no
+# connection, and running fewer local containers avoided repeated Docker
+# Desktop crashes on this machine when starting all ~13 services at once.
+# Re-enable if a test specifically needs live-update behavior.
+enabled = false
 # Bind realtime via either IPv4 or IPv6. (default: IPv4)
 # ip_version = "IPv6"
 # The maximum length in bytes of HTTP request headers. (default: 4096)
 # max_header_length = 4096
 
 [studio]
-enabled = true
+# Trimmed for E2E stability — see the realtime section's comment above.
+# Re-enable any time for manual DB inspection (`npx supabase start` again).
+enabled = false
 # Port to use for Supabase Studio.
 port = 54323
 # External URL of the API server that frontend connects to.
@@ -103,7 +110,9 @@ openai_api_key = "env(OPENAI_API_KEY)"
 # Email testing server. Emails sent with the local dev setup are not actually sent - rather, they
 # are monitored, and you can view the emails that would have been sent from the web interface.
 [inbucket]
-enabled = true
+# Trimmed for E2E stability — see the realtime section's comment above.
+# Re-enable if a test needs to inspect a sent email (e.g. password reset).
+enabled = false
 # Port to use for the email testing server web interface.
 port = 54324
 # Uncomment to expose additional ports for testing user applications that send emails.
@@ -113,7 +122,9 @@ port = 54324
 # sender_name = "Admin"
 
 [storage]
-enabled = true
+# Trimmed for E2E stability — see the realtime section's comment above.
+# Re-enable if a test needs file upload/download.
+enabled = false
 # The maximum file size allowed (e.g. "5MB", "500KB").
 file_size_limit = "50MiB"
 
@@ -372,7 +383,9 @@ authorization_url_path = "/oauth/consent"
 allow_dynamic_registration = false
 
 [edge_runtime]
-enabled = true
+# Trimmed for E2E stability — see the realtime section's comment above.
+# This app doesn't use Supabase Edge Functions (Next.js API routes instead).
+enabled = false
 # Supported request policies: `oneshot`, `per_worker`.
 # `per_worker` (default) — enables hot reload during local development.
 # `oneshot` — fallback mode if hot reload causes issues (e.g. in large repos or with symlinks).
@@ -386,7 +399,9 @@ deno_version = 2
 # secret_key = "env(SECRET_VALUE)"
 
 [analytics]
-enabled = true
+# Trimmed for E2E stability — see the realtime section's comment above.
+# Purely internal log tooling (Vector/Logflare), unused by the app itself.
+enabled = false
 port = 54327
 # Configure one of the supported backends: `postgres`, `bigquery`.
 backend = "postgres"

@@ -16,6 +16,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "test:coverage": "vitest run --coverage",
     "db:check": "node scripts/check-db-sql-frozen.mjs",
     "db:refreeze": "ls db/sql/*.sql | xargs -n1 basename | sort > db/sql/.frozen-manifest",
@@ -64,6 +66,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^7.6.7",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
