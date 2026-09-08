@@ -20,17 +20,22 @@ const SLOW_THRESHOLD_MS = 3000;
 // A lock timeout behind something the user actually tapped is worth
 // interrupting them for; the SAME timeout behind a passive background call
 // (a heartbeat, a realtime resubscribe, the auth client's own refresh-on-
-// tab-focus) is not — it self-resolves and the page keeps working. Coming
-// back to a backgrounded tab fires a burst of exactly those passive calls at
-// once with no click involved, so toasting on every timeout regardless of
-// cause meant a toast on every tab-switch — confirmed live 2026-09-09, not
-// what was wanted. Only surface the toast when the lock ACQUISITION ATTEMPT
-// itself started shortly after a real pointer/key interaction (tracked here,
-// not when the eventual timeout fires up to lockAcquireTimeout ms later).
-// Sentry still gets every timeout either way, tagged `interactive`, so
-// nothing is lost for diagnosis — only what reaches the user is filtered.
+// tab-focus) is not — it self-resolves and the page keeps working.
+//
+// First attempt gated only on "was there a recent pointerdown/keydown" —
+// confirmed live still WRONG: switching to a browser tab, or clicking back
+// into the page right after, is itself a pointerdown, so a click-based
+// signal alone can't tell "clicked to switch tabs" apart from "clicked a
+// button." Fixed by adding an explicit veto on `visibilitychange` — the
+// actual, targeted signal for "a tab/app just came back from the
+// background" (same pattern PresenceTracker already uses). A lock
+// acquisition attempt that started shortly after the tab became visible is
+// treated as background noise even if a click also landed nearby; only a
+// click with NO recent visibility change counts as interactive.
 const INTERACTION_WINDOW_MS = 2000;
+const VISIBILITY_VETO_MS = 5000;
 let lastInteractionAt = 0;
+let lastVisibleAt = 0;
 
 if (typeof window !== "undefined") {
   const mark = () => {
@@ -38,6 +43,16 @@ if (typeof window !== "undefined") {
   };
   window.addEventListener("pointerdown", mark, { capture: true, passive: true });
   window.addEventListener("keydown", mark, { capture: true, passive: true });
+
+  if (typeof document !== "undefined") {
+    document.addEventListener(
+      "visibilitychange",
+      () => {
+        if (document.visibilityState === "visible") lastVisibleAt = Date.now();
+      },
+      { capture: true, passive: true }
+    );
+  }
 }
 
 function emit(name: string, detail?: Record<string, unknown>): void {
@@ -51,7 +66,9 @@ export async function instrumentedLock<R>(
   fn: () => Promise<R>
 ): Promise<R> {
   const startedAt = Date.now();
-  const interactive = startedAt - lastInteractionAt < INTERACTION_WINDOW_MS;
+  const recentClick = startedAt - lastInteractionAt < INTERACTION_WINDOW_MS;
+  const recentVisibilityResume = startedAt - lastVisibleAt < VISIBILITY_VETO_MS;
+  const interactive = recentClick && !recentVisibilityResume;
 
   try {
     const result = await navigatorLock(name, acquireTimeout, fn);
