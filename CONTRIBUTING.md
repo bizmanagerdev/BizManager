@@ -55,6 +55,26 @@ The financial layer is being consolidated toward **one source of truth** (`lib/f
 - Refunds are negative-amount payment rows → they are **outflows / contra-revenue**, never income. There are regression tests for this in `__tests__/lib/financial/entries.test.ts`; keep them green.
 - Prefer SQL-side aggregation (views/RPCs) over pulling whole tables into Node.
 
+## Test file layout — mirror the source path, always
+
+A test's path under `__tests__/` must mirror the source file it tests, one-to-one:
+`lib/orders/paymentStatus.ts` → `__tests__/lib/orders/paymentStatus.test.ts`,
+`components/tasks/taskLines.helpers.ts` → `__tests__/components/tasks/taskLines.helpers.test.ts`,
+`app/(app)/dashboard/DashboardActions.forms.ts` → `__tests__/app/dashboard/DashboardActions.forms.test.ts`
+(the `(app)` route-group segment is dropped, matching every other `__tests__/app/**` test).
+
+Before adding tests for a module, check whether it's already covered **at that mirrored
+path** — not just anywhere under `__tests__/`. A same-named-but-differently-placed test file
+(e.g. tests for `lib/orders/paymentStatus.ts` sitting in `__tests__/lib/collectionStatus.test.ts`)
+is exactly how a module ends up silently duplicate-tested or silently untested: the next
+person (or agent) greps for the source's own name, doesn't find a match at the mirrored path,
+and adds a second file testing the same thing under a different name.
+
+The one deliberate exception: `__tests__/api/**` uses a flat, hyphenated name
+(`expenses-create.test.ts`) instead of mirroring `app/api/expenses/create/route.ts` — every
+route handler is named `route.ts`, so mirroring the folder structure would produce many
+identically-named `route.test.ts` files with nothing to distinguish them by filename alone.
+
 ## Component tests
 
 `components/ui/*` (and other render-worthy components) can be tested with jsdom + React
