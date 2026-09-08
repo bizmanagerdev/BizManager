@@ -8,6 +8,7 @@ import { DesktopQuickCreateFab } from "@/components/layout/DesktopQuickCreateFab
 import { TopNavigationProgress } from "@/components/layout/TopNavigationProgress";
 import OfflineBanner from "@/components/layout/OfflineBanner";
 import ConnectionToasts from "@/components/layout/ConnectionToasts";
+import AuthLockToasts from "@/components/layout/AuthLockToasts";
 import UndoHotkeyListener from "@/components/layout/UndoHotkeyListener";
 import ConnectionTelemetry from "@/components/pwa/ConnectionTelemetry";
 import PresenceTracker from "@/components/layout/PresenceTracker";
@@ -93,6 +94,7 @@ export default function AppShell({
           <FocusHighlighter />
         </Suspense>
         <ConnectionToasts />
+        <AuthLockToasts />
         <UndoHotkeyListener />
         <ConnectionTelemetry />
         <TopBar

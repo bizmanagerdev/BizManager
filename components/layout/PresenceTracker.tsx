@@ -84,10 +84,19 @@ export default function PresenceTracker({ userName, viewerRole }: Props) {
       setTimeout(() => void trackAs(uid), 0);
     });
 
+    // Every 60s, every open tab, every logged-in user was fighting for the
+    // same exclusive auth-token lock every other Supabase call also needs
+    // (see lib/supabase/authLock.ts) — a frequent, guaranteed-periodic
+    // contender. Widened to cut that footprint by a third. NOTE: the
+    // server's "active now" cutoff (lib/audit.ts getUserPresenceRoster,
+    // `nowMs - lastSeenAt < 2 * 60 * 1000`) is a hard 2-minute staleness
+    // window — do not raise this past ~90s without also widening that
+    // cutoff, or genuinely-active users will flicker to "offline" between
+    // beats.
     const heartbeat = setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
       void beat();
-    }, 60_000);
+    }, 90_000);
 
     return () => {
       clearInterval(heartbeat);
