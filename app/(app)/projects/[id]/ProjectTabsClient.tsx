@@ -1570,9 +1570,12 @@ export default function ProjectTabsClient({
                 ) : null}
                 {/* A separator between the +/share buttons and תצוגה only
                     makes sense once they're in one flowing row — in the 2x2
-                    grid it would land inside a single cell as a stray line. */}
+                    mobile grid it would land inside a single cell as a stray
+                    line, so it stays hidden there. Visible once the mobile
+                    row itself switches to one flowing line (@[26em]:), and
+                    always on desktop (lg:), which is one flowing row now. */}
                 <div
-                  className="hidden @[26em]:block @[26em]:h-5 @[26em]:w-px @[26em]:shrink-0 @[26em]:bg-border"
+                  className="hidden h-5 w-px shrink-0 bg-border @[26em]:block lg:block"
                   aria-hidden
                 />
                 <DropdownMenu>
@@ -1721,16 +1724,31 @@ export default function ProjectTabsClient({
             // ProjectMovements caps and scrolls only its OWN row list.
             contentClassName="@container flex flex-col text-sm"
             action={
-              <div className="@container hidden items-center gap-1.5 lg:flex">{movementActions}</div>
+              // One row, always — flex-wrap here kept nesting inside
+              // CollapsibleSection's own shrink-0 wrapper unpredictably (it
+              // shrank to one button per line instead of wrapping cleanly).
+              // flex-nowrap can't do that: it's structurally incapable of
+              // breaking into more than one line. overflow-x-auto is the
+              // escape valve for a card too narrow to fit all of them — the
+              // row scrolls horizontally instead of the card's own
+              // overflow-hidden silently clipping buttons to invisible.
+              <div className="hidden flex-nowrap items-center gap-1.5 overflow-x-auto lg:flex">
+                {movementActions}
+              </div>
             }
           >
-            {/* Phone: same actions as the header. Two per row (a 2x2 grid)
-                by default — four buttons stacked one-per-row ate too much of
-                the card's height before a single row list was even visible.
-                Once the container actually has room, switch to a single
-                flowing row instead. */}
-            <div className="mb-2 grid grid-cols-2 gap-1.5 @[26em]:flex @[26em]:flex-row @[26em]:flex-wrap @[26em]:items-center lg:hidden">
-              {movementActions}
+            {/* Phone: same actions as the header. lg:hidden lives on its OWN
+                wrapper, with nothing else touching `display` on it — putting
+                it on the same element as the @[26em]: container-query
+                classes below let a wide desktop card's container query win
+                the cascade over the viewport media query, un-hiding this
+                on desktop (a real, visible duplicate of every header
+                button). The inner div only decides 2x2-grid vs one flowing
+                row; it never controls whether this shows at all. */}
+            <div className="mb-2 lg:hidden">
+              <div className="grid grid-cols-2 gap-1.5 @[26em]:flex @[26em]:flex-row @[26em]:flex-wrap @[26em]:items-center">
+                {movementActions}
+              </div>
             </div>
             {moneyError ? (
               <p className="mb-2 text-sm text-destructive">שגיאה בטעינת תנועות: {moneyError}</p>
