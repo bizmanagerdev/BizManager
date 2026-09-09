@@ -1,9 +1,9 @@
+import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
 import type { UserProfile } from "@/lib/auth/requireProfile";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import FinancialPageClient, {
-  type FinancialPageInitialFilters,
-} from "@/app/(app)/financial/FinancialPageClient";
+import { type FinancialPageInitialFilters } from "@/app/(app)/financial/FinancialPageClient";
+import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { getFinancialPageData } from "@/lib/financial";
 import {
   loadEarnedRevenueByMonth,
@@ -48,6 +48,13 @@ function normalizePage(value: string | undefined) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
 }
+
+// This client component is ~2,400 lines (the whole cash-flow ledger UI).
+// Lazy-loaded so a visitor doesn't download it before actually opening the
+// page — same pattern already used for ProjectTabsClient/SalaryCenterClient.
+const FinancialPageClient = dynamic(() => import("@/app/(app)/financial/FinancialPageClient"), {
+  loading: () => <DetailPageSkeleton />,
+});
 
 export function normalizeFinancialSearchParams(
   searchParams: Record<string, string | string[] | undefined>
