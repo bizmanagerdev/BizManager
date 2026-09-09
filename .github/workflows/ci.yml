@@ -64,18 +64,54 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Docker sanity check
+        # Cheap, fast check of the runner's own Docker before blaming
+        # Supabase for anything — rules this out as a variable.
+        run: |
+          docker version
+          docker ps
+
       - name: Start local Supabase stack
         # --yes: a bare `supabase start` can hit a confirmation prompt (e.g.
         # first-time image pull) — with no TTY on a CI runner that fails
         # immediately instead of hanging, which matches the fast (~1m25s
         # total job) failure seen the first time this ran without it.
-        run: npx supabase start -o json --yes > /tmp/supabase-status.json
+        #
+        # Two prior attempts both failed in ~1m25s with no visible cause
+        # (repo owner couldn't access the raw per-line logs, which need a
+        # signed-in collaborator even on a public repo — different from this
+        # step summary, which renders on the run's Summary page for anyone).
+        # --debug + capturing stdout/stderr separately here, written to
+        # $GITHUB_STEP_SUMMARY on failure, is how to actually see why
+        # without needing log access.
+        run: |
+          set +e
+          npx supabase start -o json --yes --debug > /tmp/supabase-stdout.txt 2> /tmp/supabase-stderr.txt
+          STATUS=$?
+          if [ $STATUS -ne 0 ]; then
+            {
+              echo "### supabase start failed (exit $STATUS)"
+              echo '#### stdout'
+              echo '```'
+              tail -c 20000 /tmp/supabase-stdout.txt
+              echo '```'
+              echo '#### stderr'
+              echo '```'
+              tail -c 20000 /tmp/supabase-stderr.txt
+              echo '```'
+              echo '#### docker ps -a'
+              echo '```'
+              docker ps -a
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit $STATUS
 
       - name: Write .env.test.local from the local stack's own printed credentials
         run: |
-          echo "NEXT_PUBLIC_SUPABASE_URL=$(jq -r .API_URL /tmp/supabase-status.json)" >> .env.test.local
-          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$(jq -r .ANON_KEY /tmp/supabase-status.json)" >> .env.test.local
-          echo "SUPABASE_SERVICE_ROLE_KEY=$(jq -r .SERVICE_ROLE_KEY /tmp/supabase-status.json)" >> .env.test.local
+          echo "NEXT_PUBLIC_SUPABASE_URL=$(jq -r .API_URL /tmp/supabase-stdout.txt)" >> .env.test.local
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$(jq -r .ANON_KEY /tmp/supabase-stdout.txt)" >> .env.test.local
+          echo "SUPABASE_SERVICE_ROLE_KEY=$(jq -r .SERVICE_ROLE_KEY /tmp/supabase-stdout.txt)" >> .env.test.local
 
       - name: Install Playwright's chromium
         run: npx playwright install --with-deps chromium
