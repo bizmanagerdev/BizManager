@@ -444,34 +444,103 @@ export default async function CustomerDetailsPage({
   });
 
   const documentIds = Array.from(docLinkByDocumentId.keys());
-  const { data: documentRows } =
+  const canManageCollections = profile.role === "admin" || profile.role === "office";
+  const linkedUserId = s(customer as Row, "linked_user_id");
+
+  // Six more independent reads — one batch instead of ~6 sequential round trips.
+  const [
+    { data: documentRows },
+    paymentPromises,
+    loanPositions,
+    workerSide,
+    customerActivity,
+    taskRes,
+    usersRes,
+  ] = await Promise.all([
     documentIds.length > 0
-      ? await supabase
+      ? supabase
           .from("documents")
           .select("id,document_type,title,file_name,storage_key,uploaded_at")
           .in("id", documentIds)
           .order("uploaded_at", { ascending: false, nullsFirst: false })
-      : { data: [] as Row[] };
+      : Promise.resolve({ data: [] as Row[] }),
+    canManageCollections ? getCustomerPromises(supabase, id) : Promise.resolve([]),
+    // מאזן מול העסק — everything this person owes us and we owe them, gathered
+    // from the three places it lives (orders/projects, loans, payroll). Loans are
+    // fetched for ANY customer: a lender doesn't have to be a worker. The payroll
+    // half only applies when the customer is linked to a users row, and stays
+    // behind the same admin/office gate as the page's other management sections.
+    canManageCollections
+      ? getCustomerLoanPositions(supabase, id).catch(() => ({ owedToUs: 0, owedByUs: 0, loans: [] }))
+      : Promise.resolve({ owedToUs: 0, owedByUs: 0, loans: [] }),
+    linkedUserId && canManageCollections
+      ? Promise.all([
+          supabase.from("users").select("id,full_name,email").eq("id", linkedUserId).maybeSingle(),
+          supabase
+            .from("worker_balance_summary_view")
+            .select("user_id,owed_amount")
+            .eq("user_id", linkedUserId)
+            .maybeSingle(),
+        ])
+      : Promise.resolve(null),
+    // Per-entity activity timeline (admin only, mirroring /activity access): this
+    // customer's own changes plus their orders, projects, and payments.
+    profile.role === "admin"
+      ? getEntityAuditTrail(supabase, [
+          { tableName: "customers", recordId: id },
+          { tableName: "orders", jsonKey: "customer_id", value: id },
+          { tableName: "projects", jsonKey: "customer_id", value: id },
+          { tableName: "payments", jsonKey: "order_id", values: orderIds },
+          { tableName: "payments", jsonKey: "project_id", values: projectIds },
+        ]).then((result) => result.items)
+      : Promise.resolve([]),
+    // This customer's tasks (independent customer_id link) + the staff list for
+    // the "add task" dialog. Admin/office only, matching the other management
+    // sections.
+    canManageCollections
+      ? supabase
+          .from("tasks")
+          .select("id,subject,status,priority,due_date,assigned_user_id,is_private,private_owner_id")
+          .eq("customer_id", id)
+          .neq("status", "cancelled")
+          .order("due_date", { ascending: true, nullsFirst: false })
+          .range(0, 199)
+      : Promise.resolve({ data: [] as Row[] }),
+    canManageCollections
+      ? supabase
+          .from("users")
+          .select("id,full_name,email,avatar_color,active")
+          .neq("role", "worker_no_access")
+          .order("full_name", { ascending: true })
+          .range(0, 499)
+      : Promise.resolve({ data: [] as Row[] }),
+  ]);
 
   const totalDocumentsCount = ((documentRows ?? []) as Row[]).length;
-  const customerDocuments = await Promise.all(
-    ((documentRows ?? []) as Row[]).slice(0, DOCUMENTS_DISPLAY_LIMIT).map(async (doc) => {
-      const storageKey = s(doc, "storage_key");
-      const { data: signed } = storageKey
-        ? await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(storageKey, 60 * 60)
-        : { data: null };
-      const link = docLinkByDocumentId.get(s(doc, "id"));
-      return {
-        id: s(doc, "id"),
-        name: s(doc, "title") || s(doc, "file_name") || "מסמך",
-        type: s(doc, "document_type"),
-        uploadedAt: s(doc, "uploaded_at") || null,
-        url: typeof signed?.signedUrl === "string" ? signed.signedUrl : null,
-        sourceType: link ? s(link, "entity_type") : "",
-        sourceId: link ? s(link, "entity_id") : "",
-      };
-    })
+  const documentsToShow = ((documentRows ?? []) as Row[]).slice(0, DOCUMENTS_DISPLAY_LIMIT);
+  const documentStorageKeys = Array.from(
+    new Set(documentsToShow.map((doc) => s(doc, "storage_key")).filter(Boolean))
   );
+  const signedUrlByStorageKey = new Map<string, string>();
+  if (documentStorageKeys.length > 0) {
+    const { data: signed } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrls(documentStorageKeys, 60 * 60);
+    for (const item of signed ?? []) {
+      if (item.path && item.signedUrl) signedUrlByStorageKey.set(item.path, item.signedUrl);
+    }
+  }
+  const customerDocuments = documentsToShow.map((doc) => {
+    const storageKey = s(doc, "storage_key");
+    const link = docLinkByDocumentId.get(s(doc, "id"));
+    return {
+      id: s(doc, "id"),
+      name: s(doc, "title") || s(doc, "file_name") || "מסמך",
+      type: s(doc, "document_type"),
+      uploadedAt: s(doc, "uploaded_at") || null,
+      url: storageKey ? signedUrlByStorageKey.get(storageKey) ?? null : null,
+      sourceType: link ? s(link, "entity_type") : "",
+      sourceId: link ? s(link, "entity_id") : "",
+    };
+  });
 
   const customerName = s(customer as Row, "name") || s(customer as Row, "name_for_invoice") || "לקוח";
   const customerPhone = s(customer as Row, "phone");
@@ -489,30 +558,6 @@ export default async function CustomerDetailsPage({
   const activeBranches = ((branches ?? []) as Row[]).filter((branch) => branch.active !== false);
   const customerNameParam = customerName.trim();
   const returnCustomersHref = returnPage > 1 ? `/customers?page=${returnPage}` : "/customers";
-  const canManageCollections = profile.role === "admin" || profile.role === "office";
-  const paymentPromises = canManageCollections ? await getCustomerPromises(supabase, id) : [];
-
-  // מאזן מול העסק — everything this person owes us and we owe them, gathered
-  // from the three places it lives (orders/projects, loans, payroll). Loans are
-  // fetched for ANY customer: a lender doesn't have to be a worker. The payroll
-  // half only applies when the customer is linked to a users row, and stays
-  // behind the same admin/office gate as the page's other management sections.
-  const linkedUserId = s(customer as Row, "linked_user_id");
-  const [loanPositions, workerSide] = await Promise.all([
-    canManageCollections
-      ? getCustomerLoanPositions(supabase, id).catch(() => ({ owedToUs: 0, owedByUs: 0, loans: [] }))
-      : Promise.resolve({ owedToUs: 0, owedByUs: 0, loans: [] }),
-    linkedUserId && canManageCollections
-      ? Promise.all([
-          supabase.from("users").select("id,full_name,email").eq("id", linkedUserId).maybeSingle(),
-          supabase
-            .from("worker_balance_summary_view")
-            .select("user_id,owed_amount")
-            .eq("user_id", linkedUserId)
-            .maybeSingle(),
-        ])
-      : Promise.resolve(null),
-  ]);
 
   const workerRow = workerSide?.[0]?.data ?? null;
   const linkedWorker = workerRow
@@ -568,42 +613,11 @@ export default async function CustomerDetailsPage({
   const visibleProjects = projectInfos.slice(0, PROJECTS_DISPLAY_LIMIT);
   const visiblePayments = allPayments.slice(0, PAYMENTS_DISPLAY_LIMIT);
 
-  // Per-entity activity timeline (admin only, mirroring /activity access): this
-  // customer's own changes plus their orders, projects, and payments.
-  const customerActivity =
-    profile.role === "admin"
-      ? (
-          await getEntityAuditTrail(supabase, [
-            { tableName: "customers", recordId: id },
-            { tableName: "orders", jsonKey: "customer_id", value: id },
-            { tableName: "projects", jsonKey: "customer_id", value: id },
-            { tableName: "payments", jsonKey: "order_id", values: orderIds },
-            { tableName: "payments", jsonKey: "project_id", values: projectIds },
-          ])
-        ).items
-      : [];
-
   // This customer's tasks (independent customer_id link) + the staff list for the
   // "add task" dialog. Admin/office only, matching the other management sections.
   let customerTasks: CustomerTaskItem[] = [];
   let taskUserOptions: { id: string; label: string; color: string | null }[] = [];
   if (canManageCollections) {
-    const [taskRes, usersRes] = await Promise.all([
-      supabase
-        .from("tasks")
-        .select("id,subject,status,priority,due_date,assigned_user_id,is_private,private_owner_id")
-        .eq("customer_id", id)
-        .neq("status", "cancelled")
-        .order("due_date", { ascending: true, nullsFirst: false })
-        .range(0, 199),
-      supabase
-        .from("users")
-        .select("id,full_name,email,avatar_color,active")
-        .neq("role", "worker_no_access")
-        .order("full_name", { ascending: true })
-        .range(0, 499),
-    ]);
-
     const taskRows = ((taskRes.data ?? []) as Row[])
       // Private tasks are visible only to their owner (RLS also enforces this).
       .filter((t) => t.is_private !== true || s(t, "private_owner_id") === profile.id);

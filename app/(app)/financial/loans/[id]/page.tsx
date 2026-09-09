@@ -15,7 +15,7 @@ export default async function LoanDetailPage({ params }: { params: Promise<{ id:
     redirect("/no-access");
   }
 
-  const loans = await fetchLoans(supabase);
+  const loans = await fetchLoans(supabase, { loanId: id });
   const loan = loans.find((l) => l.id === id) ?? null;
   if (!loan) {
     notFound();

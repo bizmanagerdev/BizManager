@@ -1,15 +1,21 @@
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { UserIcon } from "@/components/ui/icons";
 import AppShell from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import SalaryCenterClient from "@/app/(app)/payroll/SalaryCenterClient";
+import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { requireProfile, type UserRole } from "@/lib/auth/requireProfile";
 import { loadPayrollPageData } from "@/lib/payroll-page-loader";
 import { getCustomerOpenBalance } from "@/lib/customers/openBalance";
 import { isMissingLinkColumn } from "@/lib/customers/workerLink";
 import { buildCounterpartyBalance, getCustomerLoanPositions } from "@/lib/customers/counterpartyBalance";
+
+// Lazy-loaded — see payroll/page.tsx for why (SalaryCenterClient is ~5,600 lines).
+const SalaryCenterClient = dynamic(() => import("@/app/(app)/payroll/SalaryCenterClient"), {
+  loading: () => <DetailPageSkeleton />,
+});
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("he-IL", {
@@ -32,7 +38,9 @@ export default async function WorkerDetailPage({
     redirect("/no-access");
   }
 
-  const { users, sessions, projectOptions, propertyOptions, periods, loadError } = await loadPayrollPageData(supabase);
+  const { users, sessions, projectOptions, propertyOptions, periods, loadError } = await loadPayrollPageData(supabase, {
+    scopeToUserId: id,
+  });
 
   // עובד שהוא גם לקוח — the other half of this person. Best-effort: before the
   // link migration runs there is no column, and the page renders as it always did.

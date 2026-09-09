@@ -54,9 +54,7 @@ export async function getCustomerLoanPositions(
   supabase: SupabaseClient,
   customerId: string
 ): Promise<{ owedToUs: number; owedByUs: number; loans: Loan[] }> {
-  const loans = (await fetchLoans(supabase)).filter(
-    (loan) => loan.counterparty_customer_id === customerId && isOpen(loan)
-  );
+  const loans = (await fetchLoans(supabase, { customerId })).filter(isOpen);
 
   let owedToUs = 0;
   let owedByUs = 0;

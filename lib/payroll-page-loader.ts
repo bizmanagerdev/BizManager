@@ -148,16 +148,24 @@ export async function loadAttendanceRefData(supabase: SupabaseClient): Promise<A
   };
 }
 
-export async function loadPayrollPageData(supabase: SupabaseClient): Promise<PayrollPageData> {
+export async function loadPayrollPageData(
+  supabase: SupabaseClient,
+  options?: { scopeToUserId?: string }
+): Promise<PayrollPageData> {
   const cutoff = new Date();
   cutoff.setMonth(cutoff.getMonth() - 18);
   const cutoffIso = cutoff.toISOString().slice(0, 10);
+  const scopeToUserId = options?.scopeToUserId;
 
+  // Worker-detail page scopes this to its one worker so the scan hits the
+  // user_id index instead of paging through 18 months of EVERY worker's
+  // sessions just to filter down to one on the client (see SalaryCenterClient's
+  // own `visibleSessions.filter(session => session.user_id === selectedWorkerId)`).
   async function scanSessions(): Promise<{ data: Row[] | null; error: { message: string } | null }> {
     const CHUNK = 1000;
     const rows: Row[] = [];
     for (let start = 0; ; start += CHUNK) {
-      const { data, error } = await supabase
+      let query = supabase
         .from("attendance_sessions")
         .select(
           "id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id"
@@ -165,6 +173,8 @@ export async function loadPayrollPageData(supabase: SupabaseClient): Promise<Pay
         .gte("clock_in", `${cutoffIso}T00:00:00`)
         .order("clock_in", { ascending: false })
         .range(start, start + CHUNK - 1);
+      if (scopeToUserId) query = query.eq("user_id", scopeToUserId);
+      const { data, error } = await query;
       if (error) return { data: null, error };
       rows.push(...((data ?? []) as Row[]));
       if ((data ?? []).length < CHUNK) break;

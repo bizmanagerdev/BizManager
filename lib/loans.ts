@@ -247,33 +247,82 @@ function addInterval(firstDate: string, step: number, months: number, days: numb
 }
 
 /**
- * Fetch every loan with its repayments and derived totals. Resilient: returns an
+ * Fetch loans with their repayments and derived totals. Resilient: returns an
  * empty list if the loans tables don't exist yet (before the SQL is run) or the
  * caller lacks access.
+ *
+ * By default fetches EVERY loan company-wide (for the loans list/bank overview,
+ * which genuinely need all of them). Pass `loanId` or `customerId` to scope the
+ * query at the DB level instead of paging the whole table and filtering in JS —
+ * used by the single-loan detail page and by counterparty-balance lookups
+ * (customer/worker detail pages), none of which need any loan but their own.
  */
-export async function fetchLoans(supabase: SupabaseClient): Promise<Loan[]> {
+export async function fetchLoans(
+  supabase: SupabaseClient,
+  options?: { loanId?: string; customerId?: string }
+): Promise<Loan[]> {
   try {
-    const [loanRows, repaymentRows] = await Promise.all([
-      fetchAllPaged<Row>((from, to) =>
-        supabase
-          .from("loans")
-          .select(
-            "id,direction,lender,borrower,loan_date,loan_method,repayment_method,documentation,amount,due_date,interest_amount,business_domain,counterparty_customer_id,status,notes,account_id,created_at"
+    const { loanId, customerId } = options ?? {};
+
+    const loanRowsPromise = fetchAllPaged<Row>((from, to) => {
+      let query = supabase
+        .from("loans")
+        .select(
+          "id,direction,lender,borrower,loan_date,loan_method,repayment_method,documentation,amount,due_date,interest_amount,business_domain,counterparty_customer_id,status,notes,account_id,created_at"
+        )
+        .order("loan_date", { ascending: false })
+        .range(from, to);
+      if (loanId) query = query.eq("id", loanId);
+      if (customerId) query = query.eq("counterparty_customer_id", customerId);
+      return query;
+    });
+
+    // `*` on purpose: the installment columns (status / installment_index /
+    // installment_count) may not exist yet on a database where the plan
+    // migration hasn't run — an explicit list would error the whole page.
+    let loanRows: Row[];
+    let repaymentRows: Row[];
+    if (loanId) {
+      // Repayments scope directly by the known loan id — no need to wait for
+      // the loans query first, so this stays fully parallel.
+      [loanRows, repaymentRows] = await Promise.all([
+        loanRowsPromise,
+        fetchAllPaged<Row>((from, to) =>
+          supabase
+            .from("loan_repayments")
+            .select("*")
+            .eq("loan_id", loanId)
+            .order("repayment_date", { ascending: true })
+            .range(from, to)
+        ),
+      ]);
+    } else if (customerId) {
+      // loan_repayments has no customer column of its own — must resolve the
+      // (few) matching loan ids first, then scope repayments to those.
+      loanRows = await loanRowsPromise;
+      const loanIds = loanRows.map((row) => str(row.id)).filter((id): id is string => Boolean(id));
+      repaymentRows = loanIds.length
+        ? await fetchAllPaged<Row>((from, to) =>
+            supabase
+              .from("loan_repayments")
+              .select("*")
+              .in("loan_id", loanIds)
+              .order("repayment_date", { ascending: true })
+              .range(from, to)
           )
-          .order("loan_date", { ascending: false })
-          .range(from, to)
-      ),
-      // `*` on purpose: the installment columns (status / installment_index /
-      // installment_count) may not exist yet on a database where the plan
-      // migration hasn't run — an explicit list would error the whole page.
-      fetchAllPaged<Row>((from, to) =>
-        supabase
-          .from("loan_repayments")
-          .select("*")
-          .order("repayment_date", { ascending: true })
-          .range(from, to)
-      ),
-    ]);
+        : [];
+    } else {
+      [loanRows, repaymentRows] = await Promise.all([
+        loanRowsPromise,
+        fetchAllPaged<Row>((from, to) =>
+          supabase
+            .from("loan_repayments")
+            .select("*")
+            .order("repayment_date", { ascending: true })
+            .range(from, to)
+        ),
+      ]);
+    }
 
     const repaymentsByLoan = new Map<string, LoanRepayment[]>();
     for (const row of repaymentRows) {
