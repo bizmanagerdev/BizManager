@@ -112,10 +112,14 @@ export default function AppShell({
             the SAME surface as it — the bar is the page's colour now, so a dark
             strip here would put back exactly the separation we just removed
             (user, 2026-08-19: "I want it to flow as one page"). `empty:hidden`
-            keeps it out of the layout entirely on pages that don't use it. */}
+            keeps it out of the layout entirely on pages that don't use it.
+            min-h, not h: the search input/filter button a page portals in here
+            are rem-sized (h-10) and grow under OS/accessibility large-text
+            scaling, but this px height didn't — so at large text the row got
+            visually clipped/overlapping instead of just growing to fit it. */}
         <div
           id={PAGE_HEADER_TOOLBAR_ID}
-          className="sticky top-[60px] z-20 flex h-[52px] items-center bg-background px-3 empty:hidden md:hidden"
+          className="sticky top-[60px] z-20 flex min-h-[3.25rem] items-center bg-background px-3 empty:hidden md:hidden"
         />
         <OfflineBanner />
         <div className="flex min-w-0 flex-1">
