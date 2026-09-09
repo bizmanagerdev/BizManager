@@ -1,15 +1,37 @@
-import { navigatorLock } from "@supabase/supabase-js";
+import { processLock } from "@supabase/supabase-js";
 import * as Sentry from "@sentry/nextjs";
 
 /**
- * Diagnostic wrapper around the exclusive browser lock every client-side
- * Supabase call (auth AND every .from()/.rpc() request, via _getAccessToken)
- * must acquire before it can run. Users report silent app freezes and the
- * only trace was a bare console warning ([[auth-lock-timeout-freeze]] in
- * project memory) — this makes the real frequency measurable (Sentry) and
- * the live symptom visible (a toast, see AuthLockToasts) instead of
- * guessing. Behavior is unchanged from the default `navigatorLock` — this
- * only observes timing around it.
+ * Wrapper around the lock every client-side Supabase call (auth AND every
+ * .from()/.rpc() request, via _getAccessToken) must acquire before it can
+ * run. Users reported silent app freezes — clicks doing nothing for up to
+ * 10s with no spinner/error — traced to Supabase's DEFAULT browser lock
+ * (`navigatorLock`, via the Web Locks API), which is EXCLUSIVE ACROSS EVERY
+ * TAB/INSTANCE sharing the same origin (a phone's installed PWA + the
+ * regular browser tab both count). Any one of them holding the lock — even
+ * for a quiet background heartbeat or the SDK's own auto-refresh — makes
+ * every OTHER instance's click sit queued for up to `lockAcquireTimeout`
+ * (10s default) before failing. Confirmed live in Sentry for 2+ months
+ * across 3 users, reproduced directly by the owner ([[auth-lock-timeout-
+ * freeze]] in project memory).
+ *
+ * FIX (2026-09-10): switched the underlying lock from `navigatorLock` to
+ * `processLock` — Supabase's own same-tab-only alternative (a plain in-
+ * memory promise chain, no `navigator.locks` at all). Each tab now manages
+ * its own session independently instead of waiting on every other open tab/
+ * instance, which removes the dominant cause of the freeze. Traded off: the
+ * cross-tab guarantee that only ONE tab ever refreshes the session token at
+ * once is gone — in the rare case of two instances of the same account
+ * racing a refresh at the exact same moment, one may need an extra silent
+ * re-fetch; it does not log the user out. Given this app is used mostly one
+ * device per person, this is the right trade for a confirmed, pervasive hang
+ * over a rare, self-healing edge case. Server-side clients are unaffected —
+ * `navigator.locks`/`processLock` are browser-only concepts, never used by
+ * `createSupabaseServerClient`/`createSupabaseRouteClient`.
+ *
+ * This wrapper's OWN job (Sentry reporting + the live-freeze toast via
+ * AuthLockToasts) is unchanged — still measures timing/timeouts around
+ * whichever lock function it delegates to.
  */
 export const AUTH_LOCK_EVENTS = {
   timeout: "biz:auth-lock-timeout", // gave up after lockAcquireTimeout, behind a real click
@@ -71,7 +93,7 @@ export async function instrumentedLock<R>(
   const interactive = recentClick && !recentVisibilityResume;
 
   try {
-    const result = await navigatorLock(name, acquireTimeout, fn);
+    const result = await processLock(name, acquireTimeout, fn);
     const waitedMs = Date.now() - startedAt;
     if (waitedMs > SLOW_THRESHOLD_MS) {
       const path = typeof window !== "undefined" ? window.location.pathname : undefined;
