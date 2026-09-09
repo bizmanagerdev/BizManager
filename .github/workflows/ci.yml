@@ -41,3 +41,52 @@ jobs:
 
       - name: Test
         run: npm test
+
+  e2e:
+    name: e2e (playwright)
+    runs-on: ubuntu-latest
+    # Separate job, not a step in `verify` — keeps the fast static/unit gate
+    # fast (its own comment above says "no secrets/DB needed" on purpose)
+    # while this runs in parallel with its own real (if slower) local stack.
+    # ubuntu-latest ships Docker pre-installed and running, so `supabase
+    # start` needs no setup here — unlike a Windows/WSL2 dev machine, where
+    # Docker Desktop's WSL2 backend can fail for reasons unrelated to this
+    # repo (confirmed while adding this: see e2e/README.md's own note this
+    # stack is local-only).
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start local Supabase stack
+        run: npx supabase start -o json > /tmp/supabase-status.json
+
+      - name: Write .env.test.local from the local stack's own printed credentials
+        run: |
+          echo "NEXT_PUBLIC_SUPABASE_URL=$(jq -r .API_URL /tmp/supabase-status.json)" >> .env.test.local
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$(jq -r .ANON_KEY /tmp/supabase-status.json)" >> .env.test.local
+          echo "SUPABASE_SERVICE_ROLE_KEY=$(jq -r .SERVICE_ROLE_KEY /tmp/supabase-status.json)" >> .env.test.local
+
+      - name: Install Playwright's chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        run: npm run test:e2e
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Stop local Supabase stack
+        if: always()
+        run: npx supabase stop
