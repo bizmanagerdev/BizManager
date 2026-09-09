@@ -32,7 +32,26 @@ import * as Sentry from "@sentry/nextjs";
  * This wrapper's OWN job (Sentry reporting + the live-freeze toast via
  * AuthLockToasts) is unchanged — still measures timing/timeouts around
  * whichever lock function it delegates to.
+ *
+ * FOLLOW-UP (2026-09-10, same day): a `processLock` timeout STILL happened
+ * live right after the switch above shipped (confirmed real — the error
+ * message format is unique to `processLock`, the old `navigatorLock` code
+ * cannot produce it, verified by reading @supabase/auth-js's source
+ * directly). Root cause is different from the cross-tab one: `processLock`
+ * queues behind whatever THIS SAME TAB's previous operation is (an earlier
+ * click, the SDK's own periodic auto-refresh timer, a realtime
+ * resubscribe-on-focus) — if THAT operation is genuinely slow (a mobile
+ * network round-trip to Supabase's Auth server having a bad moment, not a
+ * true deadlock), everything queued behind it can time out even though
+ * nothing is actually stuck — the front of the queue just hadn't finished
+ * yet. Added ONE retry with a shorter follow-up window: if the slow
+ * operation finishes a couple seconds after the first timeout (the common
+ * case for transient network slowness), the retry succeeds immediately
+ * instead of surfacing a failure. Worst case grows from 10s to ~14s; that's
+ * an acceptable trade for turning "reliably fails" into "usually recovers."
+ * Sentry/the toast only fire if BOTH attempts fail.
  */
+const RETRY_TIMEOUT_MS = 4000;
 export const AUTH_LOCK_EVENTS = {
   timeout: "biz:auth-lock-timeout", // gave up after lockAcquireTimeout, behind a real click
 } as const;
@@ -82,6 +101,10 @@ function emit(name: string, detail?: Record<string, unknown>): void {
   window.dispatchEvent(new CustomEvent(name, { detail }));
 }
 
+function isAcquireTimeoutError(err: unknown): boolean {
+  return Boolean((err as { isAcquireTimeout?: boolean } | null)?.isAcquireTimeout);
+}
+
 export async function instrumentedLock<R>(
   name: string,
   acquireTimeout: number,
@@ -91,31 +114,49 @@ export async function instrumentedLock<R>(
   const recentClick = startedAt - lastInteractionAt < INTERACTION_WINDOW_MS;
   const recentVisibilityResume = startedAt - lastVisibleAt < VISIBILITY_VETO_MS;
   const interactive = recentClick && !recentVisibilityResume;
+  const path = () => (typeof window !== "undefined" ? window.location.pathname : undefined);
 
   try {
     const result = await processLock(name, acquireTimeout, fn);
     const waitedMs = Date.now() - startedAt;
     if (waitedMs > SLOW_THRESHOLD_MS) {
-      const path = typeof window !== "undefined" ? window.location.pathname : undefined;
       Sentry.addBreadcrumb({
         category: "auth-lock",
         message: "lock acquired slowly",
         level: "warning",
-        data: { name, waitedMs, path, interactive },
+        data: { name, waitedMs, path: path(), interactive },
       });
     }
     return result;
-  } catch (err) {
-    const waitedMs = Date.now() - startedAt;
-    if ((err as { isAcquireTimeout?: boolean } | null)?.isAcquireTimeout) {
-      const path = typeof window !== "undefined" ? window.location.pathname : undefined;
-      Sentry.captureMessage("auth lock acquisition timed out", {
+  } catch (firstErr) {
+    if (!isAcquireTimeoutError(firstErr)) throw firstErr;
+
+    // The first attempt timed out waiting on whatever else in THIS tab is
+    // holding the lock (a slow auto-refresh, a realtime resubscribe) — `fn`
+    // was never invoked for that attempt, so retrying is safe (no risk of
+    // running the underlying operation twice). A short second window lets a
+    // transient slow moment finish and free the lock instead of failing
+    // outright the first time it takes a bit too long.
+    try {
+      const result = await processLock(name, RETRY_TIMEOUT_MS, fn);
+      Sentry.addBreadcrumb({
+        category: "auth-lock",
+        message: "lock acquired on retry after initial timeout",
         level: "warning",
-        tags: { area: "auth-lock", interactive: String(interactive) },
-        extra: { name, waitedMs, path },
+        data: { name, waitedMs: Date.now() - startedAt, path: path(), interactive },
       });
-      if (interactive) emit(AUTH_LOCK_EVENTS.timeout, { waitedMs });
+      return result;
+    } catch (secondErr) {
+      if (isAcquireTimeoutError(secondErr)) {
+        const waitedMs = Date.now() - startedAt;
+        Sentry.captureMessage("auth lock acquisition timed out", {
+          level: "warning",
+          tags: { area: "auth-lock", interactive: String(interactive) },
+          extra: { name, waitedMs, path: path(), retried: true },
+        });
+        if (interactive) emit(AUTH_LOCK_EVENTS.timeout, { waitedMs });
+      }
+      throw secondErr;
     }
-    throw err;
   }
 }
