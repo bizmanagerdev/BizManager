@@ -84,9 +84,19 @@ export type Movement = {
   onDelete?: () => void;
 };
 
+/** Pill when there's room; at a narrow container (a phone, or any width once
+ *  large-text mode eats into it — em-based container queries make those the
+ *  same signal) the pill shell drops and it's plain coloured text on its own
+ *  line instead, so the category word can never wrap mid-pill. */
 function CategoryChip({ label }: { label: string }) {
   return (
-    <span className="inline-flex items-center rounded-full border border-border bg-muted px-1.5 py-0 text-[0.6875rem] font-medium text-muted-foreground">
+    <span
+      className={cn(
+        "block text-[0.8125rem] font-medium text-secondary",
+        "@[24em]:inline-flex @[24em]:items-center @[24em]:rounded-full @[24em]:border @[24em]:border-border",
+        "@[24em]:bg-muted @[24em]:px-1.5 @[24em]:py-0 @[24em]:text-[0.6875rem] @[24em]:text-muted-foreground"
+      )}
+    >
       {label}
     </span>
   );
@@ -125,7 +135,7 @@ function AmountCell({ movement, side }: { movement: Movement; side: "in" | "out"
     return <span className="text-muted-foreground/40">—</span>;
   }
   return (
-    <span className={side === "in" ? "text-success" : "text-destructive"}>
+    <span className={cn("whitespace-nowrap", side === "in" ? "text-success" : "text-destructive")}>
       <LtrInline>{formatIls(Math.abs(movement.amount))}</LtrInline>
     </span>
   );
@@ -260,10 +270,7 @@ function StatusDot({ status }: { status: string }) {
 
 function ExpandedCard({ movement }: { movement: Movement }) {
   const recordedBy = movement.extras.find((extra) => extra.label === "נרשם")?.value ?? null;
-  const facts = movement.extras
-    .filter((extra) => extra.label !== "נרשם")
-    .map((extra) => `${extra.label}: ${extra.value}`)
-    .join(" · ");
+  const facts = movement.extras.filter((extra) => extra.label !== "נרשם");
   const files = movement.attachments.filter((attachment) => attachment.url);
 
   return (
@@ -279,7 +286,20 @@ function ExpandedCard({ movement }: { movement: Movement }) {
         ) : null}
       </div>
 
-      {facts ? <div className="break-words text-muted-foreground">{facts}</div> : null}
+      {/* A real <dl>, not "label: value · label: value" joined by a middle
+          dot — that join wraps mid-pair at large text and comes out as
+          nonsense. Each fact gets its own row instead; it can only wrap
+          within itself. */}
+      {facts.length > 0 ? (
+        <dl className="space-y-1">
+          {facts.map((extra) => (
+            <div key={extra.label} className="flex flex-wrap gap-x-1.5">
+              <dt className="shrink-0 text-muted-foreground">{extra.label}:</dt>
+              <dd className="min-w-0 break-words font-medium text-foreground">{extra.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
 
       {recordedBy || files.length > 0 ? (
         <div className="flex flex-wrap items-center justify-between gap-2 text-muted-foreground">
@@ -667,8 +687,11 @@ export default function ProjectMovements({
 
   return (
     <>
-      {/* Desktop: a table, because there's width for the columns. */}
-      <div className="hidden min-h-0 flex-1 overflow-y-auto lg:block">
+      {/* Desktop: a table, because there's width for the columns.
+          max-h capped here (not on an ancestor) so the row list's own
+          scroll budget never competes with however tall the action
+          buttons above it happen to be at a given text scale. */}
+      <div className="hidden max-h-[min(32rem,55dvh)] min-h-0 flex-1 overflow-y-auto lg:block">
         <table className="w-full border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-card">
             <tr className="border-b">
@@ -719,39 +742,26 @@ export default function ProjectMovements({
         </table>
       </div>
 
-      {/* Phone: one card per movement, same expander. The totals bar is
-          a sibling AFTER the scrolling list, not its last item — so it
-          stays put on the card's own footer instead of scrolling away
-          with the rows. */}
-      <div className="flex min-h-0 flex-1 flex-col lg:hidden">
-        <ul className="min-h-0 flex-1 divide-y overflow-y-auto">
-          {grouped
-            ? [
-                ...groups.map((group) => (
-                  <Fragment key={group.id}>
-                    {mobileGroupHeader(group)}
-                    {openGroups[group.id] ? group.rows.map(mobileRow) : null}
-                  </Fragment>
-                )),
-                ...other.map(mobileRow),
-              ]
-            : sorted.map(mobileRow)}
-        </ul>
-        <div className="flex items-center justify-between border-t-2 border-foreground/20 bg-muted px-1 py-2.5 text-sm font-semibold">
-          <span>סה״כ</span>
-          <span className="flex items-center gap-3">
-            <span className="text-secondary">
-              לחיוב לקוח <LtrInline>{formatIls(totals.billed)}</LtrInline>
-            </span>
-            <span className="text-success">
-              <LtrInline>+ {formatIls(totals.in)}</LtrInline>
-            </span>
-            <span className="text-destructive">
-              <LtrInline>- {formatIls(totals.out)}</LtrInline>
-            </span>
-          </span>
-        </div>
-      </div>
+      {/* Phone: one card per movement, same expander. No totals footer here —
+          סיכום כספי (the financial summary card elsewhere on this page)
+          already states חיובים ללקוח/הוצאות; repeating them here just ate
+          into the row list's already-tight share of a phone screen. max-h
+          capped directly on the list (not an ancestor) so its scroll budget
+          never competes with however tall the action buttons above it
+          happen to be at a given text scale. */}
+      <ul className="max-h-[min(32rem,55dvh)] min-h-0 flex-1 divide-y overflow-y-auto lg:hidden">
+        {grouped
+          ? [
+              ...groups.map((group) => (
+                <Fragment key={group.id}>
+                  {mobileGroupHeader(group)}
+                  {openGroups[group.id] ? group.rows.map(mobileRow) : null}
+                </Fragment>
+              )),
+              ...other.map(mobileRow),
+            ]
+          : sorted.map(mobileRow)}
+      </ul>
     </>
   );
 }

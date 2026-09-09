@@ -1536,26 +1536,26 @@ export default function ProjectTabsClient({
                 <Button
                   type="button"
                   size="sm"
-                  className="h-8 px-2 text-xs"
+                  className="h-auto min-h-8 whitespace-normal px-2 py-1.5 text-xs"
                   onClick={() => {
                     setEditingExpense(null);
                     setAddExpenseOpen(true);
                   }}
                 >
-                  <AddIcon className="h-4 w-4" />
+                  <AddIcon className="h-4 w-4 shrink-0" />
                   הוצאה
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-8 px-2 text-xs"
+                  className="h-auto min-h-8 whitespace-normal px-2 py-1.5 text-xs"
                   onClick={() => {
                     setEditingPayment(null);
                     setAddIncomeOpen(true);
                   }}
                 >
-                  <AddIcon className="h-4 w-4" />
+                  <AddIcon className="h-4 w-4 shrink-0" />
                   הכנסה
                 </Button>
                 {billedCustomerPrintRows.length > 0 ? (
@@ -1568,14 +1568,22 @@ export default function ProjectTabsClient({
                     }}
                   />
                 ) : null}
-                <div className="h-5 w-px shrink-0 bg-border" aria-hidden />
+                <div
+                  className="h-px w-full bg-border @[26em]:h-5 @[26em]:w-px @[26em]:shrink-0"
+                  aria-hidden
+                />
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button type="button" variant="outline" size="sm" className="h-8 gap-1 px-2 text-xs">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-auto min-h-8 gap-1 whitespace-normal px-2 py-1.5 text-xs"
+                    >
                       {ledgerPrefs.groupBy === "none"
                         ? "תצוגה"
                         : `קיבוץ: ${LEDGER_GROUP_BY_LABELS[ledgerPrefs.groupBy]}`}
-                      <ChevronDownIcon className="h-3.5 w-3.5" />
+                      <ChevronDownIcon className="h-3.5 w-3.5 shrink-0" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-52">
@@ -1697,12 +1705,28 @@ export default function ProjectTabsClient({
                 </span>
               </span>
             }
-            contentClassName="flex max-h-[32rem] flex-col text-sm"
-            action={<div className="hidden items-center gap-1.5 lg:flex">{movementActions}</div>}
+            // @container: lets this section's own children (the action row,
+            // ProjectMovements' rows/pills/totals) query THIS box's width in
+            // em rather than the viewport's — the same box reads as "narrow"
+            // on a small phone or a normal phone in large-text mode, so one
+            // rule handles both instead of a px breakpoint that only knows
+            // about the first.
+            // No max-height here — the action buttons and any error message
+            // take whatever height they need (they used to eat into the same
+            // budget as the row list, which is what squeezed the list to
+            // ~0 once the buttons stacked into a column at large text).
+            // ProjectMovements caps and scrolls only its OWN row list.
+            contentClassName="@container flex flex-col text-sm"
+            action={
+              <div className="@container hidden items-center gap-1.5 lg:flex">{movementActions}</div>
+            }
           >
-            {/* Phone: same actions as the header, wrapping onto as many lines
-                as they need instead of the header's fixed one-line row. */}
-            <div className="mb-2 flex flex-wrap items-center gap-1.5 lg:hidden">
+            {/* Phone: same actions as the header. One column (each button
+                full width) until the container actually has the room for a
+                row — a phone in large-text mode and a genuinely narrow phone
+                are the same "not enough room per character" situation, so
+                the same query handles both. */}
+            <div className="mb-2 flex flex-col items-stretch gap-1.5 @[26em]:flex-row @[26em]:flex-wrap @[26em]:items-center lg:hidden">
               {movementActions}
             </div>
             {moneyError ? (

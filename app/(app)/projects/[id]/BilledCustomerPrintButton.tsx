@@ -258,12 +258,16 @@ export default function BilledCustomerPrintButton({ data }: { data: BilledPrintD
       type="button"
       size="sm"
       variant="outline"
-      className="h-8 px-2 text-xs"
+      className="h-auto min-h-8 whitespace-normal px-2 py-1.5 text-xs"
       onClick={() => void handlePdf()}
       disabled={building}
       title="שיתוף לחיוב לקוח (PDF)"
     >
-      {building ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : <ShareIcon className="h-4 w-4" />}
+      {building ? (
+        <SpinnerIcon className="h-4 w-4 shrink-0 animate-spin" />
+      ) : (
+        <ShareIcon className="h-4 w-4 shrink-0" />
+      )}
       לחיוב לקוח
     </Button>
   );
