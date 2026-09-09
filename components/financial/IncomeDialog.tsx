@@ -14,7 +14,7 @@
 // count — which steps exist depends on the domain and payment method chosen,
 // same reasoning as ExpenseDialog's `expressSteps`.
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { toHebrewError } from "@/lib/error-messages";
@@ -138,6 +138,7 @@ export function IncomeDialog({
   onSaved?: () => void;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const isSourceLocked = Boolean(lockedPropertyId);
   const [accountsList, setAccountsList] = useState<Account[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -424,7 +425,7 @@ export function IncomeDialog({
             });
             const errJson = await res.json().catch(() => ({}));
             if (!res.ok) return { ok: false, error: toHebrewError(errJson?.error, "ביטול נכשל.") };
-            router.refresh();
+            startTransition(() => { router.refresh(); });
             return { ok: true };
           },
         });

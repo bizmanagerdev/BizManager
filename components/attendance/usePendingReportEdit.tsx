@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { SpinnerIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,7 @@ function isoToLocal(iso: string | null | undefined) {
  */
 export function usePendingReportEdit(report: EditableReport, mode: "self" | "admin" = "self") {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [editing, setEditing] = useState(false);
   const [startLocal, setStartLocal] = useState("");
   const [endLocal, setEndLocal] = useState("");
@@ -94,7 +95,9 @@ export function usePendingReportEdit(report: EditableReport, mode: "self" | "adm
           const json = (await response.json().catch(() => ({}))) as { error?: string };
           if (!response.ok) return { ok: false, error: toHebrewError(json.error ?? "", "עדכון הדיווח נכשל.") };
         }
-        router.refresh();
+        startTransition(() => {
+          router.refresh();
+        });
         return { ok: true };
       },
     });

@@ -1,7 +1,7 @@
 "use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -607,6 +607,7 @@ function BoardColumn({
 
 export default function TasksPageClient(props: Props) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const searchParams = useSearchParams();
   const canSeeAll = props.canSeeAll ?? false;
 
@@ -1182,7 +1183,7 @@ export default function TasksPageClient(props: Props) {
       }
       // Silently reconciles the optimistic rows with the real server ones (ids,
       // joined names, server-computed sort_order) — no toast for the happy path.
-      if (created > 0 || queued > 0) router.refresh();
+      if (created > 0 || queued > 0) startTransition(() => { router.refresh(); });
     } catch (error: unknown) {
       toast.error(t(tasksDict, props.locale, "toastErrorCreateTask"), { description: toHebrewError(error, "") });
     } finally {
@@ -1689,7 +1690,9 @@ export default function TasksPageClient(props: Props) {
               ];
             });
           }
-          router.refresh();
+          startTransition(() => {
+            router.refresh();
+          });
         }}
       />
 

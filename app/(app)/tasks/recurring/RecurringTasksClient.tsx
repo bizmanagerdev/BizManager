@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -122,6 +122,7 @@ function templatePatchFromForm(f: FormState): Partial<TemplateItem> {
 
 export default function RecurringTasksClient(props: Props) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const templates = useUndoOverlay(props.templates, (t) => t.id, "recurring-task-template");
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -224,7 +225,9 @@ export default function RecurringTasksClient(props: Props) {
           });
           const json = await res.json().catch(() => ({}));
           if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "שגיאה בשמירת משימה קבועה") };
-          router.refresh();
+          startTransition(() => {
+            router.refresh();
+          });
           return { ok: true };
         },
       });
@@ -245,7 +248,9 @@ export default function RecurringTasksClient(props: Props) {
           return;
         }
         setOpen(false);
-        router.refresh();
+        startTransition(() => {
+          router.refresh();
+        });
         const newId = typeof json?.id === "string" ? json.id : undefined;
         if (!newId) {
           toast.success("המשימה הקבועה נשמרה");
@@ -257,7 +262,9 @@ export default function RecurringTasksClient(props: Props) {
           message: "המשימה הקבועה נשמרה",
           onUndo: async () => {
             const del = await deleteRecurringTaskTemplate(newId);
-            router.refresh();
+            startTransition(() => {
+              router.refresh();
+            });
             return del.ok ? { ok: true } : { ok: false, error: toHebrewError(del.error, "ביטול נכשל.") };
           },
         });
@@ -276,7 +283,9 @@ export default function RecurringTasksClient(props: Props) {
       onCommit: async () => {
         const result = await deleteRecurringTaskTemplate(id);
         if (!result.ok) return { ok: false, error: toHebrewError(result.error, "שגיאה במחיקת משימה קבועה") };
-        router.refresh();
+        startTransition(() => {
+          router.refresh();
+        });
         return { ok: true };
       },
     });

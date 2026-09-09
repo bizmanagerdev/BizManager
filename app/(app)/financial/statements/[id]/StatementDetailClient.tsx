@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -154,6 +154,7 @@ export default function StatementDetailClient({
   cardAccountDefaults: Record<string, string>;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [rows, setRows] = useState<StatementRowView[]>(initialRows);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<StatementRowView | null>(null);
@@ -330,7 +331,9 @@ export default function StatementDetailClient({
       setCardCharges((prev) => [...prev.filter((c) => c.cardLabel !== chargeCardLabel), saved]);
       setChargeCardLabel(null);
       setChargeForm(null);
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch {
       setChargeError("שמירת החיוב נכשלה.");
     } finally {
@@ -350,7 +353,9 @@ export default function StatementDetailClient({
       }
       setCardCharges((prev) => prev.filter((c) => c.id !== chargeToDelete.id));
       setChargeToDelete(null);
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch {
       setChargeDeleteError("מחיקת החיוב נכשלה.");
     } finally {
@@ -381,7 +386,9 @@ export default function StatementDetailClient({
       const movedIds = new Set(mergeGroup.rowIds);
       setRows((prev) => prev.map((r) => (movedIds.has(r.id) ? { ...r, cardLabel: mergeTarget } : r)));
       setMergeGroup(null);
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch {
       setMergeError("מיזוג הכרטיס נכשל.");
     } finally {
@@ -476,7 +483,9 @@ export default function StatementDetailClient({
       );
       setIncomeOpen(false);
       setIncomeForm(null);
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch {
       setIncomeError("יצירת ההכנסה נכשלה.");
     } finally {
@@ -673,7 +682,9 @@ export default function StatementDetailClient({
         setRowError(toHebrewError(data.error, "הקישור נכשל."));
         return;
       }
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch {
       setRows(prev);
       setRowError("הקישור נכשל.");
@@ -788,7 +799,9 @@ export default function StatementDetailClient({
       }
       setMarkedDone(next);
       // Invalidate the cached list route so the "בוצע" status shows there too.
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch {
       setCreateError("עדכון הסטטוס נכשל.");
     } finally {
@@ -822,7 +835,9 @@ export default function StatementDetailClient({
       if (data.errors && data.errors.length) parts.push(`${data.errors.length} שגיאות`);
       setCreateNotice(parts.join(" · "));
       setActionDialogOpen(false);
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch {
       setCreateError("יצירת ההוצאות נכשלה.");
     } finally {

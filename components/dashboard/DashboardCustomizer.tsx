@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   DndContext,
@@ -126,6 +126,7 @@ export default function DashboardCustomizer({
   initialPrefs: DashboardPrefs | null;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [items, setItems] = useState<WidgetMeta[]>(() => orderedCatalog(role, initialPrefs));
   const [hidden, setHidden] = useState<Set<WidgetId>>(() => new Set(initialPrefs?.hidden ?? []));
   const [saving, setSaving] = useState(false);
@@ -152,7 +153,7 @@ export default function DashboardCustomizer({
         if (data.synced === false) {
           toast.warning("השינויים נשמרו מקומית אך טרם סונכרנו לחשבון");
         }
-        router.refresh();
+        startTransition(() => { router.refresh(); });
       } catch {
         toast.error("שמירת ההגדרות נכשלה, נסו שוב");
       } finally {

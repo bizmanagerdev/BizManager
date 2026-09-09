@@ -358,7 +358,9 @@ export default function PendingReportCard({
       onCommit: async () => {
         const result = await reopenPhoneReport(reportId);
         if (!result.ok) return { ok: false, error: toHebrewError(result.error, "פתיחת המשמרת מחדש נכשלה.") };
-        router.refresh();
+        startTransition(() => {
+          router.refresh();
+        });
         return { ok: true };
       },
     });
@@ -376,7 +378,9 @@ export default function PendingReportCard({
       onCommit: async () => {
         const result = await rejectPhoneReport(reportId, reasonSnapshot);
         if (!result.ok) return { ok: false, error: toHebrewError(result.error, "דחיית הדיווח נכשלה.") };
-        router.refresh();
+        startTransition(() => {
+          router.refresh();
+        });
         return { ok: true };
       },
     });

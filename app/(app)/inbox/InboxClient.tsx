@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CashIcon, CheckIcon, CheckboxCheckedIcon, ChevronLeftIcon, ClockIcon, CoinsIcon, NotificationIcon, ProductIcon, ProjectIcon, ReceiptIcon, SettingsIcon, SuccessIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
@@ -126,6 +126,7 @@ export default function InboxClient({
   locale: Locale;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [bucket, setBucket] = useState<string>("all");
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [snoozeOpen, setSnoozeOpen] = useState<string | null>(null);
@@ -193,7 +194,9 @@ export default function InboxClient({
         const json = (await res.json().catch(() => ({}))) as { error?: string };
         if (!res.ok) return { ok: false, error: toHebrewError(json.error, t(inboxDict, locale, "toastActionFailed")) };
         refreshAlerts();
-        router.refresh();
+        startTransition(() => {
+          router.refresh();
+        });
         return { ok: true };
       },
     });
@@ -205,7 +208,9 @@ export default function InboxClient({
       const supabase = createSupabaseBrowserClient();
       const { error } = await supabase.rpc("set_my_inbox_seen_at", { p_at: null });
       if (error) throw new Error(error.message);
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch (err) {
       toast.error(toHebrewError(err, t(inboxDict, locale, "toastActionFailed")));
     } finally {
@@ -220,7 +225,9 @@ export default function InboxClient({
       if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error);
       toast.success(t(inboxDict, locale, "toastSynced"));
       refreshAlerts();
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch (err) {
       toast.error(toHebrewError(err, t(inboxDict, locale, "toastSyncFailed")));
     } finally {
@@ -496,7 +503,9 @@ export default function InboxClient({
         onSaved={() => {
           setEditing(null);
           refreshAlerts();
-          router.refresh();
+          startTransition(() => {
+            router.refresh();
+          });
         }}
       />
     </div>

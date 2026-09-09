@@ -190,7 +190,9 @@ function AttendanceLogBody({
         : undefined,
     });
     onSaved?.();
-    router.refresh();
+    startTransition(() => {
+      router.refresh();
+    });
     onClose();
   }
 
@@ -237,7 +239,9 @@ function AttendanceLogBody({
         const result = await closePhoneReport(reportId, d, noteSnapshot);
         if (!result.ok) return { ok: false, error: toHebrewError(result.error, t(profileDict, locale, "clockOutReportFailed")) };
         onSaved?.();
-        router.refresh();
+        startTransition(() => {
+          router.refresh();
+        });
         return { ok: true };
       },
     });
@@ -265,7 +269,9 @@ function AttendanceLogBody({
         const result = await updatePhoneReportClockIn(reportId, d);
         if (!result.ok) return { ok: false, error: toHebrewError(result.error, t(profileDict, locale, "updateClockInFailed")) };
         onSaved?.();
-        router.refresh();
+        startTransition(() => {
+          router.refresh();
+        });
         return { ok: true };
       },
     });

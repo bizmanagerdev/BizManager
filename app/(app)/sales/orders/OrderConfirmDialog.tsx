@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { BackspaceIcon, LocationIcon, SpinnerIcon, WarningIcon } from "@/components/ui/icons";
 import * as Sentry from "@sentry/nextjs";
@@ -161,6 +161,7 @@ export default function OrderConfirmDialog({
   authorName?: string | null;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [stepId, setStepId] = useState("items");
   const [paidNow, setPaidNow] = useState(false);
@@ -620,7 +621,9 @@ export default function OrderConfirmDialog({
       }
 
       setOpen(false);
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch (err: unknown) {
       Sentry.captureException(err, { tags: { area: "order-confirm" } });
       setError(toHebrewError(err, "שגיאה לא ידועה"));

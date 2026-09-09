@@ -3,7 +3,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { resyncAlerts } from "@/lib/ui/alerts-refresh";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DeleteIcon, DocumentIcon, EditIcon, MoreIcon, NotificationIcon, PrintIcon, ShareIcon } from "@/components/ui/icons";
 import { HeaderActionsMenu } from "@/components/layout/HeaderActionsMenu";
@@ -201,6 +201,7 @@ export default function ProjectDetailsActions({
   layout?: "inline" | "menu";
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [editOpen, setEditOpen] = useState(false);
   // Only used by layout="menu" — the ⋮ items drive this instead of the
   // component's own trigger.
@@ -265,7 +266,9 @@ export default function ProjectDetailsActions({
         throw new Error(typeof json?.error === "string" ? json.error : "מחיקת הקובץ נכשלה.");
       }
       setExistingDocuments((prev) => prev.filter((document) => document.document_id !== documentId));
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch (error: unknown) {
       setDocumentActionError(toHebrewError(error, "שגיאה לא ידועה"));
     } finally {
@@ -335,7 +338,9 @@ export default function ProjectDetailsActions({
       setAttachmentFiles([]);
       // Pricing / marking ללא חיוב resolves the "closed unbilled" alert — resync now.
       void resyncAlerts();
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch (error: unknown) {
       setEditError(toHebrewError(error, "שגיאה לא ידועה"));
     } finally {

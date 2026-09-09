@@ -543,7 +543,7 @@ export default function ActivityClient({
   // Safety net: refresh the server data on an interval so the feed stays current
   // even if realtime is ever blocked — no manual refresh required.
   useEffect(() => {
-    const id = setInterval(() => router.refresh(), 15000);
+    const id = setInterval(() => startTransition(() => { router.refresh(); }), 15000);
     return () => clearInterval(id);
   }, [router]);
 

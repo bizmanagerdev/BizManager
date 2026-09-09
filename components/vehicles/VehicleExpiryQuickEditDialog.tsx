@@ -5,7 +5,7 @@
 // VehicleInput under the hood (updateVehicle overwrites every field), so the
 // other fields are carried over unchanged from the vehicle's current values.
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { DateInput } from "@/components/ui/date-input";
@@ -54,6 +54,7 @@ export function VehicleExpiryQuickEditDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [date, setDate] = useState("");
   const [sourceTaskId, setSourceTaskId] = useState("");
   // Which vehicle+kind `date`/`sourceTaskId` currently reflect — re-read from
@@ -86,7 +87,7 @@ export function VehicleExpiryQuickEditDialog({
       onCommit: async () => {
         const result = await updateVehicle(vehicle.tagId, form);
         if (result.ok) {
-          router.refresh();
+          startTransition(() => { router.refresh(); });
           return { ok: true };
         }
         return { ok: false, error: result.error };

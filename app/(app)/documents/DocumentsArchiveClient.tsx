@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DocumentIcon, ExternalLinkIcon, FolderIcon, ImageIcon, LayersIcon, ProductIcon, SearchIcon, TagIcon, UploadIcon } from "@/components/ui/icons";
 import { DeleteButton } from "@/components/ui/icon-button";
@@ -230,6 +230,7 @@ export default function DocumentsArchiveClient({
   isTruncated: boolean;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const documents = useUndoOverlay(documentsProp, (d) => d.id, "document");
   const [query, setQuery] = useState(initialFilters.q);
   const [businessDomain, setBusinessDomain] = useState(initialFilters.business_domain);
@@ -468,7 +469,7 @@ export default function DocumentsArchiveClient({
       onCommit: async () => {
         const result = await updateDocumentTag(target.id, nextValue);
         if (!result.ok) return { ok: false, error: toHebrewError(result.error, "עדכון הקטגוריה נכשל.") };
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });
@@ -500,7 +501,7 @@ export default function DocumentsArchiveClient({
         });
         const json = await response.json().catch(() => ({}));
         if (!response.ok) return { ok: false, error: toHebrewError(json?.error, "עדכון התחום נכשל.") };
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });
@@ -523,7 +524,7 @@ export default function DocumentsArchiveClient({
         });
         const json = await response.json().catch(() => ({}));
         if (!response.ok) return { ok: false, error: toHebrewError(json?.error, "מחיקת המסמך נכשלה.") };
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });
@@ -1010,7 +1011,7 @@ export default function DocumentsArchiveClient({
         defaultDomain={businessDomain}
         defaultProjectId={initialFilters.project_id}
         defaultPropertyId={initialFilters.property_id}
-        onUploaded={() => router.refresh()}
+        onUploaded={() => startTransition(() => { router.refresh(); })}
       />
 
       <FormDialog

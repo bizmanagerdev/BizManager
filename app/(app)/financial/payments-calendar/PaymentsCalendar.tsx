@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
 import { AddIcon, AddReminderIcon, CalendarIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ExternalLinkIcon, ListIcon, SplitIcon, WarningIcon } from "@/components/ui/icons";
 import { DeleteButton } from "@/components/ui/icon-button";
@@ -133,6 +133,7 @@ type Props = {
 
 export default function PaymentsCalendar({ items: itemsProp, todayIso, projects, properties, orders, accounts }: Props) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const items = useUndoOverlay(itemsProp, (i) => i.id, "payment-calendar-item");
   const [showPaid, setShowPaid] = useState(false);
   const [recurringOnly, setRecurringOnly] = useState(false);
@@ -190,7 +191,7 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
       return i.stage === "posted" ? sum : sum + i.amount;
     }, 0);
 
-  const afterMutation = () => router.refresh();
+  const afterMutation = () => startTransition(() => router.refresh());
 
   // Dark "total to pay this month" pill shown in the month-nav row (both views).
   const totalPill = (m: Date) => (

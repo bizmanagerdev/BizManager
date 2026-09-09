@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AddIcon, CalculatorIcon, CalendarIcon, RecurringIcon, RefreshIcon } from "@/components/ui/icons";
@@ -48,6 +48,7 @@ export default function PaymentsHubClient({
   expenseMissingSchema,
 }: Props) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [activeTab, setActiveTab] = useState<TabKey>("calendar");
   const [newTemplateOpen, setNewTemplateOpen] = useState(false);
   const [cashOpen, setCashOpen] = useState(false);
@@ -62,7 +63,9 @@ export default function PaymentsHubClient({
         toast.error("שגיאה ביצירת הוצאות קבועות", { description: toHebrewError(json?.error, "") });
         return;
       }
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
       toast.success("המחזור נוצר", {
         description: `נוצרו ${typeof json?.createdCount === "number" ? json.createdCount : 0} הוצאות.`,
       });
@@ -153,7 +156,9 @@ export default function PaymentsHubClient({
         recurringProperties={properties}
         onSaved={() => {
           setNewTemplateOpen(false);
-          router.refresh();
+          startTransition(() => {
+            router.refresh();
+          });
         }}
       />
     </Tabs>

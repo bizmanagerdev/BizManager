@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { CONNECTION_EVENTS } from "@/lib/offline-queue";
@@ -16,6 +16,7 @@ type ConnDetail = { label?: string; count?: number; reason?: string };
  */
 export default function ConnectionToasts() {
   const router = useRouter();
+  const [, startTransition] = useTransition();
 
   useEffect(() => {
     const onSlow = (e: Event) => {
@@ -44,7 +45,7 @@ export default function ConnectionToasts() {
         id: "conn-synced",
       });
       // Pull the freshly-synced records into the current view.
-      router.refresh();
+      startTransition(() => { router.refresh(); });
     };
 
     const onFailed = (e: Event) => {
@@ -66,7 +67,7 @@ export default function ConnectionToasts() {
       window.removeEventListener(CONNECTION_EVENTS.synced, onSynced);
       window.removeEventListener(CONNECTION_EVENTS.failed, onFailed);
     };
-  }, [router]);
+  }, [router, startTransition]);
 
   return null;
 }

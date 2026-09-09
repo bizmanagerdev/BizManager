@@ -2,7 +2,7 @@
 
 // Lazy-loaded heavy financial-entry dialogs, extracted from ProjectTabsClient so
 // their code only downloads when a user actually opens "add expense"/"add income".
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,7 @@ export function AddIncomeDialog({
   onSaved: (saved: PaymentRow) => void;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const isEditing = Boolean(editingPayment);
   const [submitting, setSubmitting] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
@@ -214,7 +215,7 @@ export function AddIncomeDialog({
             });
             const json = await res.json().catch(() => ({}));
             if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "ביטול נכשל.") };
-            router.refresh();
+            startTransition(() => { router.refresh(); });
             return { ok: true };
           },
         });

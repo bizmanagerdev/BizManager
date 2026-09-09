@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { PhoneIcon } from "@/components/ui/icons";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -96,6 +96,7 @@ export default function LogCommunicationButton({
   const [assignee, setAssignee] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
 
   useEffect(() => {
     if (!open) return;
@@ -152,7 +153,7 @@ export default function LogCommunicationButton({
       }
       onSaved?.();
       setOpen(false);
-      router.refresh();
+      startTransition(() => { router.refresh(); });
       const newId = (result.data as { id?: string } | null)?.id;
       if (!newId) {
         toast.success("השיחה תועדה.");
@@ -168,7 +169,7 @@ export default function LogCommunicationButton({
               body: JSON.stringify({ id: newId }),
             });
             const json = await res.json().catch(() => ({}));
-            router.refresh();
+            startTransition(() => { router.refresh(); });
             if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "ביטול נכשל.") };
             return { ok: true };
           },

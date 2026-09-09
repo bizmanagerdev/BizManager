@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AddIcon, CalendarIcon, CheckboxUncheckedIcon, SuccessIcon } from "@/components/ui/icons";
@@ -173,6 +173,7 @@ export default function TodayScheduleCard({
   const todayLabel = useSyncExternalStore(subscribe, () => formatToday(new Date(), locale), () => initialDate);
   const KIND_META = kindMeta(locale);
   const router = useRouter();
+  const [, startTransition] = useTransition();
 
   const { todayEntries: rawTodayEntries, ongoing } = useMemo(() => {
     const now = new Date();
@@ -230,7 +231,7 @@ export default function TodayScheduleCard({
           if (!res.ok) return { ok: false, error: toHebrewError(json.error, t(dashboardDict, locale, "actionFailed")) };
         }
         refreshAlerts();
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });

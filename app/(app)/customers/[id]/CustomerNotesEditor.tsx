@@ -1,7 +1,7 @@
 "use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,6 +20,7 @@ export default function CustomerNotesEditor({
   initialNotes: string | null;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [editing, setEditing] = useState(false);
   const [notes, setNotes] = useState(initialNotes);
   const [draft, setDraft] = useState(initialNotes ?? "");
@@ -42,7 +43,7 @@ export default function CustomerNotesEditor({
         if (!result.queued && !result.ok) {
           return { ok: false, error: toHebrewError(result.error, "שמירת ההערות נכשלה.") };
         }
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });

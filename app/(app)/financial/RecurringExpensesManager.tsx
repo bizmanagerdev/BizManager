@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AddDateIcon, AddReminderIcon, CheckIcon, RecurringIcon, SpinnerIcon } from "@/components/ui/icons";
@@ -170,6 +170,7 @@ function secondaryLines(t: RecurringExpenseTemplateItem): string[] {
 
 export default function RecurringExpensesManager(props: Props) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const templates = useUndoOverlay(props.templates, (t) => t.id, "recurring-expense-template");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<RecurringExpenseTemplateItem | null>(null);
@@ -227,7 +228,7 @@ export default function RecurringExpensesManager(props: Props) {
         return;
       }
       setBackfillTarget(null);
-      router.refresh();
+      startTransition(() => { router.refresh(); });
       const created = Number(json.created) || 0;
       toast.success(created > 0 ? `נוצרו ${created} חיובים חסרים` : "לא נמצאו חיובים חסרים");
     } catch (error: unknown) {
@@ -285,7 +286,7 @@ export default function RecurringExpensesManager(props: Props) {
       onCommit: async () => {
         const result = await deleteRecurringExpenseTemplate(id);
         if (!result.ok) return { ok: false, error: toHebrewError(result.error, "מחיקת ההוצאה הקבועה נכשלה.") };
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });
@@ -546,7 +547,7 @@ export default function RecurringExpensesManager(props: Props) {
         recurringProperties={props.properties}
         onSaved={() => {
           setDialogOpen(false);
-          router.refresh();
+          startTransition(() => { router.refresh(); });
         }}
       />
 

@@ -1,7 +1,7 @@
 "use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { DeleteButton } from "@/components/ui/icon-button";
@@ -22,6 +22,7 @@ export default function DeleteCustomerButton({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [, startTransition] = useTransition();
 
   function openConfirm() {
     setOpen(true);
@@ -40,7 +41,7 @@ export default function DeleteCustomerButton({
         if (!result.queued && !result.ok) return { ok: false, error: toHebrewError(result.error, "מחיקת לקוח נכשלה.") };
         const json = result.queued ? null : (result.data as { ok?: boolean } | null);
         if (json && !json.ok) return { ok: false, error: "מחיקת לקוח נכשלה." };
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });

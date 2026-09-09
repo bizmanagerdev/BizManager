@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChatIcon, CommentIcon, MailIcon, MoreIcon, PhoneIcon, UsersIcon } from "@/components/ui/icons";
@@ -64,6 +64,7 @@ const GRID = "grid grid-cols-[1.5rem_minmax(9rem,1.4fr)_7rem_4.5rem_minmax(0,3fr
 
 export default function CommunicationsClient({ logs: logsProp }: { logs: CommunicationLogWithCustomer[] }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const logs = useUndoOverlay(logsProp, (l) => l.id, "communication");
   const [topic, setTopic] = useState("all");
   const [channel, setChannel] = useState("all");
@@ -109,13 +110,13 @@ export default function CommunicationsClient({ logs: logsProp }: { logs: Communi
         <div className="text-sm text-muted-foreground">{filtered.length} פניות</div>
       </div>
 
-      <AddCollectionEntryDialog mode="call" open={addCallOpen} onOpenChange={setAddCallOpen} onSaved={() => router.refresh()} />
+      <AddCollectionEntryDialog mode="call" open={addCallOpen} onOpenChange={setAddCallOpen} onSaved={() => startTransition(() => { router.refresh(); })} />
       {editing ? (
         <EditCommunicationDialog
           key={editing.id}
           log={editing}
           onClose={() => setEditing(null)}
-          onSaved={() => router.refresh()}
+          onSaved={() => startTransition(() => { router.refresh(); })}
         />
       ) : null}
 

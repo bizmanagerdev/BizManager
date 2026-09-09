@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AddIcon, AttachIcon, ChevronLeftIcon, ReceiptIcon } from "@/components/ui/icons";
@@ -20,6 +20,7 @@ import { scheduleDeferredDelete } from "@/lib/undo-engine";
 // ── Main ────────────────────────────────────────────────────────────────────
 export default function LoansClient({ loans: loansProp, summary }: { loans: Loan[]; summary: LoansSummary }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const loans = useUndoOverlay(loansProp, (l) => l.id, "loan");
   const searchParams = useSearchParams();
   const [filter, setFilter] = useState<"all" | "taken" | "given">("all");
@@ -81,7 +82,7 @@ export default function LoansClient({ loans: loansProp, summary }: { loans: Loan
       onCommit: async () => {
         const res = await deleteLoan(target.id);
         if (!res.ok) return { ok: false, error: res.error };
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });

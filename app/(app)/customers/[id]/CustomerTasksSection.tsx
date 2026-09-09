@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AddIcon, LockIcon, NotificationIcon, TaskIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
@@ -45,6 +45,7 @@ export default function CustomerTasksSection({
   const router = useRouter();
   const [createOpen, setCreateOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
 
   const today = new Date().toISOString().slice(0, 10);
   // A single-option list so the dialog's customer picker shows this customer.
@@ -74,7 +75,7 @@ export default function CustomerTasksSection({
         presetCustomerId={customerId}
         currentUserId={currentUserId}
         wizard
-        onSaved={() => router.refresh()}
+        onSaved={() => startTransition(() => { router.refresh(); })}
       />
       <TaskUpsertDialog
         open={editId !== null}
@@ -86,7 +87,7 @@ export default function CustomerTasksSection({
         users={users}
         customers={customerOptions}
         currentUserId={currentUserId}
-        onSaved={() => router.refresh()}
+        onSaved={() => startTransition(() => { router.refresh(); })}
       />
     </>
   );

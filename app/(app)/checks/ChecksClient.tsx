@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AttachIcon, PhoneIcon } from "@/components/ui/icons";
 import { NavLink } from "@/components/NavLink";
@@ -74,6 +74,7 @@ function SummaryCard({
 
 export default function ChecksClient({ checks: checksProp }: Props) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const searchParams = useSearchParams();
   const checks = useUndoOverlay(checksProp, (c) => c.payment_id, "check");
   const [filter, setFilter] = useState<FilterKey>("open");
@@ -171,7 +172,7 @@ export default function ChecksClient({ checks: checksProp }: Props) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id: paymentId, collected: cleared }),
       });
-      if (res.ok) router.refresh();
+      if (res.ok) startTransition(() => { router.refresh(); });
     } finally {
       setBusyId(null);
     }
@@ -197,7 +198,7 @@ export default function ChecksClient({ checks: checksProp }: Props) {
         });
         const json = await res.json().catch(() => ({}));
         if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "מחיקת הצ׳ק נכשלה.") };
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });
@@ -528,6 +529,7 @@ function EditCheckDialog({
   onSaved: () => void;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [amount, setAmount] = useState(String(check.amount));
   const [dueDate, setDueDate] = useState(check.due_date ?? "");
   const [checkNumber, setCheckNumber] = useState(check.check_number ?? "");
@@ -594,7 +596,7 @@ function EditCheckDialog({
         if (filesToUpload.length > 0) {
           await uploadCheckPhotos(check.payment_id, filesToUpload);
         }
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });

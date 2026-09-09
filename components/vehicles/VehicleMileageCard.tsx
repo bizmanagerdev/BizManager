@@ -12,7 +12,7 @@
 // or test-task completion, the monthly-average/service-progress meter, the
 // lease-cap meter, and the low-usage flag are explicitly deferred.
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AddIcon, GaugeIcon } from "@/components/ui/icons";
 import { FormDialog } from "@/components/ui/form-dialog";
@@ -43,6 +43,7 @@ function recencyLabel(dateStr: string): { label: string; stale: boolean } {
 
 export default function VehicleMileageCard({ vehicle }: { vehicle: Vehicle }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
 
@@ -66,7 +67,7 @@ export default function VehicleMileageCard({ vehicle }: { vehicle: Vehicle }) {
       onCommit: async () => {
         const result = await addVehicleMileageReading(vehicle.tagId, reading);
         if (result.ok) {
-          router.refresh();
+          startTransition(() => { router.refresh(); });
           return { ok: true };
         }
         return { ok: false, error: result.error };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ export default function PaymentPromises({ customerId, promises: promisesProp }: 
   const [date, setDate] = useState("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
+  const [, startTransition] = useTransition();
 
   async function add() {
     if (busy) return;
@@ -52,7 +53,7 @@ export default function PaymentPromises({ customerId, promises: promisesProp }: 
       setAmount("");
       setDate("");
       setNotes("");
-      router.refresh();
+      startTransition(() => { router.refresh(); });
       const newId = json.id;
       if (!newId) {
         toast.success("ההבטחה נוספה.");
@@ -63,7 +64,7 @@ export default function PaymentPromises({ customerId, promises: promisesProp }: 
           message: "ההבטחה נוספה.",
           onUndo: async () => {
             const result = await updatePaymentPromise(newId, { status: "cancelled" });
-            router.refresh();
+            startTransition(() => { router.refresh(); });
             if (!result.ok) return { ok: false, error: toHebrewError(result.error, "ביטול נכשל.") };
             return { ok: true };
           },
@@ -85,7 +86,7 @@ export default function PaymentPromises({ customerId, promises: promisesProp }: 
       onCommit: async () => {
         const result = await updatePaymentPromise(id, { status });
         if (!result.ok) return { ok: false, error: toHebrewError(result.error, "עדכון נכשל.") };
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });

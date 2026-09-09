@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { PhoneIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
@@ -34,12 +34,13 @@ export default function CustomerCollectionButton({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [, startTransition] = useTransition();
 
   function handleOpenChange(next: boolean) {
     setOpen(next);
     if (!next && dirty) {
       setDirty(false);
-      if (refreshOnClose) router.refresh();
+      if (refreshOnClose) startTransition(() => { router.refresh(); });
     }
   }
 

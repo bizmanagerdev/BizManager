@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CoinsIcon, PhoneIcon, SuccessIcon } from "@/components/ui/icons";
@@ -43,6 +43,7 @@ const SHOWN_LIMIT = 8;
  */
 export default function CollectionsCard({ summary, locale }: { summary: CollectionsSummary; locale: Locale }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [collectedIds, setCollectedIds] = useState<Set<string>>(() => new Set());
   // Late is the louder of the two, so it opens on the list that has something —
   // but never jumps you to an empty tab.
@@ -86,7 +87,7 @@ export default function CollectionsCard({ summary, locale }: { summary: Collecti
         });
         const json = (await res.json().catch(() => ({}))) as { error?: string };
         if (!res.ok) return { ok: false, error: toHebrewError(json.error, t(dashboardDict, locale, "markCollectedError")) };
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });

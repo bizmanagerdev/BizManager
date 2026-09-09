@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AiIcon, ChevronDownIcon, CloseIcon } from "@/components/ui/icons";
@@ -73,6 +73,7 @@ export default function MissedDigestCell({
   locale: Locale;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [items, setItems] = useState<AuditFeedItem[]>(initialItems);
   const [dismissed, setDismissed] = useState(false);
   // Which topics are expanded — none to begin with, so the card lands compact.
@@ -114,7 +115,7 @@ export default function MissedDigestCell({
       // there's no telling from here whether the right slot is even still free),
       // let the server replan the whole board with this card included. Same fix
       // as dismiss, same reason.
-      if (json.items.length > 0) router.refresh();
+      if (json.items.length > 0) startTransition(() => { router.refresh(); });
     } catch {
       // ignore transient errors
     }
@@ -176,7 +177,7 @@ export default function MissedDigestCell({
       // empty until the board is replanned without it. router.refresh() re-runs
       // DashboardPanels so that happens right away instead of on the next
       // manual reload — the bug this fixed (user, 2026-08-19).
-      router.refresh();
+      startTransition(() => { router.refresh(); });
     } catch {
       // Best-effort, and deliberately NOT refreshed on failure: if the anchor
       // didn't move, the server still sees this activity as unseen and a

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { NotificationIcon } from "@/components/ui/icons";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -60,6 +60,7 @@ export default function AddReminderButton({
   onOpenChange?: (open: boolean) => void;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const cfg = ENTITY_CONFIG[entityType];
   const { currentUserId } = useAssignableUsers();
   const [internalOpen, setInternalOpen] = useState(false);
@@ -115,7 +116,7 @@ export default function AddReminderButton({
       }
       onSaved?.();
       setOpen(false);
-      router.refresh();
+      startTransition(() => { router.refresh(); });
       const newId = (result.data as { id?: string | null } | null)?.id;
       if (!newId) {
         toast.success("התזכורת נוספה.");
@@ -131,7 +132,7 @@ export default function AddReminderButton({
               body: JSON.stringify({ id: newId, status: "cancelled" }),
             });
             const json = await res.json().catch(() => ({}));
-            router.refresh();
+            startTransition(() => { router.refresh(); });
             if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "ביטול נכשל.") };
             return { ok: true };
           },

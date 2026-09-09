@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDownIcon } from "@/components/ui/icons";
 import {
@@ -66,6 +66,7 @@ export default function InvoiceQuickMenu({
   variant?: "badge" | "text";
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [busy, setBusy] = useState(false);
   const state = invoiceState(needsInvoice, invoiceSentAt);
   const badge = invoiceBadge(state);
@@ -83,7 +84,7 @@ export default function InvoiceQuickMenu({
         dbUpdate.invoice_sent_at = update.invoice_sent ? new Date().toISOString() : null;
       }
       const { error } = await createSupabaseBrowserClient().from("orders").update(dbUpdate).eq("id", orderId);
-      if (!error) router.refresh();
+      if (!error) startTransition(() => { router.refresh(); });
     } finally {
       setBusy(false);
     }

@@ -357,6 +357,7 @@ export default function ProjectsClient({
   initialFilters?: { view: ProjectsView; status: string; customerId: string | null; sort: SortMode; q: string };
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   // In projects, office sees status only — all money (price, profit, monthly totals) is admin-only.
   const canSeeMoney = viewerRole === "admin";
   const searchParams = useSearchParams();
@@ -758,7 +759,9 @@ export default function ProjectsClient({
       setApproveQuoteId("");
       setApproveQuoteName("");
       setApproveQuotePrice("");
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch (e: unknown) {
       setApproveQuoteError(toHebrewError(e, "שגיאה לא ידועה"));
     } finally {
@@ -1424,7 +1427,9 @@ export default function ProjectsClient({
                 }
                 setCreateOpen(false);
                 setCreatePrefillCustomerId(undefined);
-                router.refresh();
+                startTransition(() => {
+                  router.refresh();
+                });
                 const message = createStatus === "quote" ? "הצעת המחיר נוצרה." : "הפרויקט נוצר.";
                 if (id) {
                   // The wizard already committed the create — undo replays the same
@@ -1442,7 +1447,9 @@ export default function ProjectsClient({
                       const json = result.queued ? null : (result.data as { ok?: boolean } | null);
                       if (json && !json.ok) return { ok: false, error: "ביטול נכשל." };
                       removeProject(id);
-                      router.refresh();
+                      startTransition(() => {
+                        router.refresh();
+                      });
                       return { ok: true };
                     },
                   });
@@ -1492,7 +1499,9 @@ export default function ProjectsClient({
                   );
                 }
                 setEditOpen(false);
-                router.refresh();
+                startTransition(() => {
+                  router.refresh();
+                });
                 // Not made undoable: the wizard already committed a many-field update
                 // (name/customer/dates/pricing/addresses/items…) before this callback
                 // fires, and there's no safe way to replay the PREVIOUS full payload

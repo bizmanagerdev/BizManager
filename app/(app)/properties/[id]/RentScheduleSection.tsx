@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AddIcon, CheckIcon } from "@/components/ui/icons";
@@ -64,7 +64,8 @@ export default function RentScheduleSection({
   onDeleteRequest: (id: string, label: string) => void;
 }) {
   const router = useRouter();
-  const refresh = () => router.refresh();
+  const [, startTransition] = useTransition();
+  const refresh = () => startTransition(() => { router.refresh(); });
 
   const lastScheduled = payments.reduce<string | null>(
     (max, p) => (p.date && (!max || p.date > max) ? p.date : max),

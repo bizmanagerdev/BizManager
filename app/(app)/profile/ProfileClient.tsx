@@ -221,7 +221,9 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
         const result = await setMyProfileDetails(name, phone);
         if (!result.ok) return { ok: false, error: toHebrewError(result.error, t(profileDict, locale, "detailsSaveFailed")) };
         // The name shows in the top bar / presence too — refresh the server tree.
-        router.refresh();
+        startTransition(() => {
+          router.refresh();
+        });
         return { ok: true };
       },
     });
@@ -396,7 +398,7 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
     setAvatarColorCache(color);
     // Fire-and-forget; a refresh propagates the new color to every other avatar.
     void setMyAvatarColor(color)
-      .then(() => router.refresh())
+      .then(() => startTransition(() => router.refresh()))
       .catch(() => {});
   }
 

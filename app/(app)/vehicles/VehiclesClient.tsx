@@ -91,7 +91,9 @@ export default function VehiclesClient({ vehicles: vehiclesProp }: { vehicles: V
           if (result.ok) {
             // The write already landed — don't let a refresh hiccup read as a failed edit.
             try {
-              router.refresh();
+              startTransition(() => {
+                router.refresh();
+              });
             } catch {
               // best-effort; the next real navigation picks up the fresh data
             }
@@ -118,7 +120,9 @@ export default function VehiclesClient({ vehicles: vehiclesProp }: { vehicles: V
         message: "הרכב נוסף.",
         onUndo: async () => {
           const del = await deleteVehicle(newTagId);
-          router.refresh();
+          startTransition(() => {
+            router.refresh();
+          });
           return del;
         },
       });
@@ -138,7 +142,9 @@ export default function VehiclesClient({ vehicles: vehiclesProp }: { vehicles: V
         if (result.ok) {
           // The delete already landed — don't let a refresh hiccup read as a failed delete.
           try {
-            router.refresh();
+            startTransition(() => {
+              router.refresh();
+            });
           } catch {
             // best-effort; the next real navigation picks up the fresh data
           }

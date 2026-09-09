@@ -10,7 +10,7 @@
 // you were. Nothing navigates; saving calls router.refresh(), which re-renders the
 // current route in place (same scroll position, same open tab).
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import SessionEditorDialog from "@/app/(app)/payroll/SessionEditorDialog";
@@ -62,6 +62,7 @@ export default function QuickCreateDialogs({
   quickCreateAccountId?: string;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   // While a wizard is mid-submit its dialog must not be dismissable — closing it
   // would orphan a request that's already creating a row.
   const [submitLocked, setSubmitLocked] = useState(false);
@@ -219,7 +220,7 @@ export default function QuickCreateDialogs({
         projects={projectPickerOptions}
         properties={propertyOptions}
         onSaved={(created) => {
-          router.refresh();
+          startTransition(() => { router.refresh(); });
           const id = created && typeof created.id === "string" ? created.id : "";
           if (id) {
             toast.success(HEBREW.taskSaved, {
@@ -246,7 +247,7 @@ export default function QuickCreateDialogs({
           label: o.subtitle ? `${o.name} | ${o.subtitle}` : o.name,
         }))}
         recurringProperties={propertyOptions}
-        onSaved={() => router.refresh()}
+        onSaved={() => startTransition(() => { router.refresh(); })}
       />
 
       <IncomeDialog
@@ -258,7 +259,7 @@ export default function QuickCreateDialogs({
         orders={data.orders}
         properties={data.properties}
         defaultAccountId={quickCreateAccountId}
-        onSaved={() => router.refresh()}
+        onSaved={() => startTransition(() => { router.refresh(); })}
       />
 
       <Dialog
@@ -293,7 +294,7 @@ export default function QuickCreateDialogs({
               onSubmitted={(orderId) => {
                 setSubmitLocked(false);
                 onClose();
-                router.refresh();
+                startTransition(() => { router.refresh(); });
                 registerReversibleCreate({
                   scope: "order",
                   id: orderId,
@@ -301,7 +302,7 @@ export default function QuickCreateDialogs({
                   view: { label: "צפייה", onClick: () => router.push(`/sales/orders/${orderId}`) },
                   onUndo: async () => {
                     const result = await offlineFetch("/api/orders/delete", { order_id: orderId }, "מחיקת הזמנה");
-                    router.refresh();
+                    startTransition(() => { router.refresh(); });
                     if (!result.queued) {
                       if (!result.ok) return { ok: false, error: toHebrewError(result.error, "מחיקת הזמנה נכשלה.") };
                       if (!(result.data as { ok?: boolean })?.ok) return { ok: false, error: "מחיקת הזמנה נכשלה." };
@@ -347,7 +348,7 @@ export default function QuickCreateDialogs({
               onSubmitted={(project) => {
                 setSubmitLocked(false);
                 onClose();
-                router.refresh();
+                startTransition(() => { router.refresh(); });
                 const projectId = typeof project?.id === "string" ? project.id : "";
                 if (!projectId) {
                   toast.success(HEBREW.projectSaved);
@@ -365,7 +366,7 @@ export default function QuickCreateDialogs({
                       body: JSON.stringify({ id: projectId }),
                     });
                     const json = await res.json().catch(() => ({}));
-                    router.refresh();
+                    startTransition(() => { router.refresh(); });
                     if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "מחיקת הפרויקט נכשלה.") };
                     return { ok: true };
                   },
@@ -381,7 +382,7 @@ export default function QuickCreateDialogs({
         onOpenChange={(open) => {
           if (!open) onClose();
         }}
-        onSaved={() => router.refresh()}
+        onSaved={() => startTransition(() => { router.refresh(); })}
       />
 
       {/* Not a new record — schedules an ALREADY-EXISTING order's delivery.
@@ -394,7 +395,7 @@ export default function QuickCreateDialogs({
         onOpenChange={(open) => {
           if (!open) onClose();
         }}
-        onSaved={() => router.refresh()}
+        onSaved={() => startTransition(() => { router.refresh(); })}
       />
 
       {/* Moving money between our own accounts (cash withdrawal / bank→bank) —
@@ -404,7 +405,7 @@ export default function QuickCreateDialogs({
         onOpenChange={(open) => {
           if (!open) onClose();
         }}
-        onSaved={() => router.refresh()}
+        onSaved={() => startTransition(() => { router.refresh(); })}
       />
 
       <CreateCustomerDialog
@@ -413,7 +414,7 @@ export default function QuickCreateDialogs({
           if (!open) onClose();
         }}
         onCreated={(customer) => {
-          router.refresh();
+          startTransition(() => { router.refresh(); });
           registerReversibleCreate({
             scope: "customer",
             id: customer.id,
@@ -421,7 +422,7 @@ export default function QuickCreateDialogs({
             view: { label: "צפייה", onClick: () => router.push(`/customers/${customer.id}`) },
             onUndo: async () => {
               const result = await offlineFetch("/api/customers/delete", { id: customer.id }, "מחיקת לקוח");
-              router.refresh();
+              startTransition(() => { router.refresh(); });
               if (!result.queued && !result.ok) return { ok: false, error: toHebrewError(result.error, "מחיקת לקוח נכשלה.") };
               const json = result.queued ? null : (result.data as { ok?: boolean } | null);
               if (json && !json.ok) return { ok: false, error: "מחיקת לקוח נכשלה." };
@@ -442,7 +443,7 @@ export default function QuickCreateDialogs({
         onOpenChange={(open) => {
           if (!open) onClose();
         }}
-        onSaved={() => router.refresh()}
+        onSaved={() => startTransition(() => { router.refresh(); })}
       />
 
       <AttendanceLogDialog
@@ -451,7 +452,7 @@ export default function QuickCreateDialogs({
           if (!open) onClose();
         }}
         workers={attendanceWorkers}
-        onSaved={() => router.refresh()}
+        onSaved={() => startTransition(() => { router.refresh(); })}
         locale={data.locale}
       />
 
@@ -464,7 +465,7 @@ export default function QuickCreateDialogs({
         users={data.users}
         currentUserRole={data.role ?? undefined}
         onSaved={() => {
-          router.refresh();
+          startTransition(() => { router.refresh(); });
           toast.success("התשלום לעובד נרשם.");
         }}
       />
@@ -487,7 +488,7 @@ export default function QuickCreateDialogs({
         canViewSalary={canManageWorkerSessions}
         onUnlockSuccess={() => setSalaryUnlocked(true)}
         onSaved={(message) => {
-          router.refresh();
+          startTransition(() => { router.refresh(); });
           toast.success(message);
         }}
       />
@@ -499,7 +500,7 @@ export default function QuickCreateDialogs({
         }}
         projects={projectPickerOptions.map((p) => ({ id: p.id, label: p.label }))}
         properties={propertyOptions}
-        onUploaded={() => router.refresh()}
+        onUploaded={() => startTransition(() => { router.refresh(); })}
       />
     </>
   );

@@ -918,7 +918,9 @@ export default function SalaryCenterClient({
   }
 
   async function refreshAll({ reloadProtected = true }: { reloadProtected?: boolean } = {}) {
-    router.refresh();
+    startTransition(() => {
+      router.refresh();
+    });
     if (reloadProtected && salaryUnlocked && canViewSalary) {
       // fresh=1 bypasses the server cache so post-mutation numbers are never stale.
       await loadProtectedData({ fresh: true });
@@ -1499,7 +1501,9 @@ export default function SalaryCenterClient({
       setSalaryUnlocked(false);
       setProtectedError("");
       toast.success("נתוני השכר ננעלו.");
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     });
   }
 

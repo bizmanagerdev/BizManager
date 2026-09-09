@@ -1,7 +1,7 @@
 "use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ export default function AddContactButton({
   customerName: string;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -77,7 +78,7 @@ export default function AddContactButton({
         return;
       }
       setOpen(false);
-      router.refresh();
+      startTransition(() => { router.refresh(); });
       if (!result.queued) {
         const data = result.data as { contact?: { id?: string } } | null;
         const contactId = data?.contact?.id;
@@ -100,7 +101,7 @@ export default function AddContactButton({
               if (!undoResult.queued && !undoResult.ok) {
                 return { ok: false, error: toHebrewError(undoResult.error, "ביטול הוספת איש הקשר נכשל.") };
               }
-              router.refresh();
+              startTransition(() => { router.refresh(); });
               return { ok: true };
             },
           });

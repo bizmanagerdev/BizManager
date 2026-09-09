@@ -1,7 +1,7 @@
 "use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChecklistIcon, CheckboxUncheckedIcon } from "@/components/ui/icons";
@@ -66,6 +66,7 @@ function displaySubject(task: DashboardTask, locale: Locale) {
 
 export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: DashboardTask[]; locale: Locale }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [doneIds, setDoneIds] = useState<Set<string>>(() => new Set());
   const [tab, setTab] = useState<TabKey>("all");
   const TABS = tabs(locale);
@@ -121,7 +122,7 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
         if (!result.queued && !result.ok) {
           return { ok: false, error: toHebrewError(result.error, t(dashboardDict, locale, "actionFailed")) };
         }
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });

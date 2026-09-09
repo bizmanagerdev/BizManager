@@ -9,7 +9,7 @@
 // profile pictures everywhere else, not the multi-image DeliveryImagesCard
 // pattern — this car has exactly one photo, or none.
 
-import { useRef, useState } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { CameraIcon, CloseIcon, SpinnerIcon, VehicleIcon } from "@/components/ui/icons";
@@ -36,6 +36,7 @@ type Props = {
 
 export default function VehiclePhotoAvatar({ tagId, name, photoUrl, size = "sm", editable = false, className }: Props) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
@@ -52,7 +53,7 @@ export default function VehiclePhotoAvatar({ tagId, name, photoUrl, size = "sm",
         toast.error(result.error || "העלאת התמונה נכשלה.");
         return;
       }
-      router.refresh();
+      startTransition(() => { router.refresh(); });
       registerReversibleAction({
         key: `vehicle-photo:add:${tagId}`,
         message: "התמונה נשמרה",
@@ -62,7 +63,7 @@ export default function VehiclePhotoAvatar({ tagId, name, photoUrl, size = "sm",
             const json = await res.json().catch(() => ({}));
             return { ok: false, error: toHebrewError((json as { error?: string })?.error, "ביטול ההעלאה נכשל.") };
           }
-          router.refresh();
+          startTransition(() => { router.refresh(); });
           return { ok: true };
         },
       });
@@ -81,7 +82,7 @@ export default function VehiclePhotoAvatar({ tagId, name, photoUrl, size = "sm",
       onCommit: async () => {
         const res = await fetch(`/api/vehicles/${tagId}/photo`, { method: "DELETE" });
         if (res.ok) {
-          router.refresh();
+          startTransition(() => { router.refresh(); });
           return { ok: true };
         }
         const json = await res.json().catch(() => ({}));

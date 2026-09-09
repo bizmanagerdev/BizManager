@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDownIcon } from "@/components/ui/icons";
 import {
@@ -42,6 +42,7 @@ export function ProjectStatusPicker({
   onChanged?: (nextStatus: string) => void;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [value, setValue] = useState(status);
 
   const label = value ? getProjectStatusLabel(value) : "—";
@@ -73,7 +74,7 @@ export function ProjectStatusPicker({
           .eq("id", projectId);
         if (error) return { ok: false, error: toHebrewError(error.message, "") };
         if (onChanged) onChanged(next);
-        else router.refresh();
+        else startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });

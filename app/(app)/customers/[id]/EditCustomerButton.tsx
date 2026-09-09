@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { EditCustomerDialog, type EditCustomerInput } from "@/components/customers/EditCustomerDialog";
 import { EditButton } from "@/components/ui/icon-button";
@@ -16,6 +16,7 @@ export default function EditCustomerButton({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [, startTransition] = useTransition();
   return (
     <>
       <EditButton onClick={() => setOpen(true)} label="עריכת לקוח" className={className} />
@@ -23,7 +24,7 @@ export default function EditCustomerButton({
         open={open}
         onOpenChange={setOpen}
         customer={customer}
-        onSaved={() => router.refresh()}
+        onSaved={() => startTransition(() => { router.refresh(); })}
       />
     </>
   );

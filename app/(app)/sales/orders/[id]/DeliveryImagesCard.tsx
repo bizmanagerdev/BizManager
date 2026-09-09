@@ -10,7 +10,7 @@
 // OrderRemindersSection owns תזכורות, so the live image count/grid can update
 // without a full page reload.
 
-import { useRef, useState } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AddIcon, DeliveryIcon } from "@/components/ui/icons";
@@ -66,6 +66,7 @@ export default function DeliveryImagesCard({
   authorName: string | null;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const visibleImages = useUndoOverlay(images, (image) => image.id, UNDO_SCOPE);
 
   // ── Add ──────────────────────────────────────────────────────────────────
@@ -110,7 +111,9 @@ export default function DeliveryImagesCard({
         }
       }
       if (uploaded > 0) {
-        router.refresh();
+        startTransition(() => {
+          router.refresh();
+        });
         const message = uploaded === 1 ? "התמונה נוספה" : `${uploaded} תמונות נוספו`;
         if (uploadedIds.length > 0) {
           registerReversibleAction({
@@ -121,7 +124,9 @@ export default function DeliveryImagesCard({
                 const result = await deleteDocument(id);
                 if (!result.ok) return result;
               }
-              router.refresh();
+              startTransition(() => {
+                router.refresh();
+              });
               return { ok: true };
             },
           });
@@ -166,7 +171,9 @@ export default function DeliveryImagesCard({
         toast.error(result.error || "העלאת התמונה נכשלה.");
         return;
       }
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
       scheduleDeferredDelete({
         scope: UNDO_SCOPE,
         id: oldImageId,

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronDownIcon, DeleteIcon, EditIcon, MoreIcon } from "@/components/ui/icons";
@@ -246,6 +246,7 @@ export default function BankClient({
   dataIncomplete?: boolean;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const loansById = useMemo(() => new Map(loans.map((l) => [l.id, l] as const)), [loans]);
   // Total liquidity + "ניהול חשבונות" moved OUT of the page and split across
   // TWO top-bar slots, not moved together — the total stays near the back-
@@ -432,7 +433,7 @@ export default function BankClient({
         try {
           const result = await deleteAccountTransfer(id);
           if (!result.ok) return { ok: false, error: toHebrewError(result.error, "מחיקת ההעברה נכשלה.") };
-          router.refresh();
+          startTransition(() => { router.refresh(); });
           return { ok: true };
         } catch (error: unknown) {
           return { ok: false, error: toHebrewError(error, "מחיקת ההעברה נכשלה.") };
@@ -540,7 +541,7 @@ export default function BankClient({
             const json = (await res.json().catch(() => ({}))) as { error?: string };
             if (!res.ok) return { ok: false, error: toHebrewError(json.error, "המחיקה נכשלה.") };
           }
-          router.refresh();
+          startTransition(() => { router.refresh(); });
           return { ok: true };
         } catch (error: unknown) {
           return { ok: false, error: toHebrewError(error, "המחיקה נכשלה.") };
@@ -1088,7 +1089,7 @@ export default function BankClient({
         projects={projects}
         properties={recurringProperties}
         merchantMemory={merchantMemory}
-        onSaved={() => router.refresh()}
+        onSaved={() => startTransition(() => { router.refresh(); })}
         onHeightChange={setQuickEntryHeight}
       />
 
@@ -1101,7 +1102,7 @@ export default function BankClient({
           if (!next) setTransferToEdit(null);
         }}
         transfer={transferToEdit}
-        onSaved={() => router.refresh()}
+        onSaved={() => startTransition(() => { router.refresh(); })}
       />
 
       <ConfirmDialog
@@ -1131,7 +1132,7 @@ export default function BankClient({
         recurringProperties={recurringProperties}
         onSaved={() => {
           setEditingExpenseRef(null);
-          router.refresh();
+          startTransition(() => { router.refresh(); });
         }}
       />
 
@@ -1160,7 +1161,7 @@ export default function BankClient({
         }}
         onSaved={() => {
           setEditingPaymentId(null);
-          router.refresh();
+          startTransition(() => { router.refresh(); });
         }}
       />
 
@@ -1171,7 +1172,7 @@ export default function BankClient({
         }}
         onSaved={() => {
           setEditingWorkerPaymentId(null);
-          router.refresh();
+          startTransition(() => { router.refresh(); });
         }}
       />
 

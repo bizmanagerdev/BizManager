@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +29,7 @@ function buildFurniturePatch(input: PropertyInput): Partial<Property> {
  */
 export default function PropertyFurnitureCard({ propertyId, property }: { propertyId: string; property: Property }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [editing, setEditing] = useState(false);
   const [override, setOverride] = useState<Partial<Property> | null>(null);
   const displayProperty: Property = override ? { ...property, ...override } : property;
@@ -55,7 +56,7 @@ export default function PropertyFurnitureCard({ propertyId, property }: { proper
       onCommit: async () => {
         const result = await updateProperty(propertyId, { ...propertyToForm(property), ...pick(snapshotDraft, FURNITURE_KEYS) });
         if (!result.ok) return { ok: false, error: result.error };
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });

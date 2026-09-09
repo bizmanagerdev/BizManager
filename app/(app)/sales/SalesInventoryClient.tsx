@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AddProductIcon } from "@/components/ui/icons";
@@ -133,6 +133,7 @@ export default function SalesInventoryClient({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [, startTransition] = useTransition();
   const [searchQuery, setSearchQuery] = useState(initialQuery);
 
   const lastPushedQueryRef = useRef(initialQuery);
@@ -412,7 +413,9 @@ export default function SalesInventoryClient({
       setEditOpen(false);
       setSuccess("תנועת המלאי עודכנה.");
       // Recompute the server-derived "נמכר" column (sold − returns) for the fix.
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch (e: unknown) {
       setEditError(toHebrewError(e, "שגיאה לא ידועה"));
     } finally {
@@ -501,7 +504,9 @@ export default function SalesInventoryClient({
 
       setDeleteRow(null);
       setSuccess("תנועת המלאי נמחקה.");
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch (e: unknown) {
       setError(toHebrewError(e, "שגיאה לא ידועה"));
     } finally {

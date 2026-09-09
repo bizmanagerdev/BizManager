@@ -588,7 +588,7 @@ export default function ProjectTabsClient({
         docsToastIdRef.current = null;
         setPendingDocUploads([]);
       }
-      router.refresh();
+      startTransition(() => { router.refresh(); });
     } catch (e: unknown) {
       toast.error("שגיאה בהעלאת קובץ", { id: toastId, description: getErrorMessage(e) });
       setPendingDocsRefresh(false);
@@ -648,7 +648,7 @@ export default function ProjectTabsClient({
       onCommit: async () => {
         const result = await updateDocumentTag(documentId, value);
         if (!result.ok) return { ok: false, error: toHebrewError(result.error, "") };
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });
@@ -680,7 +680,7 @@ export default function ProjectTabsClient({
         });
         const json = await res.json().catch(() => ({}));
         if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "") };
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });
@@ -1568,8 +1568,11 @@ export default function ProjectTabsClient({
                     }}
                   />
                 ) : null}
+                {/* A separator between the +/share buttons and תצוגה only
+                    makes sense once they're in one flowing row — in the 2x2
+                    grid it would land inside a single cell as a stray line. */}
                 <div
-                  className="h-px w-full bg-border @[26em]:h-5 @[26em]:w-px @[26em]:shrink-0"
+                  className="hidden @[26em]:block @[26em]:h-5 @[26em]:w-px @[26em]:shrink-0 @[26em]:bg-border"
                   aria-hidden
                 />
                 <DropdownMenu>
@@ -1721,12 +1724,12 @@ export default function ProjectTabsClient({
               <div className="@container hidden items-center gap-1.5 lg:flex">{movementActions}</div>
             }
           >
-            {/* Phone: same actions as the header. One column (each button
-                full width) until the container actually has the room for a
-                row — a phone in large-text mode and a genuinely narrow phone
-                are the same "not enough room per character" situation, so
-                the same query handles both. */}
-            <div className="mb-2 flex flex-col items-stretch gap-1.5 @[26em]:flex-row @[26em]:flex-wrap @[26em]:items-center lg:hidden">
+            {/* Phone: same actions as the header. Two per row (a 2x2 grid)
+                by default — four buttons stacked one-per-row ate too much of
+                the card's height before a single row list was even visible.
+                Once the container actually has room, switch to a single
+                flowing row instead. */}
+            <div className="mb-2 grid grid-cols-2 gap-1.5 @[26em]:flex @[26em]:flex-row @[26em]:flex-wrap @[26em]:items-center lg:hidden">
               {movementActions}
             </div>
             {moneyError ? (
@@ -1792,7 +1795,7 @@ export default function ProjectTabsClient({
                     projectId={overview.id}
                     documents={projectMorningDocuments}
                     allowInvoice
-                    onChanged={() => router.refresh()}
+                    onChanged={() => startTransition(() => { router.refresh(); })}
                   />
                 </CardContent>
               </Card>
@@ -1828,7 +1831,7 @@ export default function ProjectTabsClient({
                             allowReceipt
                             allowInvoiceReceipt
                             compact
-                            onChanged={() => router.refresh()}
+                            onChanged={() => startTransition(() => { router.refresh(); })}
                           />
                         ) : (
                           <div className="text-xs text-muted-foreground">אי אפשר להפיק קבלה עבור החזר או תשלום לא תקין.</div>

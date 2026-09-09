@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -415,7 +415,12 @@ export default function VehicleActivityClient({
   currentUserId,
 }: Props) {
   const router = useRouter();
-  const refresh = () => router.refresh();
+  const [, startTransition] = useTransition();
+  const refresh = () => {
+    startTransition(() => {
+      router.refresh();
+    });
+  };
 
   // For linking an expense row back to the project/order/property it's tied to.
   const projectLabelsById = new Map(projects.map((p) => [p.id, p.label] as const));

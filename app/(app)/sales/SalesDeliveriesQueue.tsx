@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useTransition } from "react";
 import { CashIcon, CheckIcon, ChevronDownIcon, LocationIcon, PhoneIcon, WazeIcon } from "@/components/ui/icons";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
@@ -223,6 +223,7 @@ export default function SalesDeliveriesQueue({
   // a region filter is active we only render that region. Empty known regions
   // still get a column so the three lists stay side by side.
   const router = useRouter();
+  const [, startTransition] = useTransition();
 
   // One shared editor for the whole queue — a card sets its target rather than
   // each card mounting its own dialog.
@@ -262,7 +263,7 @@ export default function SalesDeliveriesQueue({
           customerName={locationTarget.customerName}
           initialInstructions={locationTarget.instructions}
           initialPin={locationTarget.pin}
-          onSaved={() => router.refresh()}
+          onSaved={() => startTransition(() => { router.refresh(); })}
         />
       ) : null}
 

@@ -1,7 +1,7 @@
 "use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ export default function AddCustomerDocumentButton({
   customerName: string;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -70,7 +71,7 @@ export default function AddCustomerDocumentButton({
         }
       }
       if (uploaded > 0) {
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         const message = uploaded === 1 ? "המסמך הועלה" : `${uploaded} מסמכים הועלו`;
         if (uploadedIds.length > 0) {
           // The document(s) already exist server-side (uploaded straight to
@@ -92,7 +93,7 @@ export default function AddCustomerDocumentButton({
                   return { ok: false, error: toHebrewError((json as { error?: string })?.error, "ביטול ההעלאה נכשל.") };
                 }
               }
-              router.refresh();
+              startTransition(() => { router.refresh(); });
               return { ok: true };
             },
           });

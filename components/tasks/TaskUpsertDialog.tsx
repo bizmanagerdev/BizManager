@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ComponentType, type ReactNode } from "react";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
 import { offlineUpload } from "@/lib/offline-upload";
@@ -197,6 +197,7 @@ export function TaskUpsertDialog(rawProps: Props) {
   // resolved locale (see the Props comment on why the raw prop is optional).
   const props = { ...rawProps, locale: rawProps.locale ?? "he" };
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   // At most one section open at a time (accordion) — none forced open by
@@ -631,7 +632,7 @@ export function TaskUpsertDialog(rawProps: Props) {
       clearDraft("task-create");
       props.onSaved?.();
       props.onOpenChange(false);
-      router.refresh();
+      startTransition(() => { router.refresh(); });
     } finally {
       emitProgressActivityEnd();
       setSaving(false);
@@ -678,7 +679,7 @@ export function TaskUpsertDialog(rawProps: Props) {
         props.onSaved?.(createdTask);
         // Close so the new task shows in the list (no lingering edit dialog).
         props.onOpenChange(false);
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return;
       }
 
@@ -696,7 +697,7 @@ export function TaskUpsertDialog(rawProps: Props) {
       // is the confirmation.
       props.onSaved?.();
       props.onOpenChange(false);
-      router.refresh();
+      startTransition(() => { router.refresh(); });
     } catch (error: unknown) {
       toast.error(t(tasksDict, props.locale, isEditing ? "toastErrorUpdateTask" : "toastErrorCreateTask"), {
         description: getErrorMessage(error),
@@ -982,7 +983,7 @@ export function TaskUpsertDialog(rawProps: Props) {
       // the board is the confirmation.
       props.onSaved?.();
       props.onOpenChange(false);
-      router.refresh();
+      startTransition(() => { router.refresh(); });
     } catch (error: unknown) {
       toast.error(t(tasksDict, props.locale, "toastErrorDeleteTask"), { description: getErrorMessage(error) });
     } finally {

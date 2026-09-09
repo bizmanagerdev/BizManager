@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { offlineFetch } from "@/lib/offline-queue";
 import type { CollectionCustomerGroup, PaymentDueToday } from "@/lib/collections";
@@ -26,6 +26,7 @@ type Props = {
 
 export default function CollectionsClient({ customers, totals, dueToday }: Props) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const searchParams = useSearchParams();
   const focusCustomerId = searchParams?.get("focus") ?? null;
   const [filter, setFilter] = useState<FilterKey>(parseInitialFilter(searchParams?.get("filter")));
@@ -51,7 +52,7 @@ export default function CollectionsClient({ customers, totals, dueToday }: Props
         { id: paymentId, collected: true },
         "סימון תשלום כנגבה"
       );
-      if (!result.queued && result.ok) router.refresh();
+      if (!result.queued && result.ok) startTransition(() => { router.refresh(); });
     } finally {
       setCollectingId(null);
     }

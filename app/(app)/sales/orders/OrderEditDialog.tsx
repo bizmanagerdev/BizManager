@@ -1,7 +1,7 @@
 "use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { EditButton } from "@/components/ui/icon-button";
 import {
@@ -77,6 +77,7 @@ export default function OrderEditDialog({
   onOpenChange?: (open: boolean) => void;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [openState, setOpenState] = useState(false);
   const open = openProp ?? openState;
   const setOpen = (next: boolean) => {
@@ -183,7 +184,9 @@ export default function OrderEditDialog({
             onCancel={() => setOpen(false)}
             onSubmitted={() => {
               setOpen(false);
-              router.refresh();
+              startTransition(() => {
+                router.refresh();
+              });
             }}
           />
         ) : null}

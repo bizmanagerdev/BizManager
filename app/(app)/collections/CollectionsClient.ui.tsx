@@ -4,7 +4,7 @@
 // (that's in CollectionsClient.helpers.ts); these render props and call back. The
 // orchestrator (CollectionsClient.tsx) owns the page state and data.
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { ChatIcon, ChevronDownIcon, CloseIcon, CoinsIcon, FilterIcon, PhoneIcon, ReminderIcon, UsersIcon, WarningIcon } from "@/components/ui/icons";
 import type { IconComponent } from "@/components/ui/icons";
@@ -291,6 +291,7 @@ export function DueTodaySection({
 // One-tap "collect" for a source's pending (future-dated / uncleared) payments.
 function MarkCollectedButton({ paymentIds }: { paymentIds: string[] }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [busy, setBusy] = useState(false);
   async function run() {
     if (busy || paymentIds.length === 0) return;
@@ -305,7 +306,7 @@ function MarkCollectedButton({ paymentIds }: { paymentIds: string[] }) {
           })
         )
       );
-      router.refresh();
+      startTransition(() => { router.refresh(); });
     } finally {
       setBusy(false);
     }

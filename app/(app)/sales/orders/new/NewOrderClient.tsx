@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { AddIcon, AddUserIcon, AiIcon, CardIcon, CheckIcon, CloseIcon, DocumentIcon, EditIcon, OrderIcon, RemoveIcon, SearchIcon, UserIcon, WarningIcon, WazeIcon } from "@/components/ui/icons";
@@ -188,6 +188,7 @@ export default function NewOrderClient({
   draftKey?: string;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const searchParams = useSearchParams();
   const prefillHandled = useRef(false);
   const isEditMode = mode === "edit" && initialOrder !== null;
@@ -897,11 +898,15 @@ export default function NewOrderClient({
       const newOrderId = json.order_id;
       if (embedded) {
         onSubmitted?.(newOrderId);
-        router.refresh();
+        startTransition(() => {
+          router.refresh();
+        });
       } else {
         emitNavigationStart();
         router.push("/sales");
-        router.refresh();
+        startTransition(() => {
+          router.refresh();
+        });
       }
       if (!isEditMode) {
         // Undo = a real reverse delete (not a deferred commit) — items/payments/
@@ -923,7 +928,9 @@ export default function NewOrderClient({
               return { ok: false, error: toHebrewError((delJson as { error?: string })?.error, "ביטול נכשל.") };
             }
             if (!embedded) router.push("/sales");
-            router.refresh();
+            startTransition(() => {
+              router.refresh();
+            });
             return { ok: true };
           },
         });

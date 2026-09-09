@@ -104,7 +104,7 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
       onCommit: async () => {
         const res = await deleteRepayment(target.id, loan.id);
         if (!res.ok) return { ok: false, error: res.error };
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });
@@ -476,6 +476,7 @@ function EditInstallmentDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [form, setForm] = useState({ date: "", amount: "", interest: "", notes: "" });
 
   const [seedKey, setSeedKey] = useState("");
@@ -520,7 +521,7 @@ function EditInstallmentDialog({
           notes,
         });
         if (!res.ok) return { ok: false, error: res.error };
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });

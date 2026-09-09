@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { FormDialog } from "@/components/ui/form-dialog";
@@ -38,6 +38,7 @@ import { scheduleDeferredDelete, scheduleDeferredEdit } from "@/lib/undo-engine"
 /** The vehicle detail page's own header — lets you edit the car right here, not only from the /vehicles list. */
 export default function VehicleHeaderCard({ vehicle, tasks }: { vehicle: Vehicle; tasks: VehicleTask[] }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [display] = useUndoOverlay([vehicle], (v) => v.tagId, "vehicle");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<VehicleInput>(EMPTY_VEHICLE_FORM);
@@ -68,7 +69,9 @@ export default function VehicleHeaderCard({ vehicle, tasks }: { vehicle: Vehicle
       onCommit: async () => {
         const result = await updateVehicle(vehicle.tagId, form);
         if (result.ok) {
-          router.refresh();
+          startTransition(() => {
+            router.refresh();
+          });
           return { ok: true };
         }
         return { ok: false, error: result.error };

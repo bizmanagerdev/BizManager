@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -484,7 +484,8 @@ export default function PropertyDetailClient({
   currentUserRole,
 }: Props) {
   const router = useRouter();
-  const refresh = () => router.refresh();
+  const [, startTransition] = useTransition();
+  const refresh = () => startTransition(() => { router.refresh(); });
   const leases = useUndoOverlay(property.leases, (l) => l.id, "property-lease");
   const activityExpenses = useUndoOverlay(activity.expenses, (e) => e.id, "property-expense");
   const activitySessions = useUndoOverlay(activity.sessions, (s) => s.id, "property-session");

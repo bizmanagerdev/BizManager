@@ -1,6 +1,7 @@
 "use client";
 import { toHebrewError } from "@/lib/error-messages";
 
+import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { CloseIcon } from "@/components/ui/icons";
@@ -20,6 +21,7 @@ export default function CustomerTagsSection({
   tags: CustomerTag[];
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const scope = `customer-tag:${customerId}`;
   const tags = useUndoOverlay(tagsProp, (t) => t.id, scope);
 
@@ -44,7 +46,7 @@ export default function CustomerTagsSection({
         if (!result.queued && !result.ok) {
           return { ok: false, error: toHebrewError(result.error, "הסרת התגית נכשלה.") };
         }
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });

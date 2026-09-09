@@ -1109,7 +1109,7 @@ function CustomerDetailsDialog({
                 morningSyncedAt={s(row, "morning_synced_at") || null}
                 morningLastSyncError={s(row, "morning_last_sync_error") || null}
                 morningDocuments={Array.isArray(row.morning_documents) ? (row.morning_documents as never[]) : []}
-                onChanged={() => router.refresh()}
+                onChanged={() => startNavigation(() => { router.refresh(); })}
               />
 
               <div className="space-y-2 rounded-md border bg-background p-3">

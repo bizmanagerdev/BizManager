@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { NoteIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
@@ -32,6 +32,7 @@ export default function OrderCommentsThread({
   authorColors?: Record<string, string>;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   // Seed once from the notes field; edits/adds mutate local state so they appear
   // immediately without waiting on a full page reload.
   const [comments, setComments] = useState<OrderComment[]>(() => parseOrderComments(initialNotes));
@@ -59,7 +60,9 @@ export default function OrderCommentsThread({
       if (!res.ok) throw new Error(toHebrewError(json.error, "הוספת התגובה נכשלה."));
       if (json.comment) setComments((prev) => [...prev, json.comment as OrderComment]);
       setDraft("");
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch (err: unknown) {
       toast.error(toHebrewError(err, "הוספת התגובה נכשלה."));
     } finally {
@@ -93,7 +96,9 @@ export default function OrderCommentsThread({
       const updated = (json.comment as OrderComment) ?? { ...target, body: message };
       setComments((prev) => prev.map((comment, i) => (i === editingIndex ? updated : comment)));
       setEditingIndex(null);
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch (err: unknown) {
       toast.error(toHebrewError(err, "עריכת התגובה נכשלה."));
     } finally {
@@ -120,7 +125,9 @@ export default function OrderCommentsThread({
       setComments((prev) => prev.filter((_, i) => i !== pendingDelete));
       if (editingIndex === pendingDelete) setEditingIndex(null);
       setPendingDelete(null);
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch (err: unknown) {
       toast.error(toHebrewError(err, "מחיקת התגובה נכשלה."));
     } finally {

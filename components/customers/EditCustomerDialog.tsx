@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   AdaptiveGrid,
@@ -189,6 +189,7 @@ export interface EditCustomerDialogProps {
 
 export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: EditCustomerDialogProps) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -642,7 +643,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
             }
           }
 
-          router.refresh();
+          startTransition(() => { router.refresh(); });
           return { ok: true };
         },
       });

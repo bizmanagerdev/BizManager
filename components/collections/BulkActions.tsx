@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ChatIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,7 @@ export default function BulkActions({
   onClear: () => void;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const { currentUserId } = useAssignableUsers();
   const [mode, setMode] = useState<null | "reminder" | "whatsapp">(null);
   const [remindAt, setRemindAt] = useState("");
@@ -83,7 +84,9 @@ export default function BulkActions({
       setMode(null);
       setRemindAt("");
       setContent("");
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
       onClear();
     } finally {
       setBusy(false);

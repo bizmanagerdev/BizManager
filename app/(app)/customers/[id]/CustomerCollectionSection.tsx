@@ -1,5 +1,6 @@
 "use client";
 
+import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import CollectionTrackingPanel from "@/components/collections/CollectionTrackingPanel";
 
@@ -16,12 +17,13 @@ export default function CustomerCollectionSection({
   customerPhone?: string | null;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   return (
     <CollectionTrackingPanel
       customerId={customerId}
       customerName={customerName}
       customerPhone={customerPhone}
-      onChanged={() => router.refresh()}
+      onChanged={() => startTransition(() => { router.refresh(); })}
       collapsibleForms
     />
   );

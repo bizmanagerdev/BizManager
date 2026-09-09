@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AttachIcon, ChevronLeftIcon, PhoneIcon, ReceiptIcon, UserIcon } from "@/components/ui/icons";
@@ -36,6 +36,7 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
 
 export default function LoanDetailClient({ loan }: { loan: Loan }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [formOpen, setFormOpen] = useState(false);
   const [docsOpen, setDocsOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -55,7 +56,7 @@ export default function LoanDetailClient({ loan }: { loan: Loan }) {
       onCommit: async () => {
         const res = await deleteLoan(loan.id);
         if (!res.ok) return { ok: false, error: res.error };
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useState, useEffect, useMemo, useRef, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { BackspaceIcon, BankIcon, CardIcon, CashIcon, RecurringIcon, SpinnerIcon, SplitIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
@@ -374,6 +374,7 @@ export function ExpenseDialog({
   onSaved,
 }: Props) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const isEditingSession = Boolean(editingSession);
   const isEditingTemplate = Boolean(editingRecurringTemplate);
   const isEditing = Boolean(editingExpense) || isEditingSession;
@@ -1336,7 +1337,7 @@ export function ExpenseDialog({
             });
             const json = await res.json().catch(() => ({}));
             if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "ביטול נכשל.") };
-            router.refresh();
+            startTransition(() => { router.refresh(); });
             return { ok: true };
           },
         });

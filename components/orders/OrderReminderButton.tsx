@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { NotificationIcon } from "@/components/ui/icons";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ export default function OrderReminderButton({
   iconOnly?: boolean;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
 
   return (
@@ -44,7 +45,7 @@ export default function OrderReminderButton({
         orderLabel={orderLabel}
         open={open}
         onOpenChange={setOpen}
-        onSaved={() => router.refresh()}
+        onSaved={() => startTransition(() => { router.refresh(); })}
       />
     </>
   );

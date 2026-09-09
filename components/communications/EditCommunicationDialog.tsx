@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DeleteButton } from "@/components/ui/icon-button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -53,6 +53,7 @@ export default function EditCommunicationDialog({
   const [topic, setTopic] = useState(log.category);
   const [content, setContent] = useState(log.content ?? "");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [, startTransition] = useTransition();
 
   function save() {
     const id = log.id;
@@ -96,7 +97,7 @@ export default function EditCommunicationDialog({
         });
         const json = (await res.json().catch(() => ({}))) as { error?: string };
         if (!res.ok) return { ok: false, error: toHebrewError(json.error, "מחיקה נכשלה.") };
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });

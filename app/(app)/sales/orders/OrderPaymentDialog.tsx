@@ -1,7 +1,7 @@
 "use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -63,6 +63,7 @@ export default function OrderPaymentDialog({
   buttonClassName?: string;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -192,7 +193,9 @@ export default function OrderPaymentDialog({
       });
 
       resetForm();
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch (err: unknown) {
       setError(toHebrewError(err, "שגיאה לא ידועה"));
     } finally {

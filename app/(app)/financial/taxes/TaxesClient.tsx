@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
@@ -59,6 +59,7 @@ function StatBox({ label, value, tone }: { label: string; value: string; tone?: 
 
 export default function TaxesClient({ data }: { data: TaxToPay }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(todayIso());
@@ -116,7 +117,9 @@ export default function TaxesClient({ data }: { data: TaxToPay }) {
         return;
       }
       setOpen(false);
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
       const expenseId = typeof json?.expense?.id === "string" ? json.expense.id : null;
       if (expenseId) {
         // Undo = a real reverse delete call, not a deferred commit — mirrors
@@ -133,7 +136,9 @@ export default function TaxesClient({ data }: { data: TaxToPay }) {
             });
             const delJson = await delRes.json().catch(() => ({}));
             if (!delRes.ok) return { ok: false, error: toHebrewError(delJson?.error, "ביטול נכשל.") };
-            router.refresh();
+            startTransition(() => {
+              router.refresh();
+            });
             return { ok: true };
           },
         });

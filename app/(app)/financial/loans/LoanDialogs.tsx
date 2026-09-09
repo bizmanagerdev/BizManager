@@ -229,7 +229,7 @@ export function LoanFormDialog({
           message,
           onUndo: async () => {
             const del = await deleteLoan(newLoanId);
-            router.refresh();
+            startTransition(() => { router.refresh(); });
             return del;
           },
         });
@@ -436,7 +436,7 @@ export function LoanRepaymentsPanel({ loan }: { loan: Loan }) {
           message: "ההחזר נרשם.",
           onUndo: async () => {
             const del = await deleteRepayment(newRepaymentId, loan.id);
-            router.refresh();
+            startTransition(() => { router.refresh(); });
             return del;
           },
         });
@@ -454,7 +454,7 @@ export function LoanRepaymentsPanel({ loan }: { loan: Loan }) {
       onCommit: async () => {
         const res = await deleteRepayment(id, loan.id);
         if (!res.ok) return { ok: false, error: res.error };
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });
@@ -623,6 +623,7 @@ export function EditPaidRepaymentDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [accountsList, setAccountsList] = useState<Account[]>([]);
   const [form, setForm] = useState({ date: "", amount: "", interest: "", method: "", accountId: "", notes: "" });
 
@@ -683,7 +684,7 @@ export function EditPaidRepaymentDialog({
           notes,
         });
         if (!res.ok) return { ok: false, error: res.error };
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });

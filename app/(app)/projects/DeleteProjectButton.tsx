@@ -1,7 +1,7 @@
 "use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
@@ -40,6 +40,7 @@ export default function DeleteProjectButton({
   onOpenChange?: (open: boolean) => void;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [openState, setOpenState] = useState(false);
   const open = openProp ?? openState;
   const setOpen = (next: boolean) => {
@@ -67,7 +68,9 @@ export default function DeleteProjectButton({
         const json = result.queued ? null : (result.data as { ok?: boolean; warning?: string } | null);
         if (json && !json.ok) return { ok: false, error: "מחיקת פרויקט נכשלה." };
         if (json?.warning) toast.error(json.warning);
-        router.refresh();
+        startTransition(() => {
+          router.refresh();
+        });
         return { ok: true };
       },
     });

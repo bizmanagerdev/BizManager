@@ -1,7 +1,7 @@
 "use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { DeleteButton } from "@/components/ui/icon-button";
@@ -25,6 +25,7 @@ export default function DeleteOrderButton({
   onOpenChange?: (open: boolean) => void;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [confirmOpenState, setConfirmOpenState] = useState(false);
   const confirmOpen = openProp ?? confirmOpenState;
   const setConfirmOpen = (next: boolean) => {
@@ -49,7 +50,9 @@ export default function DeleteOrderButton({
           if (!result.ok) return { ok: false, error: toHebrewError(result.error, "מחיקת הזמנה נכשלה.") };
           if (!(result.data as { ok?: boolean })?.ok) return { ok: false, error: "מחיקת הזמנה נכשלה." };
         }
-        router.refresh();
+        startTransition(() => {
+          router.refresh();
+        });
         return { ok: true };
       },
     });

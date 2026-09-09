@@ -131,7 +131,7 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
           const result = await updateProperty(id, snapshotForm);
           if (!result.ok) return { ok: false, error: result.error };
           invalidateQuickCreateCache();
-          router.refresh();
+          startTransition(() => { router.refresh(); });
           return { ok: true };
         },
       });
@@ -174,7 +174,7 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
         const result = await deleteProperty(target.id);
         if (!result.ok) return { ok: false, error: result.error };
         invalidateQuickCreateCache();
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });

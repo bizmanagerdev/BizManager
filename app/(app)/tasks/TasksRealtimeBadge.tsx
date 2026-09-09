@@ -1,12 +1,13 @@
 ﻿"use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export default function TasksRealtimeBadge() {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -15,7 +16,9 @@ export default function TasksRealtimeBadge() {
     const scheduleRefresh = () => {
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
       refreshTimerRef.current = setTimeout(() => {
-        router.refresh();
+        startTransition(() => {
+          router.refresh();
+        });
       }, 350);
     };
 

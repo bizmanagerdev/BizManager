@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   ApprovedUserIcon,
@@ -307,6 +307,7 @@ export default function AttendanceQueuePanel({
 /** A worker currently clocked in (open shift). Admin can close it now / at a set time → pending. */
 function OpenRow({ report }: { report: OpenPhoneReport }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [closing, setClosing] = useState(false);
   const [closeLocal, setCloseLocal] = useState(() => nowLocal());
   /** "מה העובד עשה" — the same thing the worker writes when closing his own shift. */
@@ -331,7 +332,9 @@ function OpenRow({ report }: { report: OpenPhoneReport }) {
       onCommit: async () => {
         const result = await updatePhoneReportClockIn(report.id, clockIn);
         if (!result.ok) return { ok: false, error: toHebrewError(result.error, "עדכון שעת הכניסה נכשל.") };
-        router.refresh();
+        startTransition(() => {
+          router.refresh();
+        });
         return { ok: true };
       },
     });
@@ -352,7 +355,9 @@ function OpenRow({ report }: { report: OpenPhoneReport }) {
       onCommit: async () => {
         const result = await closePhoneReport(report.id, clockOut, noteSnapshot);
         if (!result.ok) return { ok: false, error: toHebrewError(result.error, "סגירת המשמרת נכשלה.") };
-        router.refresh();
+        startTransition(() => {
+          router.refresh();
+        });
         return { ok: true };
       },
     });

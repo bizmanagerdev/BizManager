@@ -692,7 +692,7 @@ export default function FinancialPageClient({
         if (!res.ok) {
           return { ok: false, error: toHebrewError(json?.error, "סימון ההוצאה כשולמה נכשל.") };
         }
-        router.refresh();
+        startRefreshTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });
@@ -720,7 +720,7 @@ export default function FinancialPageClient({
         if (!result.queued && !result.ok) {
           return { ok: false, error: toHebrewError(result.error, "מחיקת החיוב נכשלה.") };
         }
-        router.refresh();
+        startRefreshTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });
@@ -806,7 +806,7 @@ export default function FinancialPageClient({
       clearDraft("income-create");
       setIncomeCreateForm(createIncomeFormState());
       setIncomeCheckPhotoFiles([]);
-      router.refresh();
+      startRefreshTransition(() => { router.refresh(); });
 
       if (!createdPaymentId) {
         toast.success("ההכנסה נוספה");
@@ -827,7 +827,7 @@ export default function FinancialPageClient({
             });
             const errJson = await res.json().catch(() => ({}));
             if (!res.ok) return { ok: false, error: toHebrewError(errJson?.error, "ביטול נכשל.") };
-            router.refresh();
+            startRefreshTransition(() => { router.refresh(); });
             return { ok: true };
           },
         });

@@ -1,7 +1,7 @@
 "use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { NotificationIcon, PhoneIcon, TaskIcon, WalletIcon } from "@/components/ui/icons";
@@ -31,6 +31,7 @@ function todayIso() {
 // hides a row on success and refreshes for source-of-truth.
 export default function TodayInbox({ data }: { data: TodayInboxData }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [doneTaskIds, setDoneTaskIds] = useState<Set<string>>(() => new Set());
   const [doneReminderIds, setDoneReminderIds] = useState<Set<string>>(() => new Set());
   const [collectedIds, setCollectedIds] = useState<Set<string>>(() => new Set());
@@ -70,7 +71,9 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
         });
         const json = (await res.json().catch(() => ({}))) as { error?: string };
         if (!res.ok) return { ok: false, error: toHebrewError(json.error, "הפעולה נכשלה.") };
-        router.refresh();
+        startTransition(() => {
+          router.refresh();
+        });
         return { ok: true };
       },
     });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -86,6 +86,7 @@ function buildDetailsPatch(input: PropertyInput): Partial<Property> {
  */
 export default function PropertyDetailsCard({ propertyId, property }: { propertyId: string; property: Property }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [editing, setEditing] = useState(false);
   const [override, setOverride] = useState<Partial<Property> | null>(null);
   const displayProperty: Property = override ? { ...property, ...override } : property;
@@ -121,7 +122,7 @@ export default function PropertyDetailsCard({ propertyId, property }: { property
         const result = await updateProperty(propertyId, { ...propertyToForm(property), ...pick(snapshotDraft, BASIC_KEYS) });
         if (!result.ok) return { ok: false, error: result.error };
         invalidateQuickCreateCache();
-        router.refresh();
+        startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });
