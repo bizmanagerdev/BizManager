@@ -545,7 +545,7 @@ export default function CollectionTrackingPanel({
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-2">
-                      <span className="truncate font-medium">
+                      <span className="font-medium">
                         {r.source_type === "loan"
                           ? r.title
                             ? `הלוואה — ${r.title}`

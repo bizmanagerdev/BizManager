@@ -11,6 +11,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { MetaRow } from "@/components/ui/meta-row";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { ViewDialog } from "@/components/ui/view-dialog";
 import { DateInput } from "@/components/ui/date-input";
@@ -269,7 +270,7 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
             return (
               <li key={item.id} className="flex items-center gap-1.5 text-xs">
                 <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STAGE_DOT[stage]}`} />
-                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                <span className="min-w-0 flex-1">{item.label}</span>
                 <span className="shrink-0 font-medium">{amountLabel(item)}</span>
               </li>
             );
@@ -502,7 +503,7 @@ export function CashNeedsDialog({
                   <li key={i.id} className="flex items-center gap-2 px-2.5 py-1">
                     <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STAGE_DOT[itemStageKey(i)]}`} />
                     <span className="w-9 shrink-0 text-xs tabular-nums text-muted-foreground">{d.getDate()}/{d.getMonth() + 1}</span>
-                    <span className="min-w-0 flex-1 truncate">{i.label}</span>
+                    <span className="min-w-0 flex-1">{i.label}</span>
                     {i.variableAmount ? <Badge variant="warning">משתנה</Badge> : null}
                     <span className="shrink-0 tabular-nums">{amountLabel(i)}</span>
                   </li>
@@ -589,7 +590,7 @@ function DuePaymentsBanner({
                   className="flex w-full items-center gap-2 px-3 py-2 text-right transition-colors hover:bg-background/60"
                 >
                   <span className={`h-2 w-2 shrink-0 rounded-full ${STAGE_DOT[stage]}`} />
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{item.label}</span>
+                  <span className="min-w-0 flex-1 text-sm font-medium">{item.label}</span>
                   <Badge variant={STAGE_BADGE[stage]}>{STAGE_LABEL[stage]}</Badge>
                   <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                     {day.getDate()}/{day.getMonth() + 1}
@@ -638,9 +639,8 @@ function PaymentItemCard({
   // Drop the source label from the meta when a type badge (הוראת קבע / קבועה) already
   // says the same thing — no info twice.
   const showsTypeBadge = item.autoPaid || isForecast;
-  const metaLine = [item.domainName, showsTypeBadge ? null : item.sourceLabel, accountName ? `מחשבון ${accountName}` : null]
-    .filter(Boolean)
-    .join(" • ");
+  const metaItems = [item.domainName, showsTypeBadge ? null : item.sourceLabel, accountName ? `מחשבון ${accountName}` : null];
+  const metaLine = metaItems.filter(Boolean).join(" • ");
   const amountText = amountLabel(item);
   const noteText = item.notes?.trim() || "";
 
@@ -665,9 +665,7 @@ function PaymentItemCard({
           <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">הערה: {noteText}</div>
         ) : null}
         <div className="mt-1 flex items-center justify-between gap-2">
-          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-            {metaLine}
-          </span>
+          <MetaRow className="min-w-0 flex-1 text-xs text-muted-foreground" items={metaItems} />
           <div className="flex shrink-0 items-center gap-1">
             {canMarkPaid && item.stage !== "posted" ? (
               <Button type="button" size="icon-sm" variant="secondary" onClick={onMarkPaid} title="סמן כשולם" aria-label="סמן כשולם">

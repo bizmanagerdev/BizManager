@@ -220,7 +220,7 @@ function OrderProductList({
         const delivered = product.delivered ?? 0;
         const partiallyDone = delivered > 0 && delivered < product.quantity;
         return (
-          <li key={`${product.name}-${idx}`} className="truncate">
+          <li key={`${product.name}-${idx}`}>
             {product.quantity > 0 ? `${product.quantity}× ` : ""}
             {product.name}
             {partiallyDone ? (

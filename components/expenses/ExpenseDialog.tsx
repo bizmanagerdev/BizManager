@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { BackspaceIcon, BankIcon, CardIcon, CashIcon, RecurringIcon, SpinnerIcon, SplitIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
+import { MetaRow } from "@/components/ui/meta-row";
 import { StepWizard, WizardTitle } from "@/components/ui/step-wizard";
 import { OptionRow, StepHeading } from "@/components/ui/option-row";
 import { DIALOG_CHROME_CONTENT_PAGE, useSwipeToDismiss } from "@/components/ui/dialog-chrome";
@@ -1921,7 +1922,12 @@ export function ExpenseDialog({
             </div>
             {recurFrequency === "monthly" && recurInterval > 1 ? (
               <p className="mt-2 text-xs text-muted-foreground">
-                יחול בחודשים: <span className="font-medium text-foreground">{occurrenceMonths(expenseDate || todayIso(), recurInterval).join(" · ")}</span>
+                יחול בחודשים:{" "}
+                <MetaRow
+                  as="span"
+                  className="inline-flex font-medium text-foreground"
+                  items={occurrenceMonths(expenseDate || todayIso(), recurInterval)}
+                />
               </p>
             ) : null}
             <p className="mt-2 text-xs text-muted-foreground">
@@ -2981,9 +2987,11 @@ export function ExpenseDialog({
                   {recurFrequency === "monthly" && recurInterval > 1 ? (
                     <div className="rounded-lg border bg-background px-3 py-2 text-xs text-muted-foreground">
                       יחול בחודשים:{" "}
-                      <span className="font-medium text-foreground">
-                        {occurrenceMonths(expenseDate || todayIso(), recurInterval).join(" · ")}
-                      </span>
+                      <MetaRow
+                        as="span"
+                        className="inline-flex font-medium text-foreground"
+                        items={occurrenceMonths(expenseDate || todayIso(), recurInterval)}
+                      />
                       <div className="mt-0.5">שנה את התאריך שלמעלה כדי להזיז את חודשי החיוב.</div>
                     </div>
                   ) : null}

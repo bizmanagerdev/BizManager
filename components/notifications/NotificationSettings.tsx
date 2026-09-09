@@ -281,7 +281,7 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
         </button>
 
         <div className="min-w-0 flex-1">
-          <div className={`truncate text-sm font-medium ${alert.enabled ? "" : "text-muted-foreground"}`}>{alert.title}</div>
+          <div className={`text-sm font-medium ${alert.enabled ? "" : "text-muted-foreground"}`}>{alert.title}</div>
           <div className="mt-0.5 flex items-center gap-1.5">
             {isBuiltin && (
               <span className="rounded bg-info-soft px-1.5 py-px text-[10px] text-info-soft-foreground">

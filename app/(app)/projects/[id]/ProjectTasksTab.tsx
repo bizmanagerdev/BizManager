@@ -958,7 +958,7 @@ export function ProjectTasksTab({
                 </div>
               </div>
               {createFiles.length > 0 ? (
-                <div className="text-xs text-muted-foreground truncate">
+                <div className="text-xs text-muted-foreground">
                   {createFiles
                     .slice(0, 3)
                     .map((f) => f.name)

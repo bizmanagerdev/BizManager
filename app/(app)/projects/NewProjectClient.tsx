@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AddUserIcon, AiIcon, CardIcon, CheckIcon, CloseIcon, DocumentIcon, EditIcon, SearchIcon, UserIcon, WazeIcon } from "@/components/ui/icons";
 import { StepWizard, WizardTitle, useStepFlow } from "@/components/ui/step-wizard";
+import { MetaRow } from "@/components/ui/meta-row";
 import { OptionRow, StepHeading } from "@/components/ui/option-row";
 import { SummaryRow, SummarySection } from "@/components/ui/summary";
 import { cn } from "@/lib/utils";
@@ -834,9 +835,11 @@ export default function NewProjectClient({
                           <span className="min-w-0 flex-1">
                             <span className="font-medium text-foreground">{customer.name}</span>
                             {customer.phone || customer.city ? (
-                              <span className="mt-0.5 block text-xs text-muted-foreground">
-                                {[customer.phone, customer.city].filter(Boolean).join(" · ")}
-                              </span>
+                              <MetaRow
+                                as="span"
+                                className="mt-0.5 text-xs text-muted-foreground"
+                                items={[customer.phone, customer.city]}
+                              />
                             ) : null}
                             {customer.nameForInvoice && customer.nameForInvoice !== customer.name ? (
                               <span className="mt-0.5 block text-xs text-muted-foreground">
@@ -879,14 +882,14 @@ export default function NewProjectClient({
                     <div className="space-y-4 rounded-xl border border-border/70 bg-background p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <h3 className="truncate text-lg font-semibold text-foreground">{selectedCustomer.name}</h3>
+                          <h3 className="text-lg font-semibold text-foreground">{selectedCustomer.name}</h3>
                           {selectedCustomer.contacts?.[0]?.full_name ? (
-                            <p className="mt-0.5 truncate text-sm text-muted-foreground">
+                            <p className="mt-0.5 text-sm text-muted-foreground">
                               {selectedCustomer.contacts[0].full_name}
                               {selectedCustomer.email ? ` · ${selectedCustomer.email}` : ""}
                             </p>
                           ) : selectedCustomer.email ? (
-                            <p className="mt-0.5 truncate text-sm text-muted-foreground">{selectedCustomer.email}</p>
+                            <p className="mt-0.5 text-sm text-muted-foreground">{selectedCustomer.email}</p>
                           ) : null}
                         </div>
                         <div className="flex flex-wrap items-center justify-end gap-1.5">

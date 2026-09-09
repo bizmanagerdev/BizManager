@@ -138,13 +138,13 @@ export default function CustomerTasksSection({
               >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="truncate font-medium">{task.subject}</span>
+                    <span className="font-medium">{task.subject}</span>
                     {task.is_private ? <LockIcon className="h-3 w-3 text-muted-foreground" /> : null}
                     {task.has_open_reminder ? <NotificationIcon className="h-3 w-3 text-warning-strong" /> : null}
                     {task.status ? <StatusBadge value={task.status} type="task" /> : null}
                   </div>
                   {task.assigned_user_name ? (
-                    <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                    <div className="mt-0.5 text-xs text-muted-foreground">
                       אחראי: {task.assigned_user_name}
                     </div>
                   ) : null}

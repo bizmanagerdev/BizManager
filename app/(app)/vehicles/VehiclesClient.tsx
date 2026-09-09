@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { DocumentIcon, EditIcon, DeleteIcon, ExpenseIcon, MoreIcon, NotificationIcon, TaskIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
+import { MetaRow } from "@/components/ui/meta-row";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -178,9 +179,11 @@ export default function VehiclesClient({ vehicles: vehiclesProp }: { vehicles: V
                       <VehiclePhotoAvatar tagId={v.tagId} name={v.name} photoUrl={v.photoUrl} size="sm" />
                       <div className="min-w-0 break-words">
                         <div className="text-lg font-semibold">{v.name}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {[v.makeModel, v.licensePlate, v.year, formatMileage(v.mileage)].filter(Boolean).join(" · ") || "—"}
-                        </div>
+                        <MetaRow
+                          className="text-sm text-muted-foreground"
+                          items={[v.makeModel, v.licensePlate, v.year, formatMileage(v.mileage)]}
+                          fallback="—"
+                        />
                       </div>
                     </div>
                     <DropdownMenu>

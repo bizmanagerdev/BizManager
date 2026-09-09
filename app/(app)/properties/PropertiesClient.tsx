@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { AddIcon, BuildingIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { MetaRow } from "@/components/ui/meta-row";
 import { Card, CardContent } from "@/components/ui/card";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -56,7 +57,7 @@ function buildPropertyPatch(input: PropertyInput) {
 }
 
 /** "3 חדרים · קומה 2 · 65 מ״ר · 2 חדרי רחצה" — only the parts that are set. */
-function factsLine(p: PropertyWithLease): string {
+function factsLine(p: PropertyWithLease): (string | null)[] {
   // A building has apartments, not a room count; a מחסן has neither — just area.
   const hasRoomLayout = propertyHasRoomLayout(p.propertyType);
   return [
@@ -72,9 +73,7 @@ function factsLine(p: PropertyWithLease): string {
     hasRoomLayout && p.bathrooms != null ? `${p.bathrooms} חדרי רחצה` : null,
     hasRoomLayout && p.mezuzahCount != null ? `${p.mezuzahCount} מזוזות` : null,
     p.lightBulbCount != null ? `${p.lightBulbCount} נורות` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  ];
 }
 
 function amenityBadges(p: PropertyWithLease) {
@@ -213,12 +212,12 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
                 <CardContent className="flex flex-1 flex-col gap-3 p-4">
                   <div className="flex items-start justify-between gap-2">
                     <Link href={`/properties/${p.id}`} className="min-w-0 flex-1">
-                      <div className="truncate text-lg font-semibold hover:underline">{propertyDisplayName(p)}</div>
-                      {p.name ? <div className="truncate text-sm text-muted-foreground">{p.address}</div> : null}
+                      <div className="text-lg font-semibold hover:underline">{propertyDisplayName(p)}</div>
+                      {p.name ? <div className="text-sm text-muted-foreground">{p.address}</div> : null}
                       {p.assetDescription ? (
-                        <div className="truncate text-sm text-muted-foreground">{p.assetDescription}</div>
+                        <div className="text-sm text-muted-foreground">{p.assetDescription}</div>
                       ) : null}
-                      {factsLine(p) ? <div className="text-xs text-muted-foreground">{factsLine(p)}</div> : null}
+                      <MetaRow className="text-xs text-muted-foreground" items={factsLine(p)} />
                     </Link>
                     <div className="flex shrink-0 gap-1">
                       <AddReminderButton entityType="property" entityId={p.id} label={propertyDisplayName(p)} className="h-9 w-9 p-0" iconOnly />

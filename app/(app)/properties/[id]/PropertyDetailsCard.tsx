@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EditButton } from "@/components/ui/icon-button";
+import { MetaRow } from "@/components/ui/meta-row";
 import { invalidateQuickCreateCache } from "@/components/layout/QuickCreateMenu";
 import { updateProperty } from "../actions";
 import { PropertyBasicFields, propertyToForm, type PropertyInput } from "../PropertyFormFields";
@@ -201,7 +202,7 @@ export default function PropertyDetailsCard({ propertyId, property }: { property
         ) : (
           <>
             {displayProperty.assetDescription ? <p className="text-sm">{displayProperty.assetDescription}</p> : null}
-            {facts.length > 0 ? <p className="text-sm text-muted-foreground">{facts.join(" · ")}</p> : null}
+            <MetaRow className="text-sm text-muted-foreground" items={facts} />
             {badges.length > 0 ? (
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 {badges.map((b) => (

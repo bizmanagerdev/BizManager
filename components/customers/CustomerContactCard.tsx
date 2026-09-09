@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ContactTapZone } from "@/components/ui/contact-link";
 import { AddressLink } from "@/components/ui/address-link";
 import { StatActionCard } from "@/components/ui/stat-action-card";
+import { MetaRow } from "@/components/ui/meta-row";
 import LogCommunicationButton, { type CommEntityType } from "@/components/communications/LogCommunicationButton";
 
 // The "who is this for" card, shared by every entity that belongs to a customer
@@ -62,13 +63,12 @@ export function CustomerContactCard({
   entityId,
 }: CustomerContactCardProps) {
   const logsCallsHere = Boolean(entityType && entityId);
-  const subtitle = [
+  const subtitleParts = [
     branchName ? `סניף: ${branchName}` : null,
     invoiceName && invoiceName !== name ? `שם לחשבונית: ${invoiceName}` : null,
     registrationNumber ? `ח.פ / ת.ז: ${registrationNumber}` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  ].filter(Boolean);
+  const subtitle = subtitleParts.length > 0 ? <MetaRow items={subtitleParts} /> : null;
 
   const waNumber =
     whatsapp && phone && digitsOnly(whatsapp) === digitsOnly(phone) ? null : whatsapp ?? null;
@@ -142,7 +142,7 @@ export function CustomerContactCard({
       icon={<UserIcon className="h-5 w-5" />}
       label="לקוח"
       value={name}
-      subtitles={[subtitle || null]}
+      subtitles={[subtitle]}
       details={details}
       cornerHref={logsCallsHere && customerId ? `/customers/${customerId}` : undefined}
       cornerLabel="כרטיס הלקוח"

@@ -7,6 +7,7 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { EditButton } from "@/components/ui/icon-button";
+import { MetaRow } from "@/components/ui/meta-row";
 import { DeleteIcon, EditIcon, MoreIcon, NotificationIcon } from "@/components/ui/icons";
 import {
   DropdownMenu,
@@ -134,11 +135,13 @@ export default function VehicleHeaderCard({ vehicle, tasks }: { vehicle: Vehicle
           <VehiclePhotoAvatar tagId={vehicle.tagId} name={display.name} photoUrl={display.photoUrl} size="lg" editable />
           <div className="min-w-0 break-words">
             <h1 className="text-2xl font-semibold">{display.name}</h1>
-            <p className="text-sm text-muted-foreground">
-              {/* Mileage isn't in this line — it has its own card right below,
-                  not folded into the same list as static identity details. */}
-              {[display.makeModel, display.licensePlate, display.year].filter(Boolean).join(" · ") || "—"}
-            </p>
+            {/* Mileage isn't in this line — it has its own card right below,
+                not folded into the same list as static identity details. */}
+            <MetaRow
+              className="text-sm text-muted-foreground"
+              items={[display.makeModel, display.licensePlate, display.year]}
+              fallback="—"
+            />
           </div>
         </div>
         <div className="hidden shrink-0 items-center gap-1 lg:flex">

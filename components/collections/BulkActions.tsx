@@ -192,7 +192,7 @@ export default function BulkActions({
                   className="flex items-center justify-between gap-2 rounded-lg border border-border/60 p-2"
                 >
                   <div className="min-w-0">
-                    <div className="truncate font-medium">{g.customer_name}</div>
+                    <div className="font-medium">{g.customer_name}</div>
                     <div className="text-xs text-muted-foreground">
                       {formatCurrency(g.outstanding_amount)}
                       {g.customer_phone ? ` · ${g.customer_phone}` : ""}

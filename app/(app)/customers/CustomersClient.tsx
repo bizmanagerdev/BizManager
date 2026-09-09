@@ -711,28 +711,28 @@ export default function CustomersClient({
                   {...clickableRowProps(() => openCustomerDetails(id))}
                 >
                   <td className="px-2 py-1.5">
-                    <div className="truncate text-right font-medium leading-tight">{customerName}</div>
+                    <div className="text-right font-medium leading-tight">{customerName}</div>
                     {s(row, "name_for_invoice") && s(row, "name_for_invoice") !== customerName ? (
-                      <div className="truncate text-right text-xs leading-tight text-muted-foreground">
+                      <div className="text-right text-xs leading-tight text-muted-foreground">
                         שם לחשבונית: {s(row, "name_for_invoice")}
                       </div>
                     ) : null}
                   </td>
                   <td className="px-2 py-1.5">
-                    <div className="truncate leading-tight">{s(row, "phone") || "-"}</div>
+                    <div className="leading-tight">{s(row, "phone") || "-"}</div>
                     {s(row, "email") ? (
-                      <div className="truncate text-xs leading-tight text-muted-foreground">{s(row, "email")}</div>
+                      <div className="text-xs leading-tight text-muted-foreground">{s(row, "email")}</div>
                     ) : null}
                   </td>
                   <td className="px-2 py-1.5">
-                    <div className="truncate text-muted-foreground">
+                    <div className="text-muted-foreground">
                       {s(row, "address") ? (
                         <AddressLink
                           address={s(row, "address")}
                           className="inline-flex max-w-full items-center gap-1 align-middle"
                         >
                           <WazeIcon className="h-3 w-3 shrink-0" />
-                          <span className="truncate">{s(row, "address")}</span>
+                          <span>{s(row, "address")}</span>
                         </AddressLink>
                       ) : (
                         "-"
@@ -752,7 +752,7 @@ export default function CustomersClient({
                   <td className="px-2 py-1.5">{n(row, "projects_count")}</td>
                   <td className="px-2 py-1.5">
                     {openBalance > 0 ? (
-                      <div className="truncate font-medium text-destructive">{ils(openBalance)}</div>
+                      <div className="whitespace-nowrap font-medium text-destructive">{ils(openBalance)}</div>
                     ) : null}
                   </td>
                   <td className="px-2 py-1.5">

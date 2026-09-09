@@ -135,12 +135,12 @@ export function WorkerHead({
             // same escape hatch the details toggle uses further down this file.
             <Link
               href={`/payroll/workers/${userId}`}
-              className="relative truncate text-sm font-medium text-foreground hover:underline"
+              className="relative text-sm font-medium text-foreground hover:underline"
             >
               {name ?? "עובד לא ידוע"}
             </Link>
           ) : (
-            <span className="truncate text-sm font-medium text-foreground">{name ?? "עובד לא ידוע"}</span>
+            <span className="text-sm font-medium text-foreground">{name ?? "עובד לא ידוע"}</span>
           )}
           {phone ? (
             <span className="shrink-0 text-xs text-muted-foreground" dir="ltr">

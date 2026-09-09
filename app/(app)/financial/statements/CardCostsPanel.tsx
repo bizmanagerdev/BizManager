@@ -135,7 +135,7 @@ export default function CardCostsPanel({ report }: { report: CardCostsReport }) 
                                           className="flex items-center justify-between gap-3 px-3 py-1.5 text-sm"
                                         >
                                           <div className="min-w-0">
-                                            <span className="truncate">{charge.description}</span>
+                                            <span>{charge.description}</span>
                                             <span dir="ltr" className="text-xs text-muted-foreground">
                                               {" · "}
                                               {formatDate(charge.date)}

@@ -700,7 +700,7 @@ export default function ProjectDetailsActions({
                         className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-border/60 p-2"
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium">{displayName}</div>
+                          <div className="text-sm font-medium">{displayName}</div>
                           <div className="mt-1 text-xs text-muted-foreground">
                             {[
                               document.document_type ? `סוג: ${document.document_type}` : null,

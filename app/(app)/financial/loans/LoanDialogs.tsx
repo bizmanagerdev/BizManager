@@ -930,7 +930,7 @@ export function LoanDocumentsDialog({
                   key={doc.id}
                   className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm"
                 >
-                  <div className="min-w-0 truncate">
+                  <div className="min-w-0">
                     {doc.url ? (
                       <a
                         href={doc.url}

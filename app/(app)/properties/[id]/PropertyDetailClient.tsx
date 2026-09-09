@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AddIcon, ChevronDownIcon, DeleteIcon, DocumentIcon, EditIcon, TaskIcon } from "@/components/ui/icons";
 import { SwipeActions } from "@/components/ui/swipe-actions";
+import { MetaRow } from "@/components/ui/meta-row";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -77,9 +78,9 @@ type RowDetail = { label: string; value: string; long?: boolean };
 
 /**
  * Whatever isn't already shown inline on the row — only when actually set.
- * The row's own title is `truncate`d (a long description gets cut with "…"),
- * so the FULL text goes here too — expanding the row is the only way to read
- * a long description/comment in full, and it must actually be complete there.
+ * The row's own title wraps onto its own lines rather than clipping, but a
+ * long description/comment is still worth surfacing here in full, label-above-
+ * value, rather than only as a shorter duplicate of what's already visible.
  */
 function expenseRowDetails(e: PropertyExpense): RowDetail[] {
   const details: RowDetail[] = [];
@@ -96,9 +97,9 @@ function expenseRowDetails(e: PropertyExpense): RowDetail[] {
 }
 
 /**
- * The inline notes preview on a session row is ALSO `truncate`d — same reason
- * as expenseRowDetails above, the full text has to live here too, not just a
- * shorter duplicate of what's already visible.
+ * The inline notes preview on a session row wraps rather than clips too —
+ * same reason as expenseRowDetails above, the full text has to live here too,
+ * not just a shorter duplicate of what's already visible.
  */
 function sessionRowDetails(s: PropertySession): RowDetail[] {
   const details: RowDetail[] = [];
@@ -464,12 +465,12 @@ function LeaseDocumentLink({ lease }: { lease: LeaseAgreement }) {
       className="mt-0.5 inline-flex items-center gap-1 text-xs text-primary hover:underline"
     >
       <DocumentIcon className="h-3.5 w-3.5" />
-      <span className="truncate">{label}</span>
+      <span>{label}</span>
     </a>
   ) : (
     <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
       <DocumentIcon className="h-3.5 w-3.5" />
-      <span className="truncate">{label} — לא ניתן לפתוח את הקובץ</span>
+      <span>{label} — לא ניתן לפתוח את הקובץ</span>
     </div>
   );
 }
@@ -872,23 +873,21 @@ export default function PropertyDetailClient({
                     {leaseStatusLabel(currentLease.status)}
                   </Badge>
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  {[
+                <MetaRow
+                  className="text-xs text-muted-foreground"
+                  items={[
                     fmtDate(currentLease.startDate) && `החל מ-${fmtDate(currentLease.startDate)}`,
                     currentLease.endDate ? `עד ${fmtDate(currentLease.endDate)}` : "ללא תאריך סיום",
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </div>
+                  ]}
+                />
                 {currentLease.depositType ? (
-                  <div className="text-xs text-muted-foreground">
-                    {[
+                  <MetaRow
+                    className="text-xs text-muted-foreground"
+                    items={[
                       depositTypeLabel(currentLease.depositType),
                       currentLease.depositAmount != null ? formatCurrency(currentLease.depositAmount) : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </div>
+                    ]}
+                  />
                 ) : null}
                 {/* The signed agreement had no surface anywhere on the page —
                     uploading one left no visible trace, so it read as if the
@@ -1026,10 +1025,12 @@ export default function PropertyDetailClient({
                   >
                     {row.kind === "expense" ? (
                       <div className="text-sm">
-                        <div className="truncate font-medium">{row.data.description || row.data.category || "הוצאה"}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {[row.data.description ? row.data.category : null, fmtDate(row.data.date)].filter(Boolean).join(" · ") || "—"}
-                        </div>
+                        <div className="font-medium">{row.data.description || row.data.category || "הוצאה"}</div>
+                        <MetaRow
+                          className="text-xs text-muted-foreground"
+                          items={[row.data.description ? row.data.category : null, fmtDate(row.data.date)]}
+                          fallback="—"
+                        />
                         {row.data.paymentStatus && row.data.paymentStatus !== "paid" ? (
                           <span className="mt-1 inline-block rounded-full border border-warning/40 bg-warning/15 px-2 py-0.5 text-[10px] font-medium text-warning-strong">
                             צפוי
@@ -1038,13 +1039,12 @@ export default function PropertyDetailClient({
                       </div>
                     ) : (
                       <div className="text-sm">
-                        <div className="truncate font-medium">{userNameById.get(row.data.user_id) ?? "עובד"}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {[fmtDate(row.data.clock_in), shiftHoursText(row.data.clock_in, row.data.clock_out)]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </div>
-                        {row.data.notes ? <div className="truncate text-xs text-muted-foreground">{row.data.notes}</div> : null}
+                        <div className="font-medium">{userNameById.get(row.data.user_id) ?? "עובד"}</div>
+                        <MetaRow
+                          className="text-xs text-muted-foreground"
+                          items={[fmtDate(row.data.clock_in), shiftHoursText(row.data.clock_in, row.data.clock_out)]}
+                        />
+                        {row.data.notes ? <div className="text-xs text-muted-foreground">{row.data.notes}</div> : null}
                       </div>
                     )}
                   </ExpandableRow>
@@ -1071,7 +1071,7 @@ export default function PropertyDetailClient({
               otherPayments.map((p) => (
                 <div key={p.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
                   <div className="min-w-0 text-sm">
-                    <div className="truncate font-medium">{p.method || "תשלום"}</div>
+                    <div className="font-medium">{p.method || "תשלום"}</div>
                     <div className="text-xs text-muted-foreground">{fmtDate(p.date) || "—"}</div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
@@ -1110,7 +1110,7 @@ export default function PropertyDetailClient({
               activityTasks.map((t: PropertyTask) => (
                 <div key={t.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
                   <div className="min-w-0 text-sm">
-                    <div className="truncate font-medium">{t.subject || "משימה"}</div>
+                    <div className="font-medium">{t.subject || "משימה"}</div>
                     <div className="text-xs text-muted-foreground">{fmtDate(t.dueDate) || "—"}</div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
@@ -1140,10 +1140,11 @@ export default function PropertyDetailClient({
               activityTemplates.map((t) => (
                 <div key={t.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
                   <div className="min-w-0 text-sm">
-                    <div className="truncate font-medium">{t.templateName || t.category || "הוצאה קבועה"}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {[t.category, recurringFrequencyLabel(t)].filter(Boolean).join(" · ")}
-                    </div>
+                    <div className="font-medium">{t.templateName || t.category || "הוצאה קבועה"}</div>
+                    <MetaRow
+                      className="text-xs text-muted-foreground"
+                      items={[t.category, recurringFrequencyLabel(t)]}
+                    />
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     {!t.isActive ? <Badge variant="neutral">לא פעיל</Badge> : null}
@@ -1232,15 +1233,17 @@ export default function PropertyDetailClient({
                 <div key={d.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
                   <div className="min-w-0 text-sm">
                     {d.url ? (
-                      <a href={d.url} target="_blank" rel="noreferrer" className="truncate font-medium text-primary hover:underline">
+                      <a href={d.url} target="_blank" rel="noreferrer" className="font-medium text-primary hover:underline">
                         {d.title || d.fileName || "מסמך"}
                       </a>
                     ) : (
-                      <div className="truncate font-medium">{d.title || d.fileName || "מסמך"}</div>
+                      <div className="font-medium">{d.title || d.fileName || "מסמך"}</div>
                     )}
-                    <div className="text-xs text-muted-foreground">
-                      {[d.documentType, fmtDate(d.uploadedAt)].filter(Boolean).join(" · ") || "—"}
-                    </div>
+                    <MetaRow
+                      className="text-xs text-muted-foreground"
+                      items={[d.documentType, fmtDate(d.uploadedAt)]}
+                      fallback="—"
+                    />
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <DeleteButton onClick={() => setDel({ kind: "document", id: d.id, label: d.title || "מסמך" })} label="מחיקת מסמך" />
@@ -1430,7 +1433,7 @@ export default function PropertyDetailClient({
             {editLeaseId ? (
               leaseDoc.documentUrl ? (
                 <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/20 p-2 text-sm">
-                  <a href={leaseDoc.documentUrl} target="_blank" rel="noreferrer" className="truncate text-primary hover:underline">
+                  <a href={leaseDoc.documentUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline">
                     {leaseDoc.documentFileName || "מסמך"}
                   </a>
                   <Button type="button" variant="secondary" size="sm" onClick={detachLeaseDoc} disabled={leaseDocBusy}>
@@ -1450,7 +1453,7 @@ export default function PropertyDetailClient({
               )
             ) : pendingLeaseDocFile ? (
               <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/20 p-2 text-sm">
-                <span className="truncate">{pendingLeaseDocFile.name}</span>
+                <span>{pendingLeaseDocFile.name}</span>
                 <Button type="button" variant="secondary" size="sm" onClick={() => setPendingLeaseDocFile(null)}>
                   הסרה
                 </Button>

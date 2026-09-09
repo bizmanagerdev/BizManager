@@ -116,9 +116,9 @@ function SearchResults({
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 space-y-1">
-                    <div className="truncate text-sm font-medium">{highlightText(result.title, trimmedQuery)}</div>
+                    <div className="text-sm font-medium">{highlightText(result.title, trimmedQuery)}</div>
                     {result.subtitle ? (
-                      <div className="truncate text-xs text-muted-foreground">
+                      <div className="text-xs text-muted-foreground">
                         {highlightText(result.subtitle, trimmedQuery)}
                       </div>
                     ) : null}
@@ -127,7 +127,7 @@ function SearchResults({
                         label={result.match.label}
                         snippet={result.match.snippet}
                         query={trimmedQuery}
-                        className="truncate text-xs text-muted-foreground/90"
+                        className="text-xs text-muted-foreground/90"
                       />
                     ) : null}
                   </div>

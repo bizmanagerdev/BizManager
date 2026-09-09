@@ -809,7 +809,7 @@ export default function OrderConfirmDialog({
                       onClick={() => addProduct(product)}
                     >
                       <span className="min-w-0">
-                        <span className="block truncate font-medium">{product.name}</span>
+                        <span className="block font-medium">{product.name}</span>
                         {product.sku ? (
                           <span className="block text-xs text-muted-foreground">מק״ט: {product.sku}</span>
                         ) : null}

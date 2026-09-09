@@ -549,7 +549,7 @@ export default async function SalesOrderPage({
                 מכירות
               </Link>
               <ChevronLeftIcon className="h-3.5 w-3.5 shrink-0" />
-              <h1 className="min-w-0 truncate text-lg font-bold text-foreground">
+              <h1 className="min-w-0 text-lg font-bold text-foreground">
                 {customerId ? (
                   <Link href={`/customers/${customerId}`} className="hover:underline">
                     {customerDisplayName}
@@ -830,8 +830,8 @@ export default async function SalesOrderPage({
                               ×{quantity}
                             </span>
                             <div className="min-w-0">
-                              <div className="truncate font-medium">{productName}</div>
-                              <div className="truncate text-xs text-muted-foreground">
+                              <div className="font-medium">{productName}</div>
+                              <div className="text-xs text-muted-foreground">
                                 מחיר יחידה {formatCurrency(unitPrice)}
                                 {lineDiscountAmount > 0
                                   ? ` · הנחה -${formatCurrency(lineDiscountAmount)}`

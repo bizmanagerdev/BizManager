@@ -1931,7 +1931,7 @@ export default function ProjectTabsClient({
                 <div className="text-xs text-muted-foreground">{uploadDocsFiles.length} קבצים</div>
               </div>
               {uploadDocsFiles.length > 0 ? (
-                <div className="text-xs text-muted-foreground truncate">
+                <div className="text-xs text-muted-foreground">
                   {uploadDocsFiles
                     .slice(0, 3)
                     .map((f) => f.name)

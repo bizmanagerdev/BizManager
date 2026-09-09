@@ -4,6 +4,7 @@ import MorningCustomerCard from "@/components/morning/MorningCustomerCard";
 import { AddressLink } from "@/components/ui/address-link";
 import { ContactTapZone } from "@/components/ui/contact-link";
 import { Badge } from "@/components/ui/badge";
+import { MetaRow } from "@/components/ui/meta-row";
 import { Button } from "@/components/ui/button";
 import { CustomerDeliveryDetails } from "./CustomerDeliveryDetails";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
@@ -670,7 +671,7 @@ export default async function CustomerDetailsPage({
                 לקוחות
               </Link>
               <ChevronLeftIcon className="h-3.5 w-3.5" />
-              <h1 className="truncate text-lg font-bold text-foreground">{customerName}</h1>
+              <h1 className="text-lg font-bold text-foreground">{customerName}</h1>
             </nav>
             <p className="text-xs text-muted-foreground">
               {customerPhone ? (
@@ -942,7 +943,7 @@ export default async function CustomerDetailsPage({
                               {getOrderStatusLabel(status)}
                             </Badge>
                           </div>
-                          <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                          <div className="mt-0.5 text-xs text-muted-foreground">
                             <OrderRef orderId={orderId} />
                             {paymentCount > 0 ? ` · ${paymentCount} תשלומים` : ""}
                             {pending > 0.009 ? ` · צפוי לגבייה ${formatCurrency(pending)}` : ""}
@@ -1011,12 +1012,12 @@ export default async function CustomerDetailsPage({
                       >
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="truncate font-medium">{project.name}</span>
+                            <span className="font-medium">{project.name}</span>
                             <Badge className={getStatusColorClasses(getProjectStatusColor(project.status))}>
                               {getProjectStatusLabel(project.status)}
                             </Badge>
                           </div>
-                          <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                          <div className="mt-0.5 text-xs text-muted-foreground">
                             {project.startDate ? `התחיל ${formatDate(project.startDate)}` : "ללא תאריך התחלה"}
                             {project.pending > 0.009 ? ` · צפוי לגבייה ${formatCurrency(project.pending)}` : ""}
                           </div>
@@ -1060,22 +1061,23 @@ export default async function CustomerDetailsPage({
                     >
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="truncate font-medium">{lease.label}</span>
+                          <span className="font-medium">{lease.label}</span>
                           <Badge variant={lease.status === "active" ? "success" : "neutral"}>
                             {leaseStatusLabel(lease.status)}
                           </Badge>
                         </div>
-                        <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                          {[
+                        <MetaRow
+                          className="mt-0.5 text-xs text-muted-foreground"
+                          items={[
                             formatDate(lease.startDate) && `החל מ-${formatDate(lease.startDate)}`,
                             lease.endDate ? `עד ${formatDate(lease.endDate)}` : "ללא תאריך סיום",
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
-                          {lease.depositType
-                            ? ` · ${[depositTypeLabel(lease.depositType), lease.depositAmount != null ? formatCurrency(lease.depositAmount) : null].filter(Boolean).join(" ")}`
-                            : ""}
-                        </div>
+                            lease.depositType
+                              ? [depositTypeLabel(lease.depositType), lease.depositAmount != null ? formatCurrency(lease.depositAmount) : null]
+                                  .filter(Boolean)
+                                  .join(" ")
+                              : null,
+                          ]}
+                        />
                       </div>
                       <div className="shrink-0 text-left font-semibold">
                         {formatCurrency(lease.monthlyRentAmount)}/חודש
@@ -1159,7 +1161,7 @@ export default async function CustomerDetailsPage({
                               ) : null}
                             </span>
                           </div>
-                          <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                          <div className="mt-0.5 text-xs text-muted-foreground">
                             {orderId ? (
                               <OrderRef orderId={orderId} />
                             ) : projectId ? (
@@ -1314,7 +1316,7 @@ export default async function CustomerDetailsPage({
                     className="flex items-center gap-1.5 py-0.5 hover:text-primary"
                   >
                     <MailIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span dir="ltr" className="truncate font-medium">{customerEmail}</span>
+                    <span dir="ltr" className="font-medium">{customerEmail}</span>
                   </ContactTapZone>
                 ) : (
                   <div className="flex items-center gap-1.5 py-0.5">
@@ -1328,7 +1330,7 @@ export default async function CustomerDetailsPage({
                 {address ? (
                   <AddressLink address={address} className="flex items-center gap-1.5 py-0.5">
                     <WazeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="truncate font-medium">{address}</span>
+                    <span className="font-medium">{address}</span>
                   </AddressLink>
                 ) : (
                   <div className="flex items-center gap-1.5 py-0.5">
@@ -1488,12 +1490,12 @@ export default async function CustomerDetailsPage({
                       <>
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="truncate font-medium">{doc.name}</span>
+                            <span className="font-medium">{doc.name}</span>
                             {doc.type ? (
                               <Badge className={getStatusColorClasses("neutral")}>{doc.type}</Badge>
                             ) : null}
                           </div>
-                          <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                          <div className="mt-0.5 text-xs text-muted-foreground">
                             {doc.sourceType === "order" ? (
                               <OrderRef orderId={doc.sourceId} />
                             ) : doc.sourceType === "project" ? (

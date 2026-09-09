@@ -596,8 +596,8 @@ export default function CalendarView({
                   >
                     <span className={`h-2 w-2 shrink-0 rounded-full ${KIND_META[e.kind].dot}`} />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">{e.title}</span>
-                      <span className="block truncate text-xs text-muted-foreground">
+                      <span className="block text-sm font-medium">{e.title}</span>
+                      <span className="block text-xs text-muted-foreground">
                         {d ? fmtFullDay(d) : ""} · {kindLabel(locale, e.kind)}
                         {e.subtitle ? ` · ${e.subtitle}` : ""}
                       </span>

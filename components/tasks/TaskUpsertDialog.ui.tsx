@@ -11,6 +11,7 @@ import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { NativeSelect } from "@/components/ui/native-select";
+import { MetaRow } from "@/components/ui/meta-row";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { DomainSelect } from "@/components/financial/DomainSelect";
@@ -468,7 +469,7 @@ export function TaskPendingFilesSection({
               key={`${file.name}-${index}`}
               className="flex items-center justify-between gap-2 rounded-md border bg-background px-2 py-1.5"
             >
-              <span className="min-w-0 truncate text-xs">{file.name}</span>
+              <span className="min-w-0 text-xs">{file.name}</span>
               <DeleteButton label={`${t(tasksDict, locale, "removeFileAriaPrefix")} ${file.name}`} onClick={() => onRemove(index)} />
             </div>
           ))}
@@ -544,21 +545,19 @@ export function TaskAttachmentsSection({
                   </span>
                 )}
                 <span className="min-w-0">
-                  <span className="block truncate text-sm text-primary hover:underline">
+                  <span className="block text-sm text-primary hover:underline">
                     {attachment.original_name ?? t(tasksDict, locale, "fileWord")}
                   </span>
-                  {attachment.created_at || attachment.uploader_name ? (
-                    <span className="block truncate text-[11px] text-muted-foreground">
-                      {[
-                        attachment.created_at ? formatShortDateTime(attachment.created_at) : null,
-                        attachment.uploader_name
-                          ? `${t(tasksDict, locale, "uploadedByPrefix")} ${attachment.uploader_name}`
-                          : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" • ")}
-                    </span>
-                  ) : null}
+                  <MetaRow
+                    as="span"
+                    className="text-[11px] text-muted-foreground"
+                    items={[
+                      attachment.created_at ? formatShortDateTime(attachment.created_at) : null,
+                      attachment.uploader_name
+                        ? `${t(tasksDict, locale, "uploadedByPrefix")} ${attachment.uploader_name}`
+                        : null,
+                    ]}
+                  />
                 </span>
               </a>
               <DeleteButton
@@ -655,7 +654,7 @@ export function TaskRemindersStagingSection({
               <div className="min-w-0">
                 <div className="font-medium">{formatShortDateTime(reminder.remind_at)}</div>
                 {reminder.content ? (
-                  <div className="truncate text-xs text-muted-foreground">{reminder.content}</div>
+                  <div className="text-xs text-muted-foreground">{reminder.content}</div>
                 ) : null}
               </div>
               <DeleteButton label={t(tasksDict, locale, "reminderDeleteLabel")} onClick={() => onRemove(index)} />
@@ -731,7 +730,7 @@ export function TaskRemindersPanel({
                   <div className="min-w-0">
                     <div className="font-medium">{formatShortDateTime(reminder.remind_at)}</div>
                     {reminder.content ? (
-                      <div className="truncate text-xs text-muted-foreground">{reminder.content}</div>
+                      <div className="text-xs text-muted-foreground">{reminder.content}</div>
                     ) : null}
                   </div>
                   <div className="flex shrink-0 gap-1">

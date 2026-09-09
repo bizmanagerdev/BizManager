@@ -32,7 +32,7 @@ export function StatActionCard({
   value: React.ReactNode;
   valueClassName?: string;
   badges?: React.ReactNode;
-  subtitles?: (string | null)[];
+  subtitles?: (React.ReactNode | null)[];
   details?: { label: string; value: React.ReactNode }[];
   /** Free-form content under the details rows, for cards that need more than
    *  label→value pairs (a list, a note). Shares the same ruled separator. */
@@ -45,7 +45,7 @@ export function StatActionCard({
   cornerHref?: string;
   cornerLabel?: string;
 }) {
-  const subs = (subtitles ?? []).filter((line): line is string => Boolean(line));
+  const subs = (subtitles ?? []).filter((line): line is React.ReactNode => Boolean(line));
   return (
     <div
       className={cn(
@@ -79,8 +79,8 @@ export function StatActionCard({
             )}
             {badges}
           </div>
-          {subs.map((line) => (
-            <div key={line} className="text-xs text-muted-foreground">
+          {subs.map((line, i) => (
+            <div key={i} className="text-xs text-muted-foreground">
               {line}
             </div>
           ))}

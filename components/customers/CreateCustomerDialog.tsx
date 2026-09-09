@@ -8,6 +8,7 @@ import { invalidateCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import { AddIcon, AiIcon, CardIcon, StoreIcon, UserIcon, UsersIcon } from "@/components/ui/icons";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
+import { MetaRow } from "@/components/ui/meta-row";
 import { DeleteButton } from "@/components/ui/icon-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Field } from "@/components/ui/field";
@@ -639,11 +640,11 @@ export function CreateCustomerDialog({
                     className="flex items-center justify-between gap-2 rounded-md bg-background/60 px-2 py-1"
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="truncate font-medium">
+                      <div className="font-medium">
                         <Highlight text={match.name} terms={similarTerms} />
                       </div>
                       {detailFields.length > 0 ? (
-                        <div className="truncate text-xs text-muted-foreground">
+                        <div className="text-xs text-muted-foreground">
                           {detailFields.map((field, idx) => (
                             <span key={field.label}>
                               {idx > 0 ? " · " : null}
@@ -666,7 +667,7 @@ export function CreateCustomerDialog({
                               contactDetails.push({ label: "אימייל", value: contact.email });
                             }
                             return (
-                              <li key={`${match.id}-contact-${idx}`} className="truncate">
+                              <li key={`${match.id}-contact-${idx}`}>
                                 <span className="opacity-70">איש קשר: </span>
                                 <Highlight text={contact.full_name} terms={similarTerms} />
                                 {contactDetails.map((field) => (
@@ -1009,7 +1010,7 @@ export function CreateCustomerDialog({
                       <SummaryRow
                         key={`summary-contact-${i}`}
                         label={c.is_primary ? "איש קשר ראשי" : `איש קשר ${i + 1}`}
-                        value={[c.full_name.trim(), c.phone.trim()].filter(Boolean).join(" · ")}
+                        value={<MetaRow as="span" className="justify-end" items={[c.full_name.trim(), c.phone.trim()]} />}
                       />
                     ))
                   )}
@@ -1023,7 +1024,7 @@ export function CreateCustomerDialog({
                       <SummaryRow
                         key={`summary-branch-${i}`}
                         label={`סניף ${i + 1}`}
-                        value={[b.name.trim(), b.address.trim()].filter(Boolean).join(" · ")}
+                        value={<MetaRow as="span" className="justify-end" items={[b.name.trim(), b.address.trim()]} />}
                       />
                     ))
                   )}

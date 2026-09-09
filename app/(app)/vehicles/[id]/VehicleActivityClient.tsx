@@ -17,6 +17,7 @@ import {
   TaskIcon,
 } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
+import { MetaRow } from "@/components/ui/meta-row";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -154,7 +155,7 @@ function DocumentYearGroup({
                 <div className="flex min-w-0 items-center gap-2">
                   <DocumentRowThumb doc={d} />
                   <div className="min-w-0 text-sm">
-                    <div className="truncate font-medium">{d.documentType || d.title || "מסמך"}</div>
+                    <div className="font-medium">{d.documentType || d.title || "מסמך"}</div>
                     <div className="text-xs text-muted-foreground">{fmtDate(d.uploadedAt) || "—"}</div>
                     {d.fileName ? (
                       // `dir="ltr"` isolates the filename from the surrounding RTL
@@ -319,10 +320,12 @@ function ExpenseMonthGroup({
             const body = (
               <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
                 <div className="min-w-0 text-sm">
-                  <div className="truncate font-medium">{e.description || e.category || "הוצאה"}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {[e.description ? e.category : null, fmtDate(e.date)].filter(Boolean).join(" · ") || "—"}
-                  </div>
+                  <div className="font-medium">{e.description || e.category || "הוצאה"}</div>
+                  <MetaRow
+                    className="text-xs text-muted-foreground"
+                    items={[e.description ? e.category : null, fmtDate(e.date)]}
+                    fallback="—"
+                  />
                   {source ? (
                     <Link href={source.href} className="text-xs text-secondary hover:underline">
                       {source.label}
@@ -652,7 +655,7 @@ export default function VehicleActivityClient({
                       )}
                     </button>
                     <div className="min-w-0 flex-1 text-sm">
-                      <div className={cn("truncate font-medium", done && "text-muted-foreground line-through")}>
+                      <div className={cn("font-medium", done && "text-muted-foreground line-through")}>
                         {t.subject || "משימה"}
                       </div>
                       <div className="text-xs text-muted-foreground">{fmtDate(t.dueDate) || "—"}</div>

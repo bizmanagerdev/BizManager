@@ -98,7 +98,7 @@ export function VehicleExpiryRow({
             className="inline-flex min-w-0 items-center gap-1 text-xs text-secondary hover:underline"
           >
             <TaskIcon className="h-3 w-3 shrink-0" />
-            <span className="truncate">מהמשימה: {sourceTask.subject || "משימה"}</span>
+            <span>מהמשימה: {sourceTask.subject || "משימה"}</span>
           </Link>
         </div>
       ) : null}

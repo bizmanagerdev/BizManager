@@ -10,6 +10,7 @@ import { ChatIcon, ChevronDownIcon, CloseIcon, CoinsIcon, FilterIcon, PhoneIcon,
 import type { IconComponent } from "@/components/ui/icons";
 import { NavLink } from "@/components/NavLink";
 import { Badge } from "@/components/ui/badge";
+import { MetaRow } from "@/components/ui/meta-row";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { ContactTapZone } from "@/components/ui/contact-link";
@@ -442,7 +443,7 @@ function SourceDetail({ source }: { source: CollectionCustomerGroup["sources"][n
         ) : null}
       </div>
       {isOrder && source.items.length > 0 ? (
-        <div className="mt-1 text-xs text-muted-foreground">{source.items.join(" · ")}</div>
+        <MetaRow className="mt-1 text-xs text-muted-foreground" items={source.items} />
       ) : null}
     </div>
   );

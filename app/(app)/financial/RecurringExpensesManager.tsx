@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AddDateIcon, AddReminderIcon, CheckIcon, RecurringIcon, SpinnerIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
+import { MetaRow } from "@/components/ui/meta-row";
 import { NativeSelect } from "@/components/ui/native-select";
 import { toHebrewError } from "@/lib/error-messages";
 import { deleteRecurringExpenseTemplate } from "@/lib/recurring/deleteTemplate";
@@ -608,9 +609,7 @@ export default function RecurringExpensesManager(props: Props) {
                   <Badge variant="outline">{row.count} חיובים</Badge>
                   {row.autoPaid ? <Badge variant="outline">הוראת קבע</Badge> : null}
                 </div>
-                <div dir="ltr" className="text-xs text-muted-foreground">
-                  {row.months.join(" · ")}
-                </div>
+                <MetaRow dir="ltr" className="text-xs text-muted-foreground" items={row.months} />
               </div>
             ))}
           </div>

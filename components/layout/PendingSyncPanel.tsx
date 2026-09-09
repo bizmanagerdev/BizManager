@@ -199,8 +199,8 @@ function Row({
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{label || "פעולה"}</div>
-        <div className={`truncate text-xs ${failed ? "text-destructive" : "text-muted-foreground"}`}>{meta}</div>
+        <div className="text-sm font-medium">{label || "פעולה"}</div>
+        <div className={`text-xs ${failed ? "text-destructive" : "text-muted-foreground"}`}>{meta}</div>
       </div>
       {failed ? (
         <div className="flex shrink-0 items-center gap-1">

@@ -517,7 +517,7 @@ export default function SalesDeliveriesQueue({
                         <div className="flex items-center justify-between gap-2 px-1">
                           <h3 className="flex min-w-0 items-center gap-1.5 text-base font-bold">
                             <LocationIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                            <span className="truncate">{city}</span>
+                            <span>{city}</span>
                           </h3>
                           <span className="shrink-0 text-xs text-muted-foreground">
                             {customerGroups.length} עצירות
@@ -629,7 +629,7 @@ export default function SalesDeliveriesQueue({
                                             <PhoneIcon className="h-4 w-4" />
                                           </span>
                                           <span className="min-w-0 flex-1">
-                                            <span className="block truncate text-sm font-semibold">
+                                            <span className="block text-sm font-semibold">
                                               {combinedCustomerName(group)}
                                             </span>
                                             {/* dir=ltr keeps the digits in dialling order, but

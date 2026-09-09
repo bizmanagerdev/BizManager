@@ -257,7 +257,7 @@ export default function InboxClient({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             {item.isNew ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-label={t(inboxDict, locale, "newIndicator")} /> : null}
-            <Link href={item.url} className="truncate text-sm font-semibold hover:underline">
+            <Link href={item.url} className="text-sm font-semibold hover:underline">
               {item.title}
             </Link>
           </div>

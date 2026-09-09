@@ -407,7 +407,7 @@ function DetailColumn({
                 <span className="w-12 shrink-0 text-xs text-muted-foreground">
                   <span dir="ltr">{dayMonth(item.date)}</span>
                 </span>
-                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                <span className="min-w-0 flex-1">{item.label}</span>
                 <span dir="ltr" className={cn("shrink-0 tabular-nums font-medium", amountClass)}>{formatCurrency(item.amount)}</span>
               </div>
             ))}

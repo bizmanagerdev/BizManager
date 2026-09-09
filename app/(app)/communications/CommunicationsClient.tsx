@@ -148,7 +148,7 @@ export default function CommunicationsClient({ logs: logsProp }: { logs: Communi
                   className={`${GRID} rounded-lg border px-2.5 py-1.5 text-sm ${directionRowClass(l.direction)}`}
                 >
                   <Icon className="h-4 w-4 text-foreground/70" />
-                  <div className="min-w-0 truncate font-medium">
+                  <div className="min-w-0 font-medium">
                     {l.customer_id ? (
                       <Link href={`/customers/${l.customer_id}`} className="hover:underline">
                         {l.customer_name ?? "לקוח"}
@@ -157,10 +157,10 @@ export default function CommunicationsClient({ logs: logsProp }: { logs: Communi
                       l.customer_name ?? "—"
                     )}
                   </div>
-                  <div className="truncate text-xs text-muted-foreground">{l.customer_phone ?? "—"}</div>
-                  <div className="truncate text-xs text-muted-foreground">{TOPIC_LABEL[l.category] ?? l.category}</div>
-                  <div className="min-w-0 truncate text-muted-foreground">{l.content ?? "—"}</div>
-                  <div className="truncate text-xs text-muted-foreground">
+                  <div className="text-xs text-muted-foreground">{l.customer_phone ?? "—"}</div>
+                  <div className="text-xs text-muted-foreground">{TOPIC_LABEL[l.category] ?? l.category}</div>
+                  <div className="min-w-0 text-muted-foreground">{l.content ?? "—"}</div>
+                  <div className="text-xs text-muted-foreground">
                     {formatShortDateTime(l.created_at, "-")}
                     {l.created_by_name ? ` · ${l.created_by_name}` : ""}
                   </div>

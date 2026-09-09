@@ -1076,8 +1076,8 @@ export default function PriceListClient({
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold leading-tight">{product.name}</div>
-                    <div className="truncate text-xs text-muted-foreground">
+                    <div className="text-sm font-semibold leading-tight">{product.name}</div>
+                    <div className="text-xs text-muted-foreground">
                       {product.category ?? "ללא קטגוריה"}
                       {product.code ? ` • ${product.code}` : ""}
                       {product.active === false ? " • לא פעיל" : ""}

@@ -6,6 +6,7 @@ import { useDeferredValue, useEffect, useMemo, useState, useTransition } from "r
 import { useRouter } from "next/navigation";
 import { DocumentIcon, ExternalLinkIcon, FolderIcon, ImageIcon, LayersIcon, ProductIcon, SearchIcon, TagIcon, UploadIcon } from "@/components/ui/icons";
 import { DeleteButton } from "@/components/ui/icon-button";
+import { MetaRow } from "@/components/ui/meta-row";
 import { toast } from "sonner";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Badge } from "@/components/ui/badge";
@@ -792,7 +793,7 @@ export default function DocumentsArchiveClient({
                     )}
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="truncate font-medium">{doc.title}</span>
+                        <span className="font-medium">{doc.title}</span>
                         <Badge variant="outline">{fileKindLabel(doc.file_kind)}</Badge>
                         {doc.business_domains.map((domain) => (
                           <Badge key={`${doc.id}-${domain}`} variant="outline">
@@ -947,7 +948,7 @@ export default function DocumentsArchiveClient({
                 <div>
                   <dt className="text-xs text-muted-foreground">תחום</dt>
                   <dd className="font-medium">
-                    {activePreviewDoc.business_domains.map(getBusinessDomainLabel).join(" · ") || "—"}
+                    <MetaRow items={activePreviewDoc.business_domains.map(getBusinessDomainLabel)} fallback="—" />
                   </dd>
                 </div>
                 {activePreviewDoc.ref_year ? (

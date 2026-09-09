@@ -71,7 +71,7 @@ export default function LoanDetailClient({ loan }: { loan: Loan }) {
               הלוואות וחובות
             </Link>
             <ChevronLeftIcon className="h-3.5 w-3.5" />
-            <h1 className="truncate text-lg font-bold text-foreground">{counterparty}</h1>
+            <h1 className="text-lg font-bold text-foreground">{counterparty}</h1>
           </nav>
           <div className="flex flex-wrap items-center gap-1.5">
             <Badge className={getStatusColorClasses("neutral")}>

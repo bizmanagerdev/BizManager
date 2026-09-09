@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
+import { MetaRow } from "@/components/ui/meta-row";
 import { DeleteButton } from "@/components/ui/icon-button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Field } from "@/components/ui/field";
@@ -549,17 +550,16 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
             {similar.map((match) => (
               <li key={match.id} className="flex items-center justify-between gap-2 rounded-md bg-background/60 px-2 py-1">
                 <div className="min-w-0 flex-1">
-                  <div className="truncate font-medium text-foreground">{match.name}</div>
-                  <div className="truncate text-xs text-muted-foreground">
-                    {[
+                  <div className="font-medium text-foreground">{match.name}</div>
+                  <MetaRow
+                    className="text-xs text-muted-foreground"
+                    items={[
                       match.phone,
                       match.whatsapp && match.whatsapp !== match.phone ? `וואטסאפ: ${match.whatsapp}` : null,
                       match.email,
                       match.address,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </div>
+                    ]}
+                  />
                 </div>
                 <Button type="button" size="sm" variant="secondary" disabled={submitting} onClick={() => applyExistingCustomer(match)}>
                   שימוש בלקוח זה

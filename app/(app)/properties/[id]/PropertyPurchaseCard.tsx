@@ -6,6 +6,7 @@ import { AddIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { MetaRow } from "@/components/ui/meta-row";
 import { updateProperty } from "../actions";
 import { PropertyPurchaseFields, propertyToForm, type PropertyInput } from "../PropertyFormFields";
 import { formatCurrency } from "@/lib/payroll";
@@ -192,15 +193,17 @@ export default function PropertyPurchaseCard({
               <div key={d.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
                 <div className="min-w-0 text-sm">
                   {d.url ? (
-                    <a href={d.url} target="_blank" rel="noreferrer" className="truncate font-medium text-primary hover:underline">
+                    <a href={d.url} target="_blank" rel="noreferrer" className="font-medium text-primary hover:underline">
                       {d.title || d.fileName || "מסמך"}
                     </a>
                   ) : (
-                    <div className="truncate font-medium">{d.title || d.fileName || "מסמך"}</div>
+                    <div className="font-medium">{d.title || d.fileName || "מסמך"}</div>
                   )}
-                  <div className="text-xs text-muted-foreground">
-                    {[d.documentType, fmtDate(d.uploadedAt)].filter(Boolean).join(" · ") || "—"}
-                  </div>
+                  <MetaRow
+                    className="text-xs text-muted-foreground"
+                    items={[d.documentType, fmtDate(d.uploadedAt)]}
+                    fallback="—"
+                  />
                 </div>
                 <DeleteButton onClick={() => onDeleteDocument(d.id, d.title || "מסמך")} label="מחיקת מסמך" />
               </div>

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { DateInput } from "@/components/ui/date-input";
+import { MetaRow } from "@/components/ui/meta-row";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FormDialog } from "@/components/ui/form-dialog";
@@ -304,18 +305,13 @@ export default function RentScheduleSection({
                       {checkStatusLabel(status)}
                     </span>
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    {[
-                      p.checkNumber
-                        ? `צ'ק #${p.checkNumber}`
-                        : p.method
-                          ? paymentMethodLabel(p.method)
-                          : null,
+                  <MetaRow
+                    className="text-xs text-muted-foreground"
+                    items={[
+                      p.checkNumber ? `צ'ק #${p.checkNumber}` : p.method ? paymentMethodLabel(p.method) : null,
                       `פרעון: ${fmtDate(p.dueDate)}`,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </div>
+                    ]}
+                  />
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   <span className="font-semibold">{formatCurrency(p.amount)}</span>

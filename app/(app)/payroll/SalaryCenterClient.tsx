@@ -2645,7 +2645,7 @@ export default function SalaryCenterClient({
                               <div className="min-w-0">
                                 <div className="font-semibold">{worker.full_name ?? worker.email ?? "עובד"}</div>
                                 {worker.phone ? <div className="text-sm text-muted-foreground" dir="ltr">{worker.phone}</div> : null}
-                                {worker.email ? <div className="truncate text-xs text-muted-foreground" dir="ltr">{worker.email}</div> : null}
+                                {worker.email ? <div className="text-xs text-muted-foreground" dir="ltr">{worker.email}</div> : null}
                                 {!worker.email && !worker.phone ? <div className="text-xs text-muted-foreground">{"ללא פרטי קשר"}</div> : null}
                               </div>
                               <StatusPill tone={worker.active === false ? "muted" : "success"}>
@@ -2889,7 +2889,7 @@ export default function SalaryCenterClient({
                               <div className="min-w-0">
                                 <div className="font-semibold">{worker.full_name ?? worker.email ?? "פועל"}</div>
                                 {worker.phone ? <div className="text-sm text-muted-foreground" dir="ltr">{worker.phone}</div> : null}
-                                {worker.email ? <div className="truncate text-xs text-muted-foreground" dir="ltr">{worker.email}</div> : null}
+                                {worker.email ? <div className="text-xs text-muted-foreground" dir="ltr">{worker.email}</div> : null}
                                 {!worker.email && !worker.phone ? <div className="text-xs text-muted-foreground">{"ללא פרטי קשר"}</div> : null}
                               </div>
                               <StatusPill tone={worker.active === false ? "muted" : "success"}>
@@ -3260,7 +3260,7 @@ export default function SalaryCenterClient({
                           </div>
                           <div className="flex items-center justify-between gap-2">
                             <span className="shrink-0 text-muted-foreground">{"קישור"}</span>
-                            <span className="min-w-0 truncate font-medium">{linkLabel || "—"}</span>
+                            <span className="min-w-0 font-medium">{linkLabel || "—"}</span>
                           </div>
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-muted-foreground">{"תחום"}</span>

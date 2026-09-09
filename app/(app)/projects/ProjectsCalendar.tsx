@@ -160,7 +160,7 @@ export default function ProjectsCalendar({
           {dayEntries.map((entry) => (
             <li key={`${entry.kind}-${entry.id}`} className="flex items-center gap-1.5 text-xs">
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${entryKindDot(entry.kind)}`} />
-              <span className="min-w-0 flex-1 truncate">{entry.title}</span>
+              <span className="min-w-0 flex-1">{entry.title}</span>
               <span className="shrink-0 text-[10px] text-muted-foreground">{entryKindLabel(entry.kind)}</span>
             </li>
           ))}

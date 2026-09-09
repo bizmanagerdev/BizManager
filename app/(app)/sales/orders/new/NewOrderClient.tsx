@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { AddIcon, AddUserIcon, AiIcon, CardIcon, CheckIcon, CloseIcon, DocumentIcon, EditIcon, OrderIcon, RemoveIcon, SearchIcon, UserIcon, WarningIcon, WazeIcon } from "@/components/ui/icons";
 import { DeleteButton } from "@/components/ui/icon-button";
+import { MetaRow } from "@/components/ui/meta-row";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { cn } from "@/lib/utils";
 import { toHebrewError } from "@/lib/error-messages";
@@ -1236,9 +1237,11 @@ export default function NewOrderClient({
                               ) : null}
                             </span>
                             {customer.phone || customer.city ? (
-                              <span className="mt-0.5 block text-xs text-muted-foreground">
-                                {[customer.phone, customer.city].filter(Boolean).join(" · ")}
-                              </span>
+                              <MetaRow
+                                as="span"
+                                className="mt-0.5 text-xs text-muted-foreground"
+                                items={[customer.phone, customer.city]}
+                              />
                             ) : null}
                             {customer.nameForInvoice && customer.nameForInvoice !== customer.name ? (
                               <span className="mt-0.5 block text-xs text-muted-foreground">
@@ -1280,16 +1283,16 @@ export default function NewOrderClient({
                     <div className="space-y-4 rounded-xl border border-border/70 bg-background p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <h3 className="truncate text-lg font-semibold text-foreground">
+                          <h3 className="text-lg font-semibold text-foreground">
                             {selectedCustomer.name}
                           </h3>
                           {selectedCustomer.contacts?.[0]?.full_name ? (
-                            <p className="mt-0.5 truncate text-sm text-muted-foreground">
+                            <p className="mt-0.5 text-sm text-muted-foreground">
                               {selectedCustomer.contacts[0].full_name}
                               {selectedCustomer.email ? ` · ${selectedCustomer.email}` : ""}
                             </p>
                           ) : selectedCustomer.email ? (
-                            <p className="mt-0.5 truncate text-sm text-muted-foreground">{selectedCustomer.email}</p>
+                            <p className="mt-0.5 text-sm text-muted-foreground">{selectedCustomer.email}</p>
                           ) : null}
                         </div>
                         <div className="flex flex-wrap items-center justify-end gap-1.5">
@@ -1458,8 +1461,8 @@ export default function NewOrderClient({
                           </div>
 
                           <div className="min-w-0 space-y-0.5 text-xs text-muted-foreground">
-                            {product.code ? <div className="truncate">מק״ט: {product.code}</div> : null}
-                            {product.stock !== null ? <div className="truncate">מלאי: {product.stock}</div> : null}
+                            {product.code ? <div>מק״ט: {product.code}</div> : null}
+                            {product.stock !== null ? <div>מלאי: {product.stock}</div> : null}
                           </div>
 
                           <div className="flex items-center justify-between gap-2">
@@ -1550,7 +1553,7 @@ export default function NewOrderClient({
                               className="h-8 min-w-0"
                             />
                           ) : (
-                            <p className="min-w-0 truncate text-sm font-medium text-foreground">{line.product_name}</p>
+                            <p className="min-w-0 text-sm font-medium text-foreground">{line.product_name}</p>
                           )}
                           <span className="shrink-0 text-sm font-semibold text-foreground">{formatCurrency(lineTotal)}</span>
                         </div>
