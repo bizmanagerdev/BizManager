@@ -65,7 +65,11 @@ jobs:
         run: npm ci
 
       - name: Start local Supabase stack
-        run: npx supabase start -o json > /tmp/supabase-status.json
+        # --yes: a bare `supabase start` can hit a confirmation prompt (e.g.
+        # first-time image pull) — with no TTY on a CI runner that fails
+        # immediately instead of hanging, which matches the fast (~1m25s
+        # total job) failure seen the first time this ran without it.
+        run: npx supabase start -o json --yes > /tmp/supabase-status.json
 
       - name: Write .env.test.local from the local stack's own printed credentials
         run: |
