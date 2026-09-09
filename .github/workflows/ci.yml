@@ -107,6 +107,20 @@ jobs:
           fi
           exit $STATUS
 
+      - name: Upload supabase start output
+        # Backup path in case the step summary above (rendered on the run's
+        # Summary page) isn't visible either — artifact downloads sometimes
+        # have different access rules than the raw per-line log stream.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-start-output
+          path: |
+            /tmp/supabase-stdout.txt
+            /tmp/supabase-stderr.txt
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Write .env.test.local from the local stack's own printed credentials
         run: |
           echo "NEXT_PUBLIC_SUPABASE_URL=$(jq -r .API_URL /tmp/supabase-stdout.txt)" >> .env.test.local
