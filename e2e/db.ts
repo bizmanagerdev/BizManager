@@ -29,6 +29,7 @@ export async function createTestCustomer(overrides: { name?: string; phone?: str
     .insert({
       name: overrides.name ?? `לקוח בדיקה ${Date.now()}`,
       phone: overrides.phone ?? "0500000000",
+      city: "תל אביב",
     })
     .select("id,name")
     .single();

@@ -9,7 +9,11 @@ test.describe("login", () => {
     await page.getByRole("button", { name: "התחברות" }).click();
 
     await page.waitForURL("**/dashboard");
-    await expect(page.getByText("E2E Admin")).toBeVisible();
+    // The dashboard greeting shows the viewer's FIRST name only (see
+    // firstNameOf() in lib/dashboard/greeting.ts) - "E2E Admin" the full name
+    // never appears as visible text on first load, only inside the closed
+    // account panel (components/layout/TopBar.tsx).
+    await expect(page.getByText("E2E", { exact: false })).toBeVisible();
   });
 
   test("a wrong password shows a Hebrew error and stays on /login", async ({ page }) => {
