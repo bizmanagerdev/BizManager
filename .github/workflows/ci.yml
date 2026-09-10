@@ -108,9 +108,15 @@ jobs:
         # --debug + capturing stdout/stderr separately here, written to
         # $GITHUB_STEP_SUMMARY on failure, is how to actually see why
         # without needing log access.
+        #
+        # Deliberately NOT `-o json` here (that flag exists on `start` per
+        # --help, but doesn't actually apply to its own summary output in
+        # this CLI version - it silently still prints the plain banner).
+        # Credentials are read afterward via `supabase status -o env`
+        # instead, which the CLI genuinely honors - see the next step.
         run: |
           set +e
-          npx supabase start -o json --yes --debug > /tmp/supabase-stdout.txt 2> /tmp/supabase-stderr.txt
+          npx supabase start --yes --debug > /tmp/supabase-stdout.txt 2> /tmp/supabase-stderr.txt
           STATUS=$?
           if [ $STATUS -ne 0 ]; then
             {
@@ -177,11 +183,45 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: Write .env.test.local from the local stack's own printed credentials
+      - name: Write .env.test.local from the local stack's own credentials
+        # Previously parsed `supabase start`'s own stdout with `jq -r .API_URL`
+        # etc, assuming `-o json` made it print JSON there - it doesn't (see
+        # the previous step's comment), so every extraction silently returned
+        # nothing and every single Playwright test failed downstream with a
+        # confusing 30s navigation timeout, several minutes away from the
+        # actual cause. `supabase status -o env` is what the CLI genuinely
+        # supports for this (its own --help even shows an `--override-name`
+        # example), so ask it directly instead of scraping `start`'s banner.
+        #
+        # Grep, not a fixed key name: this CLI version renamed the local
+        # anon/service_role keys to "publishable"/"secret" (a real Supabase
+        # platform change), and status var names have shifted between CLI
+        # versions before - so match liberally (old and new naming) rather
+        # than hardcode one, and fail LOUDLY with the full raw output if a
+        # value still comes up empty instead of writing a broken file that
+        # fails silently and confusingly downstream.
         run: |
-          echo "NEXT_PUBLIC_SUPABASE_URL=$(jq -r .API_URL /tmp/supabase-stdout.txt)" >> .env.test.local
-          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$(jq -r .ANON_KEY /tmp/supabase-stdout.txt)" >> .env.test.local
-          echo "SUPABASE_SERVICE_ROLE_KEY=$(jq -r .SERVICE_ROLE_KEY /tmp/supabase-stdout.txt)" >> .env.test.local
+          set +e
+          STATUS_ENV=$(npx supabase status -o env)
+          set -e
+
+          get_val() {
+            echo "$STATUS_ENV" | grep -E "^($1)=" | head -1 | cut -d= -f2-
+          }
+
+          URL=$(get_val "API_URL|PROJECT_URL")
+          ANON_KEY=$(get_val "ANON_KEY|PUBLISHABLE_KEY")
+          SERVICE_KEY=$(get_val "SERVICE_ROLE_KEY|SECRET_KEY")
+
+          if [ -z "$URL" ] || [ -z "$ANON_KEY" ] || [ -z "$SERVICE_KEY" ]; then
+            echo "::error::Could not extract one or more Supabase local credentials from 'supabase status -o env'. Raw output (local throwaway dev-stack keys only, safe to show):"
+            echo "$STATUS_ENV"
+            exit 1
+          fi
+
+          echo "NEXT_PUBLIC_SUPABASE_URL=$URL" >> .env.test.local
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY" >> .env.test.local
+          echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_KEY" >> .env.test.local
 
       - name: Install Playwright's chromium
         run: npx playwright install --with-deps chromium
