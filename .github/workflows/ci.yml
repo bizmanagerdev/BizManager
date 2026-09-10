@@ -45,6 +45,13 @@ jobs:
   e2e:
     name: e2e (playwright)
     runs-on: ubuntu-latest
+    # Needed for the failure-diagnostic step to post a commit comment with
+    # GITHUB_TOKEN — repos default to a read-only token otherwise, which
+    # would make that POST fail (silently, since plain curl doesn't treat
+    # a 4xx response as a shell error — fixed below too by capturing and
+    # printing the actual response).
+    permissions:
+      contents: write
     # Separate job, not a step in `verify` — keeps the fast static/unit gate
     # fast (its own comment above says "no secrets/DB needed" on purpose)
     # while this runs in parallel with its own real (if slower) local stack.
@@ -133,7 +140,7 @@ jobs:
               echo '```'
             } | jq -Rs .
           )
-          curl -s -X POST \
+          curl -s -w "\nHTTP status: %{http_code}\n" -X POST \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
