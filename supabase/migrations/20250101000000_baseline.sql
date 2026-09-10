@@ -1074,7 +1074,7 @@ alter table public.properties add column if not exists rooms numeric;
 alter table public.properties add column if not exists square_meters numeric;
 alter table public.properties add column if not exists water_contract_number text;
 -- push_alert_config's missing columns are DELIBERATELY not backfilled here
--- (unlike every other table above) — supabase/migrations/20260701000000_
+-- (unlike every other table above) — supabase/migrations/20260701000001_
 -- reshape_push_alert_config.sql later DROPS and fully recreates this table
 -- (old single-row toggle design -> multi-row uuid-id scheduler), gated on
 -- "does the `title` column already exist" as its idempotency check. Adding
