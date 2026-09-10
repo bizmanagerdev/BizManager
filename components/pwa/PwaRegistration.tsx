@@ -1,12 +1,34 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { processQueue } from "@/lib/offline-queue";
 import { processUploadQueue } from "@/lib/offline-upload";
 
+// A resumed PWA/installed-app instance (tapping the home-screen icon, not a
+// real relaunch) does NOT re-run this component's mount effect — it never
+// re-checks for a newer service worker, and Server Components (profile,
+// locale, section_access, roles...) never re-fetch either, so the app can
+// sit on whatever it last rendered indefinitely. Confirmed live 2026-09-10:
+// a worker's admin-set locale was correct in the DB the whole time, but his
+// installed app kept rendering an old snapshot from around account creation
+// with no way for it to notice the server had moved on. RESUME_REVALIDATE_MS
+// bounds how long that staleness can persist before the next foreground
+// re-checks both the SW build and re-runs Server Components via
+// router.refresh() (soft — keeps client state, unlike a full reload).
+const RESUME_REVALIDATE_MS = 5 * 60 * 1000;
+
 export default function PwaRegistration() {
+  const router = useRouter();
+  const [, startTransition] = useTransition();
+  // 0, not Date.now() — seeding a ref from an impure call during render trips
+  // react-hooks/purity. Set to the real timestamp inside the effect instead,
+  // which runs after render.
+  const lastRevalidatedAtRef = useRef(0);
+
   useEffect(() => {
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+    if (lastRevalidatedAtRef.current === 0) lastRevalidatedAtRef.current = Date.now();
 
     // In development the SW caches stale Next.js dev chunks and HTML, which
     // causes chronic hydration mismatches because the page was already
@@ -38,10 +60,11 @@ export default function PwaRegistration() {
     // the fresh bundle. A constant "/sw.js" URL let stale caches live forever.
     const swUrl = `/sw.js?v=${encodeURIComponent(process.env.NEXT_PUBLIC_BUILD_ID ?? "v13")}`;
 
-    void navigator.serviceWorker.register(swUrl).then((reg) => {
+    const registration = navigator.serviceWorker.register(swUrl).then((reg) => {
       // Proactively check for a newer service worker on each load (don't wait for the
       // browser's periodic check) so a fixed build / cache-version bump is picked up fast.
       void reg.update().catch(() => {});
+      return reg;
     });
 
     // Self-heal stale caches: when an UPDATED service worker takes control (it purges old
@@ -67,6 +90,26 @@ export default function PwaRegistration() {
     };
     navigator.serviceWorker.addEventListener("message", handleMessage);
 
+    // Re-validate when the app comes back to the foreground after sitting
+    // backgrounded — a resumed instance otherwise never re-checks anything
+    // (see RESUME_REVALIDATE_MS above). Checks the SW build AND re-runs
+    // Server Components (router.refresh, soft — no visible reload) so
+    // session-derived data that can change server-side at any time (locale,
+    // role, section_access, active/system_access) can't go stale for longer
+    // than the threshold. Time-gated, not every tab-switch, to avoid
+    // refreshing on a quick glance at another app.
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now - lastRevalidatedAtRef.current < RESUME_REVALIDATE_MS) return;
+      lastRevalidatedAtRef.current = now;
+      void registration.then((reg) => reg.update().catch(() => {}));
+      startTransition(() => {
+        router.refresh();
+      });
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     // Register a Background Sync tag so the SW can wake us up when online
     const registerSync = async () => {
       try {
@@ -85,8 +128,9 @@ export default function PwaRegistration() {
     return () => {
       navigator.serviceWorker.removeEventListener("message", handleMessage);
       navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, []);
+  }, [router, startTransition]);
 
   return null;
 }
