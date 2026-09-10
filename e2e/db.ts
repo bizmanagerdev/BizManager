@@ -83,7 +83,7 @@ export async function createTestOrder(customerId: string): Promise<TestOrder> {
     .from("orders")
     .insert({
       customer_id: customerId,
-      status: "pending",
+      status: "draft",
       payment_status: "unpaid",
       created_by: createdBy,
     })
