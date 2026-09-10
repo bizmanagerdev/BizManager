@@ -928,7 +928,7 @@ export default function NewProjectClient({
                             { label: "כתובת", value: omitUnknownPlace(selectedCustomer.address || selectedCustomer.city), ltr: false, isAddress: true },
                             { label: "שם לחשבונית", value: selectedCustomer.nameForInvoice, ltr: false },
                           ].map((row) => (
-                            <p key={row.label} className="break-words leading-5">
+                            <p key={row.label} className="leading-5">
                               <span className="text-muted-foreground">{row.label}: </span>
                               {row.value ? (
                                 row.isAddress ? (

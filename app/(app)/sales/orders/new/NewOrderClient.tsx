@@ -1335,7 +1335,7 @@ export default function NewOrderClient({
                             { label: "שם לחשבונית", value: selectedCustomer.nameForInvoice, ltr: false },
                             { label: "אופן תשלום", value: selectedCustomer.requiresPrepayment ? "תשלום מראש" : "רגיל", ltr: false },
                           ].map((row) => (
-                            <p key={row.label} className="break-words leading-5">
+                            <p key={row.label} className="leading-5">
                               <span className="text-muted-foreground">{row.label}: </span>
                               {row.value ? (
                                 row.isAddress ? (
@@ -1450,7 +1450,7 @@ export default function NewOrderClient({
                       >
                         <div className="flex h-full min-w-0 flex-col justify-between gap-2">
                           <div className="flex min-w-0 items-start justify-between gap-2">
-                            <div className="min-w-0 line-clamp-3 break-words text-sm font-semibold leading-5">
+                            <div className="min-w-0 line-clamp-3 text-sm font-semibold leading-5">
                               {product.name}
                             </div>
                             {selected ? (

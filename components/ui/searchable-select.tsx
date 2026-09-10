@@ -210,9 +210,9 @@ export function SearchableSelect({
                   )}
                   {option.icon ? <span className="shrink-0 text-muted-foreground">{option.icon}</span> : null}
                   <span className="min-w-0 flex-1">
-                    <span className="block font-medium break-words">{option.label}</span>
+                    <span className="block font-medium">{option.label}</span>
                     {option.hint ? (
-                      <span className="block text-xs break-words text-muted-foreground">{option.hint}</span>
+                      <span className="block text-xs text-muted-foreground">{option.hint}</span>
                     ) : null}
                   </span>
                 </button>

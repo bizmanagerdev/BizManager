@@ -103,11 +103,17 @@
     }
   }
 
-  /* Long unbreakable strings (URLs, IBANs, long numbers) wrap instead of pushing
-     the layout wider than the screen. */
+  /* NOT overflow-wrap: break-word — that lets the browser split an ordinary
+     word mid-letter (e.g. "הלוואות" → "הלוואו" + "ת") whenever a tight tile or
+     a bumped-up font-scale makes it not quite fit, which reads as broken UI
+     (user, 2026-09-10: never split a word across two lines, anywhere).
+     `normal` only wraps at real word/space boundaries; a truly unbreakable
+     token (a URL, IBAN, long number) that has no such boundary is handled at
+     the few call sites that actually carry one, via an explicit break-all /
+     break-words on that element — not by a blanket rule here. */
   body {
     max-width: 100%;
-    overflow-wrap: break-word;
+    overflow-wrap: normal;
     /* Second line of defence against a sideways page scroll on mobile. The
        `overflow-x: hidden` on <html> above is unreliable on iOS Safari (a few px
        of child overflow can still leak into a body-level horizontal scroll). We

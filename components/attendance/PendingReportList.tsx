@@ -44,7 +44,7 @@ function PendingReportRow({ report, locale }: { report: MyShiftReport; locale: L
           </div>
           <div className="text-muted-foreground">{shiftHoursText(report.clock_in, report.clock_out)}</div>
         </div>
-        <div className="min-w-0">{report.notes ? <div className="break-words text-muted-foreground">{report.notes}</div> : null}</div>
+        <div className="min-w-0">{report.notes ? <div className="text-muted-foreground">{report.notes}</div> : null}</div>
       </div>
       {edit.editing ? (
         <div className="mt-2 border-t border-border/60 pt-2">

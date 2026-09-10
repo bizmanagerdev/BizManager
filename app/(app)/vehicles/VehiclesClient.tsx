@@ -177,7 +177,7 @@ export default function VehiclesClient({ vehicles: vehiclesProp }: { vehicles: V
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="flex min-w-0 flex-1 items-start gap-3">
                       <VehiclePhotoAvatar tagId={v.tagId} name={v.name} photoUrl={v.photoUrl} size="sm" />
-                      <div className="min-w-0 break-words">
+                      <div className="min-w-0">
                         <div className="text-lg font-semibold">{v.name}</div>
                         <MetaRow
                           className="text-sm text-muted-foreground"

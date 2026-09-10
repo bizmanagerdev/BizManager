@@ -346,19 +346,19 @@ function TaskCard({
           {task.project_name ? (
             <span className="inline-flex max-w-full items-center gap-[0.25em]">
               <ProjectIcon className="h-[1.1em] w-[1.1em] shrink-0" />
-              <span className="min-w-0 break-words">{task.project_name}</span>
+              <span className="min-w-0">{task.project_name}</span>
             </span>
           ) : null}
           {task.property_name ? (
             <span className="inline-flex max-w-full items-center gap-[0.25em]">
               <BuildingIcon className="h-[1.1em] w-[1.1em] shrink-0" />
-              <span className="min-w-0 break-words">{task.property_name}</span>
+              <span className="min-w-0">{task.property_name}</span>
             </span>
           ) : null}
           {task.customer_name ? (
             <span className="inline-flex max-w-full items-center gap-[0.25em]">
               <UserIcon className="h-[1.1em] w-[1.1em] shrink-0" />
-              <span className="min-w-0 break-words">
+              <span className="min-w-0">
                 {task.customer_name}
                 {task.customer_phone ? <span dir="ltr"> · {task.customer_phone}</span> : null}
               </span>

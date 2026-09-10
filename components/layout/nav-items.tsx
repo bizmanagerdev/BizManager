@@ -102,13 +102,16 @@ const BOTTOM_NAV_ITEMS: SidebarNavItem[] = [
 const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
   { title: "לקוחות", url: "/customers", icon: UsersIcon },
   { title: "יומן", url: "/calendar", icon: CalendarIcon },
-  { title: "משימות", url: "/tasks", icon: TaskIcon },
   { title: "גבייה", url: "/collections", icon: CoinsIcon },
-  { title: "תיעוד פניות", url: "/communications", icon: ChatIcon },
+  // משימות / דירות / תשלומים share a row on purpose (user, 2026-09-09) — they
+  // used to fall on the same COLUMN three rows apart instead, which a tight
+  // screenshot reads as stacked rather than grouped.
+  { title: "משימות", url: "/tasks", icon: TaskIcon },
   { title: "דירות", url: "/properties", icon: HomeIcon },
+  { title: "תשלומים", url: "/financial/payments-calendar", icon: ScheduleIcon },
+  { title: "תיעוד פניות", url: "/communications", icon: ChatIcon },
   { title: "רכבים", url: "/vehicles", icon: VehicleIcon },
   { title: "פיננסי", url: "/financial", icon: BankIcon },
-  { title: "תשלומים", url: "/financial/payments-calendar", icon: ScheduleIcon },
   { title: "דוחות", url: "/financial/reports", icon: ReportIcon },
   { title: "חשבונות", url: "/financial/bank", icon: TransferIcon },
   { title: "מע״מ ומסים", url: "/financial/taxes", icon: ReceiptIcon },

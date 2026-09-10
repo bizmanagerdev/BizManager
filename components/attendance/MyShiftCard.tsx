@@ -189,7 +189,7 @@ export default function MyShiftCard({
               the line below was the same fact twice. */}
           <div className="flex min-w-0 items-center gap-2 text-base font-semibold">
             <ClockIcon className="h-5 w-5 shrink-0" />
-            <span className="break-words">
+            <span>
               {openShift ? `${t(profileDict, locale, "openShiftSincePrefix")}${formatShortDateTime(openShift.clock_in)}` : t(profileDict, locale, "attendanceClockTitle")}
             </span>
           </div>

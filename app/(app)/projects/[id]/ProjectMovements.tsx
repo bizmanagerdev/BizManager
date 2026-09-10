@@ -239,7 +239,7 @@ function Details({ movement }: { movement: Movement }) {
           {movement.extras.map((extra) => (
             <div key={extra.label} className="flex gap-1.5">
               <dt className="text-muted-foreground">{extra.label}:</dt>
-              <dd className="min-w-0 break-words font-medium">{extra.value}</dd>
+              <dd className="min-w-0 font-medium">{extra.value}</dd>
             </div>
           ))}
         </dl>
@@ -295,7 +295,7 @@ function ExpandedCard({ movement }: { movement: Movement }) {
           {facts.map((extra) => (
             <div key={extra.label} className="flex flex-wrap gap-x-1.5">
               <dt className="shrink-0 text-muted-foreground">{extra.label}:</dt>
-              <dd className="min-w-0 break-words font-medium text-foreground">{extra.value}</dd>
+              <dd className="min-w-0 font-medium text-foreground">{extra.value}</dd>
             </div>
           ))}
         </dl>
@@ -303,7 +303,7 @@ function ExpandedCard({ movement }: { movement: Movement }) {
 
       {recordedBy || files.length > 0 ? (
         <div className="flex flex-wrap items-center justify-between gap-2 text-muted-foreground">
-          <span className="min-w-0 break-words">{recordedBy ?? ""}</span>
+          <span className="min-w-0">{recordedBy ?? ""}</span>
           {files.length > 0 ? <Attachments attachments={movement.attachments} /> : null}
         </div>
       ) : null}
@@ -480,12 +480,12 @@ export default function ProjectMovements({
             <div className="flex flex-wrap items-center gap-1.5">
               {movement.category ? <CategoryChip label={movement.category} /> : null}
               {movementNameRepeatsCategory(movement) ? null : (
-                <span className="break-words font-semibold">{movement.name}</span>
+                <span className="font-semibold">{movement.name}</span>
               )}
               {hasAttachment(movement) ? <AttachmentHint /> : null}
             </div>
             {movement.hint ? (
-              <div className="mt-0.5 break-words text-xs text-muted-foreground">{movement.hint}</div>
+              <div className="mt-0.5 text-xs text-muted-foreground">{movement.hint}</div>
             ) : null}
           </td>
           <td className={TD}>
@@ -617,12 +617,12 @@ export default function ProjectMovements({
                 <span className="flex flex-wrap items-center gap-1.5">
                   {movement.category ? <CategoryChip label={movement.category} /> : null}
                   {movementNameRepeatsCategory(movement) ? null : (
-                    <span className="break-words font-medium">{movement.name}</span>
+                    <span className="font-medium">{movement.name}</span>
                   )}
                   {hasAttachment(movement) ? <AttachmentHint /> : null}
                 </span>
                 {movement.hint ? (
-                  <span className="block break-words text-xs text-muted-foreground">{movement.hint}</span>
+                  <span className="block text-xs text-muted-foreground">{movement.hint}</span>
                 ) : null}
               </span>
               <span className="shrink-0 text-end">
@@ -663,7 +663,7 @@ export default function ProjectMovements({
             className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")}
           />
           <span className="min-w-0 flex-1">
-            <span className="block break-words font-medium">{group.name}</span>
+            <span className="block font-medium">{group.name}</span>
             <span className="block text-xs text-muted-foreground">{group.rows.length} תנועות</span>
           </span>
           <span className="shrink-0 whitespace-nowrap text-end font-semibold tabular-nums">

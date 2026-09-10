@@ -152,7 +152,7 @@ export default function MyBonusCard({ bonuses: bonusesProp, locale = "he" }: { b
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2 text-base font-semibold">
             <CoinsIcon className="h-5 w-5 shrink-0" />
-            <span className="break-words">{t(profileDict, locale, "bonusesTitle")}</span>
+            <span>{t(profileDict, locale, "bonusesTitle")}</span>
           </div>
           {!open ? (
             <Button type="button" size="sm" disabled={working} onClick={() => setOpen(true)}>

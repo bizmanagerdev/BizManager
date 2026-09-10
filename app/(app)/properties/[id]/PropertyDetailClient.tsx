@@ -198,7 +198,7 @@ function RowBody({
             d.long ? (
               <div key={d.label}>
                 <div className="text-muted-foreground">{d.label}</div>
-                <div className="whitespace-pre-wrap break-words">{d.value}</div>
+                <div className="whitespace-pre-wrap">{d.value}</div>
               </div>
             ) : (
               <div key={d.label} className="flex items-center justify-between gap-2">

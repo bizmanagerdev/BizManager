@@ -146,7 +146,7 @@ export function BottomNav({ items, moreItems = [], viewerRole, viewerLocale = "h
                           onClick={() => setMoreOpen(false)}
                         >
                           <item.icon className="h-6 w-6 shrink-0" />
-                          <span className="w-full text-center text-xs font-medium leading-tight break-words">{item.title}</span>
+                          <span className="w-full text-center text-xs font-medium leading-tight">{item.title}</span>
                         </NavLink>
                       ))}
                   </div>

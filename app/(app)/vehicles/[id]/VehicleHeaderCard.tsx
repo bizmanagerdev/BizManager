@@ -133,7 +133,7 @@ export default function VehicleHeaderCard({ vehicle, tasks }: { vehicle: Vehicle
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-start gap-3">
           <VehiclePhotoAvatar tagId={vehicle.tagId} name={display.name} photoUrl={display.photoUrl} size="lg" editable />
-          <div className="min-w-0 break-words">
+          <div className="min-w-0">
             <h1 className="text-2xl font-semibold">{display.name}</h1>
             {/* Mileage isn't in this line — it has its own card right below,
                 not folded into the same list as static identity details. */}

@@ -170,7 +170,7 @@ export default function ProjectTasksMini({
               >
                 <span
                   className={
-                    "block break-words text-sm font-medium " +
+                    "block text-sm font-medium " +
                     (row.done ? "text-muted-foreground line-through" : "")
                   }
                 >

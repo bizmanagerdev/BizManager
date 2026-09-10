@@ -308,8 +308,9 @@ export function TopBar({
           </span>
           {headerTitle.subtitle ? (
             // Wraps to a second line instead of clipping — record names live here
-            // (e.g. a project's name) and half a name reads as a bug.
-            <span className="line-clamp-2 w-full break-words text-[12px] leading-tight text-muted-foreground">
+            // (e.g. a project's name) and half a name reads as a bug — including
+            // a name split mid-word, so no break-words here either.
+            <span className="line-clamp-2 w-full text-[12px] leading-tight text-muted-foreground">
               {headerTitle.subtitle}
             </span>
           ) : null}

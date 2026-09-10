@@ -179,7 +179,7 @@ export function WorkerHead({
               aria-label={expanded ? "הסתרת פרטי הדיווח" : "פרטי הדיווח — מקור ומי רשם"}
               className="relative flex w-full items-center gap-1 text-start text-xs text-foreground/80"
             >
-              <span className={cn("min-w-0", expanded ? "break-words" : "truncate")}>
+              <span className={cn("min-w-0", !expanded && "truncate")}>
                 {expanded ? metaTitle ?? meta : meta}
               </span>
               <ChevronDownIcon

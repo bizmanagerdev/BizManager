@@ -223,7 +223,7 @@ function ActivityRow({ item }: { item: AuditFeedItem }) {
         </time>
       </div>
 
-      <div className="text-sm leading-tight break-words">
+      <div className="text-sm leading-tight">
         <span className="font-medium text-foreground">{item.entityLabel}</span>
         {item.title && (
           <>
@@ -324,7 +324,7 @@ function batchSystemGroups(groups: AuditGroup[]): RenderNode[] {
 // so the change text has room; indented from the start edge to sit under its parent.
 function ActivityTableChildRow({ item }: { item: AuditFeedItem }) {
   const text = `${item.entityLabel}${item.title ? ` · ${item.title}` : ""}${item.details ? ` · ${item.details}` : ""}`;
-  const inner = <span className="break-words leading-tight text-muted-foreground">{text}</span>;
+  const inner = <DetailsText text={text} className="leading-tight text-muted-foreground" />;
   return (
     <tr className="border-b border-border/30 bg-secondary/5 text-xs last:border-0">
       <td
@@ -882,7 +882,7 @@ export default function ActivityClient({
                         </span>
                       </td>
                       <td className="px-3 py-2 align-middle">
-                        <div className="break-words leading-tight">
+                        <div className="leading-tight">
                           <span className="font-medium text-foreground">{header.entityLabel}</span>
                           {header.title && (
                             <>

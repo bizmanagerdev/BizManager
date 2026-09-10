@@ -198,7 +198,7 @@ function SessionSwipeRow({
           </div>
         ) : null}
         <div className="min-w-0">
-          <div className="break-words">{whatFor(item)}</div>
+          <div>{whatFor(item)}</div>
           {amount > 0 ? <div className="mt-0.5 font-semibold tabular-nums">{formatCurrency(amount)}</div> : null}
           {payMeta ? (
             <Badge variant={payMeta.variant} className="mt-1">
@@ -306,7 +306,7 @@ function SessionTableRow({
           </td>
         ) : null}
         <td className="px-2 py-2 md:px-3">
-          <div className="break-words">{whatFor(item)}</div>
+          <div>{whatFor(item)}</div>
           {session.notes ? <div className="text-xs text-muted-foreground">{session.notes}</div> : null}
         </td>
         <td className="whitespace-nowrap px-1 py-2 tabular-nums md:px-3">

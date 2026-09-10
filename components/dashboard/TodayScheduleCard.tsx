@@ -407,7 +407,7 @@ export default function TodayScheduleCard({
                             cramped. Title gets the line to itself; the kind label
                             joins the subtitle line instead (same "wrap, don't
                             truncate" rule, just less competing for room). */}
-                        <span className="block break-words text-sm font-medium">{entry.title}</span>
+                        <span className="block text-sm font-medium">{entry.title}</span>
                         <div className="mt-1.5 text-xs text-muted-foreground">
                           {rowSubtitle(entry, KIND_META[entry.kind].label)}
                         </div>
