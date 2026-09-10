@@ -4,6 +4,7 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { syncEntityTags, parseTagIds } from "@/lib/tags";
 import { CUSTOMER_CORE_SELECT, isMissingLinkColumn, type QueryError } from "@/lib/customers/workerLink";
+import { normalizeIsraeliPhone } from "@/lib/phone";
 
 type CreateCustomerPayload = {
   name?: string;
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
     const body = (await req.json()) as CreateCustomerPayload;
 
     const name = typeof body.name === "string" ? body.name.trim() : "";
-    const phone = typeof body.phone === "string" ? body.phone.trim() : null;
+    const phone = normalizeIsraeliPhone(typeof body.phone === "string" ? body.phone.trim() : null);
     const whatsapp = typeof body.whatsapp === "string" ? body.whatsapp.trim() : null;
     const email = typeof body.email === "string" ? body.email.trim() : "";
     const city = typeof body.city === "string" ? body.city.trim() : "";

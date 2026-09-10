@@ -2,6 +2,7 @@ import { toHebrewError } from "@/lib/error-messages";
 ﻿import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
+import { normalizeIsraeliPhone } from "@/lib/phone";
 
 type CreateCustomerContactPayload = {
   customer_id?: string;
@@ -29,7 +30,7 @@ export async function POST(req: Request) {
     const fullName =
       typeof body.full_name === "string" ? body.full_name.trim() : "";
     const role = typeof body.role === "string" ? body.role.trim() : null;
-    const phone = typeof body.phone === "string" ? body.phone.trim() : null;
+    const phone = normalizeIsraeliPhone(typeof body.phone === "string" ? body.phone.trim() : null);
     const email = typeof body.email === "string" ? body.email.trim() : null;
     const whatsapp =
       typeof body.whatsapp === "string" ? body.whatsapp.trim() : null;

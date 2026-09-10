@@ -2,6 +2,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
+import { normalizeIsraeliPhone } from "@/lib/phone";
 
 type CreateCustomerBranchPayload = {
   customer_id?: string;
@@ -23,7 +24,7 @@ export async function POST(req: Request) {
       const customerId = typeof body.customer_id === "string" ? body.customer_id.trim() : "";
       const name = typeof body.name === "string" ? body.name.trim() : "";
       const address = typeof body.address === "string" ? body.address.trim() : null;
-      const phone = typeof body.phone === "string" ? body.phone.trim() : null;
+      const phone = normalizeIsraeliPhone(typeof body.phone === "string" ? body.phone.trim() : null);
       const active = body.active === false ? false : true;
 
       if (!customerId) {

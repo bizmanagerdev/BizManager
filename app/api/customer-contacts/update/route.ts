@@ -1,6 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { normalizeIsraeliPhone } from "@/lib/phone";
 
 type UpdateContactPayload = {
   id?: string;
@@ -37,7 +38,7 @@ export async function POST(req: Request) {
       patch.full_name = fullName;
     }
     if ("role" in body) patch.role = trimOrNull(body.role);
-    if ("phone" in body) patch.phone = trimOrNull(body.phone);
+    if ("phone" in body) patch.phone = normalizeIsraeliPhone(trimOrNull(body.phone));
     if ("email" in body) patch.email = trimOrNull(body.email);
     if ("whatsapp" in body) patch.whatsapp = trimOrNull(body.whatsapp);
     if ("is_primary" in body) patch.is_primary = body.is_primary === true;

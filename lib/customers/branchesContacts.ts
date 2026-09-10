@@ -1,4 +1,5 @@
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { normalizeIsraeliPhone } from "@/lib/phone";
 
 type Row = Record<string, unknown>;
 
@@ -42,9 +43,11 @@ export async function updateCustomerBranchDirect(
   id: string,
   patch: BranchPatch
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  const normalizedPatch =
+    "phone" in patch ? { ...patch, phone: normalizeIsraeliPhone(patch.phone) } : patch;
   const { data, error } = await createSupabaseBrowserClient()
     .from("customer_branches")
-    .update(patch)
+    .update(normalizedPatch)
     .eq("id", id)
     .select("id")
     .maybeSingle();

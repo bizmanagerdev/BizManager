@@ -2,6 +2,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { syncEntityTags, parseTagIds } from "@/lib/tags";
+import { normalizeIsraeliPhone } from "@/lib/phone";
 import {
   CUSTOMER_CORE_SELECT,
   isMissingLinkColumn,
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
       patch.name_for_invoice = patch.name;
     }
     if ("registration_number" in body) patch.registration_number = trimOrNull(body.registration_number);
-    if ("phone" in body) patch.phone = trimOrNull(body.phone);
+    if ("phone" in body) patch.phone = normalizeIsraeliPhone(trimOrNull(body.phone));
     if ("whatsapp" in body) patch.whatsapp = trimOrNull(body.whatsapp);
     if ("email" in body) patch.email = trimOrNull(body.email);
     // city is NOT NULL — only overwrite when a non-empty value is supplied, so an
