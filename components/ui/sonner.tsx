@@ -6,10 +6,19 @@ import { Toaster as Sonner } from "sonner";
 
 type ToasterProps = React.ComponentProps<typeof Sonner>;
 
+// The icon is pulled OUT of flow (absolute, top-start corner) instead of
+// sitting inline before the text. That leaves the title/description as the
+// only in-flow item on the first line, so it always gets the toast's FULL
+// width — with up to two action buttons (see undo-engine.ts's "בטל" +
+// "צפייה") also competing for that one row, the text used to be squeezed
+// into a sliver so narrow it broke mid-word, one letter per line (user,
+// 2026-09-10). `ps-[4.25rem]` reserves exactly the room the icon+gap used to
+// take inline, so the flex-wrap below drops the buttons to their own row
+// underneath the text instead of cramming everything onto one line.
 const baseToast = [
-  "group toast pointer-events-auto",
-  "flex w-full max-w-md items-start gap-3",
-  "rounded-2xl px-5 py-4",
+  "group toast pointer-events-auto relative",
+  "flex w-full max-w-md flex-wrap items-start gap-x-3 gap-y-2",
+  "rounded-2xl ps-[4.25rem] pe-5 py-4",
   "text-base font-medium",
   "ring-1 ring-inset ring-white/15",
   "animate-in fade-in-0 slide-in-from-top-4 md:slide-in-from-bottom-4 md:slide-in-from-top-0 duration-300",
@@ -18,7 +27,7 @@ const baseToast = [
 const baseTitle = "text-[15px] font-bold leading-tight text-white";
 const baseDescription = "text-sm leading-snug text-white/90";
 const baseIcon = [
-  "relative size-9 shrink-0",
+  "absolute start-5 top-4 size-9 shrink-0",
   "flex items-center justify-center",
   "rounded-full bg-white/20",
   "[&_svg]:size-5 [&_svg]:text-white",
@@ -58,7 +67,10 @@ export function Toaster(props: ToasterProps) {
           title: baseTitle,
           description: baseDescription,
           icon: baseIcon,
-          content: "flex-1 min-w-0 space-y-1",
+          // w-full (not flex-1/min-w-0): the first in-flow child now claims
+          // the whole row on its own, which is what pushes action/cancel
+          // buttons onto a wrapped second row instead of sharing this one.
+          content: "w-full min-w-0 space-y-1",
           actionButton:
             "rounded-lg bg-white/20 px-3 py-1.5 text-sm font-semibold text-white hover:bg-white/30 transition",
           cancelButton:
