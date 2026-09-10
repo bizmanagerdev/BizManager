@@ -21,34 +21,55 @@
 -- fails with "must be owner of table objects", create the same two policies
 -- from the dashboard (Storage → Policies → business-documents) instead.
 
-drop policy if exists "worker_read_vehicle_photos" on storage.objects;
-create policy "worker_read_vehicle_photos" on storage.objects
-  for select to authenticated
-  using (
-    bucket_id = 'business-documents'
-    and name like 'vehicles/%'
-    and exists (
-      select 1 from public.users u
-      where u.auth_user_id = (select auth.uid())
-        and u.role = 'worker'::user_role_enum
-        and u.active = true
-        and coalesce(u.system_access, false) = true
-        and coalesce((u.section_access->>'vehicles')::boolean, false)
-    )
-  );
+-- Guarded (2026-09-10, added while getting `supabase start` to actually pass
+-- in CI): supabase/config.toml has [storage] enabled = false ("Trimmed for
+-- E2E stability" - fewer containers, avoids the Docker crashes that motivated
+-- disabling it), so storage.objects doesn't exist on a from-scratch local/CI
+-- stack at all - a bare CREATE POLICY on it fails with "relation does not
+-- exist" there. Dynamic SQL + an existence check makes this a no-op in that
+-- environment while behaving exactly as before anywhere storage IS enabled
+-- (production, or a local stack with storage re-enabled per config.toml's own
+-- "re-enable if a test needs file upload/download" note).
+do $storage_guard$
+begin
+  if to_regclass('storage.objects') is null then
+    return;
+  end if;
 
-drop policy if exists "worker_delete_vehicle_photos" on storage.objects;
-create policy "worker_delete_vehicle_photos" on storage.objects
-  for delete to authenticated
-  using (
-    bucket_id = 'business-documents'
-    and name like 'vehicles/%'
-    and exists (
-      select 1 from public.users u
-      where u.auth_user_id = (select auth.uid())
-        and u.role = 'worker'::user_role_enum
-        and u.active = true
-        and coalesce(u.system_access, false) = true
-        and coalesce((u.section_access->>'vehicles')::boolean, false)
-    )
-  );
+  execute 'drop policy if exists "worker_read_vehicle_photos" on storage.objects';
+  execute $ddl$
+    create policy "worker_read_vehicle_photos" on storage.objects
+      for select to authenticated
+      using (
+        bucket_id = 'business-documents'
+        and name like 'vehicles/%'
+        and exists (
+          select 1 from public.users u
+          where u.auth_user_id = (select auth.uid())
+            and u.role = 'worker'::user_role_enum
+            and u.active = true
+            and coalesce(u.system_access, false) = true
+            and coalesce((u.section_access->>'vehicles')::boolean, false)
+        )
+      )
+  $ddl$;
+
+  execute 'drop policy if exists "worker_delete_vehicle_photos" on storage.objects';
+  execute $ddl$
+    create policy "worker_delete_vehicle_photos" on storage.objects
+      for delete to authenticated
+      using (
+        bucket_id = 'business-documents'
+        and name like 'vehicles/%'
+        and exists (
+          select 1 from public.users u
+          where u.auth_user_id = (select auth.uid())
+            and u.role = 'worker'::user_role_enum
+            and u.active = true
+            and coalesce(u.system_access, false) = true
+            and coalesce((u.section_access->>'vehicles')::boolean, false)
+        )
+      )
+  $ddl$;
+end
+$storage_guard$;

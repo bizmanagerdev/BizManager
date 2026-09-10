@@ -49,15 +49,29 @@ create policy "documents_worker_select_task_linked" on public.documents
 -- (private tasks, other people's), so `name like 'tasks/%'` alone would let him
 -- sign any of them. documents.storage_key is UNIQUE, so the lookup is an index
 -- hit. No DELETE — removing an attachment is not a worker affordance.
-drop policy if exists "worker_read_task_attachments" on storage.objects;
-create policy "worker_read_task_attachments" on storage.objects
-  for select to authenticated
-  using (
-    bucket_id = 'business-documents'
-    and name like 'tasks/%'
-    and (select public.current_user_role()) = 'worker'::user_role_enum
-    and exists (
-      select 1 from public.documents d
-      where d.storage_key = storage.objects.name
-    )
-  );
+-- Guarded (2026-09-10 - see the matching note in
+-- 20260908093000_worker_vehicle_photo_storage_rls.sql): storage.objects
+-- doesn't exist when supabase/config.toml has [storage] enabled = false, so
+-- this is a no-op there and unchanged everywhere storage is enabled.
+do $storage_guard$
+begin
+  if to_regclass('storage.objects') is null then
+    return;
+  end if;
+
+  execute 'drop policy if exists "worker_read_task_attachments" on storage.objects';
+  execute $ddl$
+    create policy "worker_read_task_attachments" on storage.objects
+      for select to authenticated
+      using (
+        bucket_id = 'business-documents'
+        and name like 'tasks/%'
+        and (select public.current_user_role()) = 'worker'::user_role_enum
+        and exists (
+          select 1 from public.documents d
+          where d.storage_key = storage.objects.name
+        )
+      )
+  $ddl$;
+end
+$storage_guard$;
