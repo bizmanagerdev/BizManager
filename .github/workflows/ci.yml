@@ -107,6 +107,38 @@ jobs:
           fi
           exit $STATUS
 
+      - name: Post failure details as a commit comment
+        # Primary diagnostic path — both raw logs AND artifact downloads
+        # redirect to Azure Blob Storage, which this specific dev machine's
+        # network can't reach (a documented pre-existing TLS issue, unrelated
+        # to this repo). A commit comment stays entirely on api.github.com,
+        # which IS reachable, and is readable by anyone (even unauthenticated)
+        # on a public repo — the actual fix for being unable to see this at all.
+        if: failure()
+        run: |
+          BODY=$(
+            {
+              echo "### e2e (playwright) — supabase start failed"
+              echo '#### stdout'
+              echo '```'
+              tail -c 20000 /tmp/supabase-stdout.txt
+              echo '```'
+              echo '#### stderr'
+              echo '```'
+              tail -c 20000 /tmp/supabase-stderr.txt
+              echo '```'
+              echo '#### docker ps -a'
+              echo '```'
+              docker ps -a
+              echo '```'
+            } | jq -Rs .
+          )
+          curl -s -X POST \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
+            -d "{\"body\": $BODY}"
+
       - name: Upload supabase start output
         # Backup path in case the step summary above (rendered on the run's
         # Summary page) isn't visible either — artifact downloads sometimes
