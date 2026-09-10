@@ -15,6 +15,17 @@
 -- Does NOT touch expense/document/task rows unrelated to a vehicle, and does
 -- NOT grant a plain worker (without vehicles access) anything new.
 
+-- Drop-first guards (added 2026-09-10 during the migration-baseline backfill
+-- — see foundation-hardening memory): CREATE POLICY has no IF NOT EXISTS/OR
+-- REPLACE, and baseline.sql already captures all 5 of these policies as this
+-- migration's own (verified live) end state, so a from-scratch replay hit
+-- "already exists" without these.
+drop policy if exists "expenses_worker_update_vehicle_tagged" on public.expenses;
+drop policy if exists "expenses_worker_delete_vehicle_tagged" on public.expenses;
+drop policy if exists "documents_worker_delete_vehicle_tagged" on public.documents;
+drop policy if exists "tasks_worker_update_vehicle_tagged" on public.tasks;
+drop policy if exists "tasks_worker_delete_vehicle_tagged" on public.tasks;
+
 create policy "expenses_worker_update_vehicle_tagged" on public.expenses
   for update to authenticated
   using (

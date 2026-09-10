@@ -27,6 +27,14 @@
 
 drop policy if exists "payroll_periods_view_all_logged" on public.payroll_periods;
 
+-- CREATE POLICY has no IF NOT EXISTS/OR REPLACE, so the "idempotent" claim
+-- above needs this explicit drop-first (added 2026-09-10 during the
+-- migration-baseline backfill — see foundation-hardening memory): on a
+-- from-scratch replay, baseline.sql already captures this exact policy
+-- (this migration's own end state, verified live), so the bare CREATE
+-- POLICY below failed with "already exists".
+drop policy if exists "payroll_periods_worker_view_own" on public.payroll_periods;
+
 create policy "payroll_periods_worker_view_own"
 on public.payroll_periods
 for select

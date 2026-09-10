@@ -40,10 +40,20 @@
 -- should fail loud, not disappear quietly.
 -- ════════════════════════════════════════════════════════════════════════════
 
+-- Existence guard added 2026-09-10 (migration-baseline backfill — see
+-- foundation-hardening memory): baseline.sql no longer creates this table at
+-- all (confirmed already dropped, empty, on live production), so a
+-- from-scratch replay reaches this file with nothing to drop. The row-count
+-- guard below is still exactly right for the ACTUAL historical case (a real
+-- environment where the table still exists) — this just also makes the file
+-- a safe no-op once it's already gone.
 do $$
 declare
   v_count integer;
 begin
+  if to_regclass('public.property_expenses') is null then
+    return;
+  end if;
   select count(*) into v_count from public.property_expenses;
   if v_count > 0 then
     raise exception
@@ -54,10 +64,14 @@ end $$;
 
 drop table if exists public.property_expenses;
 
+-- Same existence guard as property_expenses above, same reason.
 do $$
 declare
   v_count integer;
 begin
+  if to_regclass('public.task_time_reports') is null then
+    return;
+  end if;
   select count(*) into v_count from public.task_time_reports;
   if v_count > 0 then
     raise exception

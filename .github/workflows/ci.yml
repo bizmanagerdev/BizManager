@@ -45,6 +45,23 @@ jobs:
   e2e:
     name: e2e (playwright)
     runs-on: ubuntu-latest
+    # baseline.sql + the full ~132-migration chain after it now replays with
+    # zero errors from a totally fresh database - verified twice directly
+    # against Postgres (see foundation-hardening memory for the fix list:
+    # missing tables/columns/extension, a function-ordering bug, several
+    # CREATE POLICY statements missing their drop-first idempotency guard,
+    # a couple of CREATE OR REPLACE VIEW/FUNCTION statements superseded by
+    # baseline's now-current capture, and 2 tables baseline still had that
+    # production had already dropped). continue-on-error is gone accordingly.
+    #
+    # That verification used a bare-Postgres harness with minimal stand-in
+    # auth/storage schemas (this dev machine's Docker is broken, so a real
+    # `supabase start` couldn't be run locally) - this job's own real
+    # `supabase start`, with Supabase's actual auth/storage schemas, is the
+    # first genuine end-to-end confirmation. Watch the first run after this
+    # lands; if something surfaces here that the stand-in schemas couldn't
+    # catch, re-add continue-on-error while it's fixed rather than leaving
+    # every push blocked on it.
     # Needed for the failure-diagnostic step to post a commit comment with
     # GITHUB_TOKEN — repos default to a read-only token otherwise, which
     # would make that POST fail (silently, since plain curl doesn't treat

@@ -30,6 +30,15 @@ create index if not exists vehicle_mileage_readings_tag_idx
 
 alter table public.vehicle_mileage_readings enable row level security;
 
+-- Drop-first guards (added 2026-09-10 during the migration-baseline backfill
+-- — see foundation-hardening memory): CREATE POLICY has no IF NOT EXISTS/OR
+-- REPLACE, and baseline.sql already captures all 3 of these policies as this
+-- migration's own (verified live) end state, so a from-scratch replay hit
+-- "already exists" without these.
+drop policy if exists "vehicle_mileage_readings_select" on public.vehicle_mileage_readings;
+drop policy if exists "vehicle_mileage_readings_insert" on public.vehicle_mileage_readings;
+drop policy if exists "vehicle_mileage_readings_delete" on public.vehicle_mileage_readings;
+
 -- Reads open to any authenticated user — same precedent as tags/entity_tags
 -- (see create_tags_and_vehicles.sql): the page guard is the real boundary,
 -- not row-level read scoping, for this cross-cutting backbone.

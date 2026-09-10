@@ -29,35 +29,20 @@ alter table public.orders add constraint orders_status_check check (
 );
 
 -- 2) Keep partially-delivered orders in the deliveries queue.
-create or replace view public.delivery_overview_view as
-select
-  o.id as order_id,
-  o.customer_id,
-  coalesce(
-    nullif(trim(c.name), ''),
-    nullif(trim(c.name_for_invoice), ''),
-    'לקוח'
-  )::text as customer_name,
-  nullif(trim(c.phone), '')::text as customer_phone,
-  nullif(trim(c.address), '')::text as customer_address,
-  nullif(trim(split_part(coalesce(c.address, ''), '|', 1)), '')::text as customer_city,
-  o.order_date,
-  o.created_at,
-  coalesce(o.status::text, 'draft') as status,
-  coalesce(o.total_amount, 0)::numeric as total_amount,
-  nullif(trim(o.notes), '')::text as notes
-from public.orders o
-left join public.customers c
-  on c.id = o.customer_id
-where coalesce(o.status::text, '') in (
-  'draft',
-  'confirmed',
-  'processing',
-  'out_for_delivery',
-  'partially_delivered'
-);
-
-grant select on public.delivery_overview_view to authenticated;
+--
+-- SUPERSEDED (2026-09-10, during the migration-baseline backfill — see
+-- foundation-hardening memory): this statement would have recreated
+-- delivery_overview_view in an OLDER/SMALLER shape (no branch_id /
+-- customer_branch_name / branch_address / branch_phone / branch_city) than
+-- what supabase/migrations/20260826134530_add_customer_branches.sql adds
+-- later and what baseline.sql now captures as the current live shape.
+-- Postgres's CREATE OR REPLACE VIEW can't drop columns, so on a from-scratch
+-- replay this fails against the already-current baseline version. The WHERE
+-- clause status list this statement adds ('partially_delivered' included) is
+-- already present in baseline's capture too, so removing this is a no-op
+-- against the end state — the customer_branches migration recreates the view
+-- again downstream anyway. Removed rather than commented out wholesale so the
+-- file stays readable.
 
 -- 3) create_sales_order: derive stock movements per line from delivered qty.
 --    delivered units → 'out'; remaining ordered units → 'reserve'; cancelled → none.

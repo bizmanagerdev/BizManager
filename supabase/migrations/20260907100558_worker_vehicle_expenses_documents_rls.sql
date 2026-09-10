@@ -23,6 +23,14 @@
 -- own expenses via the existing worker_insert/worker_update_own_expenses
 -- policies, unaffected by this change.
 
+-- Drop-first guards (added 2026-09-10 during the migration-baseline backfill
+-- — see foundation-hardening memory): CREATE POLICY has no IF NOT EXISTS/OR
+-- REPLACE, and baseline.sql already captures both these policies as this
+-- migration's own (verified live) end state, so a from-scratch replay hit
+-- "already exists" without these.
+drop policy if exists "expenses_worker_select_vehicle_tagged" on public.expenses;
+drop policy if exists "documents_worker_select_vehicle_tagged" on public.documents;
+
 create policy "expenses_worker_select_vehicle_tagged" on public.expenses
   for select to authenticated
   using (
