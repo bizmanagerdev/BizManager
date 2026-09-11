@@ -23,3 +23,19 @@ export async function loginAs(page: Page, role: E2ERole) {
   await page.getByRole("button", { name: "התחברות" }).click();
   await page.waitForURL("**/dashboard");
 }
+
+/**
+ * Like loginAs, but for a dynamically-created test account (e.g.
+ * db.ts's createTestWorker) rather than a fixed E2E_USERS role, and
+ * deliberately does NOT wait for /dashboard — a worker with
+ * section_access.dashboard off (or role=worker_no_access) lands somewhere
+ * else entirely (see lib/auth/sections.ts's firstAccessiblePrefix / the
+ * dashboard page's own redirect). Caller waits for whatever URL fits the
+ * scenario being tested.
+ */
+export async function loginWithCredentials(page: Page, email: string, password: string) {
+  await page.goto("/login");
+  await page.locator('input[type="email"]').fill(email);
+  await page.locator('input[type="password"]').fill(password);
+  await page.getByRole("button", { name: "התחברות" }).click();
+}
