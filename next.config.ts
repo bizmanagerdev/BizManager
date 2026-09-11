@@ -24,6 +24,14 @@ const nextConfig: NextConfig = {
   experimental: {
     turbopackUseSystemTlsCerts: true,
   },
+  // The dev-mode indicator's <nextjs-portal> (Shadow DOM) sits in a
+  // full-viewport click-catching layer and repeatedly intercepted Playwright
+  // clicks in e2e/*.spec.ts's real CI runs — genuinely confirmed via the
+  // Playwright trace, not a guess (the accessibility snapshot showed a
+  // completely normal page underneath, no actual runtime error). Only off
+  // for the e2e webServer specifically (playwright.config.ts sets
+  // NODE_ENV=test there) — normal `npm run dev` keeps the indicator.
+  devIndicators: process.env.NODE_ENV === "test" ? false : undefined,
   async headers() {
     return [
       {

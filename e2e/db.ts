@@ -158,6 +158,12 @@ export async function deleteTestProperty(id: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function getPropertyIdByName(name: string): Promise<string | null> {
+  const { data, error } = await adminClient().from("properties").select("id").eq("name", name).maybeSingle();
+  if (error) throw error;
+  return (data as { id: string } | null)?.id ?? null;
+}
+
 export type TestVehicle = { id: string; tagId: string };
 
 // Vehicle detail pages are keyed by their TAG id, not the vehicles.id row
@@ -486,4 +492,105 @@ export async function getCustomerNotes(id: string): Promise<string | null> {
   const { data, error } = await adminClient().from("customers").select("notes").eq("id", id).single();
   if (error) throw error;
   return (data as { notes: string | null }).notes;
+}
+
+export type TestPayment = { id: string };
+
+// The payments table has 4 check constraints tying business_domain to
+// which single target FK (order/project/property) may be set — see
+// supabase/migrations/20250101000000_baseline.sql:1203-1209. Default here
+// (general_business, no target) is the one combination that needs nothing
+// else seeded first — /checks itself has no create UI at all (it's a
+// derived view over payments WHERE payment_method='check', see lib/
+// checks.ts), so this is the only way to seed one directly.
+export async function createTestPayment(
+  overrides: {
+    amount?: number;
+    paymentMethod?: string;
+    paymentStatus?: "pending" | "cleared" | "rejected";
+    dueDate?: string;
+    checkNumber?: string;
+    orderId?: string;
+  } = {}
+): Promise<TestPayment> {
+  const recordedBy = await getAdminUserId();
+  const amount = overrides.amount ?? 1000;
+  const { data, error } = await adminClient()
+    .from("payments")
+    .insert({
+      payment_method: overrides.paymentMethod ?? "check",
+      amount_total: amount,
+      net_amount: amount,
+      payment_status: overrides.paymentStatus ?? "pending",
+      business_domain: overrides.orderId ? "sales" : "general_business",
+      order_id: overrides.orderId ?? null,
+      due_date: overrides.dueDate ?? null,
+      check_number: overrides.checkNumber ?? "12345",
+      recorded_by: recordedBy,
+      payment_date: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data as TestPayment;
+}
+
+export async function getPaymentStatus(id: string): Promise<string> {
+  const { data, error } = await adminClient().from("payments").select("payment_status").eq("id", id).single();
+  if (error) throw error;
+  return (data as { payment_status: string }).payment_status;
+}
+
+export async function deleteTestPayment(id: string): Promise<void> {
+  const { error } = await adminClient().from("payments").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export type TestLoan = { id: string; lender: string; borrower: string };
+
+export async function createTestLoan(
+  overrides: {
+    direction?: "taken" | "given";
+    lender?: string;
+    borrower?: string;
+    amount?: number;
+    loanDate?: string;
+  } = {}
+): Promise<TestLoan> {
+  const { data, error } = await adminClient()
+    .from("loans")
+    .insert({
+      direction: overrides.direction ?? "taken",
+      lender: overrides.lender ?? `מלווה בדיקה ${Date.now()}`,
+      borrower: overrides.borrower ?? `לווה בדיקה ${Date.now()}`,
+      loan_date: overrides.loanDate ?? new Date().toISOString().slice(0, 10),
+      amount: overrides.amount ?? 5000,
+    })
+    .select("id,lender,borrower")
+    .single();
+  if (error) throw error;
+  return data as TestLoan;
+}
+
+export async function getLoanStatus(id: string): Promise<string> {
+  const { data, error } = await adminClient().from("loans").select("status").eq("id", id).single();
+  if (error) throw error;
+  return (data as { status: string }).status;
+}
+
+export async function getLoanIdByLender(lender: string): Promise<string | null> {
+  const { data, error } = await adminClient().from("loans").select("id").eq("lender", lender).maybeSingle();
+  if (error) throw error;
+  return (data as { id: string } | null)?.id ?? null;
+}
+
+export async function deleteTestLoan(id: string): Promise<void> {
+  const { error } = await adminClient().from("loans").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function getLoanRepaymentTotal(loanId: string): Promise<number> {
+  const { data, error } = await adminClient().from("loan_repayments").select("amount").eq("loan_id", loanId);
+  if (error) throw error;
+  return (data as { amount: number }[]).reduce((sum, row) => sum + row.amount, 0);
 }
