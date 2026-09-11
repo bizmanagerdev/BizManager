@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { BackspaceIcon, LocationIcon, SpinnerIcon, WarningIcon } from "@/components/ui/icons";
+import { BackspaceIcon, LocationIcon, SpinnerIcon, SyncIcon, WarningIcon } from "@/components/ui/icons";
 import * as Sentry from "@sentry/nextjs";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -168,6 +168,11 @@ export default function OrderConfirmDialog({
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set instead of closing the dialog when the submit got saved to the offline
+  // queue rather than actually reaching the server — so a connectivity hiccup
+  // is never visually indistinguishable from a real success (both used to just
+  // close the dialog, leaving only an easy-to-miss toast as the difference).
+  const [queuedReason, setQueuedReason] = useState<"offline" | "slow" | null>(null);
   const [data, setData] = useState<EditPayload | null>(null);
   const [lines, setLines] = useState<ConfirmLine[]>([]);
   const [paymentAmount, setPaymentAmount] = useState("");
@@ -316,6 +321,7 @@ export default function OrderConfirmDialog({
     setStepId("items");
     setPaidNow(false);
     setError(null);
+    setQueuedReason(null);
   }, [data]);
 
   const existingPaid = useMemo(
@@ -367,7 +373,16 @@ export default function OrderConfirmDialog({
   const totalAmount = subtotal - (data?.initialOrder.discount_amount ?? 0);
   const paymentAmountNumber = Number(paymentAmount || 0);
   const pendingPaymentAmount = Number.isFinite(paymentAmountNumber) && paymentAmountNumber > 0 ? paymentAmountNumber : 0;
-  const projectedPaid = existingPaid + pendingPaymentAmount;
+  // A check doesn't count as collected until it clears — matches lib/
+  // payments.ts's defaultPaymentStatusForMethod, which always starts a check
+  // payment as 'pending' and excludes it from the server's own
+  // derivePaymentStatus input. Without this, the review step below could
+  // show "שולם" (paid) for a check that actually saves the order as
+  // partial/unpaid — the server ignores this component's own payment_status
+  // field and recomputes independently, so this only fixes the DISPLAY, but
+  // a wrong display is exactly what misled whoever read it.
+  const pendingPaymentCounts = paymentMethod !== "check";
+  const projectedPaid = existingPaid + (pendingPaymentCounts ? pendingPaymentAmount : 0);
   const refundDue = Math.max(projectedPaid - totalAmount, 0);
   const refundToRecord = recordRefund ? refundDue : 0;
   const finalPaidAfterRefund = projectedPaid - refundToRecord;
@@ -597,7 +612,11 @@ export default function OrderConfirmDialog({
       });
 
       if (result.queued) {
-        setOpen(false);
+        // Don't close silently — that looked identical to a real success. Show
+        // an explicit "saved locally, not on the server yet" screen instead, so
+        // the driver (and whoever debugs this later) can tell at a glance that
+        // this was a connectivity problem, not a rejection.
+        setQueuedReason(result.reason);
         return;
       }
 
@@ -1230,7 +1249,10 @@ export default function OrderConfirmDialog({
         open={open}
         onOpenChange={(nextOpen) => {
           setOpen(nextOpen);
-          if (!nextOpen) setError(null);
+          if (!nextOpen) {
+            setError(null);
+            setQueuedReason(null);
+          }
         }}
         dialogTitle={customerName || title}
         dialogDescription={description}
@@ -1241,43 +1263,60 @@ export default function OrderConfirmDialog({
         canClickStep={() => false}
         onStepClick={() => {}}
         closeDisabled={submitting}
-        onBack={stepIndex > 0 ? goBack : undefined}
+        onBack={queuedReason ? undefined : stepIndex > 0 ? goBack : undefined}
         backDisabled={submitting}
-        onNext={isLastStep ? () => void submit() : goNext}
-        nextLabel={isLastStep ? "אישור אספקה" : "הבא"}
-        nextDisabled={submitting || loading || !data}
-        isLastStep={isLastStep}
+        onNext={queuedReason ? () => setOpen(false) : isLastStep ? () => void submit() : goNext}
+        nextLabel={queuedReason ? "הבנתי" : isLastStep ? "אישור אספקה" : "הבא"}
+        nextDisabled={queuedReason ? false : submitting || loading || !data}
+        isLastStep={queuedReason ? true : isLastStep}
         showStepCounter={false}
-        error={error || undefined}
+        error={queuedReason ? undefined : error || undefined}
       >
-        {loading ? (
-          <LoadingDots
-            label="טוען את פרטי ההזמנה"
-            description="אוסף את הכמויות, התשלום והתמונות כדי שתוכלו לאשר אספקה בביטחון."
-          />
-        ) : null}
-
-        {data ? (
-          <div className="space-y-2">
+        {queuedReason ? (
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-border/60 bg-muted/20 p-6 text-center">
+            <SyncIcon className="h-10 w-10 text-muted-foreground" />
             <div>
-              <h2 className="text-base font-bold leading-tight">{STEP_META[currentStepId]?.title}</h2>
-              {STEP_META[currentStepId]?.description ? (
-                <p className="mt-0.5 text-xs text-muted-foreground">{STEP_META[currentStepId]?.description}</p>
-              ) : null}
-            </div>
-
-            {renderStepContent()}
-
-            {/* Hidden loader so the accounts list is known before the account step */}
-            <div className="hidden">
-              <AccountSelect
-                value={paymentAccountId}
-                onChange={setPaymentAccountId}
-                onLoaded={(list) => setAccountsList(list)}
-              />
+              <h2 className="text-base font-bold leading-tight">
+                {queuedReason === "offline" ? "אין כרגע חיבור לאינטרנט" : "החיבור איטי מדי"}
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                אישור האספקה עדיין לא הגיע לשרת — הוא נשמר במכשיר ויישלח אוטומטית ברגע שהחיבור יחזור. אפשר לעקוב
+                אחרי הסטטוס דרך &quot;פעולות שממתינות לשליחה&quot;.
+              </p>
             </div>
           </div>
-        ) : null}
+        ) : (
+          <>
+            {loading ? (
+              <LoadingDots
+                label="טוען את פרטי ההזמנה"
+                description="אוסף את הכמויות, התשלום והתמונות כדי שתוכלו לאשר אספקה בביטחון."
+              />
+            ) : null}
+
+            {data ? (
+              <div className="space-y-2">
+                <div>
+                  <h2 className="text-base font-bold leading-tight">{STEP_META[currentStepId]?.title}</h2>
+                  {STEP_META[currentStepId]?.description ? (
+                    <p className="mt-0.5 text-xs text-muted-foreground">{STEP_META[currentStepId]?.description}</p>
+                  ) : null}
+                </div>
+
+                {renderStepContent()}
+
+                {/* Hidden loader so the accounts list is known before the account step */}
+                <div className="hidden">
+                  <AccountSelect
+                    value={paymentAccountId}
+                    onChange={setPaymentAccountId}
+                    onLoaded={(list) => setAccountsList(list)}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </>
+        )}
       </StepWizardDialog>
 
       <ConfirmDialog
