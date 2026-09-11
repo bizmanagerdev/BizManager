@@ -8,7 +8,12 @@ import { Button } from "@/components/ui/button";
 import { MetaRow } from "@/components/ui/meta-row";
 import { StepWizard, WizardTitle } from "@/components/ui/step-wizard";
 import { OptionRow, StepHeading } from "@/components/ui/option-row";
-import { DIALOG_CHROME_CONTENT_PAGE, useSwipeToDismiss } from "@/components/ui/dialog-chrome";
+import {
+  DIALOG_CHROME_CONTENT_PAGE,
+  DiscardChangesDialog,
+  useDiscardGuard,
+  useSwipeToDismiss,
+} from "@/components/ui/dialog-chrome";
 import { NativeSelect } from "@/components/ui/native-select";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
@@ -2441,16 +2446,25 @@ export function ExpenseDialog({
   // form's own scrolling div — so ONE swipe-to-dismiss (see FormDialog/
   // StepWizardDialog for the same mechanism) covers whichever is mounted.
   const bodyRef = useRef<HTMLDivElement>(null);
+  // Past express mode's first step, real progress exists even though its
+  // OptionRow-style taps fire no native input/change event — see
+  // useDiscardGuard's `dirty` param (same trick as StepWizardDialog).
+  const discardGuard = useDiscardGuard({
+    open,
+    onOpenChange,
+    dirty: activeMode === "express" && expIndex > 0,
+  });
   const swipeProps = useSwipeToDismiss({
     enabled: true,
     bodyRef,
     onDismiss: () => {
-      if (!saving) onOpenChange(false);
+      if (!saving) discardGuard.handleOpenChange(false);
     },
   });
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!saving) onOpenChange(o); }}>
+    <>
+    <Dialog open={open} onOpenChange={(o) => { if (!saving) discardGuard.handleOpenChange(o); }}>
       {/* hideClose only for express: StepWizard renders its own X there. Full-form
           edit mode has no header X of its own, so it keeps the primitive's default.
           className is the same flex-column shell every other full-screen dialog gets
@@ -2460,6 +2474,7 @@ export function ExpenseDialog({
         hideClose={activeMode === "express"}
         className={DIALOG_CHROME_CONTENT_PAGE}
         {...swipeProps}
+        {...discardGuard.dirtyProps}
       >
         {activeMode === "express" ? (
           <StepWizard
@@ -2470,7 +2485,7 @@ export function ExpenseDialog({
             bodyRef={bodyRef}
             title={<WizardTitle title={dialogTitleText} description={dialogDescriptionText} />}
             onClose={() => {
-              if (!saving) onOpenChange(false);
+              if (!saving) discardGuard.handleOpenChange(false);
             }}
             closeDisabled={saving}
             onBack={expIndex > 0 ? () => expressGo(-1) : undefined}
@@ -3422,5 +3437,11 @@ export function ExpenseDialog({
         )}
       </FullScreenDialogContent>
     </Dialog>
+    <DiscardChangesDialog
+      open={discardGuard.confirmOpen}
+      onCancel={discardGuard.cancelDiscard}
+      onConfirm={discardGuard.confirmDiscard}
+    />
+    </>
   );
 }

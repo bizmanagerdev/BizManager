@@ -27,7 +27,12 @@ import NewProjectClient, {
 } from "@/app/(app)/projects/NewProjectClient";
 import { HEBREW } from "@/app/(app)/dashboard/DashboardActions.constants";
 import { AdaptivePageDialog } from "@/components/layout/page-layout";
-import { DIALOG_CHROME_CONTENT_PAGE, useSwipeToDismiss } from "@/components/ui/dialog-chrome";
+import {
+  DIALOG_CHROME_CONTENT_PAGE,
+  DiscardChangesDialog,
+  useDiscardGuard,
+  useSwipeToDismiss,
+} from "@/components/ui/dialog-chrome";
 import { Dialog } from "@/components/ui/dialog";
 import { UploadDocumentDialog } from "@/components/documents/UploadDocumentDialog";
 import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
@@ -66,6 +71,21 @@ export default function QuickCreateDialogs({
   // While a wizard is mid-submit its dialog must not be dismissable — closing it
   // would orphan a request that's already creating a row.
   const [submitLocked, setSubmitLocked] = useState(false);
+  // Shared the same way submitLocked is — action is a single value, so order
+  // and project are never open at once, and each wizard reports its own
+  // "past step 1" state as soon as it mounts (see NewOrderClient/
+  // NewProjectClient's onDirtyChange).
+  const [wizardDirty, setWizardDirty] = useState(false);
+  const orderDiscardGuard = useDiscardGuard({
+    open: action === "order",
+    onOpenChange: (open) => { if (!open) onClose(); },
+    dirty: wizardDirty,
+  });
+  const projectDiscardGuard = useDiscardGuard({
+    open: action === "project",
+    onOpenChange: (open) => { if (!open) onClose(); },
+    dirty: wizardDirty,
+  });
 
   // Order/project wizards are full-page dialogs now — each needs its own ref to
   // the wizard's scrollable body (owned here, handed down as `bodyRef`, so the
@@ -76,7 +96,7 @@ export default function QuickCreateDialogs({
     enabled: true,
     bodyRef: orderBodyRef,
     onDismiss: () => {
-      if (!submitLocked) onClose();
+      if (!submitLocked) orderDiscardGuard.handleOpenChange(false);
     },
   });
   const projectBodyRef = useRef<HTMLDivElement>(null);
@@ -84,7 +104,7 @@ export default function QuickCreateDialogs({
     enabled: true,
     bodyRef: projectBodyRef,
     onDismiss: () => {
-      if (!submitLocked) onClose();
+      if (!submitLocked) projectDiscardGuard.handleOpenChange(false);
     },
   });
 
@@ -266,7 +286,7 @@ export default function QuickCreateDialogs({
         open={action === "order"}
         onOpenChange={(open) => {
           if (!open && submitLocked) return;
-          if (!open) onClose();
+          orderDiscardGuard.handleOpenChange(open);
         }}
       >
         <AdaptivePageDialog
@@ -274,6 +294,7 @@ export default function QuickCreateDialogs({
           hideClose
           className={DIALOG_CHROME_CONTENT_PAGE}
           {...orderSwipeProps}
+          {...orderDiscardGuard.dirtyProps}
         >
           {action === "order" ? (
             <NewOrderClient
@@ -287,9 +308,10 @@ export default function QuickCreateDialogs({
               dialogDescription={HEBREW.orderDialogDescription}
               draftKey="quick-create-order"
               onActionLockedChange={setSubmitLocked}
+              onDirtyChange={setWizardDirty}
               onCancel={() => {
                 setSubmitLocked(false);
-                onClose();
+                orderDiscardGuard.handleOpenChange(false);
               }}
               onSubmitted={(orderId) => {
                 setSubmitLocked(false);
@@ -320,7 +342,7 @@ export default function QuickCreateDialogs({
         open={action === "project"}
         onOpenChange={(open) => {
           if (!open && submitLocked) return;
-          if (!open) onClose();
+          projectDiscardGuard.handleOpenChange(open);
         }}
       >
         <AdaptivePageDialog
@@ -328,6 +350,7 @@ export default function QuickCreateDialogs({
           hideClose
           className={DIALOG_CHROME_CONTENT_PAGE}
           {...projectSwipeProps}
+          {...projectDiscardGuard.dirtyProps}
         >
           {action === "project" ? (
             <NewProjectClient
@@ -341,9 +364,10 @@ export default function QuickCreateDialogs({
               dialogTitle={HEBREW.projectNew}
               dialogDescription={HEBREW.projectDialogDescription}
               onActionLockedChange={setSubmitLocked}
+              onDirtyChange={setWizardDirty}
               onCancel={() => {
                 setSubmitLocked(false);
-                onClose();
+                projectDiscardGuard.handleOpenChange(false);
               }}
               onSubmitted={(project) => {
                 setSubmitLocked(false);
@@ -501,6 +525,17 @@ export default function QuickCreateDialogs({
         projects={projectPickerOptions.map((p) => ({ id: p.id, label: p.label }))}
         properties={propertyOptions}
         onUploaded={() => startTransition(() => { router.refresh(); })}
+      />
+
+      <DiscardChangesDialog
+        open={orderDiscardGuard.confirmOpen}
+        onCancel={orderDiscardGuard.cancelDiscard}
+        onConfirm={orderDiscardGuard.confirmDiscard}
+      />
+      <DiscardChangesDialog
+        open={projectDiscardGuard.confirmOpen}
+        onCancel={projectDiscardGuard.cancelDiscard}
+        onConfirm={projectDiscardGuard.confirmDiscard}
       />
     </>
   );

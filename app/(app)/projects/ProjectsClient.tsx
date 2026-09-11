@@ -9,7 +9,6 @@ import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { useOfflineRows } from "@/hooks/useOfflineRows";
 import StaleDataBadge from "@/components/layout/StaleDataBadge";
 import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
-import PageAlertBar from "@/components/reminders/PageAlertBar";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { SwipeActions } from "@/components/ui/swipe-actions";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -34,7 +33,12 @@ import {
   AdaptiveStack,
   PageStack,
 } from "@/components/layout/page-layout";
-import { DIALOG_CHROME_CONTENT_PAGE, useSwipeToDismiss } from "@/components/ui/dialog-chrome";
+import {
+  DIALOG_CHROME_CONTENT_PAGE,
+  DiscardChangesDialog,
+  useDiscardGuard,
+  useSwipeToDismiss,
+} from "@/components/ui/dialog-chrome";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Button } from "@/components/ui/button";
@@ -518,12 +522,24 @@ export default function ProjectsClient({
   // this component only tracks dialog open/submit state — the wizard owns the form.
   const [createOpen, setCreateOpen] = useState(false);
   const [createSubmitting, setCreateSubmitting] = useState(false);
+  const [createDirty, setCreateDirty] = useState(false);
   const [createStatus, setCreateStatus] = useState(defaultStatusOptions[0]);
   const [createPrefillCustomerId, setCreatePrefillCustomerId] = useState<string | undefined>(undefined);
+  const createDiscardGuard = useDiscardGuard({
+    open: createOpen,
+    onOpenChange: setCreateOpen,
+    dirty: createDirty,
+  });
 
   const [editOpen, setEditOpen] = useState(false);
   const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editDirty, setEditDirty] = useState(false);
   const [editProject, setEditProject] = useState<ProjectRow | null>(null);
+  const editDiscardGuard = useDiscardGuard({
+    open: editOpen,
+    onOpenChange: setEditOpen,
+    dirty: editDirty,
+  });
 
   // Full-page dialogs now — each wizard's own ref to its scrollable body,
   // shared with the swipe-to-dismiss gate (see QuickCreateDialogs for the
@@ -533,7 +549,7 @@ export default function ProjectsClient({
     enabled: true,
     bodyRef: createBodyRef,
     onDismiss: () => {
-      if (!createSubmitting) setCreateOpen(false);
+      if (!createSubmitting) createDiscardGuard.handleOpenChange(false);
     },
   });
   const editBodyRef = useRef<HTMLDivElement>(null);
@@ -541,7 +557,7 @@ export default function ProjectsClient({
     enabled: true,
     bodyRef: editBodyRef,
     onDismiss: () => {
-      if (!editSubmitting) setEditOpen(false);
+      if (!editSubmitting) editDiscardGuard.handleOpenChange(false);
     },
   });
 
@@ -840,18 +856,7 @@ export default function ProjectsClient({
         </TabsList>
       </Tabs>
 
-      {/* PageAlertBar + the mobile filters block share ONE plain wrapper (no
-          space-y class) rather than being two direct PageStack children —
-          PageStack is space-y-4, and that CSS adds margin-top to ANY sibling
-          that has a preceding one, even a zero-height one. PageAlertBar always
-          renders a real (if 0-tall) DOM node while alerts exist, so the block
-          right after it used to get a phantom extra gap that vanished the
-          instant every alert was dismissed (user, 2026-08-27: "there is a
-          white section until i x them"). Grouping them removes that extra
-          sibling boundary from PageStack's own point of view. */}
       <div>
-      <PageAlertBar keys={["project_closed_unbilled", "project_deadline", "project_starting", "stale_quote"]} />
-
       <div className="space-y-3 md:hidden">
 
         {hasActiveToolbarFilters && !mobileFiltersOpen ? (
@@ -1389,7 +1394,7 @@ export default function ProjectsClient({
         open={createOpen}
         onOpenChange={(open) => {
           if (!open && createSubmitting) return;
-          setCreateOpen(open);
+          createDiscardGuard.handleOpenChange(open);
         }}
       >
         <AdaptivePageDialog
@@ -1397,6 +1402,7 @@ export default function ProjectsClient({
           hideClose
           className={DIALOG_CHROME_CONTENT_PAGE}
           {...createSwipeProps}
+          {...createDiscardGuard.dirtyProps}
         >
           {createOpen ? (
             <NewProjectClient
@@ -1416,7 +1422,8 @@ export default function ProjectsClient({
                   : "בוחרים לקוח וממלאים את פרטי הפרויקט."
               }
               onActionLockedChange={setCreateSubmitting}
-              onCancel={() => setCreateOpen(false)}
+              onDirtyChange={setCreateDirty}
+              onCancel={() => createDiscardGuard.handleOpenChange(false)}
               onSubmitted={(project) => {
                 const id = getString(project, "id");
                 if (id) {
@@ -1467,7 +1474,7 @@ export default function ProjectsClient({
         open={editOpen}
         onOpenChange={(open) => {
           if (!open && editSubmitting) return;
-          setEditOpen(open);
+          editDiscardGuard.handleOpenChange(open);
         }}
       >
         <AdaptivePageDialog
@@ -1475,6 +1482,7 @@ export default function ProjectsClient({
           hideClose
           className={DIALOG_CHROME_CONTENT_PAGE}
           {...editSwipeProps}
+          {...editDiscardGuard.dirtyProps}
         >
           {editOpen && editProject ? (
             <NewProjectClient
@@ -1490,7 +1498,8 @@ export default function ProjectsClient({
               dialogTitle="עריכת פרויקט"
               dialogDescription="עדכון פרטי פרויקט קיים."
               onActionLockedChange={setEditSubmitting}
-              onCancel={() => setEditOpen(false)}
+              onDirtyChange={setEditDirty}
+              onCancel={() => editDiscardGuard.handleOpenChange(false)}
               onSubmitted={(project) => {
                 const id = getString(project, "id");
                 if (id) {
@@ -1514,6 +1523,17 @@ export default function ProjectsClient({
           ) : null}
         </AdaptivePageDialog>
       </Dialog>
+
+      <DiscardChangesDialog
+        open={createDiscardGuard.confirmOpen}
+        onCancel={createDiscardGuard.cancelDiscard}
+        onConfirm={createDiscardGuard.confirmDiscard}
+      />
+      <DiscardChangesDialog
+        open={editDiscardGuard.confirmOpen}
+        onCancel={editDiscardGuard.cancelDiscard}
+        onConfirm={editDiscardGuard.confirmDiscard}
+      />
 
     </PageStack>
   );

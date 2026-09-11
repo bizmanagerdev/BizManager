@@ -5,9 +5,25 @@
 // the close X can only be changed in one place, and a wizard can't drift away
 // from an edit dialog again.
 
-import { useRef, type ReactNode, type Ref, type TouchEvent as ReactTouchEvent } from "react";
+import { useEffect, useRef, useState, type ReactNode, type Ref, type TouchEvent as ReactTouchEvent } from "react";
 import { CloseIcon } from "@/components/ui/icons";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
+
+/** A dialog body's floor height, so a short step/form and a tall one land
+ *  close enough that the action bar below them doesn't jump around — the
+ *  reason a "Next"/"Continue" press ever needs the mouse to travel (user
+ *  report, 2026-09-11). A ceiling would clip real content instead, so this is
+ *  only ever a minimum: taller content still grows the dialog past it.
+ *
+ *  sm+ only: below that, a phone's own height is already tight (more so with
+ *  the on-screen keyboard up), and this chrome's outer box deliberately has
+ *  no scroll of its own (overflow-y-hidden, see DIALOG_CHROME_CONTENT) — a
+ *  floor taller than the viewport there would clip the action bar instead of
+ *  scrolling to it. min-h-0 stays the mobile default: it's what lets this
+ *  flex-1 body shrink below its content size and actually scroll internally
+ *  when a tall step is squeezed under a short viewport. */
+export const DIALOG_BODY_MIN_HEIGHT = "min-h-0 sm:min-h-[22rem]";
 
 /** The className every dialog passes to AdaptiveDialog: a fixed-height column
  *  whose middle section is the only thing that scrolls. */
@@ -192,7 +208,11 @@ export function DialogChromeBody({
   return (
     <div
       ref={ref}
-      className={cn("min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6", className)}
+      className={cn(
+        "flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6",
+        DIALOG_BODY_MIN_HEIGHT,
+        className
+      )}
     >
       {children}
     </div>
@@ -216,5 +236,100 @@ export function DialogChromeFooter({
     >
       {children}
     </div>
+  );
+}
+
+/**
+ * Wraps a dialog's onOpenChange so a close attempt — outside click, Escape,
+ * the X, a swipe-down, Radix funnels all of these through the very same
+ * callback — asks first when the dialog has anything unsaved, instead of
+ * silently discarding it (user report, 2026-09-11: an accidental outside
+ * click was dropping mid-wizard progress with no way back).
+ *
+ * "Dirty" combines two signals, since a form's fields alone don't cover a
+ * step wizard:
+ *   1. `dirtyProps`, spread onto whatever wraps the dialog's real fields —
+ *      any native input/change event bubbling through it (typing, a native
+ *      select, a checkbox) arms the guard for the rest of that open dialog.
+ *   2. `dirty`, an optional externally-computed signal for interactions that
+ *      fire no native event at all — a step wizard's OptionRow taps are plain
+ *      buttons, so "the wizard has moved past its first step" is passed in
+ *      instead (see StepWizardDialog).
+ * Either one is enough; this hook just ORs them.
+ */
+export function useDiscardGuard({
+  open,
+  onOpenChange,
+  dirty: externalDirty = false,
+}: {
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
+  dirty?: boolean;
+}) {
+  const touchedRef = useRef(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  // A fresh open starts clean — whether this is a new dialog instance or the
+  // same one reopened on the same record.
+  useEffect(() => {
+    if (open) touchedRef.current = false;
+  }, [open]);
+
+  function markTouched() {
+    touchedRef.current = true;
+  }
+
+  function handleOpenChange(next: boolean) {
+    if (!next && (touchedRef.current || externalDirty)) {
+      setConfirmOpen(true);
+      return;
+    }
+    onOpenChange(next);
+  }
+
+  function confirmDiscard() {
+    touchedRef.current = false;
+    setConfirmOpen(false);
+    onOpenChange(false);
+  }
+
+  function cancelDiscard() {
+    setConfirmOpen(false);
+  }
+
+  return {
+    dirtyProps: { onChangeCapture: markTouched, onInputCapture: markTouched },
+    handleOpenChange,
+    confirmOpen,
+    confirmDiscard,
+    cancelDiscard,
+  };
+}
+
+/** The one "you have unsaved changes" prompt every guarded dialog shows —
+ *  same wording everywhere, so it reads as one system. Render as a sibling of
+ *  the guarded dialog, wired to the matching useDiscardGuard() call. */
+export function DiscardChangesDialog({
+  open,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <ConfirmDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onCancel();
+      }}
+      title="יש שינויים שלא נשמרו"
+      description="לסגור בלי לשמור אותם?"
+      confirmLabel="סגור בלי לשמור"
+      cancelLabel="המשך לעריכה"
+      destructive
+      onConfirm={onConfirm}
+    />
   );
 }

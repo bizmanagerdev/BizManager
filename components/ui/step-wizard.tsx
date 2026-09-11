@@ -25,6 +25,8 @@ import {
   DialogChromeBody,
   DialogChromeFooter,
   DialogChromeHeader,
+  DiscardChangesDialog,
+  useDiscardGuard,
   useSwipeToDismiss,
 } from "@/components/ui/dialog-chrome";
 import { AdaptiveDialog, AdaptivePageDialog, dialogVariants } from "@/components/layout/page-layout";
@@ -542,10 +544,17 @@ export function StepWizardDialog<TStep extends string | number>({
   // direct <StepWizard> use does, e.g. NewProjectClient), so this one just
   // wins outright when fullScreen is on — nothing to merge.
   const dragBodyRef = useRef<HTMLDivElement>(null);
+
+  // Past the first step, the wizard has real progress even when every choice
+  // so far was a tap (OptionRow, a date quick-pick) that fires no native
+  // input/change event — see useDiscardGuard's `dirty` param.
+  const pastFirstStep = wizard.steps.findIndex((s) => s.n === wizard.current) > 0;
+  const discardGuard = useDiscardGuard({ open, onOpenChange, dirty: pastFirstStep });
+
   const swipeProps = useSwipeToDismiss({
     enabled: fullScreen,
     bodyRef: dragBodyRef,
-    onDismiss: () => onOpenChange(false),
+    onDismiss: () => discardGuard.handleOpenChange(false),
   });
 
   const stepWizard = (
@@ -553,28 +562,41 @@ export function StepWizardDialog<TStep extends string | number>({
       {...wizard}
       bodyRef={fullScreen ? dragBodyRef : wizard.bodyRef}
       grabber={fullScreen}
-      onClose={() => onOpenChange(false)}
+      onClose={() => discardGuard.handleOpenChange(false)}
       title={<WizardTitle title={dialogTitle} description={dialogDescription} kicker={kicker} />}
     />
   );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* hideClose: the wizard's own X is the single way out. */}
-      {fullScreen ? (
-        <AdaptivePageDialog
-          size={size}
-          hideClose
-          className={DIALOG_CHROME_CONTENT_PAGE}
-          {...swipeProps}
-        >
-          {stepWizard}
-        </AdaptivePageDialog>
-      ) : (
-        <AdaptiveDialog size={size} hideClose className={DIALOG_CHROME_CONTENT}>
-          {stepWizard}
-        </AdaptiveDialog>
-      )}
-    </Dialog>
+    <>
+      <Dialog open={open} onOpenChange={discardGuard.handleOpenChange}>
+        {/* hideClose: the wizard's own X is the single way out. */}
+        {fullScreen ? (
+          <AdaptivePageDialog
+            size={size}
+            hideClose
+            className={DIALOG_CHROME_CONTENT_PAGE}
+            {...swipeProps}
+            {...discardGuard.dirtyProps}
+          >
+            {stepWizard}
+          </AdaptivePageDialog>
+        ) : (
+          <AdaptiveDialog
+            size={size}
+            hideClose
+            className={DIALOG_CHROME_CONTENT}
+            {...discardGuard.dirtyProps}
+          >
+            {stepWizard}
+          </AdaptiveDialog>
+        )}
+      </Dialog>
+      <DiscardChangesDialog
+        open={discardGuard.confirmOpen}
+        onCancel={discardGuard.cancelDiscard}
+        onConfirm={discardGuard.confirmDiscard}
+      />
+    </>
   );
 }

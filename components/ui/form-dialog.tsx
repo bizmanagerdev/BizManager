@@ -28,6 +28,8 @@ import {
   DialogChromeBody,
   DialogChromeFooter,
   DialogChromeHeader,
+  DiscardChangesDialog,
+  useDiscardGuard,
   useSwipeToDismiss,
 } from "@/components/ui/dialog-chrome";
 import { AdaptiveDialog, AdaptivePageDialog, dialogVariants } from "@/components/layout/page-layout";
@@ -79,11 +81,12 @@ export function FormDialog({
   children: ReactNode;
 }) {
   const bodyRef = useRef<HTMLDivElement>(null);
+  const discardGuard = useDiscardGuard({ open, onOpenChange });
 
   function handleOpenChange(next: boolean) {
     // Never vanish mid-save — the user would have no idea whether it landed.
     if (!next && busy) return;
-    onOpenChange(next);
+    discardGuard.handleOpenChange(next);
   }
 
   const swipeProps = useSwipeToDismiss({
@@ -145,22 +148,35 @@ export function FormDialog({
   );
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      {/* hideClose: the chrome header carries the only X. */}
-      {fullScreen ? (
-        <AdaptivePageDialog
-          size={size}
-          hideClose
-          className={cn(DIALOG_CHROME_CONTENT_PAGE, className)}
-          {...swipeProps}
-        >
-          {content}
-        </AdaptivePageDialog>
-      ) : (
-        <AdaptiveDialog size={size} hideClose className={cn(DIALOG_CHROME_CONTENT, className)}>
-          {content}
-        </AdaptiveDialog>
-      )}
-    </Dialog>
+    <>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        {/* hideClose: the chrome header carries the only X. */}
+        {fullScreen ? (
+          <AdaptivePageDialog
+            size={size}
+            hideClose
+            className={cn(DIALOG_CHROME_CONTENT_PAGE, className)}
+            {...swipeProps}
+            {...discardGuard.dirtyProps}
+          >
+            {content}
+          </AdaptivePageDialog>
+        ) : (
+          <AdaptiveDialog
+            size={size}
+            hideClose
+            className={cn(DIALOG_CHROME_CONTENT, className)}
+            {...discardGuard.dirtyProps}
+          >
+            {content}
+          </AdaptiveDialog>
+        )}
+      </Dialog>
+      <DiscardChangesDialog
+        open={discardGuard.confirmOpen}
+        onCancel={discardGuard.cancelDiscard}
+        onConfirm={discardGuard.confirmDiscard}
+      />
+    </>
   );
 }

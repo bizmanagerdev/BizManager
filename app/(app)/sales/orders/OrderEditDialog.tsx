@@ -11,7 +11,12 @@ import {
   DialogTitle,
   FullScreenDialogContent,
 } from "@/components/ui/dialog";
-import { DIALOG_CHROME_CONTENT_PAGE, useSwipeToDismiss } from "@/components/ui/dialog-chrome";
+import {
+  DIALOG_CHROME_CONTENT_PAGE,
+  DiscardChangesDialog,
+  useDiscardGuard,
+  useSwipeToDismiss,
+} from "@/components/ui/dialog-chrome";
 import { cn } from "@/lib/utils";
 import LoadingDots from "@/app/(app)/sales/orders/LoadingDots";
 import NewOrderClient from "@/app/(app)/sales/orders/new/NewOrderClient";
@@ -87,12 +92,14 @@ export default function OrderEditDialog({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<EditPayload | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const discardGuard = useDiscardGuard({ open, onOpenChange: setOpen, dirty });
   const shouldUseConfirmDialog = allowOrderStatusEdit || initialStatusOverride === "delivered";
   const bodyRef = useRef<HTMLDivElement>(null);
   const swipeProps = useSwipeToDismiss({
     enabled: true,
     bodyRef,
-    onDismiss: () => setOpen(false),
+    onDismiss: () => discardGuard.handleOpenChange(false),
   });
 
   useEffect(() => {
@@ -133,7 +140,8 @@ export default function OrderEditDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <>
+    <Dialog open={open} onOpenChange={discardGuard.handleOpenChange}>
       {hideTrigger ? null : <EditButton onClick={() => setOpen(true)} label={triggerLabel} />}
       {/* Once the wizard is up it owns the frame: pinned step bar (with its own
           close button, hence hideClose), scrolling middle, pinned action bar.
@@ -142,6 +150,7 @@ export default function OrderEditDialog({
         hideClose={Boolean(data)}
         className={cn(DIALOG_CHROME_CONTENT_PAGE, "sm:max-w-5xl")}
         {...swipeProps}
+        {...discardGuard.dirtyProps}
       >
         {/* Visible only before the wizard mounts — once it does, it renders its
             own visible step heading (see NewOrderClient's dialogTitle prop
@@ -181,7 +190,8 @@ export default function OrderEditDialog({
             bodyRef={bodyRef}
             dialogTitle={title}
             dialogDescription={description}
-            onCancel={() => setOpen(false)}
+            onDirtyChange={setDirty}
+            onCancel={() => discardGuard.handleOpenChange(false)}
             onSubmitted={() => {
               setOpen(false);
               startTransition(() => {
@@ -192,5 +202,11 @@ export default function OrderEditDialog({
         ) : null}
       </FullScreenDialogContent>
     </Dialog>
+    <DiscardChangesDialog
+      open={discardGuard.confirmOpen}
+      onCancel={discardGuard.cancelDiscard}
+      onConfirm={discardGuard.confirmDiscard}
+    />
+    </>
   );
 }

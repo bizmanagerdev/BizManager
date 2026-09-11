@@ -274,6 +274,7 @@ export default function NewProjectClient({
   onCancel,
   onSubmitted,
   onActionLockedChange,
+  onDirtyChange,
   bodyRef: externalBodyRef,
   dialogTitle,
   dialogDescription,
@@ -299,6 +300,11 @@ export default function NewProjectClient({
   /** Called with the saved project row after a successful create/update. */
   onSubmitted: (project: Row) => void;
   onActionLockedChange?: (locked: boolean) => void;
+  /** Reports "the wizard has moved past its first step" — the embedding
+   *  dialog's own outside-click discard guard uses this, since most of this
+   *  wizard's progress (tapping a customer card, an option row) fires no
+   *  native input/change event for a generic dirty-detector to see. */
+  onDirtyChange?: (dirty: boolean) => void;
   /** The embedding dialog's own ref to the scrollable body — so IT can gate a
    *  swipe-to-dismiss on "scrolled to top" too (this wizard is always embedded
    *  in a dialog, unlike NewOrderClient which also has a standalone page). */
@@ -536,6 +542,10 @@ export default function NewProjectClient({
     canClickStep: canClickStepUnblocked,
     advanceTo,
   } = useStepFlow<Step>({ stepId: step, setStepId: setStep, steps: stepIds, isSatisfied });
+
+  useEffect(() => {
+    onDirtyChange?.(stepIndex(step) > 0);
+  }, [step, stepIndex, onDirtyChange]);
 
   // While the inline create/edit customer form is open the user must save or
   // cancel first — otherwise the in-progress edit would be abandoned. Wrapped
