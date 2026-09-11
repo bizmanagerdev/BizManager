@@ -521,6 +521,12 @@ export async function createTestPayment(
       payment_method: overrides.paymentMethod ?? "check",
       amount_total: amount,
       net_amount: amount,
+      // amount_including_vat has a column default of 0, not null - but
+      // payments_split_consistency_chk requires it to be NULL whenever
+      // requires_split is false (the default here). Must be set explicitly;
+      // relying on the column default violates the constraint.
+      amount_including_vat: null,
+      amount_before_vat: null,
       payment_status: overrides.paymentStatus ?? "pending",
       business_domain: overrides.orderId ? "sales" : "general_business",
       order_id: overrides.orderId ?? null,
