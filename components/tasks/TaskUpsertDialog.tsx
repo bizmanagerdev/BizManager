@@ -124,6 +124,11 @@ type Props = {
   defaultDueDate?: string;
   // The signed-in user — enables the optional "add me as a member" toggle.
   currentUserId?: string;
+  // A worker has no RLS delete permission on a task's attachments (see
+  // 20260908110000_worker_task_attachment_rls.sql's own "no DELETE" note) —
+  // omit or pass a non-worker role to keep the delete button showing
+  // (existing staff-only call sites need no change).
+  viewerRole?: string;
   // Guided step-by-step creation (Next → Next → Save). Defaults to false.
   wizard?: boolean;
   // Pre-select tags (e.g. a vehicle) for a NEW task.
@@ -1462,6 +1467,7 @@ export function TaskUpsertDialog(rawProps: Props) {
                 uploadingFiles={uploadingFiles}
                 onUpload={(files) => void uploadAttachments(files)}
                 onRequestDelete={setAttachmentToDelete}
+                canDelete={props.viewerRole !== "worker"}
                 locale={props.locale}
               />
             ) : (

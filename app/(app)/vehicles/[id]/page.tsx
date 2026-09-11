@@ -80,6 +80,7 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
           orders={orders}
           properties={properties}
           currentUserId={profile.id}
+          viewerRole={profile.role}
         />
       </PageStack>
     </AppShell>

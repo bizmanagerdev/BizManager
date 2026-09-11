@@ -386,6 +386,7 @@ type Props = {
   orders: SourceOption[];
   properties: SourceOption[];
   currentUserId: string;
+  viewerRole: string;
 };
 
 function toEditingExpense(e: VehicleExpense): EditingExpenseData {
@@ -416,6 +417,7 @@ export default function VehicleActivityClient({
   orders,
   properties,
   currentUserId,
+  viewerRole,
 }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -755,6 +757,7 @@ export default function VehicleActivityClient({
         onOpenChange={setTaskOpen}
         mode={editTaskId ? "edit" : "create"}
         taskId={editTaskId}
+        viewerRole={viewerRole}
         users={users}
         currentUserId={currentUserId}
         presetTagIds={[tagId]}

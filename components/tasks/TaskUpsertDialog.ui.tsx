@@ -487,12 +487,17 @@ export function TaskAttachmentsSection({
   uploadingFiles,
   onUpload,
   onRequestDelete,
+  canDelete = true,
   locale,
 }: {
   attachments: AttachmentItem[];
   uploadingFiles: boolean;
   onUpload: (files: File[]) => void;
   onRequestDelete: (target: { id: string; name: string | null }) => void;
+  // A worker has no RLS delete permission on a task's attachments — showing
+  // the button anyway made it a silent no-op (click removes it optimistically,
+  // nothing actually happens server-side, no error, it's back on reload).
+  canDelete?: boolean;
   locale: Locale;
 }) {
   return (
@@ -560,10 +565,12 @@ export function TaskAttachmentsSection({
                   />
                 </span>
               </a>
-              <DeleteButton
-                label={t(tasksDict, locale, "deleteFileOfflineLabel")}
-                onClick={() => onRequestDelete({ id: attachment.id, name: attachment.original_name })}
-              />
+              {canDelete ? (
+                <DeleteButton
+                  label={t(tasksDict, locale, "deleteFileOfflineLabel")}
+                  onClick={() => onRequestDelete({ id: attachment.id, name: attachment.original_name })}
+                />
+              ) : null}
             </div>
           ))}
         </div>

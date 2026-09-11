@@ -1653,6 +1653,7 @@ export default function TasksPageClient(props: Props) {
         mode="edit"
         taskId={editId}
         locale={props.locale}
+        viewerRole={canSeeAll ? undefined : "worker"}
         users={props.users}
         projects={props.projects}
         properties={props.properties}
