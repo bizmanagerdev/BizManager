@@ -123,10 +123,16 @@ export async function createTestOrderItem(
   return data as { id: string };
 }
 
-export async function getOrderStatus(id: string): Promise<{ status: string; payment_status: string }> {
-  const { data, error } = await adminClient().from("orders").select("status,payment_status").eq("id", id).single();
+export async function getOrderStatus(
+  id: string
+): Promise<{ status: string; payment_status: string; total_amount: number }> {
+  const { data, error } = await adminClient()
+    .from("orders")
+    .select("status,payment_status,total_amount")
+    .eq("id", id)
+    .single();
   if (error) throw error;
-  return data as { status: string; payment_status: string };
+  return data as { status: string; payment_status: string; total_amount: number };
 }
 
 export type TestProperty = { id: string; address: string };
@@ -401,4 +407,24 @@ export async function getVehicleMileage(tagId: string): Promise<number | null> {
   const { data, error } = await adminClient().from("vehicles").select("mileage").eq("tag_id", tagId).single();
   if (error) throw error;
   return (data as { mileage: number | null }).mileage;
+}
+
+// expenses.description has no uniqueness constraint, so tests give theirs a
+// Date.now()-suffixed value and look it up afterward — used when a value was
+// entered through the real ExpenseDialog UI rather than inserted directly, so
+// there's no id to capture from a network response.
+export async function getExpenseIdByDescription(description: string): Promise<string> {
+  const { data, error } = await adminClient()
+    .from("expenses")
+    .select("id")
+    .eq("description", description)
+    .single();
+  if (error) throw error;
+  return (data as { id: string }).id;
+}
+
+export async function getCustomerNotes(id: string): Promise<string | null> {
+  const { data, error } = await adminClient().from("customers").select("notes").eq("id", id).single();
+  if (error) throw error;
+  return (data as { notes: string | null }).notes;
 }
