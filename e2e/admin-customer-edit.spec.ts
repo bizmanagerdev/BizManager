@@ -9,6 +9,10 @@ import { createTestCustomer, deleteTestCustomer, getCustomerNotes } from "./db";
 // persists.
 test.describe("admin — customer edit", () => {
   test("admin can edit a customer's notes and the change persists", async ({ page }) => {
+    // Flagged flaky in CI: the 15s undo-window poll below plus normal
+    // page-load/interaction time can exceed the 30s default under CI's
+    // slower conditions.
+    test.setTimeout(60_000);
     const customer = await createTestCustomer({ name: `E2E notes customer ${Date.now()}` });
     const newNotes = `E2E note ${Date.now()}`;
     try {

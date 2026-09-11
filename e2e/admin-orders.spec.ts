@@ -14,6 +14,11 @@ import {
 // crash, none actually creates or mutates financial data through the UI.
 test.describe("admin — order creation and payment collection", () => {
   test("admin can create an order through the wizard with a free-text line item", async ({ page }) => {
+    // More steps than the 30s default comfortably covers in CI - and a
+    // timed-out test skips the rest of its finally block's async cleanup,
+    // which is exactly how a failed run once left stray "E2E ..." customers
+    // behind for an unrelated test (login.spec.ts) to trip over.
+    test.setTimeout(60_000);
     const customer = await createTestCustomer({ name: `E2E order customer ${Date.now()}` });
     let orderId: string | null = null;
     try {
@@ -23,7 +28,7 @@ test.describe("admin — order creation and payment collection", () => {
       await page.getByRole("button", { name: "לקוח קיים" }).click();
       await page.locator('[aria-label="חיפוש לקוח"]').fill(customer.name);
       await page.getByText(customer.name, { exact: true }).first().click();
-      await page.getByRole("button", { name: "הבא" }).click();
+      await page.getByRole("button", { name: "המשך" }).click();
 
       // Items step: a free-text line avoids needing a seeded product/catalog
       // fixture chain. addCustomLine() (NewOrderClient.tsx:630) starts it at
@@ -46,7 +51,7 @@ test.describe("admin — order creation and payment collection", () => {
               await createButton.click();
               return;
             }
-            await page.getByRole("button", { name: "הבא" }).click();
+            await page.getByRole("button", { name: "המשך" }).click();
           }
           throw new Error("Never reached the order-creation summary step");
         })(),

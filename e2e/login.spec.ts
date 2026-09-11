@@ -13,7 +13,14 @@ test.describe("login", () => {
     // firstNameOf() in lib/dashboard/greeting.ts) - "E2E Admin" the full name
     // never appears as visible text on first load, only inside the closed
     // account panel (components/layout/TopBar.tsx).
-    await expect(page.getByText("E2E", { exact: false })).toBeVisible();
+    //
+    // Matched as ", E2E" (with the leading comma the greeting renders as
+    // "<greeting>, E2E", DashboardGreetingTitle.tsx), not a bare "E2E" - a
+    // bare match is ambiguous against the topbar's own "החשבון שלי — E2E
+    // Admin" account button, and (if another test's cleanup didn't finish in
+    // time) against any stray "E2E ..." customer/order left over elsewhere
+    // on the page from a different spec entirely.
+    await expect(page.getByText(", E2E", { exact: false })).toBeVisible();
   });
 
   test("a wrong password shows a Hebrew error and stays on /login", async ({ page }) => {

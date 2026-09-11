@@ -75,6 +75,12 @@ export async function deleteTestProject(id: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function getProjectStatus(id: string): Promise<string> {
+  const { data, error } = await adminClient().from("projects").select("status").eq("id", id).single();
+  if (error) throw error;
+  return (data as { status: string }).status;
+}
+
 export type TestOrder = { id: string };
 
 export async function createTestOrder(customerId: string): Promise<TestOrder> {
@@ -253,6 +259,59 @@ export async function getLatestAttendanceReportStatus(userId: string): Promise<s
 
 export async function deleteTestAttendanceReports(userId: string): Promise<void> {
   const { error } = await adminClient().from("phone_attendance_reports").delete().eq("user_id", userId);
+  if (error) throw error;
+}
+
+// Seeds a pending_review report directly, skipping the worker's own clock-
+// in/out UI (already covered by worker-attendance.spec.ts) — this is for
+// exercising the admin/office APPROVAL side on its own.
+export async function createTestAttendanceReport(
+  userId: string,
+  overrides: { clockIn?: Date; clockOut?: Date; notes?: string } = {}
+): Promise<{ id: string }> {
+  const clockIn = overrides.clockIn ?? new Date(Date.now() - 60 * 60_000);
+  const clockOut = overrides.clockOut ?? new Date();
+  const workedMinutes = Math.round((clockOut.getTime() - clockIn.getTime()) / 60_000);
+  const { data, error } = await adminClient()
+    .from("phone_attendance_reports")
+    .insert({
+      user_id: userId,
+      clock_in: clockIn.toISOString(),
+      clock_out: clockOut.toISOString(),
+      worked_minutes: workedMinutes,
+      status: "pending_review",
+      source: "phone",
+      notes: overrides.notes ?? null,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data as { id: string };
+}
+
+export async function getAttendanceReportStatus(reportId: string): Promise<string> {
+  const { data, error } = await adminClient()
+    .from("phone_attendance_reports")
+    .select("status")
+    .eq("id", reportId)
+    .single();
+  if (error) throw error;
+  return (data as { status: string }).status;
+}
+
+export async function getAttendanceSessionForReport(reportId: string): Promise<{ id: string } | null> {
+  const { data: report, error: reportError } = await adminClient()
+    .from("phone_attendance_reports")
+    .select("attendance_session_id")
+    .eq("id", reportId)
+    .single();
+  if (reportError) throw reportError;
+  const sessionId = (report as { attendance_session_id: string | null }).attendance_session_id;
+  return sessionId ? { id: sessionId } : null;
+}
+
+export async function deleteTestAttendanceSession(id: string): Promise<void> {
+  const { error } = await adminClient().from("attendance_sessions").delete().eq("id", id);
   if (error) throw error;
 }
 

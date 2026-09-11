@@ -10,6 +10,10 @@ import { getExpenseIdByDescription, deleteTestExpense } from "./db";
 // "המשך" nav button (ExpenseDialog.tsx:2478).
 test.describe("admin — expense recording", () => {
   test("admin can record a one-time paid cash expense and it shows on /financial", async ({ page }) => {
+    // See admin-orders.spec.ts's order-creation test for why: more wizard
+    // steps than the 30s default comfortably covers, and a timed-out test
+    // skips the rest of its finally block's cleanup.
+    test.setTimeout(60_000);
     const description = `E2E expense ${Date.now()}`;
     let expenseId: string | null = null;
     try {
