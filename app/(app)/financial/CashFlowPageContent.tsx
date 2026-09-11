@@ -22,7 +22,6 @@ import { loadCustomerRanking, type CustomerRankingReport } from "@/lib/financial
 import { ensureRecurringExpensesForDate } from "@/lib/recurring-expenses";
 import { loadProjectedOutflowEntries } from "@/lib/payables";
 import { propertyDisplayName } from "@/lib/properties";
-import PageAlertBar from "@/components/reminders/PageAlertBar";
 
 type Row = Record<string, unknown>;
 
@@ -207,8 +206,6 @@ export default async function CashFlowPageContent({
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
-      {/* Match the nav-tab badge: surface the same alerts at the top of the page. */}
-      <PageAlertBar keys={["recurring_expense_confirm", "payment_outflow_due"]} />
       <FinancialPageClient
         key={JSON.stringify({
           customerId,

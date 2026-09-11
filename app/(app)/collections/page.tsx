@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
-import PageAlertBar from "@/components/reminders/PageAlertBar";
 import { Card, CardContent } from "@/components/ui/card";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { getCollectionsData, getPaymentsDueToday, type PaymentDueToday } from "@/lib/collections";
@@ -23,11 +22,6 @@ export default async function CollectionsPage() {
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
-      {/* OUTSIDE the space-y-4 below — see tasks/page.tsx for why (space-y adds
-          margin-top to any sibling with a preceding one, even PageAlertBar's
-          own zero-height node, which read as a white gap that closed the
-          instant every alert was dismissed). */}
-      <PageAlertBar keys={["collection_overdue", "payment_due_today", "promise_broken", "check_deposit_due"]} />
       <div className="space-y-4 text-right" dir="rtl">
         {data.loadError ? (
           <Card>

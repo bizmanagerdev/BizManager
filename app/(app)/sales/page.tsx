@@ -6,7 +6,6 @@ import InventoryRealtimeBadge from "@/app/(app)/sales/InventoryRealtimeBadge";
 import SalesOrdersClient from "@/app/(app)/sales/SalesOrdersClient";
 import PriceListClient from "@/app/(app)/sales/PriceListClient";
 import SalesTabsNav from "@/app/(app)/sales/SalesTabsNav";
-import PageAlertBar from "@/components/reminders/PageAlertBar";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { DELIVERY_REGIONS } from "@/lib/ui/cities";
 import { loadOrdersPage } from "@/app/(app)/sales/loadOrders";
@@ -292,13 +291,7 @@ export default async function SalesPage({
             {/* No "הזמנה חדשה" button — the app's one quick-create + carries it. */}
           </div>
         </div>
-        {/* PageAlertBar is `position: fixed` — floats above the whole page
-            (see the component), not part of this flow — so it can sit right
-            next to {content} with no spacing concerns either way. */}
-        <div>
-          <PageAlertBar keys={["low_stock"]} />
-          {content}
-        </div>
+        {content}
       </div>
     </AppShell>
   );

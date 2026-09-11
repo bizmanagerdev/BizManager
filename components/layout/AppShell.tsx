@@ -22,6 +22,7 @@ import { DEFAULT_SECTION_ACCESS, type SectionAccess } from "@/lib/auth/sections"
 import { SidebarCollapseProvider } from "@/components/layout/sidebar-collapse-context";
 import { PageTitleProvider } from "@/components/layout/page-title-context";
 import { PAGE_HEADER_TOOLBAR_ID } from "@/components/layout/PageHeaderToolbar";
+import { AlertBar } from "@/components/reminders/AlertBar";
 
 type Props = {
   children: ReactNode;
@@ -97,30 +98,39 @@ export default function AppShell({
         <AuthLockToasts />
         <UndoHotkeyListener />
         <ConnectionTelemetry />
-        <TopBar
-          appName={appName}
-          companyName={companyName}
-          hasSidebar={sidebar.length > 0}
-          userName={userName}
-          viewerRole={viewerRole}
-          viewerLocale={viewerLocale === "ar" ? "ar" : "he"}
-          initialColor={avatarColor}
-          initialMe={initialMe}
-          showSearch={showSearch}
-        />
-        {/* Slot for a page's own search/filter row, directly under the bar and on
-            the SAME surface as it — the bar is the page's colour now, so a dark
-            strip here would put back exactly the separation we just removed
-            (user, 2026-08-19: "I want it to flow as one page"). `empty:hidden`
-            keeps it out of the layout entirely on pages that don't use it.
-            min-h, not h: the search input/filter button a page portals in here
-            are rem-sized (h-10) and grow under OS/accessibility large-text
-            scaling, but this px height didn't — so at large text the row got
-            visually clipped/overlapping instead of just growing to fit it. */}
-        <div
-          id={PAGE_HEADER_TOOLBAR_ID}
-          className="sticky top-[60px] z-20 flex min-h-[3.25rem] items-center bg-background px-3 empty:hidden md:hidden"
-        />
+        {/* TopBar, AlertBar and the page-toolbar slot stick TOGETHER as one unit —
+            AlertBar's height is dynamic (0 when empty, 1-2 lines, or expanded), so
+            giving each sibling below it its own independent `sticky top-[Npx]` would
+            need that px kept in sync by hand every time AlertBar's height changes.
+            Wrapping them in one sticky container sidesteps that: they stack via
+            normal flow inside it and stick as a group. */}
+        <div className="sticky top-0 z-30 flex flex-col">
+          <TopBar
+            appName={appName}
+            companyName={companyName}
+            hasSidebar={sidebar.length > 0}
+            userName={userName}
+            viewerRole={viewerRole}
+            viewerLocale={viewerLocale === "ar" ? "ar" : "he"}
+            initialColor={avatarColor}
+            initialMe={initialMe}
+            showSearch={showSearch}
+          />
+          <AlertBar locale={viewerLocale === "ar" ? "ar" : "he"} />
+          {/* Slot for a page's own search/filter row, on the SAME surface as the bar
+              above it — the bar is the page's colour now, so a dark strip here would
+              put back exactly the separation we just removed (user, 2026-08-19: "I
+              want it to flow as one page"). `empty:hidden` keeps it out of the layout
+              entirely on pages that don't use it. min-h, not h: the search
+              input/filter button a page portals in here are rem-sized (h-10) and grow
+              under OS/accessibility large-text scaling, but this px height didn't —
+              so at large text the row got visually clipped/overlapping instead of
+              just growing to fit it. */}
+          <div
+            id={PAGE_HEADER_TOOLBAR_ID}
+            className="flex min-h-[3.25rem] items-center bg-background px-3 empty:hidden md:hidden"
+          />
+        </div>
         <OfflineBanner />
         <div className="flex min-w-0 flex-1">
           {sidebar.length > 0 && (

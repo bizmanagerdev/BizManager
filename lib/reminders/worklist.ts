@@ -40,11 +40,17 @@ export type WorklistItem = {
   dedupeKey: string | null;
   /** Arrived since the viewer last opened their inbox. Set by getInboxView only. */
   isNew?: boolean;
+  /** The one real-world thing this row is about, resolved from whichever `*_id`
+   *  link column is set (priority order in `resolveEntity`). Falls back to
+   *  'summary'/<ruleKey> for a linkless isSummary row (low_stock, unprocessed_items). */
+  entityType: string;
+  entityId: string;
 };
 
 const SELECT =
   "id,source,severity,behavior,title,content,url,category,remind_at,snoozed_until,next_ping_at,notified_at,dedupe_key," +
-  "assigned_to,audience_role,created_by,customer_id,project_id,order_id,payment_id,task_id,vehicle_id,invoice_id,action_type";
+  "assigned_to,audience_role,created_by,customer_id,project_id,order_id,payment_id,task_id,vehicle_id,invoice_id,action_type," +
+  "expense_id,property_id";
 
 const SEVERITY_RANK: Record<WorklistSeverity, number> = { danger: 0, warning: 1, info: 2 };
 
@@ -210,6 +216,32 @@ async function loadPrefs(supabase: SupabaseClient, userId: string): Promise<Noti
   }
 }
 
+// The one real-world thing a reminders row is "about" — first match wins. A row can
+// carry more than one `*_id` link (e.g. a task alert also tags its project), so this
+// order picks the most SPECIFIC thing over the broader container it lives in.
+const ENTITY_LINK_COLUMNS: Array<{ column: string; entityType: string }> = [
+  { column: "task_id", entityType: "task" },
+  { column: "order_id", entityType: "order" },
+  { column: "project_id", entityType: "project" },
+  { column: "property_id", entityType: "property" },
+  { column: "payment_id", entityType: "payment" },
+  { column: "vehicle_id", entityType: "vehicle" },
+  { column: "invoice_id", entityType: "invoice" },
+  { column: "expense_id", entityType: "expense" },
+  { column: "customer_id", entityType: "customer" },
+];
+
+function resolveEntity(row: Row): { entityType: string; entityId: string } {
+  for (const { column, entityType } of ENTITY_LINK_COLUMNS) {
+    const id = str(row, column);
+    if (id) return { entityType, entityId: id };
+  }
+  // A linkless system row is a pure metric (low_stock, unprocessed_items) — key it by
+  // its rule instead of a real entity.
+  const dedupeKey = str(row, "dedupe_key") ?? "";
+  return { entityType: "summary", entityId: dedupeKey.split(":")[0] || (str(row, "id") ?? "") };
+}
+
 // Shared enrichment: resolve customer / task / assignee display info and map raw
 // `reminders` rows to WorklistItem[]. Used by every reminder read model here.
 async function enrichRows(supabase: SupabaseClient, rows: Row[]): Promise<WorklistItem[]> {
@@ -271,6 +303,7 @@ async function enrichRows(supabase: SupabaseClient, rows: Row[]): Promise<Workli
       taskSubject,
       assignedToName: userById.get(str(r, "assigned_to") ?? "") ?? null,
       dedupeKey: str(r, "dedupe_key"),
+      ...resolveEntity(r),
     };
   });
 }
@@ -338,7 +371,7 @@ const COLLAPSE_META: Record<string, { label: string; href: string }> = {
   payment_outflow_due: { label: "תשלומים לתשלום", href: "/financial/payments-calendar" },
 };
 
-function ruleKeyOf(item: WorklistItem): string {
+export function ruleKeyOf(item: WorklistItem): string {
   if (item.source !== "system") return "reminders";
   return (item.dedupeKey ?? "").split(":")[0] || "system";
 }
@@ -596,41 +629,3 @@ export async function getWorklistNavCounts(
   return out;
 }
 
-export type PageAlert = { id: string; title: string; href: string; severity: WorklistSeverity };
-
-/**
- * The subset of the viewer's worklist relevant to a specific page, for a
- * contextual banner at the top of that page (e.g. low_stock on /sales). Same
- * collapse rules as the worklist so a bar reads "חובות באיחור: 17", not 17 bars.
- */
-export async function getPageAlerts(
-  supabase: SupabaseClient,
-  options: { userId: string; role: string | null; keys: string[] }
-): Promise<PageAlert[]> {
-  const wanted = new Set(options.keys);
-  if (wanted.size === 0) return [];
-  const items = await getWorklist(supabase, { userId: options.userId, role: options.role });
-  const out: PageAlert[] = [];
-  const collapse = new Map<string, { count: number; rank: number }>();
-  for (const item of items) {
-    const rk = item.source === "system" ? (item.dedupeKey ?? "").split(":")[0] : "reminders";
-    if (!wanted.has(rk)) continue;
-    if (COLLAPSE_META[rk]) {
-      const agg = collapse.get(rk) ?? { count: 0, rank: 99 };
-      agg.count += 1;
-      agg.rank = Math.min(agg.rank, SEVERITY_RANK[item.severity]);
-      collapse.set(rk, agg);
-    } else {
-      out.push({ id: item.id, title: item.title, href: item.url, severity: item.severity });
-    }
-  }
-  for (const [rk, agg] of collapse) {
-    out.push({
-      id: `sum-${rk}`,
-      title: `${COLLAPSE_META[rk].label}: ${agg.count}`,
-      href: COLLAPSE_META[rk].href,
-      severity: RANK_TO_SEVERITY[agg.rank] ?? "info",
-    });
-  }
-  return out.sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
-}

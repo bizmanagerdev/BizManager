@@ -72,6 +72,7 @@ export {
   CheckCircle2 as SuccessIcon,
   CircleX as ErrorIcon,
   AlertTriangle as WarningIcon,
+  CircleAlert as AlertCircleIcon,
   Info as InfoIcon,
   CircleHelp as HelpIcon,
   Ban as BlockedIcon,

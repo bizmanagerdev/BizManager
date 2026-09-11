@@ -220,11 +220,6 @@ export default function SalesInventoryClient({
   const [success, setSuccess] = useState("");
   const quantityInputRef = useRef<HTMLInputElement | null>(null);
 
-  const lowStockItems = useMemo(
-    () => items.filter((item) => item.active && item.available <= item.lowStockThreshold),
-    [items]
-  );
-
   const productOptions = useMemo(
     () =>
       items
@@ -518,28 +513,6 @@ export default function SalesInventoryClient({
   useSetPageTitle("מלאי", `${totalCount ?? initialItems.length} מוצרים`);
   return (
     <div className="space-y-4">
-      {lowStockItems.length > 0 ? (
-        <Card className="border-destructive/40">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">התראת מלאי נמוך</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1 text-sm">
-            {lowStockItems.map((item) => (
-              <div
-                key={item.productId}
-                className="flex items-center justify-between rounded border border-destructive/30 bg-destructive-soft p-2"
-              >
-                <div>
-                  <div>{item.productName}</div>
-                  <div className="text-xs text-destructive/80">{`סף: ${item.lowStockThreshold}`}</div>
-                </div>
-                <span className="font-medium text-destructive">{item.available}</span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      ) : null}
-
       <Card>
         <CardHeader className="pb-2">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

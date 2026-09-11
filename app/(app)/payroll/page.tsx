@@ -1,7 +1,6 @@
 import dynamic from "next/dynamic";
 import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
-import PageAlertBar from "@/components/reminders/PageAlertBar";
 import { Card, CardContent } from "@/components/ui/card";
 import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { requireProfile, type UserRole } from "@/lib/auth/requireProfile";
@@ -35,11 +34,6 @@ export default async function PayrollPage({
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
-      {/* OUTSIDE the space-y-4 below — see tasks/page.tsx for why (space-y adds
-          margin-top to any sibling with a preceding one, even PageAlertBar's
-          own zero-height node, which read as a white gap that closed the
-          instant every alert was dismissed). */}
-      <PageAlertBar keys={["wage_overdue"]} />
       <div className="space-y-4 text-right" dir="rtl">
         {loadError ? (
           <Card>
