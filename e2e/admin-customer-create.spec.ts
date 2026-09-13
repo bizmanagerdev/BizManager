@@ -22,30 +22,11 @@ test.describe("admin — customer creation", () => {
     test.setTimeout(60_000);
     const customerName = `E2E new customer ${Date.now()}`;
     let customerId: string | null = null;
-    // TEMPORARY diagnostic instrumentation for a real, reproducible
-    // instability bug: quick-create tile buttons intermittently get
-    // "detached from the DOM, retrying" right after the panel opens.
-    // Capturing console output + a screenshot at the exact failure point to
-    // get real evidence instead of guessing further from static code.
-    const consoleLines: string[] = [];
-    page.on("console", (msg) => consoleLines.push(`[${msg.type()}] ${msg.text()}`));
-    page.on("pageerror", (err) => consoleLines.push(`[pageerror] ${err.message}`));
     try {
       await loginAs(page, "admin");
 
       await page.getByRole("button", { name: "הוספה מהירה" }).click();
-      try {
-        await page.getByRole("button", { name: "לקוח" }).click({ timeout: 10_000 });
-      } catch (err) {
-        const screenshot = await page.screenshot({ fullPage: true }).catch(() => null);
-        if (screenshot) {
-          await test.info().attach("quick-create-diagnostic", { body: screenshot, contentType: "image/png" });
-        }
-        console.log("=== QUICK-CREATE DIAGNOSTIC: console output around the failed click ===");
-        console.log(consoleLines.join("\n") || "(no console output captured)");
-        console.log("=== end diagnostic ===");
-        throw err;
-      }
+      await page.getByRole("button", { name: "לקוח" }).click();
 
       // name
       await page.getByRole("textbox").fill(customerName);

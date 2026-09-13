@@ -10,6 +10,11 @@ loadEnv({ path: path.resolve(__dirname, ".env.test.local") });
 
 export default defineConfig({
   testDir: "./e2e",
+  // Warms up Next dev mode's on-demand compilation for the app's heaviest
+  // lazy-loaded chunks before any real test runs — see global-setup.ts's own
+  // comment for the exact bug this avoids (a live compile + Fast Refresh
+  // remount mid-interaction, confirmed via a real CI run's console output).
+  globalSetup: "./e2e/global-setup.ts",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
