@@ -370,8 +370,19 @@ export default function NewProjectClient({
   const [projectType, setProjectType] = useState(
     initialProject?.project_type ?? restoredDraft?.projectType ?? projectTypeOptions[0] ?? ""
   );
+  // restoredDraft comes straight from localStorage (lib/offline-queue.ts) with
+  // no shape guarantee — a draft saved under an older app version, or one that
+  // somehow picked up a task's status value instead of a project's, could carry
+  // a status this build no longer recognizes. `status` is a Postgres enum, so
+  // submitting it unvalidated fails loudly at save time instead of at open time
+  // — confirmed live 2026-09-14 as "invalid input value for enum
+  // project_status_enum: \"in_progress\"" (a real task status, never a valid
+  // project one). Only trust the draft's status if it's still one of the
+  // options this wizard actually offers.
+  const restoredDraftStatus =
+    restoredDraft?.status && statusOptions.includes(restoredDraft.status) ? restoredDraft.status : undefined;
   const [status, setStatus] = useState(
-    initialProject?.status ?? restoredDraft?.status ?? initialStatus ?? statusOptions[0]
+    initialProject?.status ?? restoredDraftStatus ?? initialStatus ?? statusOptions[0]
   );
   const [agreedBasePrice, setAgreedBasePrice] = useState(
     initialProject
