@@ -12,12 +12,14 @@ import {
   type AuditLogRow,
 } from "@/lib/audit";
 import { formatMoney } from "@/lib/money";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 // resolvePrivateTaskIds deliberately bypasses the caller's own (RLS-bound)
 // client via createSupabaseAdminClient — falls back to whatever `supabase` it
 // was given (see the code comment) when the service key isn't configured, same
-// pattern as payroll-sessions-delete.test.ts.
-vi.mock("@/lib/supabase/admin", () => ({ createSupabaseAdminClient: () => null }));
+// pattern as payroll-sessions-delete.test.ts. Defaults to null (service role
+// not configured); the backfill tests below override it per-test.
+vi.mock("@/lib/supabase/admin", () => ({ createSupabaseAdminClient: vi.fn(() => null) }));
 
 // logAuditEvent is called by nearly every mutating route in the app, and
 // every one of those route tests mocks it away as a transparent
@@ -69,7 +71,33 @@ const BASE = {
 
 beforeEach(() => {
   invalidateAuditFlagCache(); // the 60s in-memory flag cache must not leak between tests
+  vi.mocked(createSupabaseAdminClient).mockReturnValue(null); // reset to the "not configured" default
 });
+
+// Mocks the service-role client used only by the backfill path below:
+// admin.from("audit_logs").select(...).is("changed_by", null)...maybeSingle()
+// to find the trigger's row, then .update(...).eq("id", ...).is("changed_by", null).
+function makeAdminClient(existingRow: { id: string } | null) {
+  const calls = { update: [] as unknown[] };
+  const from = (_table: string) => {
+    const selectBuilder: Record<string, unknown> = {};
+    selectBuilder.select = () => selectBuilder;
+    selectBuilder.eq = () => selectBuilder;
+    selectBuilder.is = () => selectBuilder;
+    selectBuilder.order = () => selectBuilder;
+    selectBuilder.limit = () => selectBuilder;
+    selectBuilder.maybeSingle = () => Promise.resolve({ data: existingRow });
+    selectBuilder.update = (values: unknown) => {
+      calls.update.push(values);
+      const updateBuilder: Record<string, unknown> = {};
+      updateBuilder.eq = () => updateBuilder;
+      updateBuilder.is = () => Promise.resolve({ error: null });
+      return updateBuilder;
+    };
+    return selectBuilder;
+  };
+  return { client: { from }, calls };
+}
 
 describe("logAuditEvent — argument guard", () => {
   it("does nothing (no DB call at all) when tableName, recordId or action is missing", async () => {
@@ -135,6 +163,94 @@ describe("logAuditEvent — the trigger-audited-table skip", () => {
     expect(TRIGGER_AUDITED_TABLES.has("recurring_expense_templates")).toBe(false);
     await logAuditEvent({ ...BASE, supabase: database as never }); // BASE.tableName is recurring_expense_templates
     expect(database.calls.insert).toHaveLength(1);
+  });
+});
+
+// A delete on a trigger-audited table (e.g. attendance_sessions) run through
+// the service-role client (createSupabaseAdminClient, no user JWT) leaves the
+// trigger's own row with changed_by=NULL — auth.uid() has nothing to read.
+// That row is the ONLY one for this action (the insert above is skipped), so
+// without this backfill the actor is lost for good, even though the route
+// already knows exactly who did it. Found via app/api/payroll/sessions/delete.
+describe("logAuditEvent — backfilling changed_by after an admin-client write", () => {
+  it("patches the trigger's row when it's still missing an actor", async () => {
+    const database = makeSupabase({ auditEnabled: true });
+    const admin = makeAdminClient({ id: "audit-row-1" });
+    vi.mocked(createSupabaseAdminClient).mockReturnValue(admin.client as never);
+
+    await logAuditEvent({
+      ...BASE,
+      tableName: "attendance_sessions",
+      action: "delete",
+      changedBy: "admin-1",
+      userRole: "admin",
+      supabase: database as never,
+    });
+
+    expect(database.calls.insert).toHaveLength(0); // still no duplicate row
+    expect(admin.calls.update).toEqual([{ changed_by: "admin-1", user_role: "admin" }]);
+  });
+
+  it("does nothing when no null-actor row is found (trigger already had a real actor)", async () => {
+    const database = makeSupabase({ auditEnabled: true });
+    const admin = makeAdminClient(null);
+    vi.mocked(createSupabaseAdminClient).mockReturnValue(admin.client as never);
+
+    await logAuditEvent({
+      ...BASE,
+      tableName: "attendance_sessions",
+      action: "delete",
+      changedBy: "admin-1",
+      supabase: database as never,
+    });
+
+    expect(admin.calls.update).toHaveLength(0);
+  });
+
+  it("does nothing when changedBy isn't provided — nothing to backfill with", async () => {
+    const database = makeSupabase({ auditEnabled: true });
+    const fromSpy = vi.fn(makeAdminClient({ id: "audit-row-1" }).client.from);
+    vi.mocked(createSupabaseAdminClient).mockReturnValue({ from: fromSpy } as never);
+
+    await logAuditEvent({
+      ...BASE,
+      tableName: "attendance_sessions",
+      action: "delete",
+      changedBy: undefined,
+      supabase: database as never,
+    });
+
+    expect(fromSpy).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the service role isn't configured (admin client is null)", async () => {
+    const database = makeSupabase({ auditEnabled: true });
+    // createSupabaseAdminClient defaults to null per the beforeEach reset.
+    await expect(
+      logAuditEvent({
+        ...BASE,
+        tableName: "attendance_sessions",
+        action: "delete",
+        changedBy: "admin-1",
+        supabase: database as never,
+      })
+    ).resolves.toBeUndefined();
+  });
+
+  it("doesn't attempt a backfill for an action with no single matching TG_OP (status_changed/priority_changed/upload)", async () => {
+    const database = makeSupabase({ auditEnabled: true });
+    const fromSpy = vi.fn(makeAdminClient({ id: "audit-row-1" }).client.from);
+    vi.mocked(createSupabaseAdminClient).mockReturnValue({ from: fromSpy } as never);
+
+    await logAuditEvent({
+      ...BASE,
+      tableName: "attendance_sessions",
+      action: "status_changed",
+      changedBy: "admin-1",
+      supabase: database as never,
+    });
+
+    expect(fromSpy).not.toHaveBeenCalled();
   });
 });
 

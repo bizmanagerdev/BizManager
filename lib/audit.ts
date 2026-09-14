@@ -1868,6 +1868,59 @@ const TRIGGER_HANDLED_ACTIONS = new Set([
   "upload",
 ]);
 
+// The trigger's own TG_OP for the 3 plain-CRUD actions we can safely backfill
+// (status_changed/priority_changed/upload don't map to a single TG_OP 1:1, so
+// they're left alone — same as before).
+const ACTION_TO_TRIGGER_OP: Partial<Record<string, "INSERT" | "UPDATE" | "DELETE">> = {
+  create: "INSERT",
+  update: "UPDATE",
+  delete: "DELETE",
+};
+
+// The DB trigger fills audit_logs.changed_by from Postgres auth.uid(), which is
+// NULL whenever the write that fired it ran through the service-role client
+// (createSupabaseAdminClient — no user JWT, e.g. an admin-only delete route).
+// When that happens, the trigger's row is the ONLY row for that action (the
+// caller's own logAuditEvent call is skipped below to avoid double-logging),
+// so the actor is otherwise lost for good. Patch it in place using the actor
+// the caller already knows — scoped to this exact row and guarded so it never
+// overwrites a real value. Requires the service-role client since RLS blocks
+// UPDATE on audit_logs entirely (policy `no_insert_update_delete`).
+async function backfillMissingAuditActor({
+  tableName,
+  recordId,
+  triggerOp,
+  changedBy,
+  userRole,
+}: {
+  tableName: string;
+  recordId: string;
+  triggerOp: "INSERT" | "UPDATE" | "DELETE";
+  changedBy: string;
+  userRole: string | null | undefined;
+}) {
+  const admin = createSupabaseAdminClient();
+  if (!admin) return;
+
+  const { data } = await admin
+    .from("audit_logs")
+    .select("id")
+    .eq("table_name", tableName)
+    .eq("record_id", recordId)
+    .eq("action", triggerOp)
+    .is("changed_by", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!data) return;
+
+  await admin
+    .from("audit_logs")
+    .update({ changed_by: changedBy, user_role: userRole ?? null })
+    .eq("id", data.id)
+    .is("changed_by", null);
+}
+
 // Global audit on/off flag (mirrors business_settings.audit_logging_enabled,
 // flipped from Settings → System). Cached briefly so we never pay a read per
 // write on a warm server instance.
@@ -1909,7 +1962,13 @@ export async function logAuditEvent({
 
   // The DB trigger already records plain CRUD for these tables — skip to avoid
   // duplicate rows, but keep distinct semantic events (morning_*, login, etc.).
-  if (TRIGGER_AUDITED_TABLES.has(tableName) && TRIGGER_HANDLED_ACTIONS.has(action)) return;
+  if (TRIGGER_AUDITED_TABLES.has(tableName) && TRIGGER_HANDLED_ACTIONS.has(action)) {
+    const triggerOp = ACTION_TO_TRIGGER_OP[action];
+    if (changedBy && triggerOp) {
+      await backfillMissingAuditActor({ tableName, recordId, triggerOp, changedBy, userRole });
+    }
+    return;
+  }
 
   const { error } = await supabase.from("audit_logs").insert({
     table_name: tableName,
