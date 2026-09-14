@@ -70,7 +70,15 @@ export default function OnlineUsersCard({ roster }: { roster: PresenceRosterUser
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
-    void supabase.auth.getUser().then(({ data }) => setViewerId(data.user?.id ?? null));
+    // A timed-out auth-lock acquisition (lib/supabase/authLock.ts) rejects
+    // this call — uncaught here, it was an unhandled promise rejection on
+    // every /activity load (confirmed live 2026-09-14). Losing viewerId just
+    // means the viewer doesn't get the "show me as online instantly" shortcut
+    // below; the server heartbeat + presence channel still mark them active.
+    supabase.auth
+      .getUser()
+      .then(({ data }) => setViewerId(data.user?.id ?? null))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {

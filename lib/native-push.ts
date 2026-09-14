@@ -76,15 +76,18 @@ export async function enableNativePush(): Promise<NativeEnableResult> {
 
       await PushNotifications.addListener("registration", (token) => {
         void registerFcmToken(token.value, Capacitor.getPlatform())
-          .then(async (ok) => {
+          .then(async ({ ok, errorMessage }) => {
             // A failed write means the token never actually got stored — the
             // device thinks push is on, but no alert will ever arrive. This was
             // happening silently for every account whose users.id != auth_user_id
             // until the identity bug behind this write was fixed (2026-09-01);
             // report any future recurrence instead of letting it go unnoticed again.
+            // errorMessage is the real Postgres/RLS reason (see
+            // lib/notifications/pushTokens.ts) — without it this Sentry event
+            // said only "failed", never why.
             if (!ok) {
               const Sentry = await import("@sentry/nextjs");
-              Sentry.captureException(new Error("fcm token registration failed"), {
+              Sentry.captureException(new Error(`fcm token registration failed: ${errorMessage ?? "unknown"}`), {
                 tags: { area: "push" },
               });
             }

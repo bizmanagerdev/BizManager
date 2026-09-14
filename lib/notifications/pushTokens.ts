@@ -19,9 +19,17 @@ async function currentAuthUserId(): Promise<string | null> {
   return user?.id ?? null;
 }
 
-export async function registerFcmToken(token: string, platform: string): Promise<boolean> {
+/** Returns the failure reason too — `registerFcmToken` used to collapse a
+ *  real Postgres/RLS error into a bare `false`, so the one Sentry event this
+ *  ever produced ("fcm token registration failed") never said WHY. Confirmed
+ *  live 2026-09-14: one device failing on every launch for two weeks with
+ *  nothing to actually diagnose it by. */
+export async function registerFcmToken(
+  token: string,
+  platform: string
+): Promise<{ ok: boolean; errorMessage?: string }> {
   const userId = await currentAuthUserId();
-  if (!userId) return false;
+  if (!userId) return { ok: false, errorMessage: "no auth user id" };
   const supabase = createSupabaseBrowserClient();
   const { error } = await supabase.from("fcm_tokens").upsert(
     {
@@ -33,7 +41,7 @@ export async function registerFcmToken(token: string, platform: string): Promise
     },
     { onConflict: "token" }
   );
-  return !error;
+  return error ? { ok: false, errorMessage: error.message } : { ok: true };
 }
 
 export async function unregisterFcmToken(token?: string): Promise<void> {

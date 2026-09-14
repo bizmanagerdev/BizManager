@@ -33,11 +33,26 @@ export default function PresenceTracker({ userName, viewerRole }: Props) {
       const sid = sessionIdRef.current;
       if (!sid) return;
       const ua = typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 300) : null;
-      const { error } = await supabase.rpc("session_heartbeat", {
-        p_session_id: sid,
-        p_user_agent: ua,
-      });
-      if (error) console.warn("[presence] session_heartbeat failed:", error.message);
+      // A timed-out auth-lock acquisition (lib/supabase/authLock.ts) REJECTS
+      // this call rather than resolving it with {error} — that lock wrapper's
+      // own design treats a background timeout like this heartbeat as
+      // expected/self-healing (never worth interrupting the user for), but
+      // nothing here was actually catching the rejection: called via `void
+      // beat()` with no try/catch, it surfaced as an unhandled promise
+      // rejection on every 90s tick, confirmed live in Sentry 2026-09-14
+      // ("auth lock acquisition timed out" / "Acquiring process lock...
+      // timed out", both tagged /activity — where an admin watching presence
+      // is most likely to be sitting when a beat lands). A missed heartbeat
+      // just means this tab looks briefly stale; the next one self-heals it.
+      try {
+        const { error } = await supabase.rpc("session_heartbeat", {
+          p_session_id: sid,
+          p_user_agent: ua,
+        });
+        if (error) console.warn("[presence] session_heartbeat failed:", error.message);
+      } catch (err) {
+        console.warn("[presence] session_heartbeat threw:", err);
+      }
     };
 
     const stopTracking = async () => {
