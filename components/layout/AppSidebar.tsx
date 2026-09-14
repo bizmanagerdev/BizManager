@@ -368,6 +368,11 @@ export function AppSidebar({ items }: Props) {
       <nav
         className={cn(
           "scroll-slim flex-1 space-y-0.5 overflow-y-auto overscroll-contain py-2",
+          // Collapsed: a small inset, not zero — a full-bleed pill (tried first)
+          // spanned the entire rail edge to edge and read as too wide (user,
+          // 2026-09-14: "the highlighted nav is too wide for the width make it
+          // smaller"). This is back to the same gutter the expanded rows keep,
+          // just proportionally tighter for the narrower collapsed rail.
           collapsed ? "px-1.5" : "px-2"
         )}
       >
