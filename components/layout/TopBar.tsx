@@ -240,8 +240,17 @@ export function TopBar({
               rather than text-white, per the palette rule — the token IS white,
               and it says "the readable colour on a primary surface", which is
               what this corner is. BrandMark's own default is text-secondary, for
-              the light surfaces it sits on elsewhere (the auth screen). */}
-          <BrandMark size="sm" className="text-primary-foreground" />
+              the light surfaces it sits on elsewhere (the auth screen).
+
+              Collapsed: sized up to "lg" (~44px wide) so the bare glyph fills
+              roughly the same width as the active nav pill directly below it
+              (56px rail minus the nav's own 6px inset each side) — at "sm" it
+              was a slim ~31px glyph floating alone in that column, which read
+              as narrower than the rail even though the containers are the
+              exact same 56px width (user, 2026-09-14: "the navbar is a drop
+              wider it looks crazy"). Expanded: stays "sm" since the name +
+              company text beside it already fills the wider corner. */}
+          <BrandMark size={collapsed ? "lg" : "sm"} className="text-primary-foreground" />
           <div className={cn("min-w-0 leading-tight", collapsed ? "hidden" : "block")}>
             <div className="truncate text-sm font-bold tracking-tight">{appName}</div>
             {companyName ? (
