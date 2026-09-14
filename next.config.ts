@@ -32,6 +32,23 @@ const nextConfig: NextConfig = {
   // for the e2e webServer specifically (playwright.config.ts sets
   // NODE_ENV=test there) — normal `npm run dev` keeps the indicator.
   devIndicators: process.env.NODE_ENV === "test" ? false : undefined,
+  // Next dev mode disposes an on-demand-compiled page/chunk after 60s of no
+  // requests (default onDemandEntries.maxInactiveAge), keeping only the 5
+  // most-recently-used (default pagesBufferLength) — so a route warmed up at
+  // the start of a long, sequential e2e run gets evicted and silently
+  // RE-compiled the next time a later test needs it, reproducing the exact
+  // "on-demand compile -> Fast Refresh remount mid-interaction" instability
+  // global-setup.ts's own warmup exists to avoid (see its header comment) —
+  // confirmed via a real CI run: the SAME "element was detached from the DOM"
+  // failure kept recurring, just as broadly, even after that warmup fix and
+  // an unrelated auto-reload fix landed. Generous, test-only numbers (this
+  // key is a `next dev`-only mechanism with zero effect on a production
+  // build) so every route/dialog chunk the suite touches stays compiled for
+  // the whole run instead of cycling in and out.
+  onDemandEntries:
+    process.env.NODE_ENV === "test"
+      ? { maxInactiveAge: 60 * 60 * 1000, pagesBufferLength: 100 }
+      : undefined,
   async headers() {
     return [
       {
