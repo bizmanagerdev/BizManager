@@ -50,6 +50,11 @@ export function TopNavigationProgress() {
   const finalizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const observerRef = useRef<MutationObserver | null>(null);
   const seenSkeletonRef = useRef(false);
+  // Kept in a ref (not read from a dep array) so the listener-registration
+  // effect below doesn't re-run — and tear down its live timers — on every
+  // searchParams-only navigation (e.g. tab/filter clicks on the same page).
+  const routeKeyRef = useRef(routeKey);
+  routeKeyRef.current = routeKey;
 
   const clearAllTimers = useCallback(() => {
     if (progressTimerRef.current) {
@@ -149,7 +154,7 @@ export function TopNavigationProgress() {
 
     function startNavigation() {
       ensureStarted();
-      fromRouteKeyRef.current = routeKey;
+      fromRouteKeyRef.current = routeKeyRef.current;
       pendingRouteChangeRef.current = true;
       seenSkeletonRef.current = false;
     }
@@ -218,7 +223,7 @@ export function TopNavigationProgress() {
       clearAllTimers();
       disconnectObserver();
     };
-  }, [clearAllTimers, disconnectObserver, finalizeIfIdle, routeKey]);
+  }, [clearAllTimers, disconnectObserver, finalizeIfIdle]);
 
   useEffect(() => {
     visibleRef.current = visible;
