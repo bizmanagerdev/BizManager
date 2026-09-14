@@ -22,6 +22,7 @@ import { useEffect } from "react";
 import * as Sentry from "@sentry/nextjs";
 import { Button } from "@/components/ui/button";
 import { RefreshIcon, WarningIcon } from "@/components/ui/icons";
+import { reloadIfStaleBuild } from "@/lib/ui/auto-recover";
 
 export default function AppError({
   error,
@@ -32,6 +33,11 @@ export default function AppError({
 }) {
   useEffect(() => {
     Sentry.captureException(error);
+    // A stale/mismatched build gets one automatic hard reload instead of
+    // making the user notice and press "נסה שוב" — reset() alone can't fix
+    // this class of error since it re-renders against the same broken
+    // module. See lib/ui/auto-recover.ts.
+    reloadIfStaleBuild(error);
   }, [error]);
 
   return (

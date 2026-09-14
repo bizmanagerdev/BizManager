@@ -5,6 +5,7 @@
 // so it must render its own <html>/<body>.
 import * as Sentry from "@sentry/nextjs";
 import { useEffect } from "react";
+import { reloadIfStaleBuild } from "@/lib/ui/auto-recover";
 
 export default function GlobalError({
   error,
@@ -13,6 +14,9 @@ export default function GlobalError({
 }) {
   useEffect(() => {
     Sentry.captureException(error);
+    // See lib/ui/auto-recover.ts — a stale/mismatched build gets one
+    // automatic hard reload instead of leaving the user stuck here.
+    reloadIfStaleBuild(error);
   }, [error]);
 
   return (
