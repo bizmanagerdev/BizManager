@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { reminderBucket } from "@/lib/notifications/categories";
-import { DEFAULT_PREFS, sanitizeNotificationPrefs, type NotificationPrefs } from "@/lib/notifications/prefs";
+import { sanitizeNotificationPrefs, type NotificationPrefs } from "@/lib/notifications/prefs";
 
 // Reminders/Alerts unification — Phase 4: the worklist read model.
 // One query over the unified `reminders` table returns everything that needs a
@@ -186,15 +186,17 @@ export async function getWorklist(
         return Number.isNaN(t) || t <= nowMs;
       });
 
-  // enrichRows (reads `rows`) and the prefs lookup (reads `userId`) don't depend
-  // on each other's output — run them concurrently rather than one after another.
+  // Fold the viewer's own row into the SAME `users` query enrichRows already
+  // runs for assignee names, instead of a separate loadPrefs round trip — this
+  // used to be two independent calls to /rest/v1/users per getWorklist() run,
+  // flagged by Sentry as "Consecutive HTTP" (confirmed live 2026-09-14,
+  // alongside broader DB slowness — worth cutting regardless of how much of
+  // that it explains on its own). Skipped when the caller already has prefs.
   // The one visibility choice the USER owns: topics they've muted are hidden
   // everywhere they'd otherwise appear (inbox, dashboard, badges, page bars).
   // Default is nothing muted → you see everything your role permits.
-  const [items, prefs] = await Promise.all([
-    enrichRows(supabase, rows),
-    options.prefs ? Promise.resolve(options.prefs) : loadPrefs(supabase, userId),
-  ]);
+  const { items, viewerPrefsRaw } = await enrichRows(supabase, rows, options.prefs ? undefined : userId);
+  const prefs = options.prefs ?? sanitizeNotificationPrefs(viewerPrefsRaw);
   const visible = prefs.muted.length
     ? items.filter((i) => !prefs.muted.includes(inboxBucket(i)))
     : items;
@@ -204,16 +206,6 @@ export async function getWorklist(
     if (s !== 0) return s;
     return a.remindAt.localeCompare(b.remindAt);
   });
-}
-
-/** The viewer's prefs, fetched once per read model (tolerant of a missing column). */
-async function loadPrefs(supabase: SupabaseClient, userId: string): Promise<NotificationPrefs> {
-  try {
-    const { data } = await supabase.from("users").select("notification_prefs").eq("id", userId).maybeSingle();
-    return sanitizeNotificationPrefs((data as { notification_prefs?: unknown } | null)?.notification_prefs);
-  } catch {
-    return { ...DEFAULT_PREFS };
-  }
 }
 
 // The one real-world thing a reminders row is "about" — first match wins. A row can
@@ -244,15 +236,30 @@ function resolveEntity(row: Row): { entityType: string; entityId: string } {
 
 // Shared enrichment: resolve customer / task / assignee display info and map raw
 // `reminders` rows to WorklistItem[]. Used by every reminder read model here.
-async function enrichRows(supabase: SupabaseClient, rows: Row[]): Promise<WorklistItem[]> {
+//
+// `viewerId`, when passed, folds the CURRENT viewer into this same `users`
+// query (extending its select to include notification_prefs) so getWorklist
+// can read their prefs off the result instead of a separate round trip to
+// /rest/v1/users — omit it (e.g. when the caller already has prefs, or has no
+// need for them at all, like getCreatedByMeReminders) and this behaves exactly
+// as before.
+async function enrichRows(
+  supabase: SupabaseClient,
+  rows: Row[],
+  viewerId?: string
+): Promise<{ items: WorklistItem[]; viewerPrefsRaw: unknown }> {
   const customerIds = [...new Set(rows.map((r) => str(r, "customer_id")).filter((v): v is string => Boolean(v)))];
   const taskIds = [...new Set(rows.map((r) => str(r, "task_id")).filter((v): v is string => Boolean(v)))];
-  const assigneeIds = [...new Set(rows.map((r) => str(r, "assigned_to")).filter((v): v is string => Boolean(v)))];
+  const userIds = new Set(rows.map((r) => str(r, "assigned_to")).filter((v): v is string => Boolean(v)));
+  if (viewerId) userIds.add(viewerId);
+  const userIdList = [...userIds];
 
   const [customersRes, tasksRes, usersRes] = await Promise.all([
     customerIds.length ? supabase.from("customers").select("id,name,phone").in("id", customerIds) : Promise.resolve({ data: [] as Row[] }),
     taskIds.length ? supabase.from("tasks").select("id,subject").in("id", taskIds) : Promise.resolve({ data: [] as Row[] }),
-    assigneeIds.length ? supabase.from("users").select("id,full_name,email").in("id", assigneeIds) : Promise.resolve({ data: [] as Row[] }),
+    userIdList.length
+      ? supabase.from("users").select("id,full_name,email,notification_prefs").in("id", userIdList)
+      : Promise.resolve({ data: [] as Row[] }),
   ]);
 
   const customerById = new Map<string, { name: string | null; phone: string | null }>();
@@ -271,7 +278,7 @@ async function enrichRows(supabase: SupabaseClient, rows: Row[]): Promise<Workli
     if (id) userById.set(id, str(r, "full_name") ?? str(r, "email") ?? id.slice(0, 8));
   }
 
-  return rows.map((r) => {
+  const items: WorklistItem[] = rows.map((r) => {
     const source = str(r, "source") === "system" ? "system" : "manual";
     const behavior = (str(r, "behavior") ?? "ping_once") as WorklistItem["behavior"];
     const severity = (str(r, "severity") ?? "info") as WorklistSeverity;
@@ -306,6 +313,12 @@ async function enrichRows(supabase: SupabaseClient, rows: Row[]): Promise<Workli
       ...resolveEntity(r),
     };
   });
+
+  const viewerRow = viewerId
+    ? ((usersRes.data ?? []) as unknown as Row[]).find((r) => str(r, "id") === viewerId)
+    : undefined;
+
+  return { items, viewerPrefsRaw: viewerRow?.["notification_prefs"] };
 }
 
 /**
@@ -337,7 +350,7 @@ export async function getCreatedByMeReminders(
     const t = new Date(snoozed).getTime();
     return Number.isNaN(t) || t <= nowMs;
   });
-  const items = await enrichRows(supabase, rows);
+  const { items } = await enrichRows(supabase, rows);
   return items.sort((a, b) => a.remindAt.localeCompare(b.remindAt));
 }
 
