@@ -139,11 +139,34 @@ async function runEnsureRecurringTasksForDate(
     assigneesByTemplateId.set(row.recurring_task_template_id, current);
   });
 
+  // Which templates already have this month's tasks generated — so a call that
+  // arrives after another instance already finished (the in-memory cache above
+  // is per-process; it can't stop a DIFFERENT warm instance, or the same one
+  // after a redeploy, from trying again) skips straight past them instead of
+  // re-attempting every assignee's insert and eating a duplicate-key error for
+  // each one. Confirmed live 2026-09-14: hundreds of "duplicate key value
+  // violates ... tasks_recurring_template_key_assignee_uidx" in the Postgres
+  // logs — this runs on every /dashboard and /tasks load, and each of today's
+  // deploys reset the cache on every instance. Still caught gracefully either
+  // way (looksLikeUniqueViolation below), so this is about cutting wasted
+  // database writes, not fixing a crash.
+  const { data: existingTasksData } = await supabase
+    .from("tasks")
+    .select("recurring_task_template_id")
+    .eq("recurrence_key", monthKey)
+    .in("recurring_task_template_id", templateIds);
+  const templatesAlreadyGenerated = new Set(
+    ((existingTasksData ?? []) as { recurring_task_template_id: string | null }[])
+      .map((row) => row.recurring_task_template_id)
+      .filter((id): id is string => Boolean(id))
+  );
+
   let createdCount = 0;
 
   for (const template of templates) {
     if (!template.id || !template.subject_template || !isExpenseBusinessDomain(template.business_domain)) continue;
     if (template.frequency !== "monthly") continue;
+    if (templatesAlreadyGenerated.has(template.id)) continue;
 
     const createDay = parsePositiveDay(template.create_day_of_month, 1);
     const dueDay = parsePositiveDay(template.due_day_of_month, createDay);
