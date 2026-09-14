@@ -82,12 +82,24 @@ export default function RootLayout({
             confirmed live the same day) — this script can't import that module, it
             has to exist before any module graph does. Same sessionStorage key on
             purpose, so only one reload ever fires regardless of which path notices
-            the stale build first. */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `try{var K="__chunk_reload__";var RX=/ChunkLoadError|Loading chunk [\\w.-]+ failed|Failed to fetch dynamically imported module|error loading dynamically imported module|Rendered (more|fewer) hooks than (during the previous render|expected)/i;function isStaticAsset(el){if(!el||!el.tagName)return false;var tag=el.tagName.toLowerCase();if(tag!=="script"&&tag!=="link")return false;var src=el.src||el.href||"";return src.indexOf("/_next/")!==-1;}function reloadOnce(){if(sessionStorage.getItem(K))return;sessionStorage.setItem(K,"1");location.reload();}window.addEventListener("error",function(e){if(isStaticAsset(e.target)){reloadOnce();return;}var msg=e.error&&e.error.message?e.error.message:e.message;if(msg&&RX.test(msg))reloadOnce();},true);window.addEventListener("unhandledrejection",function(e){var msg=e.reason&&e.reason.message?e.reason.message:String(e.reason||"");if(RX.test(msg))reloadOnce();});}catch(e){}`,
-          }}
-        />
+            the stale build first.
+            PRODUCTION ONLY, same reason as auto-recover.ts's own guard: Next's
+            dev-mode Fast Refresh can throw the exact "Rendered more/fewer hooks"
+            text transiently and harmlessly when swapping a component mid-render —
+            e2e tests run against `npm run dev`, and this script reloading on that
+            wiped a running test's state, confirmed live 2026-09-14 as 34 e2e
+            failures across totally unrelated spec files. Rendered conditionally
+            (not a runtime check inside the string) since this script exists before
+            any module graph — process.env.NODE_ENV is a build-time substitution
+            Next's compiler makes on the SOURCE FILE, same mechanism PwaRegistration
+            already relies on for its own dev/production branch. */}
+        {process.env.NODE_ENV === "production" ? (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `try{var K="__chunk_reload__";var RX=/ChunkLoadError|Loading chunk [\\w.-]+ failed|Failed to fetch dynamically imported module|error loading dynamically imported module|Rendered (more|fewer) hooks than (during the previous render|expected)/i;function isStaticAsset(el){if(!el||!el.tagName)return false;var tag=el.tagName.toLowerCase();if(tag!=="script"&&tag!=="link")return false;var src=el.src||el.href||"";return src.indexOf("/_next/")!==-1;}function reloadOnce(){if(sessionStorage.getItem(K))return;sessionStorage.setItem(K,"1");location.reload();}window.addEventListener("error",function(e){if(isStaticAsset(e.target)){reloadOnce();return;}var msg=e.error&&e.error.message?e.error.message:e.message;if(msg&&RX.test(msg))reloadOnce();},true);window.addEventListener("unhandledrejection",function(e){var msg=e.reason&&e.reason.message?e.reason.message:String(e.reason||"");if(RX.test(msg))reloadOnce();});}catch(e){}`,
+            }}
+          />
+        ) : null}
         {/* Apply the saved global text-size multiplier before first paint.
             Migrates the legacy absolute-px key (biz-font-size) to a scale. */}
         <script dangerouslySetInnerHTML={{ __html: `try{var d=document.documentElement;var s=localStorage.getItem('biz-font-scale');if(!s){var px=parseFloat(localStorage.getItem('biz-font-size'));if(px>0){s=String(px/17);localStorage.setItem('biz-font-scale',s);}}if(s){d.style.setProperty('--font-scale',s);}var m=localStorage.getItem('biz-font-scale-mobile');if(m){d.style.setProperty('--font-scale-mobile',m);}}catch(e){}` }} />

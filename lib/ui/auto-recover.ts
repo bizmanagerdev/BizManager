@@ -20,6 +20,18 @@
 // so only one reload ever fires regardless of which path notices first. That
 // script runs before any module graph exists and can't import this file, so
 // keep its copy of RELOAD_KEY/the regex in sync by hand if either changes.
+//
+// PRODUCTION ONLY (2026-09-14 fix): Next's dev-mode Fast Refresh can throw
+// this EXACT "Rendered more/fewer hooks" message transiently when it live-
+// swaps a component mid-render — normally harmless, Fast Refresh just
+// recovers silently. This function didn't know the difference and reloaded
+// anyway, and since e2e tests run against `npm run dev`, a Fast-Refresh
+// hiccup at any moment could wipe a running test's state and fail it —
+// confirmed live: 34 e2e failures across totally unrelated spec files (a
+// different Claude Code session root-caused it from the commit history,
+// since it had no CI log access to confirm directly). public/sw.js already
+// treats dev/localhost as a separate case for the same class of reason
+// (IS_DEV_HOST) — this just didn't.
 const RELOAD_KEY = "__chunk_reload__";
 
 const STALE_BUILD_RX =
@@ -28,6 +40,7 @@ const STALE_BUILD_RX =
 /** Returns true if it triggered a reload (caller can skip its own fallback UI work). */
 export function reloadIfStaleBuild(error: Error): boolean {
   if (typeof window === "undefined") return false;
+  if (process.env.NODE_ENV !== "production") return false;
   if (!STALE_BUILD_RX.test(error.message ?? "")) return false;
   try {
     if (sessionStorage.getItem(RELOAD_KEY)) return false;
