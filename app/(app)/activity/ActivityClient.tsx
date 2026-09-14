@@ -228,7 +228,9 @@ function ActivityRow({ item }: { item: AuditFeedItem }) {
         {item.title && (
           <>
             <span className="text-muted-foreground"> · </span>
-            <span className="font-semibold text-foreground">{item.title}</span>
+            <span className="font-semibold text-foreground">
+              <WrappedTokens text={item.title} />
+            </span>
           </>
         )}
       </div>
@@ -887,7 +889,9 @@ export default function ActivityClient({
                           {header.title && (
                             <>
                               <span className="text-muted-foreground"> · </span>
-                              <span className="font-semibold text-foreground">{header.title}</span>
+                              <span className="font-semibold text-foreground">
+                                <WrappedTokens text={header.title} />
+                              </span>
                             </>
                           )}
                           {children.length > 0 && (
