@@ -3,6 +3,7 @@ import { computeSourceCollection } from "@/lib/collections";
 import { findMatchingCustomers } from "@/lib/search/findMatchingCustomers";
 import { findProjectIdsMatchingContent } from "@/lib/search/findMatchingChildIds";
 import { projectTypesMatching } from "@/lib/search/projectTypeLabels";
+import { toHebrewError } from "@/lib/error-messages";
 
 type Row = Record<string, unknown>;
 
@@ -112,7 +113,12 @@ export async function loadProjectsPage(
   // view can be wildly off, which would either stall the scroll or loop).
   const hasMore = rows.length === PROJECTS_PAGE_SIZE;
 
-  return { rows: rowsWithPaymentStatus, totalCount, hasMore, error: error?.message ?? null };
+  return {
+    rows: rowsWithPaymentStatus,
+    totalCount,
+    hasMore,
+    error: error ? toHebrewError(error.message) : null,
+  };
 }
 
 /**
