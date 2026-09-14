@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import Image from "next/image";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -32,8 +34,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormDialog } from "@/components/ui/form-dialog";
-import { ExpenseDialog, type EditingExpenseData } from "@/components/expenses/ExpenseDialog";
-import { TaskUpsertDialog, type UserOption } from "@/components/tasks/TaskUpsertDialog";
+import type { EditingExpenseData } from "@/components/expenses/ExpenseDialog";
+import type { UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { DOCUMENT_CATEGORIES, inferDefaultDocumentCategory } from "@/lib/documents";
 import { formatCurrency } from "@/lib/payroll";
 import {
@@ -50,6 +52,15 @@ import { offlineUpload } from "@/lib/offline-upload";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete, scheduleDeferredEdit } from "@/lib/undo-engine";
 import { cn } from "@/lib/utils";
+
+const ExpenseDialog = dynamic(
+  () => import("@/components/expenses/ExpenseDialog").then((mod) => mod.ExpenseDialog),
+  { loading: () => null }
+);
+const TaskUpsertDialog = dynamic(
+  () => import("@/components/tasks/TaskUpsertDialog").then((mod) => mod.TaskUpsertDialog),
+  { loading: () => null }
+);
 
 // Mobile: swipe a row to reveal עריכה/מחיקה, same as every other list in the
 // app. Desktop: no swipe gesture, so the same two actions collapse into a "⋮".
@@ -223,8 +234,15 @@ const IMAGE_EXTENSION_RE = /\.(jpe?g|png|webp|heic|heif|gif|bmp)$/i;
 function DocumentRowThumb({ doc }: { doc: VehicleDocument }) {
   const isImage = doc.url && IMAGE_EXTENSION_RE.test(doc.fileName ?? doc.url);
   if (isImage) {
-    // eslint-disable-next-line @next/next/no-img-element -- remote Supabase storage URL, not a local asset
-    return <img src={doc.url ?? undefined} alt="" className="h-10 w-10 shrink-0 rounded-md border object-cover" />;
+    return (
+      <Image
+        src={doc.url as string}
+        alt=""
+        width={40}
+        height={40}
+        className="h-10 w-10 shrink-0 rounded-md border object-cover"
+      />
+    );
   }
   return (
     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted">

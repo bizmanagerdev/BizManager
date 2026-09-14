@@ -1,8 +1,7 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element */
-
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { BackspaceIcon, LocationIcon, SpinnerIcon, SyncIcon, WarningIcon } from "@/components/ui/icons";
 import * as Sentry from "@sentry/nextjs";
@@ -1106,11 +1105,14 @@ export default function OrderConfirmDialog({
                       className="rounded-xl border border-border/70 bg-background/70 p-2 text-sm"
                     >
                       {image.url ? (
-                        <img
-                          src={image.url}
-                          alt={image.file_name ?? "Delivery image"}
-                          className="mb-2 h-32 w-full rounded object-cover"
-                        />
+                        <div className="relative mb-2 h-32 w-full">
+                          <Image
+                            src={image.url}
+                            alt={image.file_name ?? "תמונת אספקה"}
+                            fill
+                            className="rounded object-cover"
+                          />
+                        </div>
                       ) : null}
                       <div className="font-medium">{image.file_name ?? "תמונה"}</div>
                       <div className="text-xs text-muted-foreground">{formatDate(image.uploaded_at)}</div>

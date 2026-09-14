@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ClientOnly } from "@/components/ClientOnly";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { resyncAlerts } from "@/lib/ui/alerts-refresh";
 import { toast } from "sonner";
@@ -2228,8 +2229,7 @@ export default function ProjectTabsClient({
                       className="relative flex h-20 items-center justify-center bg-muted/40"
                     >
                       {isImage && d.url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={d.url} alt={name} className="h-20 w-full object-cover" />
+                        <Image src={d.url} alt={name} fill className="object-cover" />
                       ) : (
                         <DocumentIcon className="h-6 w-6 text-muted-foreground" />
                       )}

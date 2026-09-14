@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import type { ReactNode } from "react";
 import { useDeferredValue, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -778,10 +779,11 @@ export default function DocumentsArchiveClient({
                         title="פתיחת התמונה"
                         onClick={(event) => event.stopPropagation()}
                       >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
+                        <Image
                           src={doc.url}
                           alt={doc.title}
+                          width={48}
+                          height={48}
                           loading="lazy"
                           className="h-12 w-12 rounded-lg border border-border/60 object-cover"
                         />
@@ -912,12 +914,14 @@ export default function DocumentsArchiveClient({
             <div className="mt-4 space-y-4">
               <div className="overflow-hidden rounded-xl border border-border/70 bg-muted/30">
                 {activePreviewDoc.url && activePreviewDoc.file_kind === "image" ? (
-                  /* eslint-disable-next-line @next/next/no-img-element */
-                  <img
-                    src={activePreviewDoc.url}
-                    alt={activePreviewDoc.title}
-                    className="max-h-[50vh] w-full object-contain"
-                  />
+                  <div className="relative h-[50vh] w-full">
+                    <Image
+                      src={activePreviewDoc.url}
+                      alt={activePreviewDoc.title}
+                      fill
+                      className="object-contain"
+                    />
+                  </div>
                 ) : activePreviewDoc.url && activePreviewDoc.file_kind === "pdf" ? (
                   <iframe
                     src={activePreviewDoc.url}

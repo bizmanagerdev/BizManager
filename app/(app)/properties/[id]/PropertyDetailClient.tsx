@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
+import Image from "next/image";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AddIcon, ChevronDownIcon, DeleteIcon, DocumentIcon, EditIcon, TaskIcon } from "@/components/ui/icons";
@@ -29,7 +31,7 @@ import {
 } from "@/components/expenses/ExpenseDialog";
 import { IncomeDialog } from "@/components/financial/IncomeDialog";
 import { CustomerPicker, type PickedCustomer } from "@/components/customers/CustomerPicker";
-import { TaskUpsertDialog, type UserOption } from "@/components/tasks/TaskUpsertDialog";
+import type { UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { DOCUMENT_CATEGORIES, inferDefaultDocumentCategory } from "@/lib/documents";
 import { formatCurrency, type SalaryAgreementRow } from "@/lib/payroll";
 import { shiftHoursText } from "@/components/attendance/DayTile";
@@ -64,6 +66,11 @@ import PropertyDetailsCard from "./PropertyDetailsCard";
 import PropertyPurchaseCard from "./PropertyPurchaseCard";
 import PropertyFurnitureCard from "./PropertyFurnitureCard";
 import PropertyUtilitiesCard from "./PropertyUtilitiesCard";
+
+const TaskUpsertDialog = dynamic(
+  () => import("@/components/tasks/TaskUpsertDialog").then((mod) => mod.TaskUpsertDialog),
+  { loading: () => null }
+);
 
 function fmtDate(value: string | null) {
   if (!value) return "";
@@ -1193,11 +1200,15 @@ export default function PropertyDetailClient({
                       href={photo.url ?? "#"}
                       target="_blank"
                       rel="noreferrer"
-                      className="block overflow-hidden rounded-xl border border-border/70 bg-background/70"
+                      className="relative block h-28 w-full overflow-hidden rounded-xl border border-border/70 bg-background/70"
                     >
                       {photo.url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={photo.url} alt={photo.title ?? photo.fileName ?? "תמונה"} className="h-28 w-full object-cover" />
+                        <Image
+                          src={photo.url}
+                          alt={photo.title ?? photo.fileName ?? "תמונה"}
+                          fill
+                          className="object-cover"
+                        />
                       ) : (
                         <div className="flex h-28 w-full items-center justify-center text-xs text-muted-foreground">אין תצוגה</div>
                       )}

@@ -23,6 +23,25 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     turbopackUseSystemTlsCerts: true,
+    // recharts is the one heavy chart lib in this repo not already covered by
+    // Next's built-in optimizePackageImports defaults — trims its barrel import.
+    optimizePackageImports: ["recharts"],
+  },
+  images: {
+    // All real remote photos (documents, receipts, delivery/property photos,
+    // …) are served from Supabase Storage as signed URLs shaped
+    // https://<project-ref>.supabase.co/storage/v1/object/sign/<bucket>/<path>?token=…
+    // (see lib/storage.ts + the various createSignedUrls() call sites). The
+    // wildcard subdomain is safer than hardcoding the project ref in case it
+    // ever changes; the `**` pathname covers both the `sign/` and `public/`
+    // object-serving variants.
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "*.supabase.co",
+        pathname: "/storage/v1/object/**",
+      },
+    ],
   },
   // The dev-mode indicator's <nextjs-portal> (Shadow DOM) sits in a
   // full-viewport click-catching layer and repeatedly intercepted Playwright

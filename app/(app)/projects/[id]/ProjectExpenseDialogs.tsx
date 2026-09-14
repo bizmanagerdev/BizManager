@@ -3,6 +3,7 @@
 // Lazy-loaded heavy financial-entry dialogs, extracted from ProjectTabsClient so
 // their code only downloads when a user actually opens "add expense"/"add income".
 import { useEffect, useState, useTransition } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -486,11 +487,12 @@ export function AddIncomeDialog({
                   {existingAttachments
                     .filter((attachment) => attachment.url && isImageAttachment(attachment))
                     .map((attachment) => (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <Image
                         key={`${attachment.document_id}-preview`}
-                        src={attachment.url ?? ""}
+                        src={attachment.url as string}
                         alt={attachment.file_name ?? "קובץ"}
+                        width={80}
+                        height={80}
                         className="h-20 w-20 rounded-lg border object-cover"
                       />
                     ))}

@@ -15,6 +15,7 @@
 // same reasoning as ExpenseDialog's `expressSteps`.
 
 import { useMemo, useState, useEffect, useTransition } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { toHebrewError } from "@/lib/error-messages";
@@ -774,11 +775,12 @@ export function IncomeDialog({
                 {existingAttachments
                   .filter((attachment) => attachment.url && isImageAttachment(attachment))
                   .map((attachment) => (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
+                    <Image
                       key={`${attachment.document_id}-preview`}
-                      src={attachment.url ?? ""}
+                      src={attachment.url as string}
                       alt={attachment.file_name ?? "קובץ"}
+                      width={80}
+                      height={80}
                       className="h-20 w-20 rounded-lg border object-cover"
                     />
                   ))}
