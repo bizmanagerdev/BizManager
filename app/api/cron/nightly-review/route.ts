@@ -58,7 +58,9 @@ export async function GET(req: Request) {
   const { data: activeRows, error: activeError } = await supabase
     .from("projects")
     .select("id,name")
-    .in("status", ["active", "in_progress"])
+    // "in_progress" is a task status, never a valid project_status_enum value —
+    // including it here hard-fails the query (22P02) on every run.
+    .in("status", ["active"])
     .lte("start_date", date)
     .or(`end_date.gte.${date},end_date.is.null`)
     .range(0, 199);
