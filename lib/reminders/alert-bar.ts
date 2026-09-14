@@ -69,12 +69,18 @@ export async function getAlertBarAlerts(
     });
   }
 
-  // Collapsed rule summaries (low_stock, collection_overdue, …) stand for many
-  // underlying reminders — there's no single row action for "17 overdue debts", so
-  // they carry no reminderIds; the strip only links them out, it doesn't act on them.
+  // Two different kinds of "summary" row, and only one of them is actionable:
+  //  - a COLLAPSE_META rule (collection_overdue, wage_overdue, …) folds MANY
+  //    reminders rows into one line — its `id` is a synthetic `sum-<ruleKey>`,
+  //    there is no single row to act on, so it stays link-only.
+  //  - a plain isSummary rule that ISN'T collapsed (low_stock, unprocessed_items)
+  //    is still exactly ONE real `reminders` row whose title just happens to say
+  //    "N items" — `summary.id` there IS that row's real id (see getInboxView),
+  //    so done/dismiss/snooze work on it exactly like any individual alert.
   for (const summary of inbox.summaries) {
     const id = `summary:${summary.ruleKey}:${summary.ruleKey}`;
     if (byId.has(id)) continue;
+    const isRealRow = !summary.id.startsWith("sum-");
     byId.set(id, {
       id,
       level: summary.severity,
@@ -84,7 +90,7 @@ export async function getAlertBarAlerts(
       href: summary.href,
       dueAt: null,
       module: moduleOf(summary.href),
-      reminderIds: [],
+      reminderIds: isRealRow ? [summary.id] : [],
     });
   }
 

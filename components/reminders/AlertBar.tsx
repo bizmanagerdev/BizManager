@@ -13,6 +13,7 @@ import {
   CloseIcon,
   ChevronDownIcon,
   ChevronUpIcon,
+  ChevronLeftIcon,
   CheckIcon,
   ClockIcon,
 } from "@/components/ui/icons";
@@ -192,7 +193,7 @@ export function AlertBar({ locale = "he" }: { locale?: Locale }) {
   if (primary.length === 1 && primary[0]!.entityType !== "summary") {
     const alert = primary[0]!;
     return (
-      <div className={cn("@container mt-0.5 mb-0.5 border-b", LEVEL_TONE[alert.level])}>
+      <div className={cn("@container border-b", LEVEL_TONE[alert.level])}>
         <div className="mx-auto flex w-full max-w-[1600px] items-center gap-1.5 px-3 py-0.5 text-xs leading-none @[45em]:px-6">
           <LevelIcon level={alert.level} className="h-3.5 w-3.5 shrink-0" />
           <div className="min-w-0 flex-1">
@@ -236,7 +237,7 @@ export function AlertBar({ locale = "he" }: { locale?: Locale }) {
   const listId = "alert-bar-list";
 
   return (
-    <div className={cn("@container mt-0.5 mb-0.5 border-b", LEVEL_TONE[level])}>
+    <div className={cn("@container border-b", LEVEL_TONE[level])}>
       <div className="mx-auto flex w-full max-w-[1600px] items-center gap-1.5 px-3 py-0.5 leading-none @[45em]:px-6">
         <button
           type="button"
@@ -361,7 +362,21 @@ export function AlertBar({ locale = "he" }: { locale?: Locale }) {
                         </>
                       )}
                     </span>
-                  ) : null}
+                  ) : (
+                    // A summary row (low_stock, or any collapsed rule) has no single
+                    // reminders.id to act on — nothing to mark done/dismiss/snooze —
+                    // but the slot still shows a glyph so every row reads the same
+                    // shape as a task row, instead of looking broken/empty next to
+                    // one that has three icons (user, 2026-09-14: "not like tasks").
+                    // Same p-1 wrapper as the real action buttons — without it this
+                    // glyph sits flush against the edge instead of matching their
+                    // padding (user, same day: photo comparison caught the mismatch).
+                    // The row itself is already the whole-row Link, so this is
+                    // decorative, not a second interactive target.
+                    <span className="shrink-0 p-1">
+                      <ChevronLeftIcon aria-hidden className="h-3.5 w-3.5 text-muted-foreground" />
+                    </span>
+                  )}
                 </div>
               ))}
             {primary.length > 5 ? (

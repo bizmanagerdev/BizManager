@@ -103,15 +103,11 @@ export default function AppShell({
             giving each sibling below it its own independent `sticky top-[Npx]` would
             need that px kept in sync by hand every time AlertBar's height changes.
             Wrapping them in one sticky container sidesteps that: they stack via
-            normal flow inside it and stick as a group.
-            bg-sidebar + pt-0.5: the small gap around AlertBar (its own mt/mb) and
-            above TopBar is just navy padding of THIS box, not a seam to a
-            different color — user, 2026-09-14: rejected a white gap, wanted the
-            same dark-navy chrome color the sidebar uses instead. Kept deliberately
-            tiny (0.5 not 1.5): the tasks board fills whatever height is left below
-            this header, so every extra px here is a px it loses (user, same day:
-            "we should be able to see more at once"). */}
-        <div className="sticky top-0 z-30 flex flex-col bg-sidebar pt-0.5">
+            normal flow inside it and stick as a group. Flush, no gap — a gap here
+            was tried (padding + bg-sidebar) and reverted twice (2026-09-14): it read
+            as a stray dark line at small sizes, and every px here is a px the
+            self-filling tasks board loses. */}
+        <div className="sticky top-0 z-30 flex flex-col">
           <TopBar
             appName={appName}
             companyName={companyName}
