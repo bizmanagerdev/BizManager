@@ -98,42 +98,17 @@ export default function AppShell({
         <AuthLockToasts />
         <UndoHotkeyListener />
         <ConnectionTelemetry />
-        {/* TopBar, AlertBar and the page-toolbar slot stick TOGETHER as one unit —
-            AlertBar's height is dynamic (0 when empty, 1-2 lines, or expanded), so
-            giving each sibling below it its own independent `sticky top-[Npx]` would
-            need that px kept in sync by hand every time AlertBar's height changes.
-            Wrapping them in one sticky container sidesteps that: they stack via
-            normal flow inside it and stick as a group. Flush, no gap — a gap here
-            was tried (padding + bg-sidebar) and reverted twice (2026-09-14): it read
-            as a stray dark line at small sizes, and every px here is a px the
-            self-filling tasks board loses. */}
-        <div className="sticky top-0 z-30 flex flex-col">
-          <TopBar
-            appName={appName}
-            companyName={companyName}
-            hasSidebar={sidebar.length > 0}
-            userName={userName}
-            viewerRole={viewerRole}
-            viewerLocale={viewerLocale === "ar" ? "ar" : "he"}
-            initialColor={avatarColor}
-            initialMe={initialMe}
-            showSearch={showSearch}
-          />
-          <AlertBar locale={viewerLocale === "ar" ? "ar" : "he"} />
-          {/* Slot for a page's own search/filter row, on the SAME surface as the bar
-              above it — the bar is the page's colour now, so a dark strip here would
-              put back exactly the separation we just removed (user, 2026-08-19: "I
-              want it to flow as one page"). `empty:hidden` keeps it out of the layout
-              entirely on pages that don't use it. min-h, not h: the search
-              input/filter button a page portals in here are rem-sized (h-10) and grow
-              under OS/accessibility large-text scaling, but this px height didn't —
-              so at large text the row got visually clipped/overlapping instead of
-              just growing to fit it. */}
-          <div
-            id={PAGE_HEADER_TOOLBAR_ID}
-            className="flex min-h-[3.25rem] items-center bg-background px-3 empty:hidden md:hidden"
-          />
-        </div>
+        <TopBar
+          appName={appName}
+          companyName={companyName}
+          hasSidebar={sidebar.length > 0}
+          userName={userName}
+          viewerRole={viewerRole}
+          viewerLocale={viewerLocale === "ar" ? "ar" : "he"}
+          initialColor={avatarColor}
+          initialMe={initialMe}
+          showSearch={showSearch}
+        />
         <OfflineBanner />
         <div className="flex min-w-0 flex-1">
           {sidebar.length > 0 && (
@@ -144,6 +119,33 @@ export default function AppShell({
             </Suspense>
           )}
           <div className="flex min-w-0 flex-1 flex-col">
+            {/* AlertBar + the page-toolbar slot stick TOGETHER as one unit, offset by
+                TopBar's own fixed 60px (an established constant elsewhere in this
+                file's family — see topbar-layout.md — not something new). They live
+                HERE, inside the content column rather than up with TopBar, because
+                TopBar deliberately spans the full viewport OVER the sidebar too,
+                while AlertBar must not: it was overflowing past the content area's
+                edge into the sidebar's column (user, 2026-09-15, laptop screenshot:
+                "its poping out on the side"). AlertBar's own height is dynamic (0
+                when empty, 1-2 lines, or expanded) — wrapping it with the toolbar
+                slot in one sticky container means the toolbar doesn't need to
+                separately track AlertBar's height. */}
+            <div className="sticky top-[60px] z-20 flex flex-col">
+              <AlertBar locale={viewerLocale === "ar" ? "ar" : "he"} />
+              {/* Slot for a page's own search/filter row, on the SAME surface as the
+                  bar above it — the bar is the page's colour now, so a dark strip
+                  here would put back exactly the separation we just removed (user,
+                  2026-08-19: "I want it to flow as one page"). `empty:hidden` keeps
+                  it out of the layout entirely on pages that don't use it. min-h,
+                  not h: the search input/filter button a page portals in here are
+                  rem-sized (h-10) and grow under OS/accessibility large-text
+                  scaling, but this px height didn't — so at large text the row got
+                  visually clipped/overlapping instead of just growing to fit it. */}
+              <div
+                id={PAGE_HEADER_TOOLBAR_ID}
+                className="flex min-h-[3.25rem] items-center bg-background px-3 empty:hidden md:hidden"
+              />
+            </div>
             {/* The curve at the sidebar/top-bar junction is carried by the sidebar
                 itself (rounded-se), so the page background shows through it. */}
             <main className="flex-1 bg-background">
