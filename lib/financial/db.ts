@@ -48,12 +48,18 @@ async function scanRows<T extends Record<string, unknown>>(
 }
 
 export async function scanPaymentRows(supabase: SupabaseClient, since?: string | null) {
+  // target_type/target_id are never real columns on this table (no migration
+  // anywhere defines them — confirmed live 2026-09-14 as a real, repeated
+  // "column payments.target_type does not exist" under real load), but every
+  // call used to try them FIRST regardless, guaranteed to fail. The variant
+  // that never touches them now goes first; the two dead variants stay at
+  // the end purely as a harmless safety net.
   const selectVariants = [
-    "id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,project_id,order_id,property_id,target_type,target_id,recorded_by",
     "id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,project_id,order_id,property_id,recorded_by",
-    "id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,target_type,target_id,recorded_by",
     "id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,recorded_by",
     "id,payment_date,amount_total,payment_method,reference_number,business_domain,notes,recorded_by",
+    "id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,project_id,order_id,property_id,target_type,target_id,recorded_by",
+    "id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,target_type,target_id,recorded_by",
   ] as const;
 
   let lastError: unknown = null;
@@ -373,7 +379,19 @@ export async function fetchWorkerPaymentAllocationsByPaymentIds(
 }
 
 export async function scanAttendanceSessionRows(supabase: SupabaseClient, since?: string | null) {
+  // paid_amount/owed_amount/payment_status are NEVER real columns on this table
+  // (confirmed live 2026-09-14: worker_debt_items_view and
+  // session_effective_payment_view compute them by JOINing worker_payments/
+  // worker_payment_allocations — a plain column here couldn't do that) — but
+  // every call used to try all 6 combinations of them FIRST regardless,
+  // guaranteed to fail every time. That was dozens of wasted round-trips
+  // within seconds under real load, landing in the same window as actual
+  // Postgres statement timeouts on unrelated views. The two variants that
+  // never touch those three columns now go first; the old payment-field
+  // variants stay at the end purely as a harmless safety net.
   const selectVariants = [
+    "id,user_id,clock_in,business_domain,project_id,property_id,labor_cost",
+    "id,user_id,clock_in,business_domain,project_id,property_id",
     "id,user_id,clock_in,business_domain,project_id,property_id,labor_cost,paid_amount,owed_amount,payment_status",
     "id,user_id,clock_in,business_domain,project_id,property_id,labor_cost,paid_amount,owed_amount",
     "id,user_id,clock_in,business_domain,project_id,property_id,labor_cost,paid_amount,payment_status",
@@ -381,8 +399,6 @@ export async function scanAttendanceSessionRows(supabase: SupabaseClient, since?
     "id,user_id,clock_in,business_domain,project_id,property_id,labor_cost,paid_amount",
     "id,user_id,clock_in,business_domain,project_id,property_id,labor_cost,owed_amount",
     "id,user_id,clock_in,business_domain,project_id,property_id,labor_cost,payment_status",
-    "id,user_id,clock_in,business_domain,project_id,property_id,labor_cost",
-    "id,user_id,clock_in,business_domain,project_id,property_id",
   ] as const;
 
   let lastError: unknown = null;
