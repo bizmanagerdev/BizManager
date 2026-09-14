@@ -12,6 +12,35 @@ export type NativeEnableResult = "granted" | "denied" | "unsupported";
 
 let listenersAttached = false;
 
+async function reportRegistrationFailure(errorMessage: string) {
+  const Sentry = await import("@sentry/nextjs");
+  Sentry.captureException(new Error(`fcm token registration failed: ${errorMessage}`), {
+    tags: { area: "push" },
+  });
+}
+
+// The "registration" event can fire before the user has signed in (e.g. a
+// cold launch that lands on /login) — registerFcmToken then fails with "no
+// auth user id". That's expected, not a bug, but the token still needs to get
+// attached once a session exists, or this device silently gets no push for
+// the rest of the app's lifetime: NativePushRegistration mounts once in the
+// root layout and never retries on its own. So wait for the next sign-in and
+// retry with the same token instead of re-registering with FCM.
+function retryAfterSignIn(token: string, platform: string) {
+  void import("@/lib/supabase/client").then(({ createSupabaseBrowserClient }) => {
+    const supabase = createSupabaseBrowserClient();
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event !== "SIGNED_IN") return;
+      subscription.unsubscribe();
+      void registerFcmToken(token, platform).then(({ ok, errorMessage }) => {
+        if (!ok) void reportRegistrationFailure(errorMessage ?? "unknown");
+      });
+    });
+  });
+}
+
 // True only inside the real Capacitor shell (the APK). False in every browser,
 // including an installed browser PWA.
 export async function isNativePlatform(): Promise<boolean> {
@@ -75,8 +104,9 @@ export async function enableNativePush(): Promise<NativeEnableResult> {
       listenersAttached = true;
 
       await PushNotifications.addListener("registration", (token) => {
-        void registerFcmToken(token.value, Capacitor.getPlatform())
-          .then(async ({ ok, errorMessage }) => {
+        const platform = Capacitor.getPlatform();
+        void registerFcmToken(token.value, platform)
+          .then(({ ok, errorMessage }) => {
             // A failed write means the token never actually got stored — the
             // device thinks push is on, but no alert will ever arrive. This was
             // happening silently for every account whose users.id != auth_user_id
@@ -85,12 +115,12 @@ export async function enableNativePush(): Promise<NativeEnableResult> {
             // errorMessage is the real Postgres/RLS reason (see
             // lib/notifications/pushTokens.ts) — without it this Sentry event
             // said only "failed", never why.
-            if (!ok) {
-              const Sentry = await import("@sentry/nextjs");
-              Sentry.captureException(new Error(`fcm token registration failed: ${errorMessage ?? "unknown"}`), {
-                tags: { area: "push" },
-              });
+            if (ok) return;
+            if (errorMessage === "no auth user id") {
+              retryAfterSignIn(token.value, platform);
+              return;
             }
+            void reportRegistrationFailure(errorMessage ?? "unknown");
           })
           .catch(() => {});
       });
