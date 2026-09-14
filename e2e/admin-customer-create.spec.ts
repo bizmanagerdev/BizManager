@@ -22,11 +22,34 @@ test.describe("admin — customer creation", () => {
     test.setTimeout(60_000);
     const customerName = `E2E new customer ${Date.now()}`;
     let customerId: string | null = null;
+
+    // TEMPORARY DIAGNOSTIC — this test has failed identically ("element was
+    // detached from the DOM, retrying" on the same "לקוח" tile click) across
+    // three different fix attempts (global-setup warmup, auto-reload
+    // production-only guard, onDemandEntries tuning), with zero change in the
+    // failure. That reproducibility with no reaction to any fix means further
+    // fixes would be guessing — this captures real console/network evidence
+    // from the CI browser via the thrown error's own message (readable
+    // through the Checks annotations API even without log/artifact access).
+    // Remove once root-caused.
+    const diag: string[] = [];
+    page.on("console", (msg) => diag.push(`[console:${msg.type()}] ${msg.text().slice(0, 300)}`));
+    page.on("pageerror", (err) => diag.push(`[pageerror] ${err.message.slice(0, 300)}`));
+    page.on("requestfailed", (req) => diag.push(`[requestfailed] ${req.url()} ${req.failure()?.errorText}`));
+
     try {
       await loginAs(page, "admin");
 
       await page.getByRole("button", { name: "הוספה מהירה" }).click();
-      await page.getByRole("button", { name: "לקוח" }).click();
+      try {
+        await page.getByRole("button", { name: "לקוח" }).click();
+      } catch (err) {
+        throw new Error(
+          `DIAGNOSTIC dump (${diag.length} events, last 50 shown):\n` +
+            diag.slice(-50).join("\n") +
+            `\n\nORIGINAL ERROR: ${(err as Error).message}`
+        );
+      }
 
       // name
       await page.getByRole("textbox").fill(customerName);
