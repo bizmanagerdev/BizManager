@@ -1,8 +1,9 @@
 "use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   DndContext,
@@ -42,7 +43,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { InitialsAvatar, buildColorIndexMap } from "@/components/dashboard/InitialsAvatar";
 import { dueUrgencyChipClass, formatShortDate, getDueUrgency } from "@/lib/date";
-import { TaskUpsertDialog, type TaskOption, type UserOption } from "@/components/tasks/TaskUpsertDialog";
+import type { TaskOption, UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { emitNavigationStart, emitProgressActivityEnd, emitProgressActivityStart } from "@/components/layout/TopNavigationProgress";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { useSetHeaderToolbar } from "@/components/layout/page-title-context";
@@ -51,6 +52,11 @@ import type { Locale } from "@/lib/i18n/types";
 import { t } from "@/lib/i18n/t";
 import { commonDict } from "@/lib/i18n/dictionaries/common";
 import { tasksDict } from "@/lib/i18n/dictionaries/tasks";
+
+const TaskUpsertDialog = dynamic(
+  () => import("@/components/tasks/TaskUpsertDialog").then((mod) => mod.TaskUpsertDialog),
+  { loading: () => null }
+);
 
 // Bidirectional: subject_he is only ever set when the AUTHOR's own locale was
 // 'ar' (see app/api/tasks/create) — so its presence means `original` is
@@ -185,7 +191,13 @@ function buildOptimisticTask(fields: {
 }
 
 // ─── Card ──────────────────────────────────────────────────────────────────────
-function TaskCard({
+// Memoized: a board re-render (search typing, filter panel, zoom toggle, menu
+// open/close…) used to re-render EVERY card in EVERY column even though most
+// cards' own props never changed. React.memo skips a card whose task/callbacks/
+// colorIndexById/longPress/overview/locale are all referentially unchanged —
+// which only holds because onOpen/onToggleDone/onContextMenu are useCallback'd
+// below (see openCard/toggleDone/openMenu).
+const TaskCard = memo(function TaskCard({
   task,
   onOpen,
   onToggleDone,
@@ -399,7 +411,8 @@ function TaskCard({
       ) : null}
     </div>
   );
-}
+});
+TaskCard.displayName = "TaskCard";
 
 // ─── Column ─────────────────────────────────────────────────────────────────────
 function BoardColumn({
@@ -1070,26 +1083,40 @@ export default function TasksPageClient(props: Props) {
     })();
   }
 
-  function openCard(id: string) {
-    if (justDraggedRef.current) return;
-    setEditId(id);
-  }
+  // useCallback (not plain function declarations): these three are passed as
+  // onOpen/onToggleDone/onContextMenu to every TaskCard on the board, which is
+  // now React.memo'd — a fresh function identity here would re-render every
+  // card on every render of this component regardless of whether that card's
+  // own data changed, defeating the memo.
+  const openCard = useCallback(
+    (id: string) => {
+      if (justDraggedRef.current) return;
+      setEditId(id);
+    },
+    [setEditId]
+  );
 
-  function toggleDone(id: string, done: boolean) {
-    const found = tasks.find((t) => t.id === id);
-    const subject = found ? preferHe(found.subject, found.subject_he, props.locale, found.subject_ar) : t(tasksDict, props.locale, "taskFallbackWord");
-    void moveTask(
-      id,
-      done ? "done" : "todo",
-      done
-        ? `"${subject}" ${t(tasksDict, props.locale, "markedDoneSuffix")}`
-        : `"${subject}" ${t(tasksDict, props.locale, "markedUndoneSuffix")}`
-    );
-  }
+  const toggleDone = useCallback(
+    (id: string, done: boolean) => {
+      const found = tasks.find((t) => t.id === id);
+      const subject = found ? preferHe(found.subject, found.subject_he, props.locale, found.subject_ar) : t(tasksDict, props.locale, "taskFallbackWord");
+      void moveTask(
+        id,
+        done ? "done" : "todo",
+        done
+          ? `"${subject}" ${t(tasksDict, props.locale, "markedDoneSuffix")}`
+          : `"${subject}" ${t(tasksDict, props.locale, "markedUndoneSuffix")}`
+      );
+    },
+    [tasks, props.locale, moveTask]
+  );
 
-  function openMenu(id: string, x: number, y: number) {
-    setMenu({ id, x, y });
-  }
+  const openMenu = useCallback(
+    (id: string, x: number, y: number) => {
+      setMenu({ id, x, y });
+    },
+    [setMenu]
+  );
 
   function performDeleteTask() {
     const id = deleteTaskId;

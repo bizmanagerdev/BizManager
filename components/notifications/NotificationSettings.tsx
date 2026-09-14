@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -672,11 +672,13 @@ function UrlPicker({ value, onChange }: { value: string; onChange: (url: string)
       });
   }
 
-  const filtered = items
-    ? search.trim()
-      ? items.filter((o) => o.label.toLowerCase().includes(search.toLowerCase()))
-      : items
-    : null;
+  // Memoized: `items` can run to ~500 nav options, and this used to re-filter
+  // unmemoized on every keystroke in the search box below.
+  const filtered = useMemo(() => {
+    if (!items) return null;
+    const q = search.trim().toLowerCase();
+    return q ? items.filter((o) => o.label.toLowerCase().includes(q)) : items;
+  }, [items, search]);
 
   return (
     <div className="space-y-2">

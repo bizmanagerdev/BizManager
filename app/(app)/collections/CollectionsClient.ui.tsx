@@ -4,7 +4,7 @@
 // (that's in CollectionsClient.helpers.ts); these render props and call back. The
 // orchestrator (CollectionsClient.tsx) owns the page state and data.
 
-import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { ChatIcon, ChevronDownIcon, CloseIcon, CoinsIcon, FilterIcon, PhoneIcon, ReminderIcon, UsersIcon, WarningIcon } from "@/components/ui/icons";
 import type { IconComponent } from "@/components/ui/icons";
@@ -449,7 +449,11 @@ function SourceDetail({ source }: { source: CollectionCustomerGroup["sources"][n
   );
 }
 
-function CustomerCard({
+// Memoized: rendered once per collections row (up to hundreds), and its
+// onToggle/onToggleSelect props are now the parent's stable, useCallback'd
+// toggle/toggleSelect passed straight through (no per-row wrapper closure) —
+// see DebtorsTable's toggle/toggleSelect and their call sites below.
+const CustomerCard = memo(function CustomerCard({
   group,
   isOpen,
   onToggle,
@@ -460,13 +464,15 @@ function CustomerCard({
 }: {
   group: CollectionCustomerGroup;
   isOpen: boolean;
-  onToggle: () => void;
+  onToggle: (key: string) => void;
   wa: string | null;
   selected: boolean;
-  onToggleSelect?: () => void;
+  onToggleSelect?: (id: string) => void;
   onOpenReminders: (customerId: string | null) => void;
 }) {
   const tint = severityTint(group);
+  const rowKey = group.customer_id ?? group.customer_name;
+  const cid = group.customer_id;
   const [swipeOpen, setSwipeOpen] = useState(false);
 
   // Same two actions as the desktop row, revealed by a side-swipe instead of
@@ -500,18 +506,18 @@ function CustomerCard({
   const card = (
     <div data-focus-id={group.customer_id ?? undefined} className={`rounded-2xl border border-border/70 p-3 ${tint}`}>
       <div className="flex items-start gap-2">
-        {onToggleSelect ? (
+        {onToggleSelect && cid ? (
           <input
             type="checkbox"
             aria-label="בחירת לקוח"
             checked={selected}
-            onChange={onToggleSelect}
+            onChange={() => onToggleSelect(cid)}
             className="mt-1 h-4 w-4 shrink-0"
           />
         ) : null}
         <div
           className="flex w-full cursor-pointer items-start justify-between gap-2 text-right"
-          {...clickableRowProps(onToggle)}
+          {...clickableRowProps(() => onToggle(rowKey))}
         >
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -577,7 +583,8 @@ function CustomerCard({
       {card}
     </SwipeActions>
   );
-}
+});
+CustomerCard.displayName = "CustomerCard";
 
 // ─── Expected receipts (תקבולים צפויים) ─────────────────────────────────────
 // A flat, payment-centric view of every future-dated / uncleared receivable.
@@ -977,25 +984,35 @@ export function DebtorsTable({
     { key: "uncontacted", label: "טרם נוצר קשר" },
   ];
 
-  function toggle(key: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }
+  // useCallback: passed straight through as onToggle to every memoized
+  // FragmentRow/CustomerCard, so it needs a stable identity across renders —
+  // both already take the row's key/id as a parameter, so no per-row wrapper
+  // closure is needed at the call site either.
+  const toggle = useCallback(
+    (key: string) => {
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+    },
+    [setExpanded]
+  );
 
   const selectableIds = filtered.map((g) => g.customer_id).filter((x): x is string => Boolean(x));
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
-  function toggleSelect(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
+  const toggleSelect = useCallback(
+    (id: string) => {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    },
+    [setSelected]
+  );
   function toggleSelectAll() {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -1240,10 +1257,10 @@ export function DebtorsTable({
                       key={key}
                       group={group}
                       isOpen={expanded.has(key)}
-                      onToggle={() => toggle(key)}
+                      onToggle={toggle}
                       wa={whatsappLink(group.customer_whatsapp ?? group.customer_phone, buildWaMessage(group))}
                       selected={cid ? selected.has(cid) : false}
-                      onToggleSelect={cid ? () => toggleSelect(cid) : undefined}
+                      onToggleSelect={cid ? toggleSelect : undefined}
                       onOpenReminders={onOpenReminders}
                     />
                   );
@@ -1274,10 +1291,10 @@ export function DebtorsTable({
                   key={key}
                   group={group}
                   isOpen={expanded.has(key)}
-                  onToggle={() => toggle(key)}
+                  onToggle={toggle}
                   wa={whatsappLink(group.customer_whatsapp ?? group.customer_phone, buildWaMessage(group))}
                   selected={cid ? selected.has(cid) : false}
-                  onToggleSelect={cid ? () => toggleSelect(cid) : undefined}
+                  onToggleSelect={cid ? toggleSelect : undefined}
                   onOpenReminders={onOpenReminders}
                 />
               );
@@ -1295,7 +1312,10 @@ export function DebtorsTable({
   );
 }
 
-function FragmentRow({
+// Memoized: one instance per collections row (up to hundreds in the desktop
+// table), with onToggle/onToggleSelect passed straight through as the
+// parent's stable, useCallback'd toggle/toggleSelect (see DebtorsTable).
+const FragmentRow = memo(function FragmentRow({
   group,
   isOpen,
   onToggle,
@@ -1306,31 +1326,33 @@ function FragmentRow({
 }: {
   group: CollectionCustomerGroup;
   isOpen: boolean;
-  onToggle: () => void;
+  onToggle: (key: string) => void;
   wa: string | null;
   selected: boolean;
-  onToggleSelect?: () => void;
+  onToggleSelect?: (id: string) => void;
   onOpenReminders: (customerId: string | null) => void;
 }) {
   const tint = severityTint(group);
+  const rowKey = group.customer_id ?? group.customer_name;
+  const cid = group.customer_id;
   return (
     <>
       <tr data-focus-id={group.customer_id ?? undefined} className={`border-b border-border/50 hover:bg-muted/30 ${tint}`}>
         <td className="px-3 py-2">
           <div className="flex items-start gap-2">
-            {onToggleSelect ? (
+            {onToggleSelect && cid ? (
               <input
                 type="checkbox"
                 aria-label="בחירת לקוח"
                 checked={selected}
-                onChange={onToggleSelect}
+                onChange={() => onToggleSelect(cid)}
                 className="mt-1 h-4 w-4 shrink-0"
               />
             ) : null}
             <div className="min-w-0">
               <button
                 type="button"
-                onClick={onToggle}
+                onClick={() => onToggle(rowKey)}
                 className="flex items-center gap-1 text-right font-medium hover:underline"
               >
                 <ChevronDownIcon
@@ -1404,7 +1426,8 @@ function FragmentRow({
       ) : null}
     </>
   );
-}
+});
+FragmentRow.displayName = "FragmentRow";
 
 export function RemindersView({
   reminders,

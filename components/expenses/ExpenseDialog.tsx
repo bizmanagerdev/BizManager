@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useTransition, type ReactNode } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { BackspaceIcon, BankIcon, CardIcon, CashIcon, RecurringIcon, SpinnerIcon, SplitIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
@@ -520,6 +521,27 @@ export function ExpenseDialog({
   const effectiveProjectId = lockedProjectId ?? (effectiveDomain === "logistics_projects" ? projectId : "");
   const effectiveOrderId = lockedOrderId ?? (effectiveDomain === "sales" ? orderId : "");
   const effectivePropertyId = lockedPropertyId ?? (effectiveDomain === "property_management" ? propertyId : "");
+
+  // Memoized (not filtered inline in expressStageContent's render) — these lists
+  // can run to 500-1000 rows, and re-filtering on every keystroke in the source
+  // search box (as well as on every unrelated re-render while the "source" step
+  // is showing) was doing that scan unmemoized. Kept as three separate memos
+  // rather than one combined "filteredSourceList": the switch below only reads
+  // whichever one matches effectiveDomain, but hooks can't live inside that
+  // conditional branch, so all three are computed here unconditionally instead.
+  const filteredRecurringProjects = useMemo(() => {
+    const q = sourceSearch.trim().toLowerCase();
+    return recurringProjects.filter((p) => p.label.toLowerCase().includes(q));
+  }, [recurringProjects, sourceSearch]);
+  const filteredRecurringOrders = useMemo(() => {
+    const q = sourceSearch.trim().toLowerCase();
+    return recurringOrders.filter((o) => o.label.toLowerCase().includes(q));
+  }, [recurringOrders, sourceSearch]);
+  const filteredRecurringProperties = useMemo(() => {
+    const q = sourceSearch.trim().toLowerCase();
+    return recurringProperties.filter((p) => p.label.toLowerCase().includes(q));
+  }, [recurringProperties, sourceSearch]);
+
   const categoryOptions = workerSupport
     ? [WORKER_WAGE_CATEGORY, ...BASE_EXPENSE_CATEGORIES]
     : isVehicleContext
@@ -1691,12 +1713,11 @@ export function ExpenseDialog({
           </>
         );
       case "source": {
-        const q = sourceSearch.trim().toLowerCase();
         const searchBox = (placeholder: string) => (
           <Input value={sourceSearch} onChange={(e) => setSourceSearch(e.target.value)} placeholder={placeholder} className="mb-2" />
         );
         if (effectiveDomain === "logistics_projects") {
-          const list = recurringProjects.filter((p) => p.label.toLowerCase().includes(q));
+          const list = filteredRecurringProjects;
           return (
             <>
               {expTitle("לאיזה פרויקט לשייך?")}
@@ -1718,7 +1739,7 @@ export function ExpenseDialog({
           );
         }
         if (effectiveDomain === "sales") {
-          const list = recurringOrders.filter((o) => o.label.toLowerCase().includes(q));
+          const list = filteredRecurringOrders;
           return (
             <>
               {expTitle("לאיזו הזמנה לשייך?", "אפשר גם בלי הזמנה")}
@@ -1732,7 +1753,7 @@ export function ExpenseDialog({
             </>
           );
         }
-        const list = recurringProperties.filter((p) => p.label.toLowerCase().includes(q));
+        const list = filteredRecurringProperties;
         return (
           <>
             {expTitle("לאיזה נכס לשייך?")}
@@ -3386,11 +3407,12 @@ export function ExpenseDialog({
                     {existingAttachments
                       .filter((att) => att.url && isImageAttachment(att))
                       .map((att) => (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                        <Image
                           key={`${att.document_id}-preview`}
-                          src={att.url ?? ""}
+                          src={att.url as string}
                           alt={att.file_name ?? "קובץ"}
+                          width={80}
+                          height={80}
                           className="h-20 w-20 rounded-lg border object-cover"
                         />
                       ))}
