@@ -251,6 +251,40 @@ export async function deleteTestReminder(id: string): Promise<void> {
   if (error) throw error;
 }
 
+export type TestReminder = { id: string; remind_at: string };
+
+export async function createTestReminder(
+  overrides: {
+    remindAt?: string;
+    content?: string;
+    customerId?: string | null;
+    taskId?: string | null;
+    assignedTo?: string | null;
+    category?: string;
+    actionType?: string;
+    status?: "pending" | "done" | "cancelled";
+    createdBy?: string | null;
+  } = {}
+): Promise<TestReminder> {
+  const { data, error } = await adminClient()
+    .from("reminders")
+    .insert({
+      remind_at: overrides.remindAt ?? new Date(Date.now() + 86_400_000).toISOString(),
+      content: overrides.content ?? `תזכורת בדיקה ${Date.now()}`,
+      customer_id: overrides.customerId ?? null,
+      task_id: overrides.taskId ?? null,
+      assigned_to: overrides.assignedTo ?? null,
+      category: overrides.category ?? "general",
+      action_type: overrides.actionType ?? "other",
+      status: overrides.status ?? "pending",
+      created_by: overrides.createdBy ?? null,
+    })
+    .select("id,remind_at")
+    .single();
+  if (error) throw error;
+  return data as TestReminder;
+}
+
 export async function getLatestAttendanceReportStatus(userId: string): Promise<string | null> {
   const { data, error } = await adminClient()
     .from("phone_attendance_reports")
@@ -599,4 +633,18 @@ export async function getLoanRepaymentTotal(loanId: string): Promise<number> {
   const { data, error } = await adminClient().from("loan_repayments").select("amount").eq("loan_id", loanId);
   if (error) throw error;
   return (data as { amount: number }[]).reduce((sum, row) => sum + row.amount, 0);
+}
+
+// business_settings is a singleton row (id=true) — vat_rate is shared, global
+// business state, not a row a test can scope to itself. A test that changes
+// it MUST restore the original value in a `finally`.
+export async function getVatRate(): Promise<number> {
+  const { data, error } = await adminClient().from("business_settings").select("vat_rate").eq("id", true).single();
+  if (error) throw error;
+  return (data as { vat_rate: number }).vat_rate;
+}
+
+export async function setVatRate(rate: number): Promise<void> {
+  const { error } = await adminClient().from("business_settings").update({ vat_rate: rate }).eq("id", true);
+  if (error) throw error;
 }

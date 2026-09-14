@@ -42,9 +42,12 @@ export default async function globalSetup() {
     await page.getByRole("button", { name: "הוספה מהירה" }).click().catch(() => {});
     await page.waitForTimeout(3_000);
 
-    // Separately-routed dialogs this suite also exercises, each compiled on
-    // its own first visit, independent of the quick-create bundle above.
-    for (const path of ["/financial/loans", "/sales/orders/new", "/properties"]) {
+    // Separately-routed dialogs/pages this suite also exercises, each
+    // compiled on its own first visit, independent of the quick-create
+    // bundle above. /tasks (dnd-kit + a 1700+-line client component) and
+    // /calendar (its own gesture/pinch/swipe machinery) are particularly
+    // heavy first compiles.
+    for (const path of ["/financial/loans", "/sales/orders/new", "/properties", "/tasks", "/calendar", "/collections", "/settings"]) {
       await page.goto(`${baseURL}${path}`).catch(() => {});
       await page.waitForTimeout(1_500);
     }
