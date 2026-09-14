@@ -699,19 +699,20 @@ export async function getCollectionsData(supabase: SupabaseClient): Promise<Coll
     };
   });
 
-  // Enrich each source with WHAT the debt is for — so a caller has talking points.
-  // Projects → project name; orders → list of ordered items ("מוצר ×כמות").
-  await enrichCollectionTitles(supabase, rows);
-  // Attach pending payments so each open debt can be marked collected inline.
-  await attachPendingPayments(supabase, rows);
-
-  // Fold in open loans we gave out (money still owed to us). Added after the
-  // order/project enrichment so their titles aren't overwritten. Best-effort.
-  const loanRows = await buildLoanSourceRows(supabase, today).catch(() => [] as CollectionSourceRow[]);
+  // These 4 are independent of each other (loan/rent rows don't read `rows`,
+  // just get PUSHED onto it after) — run as one round trip instead of 4
+  // sequential ones. Enrich each source with WHAT the debt is for (projects →
+  // project name; orders → list of ordered items) and attach pending payments
+  // so each open debt can be marked collected inline; fold in open loans we
+  // gave out and pending/overdue rent, pushed only after the enrichment calls
+  // above have finished reading `rows` so their titles aren't overwritten.
+  const [, , loanRows, rentRows] = await Promise.all([
+    enrichCollectionTitles(supabase, rows),
+    attachPendingPayments(supabase, rows),
+    buildLoanSourceRows(supabase, today).catch(() => [] as CollectionSourceRow[]),
+    buildRentSourceRows(supabase, today).catch(() => [] as CollectionSourceRow[]),
+  ]);
   if (loanRows.length > 0) rows.push(...loanRows);
-
-  // Fold in pending/overdue rent (pre-scheduled per-lease checks). Best-effort.
-  const rentRows = await buildRentSourceRows(supabase, today).catch(() => [] as CollectionSourceRow[]);
   if (rentRows.length > 0) rows.push(...rentRows);
 
   // Group by customer

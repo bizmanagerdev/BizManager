@@ -183,6 +183,23 @@ export default async function ProjectWorkerExportPage({
     if (documentId) documentById.set(documentId, row);
   });
 
+  const documentStorageKeys = Array.from(
+    new Set(
+      ((projectDocuments ?? []) as UnknownRow[])
+        .map((row) => getFirstString(row, ["storage_key"]))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+  const signedUrlByStorageKey = new Map<string, string>();
+  if (documentStorageKeys.length > 0) {
+    const { data: signed } = await supabase.storage
+      .from(DOCUMENTS_BUCKET)
+      .createSignedUrls(documentStorageKeys, 60 * 60);
+    for (const item of signed ?? []) {
+      if (item.path && item.signedUrl) signedUrlByStorageKey.set(item.path, item.signedUrl);
+    }
+  }
+
   const attachmentRows = [];
   for (const link of (projectDocumentLinks ?? []) as UnknownRow[]) {
     const documentId = getFirstString(link, ["document_id"]);
@@ -190,16 +207,13 @@ export default async function ProjectWorkerExportPage({
     const doc = documentById.get(documentId);
     if (!doc) continue;
     const storageKey = getFirstString(doc, ["storage_key"]);
-    const { data: signed } = storageKey
-      ? await supabase.storage.from(DOCUMENTS_BUCKET).createSignedUrl(storageKey, 60 * 60)
-      : { data: null };
     attachmentRows.push({
       id: documentId,
       title: getFirstString(doc, ["title", "file_name"]) ?? "קובץ",
       fileName: getFirstString(doc, ["file_name"]),
       documentType: getFirstString(doc, ["document_type"]),
       uploadedAt: getFirstString(doc, ["uploaded_at"]) ?? getFirstString(link, ["created_at"]),
-      url: typeof signed?.signedUrl === "string" ? signed.signedUrl : null,
+      url: storageKey ? signedUrlByStorageKey.get(storageKey) ?? null : null,
     });
   }
 

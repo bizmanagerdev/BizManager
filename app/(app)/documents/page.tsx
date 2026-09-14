@@ -1,15 +1,23 @@
+import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
+import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { resolveUserDisplayNamesForValues } from "@/lib/audit";
 import { isExpenseBusinessDomain, mapProjectTypeToExpenseDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
 import { propertyDisplayName } from "@/lib/properties";
-import DocumentsArchiveClient, {
-  type ArchiveTargetOption,
-  type DocumentArchiveFilters,
-  type DocumentArchiveItem,
+import type {
+  ArchiveTargetOption,
+  DocumentArchiveFilters,
+  DocumentArchiveItem,
 } from "@/app/(app)/documents/DocumentsArchiveClient";
 
 import { STORAGE_BUCKET } from "@/lib/storage";
+
+// ~1,000 lines. Lazy-loaded so a visitor doesn't download it before actually
+// landing on this route — same pattern as SalaryCenterClient/ProfileClient.
+const DocumentsArchiveClient = dynamic(() => import("@/app/(app)/documents/DocumentsArchiveClient"), {
+  loading: () => <DetailPageSkeleton />,
+});
 
 const DOCUMENTS_BUCKET = STORAGE_BUCKET;
 const MAX_DOCUMENTS = 1000;
@@ -177,69 +185,78 @@ export default async function DocumentsPage({
   );
   const documentUploaderNames = await resolveUserDisplayNamesForValues(supabase, documentUploadedByValues);
 
-  // Vehicle/tag links per document (resilient: stays empty before the tags SQL is run).
-  const tagsByDocument = new Map<string, Array<{ id: string; label: string; href: string | null }>>();
-  // The "document year" the file is FOR (e.g. a 2026 טסט), stored on the tag link.
-  // A doc can carry several tag rows → keep the latest ref_year present.
-  const refYearByDocument = new Map<string, number>();
-  let vehicleTagOptions: ArchiveTargetOption[] = [];
-  if (documentIds.length > 0) {
-    const { data: docTagRows, error: docTagErr } = await supabase
-      .from("entity_tags")
-      .select("entity_id,tag_id,ref_year")
-      .eq("entity_type", "document")
-      .in("entity_id", documentIds);
-    const tagLinks = (!docTagErr && Array.isArray(docTagRows) ? docTagRows : []) as Array<Record<string, unknown>>;
-    if (tagLinks.length > 0) {
-      const tagIdSet = Array.from(
-        new Set(tagLinks.map((r) => normalizeString(r.tag_id)).filter(Boolean))
-      );
-      const { data: tagRows } = tagIdSet.length
-        ? await supabase.from("tags").select("id,name,kind").in("id", tagIdSet)
-        : { data: [] };
-      const tagNameById = new Map<string, string>();
-      // Only 'vehicle' tags have a page of their own (/vehicles/[tagId]) — every
-      // other kind (general/campaign/equipment/…) has nowhere to link to yet.
-      const vehicleTagIds = new Set<string>();
-      for (const t of (tagRows ?? []) as Array<Record<string, unknown>>) {
-        const tid = normalizeString(t.id);
-        if (!tid) continue;
-        tagNameById.set(tid, normalizeString(t.name) || "תגית");
-        if (t.kind === "vehicle") vehicleTagIds.add(tid);
-      }
-      for (const r of tagLinks) {
-        const docId = normalizeString(r.entity_id);
-        const refYearValue = Number(r.ref_year);
-        if (docId && Number.isInteger(refYearValue) && refYearValue > 0) {
-          const existing = refYearByDocument.get(docId);
-          if (existing === undefined || refYearValue > existing) {
-            refYearByDocument.set(docId, refYearValue);
-          }
-        }
-        const tid = normalizeString(r.tag_id);
-        const name = tagNameById.get(tid);
-        if (!docId || !tid || !name) continue;
-        const list = tagsByDocument.get(docId) ?? [];
-        list.push({ id: tid, label: name, href: vehicleTagIds.has(tid) ? `/vehicles/${tid}` : null });
-        tagsByDocument.set(docId, list);
-      }
-      const optMap = new Map<string, string>();
-      for (const list of tagsByDocument.values()) for (const t of list) optMap.set(t.id, t.label);
-      vehicleTagOptions = Array.from(optMap.entries())
-        .map(([id, label]) => ({ id, label }))
-        .sort(compareByLabel);
-    }
-  }
-
-  const { data: linksRaw, error: linksError } =
+  // The tags lookup (entity_tags → tags, its own internal 2-step chain) and the
+  // document_links fetch both only depend on documentIds, not on each other —
+  // run them as one round trip instead of sequentially.
+  const [linksResult, tagsResult] = await Promise.all([
     documentIds.length > 0
-      ? await supabase
+      ? supabase
           .from("document_links")
           .select("document_id,entity_type,entity_id,created_at")
           .in("document_id", documentIds)
           .order("created_at", { ascending: false })
-      : { data: [] as DocumentLinkRow[], error: null };
+      : Promise.resolve({ data: [] as DocumentLinkRow[], error: null }),
+    (async () => {
+      // Vehicle/tag links per document (resilient: stays empty before the tags SQL is run).
+      const tagsByDocument = new Map<string, Array<{ id: string; label: string; href: string | null }>>();
+      // The "document year" the file is FOR (e.g. a 2026 טסט), stored on the tag link.
+      // A doc can carry several tag rows → keep the latest ref_year present.
+      const refYearByDocument = new Map<string, number>();
+      let vehicleTagOptions: ArchiveTargetOption[] = [];
+      if (documentIds.length === 0) {
+        return { tagsByDocument, refYearByDocument, vehicleTagOptions };
+      }
+      const { data: docTagRows, error: docTagErr } = await supabase
+        .from("entity_tags")
+        .select("entity_id,tag_id,ref_year")
+        .eq("entity_type", "document")
+        .in("entity_id", documentIds);
+      const tagLinks = (!docTagErr && Array.isArray(docTagRows) ? docTagRows : []) as Array<Record<string, unknown>>;
+      if (tagLinks.length > 0) {
+        const tagIdSet = Array.from(
+          new Set(tagLinks.map((r) => normalizeString(r.tag_id)).filter(Boolean))
+        );
+        const { data: tagRows } = tagIdSet.length
+          ? await supabase.from("tags").select("id,name,kind").in("id", tagIdSet)
+          : { data: [] };
+        const tagNameById = new Map<string, string>();
+        // Only 'vehicle' tags have a page of their own (/vehicles/[tagId]) — every
+        // other kind (general/campaign/equipment/…) has nowhere to link to yet.
+        const vehicleTagIds = new Set<string>();
+        for (const t of (tagRows ?? []) as Array<Record<string, unknown>>) {
+          const tid = normalizeString(t.id);
+          if (!tid) continue;
+          tagNameById.set(tid, normalizeString(t.name) || "תגית");
+          if (t.kind === "vehicle") vehicleTagIds.add(tid);
+        }
+        for (const r of tagLinks) {
+          const docId = normalizeString(r.entity_id);
+          const refYearValue = Number(r.ref_year);
+          if (docId && Number.isInteger(refYearValue) && refYearValue > 0) {
+            const existing = refYearByDocument.get(docId);
+            if (existing === undefined || refYearValue > existing) {
+              refYearByDocument.set(docId, refYearValue);
+            }
+          }
+          const tid = normalizeString(r.tag_id);
+          const name = tagNameById.get(tid);
+          if (!docId || !tid || !name) continue;
+          const list = tagsByDocument.get(docId) ?? [];
+          list.push({ id: tid, label: name, href: vehicleTagIds.has(tid) ? `/vehicles/${tid}` : null });
+          tagsByDocument.set(docId, list);
+        }
+        const optMap = new Map<string, string>();
+        for (const list of tagsByDocument.values()) for (const t of list) optMap.set(t.id, t.label);
+        vehicleTagOptions = Array.from(optMap.entries())
+          .map(([id, label]) => ({ id, label }))
+          .sort(compareByLabel);
+      }
+      return { tagsByDocument, refYearByDocument, vehicleTagOptions };
+    })(),
+  ]);
 
+  const { data: linksRaw, error: linksError } = linksResult;
+  const { tagsByDocument, refYearByDocument, vehicleTagOptions } = tagsResult;
   const links = (linksRaw ?? []) as DocumentLinkRow[];
   const linksByDocumentId = new Map<string, DocumentLinkRow[]>();
 
@@ -370,8 +387,22 @@ export default async function DocumentsPage({
     ordersById.set(row.order_id, row);
   });
 
-  const archiveItems = await Promise.all(
-    documents.map(async (doc): Promise<DocumentArchiveItem> => {
+  // ONE batched signed-URL call for every document instead of one call per
+  // document (was up to MAX_DOCUMENTS=1000 concurrent Storage round trips).
+  const documentStorageKeys = Array.from(
+    new Set(documents.map((doc) => normalizeString(doc.storage_key)).filter(Boolean))
+  );
+  const signedUrlByStorageKey = new Map<string, string>();
+  if (documentStorageKeys.length > 0) {
+    const { data: signed } = await supabase.storage
+      .from(DOCUMENTS_BUCKET)
+      .createSignedUrls(documentStorageKeys, 60 * 60);
+    for (const item of signed ?? []) {
+      if (item.path && item.signedUrl) signedUrlByStorageKey.set(item.path, item.signedUrl);
+    }
+  }
+
+  const archiveItems = documents.map((doc): DocumentArchiveItem => {
       const docLinks = linksByDocumentId.get(doc.id) ?? [];
       const relatedProjects = new Map<string, { id: string; label: string }>();
       const relatedProperties = new Map<string, { id: string; label: string }>();
@@ -522,9 +553,7 @@ export default async function DocumentsPage({
       const storageKey = normalizeString(doc.storage_key) || null;
       const latestLinkCreatedAt =
         docLinks.find((link) => normalizeString(link.created_at))?.created_at ?? null;
-      const { data: signedUrlData } = storageKey
-        ? await supabase.storage.from(DOCUMENTS_BUCKET).createSignedUrl(storageKey, 60 * 60)
-        : { data: null };
+      const signedUrl = storageKey ? signedUrlByStorageKey.get(storageKey) ?? null : null;
 
       const title = buildDocumentName(doc);
       const documentType = normalizeString(doc.document_type);
@@ -557,7 +586,7 @@ export default async function DocumentsPage({
         created_at: normalizeString(latestLinkCreatedAt) || null,
         uploaded_by_name:
           typeof doc.uploaded_by === "string" ? documentUploaderNames[doc.uploaded_by] ?? null : null,
-        url: typeof signedUrlData?.signedUrl === "string" ? signedUrlData.signedUrl : null,
+        url: signedUrl,
         entity_types: Array.from(
           new Set(linkedEntityList.map((item) => item.type).filter(Boolean))
         ),
@@ -588,8 +617,7 @@ export default async function DocumentsPage({
           .join(" ")
           .toLowerCase(),
       };
-    })
-  );
+    });
 
   const filterCustomerId = normalizeString(params.customer_id) || "";
   let filterCustomerPhone = "";

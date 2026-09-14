@@ -1,5 +1,7 @@
+import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
 import { Card, CardContent } from "@/components/ui/card";
+import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import {
   buildMonthlyHoursSummary,
@@ -11,7 +13,6 @@ import {
   type WorkSessionRow,
   WORK_SESSIONS_TABLE,
 } from "@/lib/payroll";
-import ProfileClient from "@/app/(app)/profile/ProfileClient";
 import DashboardCustomizer from "@/components/dashboard/DashboardCustomizer";
 import { sanitizePrefs } from "@/lib/dashboard/widgets";
 import PageTitle from "@/components/layout/PageTitle";
@@ -26,6 +27,13 @@ import {
   PAYSLIP_ITEMS_TABLE,
   type PayslipItemRow,
 } from "@/lib/payroll-bonuses";
+
+// ~1,600 lines (full profile/attendance/payroll-summary UI). Lazy-loaded so a
+// visitor doesn't download it before actually landing on this tab — same
+// pattern as SalaryCenterClient/FinancialPageClient/ProjectTabsClient.
+const ProfileClient = dynamic(() => import("@/app/(app)/profile/ProfileClient"), {
+  loading: () => <DetailPageSkeleton />,
+});
 
 type Row = Record<string, unknown>;
 
@@ -53,42 +61,46 @@ type LinkedOption = {
 export default async function ProfilePage() {
   const { profile, supabase } = await requireProfile();
 
-  const { data: sessionRows, error: sessionsError } = await supabase
-    .from(WORK_SESSIONS_TABLE)
-    .select("id,user_id,clock_in,clock_out,worked_minutes,labor_cost,notes,notes_he,business_domain,project_id,property_id")
-    .eq("user_id", profile.id)
-    .order("clock_in", { ascending: false })
-    .limit(300);
+  // A worker's shifts live in the approval queue until the boss classifies them,
+  // so his attendance tab reads from there rather than from attendance_sessions.
+  const isWorker = profile.role === "worker";
 
-  const { data: agreementRows, error: agreementsError } = await supabase
-    .from("salary_agreements")
-    .select(
-      "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month"
-    )
-    .eq("user_id", profile.id)
-    .order("valid_from", { ascending: false });
-
-  const { data: payslipRows, error: payslipsError } = await supabase
-    .from("payslips")
-    .select(
-      "id,payroll_period_id,user_id,calculated_salary_type,total_work_minutes,calculated_base_salary,manual_adjustments,gross_salary,notes"
-    )
-    .eq("user_id", profile.id)
-    .limit(24);
-
-  const periodIds = ((payslipRows ?? []) as Row[])
-    .map((row) => (typeof row.payroll_period_id === "string" ? row.payroll_period_id : ""))
-    .filter(Boolean);
-
-  const { data: periodRows, error: periodsError } = periodIds.length
-    ? await supabase
-        .from("payroll_periods")
-        .select("id,period_month,start_date,end_date,status")
-        .in("id", periodIds)
-    : { data: [], error: null };
-
-  const [{ data: projectRows, error: projectsError }, { data: propertyRows, error: propertiesError }] =
-    await Promise.all([
+  // Everything below is independent of everything else in this wave — none of
+  // these reads depends on another's result — so they run as ONE round trip
+  // instead of ~7 sequential ones. (periodRows and the linked project/property
+  // lookups genuinely depend on payslipRows/sessionRows and run in a 2nd wave
+  // below.)
+  const [
+    { data: sessionRows, error: sessionsError },
+    { data: agreementRows, error: agreementsError },
+    { data: payslipRows, error: payslipsError },
+    [{ data: projectRows, error: projectsError }, { data: propertyRows, error: propertiesError }],
+    { data: userExtrasRow },
+    shiftState,
+    myPayroll,
+    myBonusesResult,
+  ] = await Promise.all([
+    supabase
+      .from(WORK_SESSIONS_TABLE)
+      .select("id,user_id,clock_in,clock_out,worked_minutes,labor_cost,notes,notes_he,business_domain,project_id,property_id")
+      .eq("user_id", profile.id)
+      .order("clock_in", { ascending: false })
+      .limit(300),
+    supabase
+      .from("salary_agreements")
+      .select(
+        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month"
+      )
+      .eq("user_id", profile.id)
+      .order("valid_from", { ascending: false }),
+    supabase
+      .from("payslips")
+      .select(
+        "id,payroll_period_id,user_id,calculated_salary_type,total_work_minutes,calculated_base_salary,manual_adjustments,gross_salary,notes"
+      )
+      .eq("user_id", profile.id)
+      .limit(24),
+    Promise.all([
       supabase
         .from("project_dashboard_view")
         .select("id,name")
@@ -99,55 +111,39 @@ export default async function ProfilePage() {
         .select("id,name,address")
         .order("address", { ascending: true })
         .range(0, 199),
-    ]);
-
-  // Per-user text-size multipliers, one per device class. Tolerant of either
-  // column not existing yet (font_scale predates font_scale_mobile, migration
-  // 20260818000000) — a failed read falls back to null and the client uses its
-  // localStorage value.
-  const { data: fontScaleRow } = await supabase
-    .from("users")
-    .select("font_scale,font_scale_mobile")
-    .eq("id", profile.id)
-    .maybeSingle();
-  const fontScales = fontScaleRow as { font_scale?: unknown; font_scale_mobile?: unknown } | null;
-  const positive = (value: unknown) => (typeof value === "number" && value > 0 ? value : null);
-  const initialFontScale = positive(fontScales?.font_scale);
-  const initialFontScaleMobile = positive(fontScales?.font_scale_mobile);
-
-  // Chosen avatar color — separate query so a missing column (before
-  // db/sql/add_user_avatar_color.sql runs) can't break the font-scale load.
-  const { data: avatarColorRow } = await supabase
-    .from("users")
-    .select("avatar_color")
-    .eq("id", profile.id)
-    .maybeSingle();
-  const rawAvatarColor = (avatarColorRow as { avatar_color?: unknown } | null)?.avatar_color;
-  const initialAvatarColor = typeof rawAvatarColor === "string" ? rawAvatarColor : null;
-
-  // A worker's shifts live in the approval queue until the boss classifies them,
-  // so his attendance tab reads from there rather than from attendance_sessions.
-  const isWorker = profile.role === "worker";
-  const shiftState = isWorker
-    ? await loadMyShiftState(supabase, profile.id, { limit: 30 })
-    : { open: null, pending: [], history: [] };
-
-  // Earned / paid / still owed, from worker_debt_items_view — the same view the
-  // salary centre reads, so a worker and his boss can never quote different
-  // numbers. Everyone gets this on their own profile, not just workers.
-  const myPayroll = await loadMyPayroll(supabase, profile.id);
-
-  // His own bonuses — a payslip_items row each, whether or not the month has been
-  // closed into a payslip yet. Tolerant: before the bonus migration runs there is
-  // no user_id / item_date column, and the rest of the profile must still render.
-  const myBonusesResult = await supabase
-    .from(PAYSLIP_ITEMS_TABLE)
-    .select(PAYSLIP_ITEM_COLUMNS)
-    .eq("user_id", profile.id)
-    .eq("item_type", BONUS_ITEM_TYPE)
-    .order("item_date", { ascending: false })
-    .range(0, 99);
+    ]),
+    // Per-user text-size multipliers (one per device class) + chosen avatar
+    // color, merged into one `users` read (was 2 separate queries). Tolerant of
+    // a column not existing yet (font_scale predates font_scale_mobile predates
+    // avatar_color) — a failed read falls back to null and the client uses its
+    // localStorage value / auto-assigns a color.
+    supabase.from("users").select("font_scale,font_scale_mobile,avatar_color").eq("id", profile.id).maybeSingle(),
+    isWorker ? loadMyShiftState(supabase, profile.id, { limit: 30 }) : Promise.resolve({ open: null, pending: [], history: [] }),
+    // Earned / paid / still owed, from worker_debt_items_view — the same view the
+    // salary centre reads, so a worker and his boss can never quote different
+    // numbers. Everyone gets this on their own profile, not just workers.
+    loadMyPayroll(supabase, profile.id),
+    // His own bonuses — a payslip_items row each, whether or not the month has been
+    // closed into a payslip yet. Tolerant: before the bonus migration runs there is
+    // no user_id / item_date column, and the rest of the profile must still render.
+    supabase
+      .from(PAYSLIP_ITEMS_TABLE)
+      .select(PAYSLIP_ITEM_COLUMNS)
+      .eq("user_id", profile.id)
+      .eq("item_type", BONUS_ITEM_TYPE)
+      .order("item_date", { ascending: false })
+      .range(0, 99),
+  ]);
   const myBonuses = myBonusesResult.error ? [] : ((myBonusesResult.data ?? []) as PayslipItemRow[]);
+
+  const userExtras = userExtrasRow as
+    | { font_scale?: unknown; font_scale_mobile?: unknown; avatar_color?: unknown }
+    | null;
+  const positive = (value: unknown) => (typeof value === "number" && value > 0 ? value : null);
+  const initialFontScale = positive(userExtras?.font_scale);
+  const initialFontScaleMobile = positive(userExtras?.font_scale_mobile);
+  const rawAvatarColor = userExtras?.avatar_color;
+  const initialAvatarColor = typeof rawAvatarColor === "string" ? rawAvatarColor : null;
 
   // What each shift was actually ON. The domain alone ("פרויקטים") is the same
   // word on every project row, so resolve the specific job/address by id —
@@ -160,7 +156,14 @@ export default async function ProfilePage() {
   const linkedPropertyIds = [
     ...new Set(sessionRows2.map((s) => s.property_id).filter((id): id is string => Boolean(id))),
   ];
-  const [linkedProjectsRes, linkedPropertiesRes] = await Promise.all([
+  const periodIds = ((payslipRows ?? []) as Row[])
+    .map((row) => (typeof row.payroll_period_id === "string" ? row.payroll_period_id : ""))
+    .filter(Boolean);
+
+  const [{ data: periodRows, error: periodsError }, linkedProjectsRes, linkedPropertiesRes] = await Promise.all([
+    periodIds.length
+      ? supabase.from("payroll_periods").select("id,period_month,start_date,end_date,status").in("id", periodIds)
+      : Promise.resolve({ data: [] as Row[], error: null }),
     linkedProjectIds.length
       ? supabase.from("projects").select("id,name").in("id", linkedProjectIds)
       : Promise.resolve({ data: [] as Row[] }),

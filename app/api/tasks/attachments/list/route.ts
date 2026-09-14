@@ -57,24 +57,30 @@ export async function POST(req: Request) {
       docRows.map((d) => str(d, "uploaded_by")).filter((v): v is string => Boolean(v))
     );
 
-    const attachments = await Promise.all(
-      docRows.map(async (doc) => {
-        const key = str(doc, "storage_key") ?? "";
-        const name = str(doc, "file_name");
-        const uploadedBy = str(doc, "uploaded_by");
-        const { data: signed } = key
-          ? await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(key, 60 * 60)
-          : { data: null };
-        return {
-          id: str(doc, "id") ?? "",
-          kind: inferKind(name),
-          original_name: name,
-          created_at: str(doc, "uploaded_at"),
-          uploader_name: uploadedBy ? uploaderNames[uploadedBy] ?? null : null,
-          url: signed?.signedUrl ?? null,
-        };
-      })
+    const storageKeys = Array.from(
+      new Set(docRows.map((doc) => str(doc, "storage_key")).filter((v): v is string => Boolean(v)))
     );
+    const signedUrlByStorageKey = new Map<string, string>();
+    if (storageKeys.length > 0) {
+      const { data: signed } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrls(storageKeys, 60 * 60);
+      for (const item of signed ?? []) {
+        if (item.path && item.signedUrl) signedUrlByStorageKey.set(item.path, item.signedUrl);
+      }
+    }
+
+    const attachments = docRows.map((doc) => {
+      const key = str(doc, "storage_key") ?? "";
+      const name = str(doc, "file_name");
+      const uploadedBy = str(doc, "uploaded_by");
+      return {
+        id: str(doc, "id") ?? "",
+        kind: inferKind(name),
+        original_name: name,
+        created_at: str(doc, "uploaded_at"),
+        uploader_name: uploadedBy ? uploaderNames[uploadedBy] ?? null : null,
+        url: key ? signedUrlByStorageKey.get(key) ?? null : null,
+      };
+    });
 
     return NextResponse.json({ attachments });
   } catch (err: unknown) {

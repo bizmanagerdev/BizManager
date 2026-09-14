@@ -39,24 +39,35 @@ export async function POST(req: Request) {
       .order("uploaded_at", { ascending: false });
     if (docsError) return NextResponse.json({ error: toHebrewError(docsError.message) }, { status: 400 });
 
-    const documents = await Promise.all(
-      ((docs ?? []) as Row[]).map(async (doc) => {
-        const storageKey = typeof doc.storage_key === "string" ? doc.storage_key : null;
-        const signed = storageKey
-          ? await supabase.storage.from(BUCKET).createSignedUrl(storageKey, 60 * 60)
-          : null;
-        return {
-          id: typeof doc.id === "string" ? doc.id : "",
-          fileName:
-            (typeof doc.file_name === "string" && doc.file_name) ||
-            (typeof doc.title === "string" && doc.title) ||
-            "מסמך",
-          documentType: typeof doc.document_type === "string" ? doc.document_type : null,
-          uploadedAt: typeof doc.uploaded_at === "string" ? doc.uploaded_at : null,
-          url: signed?.data?.signedUrl ?? null,
-        };
-      })
+    const docRows = (docs ?? []) as Row[];
+    const storageKeys = Array.from(
+      new Set(
+        docRows
+          .map((doc) => (typeof doc.storage_key === "string" ? doc.storage_key : null))
+          .filter((v): v is string => Boolean(v))
+      )
     );
+    const signedUrlByStorageKey = new Map<string, string>();
+    if (storageKeys.length > 0) {
+      const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrls(storageKeys, 60 * 60);
+      for (const item of signed ?? []) {
+        if (item.path && item.signedUrl) signedUrlByStorageKey.set(item.path, item.signedUrl);
+      }
+    }
+
+    const documents = docRows.map((doc) => {
+      const storageKey = typeof doc.storage_key === "string" ? doc.storage_key : null;
+      return {
+        id: typeof doc.id === "string" ? doc.id : "",
+        fileName:
+          (typeof doc.file_name === "string" && doc.file_name) ||
+          (typeof doc.title === "string" && doc.title) ||
+          "מסמך",
+        documentType: typeof doc.document_type === "string" ? doc.document_type : null,
+        uploadedAt: typeof doc.uploaded_at === "string" ? doc.uploaded_at : null,
+        url: storageKey ? signedUrlByStorageKey.get(storageKey) ?? null : null,
+      };
+    });
 
     return NextResponse.json({ documents });
   } catch (err: unknown) {
