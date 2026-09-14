@@ -18,7 +18,9 @@ interface Props {
 const linkBase =
   "flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-sm text-sidebar-foreground transition-all duration-200 hover:bg-secondary hover:text-secondary-foreground hover:shadow-sm";
 const linkActive =
-  "bg-secondary text-secondary-foreground font-medium shadow-md shadow-secondary/30 hover:ring-2 hover:ring-white/50 hover:ring-offset-2 hover:ring-offset-sidebar";
+  // ring-white, not ring-white/50 — the 50%-opacity ring blended with the
+  // sky pill behind it and read as grey rather than white (user, 2026-09-14).
+  "bg-secondary text-secondary-foreground font-medium shadow-md shadow-secondary/30 hover:ring-2 hover:ring-white hover:ring-offset-2 hover:ring-offset-sidebar";
 const linkPending = "bg-white/10 opacity-70";
 // Sub-tab row — smaller than a top-level row. Shared with the hover flyout so a
 // sub-tab is never bigger in the pop-out than it is in the sidebar itself.
