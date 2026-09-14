@@ -184,12 +184,17 @@ export function AlertBar({ locale = "he" }: { locale?: Locale }) {
   const level = highestLevel(primary) ?? "info";
   const restLevels = LEVEL_ORDER.filter((l) => l !== level && primary.some((a) => a.level === l));
 
-  if (primary.length === 1) {
+  // Single-alert mode is for one genuinely individual alert — a "summary" row
+  // (low_stock, or any collapsed rule) always bakes a count into its own title
+  // (e.g. "מלאי נמוך: 2 פריטים"), so even when it's the only alert here it should
+  // still expand like the multi-alert strip, not the compact single-alert layout
+  // with no chevron (user, 2026-09-13: expected the same arrow the tasks page has).
+  if (primary.length === 1 && primary[0]!.entityType !== "summary") {
     const alert = primary[0]!;
     return (
-      <div className={cn("@container border-b", LEVEL_TONE[alert.level])}>
-        <div className="mx-auto flex w-full max-w-[1600px] items-center gap-2 px-3 py-1.5 text-sm @[45em]:px-6">
-          <LevelIcon level={alert.level} className="h-4 w-4 shrink-0" />
+      <div className={cn("@container mt-0.5 mb-0.5 border-b", LEVEL_TONE[alert.level])}>
+        <div className="mx-auto flex w-full max-w-[1600px] items-center gap-1.5 px-3 py-0.5 text-xs leading-none @[45em]:px-6">
+          <LevelIcon level={alert.level} className="h-3.5 w-3.5 shrink-0" />
           <div className="min-w-0 flex-1">
             <MetaRow
               items={[
@@ -211,17 +216,17 @@ export function AlertBar({ locale = "he" }: { locale?: Locale }) {
               onClick={() => act(alert, "done")}
               title={s.done}
               aria-label={s.done}
-              className="shrink-0 rounded-lg p-1.5 text-current hover:bg-background/60 disabled:opacity-50"
+              className="shrink-0 rounded-md p-1 text-current hover:bg-background/60 disabled:opacity-50"
             >
-              <CheckIcon className="h-4 w-4" />
+              <CheckIcon className="h-3.5 w-3.5" />
             </button>
           ) : (
-            <Link href={alert.href} className="shrink-0 rounded-lg px-2 py-1 text-sm font-medium hover:underline">
+            <Link href={alert.href} className="shrink-0 rounded-md px-1.5 py-0.5 text-xs font-medium hover:underline">
               {s.showAll}
             </Link>
           )}
           <button type="button" onClick={dismiss} aria-label={s.close} className="shrink-0 rounded-md p-1 opacity-60 hover:opacity-100">
-            <CloseIcon className="h-4 w-4" />
+            <CloseIcon className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
@@ -231,22 +236,22 @@ export function AlertBar({ locale = "he" }: { locale?: Locale }) {
   const listId = "alert-bar-list";
 
   return (
-    <div className={cn("@container border-b", LEVEL_TONE[level])}>
-      <div className="mx-auto flex w-full max-w-[1600px] items-center gap-2 px-3 py-1.5 @[45em]:px-6">
+    <div className={cn("@container mt-0.5 mb-0.5 border-b", LEVEL_TONE[level])}>
+      <div className="mx-auto flex w-full max-w-[1600px] items-center gap-1.5 px-3 py-0.5 leading-none @[45em]:px-6">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
           aria-controls={listId}
-          className="flex min-w-0 flex-1 items-center gap-2 text-start"
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-start"
         >
-          <LevelIcon className="h-4 w-4 shrink-0" level={level} />
+          <LevelIcon className="h-3.5 w-3.5 shrink-0" level={level} />
           <span id={`${listId}-label`} className="shrink-0 text-xs font-semibold">
             {primary.filter((a) => a.level === level).length} {LEVEL_LABEL[locale][level]}
           </span>
           <span className="flex min-w-0 flex-wrap items-center gap-1">
             {restLevels.map((l) => (
-              <Badge key={l} variant={LEVEL_BADGE_VARIANT[l]} className="px-1.5 py-0 text-[0.625rem]">
+              <Badge key={l} variant={LEVEL_BADGE_VARIANT[l]} className="px-1 py-0 text-[0.625rem] leading-tight">
                 {primary.filter((a) => a.level === l).length}
               </Badge>
             ))}
@@ -254,7 +259,7 @@ export function AlertBar({ locale = "he" }: { locale?: Locale }) {
           {/* Spacer, then the chevron — both inside the same trigger button so the
               whole row (everything except ✕) is clickable, per spec. */}
           <span className="flex-1" />
-          {expanded ? <ChevronUpIcon className="h-3.5 w-3.5 shrink-0" /> : <ChevronDownIcon className="h-3.5 w-3.5 shrink-0" />}
+          {expanded ? <ChevronUpIcon className="h-3 w-3 shrink-0" /> : <ChevronDownIcon className="h-3 w-3 shrink-0" />}
         </button>
         <button
           type="button"
@@ -262,7 +267,7 @@ export function AlertBar({ locale = "he" }: { locale?: Locale }) {
           aria-label={s.close}
           className="shrink-0 rounded-md p-1 opacity-60 hover:opacity-100"
         >
-          <CloseIcon className="h-4 w-4" />
+          <CloseIcon className="h-3.5 w-3.5" />
         </button>
       </div>
 
@@ -286,7 +291,7 @@ export function AlertBar({ locale = "he" }: { locale?: Locale }) {
               .sort((a, b) => LEVEL_ORDER.indexOf(a.level) - LEVEL_ORDER.indexOf(b.level))
               .slice(0, 5)
               .map((alert) => (
-                <div key={alert.id} className="relative flex min-w-0 items-center gap-2 px-3 py-1.5 text-xs @[45em]:px-6">
+                <div key={alert.id} className="relative flex min-w-0 items-center gap-1.5 px-3 py-1 text-xs leading-none @[45em]:px-6">
                   <Link href={alert.href} className="absolute inset-0" aria-hidden />
                   <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", LEVEL_DOT[alert.level])} />
                   <div className="pointer-events-none min-w-0 flex-1">
@@ -360,7 +365,7 @@ export function AlertBar({ locale = "he" }: { locale?: Locale }) {
                 </div>
               ))}
             {primary.length > 5 ? (
-              <Link href="/inbox" className="px-3 py-1.5 text-center text-xs font-medium hover:underline @[45em]:px-6">
+              <Link href="/inbox" className="px-3 py-1 text-center text-xs font-medium hover:underline @[45em]:px-6">
                 {s.showAll}
               </Link>
             ) : null}
