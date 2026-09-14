@@ -32,10 +32,26 @@ test.describe("admin — customer creation", () => {
     // from the CI browser via the thrown error's own message (readable
     // through the Checks annotations API even without log/artifact access).
     // Remove once root-caused.
+    //
+    // Round 2: console/pageerror/requestfailed alone only turned up the
+    // already-known, already-ruled-out Realtime websocket noise (Realtime is
+    // off in the e2e Supabase stack; the notification bell still tries to
+    // connect every run, pass or fail alike — confirmed present regardless of
+    // outcome, so not a lead). Widened to also catch a real API call that
+    // responds with an error STATUS, which requestfailed can't see (it only
+    // fires on network-level failures, not on a "successful" HTTP response
+    // that happens to be 4xx/5xx) — filtering out the known websocket noise
+    // to keep the dump focused on anything actually new.
     const diag: string[] = [];
-    page.on("console", (msg) => diag.push(`[console:${msg.type()}] ${msg.text().slice(0, 300)}`));
+    page.on("console", (msg) => {
+      if (msg.text().includes("realtime/v1/websocket")) return;
+      diag.push(`[console:${msg.type()}] ${msg.text().slice(0, 300)}`);
+    });
     page.on("pageerror", (err) => diag.push(`[pageerror] ${err.message.slice(0, 300)}`));
     page.on("requestfailed", (req) => diag.push(`[requestfailed] ${req.url()} ${req.failure()?.errorText}`));
+    page.on("response", (res) => {
+      if (res.status() >= 400) diag.push(`[response ${res.status()}] ${res.request().method()} ${res.url()}`);
+    });
 
     try {
       await loginAs(page, "admin");
