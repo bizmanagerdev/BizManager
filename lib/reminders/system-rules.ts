@@ -148,7 +148,11 @@ const projectDeadlineRule: SystemRule = {
     const { data, error } = await supabase
       .from("projects")
       .select("id,name,end_date,status,project_manager_id,customer_id")
-      .in("status", ["active", "in_progress"])
+      // "in_progress" is a task status, never a valid project_status_enum
+      // value — including it here made this query fail OUTRIGHT (a hard
+      // Postgres rejection, not a graceful skip) on every single sync, so
+      // this rule has never actually fired. Confirmed live 2026-09-14.
+      .in("status", ["active"])
       .not("end_date", "is", null)
       .gte("end_date", ctx.todayIso)
       .lte("end_date", ctx.nearHorizonIso)
@@ -756,7 +760,9 @@ const projectStartingRule: SystemRule = {
     const { data, error } = await supabase
       .from("projects")
       .select("id,name,start_date,status,project_manager_id,customer_id")
-      .in("status", ["planned", "active", "in_progress"])
+      // Same bug as project_deadline just above — "in_progress" isn't a real
+      // project status, so this failed outright on every sync too.
+      .in("status", ["planned", "active"])
       .not("start_date", "is", null)
       .gte("start_date", ctx.todayIso)
       .lte("start_date", horizonIso)
