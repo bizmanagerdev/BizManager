@@ -2,6 +2,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { EditButton } from "@/components/ui/icon-button";
 import {
@@ -20,7 +21,10 @@ import {
 import { cn } from "@/lib/utils";
 import LoadingDots from "@/app/(app)/sales/orders/LoadingDots";
 import NewOrderClient from "@/app/(app)/sales/orders/new/NewOrderClient";
-import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
+
+const OrderConfirmDialog = dynamic(() => import("@/app/(app)/sales/orders/OrderConfirmDialog"), {
+  loading: () => null,
+});
 
 type Row = Record<string, unknown>;
 

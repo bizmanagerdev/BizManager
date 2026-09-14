@@ -2,6 +2,7 @@
 
 import { Fragment, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { ChevronDownIcon, DeleteIcon, EditIcon, MoreIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
@@ -28,7 +29,6 @@ import {
   type AccountTransferRef,
   type AccountWithLedger,
 } from "@/lib/accounts";
-import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
 import { PaymentEditDialog } from "@/components/financial/PaymentEditDialog";
 import { EditWorkerPaymentDialog } from "@/components/payroll/EditWorkerPaymentDialog";
 import { EditPaidRepaymentDialog, LoanFormDialog } from "@/app/(app)/financial/loans/LoanDialogs";
@@ -38,6 +38,11 @@ import { deleteAccountTransfer } from "@/lib/financial/transfersClient";
 import type { Loan } from "@/lib/loans";
 import { formatMoneyRounded } from "@/lib/money";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
+
+const ExpenseDialog = dynamic(
+  () => import("@/components/expenses/ExpenseDialog").then((mod) => mod.ExpenseDialog),
+  { loading: () => null }
+);
 
 // Was a local Intl-currency-style formatter — exactly the anti-pattern
 // lib/money.ts's own docstring warns about ("every hand-written

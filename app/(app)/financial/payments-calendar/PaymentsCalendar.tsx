@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -30,10 +31,14 @@ import MonthCalendar, {
   type DayContext,
   type SelectedContext,
 } from "@/components/ui/month-calendar";
-import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
 import { SplitPaymentDialog } from "./SplitPaymentDialog";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete } from "@/lib/undo-engine";
+
+const ExpenseDialog = dynamic(
+  () => import("@/components/expenses/ExpenseDialog").then((mod) => mod.ExpenseDialog),
+  { loading: () => null }
+);
 
 function fmtIls(value: number) {
   return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 }).format(value);

@@ -1,7 +1,12 @@
+import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
+import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
-import CustomersClient from "@/app/(app)/customers/CustomersClient";
 import { loadCustomersPage, type CustomerFilterMode } from "@/app/(app)/customers/loadCustomers";
+
+const CustomersClient = dynamic(() => import("@/app/(app)/customers/CustomersClient"), {
+  loading: () => <DetailPageSkeleton />,
+});
 
 function parseFilterMode(value: string | undefined): CustomerFilterMode {
   return value === "yes" || value === "no" ? value : "all";

@@ -2,6 +2,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -41,7 +42,6 @@ import {
   getBusinessDomainLabel,
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
-import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
 import { monthRange, recentMonthKeys } from "@/lib/financial/periodPresets";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import DomainMultiSelect from "@/components/financial/DomainMultiSelect";
@@ -72,6 +72,11 @@ import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete, scheduleDeferredEdit, registerReversibleCreate } from "@/lib/undo-engine";
+
+const ExpenseDialog = dynamic(
+  () => import("@/components/expenses/ExpenseDialog").then((mod) => mod.ExpenseDialog),
+  { loading: () => null }
+);
 
 const useIsomorphicLayoutEffect =
   typeof window !== "undefined" ? useLayoutEffect : useEffect;

@@ -1,5 +1,7 @@
+import dynamic from "next/dynamic";
 import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
+import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
@@ -11,7 +13,10 @@ import {
   getUserPresenceRoster,
   resolveActorFilterValues,
 } from "@/lib/audit";
-import ActivityClient from "./ActivityClient";
+
+const ActivityClient = dynamic(() => import("./ActivityClient"), {
+  loading: () => <DetailPageSkeleton />,
+});
 
 export const revalidate = 30;
 

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { DeliveryIcon, WarehouseIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,10 +11,13 @@ import Sparkline from "@/components/charts/Sparkline";
 import QuietCard from "@/components/dashboard/QuietCard";
 import { ContactTapZone } from "@/components/ui/contact-link";
 import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
-import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import PickingListDialog from "@/app/(app)/sales/PickingListDialog";
 import { clickableRowProps } from "@/lib/ui/row-navigation";
 import type { DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
+
+const OrderConfirmDialog = dynamic(() => import("@/app/(app)/sales/orders/OrderConfirmDialog"), {
+  loading: () => null,
+});
 
 /**
  * "משלוחים קרובים" — the next open deliveries.

@@ -1,11 +1,16 @@
-﻿import { requireStaffPage } from "@/lib/auth/roleAccess";
+﻿import dynamic from "next/dynamic";
+import { requireStaffPage } from "@/lib/auth/roleAccess";
 import AppShell from "@/components/layout/AppShell";
-import ProjectsClient from "@/app/(app)/projects/ProjectsClient";
+import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import {
   loadProjectsPage,
   type ProjectsSort,
   type ProjectsView,
 } from "@/app/(app)/projects/loadProjects";
+
+const ProjectsClient = dynamic(() => import("@/app/(app)/projects/ProjectsClient"), {
+  loading: () => <DetailPageSkeleton />,
+});
 
 type Row = Record<string, unknown>;
 

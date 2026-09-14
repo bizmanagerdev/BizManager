@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState, useTransition } from "react";
 import { CashIcon, CheckIcon, ChevronDownIcon, LocationIcon, PhoneIcon, WazeIcon } from "@/components/ui/icons";
-import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
 import PickingListDialog from "@/app/(app)/sales/PickingListDialog";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
@@ -29,6 +29,10 @@ import { dueUrgencyChipClass, formatShortDate, getDueUrgency } from "@/lib/date"
 import { DeliveryLocationDialog } from "@/components/orders/DeliveryLocationDialog";
 import { rowNavigateProps } from "@/lib/ui/row-navigation";
 import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
+
+const OrderConfirmDialog = dynamic(() => import("@/app/(app)/sales/orders/OrderConfirmDialog"), {
+  loading: () => null,
+});
 
 type CustomerGroup = {
   customerId: string;

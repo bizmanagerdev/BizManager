@@ -1,12 +1,18 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { AddIcon, LockIcon, NotificationIcon, TaskIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { formatShortDate } from "@/lib/date";
-import { TaskUpsertDialog, type UserOption } from "@/components/tasks/TaskUpsertDialog";
+import type { UserOption } from "@/components/tasks/TaskUpsertDialog";
+
+const TaskUpsertDialog = dynamic(
+  () => import("@/components/tasks/TaskUpsertDialog").then((mod) => mod.TaskUpsertDialog),
+  { loading: () => null }
+);
 
 export type CustomerTaskItem = {
   id: string;

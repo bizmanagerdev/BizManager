@@ -11,6 +11,7 @@
 // current route in place (same scroll position, same open tab).
 
 import { useMemo, useRef, useState, useTransition } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import SessionEditorDialog from "@/app/(app)/payroll/SessionEditorDialog";
@@ -36,8 +37,6 @@ import {
 import { Dialog } from "@/components/ui/dialog";
 import { UploadDocumentDialog } from "@/components/documents/UploadDocumentDialog";
 import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
-import { TaskUpsertDialog } from "@/components/tasks/TaskUpsertDialog";
-import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
 import { IncomeDialog } from "@/components/financial/IncomeDialog";
 import { AccountTransferDialog } from "@/components/financial/AccountTransferDialog";
 import { CollectPaymentDialog } from "@/components/collections/CollectPaymentDialog";
@@ -49,6 +48,15 @@ import type { QuickCreateAction, QuickCreateData } from "@/components/layout/qui
 import { toHebrewError } from "@/lib/error-messages";
 import { offlineFetch } from "@/lib/offline-queue";
 import { registerReversibleCreate } from "@/lib/undo-engine";
+
+const TaskUpsertDialog = dynamic(
+  () => import("@/components/tasks/TaskUpsertDialog").then((mod) => mod.TaskUpsertDialog),
+  { loading: () => null }
+);
+const ExpenseDialog = dynamic(
+  () => import("@/components/expenses/ExpenseDialog").then((mod) => mod.ExpenseDialog),
+  { loading: () => null }
+);
 
 export default function QuickCreateDialogs({
   action,

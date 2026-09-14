@@ -1,7 +1,12 @@
-﻿import AppShell from "@/components/layout/AppShell";
+﻿import dynamic from "next/dynamic";
+import AppShell from "@/components/layout/AppShell";
+import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
-import NewOrderClient from "@/app/(app)/sales/orders/new/NewOrderClient";
 import { attachProductStock } from "@/lib/orders/productStock";
+
+const NewOrderClient = dynamic(() => import("@/app/(app)/sales/orders/new/NewOrderClient"), {
+  loading: () => <DetailPageSkeleton />,
+});
 
 type Row = Record<string, unknown>;
 

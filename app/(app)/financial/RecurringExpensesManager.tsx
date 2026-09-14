@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AddDateIcon, AddReminderIcon, CheckIcon, RecurringIcon, SpinnerIcon } from "@/components/ui/icons";
@@ -13,12 +14,16 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getBusinessDomainLabel } from "@/lib/expenses";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
 import ReminderFormDialog from "@/components/reminders/ReminderFormDialog";
 import type { Account } from "@/lib/accounts";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete } from "@/lib/undo-engine";
+
+const ExpenseDialog = dynamic(
+  () => import("@/components/expenses/ExpenseDialog").then((mod) => mod.ExpenseDialog),
+  { loading: () => null }
+);
 
 type Option = {
   id: string;

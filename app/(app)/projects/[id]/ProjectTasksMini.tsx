@@ -5,14 +5,19 @@
 // board lives on /tasks — this is the "what's left on this project" view.
 
 import { useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { AddIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { offlineFetch } from "@/lib/offline-queue";
 import { toHebrewError } from "@/lib/error-messages";
 import { formatShortDate } from "@/lib/date";
-import { TaskUpsertDialog } from "@/components/tasks/TaskUpsertDialog";
 import type { AssignableUser } from "@/app/(app)/projects/[id]/ProjectTabsClient";
+
+const TaskUpsertDialog = dynamic(
+  () => import("@/components/tasks/TaskUpsertDialog").then((mod) => mod.TaskUpsertDialog),
+  { loading: () => null }
+);
 
 type Row = Record<string, unknown>;
 

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { StatActionCard, collectionStatusTextClass } from "@/components/ui/stat-action-card";
@@ -14,7 +15,6 @@ import DeliveryImagesCard from "@/app/(app)/sales/orders/[id]/DeliveryImagesCard
 import { SectionCard } from "@/components/ui/section-card";
 import LogCommunicationButton from "@/components/communications/LogCommunicationButton";
 import OrderPaymentDialog from "@/app/(app)/sales/orders/OrderPaymentDialog";
-import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import OrderEditDialog from "@/app/(app)/sales/orders/OrderEditDialog";
 import InvoiceQuickMenu from "@/app/(app)/sales/orders/InvoiceQuickMenu";
 import OrderCommentsThread from "@/app/(app)/sales/orders/[id]/OrderCommentsThread";
@@ -30,6 +30,10 @@ import { attachProductStock } from "@/lib/orders/productStock";
 import { paymentTermsLabel } from "@/lib/paymentTerms";
 import { formatRelativeDateLabel, formatShortDate, formatShortDateTime } from "@/lib/date";
 import type { MorningLocalDocument } from "@/lib/morning/types";
+
+const OrderConfirmDialog = dynamic(() => import("@/app/(app)/sales/orders/OrderConfirmDialog"), {
+  loading: () => null,
+});
 
 type Row = Record<string, unknown>;
 

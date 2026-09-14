@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { CheckIcon, ChevronDownIcon, CommentIcon, EditIcon, NotificationIcon, SearchIcon } from "@/components/ui/icons";
@@ -14,7 +15,6 @@ import { findOrderContentMatches, loadMoreOrders, loadOrderRowsByIds } from "@/a
 import type { OrdersFilters } from "@/app/(app)/sales/loadOrders";
 import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import { searchOrderEntries, useOrderSearchIndex, type OrderSearchIndexEntry } from "@/hooks/useOrderSearchIndex";
-import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import OrderPaymentDialog from "@/app/(app)/sales/orders/OrderPaymentDialog";
 import InvoiceQuickMenu from "@/app/(app)/sales/orders/InvoiceQuickMenu";
 import LogCommunicationButton from "@/components/communications/LogCommunicationButton";
@@ -52,6 +52,10 @@ import {
   derivePaymentStatus,
 } from "@/lib/orders/paymentStatus";
 import { computeSourceCollection } from "@/lib/collections";
+
+const OrderConfirmDialog = dynamic(() => import("@/app/(app)/sales/orders/OrderConfirmDialog"), {
+  loading: () => null,
+});
 
 type PaymentStatusFilter = "all" | "paid" | "partial" | "unpaid";
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AddIcon, CalculatorIcon, CalendarIcon, RecurringIcon, RefreshIcon } from "@/components/ui/icons";
@@ -9,11 +10,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toHebrewError } from "@/lib/error-messages";
 import type { PaymentCalendarItem } from "@/lib/payables";
 import type { Account } from "@/lib/accounts";
-import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
 import RecurringExpensesManager, {
   type RecurringExpenseTemplateItem,
 } from "@/app/(app)/financial/RecurringExpensesManager";
 import PaymentsCalendar, { CashNeedsDialog } from "./PaymentsCalendar";
+
+const ExpenseDialog = dynamic(
+  () => import("@/components/expenses/ExpenseDialog").then((mod) => mod.ExpenseDialog),
+  { loading: () => null }
+);
 
 type Option = { id: string; label: string };
 

@@ -1,16 +1,25 @@
 import type { ReactNode } from "react";
+import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
+import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import SalesDeliveriesQueue from "@/app/(app)/sales/SalesDeliveriesQueue";
-import SalesInventoryClient from "@/app/(app)/sales/SalesInventoryClient";
 import InventoryRealtimeBadge from "@/app/(app)/sales/InventoryRealtimeBadge";
-import SalesOrdersClient from "@/app/(app)/sales/SalesOrdersClient";
-import PriceListClient from "@/app/(app)/sales/PriceListClient";
 import SalesTabsNav from "@/app/(app)/sales/SalesTabsNav";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { DELIVERY_REGIONS } from "@/lib/ui/cities";
 import { loadOrdersPage } from "@/app/(app)/sales/loadOrders";
 import { loadPriceListPage, loadInventoryListPage } from "@/app/(app)/sales/loadProducts";
 import { loadDeliveriesPage } from "@/app/(app)/sales/loadDeliveries";
+
+const SalesInventoryClient = dynamic(() => import("@/app/(app)/sales/SalesInventoryClient"), {
+  loading: () => <DetailPageSkeleton />,
+});
+const SalesOrdersClient = dynamic(() => import("@/app/(app)/sales/SalesOrdersClient"), {
+  loading: () => <DetailPageSkeleton />,
+});
+const PriceListClient = dynamic(() => import("@/app/(app)/sales/PriceListClient"), {
+  loading: () => <DetailPageSkeleton />,
+});
 
 export const revalidate = 30;
 
@@ -112,27 +121,43 @@ export default async function SalesPage({
     { count: deliveriesCount },
   ] = await Promise.all([
     (() => {
+      // Tab count — only needs status/customer_id, so it counts the plain
+      // orders table rather than order_overview_view (which forces a
+      // total_paid/remaining_balance aggregation per count).
       let query = applyOpenOrdersFilter(
         supabase
-        .from("order_overview_view")
-        .select("order_id", { count: "estimated", head: true })
+        .from("orders")
+        .select("id", { count: "estimated", head: true })
       );
       if (customerId) query = query.eq("customer_id", customerId);
       return query;
     })(),
     (() => {
+      if (paymentStatusFilter) {
+        // Payment-status filter genuinely needs the view's computed
+        // total_paid/remaining_balance columns.
+        let query = supabase
+          .from("order_overview_view")
+          .select("order_id", { count: "estimated", head: true })
+          .in("status", CLOSED_ORDER_STATUSES);
+        if (customerId) query = query.eq("customer_id", customerId);
+        if (paymentStatusFilter === "paid") {
+          query = query.gt("total_paid", 0).lte("remaining_balance", 0.009);
+        } else if (paymentStatusFilter === "partial") {
+          query = query.gt("total_paid", 0).gt("remaining_balance", 0.009);
+        } else if (paymentStatusFilter === "unpaid") {
+          query = query.lte("total_paid", 0);
+        }
+        return query;
+      }
+      // No payment-status filter — only needs status/customer_id, so count
+      // the plain orders table rather than order_overview_view (which forces
+      // a total_paid/remaining_balance aggregation per count).
       let query = supabase
-        .from("order_overview_view")
-        .select("order_id", { count: "estimated", head: true })
+        .from("orders")
+        .select("id", { count: "estimated", head: true })
         .in("status", CLOSED_ORDER_STATUSES);
       if (customerId) query = query.eq("customer_id", customerId);
-      if (paymentStatusFilter === "paid") {
-        query = query.gt("total_paid", 0).lte("remaining_balance", 0.009);
-      } else if (paymentStatusFilter === "partial") {
-        query = query.gt("total_paid", 0).gt("remaining_balance", 0.009);
-      } else if (paymentStatusFilter === "unpaid") {
-        query = query.lte("total_paid", 0);
-      }
       return query;
     })(),
     supabase.from("products").select("id", { count: "estimated", head: true }),

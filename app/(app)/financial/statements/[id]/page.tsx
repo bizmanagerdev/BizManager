@@ -1,9 +1,17 @@
+// Aliased: this route also exports its own `dynamic` (route-segment config,
+// below) which would otherwise collide with next/dynamic's default export.
+import nextDynamic from "next/dynamic";
 import { notFound, redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
+import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import { propertyDisplayName } from "@/lib/properties";
-import StatementDetailClient, { type StatementRowView } from "./StatementDetailClient";
+import type { StatementRowView } from "./StatementDetailClient";
+
+const StatementDetailClient = nextDynamic(() => import("./StatementDetailClient"), {
+  loading: () => <DetailPageSkeleton />,
+});
 
 export const dynamic = "force-dynamic";
 

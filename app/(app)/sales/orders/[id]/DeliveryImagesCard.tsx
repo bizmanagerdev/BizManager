@@ -11,6 +11,7 @@
 // without a full page reload.
 
 import { useRef, useState, useTransition } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AddIcon, DeliveryIcon } from "@/components/ui/icons";
@@ -19,13 +20,16 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { SectionCard } from "@/components/ui/section-card";
-import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { registerReversibleAction, scheduleDeferredDelete } from "@/lib/undo-engine";
 import { offlineUpload } from "@/lib/offline-upload";
 import { toHebrewError } from "@/lib/error-messages";
 import { formatShortDate } from "@/lib/date";
 import { getOrderStatusLabel } from "@/lib/ui/status-colors";
+
+const OrderConfirmDialog = dynamic(() => import("@/app/(app)/sales/orders/OrderConfirmDialog"), {
+  loading: () => null,
+});
 
 const FULL_SECONDARY_TRIGGER_CLASSES =
   "border-transparent bg-secondary text-secondary-foreground shadow-md shadow-secondary/20 hover:bg-secondary/90 hover:text-secondary-foreground w-full";
