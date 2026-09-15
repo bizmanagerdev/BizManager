@@ -382,10 +382,20 @@ export default function SalaryCenterClient({
       if (isWorkerDetailMode && defaultWorkerId) params.set("userId", defaultWorkerId);
       if (options?.fresh) params.set("fresh", "1");
       const queryString = params.toString();
-      const response = await fetch(
-        `/api/payroll/center/protected${queryString ? `?${queryString}` : ""}`,
-        { cache: "no-store" }
-      );
+      const url = `/api/payroll/center/protected${queryString ? `?${queryString}` : ""}`;
+      // This endpoint fans out to ~10 parallel queries across several tables — under
+      // heavy concurrent use (several admins/office staff switching between workers
+      // at once) that can occasionally collide with another transaction and hit a
+      // Postgres statement timeout, even though each query alone is fast. Confirmed
+      // live 2026-09-15: a real 500 while the page was actively in use, but every
+      // query in isolation ran in single-digit milliseconds — a transient blip, not
+      // a slow query. One silent retry avoids surfacing an error the user would
+      // just "fix" by reloading anyway.
+      let response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) {
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        response = await fetch(url, { cache: "no-store" });
+      }
       const json = (await response.json().catch(() => ({}))) as SalaryCenterProtectedPayload & { error?: string };
       if (!response.ok) {
         setProtectedError(toHebrewError(json.error, "לא ניתן לטעון את נתוני השכר המוגנים."));
