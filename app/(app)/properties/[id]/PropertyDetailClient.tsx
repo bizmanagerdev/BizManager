@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import dynamic from "next/dynamic";
@@ -130,6 +130,8 @@ function sessionRowDetails(s: PropertySession): RowDetail[] {
  */
 function ExpandableRow(props: {
   rowKey: string;
+  /** App-wide deep-link target (`?focus=<id>`, see FocusHighlighter). */
+  focusId?: string;
   details: RowDetail[];
   expanded: boolean;
   onToggle: (key: string) => void;
@@ -161,6 +163,7 @@ function RowBody({
   expanded,
   onToggle,
   rowKey,
+  focusId,
   amount,
   isLast,
   children,
@@ -171,6 +174,7 @@ function RowBody({
   expanded: boolean;
   onToggle: (key: string) => void;
   rowKey: string;
+  focusId?: string;
   amount: ReactNode;
   isLast: boolean;
   children: ReactNode;
@@ -179,7 +183,7 @@ function RowBody({
   panelFooter?: ReactNode;
 }) {
   return (
-    <div className={cn("pb-2", !isLast && "border-b")}>
+    <div className={cn("pb-2", !isLast && "border-b")} data-focus-id={focusId}>
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           {showChevron ? (
@@ -224,6 +228,7 @@ function RowBody({
 /** Mobile: chevron only for details (when there are any); edit/delete via side swipe. */
 function ExpandableRowMobile({
   rowKey,
+  focusId,
   details,
   expanded,
   onToggle,
@@ -236,6 +241,7 @@ function ExpandableRowMobile({
   children,
 }: {
   rowKey: string;
+  focusId?: string;
   details: RowDetail[];
   expanded: boolean;
   onToggle: (key: string) => void;
@@ -255,6 +261,7 @@ function ExpandableRowMobile({
       expanded={expanded}
       onToggle={onToggle}
       rowKey={rowKey}
+      focusId={focusId}
       amount={amount}
       isLast={isLast}
       showChevron={details.length > 0}
@@ -300,6 +307,7 @@ function ExpandableRowMobile({
  *  details (when there are any) and the edit/delete buttons. */
 function ExpandableRowDesktop({
   rowKey,
+  focusId,
   details,
   expanded,
   onToggle,
@@ -312,6 +320,7 @@ function ExpandableRowDesktop({
   children,
 }: {
   rowKey: string;
+  focusId?: string;
   details: RowDetail[];
   expanded: boolean;
   onToggle: (key: string) => void;
@@ -329,6 +338,7 @@ function ExpandableRowDesktop({
       expanded={expanded}
       onToggle={onToggle}
       rowKey={rowKey}
+      focusId={focusId}
       amount={amount}
       isLast={isLast}
       showChevron
@@ -501,6 +511,14 @@ export default function PropertyDetailClient({
   const activityDocuments = useUndoOverlay(activity.documents, (d) => d.id, "property-document");
   const activityTasks = useUndoOverlay(activity.tasks, (t) => t.id, "property-task");
   const activityTemplates = useUndoOverlay(activity.recurringTemplates, (t) => t.id, "property-template");
+  // A generated row reads by its template's name — the same label the ledger
+  // and the payments calendar use.
+  const templateNameById = useMemo(
+    () => new Map(activityTemplates.filter((t) => t.templateName).map((t) => [t.id, t.templateName as string] as const)),
+    [activityTemplates]
+  );
+  const expenseLabel = (e: PropertyExpense) =>
+    (e.recurringTemplateId && templateNameById.get(e.recurringTemplateId)) || e.description || e.category || "הוצאה";
   const address = propertyDisplayName(property);
 
   // Task assignment stays limited to active, dashboard-having staff (unchanged
@@ -1012,6 +1030,9 @@ export default function PropertyDetailClient({
                   <ExpandableRow
                     key={rowKey}
                     rowKey={rowKey}
+                    // Same id the ledger + payments calendar use, so "למקור"
+                    // from the calendar lands on THIS row.
+                    focusId={row.kind === "expense" ? `expense:${row.data.id}` : undefined}
                     details={details}
                     expanded={expandedRows.has(rowKey)}
                     onToggle={toggleExpandedRow}
@@ -1022,7 +1043,7 @@ export default function PropertyDetailClient({
                     deleteLabel={row.kind === "expense" ? "מחיקת הוצאה" : "מחיקת משמרת"}
                     onDelete={() =>
                       row.kind === "expense"
-                        ? setDel({ kind: "expense", id: row.data.id, label: row.data.category || "הוצאה" })
+                        ? setDel({ kind: "expense", id: row.data.id, label: expenseLabel(row.data) })
                         : setDel({
                             kind: "session",
                             id: row.data.id,
@@ -1032,7 +1053,7 @@ export default function PropertyDetailClient({
                   >
                     {row.kind === "expense" ? (
                       <div className="text-sm">
-                        <div className="font-medium">{row.data.description || row.data.category || "הוצאה"}</div>
+                        <div className="font-medium">{expenseLabel(row.data)}</div>
                         <MetaRow
                           className="text-xs text-muted-foreground"
                           items={[row.data.description ? row.data.category : null, fmtDate(row.data.date)]}

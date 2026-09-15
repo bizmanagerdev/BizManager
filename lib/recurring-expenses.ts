@@ -29,8 +29,18 @@ function getEnsureRecurringExpensesCache() {
   return globalThis.__bizmanagerRecurringExpensesEnsureCache;
 }
 
+// How long one server instance trusts "already generated" before running the
+// generator again on the next page load. It used to be the whole calendar day,
+// which meant a change that only the generator can reflect — a migration to
+// the generator itself, a template edited from another instance, a row deleted
+// by hand — did not reach the board until tomorrow, however often the page was
+// refreshed. The RPC is idempotent and cheap (one EXISTS per template-period),
+// so a short window keeps rapid navigation from re-running it while a plain
+// refresh a minute later sees the truth.
+const ENSURE_TTL_MS = 60_000;
+
 function ensureCacheKey(date: Date) {
-  return date.toISOString().slice(0, 10);
+  return `${date.toISOString().slice(0, 10)}:${Math.floor(Date.now() / ENSURE_TTL_MS)}`;
 }
 
 async function runEnsureRecurringExpensesForDate(
@@ -82,6 +92,9 @@ export function ensureRecurringExpensesForDate(
   const cache = getEnsureRecurringExpensesCache();
   const existing = cache.get(key);
   if (existing) return existing;
+  // Only the current window is worth keeping — drop the previous ones so the
+  // map doesn't grow by one entry per minute per instance.
+  for (const staleKey of cache.keys()) if (staleKey !== key) cache.delete(staleKey);
 
   const promise = runEnsureRecurringExpensesForDate(supabase, { ...options, today })
     .then((result) => {

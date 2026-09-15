@@ -781,8 +781,11 @@ export function buildExpenseEntries(args: {
   customerId: string | null;
   customerProjectSet: Set<string>;
   referenceDate: string;
+  // Template id → { name, variable }; a generated row is labelled by its
+  // template's name, and flagged when its amount is only an estimate.
+  templateMetaById?: Map<string, { name: string; variable: boolean }>;
 }): FinancialEntry[] {
-  const { expenseRows, projectsById, ordersById, propertiesById, propertyCustomersById, projectExpenseLinksByExpenseId, recordedByNames, customerId, customerProjectSet, referenceDate } = args;
+  const { expenseRows, projectsById, ordersById, propertiesById, propertyCustomersById, projectExpenseLinksByExpenseId, recordedByNames, customerId, customerProjectSet, referenceDate, templateMetaById } = args;
 
   return expenseRows.flatMap((row) => {
     const flowMeta = buildExpenseFlowMeta(row, referenceDate);
@@ -806,7 +809,19 @@ export function buildExpenseEntries(args: {
       businessDomain, projectId: resolvedProjectId, orderId: row.order_id, propertyId: row.property_id,
       projectName: linkedProject?.name?.trim() || null, propertyAddress: linkedProperty?.address?.trim() || null,
     });
-    const description = buildExpenseDescription(row);
+    // A row generated from a recurring template is labelled by the TEMPLATE
+    // name — what the הוצאות קבועות list and the payments calendar show — so
+    // "הלוואה אמא 2" is findable in the ledger even though its rows carry no
+    // description of their own. The raw description stays searchable (and is
+    // what the edit dialog seeds from, via expenseDescriptionRaw).
+    const templateMeta =
+      typeof row.recurring_expense_template_id === "string" ? templateMetaById?.get(row.recurring_expense_template_id) ?? null : null;
+    const templateName = templateMeta?.name?.trim() || null;
+    const description = templateName || buildExpenseDescription(row);
+    // A row from a variable-amount template holds only the ESTIMATE until it is
+    // confirmed with the real figure — anything that confirms it must ask.
+    const paymentStatusNormalized = normalizePaymentStatus(row.payment_status);
+    const expenseVariableEstimate = templateMeta?.variable === true && paymentStatusNormalized !== "paid";
     const reference = row.category?.trim() || null;
 
     return [{
@@ -832,7 +847,7 @@ export function buildExpenseEntries(args: {
       paymentStatus: normalizePaymentStatus(row.payment_status),
       recordedByName: typeof row.recorded_by === "string" ? recordedByNames[row.recorded_by] ?? null : null,
       customerId: linkedOrder?.customer_id ?? linkedProject?.customer_id ?? null,
-      searchText: [description, source.label, reference ?? "", row.notes ?? "",
+      searchText: [description, row.description ?? "", source.label, reference ?? "", row.notes ?? "",
         row.category ?? "", getBusinessDomainLabel(businessDomain),
         typeof row.recorded_by === "string" ? recordedByNames[row.recorded_by] ?? "" : ""]
         .join(" ").toLowerCase(),
@@ -851,6 +866,7 @@ export function buildExpenseEntries(args: {
       expenseInstallmentIndex: row.installment_index != null && Number.isFinite(Number(row.installment_index)) ? Number(row.installment_index) : null,
       expenseInstallmentCount: row.installment_count != null && Number.isFinite(Number(row.installment_count)) ? Number(row.installment_count) : null,
       expenseRecurringTemplateId: typeof row.recurring_expense_template_id === "string" ? row.recurring_expense_template_id : null,
+      expenseVariableEstimate,
     }];
   });
 }

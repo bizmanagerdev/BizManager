@@ -2,18 +2,19 @@
 
 import { useState, useTransition } from "react";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { AddIcon, CalculatorIcon, CalendarIcon, RecurringIcon, RefreshIcon } from "@/components/ui/icons";
+import { useRouter, useSearchParams } from "next/navigation";
+import { AddDateIcon, AddIcon, CalculatorIcon, CalendarIcon, RecurringIcon, WarningIcon } from "@/components/ui/icons";
+import { useBackfillMissing } from "@/app/(app)/financial/useBackfillMissing";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { toHebrewError } from "@/lib/error-messages";
+import { replaceSearchParams } from "@/lib/ui/url-state";
 import type { PaymentCalendarItem } from "@/lib/payables";
 import type { Account } from "@/lib/accounts";
 import RecurringExpensesManager, {
   type RecurringExpenseTemplateItem,
 } from "@/app/(app)/financial/RecurringExpensesManager";
 import PaymentsCalendar, { CashNeedsDialog } from "./PaymentsCalendar";
+import type { OutflowSourceSettingsRecord } from "@/lib/outflow-source-settings";
 
 const ExpenseDialog = dynamic(
   () => import("@/components/expenses/ExpenseDialog").then((mod) => mod.ExpenseDialog),
@@ -30,15 +31,32 @@ type Props = {
   properties: Option[];
   orders: Option[];
   accounts: Account[];
+  // Per-source settings (alert days, account, active) for the salaries / loans /
+  // cards on the board — the alerts bar needs them; the tab loads its own rows.
+  sourceSettings: OutflowSourceSettingsRecord;
   expenseMissingSchema: boolean;
+  // Set when this load's recurring-expense generator failed — the board may be
+  // missing this month's bills, and the user must know that rather than trust it.
+  generatorError?: string | null;
 };
 
 const TABS = [
-  { key: "calendar", label: "תשלומים", icon: CalendarIcon },
-  { key: "recurring", label: "הוצאות קבועות", icon: RecurringIcon },
+  // The board itself.
+  { key: "calendar", label: "לוח תשלומים", icon: CalendarIcon },
+  // What feeds it: bills AND the other fixed outflows (salaries, loans, cards),
+  // one list by day with each one's rules — named for what it answers.
+  { key: "recurring", label: "פירוט", icon: RecurringIcon },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
+
+// The active tab lives in the URL (`?tab=recurring`; the calendar is the
+// default and writes nothing) so a refresh, or Back from a source page, returns
+// to the tab the user was on.
+const TAB_PARAM = "tab";
+function tabFromParam(value: string | null): TabKey {
+  return value === "recurring" ? "recurring" : "calendar";
+}
 
 // The יומן תשלומים hub: a calendar/list of upcoming payments + management of the
 // recurring-expense templates that feed it.
@@ -50,37 +68,32 @@ export default function PaymentsHubClient({
   properties,
   orders,
   accounts,
+  sourceSettings,
   expenseMissingSchema,
+  generatorError = null,
 }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
-  const [activeTab, setActiveTab] = useState<TabKey>("calendar");
+  const [activeTab, setActiveTab] = useState<TabKey>(() => tabFromParam(searchParams.get(TAB_PARAM)));
+  const changeTab = (next: TabKey) => {
+    setActiveTab(next);
+    replaceSearchParams({ [TAB_PARAM]: next === "calendar" ? null : next });
+  };
   const [newTemplateOpen, setNewTemplateOpen] = useState(false);
   const [cashOpen, setCashOpen] = useState(false);
-  const [generating, setGenerating] = useState(false);
-
-  async function generateCycle() {
-    setGenerating(true);
-    try {
-      const res = await fetch("/api/recurring-expenses/generate", { method: "POST" });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error("שגיאה ביצירת הוצאות קבועות", { description: toHebrewError(json?.error, "") });
-        return;
-      }
-      startTransition(() => {
-        router.refresh();
-      });
-      toast.success("המחזור נוצר", {
-        description: `נוצרו ${typeof json?.createdCount === "number" ? json.createdCount : 0} הוצאות.`,
-      });
-    } finally {
-      setGenerating(false);
-    }
-  }
+  // "השלמת חיובים חסרים" for every template — lives up here beside "new", not
+  // buried above the list.
+  const backfill = useBackfillMissing();
 
   return (
-    <Tabs dir="rtl" value={activeTab} onValueChange={(value) => setActiveTab(value as TabKey)} className="space-y-4">
+    <Tabs dir="rtl" value={activeTab} onValueChange={(value) => changeTab(tabFromParam(value))} className="space-y-4">
+      {generatorError ? (
+        <div role="status" className="flex items-center gap-2 rounded-xl border border-warning/40 bg-warning/[0.05] px-3 py-2 text-sm text-warning-strong">
+          <WarningIcon className="h-4 w-4 shrink-0" />
+          <span>ההוצאות הקבועות של החודש לא נוצרו בטעינה זו — הלוח עלול להיות חסר. {generatorError}</span>
+        </div>
+      ) : null}
       {/* Header — tab bar + the actions for the active tab, on one baseline */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <TabsList variant="underline" className="w-auto">
@@ -107,13 +120,23 @@ export default function PaymentsHubClient({
             </>
           ) : (
             <>
+              {/* No "create current cycle" button: the generator runs on every
+                  page load (memoized for a minute) and walks every period from
+                  each bill's start date. "השלמת חיובים חסרים" on the list is the
+                  explicit action, with a preview. */}
               <Button type="button" size="sm" onClick={() => setNewTemplateOpen(true)} disabled={expenseMissingSchema}>
                 <AddIcon className="h-4 w-4" />
                 הוצאה קבועה חדשה
               </Button>
-              <Button type="button" size="sm" variant="outline" onClick={() => void generateCycle()} disabled={generating || expenseMissingSchema}>
-                <RefreshIcon className={`h-4 w-4 ${generating ? "animate-spin" : ""}`} />
-                {generating ? "מייצר..." : "צור מחזור נוכחי"}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void backfill.open({ id: null, label: "כל ההוצאות הקבועות" })}
+                disabled={expenseMissingSchema}
+              >
+                <AddDateIcon className="h-4 w-4" />
+                השלמת חיובים חסרים
               </Button>
             </>
           )}
@@ -128,6 +151,8 @@ export default function PaymentsHubClient({
           properties={properties}
           orders={orders}
           accounts={accounts}
+          templates={templates}
+          sourceSettings={sourceSettings}
         />
       </TabsContent>
       <TabsContent value="recurring">
@@ -150,6 +175,8 @@ export default function PaymentsHubClient({
         accounts={accounts}
         todayIso={todayIso}
       />
+
+      {backfill.dialog}
 
       {/* New recurring template (recurring tab) — opens in recurring mode */}
       <ExpenseDialog

@@ -11,6 +11,8 @@ import {
 import { addWorkingDays, subtractWorkingDays, toDateOnly } from "@/lib/dashboard/week";
 import { getRuleSettings, getDunningStages } from "@/lib/notifications/alert-config";
 import { loadProjectedRecurringExpenses } from "@/lib/payables";
+import { loadOutflowSources } from "@/lib/outflow-sources";
+import type { OutflowSourceKind } from "@/lib/outflow-source-settings";
 
 // ---------------------------------------------------------------------------
 // Reminders/Alerts unification — Phase 2: the system-rule engine.
@@ -650,12 +652,31 @@ const recurringPaymentReminderRule: SystemRule = {
       if ((error.message ?? "").toLowerCase().includes("reminder_work_days_before")) return [];
       throwIf(error, "recurring_expense_templates(reminder)");
     }
+    // A period whose row was already confirmed paid (paid early, or a standing
+    // order that already landed) must not keep nagging until its date.
+    const templateIds = ((data ?? []) as Row[]).map((t) => getString(t, "id")).filter((v): v is string => Boolean(v));
+    const paidPeriods = new Set<string>();
+    if (templateIds.length > 0) {
+      const { data: paidRows, error: paidError } = await supabase
+        .from("expenses")
+        .select("recurring_expense_template_id,recurrence_key")
+        .in("recurring_expense_template_id", templateIds)
+        .eq("payment_status", "paid")
+        .range(0, 4999);
+      throwIf(paidError, "expenses(paid recurring)");
+      for (const r of (paidRows ?? []) as Row[]) {
+        const id = getString(r, "recurring_expense_template_id");
+        const key = getString(r, "recurrence_key");
+        if (id && key) paidPeriods.add(`${id}:${key}`);
+      }
+    }
     const items: SystemReminderItem[] = [];
     for (const t of (data ?? []) as Row[]) {
       const n = getNumber(t, "reminder_work_days_before") ?? 0;
       if (n <= 0) continue;
       const occ = nextRecurringOccurrence(t, ctx.today);
       if (!occ) continue;
+      if (paidPeriods.has(`${getString(t, "id") ?? ""}:${occ.key}`)) continue;
       const remindIso = isoOf(subtractWorkingDays(occ.date, n));
       const occIso = isoOf(occ.date);
       if (ctx.todayIso < remindIso || ctx.todayIso > occIso) continue; // outside the heads-up window
@@ -678,6 +699,58 @@ const recurringPaymentReminderRule: SystemRule = {
     return items;
   },
 };
+
+// ── Heads-ups for the board's OTHER outflows (salaries, loan instalments,
+//    card charges) — "מקורות נוספים" on the תשלומים קבועים tab ─────────────────
+// One rule per kind (each toggleable in Settings → התראות), all built the same
+// way: N WORK days before the source's next date until the date itself (Fri+Sat
+// don't count — same as recurring bills). N and the default come from
+// lib/outflow-sources (stored per source; cards default to 3, the rest to off).
+// The item id is the calendar item the alert points at, so the reminder
+// auto-closes once that item is gone (paid / recorded / date passed).
+function outflowSourceReminderRule(kind: OutflowSourceKind, key: string, label: string): SystemRule {
+  return {
+    key,
+    label,
+    async evaluate(supabase, ctx) {
+      const rows = await loadOutflowSources(supabase, { todayIso: ctx.todayIso, throwOnError: true });
+      const out: SystemReminderItem[] = [];
+      for (const row of rows) {
+        if (row.kind !== kind || !row.nextDate || !row.focusId) continue;
+        // Switched off on the tab, or this occurrence is already paid → nothing to say.
+        if (!row.isActive || row.settled) continue;
+        const n = row.effectiveReminderDays;
+        if (n <= 0) continue;
+        const due = toDateOnly(row.nextDate);
+        if (!due) continue;
+        const remindIso = isoOf(subtractWorkingDays(due, n));
+        if (ctx.todayIso < remindIso || ctx.todayIso > row.nextDate) continue;
+        const day = `${row.nextDate.slice(8, 10)}/${row.nextDate.slice(5, 7)}`;
+        const amountText =
+          row.amount != null && row.amount > 0
+            ? ils(row.amount)
+            : kind === "card"
+              ? "הסכום ייקבע כשהדף יעובד"
+              : "סכום לא ידוע";
+        out.push({
+          key: row.focusId,
+          title: `תשלום קרוב: ${row.name}`,
+          content: `${amountText} · צפוי ב-${day}.`,
+          url: `${buildFocusHref("/financial/payments-calendar", row.focusId)}&month=${row.nextDate.slice(0, 7)}`,
+          severity: "info" as Severity,
+          behavior: "ping_once" as Behavior,
+          audienceRole: "office" as AudienceRole,
+          links: { expense_id: null },
+        });
+      }
+      return out;
+    },
+  };
+}
+
+const salaryPaymentReminderRule = outflowSourceReminderRule("salary", "salary_payment_reminder", "תזכורות למשכורות");
+const loanInstallmentReminderRule = outflowSourceReminderRule("loan", "loan_installment_reminder", "תזכורות להחזרי הלוואות");
+const cardChargeUpcomingRule = outflowSourceReminderRule("card", "card_charge_upcoming", "חיוב כרטיס אשראי קרוב");
 
 const recurringExpenseConfirmRule: SystemRule = {
   key: "recurring_expense_confirm",
@@ -1008,6 +1081,9 @@ export const SYSTEM_RULES: SystemRule[] = [
   paymentDueTodayRule,
   paymentOutflowDueRule,
   recurringPaymentReminderRule,
+  salaryPaymentReminderRule,
+  loanInstallmentReminderRule,
+  cardChargeUpcomingRule,
   promiseBrokenRule,
   recurringExpenseConfirmRule,
   // New coverage (Phase 5): tasks & projects

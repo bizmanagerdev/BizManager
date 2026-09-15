@@ -47,6 +47,14 @@ type Payload = {
   amount_propagation?: "none" | "unpaid" | "all" | null;
 };
 
+/** The RPCs live in migrations; say which one instead of a raw PG error. */
+function isMissingFunction(message: string | undefined) {
+  const value = (message ?? "").toLowerCase();
+  return value.includes("does not exist") || value.includes("could not find") || value.includes("schema cache");
+}
+const MISSING_GENERATOR = "המחולל של ההוצאות הקבועות לא מותקן במסד הנתונים — צריך להריץ את המיגרציות של recurring_expense.";
+const MISSING_BACKFILL = "השלמת חיובים חסרים לא מותקנת — צריך להריץ את המיגרציה 20260809000000_recurring_expense_backfill_missing.";
+
 function normalizeId(value: unknown) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -243,7 +251,9 @@ export async function POST(req: Request) {
     const amountChanged =
       previousAmount !== null && Number.isFinite(effectiveAmount) && previousAmount !== effectiveAmount;
 
-    if (id && propagation !== "none" && amountChanged && !isVariableAmount) {
+    // A variable bill's ESTIMATE propagates the same way (its unpaid rows carry
+    // the estimate until confirmed); an estimate of 0 never overwrites anything.
+    if (id && propagation !== "none" && amountChanged && effectiveAmount > 0) {
       if (propagation === "unpaid") {
         // Nothing has moved on these yet, so re-pricing them rewrites no history.
         const { data, error } = await supabase
@@ -283,25 +293,37 @@ export async function POST(req: Request) {
     // saved after today's run would produce nothing until tomorrow: its periods
     // would show in the calendar only as FORECASTS (always rendered unpaid, even
     // for a standing order) and be absent from the ledger and the bank comparison.
-    // Saving is exactly the moment to run it.
+    // Saving is exactly the moment to run it. Generating never fails the save —
+    // but a failure is REPORTED (`generationError`), because "I moved the start
+    // date back and nothing appeared" is indistinguishable from a bug when the
+    // only signal is silence.
     let generatedCount = 0;
+    let generationError: string | null = null;
     try {
       invalidateRecurringExpensesEnsureCache();
       const generated = await ensureRecurringExpensesForDate(supabase);
       generatedCount += generated.createdCount;
-      // Also fill any PAST period the daily generator won't touch (it only
-      // back-fills standing orders; a manual template gets the current period
-      // only). No-op when migration 20260809000000 isn't deployed yet.
+      if (!generated.ok) generationError = generated.error ?? "יצירת החיובים נכשלה.";
+      else if (generated.skippedMissingSchema) generationError = MISSING_GENERATOR;
+      // Also fill any PAST period. The generator (20260915123909) walks every
+      // period from the start date for both kinds of template, so this is now a
+      // safety net for a DB still on the older generator (current period only).
       const { data: backfilled, error: backfillError } = await supabase.rpc(
         "backfill_recurring_expense",
         { p_template_id: templateId }
       );
-      if (!backfillError) generatedCount += Number(backfilled) || 0;
-    } catch {
-      // Generating is a convenience on top of the save — never fail the save for it.
+      if (backfillError) {
+        generationError ??= isMissingFunction(backfillError.message)
+          ? MISSING_BACKFILL
+          : toHebrewError(backfillError.message);
+      } else {
+        generatedCount += Number(backfilled) || 0;
+      }
+    } catch (err) {
+      generationError ??= toHebrewError(err, "יצירת החיובים נכשלה.");
     }
 
-    return NextResponse.json({ ok: true, id: templateId, repricedCount, generatedCount });
+    return NextResponse.json({ ok: true, id: templateId, repricedCount, generatedCount, generationError });
   } catch (err: unknown) {
     const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });

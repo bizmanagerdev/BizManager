@@ -353,7 +353,7 @@ export default function FinancialPageClient({
 
   // ── Ledger-only client controls (instant, no route reload) ──────────────────
   const [ledgerVisible, setLedgerVisible] = useState(60);
-  const [ledgerSearch, setLedgerSearch] = useState("");
+  const [ledgerSearch, setLedgerSearch] = useState(initialFilters.q);
   const [ledgerMonth, setLedgerMonth] = useState("");
   const [ledgerSort, setLedgerSort] = useState<{ key: "date" | "amount" | "domain"; dir: "asc" | "desc" }>({
     key: "date",
@@ -363,7 +363,7 @@ export default function FinancialPageClient({
   const ledgerSentinelRef = useRef<HTMLDivElement>(null);
   const ledgerMobileSentinelRef = useRef<HTMLDivElement>(null);
   const [historyVisible, setHistoryVisible] = useState(60);
-  const [historySearch, setHistorySearch] = useState("");
+  const [historySearch, setHistorySearch] = useState(initialFilters.q);
   const historyScrollRef = useRef<HTMLDivElement>(null);
   const historySentinelRef = useRef<HTMLDivElement>(null);
   const historyMobileSentinelRef = useRef<HTMLDivElement>(null);
@@ -405,6 +405,26 @@ export default function FinancialPageClient({
       return cmp !== 0 ? cmp : b.id.localeCompare(a.id);
     });
   }, [ledgerEntries, historySearch, data.todayIso]);
+
+  // Back/forward changes the URL's `q` without remounting this component —
+  // mirror it into the boxes, unless the user is mid-typing (debounce pending).
+  useEffect(() => {
+    if (queryDebounceRef.current) return;
+    setQuery(initialFilters.q);
+    setHistorySearch(initialFilters.q);
+    setLedgerSearch(initialFilters.q);
+  }, [initialFilters.q]);
+
+  // The lists hold only the newest entries (the server caps them) — say so, and
+  // that search + date filters cover the whole period, so "5 מתוך 5" is never
+  // mistaken for "that's all there is".
+  const ledgerCapNote =
+    data.ledgerTotalCount > ledgerEntries.length ? (
+      <span className="mt-1 block text-xs text-muted-foreground">
+        מוצגות {ledgerEntries.length.toLocaleString("he-IL")} התנועות האחרונות מתוך{" "}
+        {data.ledgerTotalCount.toLocaleString("he-IL")} — חיפוש וסינון תאריכים חלים על כל התקופה.
+      </span>
+    ) : null;
 
   const pagedHistoryEntries = displayHistory.slice(0, historyVisible);
   const historyHasMore = pagedHistoryEntries.length < displayHistory.length;
@@ -568,6 +588,26 @@ export default function FinancialPageClient({
     }, { pending: true });
   };
 
+  // ONE search for the page. The filter bar, the היסטוריה box and the יומן box
+  // all drive the same server-side `q`: the lists the client holds are capped
+  // at the newest entries (LEDGER_MAX), so a client-only search silently
+  // misses anything older than the cap — the server filter runs BEFORE the
+  // cap and covers the whole scan window. The client filter still narrows the
+  // list instantly while the refresh is in flight, and `q` lives in the URL,
+  // so the search survives a refresh and the Back button.
+  const applySearch = (next: string) => {
+    setQuery(next);
+    setHistorySearch(next);
+    setLedgerSearch(next);
+    setHistoryVisible(60);
+    setLedgerVisible(60);
+    if (queryDebounceRef.current) clearTimeout(queryDebounceRef.current);
+    queryDebounceRef.current = setTimeout(() => {
+      queryDebounceRef.current = null;
+      replaceFilters({ q: next, ledgerPage: 1, upcomingPage: 1 });
+    }, 300);
+  };
+
   // Set both ends of the date range in one route update (used by the period chips
   // and the month picker). Empty strings clear the range.
   const applyRange = (nextFrom: string, nextTo: string) => {
@@ -578,6 +618,8 @@ export default function FinancialPageClient({
 
   const resetFilters = () => {
     setQuery("");
+    setHistorySearch("");
+    setLedgerSearch("");
     setFrom("");
     setTo("");
     setDomain("");
@@ -609,6 +651,8 @@ export default function FinancialPageClient({
   const [markPaidAccountId, setMarkPaidAccountId] = useState<string>("");
   const [markPaidAccountsList, setMarkPaidAccountsList] = useState<Account[]>([]);
   const [markPaidDate, setMarkPaidDate] = useState<string>(todayIsoDate());
+  // The real figure for a row that still carries a variable bill's ESTIMATE.
+  const [markPaidAmount, setMarkPaidAmount] = useState<string>("");
   const [expenseCreateOpen, setExpenseCreateOpen] = useState(false);
   const [incomeCreateOpen, setIncomeCreateOpen] = useState(false);
   const [incomeAccountsList, setIncomeAccountsList] = useState<Account[]>([]);
@@ -657,6 +701,9 @@ export default function FinancialPageClient({
     if (!isEditableExpenseEntry(entry)) return;
     setMarkPaidMethod(entry.expensePaymentMethod ?? "");
     setMarkPaidAccountId(entry.expenseAccountId ?? "");
+    // A variable bill's row holds only its estimate — seed it so the user
+    // corrects a number instead of typing one from scratch.
+    setMarkPaidAmount(entry.expenseVariableEstimate ? String(entry.amount) : "");
     // Default the pay date to the scheduled date if it's already due, else today.
     const scheduled = entry.recordedDate;
     setMarkPaidDate(scheduled && scheduled <= data.todayIso ? scheduled : todayIsoDate());
@@ -669,10 +716,16 @@ export default function FinancialPageClient({
       toast.error("יש לבחור חשבון לתנועה.");
       return;
     }
+    const realAmount = Number(markPaidAmount);
+    if (markPaidExpense.expenseVariableEstimate && !(Number.isFinite(realAmount) && realAmount > 0)) {
+      toast.error("יש להזין את הסכום ששולם בפועל.");
+      return;
+    }
     const target = markPaidExpense;
     const method = markPaidMethod;
     const accountId = markPaidAccountId;
     const paidDate = markPaidDate;
+    const amountToRecord = target.expenseVariableEstimate ? realAmount : null;
     setMarkPaidExpense(null);
     scheduleDeferredEdit({
       scope: "financial-entry",
@@ -681,13 +734,18 @@ export default function FinancialPageClient({
       // Only the fields this list actually renders (status badge + method
       // label) — stage/flowDate stay as-is for the undo window and catch up on
       // the router.refresh() below once the real mutation lands.
-      patch: { paymentStatus: "paid", expensePaymentMethod: method || null },
+      patch: {
+        paymentStatus: "paid",
+        expensePaymentMethod: method || null,
+        ...(amountToRecord != null ? { amount: amountToRecord, expenseVariableEstimate: false } : {}),
+      },
       onCommit: async () => {
         const res = await fetch("/api/expenses/mark-paid", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             id: target.expenseId,
+            amount: amountToRecord,
             payment_method: method || null,
             account_id: accountId || null,
             paid_date: paidDate || null,
@@ -987,14 +1045,7 @@ export default function FinancialPageClient({
               <SearchIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={query}
-                onChange={(event) => {
-                  const nextValue = event.target.value;
-                  setQuery(nextValue);
-                  if (queryDebounceRef.current) clearTimeout(queryDebounceRef.current);
-                  queryDebounceRef.current = setTimeout(() => {
-                    replaceFilters({ q: nextValue, ledgerPage: 1, upcomingPage: 1 });
-                  }, 300);
-                }}
+                onChange={(event) => applySearch(event.target.value)}
                 placeholder="חפש לפי תיאור, מקור, תחום או אסמכתא..."
                 className="pr-9"
               />
@@ -1373,10 +1424,7 @@ export default function FinancialPageClient({
               <SearchIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={historySearch}
-                onChange={(e) => {
-                  setHistoryVisible(60);
-                  setHistorySearch(e.target.value);
-                }}
+                onChange={(e) => applySearch(e.target.value)}
                 placeholder="חיפוש (פירוט, מקור, תחום)"
                 className="h-9 pr-9"
               />
@@ -1386,10 +1434,7 @@ export default function FinancialPageClient({
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => {
-                  setHistoryVisible(60);
-                  setHistorySearch("");
-                }}
+                onClick={() => applySearch("")}
               >
                 ניקוי
               </Button>
@@ -1548,6 +1593,7 @@ export default function FinancialPageClient({
               {historyHasMore ? <div ref={historyMobileSentinelRef} className="h-1 md:hidden" /> : null}
               <div className="pt-3 text-center text-xs text-muted-foreground">
                 מציג {pagedHistoryEntries.length} מתוך {displayHistory.length} תנועות
+                {ledgerCapNote}
               </div>
             </>
           )}
@@ -1756,10 +1802,7 @@ export default function FinancialPageClient({
               <SearchIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={ledgerSearch}
-                onChange={(e) => {
-                  setLedgerVisible(60);
-                  setLedgerSearch(e.target.value);
-                }}
+                onChange={(e) => applySearch(e.target.value)}
                 placeholder="חיפוש ביומן (פירוט, מקור, תחום)"
                 className="h-9 pr-9"
               />
@@ -1782,8 +1825,7 @@ export default function FinancialPageClient({
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  setLedgerVisible(60);
-                  setLedgerSearch("");
+                  applySearch("");
                   setLedgerMonth("");
                 }}
               >
@@ -2054,6 +2096,7 @@ export default function FinancialPageClient({
               {ledgerHasMore ? <div ref={ledgerMobileSentinelRef} className="h-1 md:hidden" /> : null}
               <div className="pt-3 text-center text-xs text-muted-foreground">
                 מציג {pagedLedgerEntries.length} מתוך {displayLedger.length} תנועות
+                {ledgerCapNote}
                 {data.ledgerTotalCount > ledgerEntries.length
                   ? " · המערכת טוענת עד 1500 — סננו לפי תאריך לצפייה בנוספות"
                   : ""}
@@ -2328,6 +2371,7 @@ export default function FinancialPageClient({
           payment_status: activeEditingExpense.paymentStatus,
           paid_amount: activeEditingExpense.expensePaidAmount ?? null,
           payment_method: activeEditingExpense.expensePaymentMethod ?? null,
+          paid_date: activeEditingExpense.expensePaidDate ?? null,
           account_id: activeEditingExpense.expenseAccountId ?? null,
           project_id: activeEditingExpense.expenseProjectId,
           order_id: activeEditingExpense.expenseOrderId,
@@ -2391,11 +2435,20 @@ export default function FinancialPageClient({
                 <div className="font-medium">{markPaidExpense.description}</div>
                 <div className="mt-1 text-muted-foreground">{markPaidExpense.sourceLabel}</div>
                 <div dir="ltr" className="mt-2 text-left font-semibold tabular-nums">
-                  -{formatCurrency(markPaidExpense.amount)}
+                  {markPaidExpense.expenseVariableEstimate ? "~" : ""}-{formatCurrency(markPaidExpense.amount)}
                 </div>
+                {markPaidExpense.expenseVariableEstimate ? (
+                  <div className="mt-1 text-xs text-muted-foreground">הסכום הוא הערכה — הזינו את הסכום ששולם בפועל.</div>
+                ) : null}
               </div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {markPaidExpense.expenseVariableEstimate ? (
+                  <div className="space-y-1 sm:col-span-2">
+                    <div className="text-sm font-medium">כמה שולם בפועל? *</div>
+                    <CurrencyInput value={markPaidAmount} onChange={(event) => setMarkPaidAmount(event.target.value)} />
+                  </div>
+                ) : null}
                 <div className="space-y-1">
                   <div className="text-sm font-medium">אמצעי תשלום</div>
                   <NativeSelect

@@ -452,6 +452,9 @@ export default function ProjectMovements({
     return (
       <Fragment key={movement.key}>
         <tr
+          // Deep-link target: the payments calendar's "למקור" opens this page at
+          // `?focus=expense:<uuid>` and FocusHighlighter flashes this row.
+          data-focus-id={movement.key}
           className={cn(
             "hover:bg-accent/40",
             // The border marks the end of this movement's own block — it
@@ -557,7 +560,7 @@ export default function ProjectMovements({
       Boolean(movement.onDelete);
     const open = expandable && Boolean(openKeys[movement.key]);
     return (
-      <li key={movement.key}>
+      <li key={movement.key} data-focus-id={movement.key}>
         <SwipeActions
           className="rounded-none"
           open={swipedKey === movement.key}

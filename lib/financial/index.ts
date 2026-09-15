@@ -18,6 +18,7 @@ import {
   scanPaymentRows,
   scanProjectRows,
   scanWorkerPaymentRows,
+  fetchRecurringTemplateMeta,
 } from "./db";
 import {
   aggregateProfitLoss,
@@ -119,7 +120,7 @@ export async function loadFinancialEntries(
   // `await`ed after everything else had already resolved).
   const loansPromise = customerId ? Promise.resolve([] as Loan[]) : fetchLoans(supabase);
 
-  const [paymentRows, expenseRows, workerPaymentsResult, projectRows, orderRows] = await Promise.all([
+  const [paymentRows, expenseRows, workerPaymentsResult, projectRows, orderRows, templateMetaById] = await Promise.all([
     scanPaymentRows(supabase, scanSince),
     scanExpenseRows(supabase, scanSince),
     (async () => {
@@ -152,6 +153,7 @@ export async function loadFinancialEntries(
     })(),
     scanProjectRows(supabase, scanSince),
     scanOrderRows(supabase, scanSince),
+    fetchRecurringTemplateMeta(supabase),
   ]);
 
   const paymentLinks = paymentRows.map(resolvePaymentLinks);
@@ -260,7 +262,7 @@ export async function loadFinancialEntries(
   const sharedArgs = { customerId, customerProjectSet, referenceDate, projectsById, propertiesById, propertyCustomersById, recordedByNames };
 
   const payments = buildPaymentEntries({ paymentRows, ordersById, ...sharedArgs });
-  const expenses = buildExpenseEntries({ expenseRows, ordersById, projectExpenseLinksByExpenseId, ...sharedArgs });
+  const expenses = buildExpenseEntries({ expenseRows, ordersById, projectExpenseLinksByExpenseId, templateMetaById, ...sharedArgs });
   const workerPaymentEntries = buildWorkerPaymentEntries({
     allocations: workerPaymentsResult.allocations,
     workerPaymentById,

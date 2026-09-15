@@ -9,6 +9,9 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 //
 // GET  — preview: which periods are missing, per template. Changes nothing.
 // POST — create them (idempotent; re-running finds nothing left).
+// Variable-amount templates are included (20260915130752): a row is created
+// with the estimate as not_paid; the DB functions themselves return nothing
+// for a variable template whose estimate is 0.
 
 type MissingRow = { recurrence_key: string; expense_date: string; would_be_paid: boolean };
 
@@ -33,8 +36,7 @@ export async function GET(req: Request) {
     let query = supabase
       .from("recurring_expense_templates")
       .select("id,template_name,auto_paid")
-      .eq("is_active", true)
-      .eq("is_variable_amount", false);
+      .eq("is_active", true);
     if (id) query = query.eq("id", id);
     const { data: templates, error } = await query;
     if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
@@ -90,8 +92,7 @@ export async function POST(req: Request) {
     let query = supabase
       .from("recurring_expense_templates")
       .select("id,template_name,auto_paid")
-      .eq("is_active", true)
-      .eq("is_variable_amount", false);
+      .eq("is_active", true);
     if (id) query = query.eq("id", id);
     const { data: templates, error } = await query;
     if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });

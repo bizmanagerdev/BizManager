@@ -27,6 +27,10 @@ export async function POST(req: Request) {
       payment_method?: string | null;
       account_id?: string | null;
       paid_date?: string | null;
+      // The real figure for a row that was generated from a variable-amount
+      // (סכום משתנה) template and so far only carries the estimate. Optional;
+      // ignored unless a positive number.
+      amount?: number | string | null;
     };
 
     const expenseId = typeof body.id === "string" ? body.id.trim() : "";
@@ -43,6 +47,10 @@ export async function POST(req: Request) {
     const paidDate = /^\d{4}-\d{2}-\d{2}$/.test(rawPaidDate)
       ? rawPaidDate
       : new Date().toISOString().slice(0, 10);
+    const rawAmount = typeof body.amount === "number" ? body.amount
+      : typeof body.amount === "string" && body.amount.trim() ? Number(body.amount) : NaN;
+    // When given, the row's amount becomes the real one and it reads as fully paid.
+    const amountPatch = Number.isFinite(rawAmount) && rawAmount > 0 ? { amount: rawAmount, paid_amount: rawAmount } : {};
 
     const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
@@ -58,7 +66,7 @@ export async function POST(req: Request) {
     {
       const { data, error } = await supabase
         .from("expenses")
-        .update({ payment_status: "paid", payment_method: paymentMethod, account_id: accountId, paid_date: paidDate })
+        .update({ ...amountPatch, payment_status: "paid", payment_method: paymentMethod, account_id: accountId, paid_date: paidDate })
         .eq("id", expenseId)
         .select(selectExpense)
         .maybeSingle();
@@ -69,7 +77,7 @@ export async function POST(req: Request) {
     if (updateError && isMissingColumn(updateError, "paid_date")) {
       const { data, error } = await supabase
         .from("expenses")
-        .update({ payment_status: "paid", payment_method: paymentMethod, account_id: accountId })
+        .update({ ...amountPatch, payment_status: "paid", payment_method: paymentMethod, account_id: accountId })
         .eq("id", expenseId)
         .select(
           "id,expense_date,amount,category,description,business_domain,project_id,order_id,property_id,notes,recorded_by,payment_status,paid_amount,payment_method,account_id,created_at,updated_at"

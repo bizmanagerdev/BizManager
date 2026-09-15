@@ -432,3 +432,28 @@ export async function resolveCustomerProjectIds(supabase: SupabaseClient, custom
     .map((row) => (typeof row.id === "string" ? row.id : null))
     .filter((value): value is string => Boolean(value));
 }
+
+export type RecurringTemplateMeta = { name: string; variable: boolean };
+
+/**
+ * Recurring template id → { name, variable }, for the expense rows a template
+ * generated: the name labels them (it is what the הוצאות קבועות list and the
+ * payments calendar show; many generated rows carry no description of their
+ * own), and `variable` marks a row whose amount is only an ESTIMATE until it is
+ * confirmed with the real figure. Empty on any error — a label fallback must
+ * never fail the scan.
+ */
+export async function fetchRecurringTemplateMeta(supabase: SupabaseClient): Promise<Map<string, RecurringTemplateMeta>> {
+  try {
+    const { data, error } = await supabase.from("recurring_expense_templates").select("id,template_name,is_variable_amount");
+    if (error) return new Map();
+    const meta = new Map<string, RecurringTemplateMeta>();
+    for (const row of (data ?? []) as Array<{ id: string | null; template_name: string | null; is_variable_amount: boolean | null }>) {
+      const name = row.template_name?.trim();
+      if (row.id && name) meta.set(row.id, { name, variable: row.is_variable_amount === true });
+    }
+    return meta;
+  } catch {
+    return new Map();
+  }
+}

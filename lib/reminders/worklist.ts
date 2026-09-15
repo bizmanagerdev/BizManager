@@ -382,6 +382,11 @@ const COLLAPSE_META: Record<string, { label: string; href: string }> = {
   vehicle_expiry: { label: "רכבים — טסט/ביטוח/רישוי", href: "/vehicles" },
   wage_overdue: { label: "שכר עובדים לתשלום", href: "/payroll" },
   payment_outflow_due: { label: "תשלומים לתשלום", href: "/financial/payments-calendar" },
+  // Heads-ups (N work days before): one line per rule, not one per worker/loan/card.
+  recurring_payment_reminder: { label: "תשלומים קבועים קרובים", href: "/financial/payments-calendar" },
+  salary_payment_reminder: { label: "משכורות קרובות", href: "/financial/payments-calendar" },
+  loan_installment_reminder: { label: "החזרי הלוואות קרובים", href: "/financial/payments-calendar" },
+  card_charge_upcoming: { label: "חיובי כרטיס קרובים", href: "/financial/payments-calendar" },
 };
 
 export function ruleKeyOf(item: WorklistItem): string {
@@ -596,6 +601,9 @@ const RULE_NAV_URL: Record<string, string> = {
   check_deposit_due: "/checks",
   payment_outflow_due: "/financial/payments-calendar",
   recurring_payment_reminder: "/financial/payments-calendar",
+  card_charge_upcoming: "/financial/payments-calendar",
+  salary_payment_reminder: "/financial/payments-calendar",
+  loan_installment_reminder: "/financial/payments-calendar",
   recurring_expense_confirm: "/financial",
   unprocessed_items: "/financial/statements",
   // projects

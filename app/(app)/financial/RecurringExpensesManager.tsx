@@ -1,11 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { AddDateIcon, AddReminderIcon, CheckIcon, RecurringIcon, SpinnerIcon } from "@/components/ui/icons";
+import { AddDateIcon, AddReminderIcon, CheckIcon, DeleteIcon, EditIcon, ExternalLinkIcon, MoreIcon, RecurringIcon, SpinnerIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MetaRow } from "@/components/ui/meta-row";
 import { NativeSelect } from "@/components/ui/native-select";
 import { toHebrewError } from "@/lib/error-messages";
@@ -19,11 +20,31 @@ import type { Account } from "@/lib/accounts";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete } from "@/lib/undo-engine";
+import { OUTFLOW_SOURCE_KIND_LABEL, type OutflowSourceRow } from "@/lib/outflow-source-settings";
+import { buildFixedPaymentRows, summarizeFixedPayments, type FixedPaymentRow } from "@/lib/fixed-payments";
+import { useOutflowSources } from "./useOutflowSources";
+import { useBackfillMissing } from "./useBackfillMissing";
 
 const ExpenseDialog = dynamic(
   () => import("@/components/expenses/ExpenseDialog").then((mod) => mod.ExpenseDialog),
   { loading: () => null }
 );
+
+// ════════════════════════════════════════════════════════════════════════════
+// "תשלומים קבועים" — ONE list of everything that leaves the business on a fixed
+// rhythm, sorted by the day of the month it leaves on:
+//
+//   • recurring-expense TEMPLATES (הוצאות קבועות) — owned here: full edit,
+//     delete, per-bill reminder, "fill in missing months"
+//   • the OTHER SOURCES the payments board draws — a worker's monthly salary
+//     (payroll), a loan's instalment plan (the loan page), a card's monthly
+//     charge (statements). Their amounts and dates are managed THERE (למקור);
+//     here only the planning layer around each: active on the board, alert N
+//     work days before, the account it leaves from.
+//
+// The board reads by day, so this list reads by day too — a bill on the 10th
+// sits next to the salary on the 10th, whatever kind it is.
+// ════════════════════════════════════════════════════════════════════════════
 
 type Option = {
   id: string;
@@ -61,12 +82,6 @@ export type RecurringExpenseTemplateItem = {
   is_active: boolean;
 };
 
-/** What /api/recurring-expenses/backfill reports as missing, per template. */
-type BackfillPreview = {
-  templates: Array<{ id: string; name: string; autoPaid: boolean; months: string[]; count: number }>;
-  total: number;
-};
-
 type Props = {
   templates: RecurringExpenseTemplateItem[];
   projects: Option[];
@@ -91,6 +106,14 @@ const MONTH_OPTIONS = [
   { value: "12", label: "דצמבר" },
 ] as const;
 
+const REMINDER_CHOICES: Array<{ value: number; label: string }> = [
+  { value: 0, label: "ללא תזכורת" },
+  { value: 1, label: "יום עבודה לפני" },
+  { value: 2, label: "2 ימי עבודה לפני" },
+  { value: 3, label: "3 ימי עבודה לפני" },
+  { value: 5, label: "5 ימי עבודה לפני" },
+];
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("he-IL", {
     style: "currency",
@@ -100,43 +123,8 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
-// Timestamp of the template's next payment (expense) date on/after today — used
-// to order the list "by payment date". Honors the interval (every N months),
-// phased off start_date (or today when unset).
-function nextPaymentTime(t: RecurringExpenseTemplateItem): number {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const day = t.expense_day_of_month || 1;
-  if (t.frequency === "yearly") {
-    const month = (t.expense_month_of_year || 1) - 1;
-    for (const year of [today.getFullYear(), today.getFullYear() + 1]) {
-      const last = new Date(year, month + 1, 0).getDate();
-      const cand = new Date(year, month, Math.min(day, last));
-      if (cand >= today) return cand.getTime();
-    }
-    return today.getTime();
-  }
-  const interval = Math.max(1, t.interval_months || 1);
-  const anchor = t.start_date ? new Date(t.start_date) : today;
-  const anchorIdx = anchor.getFullYear() * 12 + anchor.getMonth();
-  for (let i = 0; i < 24; i++) {
-    const base = new Date(today.getFullYear(), today.getMonth() + i, 1);
-    const diff = base.getFullYear() * 12 + base.getMonth() - anchorIdx;
-    if (diff < 0 || diff % interval !== 0) continue;
-    const last = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
-    const cand = new Date(base.getFullYear(), base.getMonth(), Math.min(day, last));
-    if (cand >= today) return cand.getTime();
-  }
-  return today.getTime();
-}
-
-// Human cadence label — "חודשי" / "כל חודשיים" / "כל 3 חודשים" / "שנתי".
-function cadenceLabel(t: RecurringExpenseTemplateItem): string {
-  if (t.frequency === "yearly") return "שנתי";
-  const n = Math.max(1, t.interval_months || 1);
-  if (n === 1) return "חודשי";
-  if (n === 2) return "כל חודשיים";
-  return `כל ${n} חודשים`;
+function fmtDay(iso: string) {
+  return `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(2, 4)}`;
 }
 
 // The recurring payment timing, NOT a concrete date — a monthly bill leaves on
@@ -174,107 +162,63 @@ function secondaryLines(t: RecurringExpenseTemplateItem): string[] {
   return desc && desc !== name ? [desc] : [];
 }
 
+// Where a source's own numbers live — said plainly, since this list can't edit them.
+const SOURCE_OWNER: Record<OutflowSourceRow["kind"], string> = {
+  salary: "מנוהל בשכר",
+  loan: "מנוהל בדף ההלוואה",
+  card: "מנוהל בדפי האשראי",
+};
+
+function sourceBoardHref(row: OutflowSourceRow) {
+  if (!row.focusId || !row.nextDate) return null;
+  return `/financial/payments-calendar?focus=${encodeURIComponent(row.focusId)}&month=${row.nextDate.slice(0, 7)}`;
+}
+
+type UnifiedRow = FixedPaymentRow;
+
 export default function RecurringExpensesManager(props: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const templates = useUndoOverlay(props.templates, (t) => t.id, "recurring-expense-template");
+  const sources = useOutflowSources();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<RecurringExpenseTemplateItem | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [remindTemplate, setRemindTemplate] = useState<RecurringExpenseTemplateItem | null>(null);
   const [accountFilter, setAccountFilter] = useState("");
 
-  // ── "השלמת חיובים חסרים" ──────────────────────────────────────────────────
-  // The daily generator only runs for TODAY, and for a manual (non-standing-order)
-  // template it materializes only the current period — so months between the
-  // start date and the first run never exist. This previews what's missing and
-  // then creates it. `id: null` = every active template.
-  const [backfillTarget, setBackfillTarget] = useState<{ id: string | null; label: string } | null>(null);
-  const [backfillPreview, setBackfillPreview] = useState<BackfillPreview | null>(null);
-  const [backfillLoading, setBackfillLoading] = useState(false);
-  const [backfillRunning, setBackfillRunning] = useState(false);
-  const [backfillError, setBackfillError] = useState<string | undefined>(undefined);
+  // "השלמת חיובים חסרים" for a single row (the page header has the all-templates one).
+  const backfill = useBackfillMissing();
 
-  async function openBackfill(target: { id: string | null; label: string }) {
-    setBackfillTarget(target);
-    setBackfillPreview(null);
-    setBackfillError(undefined);
-    setBackfillLoading(true);
-    try {
-      const res = await fetch(
-        `/api/recurring-expenses/backfill${target.id ? `?id=${encodeURIComponent(target.id)}` : ""}`,
-        { cache: "no-store" }
-      );
-      const json = (await res.json().catch(() => ({}))) as BackfillPreview & { error?: string };
-      if (!res.ok) {
-        setBackfillError(toHebrewError(json.error, "בדיקת החיובים החסרים נכשלה."));
-        return;
-      }
-      setBackfillPreview({ templates: json.templates ?? [], total: json.total ?? 0 });
-    } catch (error: unknown) {
-      setBackfillError(toHebrewError(error, "בדיקת החיובים החסרים נכשלה."));
-    } finally {
-      setBackfillLoading(false);
-    }
-  }
-
-  async function runBackfill() {
-    if (!backfillTarget) return;
-    setBackfillRunning(true);
-    setBackfillError(undefined);
-    try {
-      const res = await fetch("/api/recurring-expenses/backfill", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: backfillTarget.id }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string; created?: number };
-      if (!res.ok) {
-        setBackfillError(toHebrewError(json.error, "השלמת החיובים החסרים נכשלה."));
-        return;
-      }
-      setBackfillTarget(null);
-      startTransition(() => { router.refresh(); });
-      const created = Number(json.created) || 0;
-      toast.success(created > 0 ? `נוצרו ${created} חיובים חסרים` : "לא נמצאו חיובים חסרים");
-    } catch (error: unknown) {
-      setBackfillError(toHebrewError(error, "השלמת החיובים החסרים נכשלה."));
-    } finally {
-      setBackfillRunning(false);
-    }
-  }
-
-  // Bank-account scope for the list + summary.
+  // Bank-account scope for the list + summary — templates by their account,
+  // sources by the account set for them (or their own).
+  const sourceRows = useMemo(() => sources.rows ?? [], [sources.rows]);
   const filteredTemplates = useMemo(
     () => (accountFilter ? templates.filter((t) => t.account_id === accountFilter) : templates),
     [templates, accountFilter]
   );
-  // Ordered by the day of the month the payment falls on (2nd, 9th, 10th …), then
-  // by next occurrence as a tiebreaker.
-  const sortedTemplates = useMemo(
-    () =>
-      [...filteredTemplates].sort(
-        (a, b) => (a.expense_day_of_month || 1) - (b.expense_day_of_month || 1) || nextPaymentTime(a) - nextPaymentTime(b)
-      ),
-    [filteredTemplates]
+  const filteredSources = useMemo(
+    () => (accountFilter ? sourceRows.filter((r) => (sources.stateOf(r).accountId || "") === accountFilter) : sourceRows),
+    // stateOf reads the per-row state map; its identity changes with every save.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sourceRows, accountFilter, sources.stateOf]
   );
+
+  // One list, by the day of the month the money leaves (lib/fixed-payments).
+  const rows = useMemo<UnifiedRow[]>(() => buildFixedPaymentRows(filteredTemplates, filteredSources), [filteredTemplates, filteredSources]);
+
   const accountNameById = useMemo(
     () => new Map(props.accounts.map((a) => [a.id, a.name] as const)),
     [props.accounts]
   );
-  // Total monthly commitment (fixed-amount templates only), normalized to a month:
-  // yearly ÷ 12, every-N-months ÷ N. Variable templates are counted separately.
-  // Respects the account filter so the total reflects what's shown.
-  const summary = useMemo(() => {
-    const active = filteredTemplates.filter((t) => t.is_active);
-    const variableCount = active.filter((t) => t.is_variable_amount).length;
-    const monthlyTotal = active.reduce((sum, t) => {
-      if (t.is_variable_amount) return sum;
-      const per = t.frequency === "yearly" ? t.amount / 12 : t.amount / Math.max(1, t.interval_months || 1);
-      return sum + per;
-    }, 0);
-    return { activeCount: active.length, variableCount, monthlyTotal };
-  }, [filteredTemplates]);
+
+  // The monthly-commitment pill (lib/fixed-payments): only what really leaves
+  // every month is summed; one-off loans, hourly workers and cards are counted.
+  const summary = useMemo(
+    () => summarizeFixedPayments(filteredTemplates, filteredSources, (s) => sources.stateOf(s).active),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filteredTemplates, filteredSources, sources.stateOf]
+  );
 
   function openEdit(template: RecurringExpenseTemplateItem) {
     setEditingTemplate(template);
@@ -298,10 +242,310 @@ export default function RecurringExpensesManager(props: Props) {
     });
   }
 
+  // The account filter IS the חשבון column's header on desktop (no separate
+  // "חשבון:" row); on phones it sits above the cards.
+  const accountFilterSelect = (className: string) => (
+    <NativeSelect
+      dense
+      value={accountFilter}
+      onChange={(e) => setAccountFilter(e.target.value)}
+      aria-label="סינון לפי חשבון"
+      className={`text-foreground ${className}`}
+    >
+      <option value="">כל החשבונות</option>
+      {props.accounts.map((a) => (
+        <option key={a.id} value={a.id}>{a.name}</option>
+      ))}
+    </NativeSelect>
+  );
+
+  // ── Cell renderers shared by the table and the cards ────────────────────
+  const linkedLabelOf = (template: RecurringExpenseTemplateItem) =>
+    template.project_id
+      ? props.projects.find((item) => item.id === template.project_id)?.label ?? "פרויקט"
+      : template.property_id
+        ? props.properties.find((item) => item.id === template.property_id)?.label ?? "נכס"
+        : template.order_id
+          ? props.orders.find((item) => item.id === template.order_id)?.label ?? "הזמנה"
+          : null;
+
+  const kindBadge = (row: UnifiedRow) =>
+    row.kind === "template" ? (
+      <Badge variant="neutral">הוצאה קבועה</Badge>
+    ) : (
+      <Badge variant="neutral">{OUTFLOW_SOURCE_KIND_LABEL[row.source.kind]}</Badge>
+    );
+
+  const nameCell = (row: UnifiedRow) => {
+    if (row.kind === "template") {
+      const t = row.template;
+      return (
+        <>
+          <div className="flex items-center gap-1.5">
+            <RecurringIcon className="h-3.5 w-3.5 shrink-0 text-primary" />
+            <span className="font-semibold">{t.template_name}</span>
+          </div>
+          {secondaryLines(t).map((line, i) => (
+            <div key={i} className="text-xs text-muted-foreground">{line}</div>
+          ))}
+        </>
+      );
+    }
+    const s = row.source;
+    const href = sourceBoardHref(s);
+    return (
+      <>
+        <div className="font-semibold">{s.name}</div>
+        <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          {s.nextDate ? (
+            <>
+              <span>הבא:</span>
+              {href ? (
+                <Link href={href} className="font-medium tabular-nums text-secondary underline-offset-2 hover:underline">
+                  {fmtDay(s.nextDate)}
+                </Link>
+              ) : (
+                <span className="tabular-nums">{fmtDay(s.nextDate)}</span>
+              )}
+            </>
+          ) : null}
+          {s.settled ? <Badge variant="success">שולם לחודש זה</Badge> : null}
+        </div>
+      </>
+    );
+  };
+
+  const moedCell = (row: UnifiedRow) =>
+    row.kind === "template" ? (
+      <>
+        <div className="text-lg font-bold tabular-nums leading-none">{row.template.expense_day_of_month}</div>
+        <div className="mt-0.5 text-xs text-muted-foreground">{moedSubLabel(row.template)}</div>
+      </>
+    ) : (
+      <>
+        <div className="text-lg font-bold tabular-nums leading-none">{row.day === 32 ? "—" : row.day}</div>
+        <div className="mt-0.5 text-xs text-muted-foreground">{row.source.scheduleLabel}</div>
+      </>
+    );
+
+  const domainCell = (row: UnifiedRow) => {
+    if (row.kind === "template") {
+      const linked = linkedLabelOf(row.template);
+      return (
+        <>
+          <div>{getBusinessDomainLabel(row.template.business_domain)}</div>
+          {linked ? <Badge variant="neutral" className="mt-1">{linked}</Badge> : null}
+        </>
+      );
+    }
+    return <span className="text-muted-foreground">{SOURCE_OWNER[row.source.kind]}</span>;
+  };
+
+  const amountCell = (row: UnifiedRow) => {
+    if (row.kind === "template") {
+      const t = row.template;
+      return t.is_variable_amount ? (
+        <div className="flex items-center justify-end gap-1.5">
+          {t.amount > 0 ? <span className="font-semibold tabular-nums">~{formatCurrency(t.amount)}</span> : null}
+          <Badge variant="warning">משתנה</Badge>
+        </div>
+      ) : (
+        <span className="font-semibold tabular-nums">{formatCurrency(t.amount)}</span>
+      );
+    }
+    const s = row.source;
+    return s.amount != null && s.amount > 0 ? (
+      <span className="font-semibold tabular-nums">{formatCurrency(s.amount)}</span>
+    ) : (
+      <Badge variant="warning">משתנה</Badge>
+    );
+  };
+
+  const accountCell = (row: UnifiedRow) => {
+    if (row.kind === "template") {
+      const t = row.template;
+      return <>{(t.account_id && accountNameById.get(t.account_id)) || "—"}</>;
+    }
+    const s = row.source;
+    const st = sources.stateOf(s);
+    return (
+      <NativeSelect
+        dense
+        // In the table a select must size to its longest option, not to the
+        // column — otherwise an account name reads as "מזר…".
+        className="w-full md:w-auto md:min-w-[11rem]"
+        value={st.accountId}
+        disabled={st.saving}
+        aria-label={`חשבון — ${s.name}`}
+        onChange={(e) => void sources.save(s, { accountId: e.target.value })}
+      >
+        <option value="">ללא חשבון</option>
+        {props.accounts.map((a) => (
+          <option key={a.id} value={a.id}>{a.name}</option>
+        ))}
+      </NativeSelect>
+    );
+  };
+
+  const autoPaidCell = (row: UnifiedRow) => {
+    const auto = row.kind === "template" ? row.template.auto_paid : row.source.kind === "card";
+    return auto ? (
+      <span className="inline-flex items-center gap-1 text-primary">
+        <CheckIcon className="h-4 w-4" />
+        {row.kind === "template" ? "הוראת קבע" : "אוטומטי"}
+      </span>
+    ) : (
+      <span className="text-muted-foreground">—</span>
+    );
+  };
+
+  const reminderChoicesFor = (current: number) =>
+    REMINDER_CHOICES.some((c) => c.value === current)
+      ? REMINDER_CHOICES
+      : [...REMINDER_CHOICES, { value: current, label: `${current} ימי עבודה לפני` }].sort((a, b) => a.value - b.value);
+
+  const reminderCell = (row: UnifiedRow) => {
+    if (row.kind === "template") {
+      const n = row.template.reminder_work_days_before;
+      return n ? (
+        <span className="inline-flex items-center gap-1 text-primary">
+          <AddReminderIcon className="h-4 w-4" />{n} ימי עבודה לפני
+        </span>
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      );
+    }
+    const s = row.source;
+    const st = sources.stateOf(s);
+    return (
+      <NativeSelect
+        dense
+        className="w-full md:w-auto md:min-w-[11rem]"
+        value={String(st.reminder)}
+        disabled={st.saving}
+        aria-label={`תזכורת — ${s.name}`}
+        onChange={(e) => void sources.save(s, { reminder: Number(e.target.value) })}
+      >
+        {reminderChoicesFor(st.reminder).map((c) => (
+          <option key={c.value} value={String(c.value)}>{c.label}</option>
+        ))}
+      </NativeSelect>
+    );
+  };
+
+  // Same switch the calendar toolbar uses (role=switch), so it reads as one family.
+  const activeCell = (row: UnifiedRow) => {
+    if (row.kind === "template") {
+      return row.template.is_active ? <Badge variant="success">פעיל</Badge> : <Badge variant="warning">לא פעיל</Badge>;
+    }
+    const s = row.source;
+    const st = sources.stateOf(s);
+    return (
+      <button
+        type="button"
+        role="switch"
+        aria-checked={st.active}
+        aria-label={`פעיל — ${s.name}`}
+        disabled={st.saving}
+        onClick={() => void sources.save(s, { active: !st.active })}
+        className="flex items-center gap-2 text-xs font-medium text-muted-foreground disabled:opacity-60"
+      >
+        <span className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${st.active ? "bg-primary" : "bg-muted-foreground/30"}`}>
+          <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${st.active ? "right-0.5" : "right-[18px]"}`} />
+        </span>
+        {st.active ? "פעיל" : "לא פעיל"}
+      </button>
+    );
+  };
+
+  const actionsCell = (row: UnifiedRow) => {
+    if (row.kind === "template") {
+      const t = row.template;
+      return (
+        <div className="flex items-center gap-1">
+          <Button type="button" size="icon-sm" variant="secondary" onClick={() => setRemindTemplate(t)} title="תזכורת" aria-label="תזכורת">
+            <AddReminderIcon className="h-4 w-4" />
+          </Button>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="secondary"
+            onClick={() => void backfill.open({ id: t.id, label: t.template_name })}
+            title="השלמת חיובים חסרים"
+            aria-label="השלמת חיובים חסרים"
+          >
+            <AddDateIcon className="h-4 w-4" />
+          </Button>
+          <EditButton onClick={() => openEdit(t)} label="עריכה" />
+          <DeleteButton onClick={() => setConfirmDeleteId(t.id)} />
+        </div>
+      );
+    }
+    return (
+      <Button asChild type="button" size="icon-sm" variant="secondary" title="למקור" aria-label="למקור">
+        <Link href={row.source.href}><ExternalLinkIcon className="h-4 w-4" /></Link>
+      </Button>
+    );
+  };
+
+  // Desktop table: every row's actions behind ONE ⋯ button (same as the
+  // תנועות table), so the row stays one line and the table never needs a side
+  // scroll. The mobile cards have the room and keep the buttons inline.
+  const rowMenu = (row: UnifiedRow) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+          title="פעולות"
+          aria-label={`פעולות — ${row.kind === "template" ? row.template.template_name : row.source.name}`}
+        >
+          <MoreIcon className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        {row.kind === "template" ? (
+          <>
+            <DropdownMenuItem onClick={() => setRemindTemplate(row.template)}>
+              <AddReminderIcon className="me-2 h-4 w-4" />
+              תזכורת
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void backfill.open({ id: row.template.id, label: row.template.template_name })}>
+              <AddDateIcon className="me-2 h-4 w-4" />
+              השלמת חיובים חסרים
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => openEdit(row.template)}>
+              <EditIcon className="me-2 h-4 w-4" />
+              עריכה
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setConfirmDeleteId(row.template.id)} className="text-destructive focus:text-destructive">
+              <DeleteIcon className="me-2 h-4 w-4" />
+              מחיקה
+            </DropdownMenuItem>
+          </>
+        ) : (
+          <DropdownMenuItem asChild>
+            <Link href={row.source.href}>
+              <ExternalLinkIcon className="me-2 h-4 w-4" />
+              למקור
+            </Link>
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const isOff = (row: UnifiedRow) =>
+    row.kind === "template" ? !row.template.is_active : !sources.stateOf(row.source).active;
+
+  const hasAnything = templates.length > 0 || sourceRows.length > 0;
+
   return (
     <div dir="rtl" className="space-y-4 text-right">
-      {/* Summary bar — total monthly recurring commitment + counts */}
-      {!props.missingSchema && templates.length > 0 ? (
+      {/* Summary bar — total monthly commitment + counts */}
+      {hasAnything ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-foreground p-4 text-background">
           <div>
             <div className="text-xs opacity-70">סה״כ התחייבות חודשית קבועה</div>
@@ -309,42 +553,35 @@ export default function RecurringExpensesManager(props: Props) {
           </div>
           <div className="text-sm opacity-90">
             <div className="font-medium">
-              {summary.activeCount} תבניות פעילות{summary.variableCount ? ` · ${summary.variableCount} בסכום משתנה` : ""}
+              <MetaRow
+                items={[
+                  `${summary.activeCount} הוצאות קבועות`,
+                  summary.monthlySourceCount ? `${summary.monthlySourceCount} משכורות והלוואות חודשיות` : null,
+                  summary.variableCount ? `${summary.variableCount} בסכום משתנה` : null,
+                ]}
+              />
             </div>
-            <div className="text-xs opacity-60">הסכומים הקבועים מזינים אוטומטית את היומן.</div>
+            <div className="text-xs opacity-60">
+              {sources.loading ? (
+                "טוען משכורות, הלוואות וכרטיסים..."
+              ) : (
+                <MetaRow
+                  items={[
+                    "רק מה שיוצא כל חודש",
+                    summary.oneOffLoanCount ? `${summary.oneOffLoanCount} הלוואות בהחזר חד-פעמי לא נכללות` : null,
+                    summary.hourlyCount ? `${summary.hourlyCount} עובדים לפי שעות לא נכללים` : null,
+                    summary.cardCount ? `${summary.cardCount} כרטיסי אשראי לא נכללים — הסכום ידוע רק כשהדף מעובד` : null,
+                  ]}
+                />
+              )}
+            </div>
           </div>
         </div>
       ) : null}
 
-      {/* Bank-account filter + the catch-up action for every template at once */}
-      {!props.missingSchema && templates.length > 0 ? (
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            onClick={() => void openBackfill({ id: null, label: "כל ההוצאות הקבועות" })}
-          >
-            <AddDateIcon className="h-4 w-4" />
-            השלמת חיובים חסרים
-          </Button>
-        </div>
-      ) : null}
-
-      {!props.missingSchema && templates.length > 0 && props.accounts.length > 0 ? (
-        <div className="flex items-center justify-end gap-2">
-          <span className="text-xs text-muted-foreground">חשבון:</span>
-          <NativeSelect dense
-            value={accountFilter}
-            onChange={(e) => setAccountFilter(e.target.value)}
-            aria-label="סינון לפי חשבון" className="text-foreground"
-          >
-            <option value="">כל החשבונות</option>
-            {props.accounts.map((a) => (
-              <option key={a.id} value={a.id}>{a.name}</option>
-            ))}
-          </NativeSelect>
-        </div>
+      {/* Phones have no column header to hold the filter — a bare select above the cards. */}
+      {hasAnything && props.accounts.length > 0 ? (
+        <div className="md:hidden">{accountFilterSelect("w-full")}</div>
       ) : null}
 
       {props.missingSchema ? (
@@ -353,100 +590,110 @@ export default function RecurringExpensesManager(props: Props) {
             צריך קודם להריץ את [db/sql/create_recurring_expense_templates.sql] כדי לנהל הוצאות קבועות.
           </CardContent>
         </Card>
-      ) : templates.length === 0 ? (
-        <Card>
-          <CardContent className="p-4 text-sm text-muted-foreground">
-            אין עדיין הוצאות קבועות. אפשר להתחיל משכירות, משכורות, ביטוחים, רכב, אינטרנט או כל הוצאה שחוזרת כל חודש או כל שנה.
+      ) : null}
+
+      {sources.error ? (
+        <Card className="border-destructive/40">
+          <CardContent className="p-4 text-sm text-destructive">
+            משכורות, הלוואות וכרטיסים לא נטענו: {sources.error}
           </CardContent>
         </Card>
-      ) : sortedTemplates.length === 0 ? (
+      ) : null}
+
+      {!hasAnything && !sources.loading ? (
         <Card>
           <CardContent className="p-4 text-sm text-muted-foreground">
-            אין הוצאות קבועות בחשבון שנבחר.
+            אין עדיין תשלומים קבועים. אפשר להתחיל משכירות, ביטוחים, רכב, אינטרנט או כל הוצאה שחוזרת כל חודש או כל שנה;
+            משכורות חודשיות, הלוואות פעילות וכרטיסי אשראי יופיעו כאן מעצמם.
+          </CardContent>
+        </Card>
+      ) : !hasAnything && sources.loading ? (
+        <Card>
+          <CardContent className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+            <SpinnerIcon className="h-4 w-4 animate-spin" />
+            <span>טוען משכורות, הלוואות וכרטיסים...</span>
+          </CardContent>
+        </Card>
+      ) : rows.length === 0 ? (
+        <Card>
+          <CardContent className="p-4 text-sm text-muted-foreground">
+            אין תשלומים קבועים בחשבון שנבחר.
           </CardContent>
         </Card>
       ) : (
         <>
-          <div className="space-y-2 md:hidden">
-            {sortedTemplates.map((template) => {
-              const linkedLabel =
-                template.project_id
-                  ? props.projects.find((item) => item.id === template.project_id)?.label ?? "פרויקט"
-                  : template.property_id
-                    ? props.properties.find((item) => item.id === template.property_id)?.label ?? "נכס"
-                    : template.order_id
-                      ? props.orders.find((item) => item.id === template.order_id)?.label ?? "הזמנה"
-                      : "ללא שיוך";
+          <p className="text-xs text-muted-foreground">
+            הוצאות קבועות נערכות כאן במלואן. משכורות, החזרי הלוואות וחיובי כרטיס מגיעים מהשכר, מדפי ההלוואות ומדפי האשראי —
+            הסכום והמועד נקבעים שם, וכאן רק אם המקור פעיל בלוח, התזכורת (ימי עבודה לפני — שישי ושבת לא נספרים) והחשבון.
+          </p>
 
-              return (
-                <Card key={template.id} className="overflow-hidden">
-                  <CardContent className="space-y-3 p-4 text-sm">
+          {/* Mobile */}
+          <div className="space-y-2 md:hidden">
+            {rows.map((row) => (
+              <Card key={row.id} className={`overflow-hidden ${isOff(row) ? "opacity-60" : ""}`}>
+                <CardContent className="space-y-3 p-4 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="text-xs font-semibold text-primary">
-                      מועד תשלום: <span className="tabular-nums">{payScheduleLabel(template)}</span>
+                      מועד תשלום: <span className="tabular-nums">{row.kind === "template" ? payScheduleLabel(row.template) : row.source.scheduleLabel}</span>
                     </div>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-1.5">
-                        <RecurringIcon className="h-3.5 w-3.5 shrink-0 text-primary" />
-                        <span className="font-semibold">{template.template_name}</span>
+                    {kindBadge(row)}
+                  </div>
+                  <div className="space-y-1">{nameCell(row)}</div>
+                  <div className="text-xs text-muted-foreground">{domainCell(row)}</div>
+                  <div className="grid gap-1 text-xs text-muted-foreground">
+                    <div>סכום: <span className="text-foreground">{amountCell(row)}</span></div>
+                    {row.kind === "template" ? (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <span>חשבון: <span className="text-foreground">{accountCell(row)}</span></span>
+                          {row.template.auto_paid ? <Badge variant="outline">הוראת קבע</Badge> : null}
+                        </div>
+                        {row.template.reminder_work_days_before ? (
+                          <div>תזכורת: <span className="text-foreground">{row.template.reminder_work_days_before} ימי עבודה לפני</span></div>
+                        ) : null}
+                        <div>
+                          טווח: <span className="text-foreground">{row.template.start_date || "ללא התחלה"} | {row.template.end_date || "ללא סוף"}</span>
+                        </div>
+                        {row.template.notes_template ? (
+                          <div>הערות: <span className="text-foreground">{row.template.notes_template}</span></div>
+                        ) : null}
+                      </>
+                    ) : (
+                      <div className="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-2">
+                        <label className="space-y-1">
+                          <span className="text-xs text-muted-foreground">חשבון</span>
+                          {accountCell(row)}
+                        </label>
+                        <label className="space-y-1">
+                          <span className="text-xs text-muted-foreground">תזכורת</span>
+                          {reminderCell(row)}
+                        </label>
                       </div>
-                      {secondaryLines(template).map((line, i) => (
-                        <div key={i} className="text-xs text-muted-foreground">{line}</div>
-                      ))}
-                      <div className="text-xs text-muted-foreground">{getBusinessDomainLabel(template.business_domain)}</div>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {linkedLabel ? <Badge variant="neutral">{linkedLabel}</Badge> : null}
-                      <Badge variant="outline">{cadenceLabel(template)}</Badge>
-                      {template.is_active ? <Badge variant="success">פעיל</Badge> : <Badge variant="warning">לא פעיל</Badge>}
-                    </div>
-                    <div className="grid gap-1 text-xs text-muted-foreground">
-                      <div>סכום: <span className="text-foreground">{template.is_variable_amount ? (template.amount > 0 ? `~${formatCurrency(template.amount)} (משתנה)` : "משתנה") : formatCurrency(template.amount)}</span></div>
-                      <div className="flex items-center gap-2">
-                        <span>חשבון: <span className="text-foreground">{(template.account_id && accountNameById.get(template.account_id)) || "—"}</span></span>
-                        {template.auto_paid ? <Badge variant="outline">הוראת קבע</Badge> : null}
-                      </div>
-                      {template.reminder_work_days_before ? (
-                        <div>תזכורת: <span className="text-foreground">{template.reminder_work_days_before} ימי עבודה לפני</span></div>
-                      ) : null}
-                      <div>
-                        טווח: <span className="text-foreground">{template.start_date || "ללא התחלה"} | {template.end_date || "ללא סוף"}</span>
-                      </div>
-                      {template.notes_template ? (
-                        <div>הערות: <span className="text-foreground">{template.notes_template}</span></div>
-                      ) : null}
-                    </div>
-                    <div className="flex justify-end gap-1.5">
-                      <Button type="button" size="icon-sm" variant="secondary" onClick={() => setRemindTemplate(template)} title="תזכורת" aria-label="תזכורת">
-                        <AddReminderIcon className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="secondary"
-                        onClick={() => void openBackfill({ id: template.id, label: template.template_name })}
-                        title="השלמת חיובים חסרים"
-                        aria-label="השלמת חיובים חסרים"
-                      >
-                        <AddDateIcon className="h-4 w-4" />
-                      </Button>
-                      <EditButton onClick={() => openEdit(template)} label="עריכה" />
-                      <DeleteButton onClick={() => setConfirmDeleteId(template.id)} />
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    {activeCell(row)}
+                    {actionsCell(row)}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
 
-          <div className="hidden max-h-[70vh] overflow-auto rounded-xl border md:block">
+          {/* Desktop */}
+          {/* Cells wrap rather than the table growing past the page — no side scroll. */}
+          <div className="hidden max-h-[70vh] overflow-y-auto rounded-xl border md:block">
             <table dir="rtl" className="w-full text-sm">
               <thead className="sticky top-0 z-10 border-b-2 bg-muted text-xs font-semibold text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 text-right font-medium">מועד תשלום</th>
+                  <th className="px-3 py-2 text-right font-medium">סוג</th>
                   <th className="px-3 py-2 text-right font-medium">שם ותיאור</th>
                   <th className="px-3 py-2 text-right font-medium">תחום · שיוך</th>
                   <th className="px-3 py-2 text-right font-medium">סכום</th>
-                  <th className="px-3 py-2 text-right font-medium">חשבון</th>
+                  <th className="px-3 py-2 text-right font-medium">
+                    {props.accounts.length > 0 ? accountFilterSelect("w-auto min-w-[9rem]") : "חשבון"}
+                  </th>
                   <th className="px-3 py-2 text-right font-medium">הוראת קבע</th>
                   <th className="px-3 py-2 text-right font-medium">תזכורת</th>
                   <th className="px-3 py-2 text-right font-medium">פעיל</th>
@@ -454,89 +701,30 @@ export default function RecurringExpensesManager(props: Props) {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {sortedTemplates.map((template) => {
-                  const linkedLabel =
-                    template.project_id
-                      ? props.projects.find((item) => item.id === template.project_id)?.label ?? "פרויקט"
-                      : template.property_id
-                        ? props.properties.find((item) => item.id === template.property_id)?.label ?? "נכס"
-                        : template.order_id
-                          ? props.orders.find((item) => item.id === template.order_id)?.label ?? "הזמנה"
-                          : null;
-
-                  return (
-                    <tr key={template.id} className="align-top hover:bg-secondary/10">
-                      <td className="whitespace-nowrap px-3 py-2">
-                        <div className="text-lg font-bold tabular-nums leading-none">{template.expense_day_of_month}</div>
-                        <div className="mt-0.5 text-xs text-muted-foreground">{moedSubLabel(template)}</div>
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-1.5">
-                          <RecurringIcon className="h-3.5 w-3.5 shrink-0 text-primary" />
-                          <span className="font-semibold">{template.template_name}</span>
-                        </div>
-                        {secondaryLines(template).map((line, i) => (
-                          <div key={i} className="line-clamp-1 max-w-[260px] text-xs text-muted-foreground">{line}</div>
-                        ))}
-                      </td>
-                      <td className="px-3 py-2">
-                        <div>{getBusinessDomainLabel(template.business_domain)}</div>
-                        {linkedLabel ? <Badge variant="neutral" className="mt-1">{linkedLabel}</Badge> : null}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2 text-right">
-                        {template.is_variable_amount ? (
-                          <div className="flex items-center justify-end gap-1.5">
-                            {template.amount > 0 ? <span className="font-semibold tabular-nums">~{formatCurrency(template.amount)}</span> : null}
-                            <Badge variant="warning">משתנה</Badge>
-                          </div>
-                        ) : (
-                          <span className="font-semibold tabular-nums">{formatCurrency(template.amount)}</span>
-                        )}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2">{(template.account_id && accountNameById.get(template.account_id)) || "—"}</td>
-                      <td className="whitespace-nowrap px-3 py-2">
-                        {template.auto_paid ? (
-                          <span className="inline-flex items-center gap-1 text-primary">
-                            <CheckIcon className="h-4 w-4" />הוראת קבע
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2">
-                        {template.reminder_work_days_before ? (
-                          <span className="inline-flex items-center gap-1 text-primary">
-                            <AddReminderIcon className="h-4 w-4" />{template.reminder_work_days_before} ימי עבודה לפני
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        {template.is_active ? <Badge variant="success">פעיל</Badge> : <Badge variant="warning">לא פעיל</Badge>}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2">
-                        <div className="flex items-center gap-1">
-                          <Button type="button" size="icon-sm" variant="secondary" onClick={() => setRemindTemplate(template)} title="תזכורת" aria-label="תזכורת">
-                            <AddReminderIcon className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            type="button"
-                            size="icon-sm"
-                            variant="secondary"
-                            onClick={() => void openBackfill({ id: template.id, label: template.template_name })}
-                            title="השלמת חיובים חסרים"
-                            aria-label="השלמת חיובים חסרים"
-                          >
-                            <AddDateIcon className="h-4 w-4" />
-                          </Button>
-                          <EditButton onClick={() => openEdit(template)} label="עריכה" />
-                          <DeleteButton onClick={() => setConfirmDeleteId(template.id)} />
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {rows.map((row) => (
+                  <tr key={row.id} className={`align-top hover:bg-secondary/10 ${isOff(row) ? "opacity-60" : ""}`}>
+                    <td className="whitespace-nowrap px-3 py-2">{moedCell(row)}</td>
+                    <td className="px-3 py-2">{kindBadge(row)}</td>
+                    <td className="px-3 py-2">{nameCell(row)}</td>
+                    <td className="px-3 py-2">{domainCell(row)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right">{amountCell(row)}</td>
+                    <td className="px-3 py-2">{accountCell(row)}</td>
+                    <td className="px-3 py-2">{autoPaidCell(row)}</td>
+                    <td className="px-3 py-2">{reminderCell(row)}</td>
+                    <td className="px-3 py-2">{activeCell(row)}</td>
+                    <td className="w-10 px-1 py-2">{rowMenu(row)}</td>
+                  </tr>
+                ))}
+                {sources.loading ? (
+                  <tr>
+                    <td colSpan={10} className="px-3 py-2 text-xs text-muted-foreground">
+                      <span className="inline-flex items-center gap-2">
+                        <SpinnerIcon className="h-3.5 w-3.5 animate-spin" />
+                        טוען משכורות, הלוואות וכרטיסים...
+                      </span>
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>
@@ -567,59 +755,7 @@ export default function RecurringExpensesManager(props: Props) {
         onConfirm={remove}
       />
 
-      {/* Preview first, then create — a catch-up that silently invents rows in
-          closed months would be indistinguishable from a bug. */}
-      <ConfirmDialog
-        open={Boolean(backfillTarget)}
-        onOpenChange={(next) => {
-          if (!next) {
-            setBackfillTarget(null);
-            setBackfillPreview(null);
-            setBackfillError(undefined);
-          }
-        }}
-        title="השלמת חיובים חסרים"
-        description={
-          backfillLoading
-            ? undefined
-            : backfillPreview && backfillPreview.total > 0
-              ? "אלה החיובים שהיו אמורים להיווצר ולא נוצרו. חיוב של הוראת קבע ייווצר כשולם; חיוב רגיל ייווצר כממתין לאישור תשלום."
-              : undefined
-        }
-        confirmLabel={
-          backfillPreview && backfillPreview.total > 0 ? `יצירת ${backfillPreview.total} חיובים` : "סגירה"
-        }
-        loading={backfillRunning}
-        error={backfillError}
-        onConfirm={() => {
-          if (backfillPreview && backfillPreview.total > 0) void runBackfill();
-          else setBackfillTarget(null);
-        }}
-      >
-        {backfillLoading ? (
-          <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
-            <SpinnerIcon className="h-4 w-4 animate-spin" />
-            <span>בודק אילו חיובים חסרים...</span>
-          </div>
-        ) : backfillPreview && backfillPreview.total === 0 ? (
-          <div className="py-2 text-sm text-muted-foreground">
-            לא נמצאו חיובים חסרים ב{backfillTarget?.label ?? ""}. הכול כבר נוצר.
-          </div>
-        ) : backfillPreview ? (
-          <div className="max-h-64 space-y-3 overflow-y-auto">
-            {backfillPreview.templates.map((row) => (
-              <div key={row.id} className="space-y-1">
-                <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                  <span>{row.name}</span>
-                  <Badge variant="outline">{row.count} חיובים</Badge>
-                  {row.autoPaid ? <Badge variant="outline">הוראת קבע</Badge> : null}
-                </div>
-                <MetaRow dir="ltr" className="text-xs text-muted-foreground" items={row.months} />
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </ConfirmDialog>
+      {backfill.dialog}
 
       <ReminderFormDialog
         mode="create"

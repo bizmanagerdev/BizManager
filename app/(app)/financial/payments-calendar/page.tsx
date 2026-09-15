@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ensureRecurringExpensesForDate } from "@/lib/recurring-expenses";
 import { loadPaymentCalendarItems, type PaymentCalendarItem } from "@/lib/payables";
 import { loadAccounts, type Account } from "@/lib/accounts";
+import type { OutflowSourceSettingsRecord } from "@/lib/outflow-source-settings";
 import { propertyDisplayName } from "@/lib/properties";
 import type { RecurringExpenseTemplateItem } from "@/app/(app)/financial/RecurringExpensesManager";
 import PaymentsHubClient from "./PaymentsHubClient";
@@ -39,20 +40,35 @@ export default async function PaymentsCalendarPage() {
   if (profile.role !== "admin" && profile.role !== "office") redirect("/dashboard");
 
   // Materialize any recurring expenses due up to today before reading the ledger.
-  await ensureRecurringExpensesForDate(supabase).catch(() => undefined);
+  // A failure never blocks the page, but it IS shown on it: a board whose
+  // generator silently didn't run looks complete while missing this month's
+  // bills, which is the one thing it must never do.
+  const ensure = await ensureRecurringExpensesForDate(supabase).catch((err: unknown) => ({
+    ok: false as const,
+    createdCount: 0,
+    skippedMissingSchema: false,
+    error: (err as { message?: string })?.message ?? "שגיאה לא צפויה",
+  }));
+  const generatorError = !ensure.ok
+    ? ensure.error ?? "יצירת ההוצאות הקבועות נכשלה."
+    : ensure.skippedMissingSchema
+      ? "המחולל של ההוצאות הקבועות לא מותקן במסד הנתונים."
+      : null;
 
   let items: PaymentCalendarItem[] = [];
+  let sourceSettings: OutflowSourceSettingsRecord = {};
   let todayIso = new Date().toISOString().slice(0, 10);
   let error: string | null = null;
   try {
     const result = await loadPaymentCalendarItems(supabase);
     items = result.items;
     todayIso = result.todayIso;
+    sourceSettings = result.sourceSettings;
   } catch (err) {
     error = (err as { message?: string })?.message ?? "שגיאה בטעינת התשלומים";
   }
 
-  // ── Recurring templates + source lookups (for the הוצאות קבועות tab and the
+  // ── Recurring templates + source lookups (for the תשלומים קבועים tab and the
   //    expense dialog's domain-link pickers) ────────────────────────────────
   const [expResult, projectsResult, propertiesResult, ordersResult, accounts] = await Promise.all([
     supabase
@@ -155,7 +171,9 @@ export default async function PaymentsCalendarPage() {
             properties={propertyOptions}
             orders={orderOptions}
             accounts={accounts}
+            sourceSettings={sourceSettings}
             expenseMissingSchema={expenseMissingSchema}
+            generatorError={generatorError}
           />
         )}
       </div>

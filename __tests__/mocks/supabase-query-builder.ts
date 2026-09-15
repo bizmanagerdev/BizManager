@@ -27,6 +27,7 @@ export function makeSupabase(config: Record<string, MockTableConfig> = {}) {
   const calls = {
     insert: {} as Record<string, unknown[]>,
     update: {} as Record<string, unknown[]>,
+    upsert: {} as Record<string, unknown[]>,
     delete: {} as Record<string, number>,
   };
 
@@ -48,6 +49,11 @@ export function makeSupabase(config: Record<string, MockTableConfig> = {}) {
     };
     builder.update = (values: unknown) => {
       (calls.update[table] ??= []).push(values);
+      resp = writeResp;
+      return builder;
+    };
+    builder.upsert = (values: unknown) => {
+      (calls.upsert[table] ??= []).push(values);
       resp = writeResp;
       return builder;
     };

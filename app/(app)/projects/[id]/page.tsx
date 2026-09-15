@@ -420,7 +420,7 @@ export default async function ProjectPage({
           const primaryResult = await supabase
             .from("expenses")
             .select(
-              "id,expense_date,amount,payment_method,payment_status,paid_amount,category,description,business_domain,notes,account_id,recorded_by,created_at,updated_at"
+              "id,expense_date,amount,payment_method,payment_status,paid_amount,category,description,business_domain,notes,account_id,recorded_by,created_at,updated_at,recurring_expense_template_id"
             )
             .order("expense_date", { ascending: false })
             .in("id", expenseIds);
@@ -428,7 +428,7 @@ export default async function ProjectPage({
           if (primaryResult.error && isMissingColumnError(primaryResult.error, "payment_method")) {
             const fallbackResult = await supabase
               .from("expenses")
-              .select("id,expense_date,amount,payment_status,paid_amount,category,description,business_domain,notes,recorded_by,created_at,updated_at")
+              .select("id,expense_date,amount,payment_status,paid_amount,category,description,business_domain,notes,recorded_by,created_at,updated_at,recurring_expense_template_id")
               .order("expense_date", { ascending: false })
               .in("id", expenseIds);
 
@@ -470,6 +470,27 @@ export default async function ProjectPage({
                 .in("auth_user_id", expenseRecordedByValues)
             : Promise.resolve({ data: [] as UnknownRow[], error: null }),
         ]);
+
+        // A row generated from a recurring template reads by the template's
+        // name — the same label the ledger and the payments calendar use.
+        const recurringTemplateIds = Array.from(
+          new Set(
+            (expenses ?? [])
+              .map((row) => (typeof (row as Record<string, unknown>).recurring_expense_template_id === "string" ? ((row as Record<string, unknown>).recurring_expense_template_id as string) : null))
+              .filter((value): value is string => Boolean(value))
+          )
+        );
+        const recurringTemplateNames: Record<string, string> = {};
+        if (recurringTemplateIds.length > 0) {
+          const { data: templateRows } = await supabase
+            .from("recurring_expense_templates")
+            .select("id,template_name")
+            .in("id", recurringTemplateIds);
+          for (const row of (templateRows ?? []) as Array<{ id: string | null; template_name: string | null }>) {
+            const name = row.template_name?.trim();
+            if (row.id && name) recurringTemplateNames[row.id] = name;
+          }
+        }
 
         const expenseRecordedByNameByValue: Record<string, string> = {};
         for (const row of [
@@ -543,6 +564,7 @@ export default async function ProjectPage({
           monthlySalaryItems,
           expenseList,
           expenseRecordedByNameByValue,
+          recurringTemplateNames,
           expenseAuditResult,
           expensesError,
         };
@@ -943,6 +965,7 @@ export default async function ProjectPage({
     monthlySalaryItems,
     expenseList,
     expenseRecordedByNameByValue,
+    recurringTemplateNames,
     expenseAuditResult,
     expensesError,
   } = expensesChain;
@@ -1390,6 +1413,7 @@ export default async function ProjectPage({
             assignableUsers={(assignableUsers as AssignableUser[] | null) ?? []}
             expenses={combinedExpenseList}
             expenseRecordedByNameByValue={expenseRecordedByNameByValue}
+            recurringTemplateNames={recurringTemplateNames}
             expenseAuditById={expenseAuditResult.byRecordId}
             payments={paymentsWithPhotos}
             morningDocuments={morningDocuments}

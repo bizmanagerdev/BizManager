@@ -21,7 +21,8 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sourceItem: PaymentCalendarItem | null;
-  onSaved: () => void;
+  // Awaited: the dialog stays busy until the board shows the new instalments.
+  onSaved: () => void | Promise<void>;
 };
 
 export function SplitPaymentDialog({ open, onOpenChange, sourceItem, onSaved }: Props) {
@@ -70,7 +71,7 @@ export function SplitPaymentDialog({ open, onOpenChange, sourceItem, onSaved }: 
         return;
       }
       toast.success("התשלום פוצל לתשלומים");
-      onSaved();
+      await onSaved();
     } catch (err) {
       const msg = toHebrewError(err, "פיצול התשלום נכשל.");
       setError(msg);

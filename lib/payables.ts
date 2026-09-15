@@ -6,6 +6,8 @@ import {
   type FinancialEntryOrigin,
 } from "@/lib/financial";
 import { getBusinessDomainLabel, type ExpenseBusinessDomain } from "@/lib/expenses";
+import { loadOutflowSourceSettings } from "@/lib/outflow-sources";
+import { sourceSettingKey, type OutflowSourceSettings, type OutflowSourceSettingsRecord } from "@/lib/outflow-source-settings";
 
 // ── Payments calendar item ─────────────────────────────────────────────────────
 // One outgoing obligation placed on a calendar day. Sourced from the single
@@ -24,6 +26,8 @@ export type PaymentCalendarItem = {
   stage: FinancialEntryStage; // scheduled (צפוי) | pending (ממתין) | posted (בפועל)
   paymentStatus: string | null;
   origin: FinancialEntryOrigin;
+  // The entry's source record when it has one (a loan id for loan items).
+  sourceId: string | null;
   domainName: string;
   // Expense-only fields (present ⇒ actionable):
   expenseId: string | null;
@@ -33,6 +37,13 @@ export type PaymentCalendarItem = {
   paidAmount: number | null;
   descriptionRaw: string | null;
   notes: string | null;
+  // The expense's own payment method + its scheduled date (expense_date). `date`
+  // above is the FLOW date, which for a paid row is the paid_date — so an edit
+  // dialog must seed from `dueDate`, not `date`, or it would overwrite the
+  // schedule with the pay day.
+  paymentMethod: string | null;
+  dueDate: string;
+  paidDate: string | null; // the stored paid_date (null unless the row carries one)
   overdue: boolean; // pending AND past its date
   installmentGroupId: string | null;
   installmentIndex: number | null;
@@ -61,6 +72,24 @@ export type PaymentCalendarItem = {
  * entries; an entry is `overdue` when it's still pending and its flow date has
  * already passed.
  */
+/**
+ * Where "למקור" takes an expense item. The app-wide `?focus=<id>` deep link
+ * (components/layout/FocusHighlighter.tsx) scrolls to and flashes the element
+ * carrying `data-focus-id`; the ledger additionally OPENS the expense's dialog
+ * for `focus=expense:<uuid>`. The project and property pages mark their expense
+ * rows with the same `expense:<uuid>` id, so a linked expense lands on its own
+ * row there; an order-linked or general expense (no row list on its source
+ * page, or no source page at all) goes to the ledger, which opens it.
+ */
+export function expenseSourceHref(entry: Pick<FinancialEntry, "id" | "origin" | "expenseId" | "sourceHref" | "sourceKind">): string | null {
+  if (entry.origin !== "expense" || !entry.expenseId) return entry.sourceHref;
+  const focus = `?focus=${encodeURIComponent(entry.id)}`;
+  if (entry.sourceHref && (entry.sourceKind === "project" || entry.sourceKind === "property")) {
+    return `${entry.sourceHref}${focus}`;
+  }
+  return `/financial${focus}`;
+}
+
 export function toPaymentCalendarItems(entries: FinancialEntry[], todayIso: string): PaymentCalendarItem[] {
   return entries
     .filter((entry) => entry.type === "outflow")
@@ -70,10 +99,11 @@ export function toPaymentCalendarItems(entries: FinancialEntry[], todayIso: stri
       amount: entry.amount,
       label: entry.description,
       sourceLabel: entry.sourceLabel,
-      sourceHref: entry.sourceHref,
+      sourceHref: expenseSourceHref(entry),
       stage: entry.stage,
       paymentStatus: entry.paymentStatus,
       origin: entry.origin,
+      sourceId: entry.sourceId ?? null,
       domainName: entry.domainName,
       expenseId: entry.expenseId ?? null,
       category: entry.expenseCategory ?? null,
@@ -82,6 +112,9 @@ export function toPaymentCalendarItems(entries: FinancialEntry[], todayIso: stri
       paidAmount: entry.expensePaidAmount ?? null,
       descriptionRaw: entry.expenseDescriptionRaw ?? null,
       notes: entry.expenseNotes ?? null,
+      paymentMethod: entry.expensePaymentMethod ?? null,
+      dueDate: entry.recordedDate ?? entry.flowDate,
+      paidDate: entry.expensePaidDate ?? null,
       overdue: entry.stage === "pending" && entry.flowDate < todayIso,
       installmentGroupId: entry.expenseInstallmentGroupId ?? null,
       installmentIndex: entry.expenseInstallmentIndex ?? null,
@@ -132,11 +165,12 @@ export function upcomingDueDates(todayIso: string, dueDay: number, count: number
 }
 
 /**
- * Calendar-only forecast of monthly salaries: for each active monthly worker,
- * emit scheduled (צפוי) payment items on the upcoming salary due date(s), computed
- * from the salary agreement — WITHOUT touching payroll accounting. De-duped against
- * real wage items (worker_owed / worker_payment) already present for that
- * worker+month, so a generated payslip supersedes the projection.
+ * Calendar-only forecast of salaries: for each active worker with an agreement
+ * in force, emit scheduled (צפוי) payment items on the upcoming salary due
+ * date(s) — a monthly wage with its amount, an hourly worker as a "משתנה"
+ * marker (the amount depends on hours) — WITHOUT touching payroll accounting.
+ * De-duped against real wage items (worker_owed / worker_payment) already
+ * present for that worker+month, so a generated payslip supersedes the projection.
  */
 export async function loadProjectedSalaries(
   supabase: SupabaseClient,
@@ -148,12 +182,12 @@ export async function loadProjectedSalaries(
 ): Promise<PaymentCalendarItem[]> {
   const { data: agrRows, error } = await supabase
     .from("salary_agreements")
-    .select("id,user_id,salary_type,monthly_salary,valid_from,valid_to,due_day_of_next_month")
-    .eq("salary_type", "monthly");
+    .select("id,user_id,salary_type,monthly_salary,valid_from,valid_to,due_day_of_next_month");
   if (error || !agrRows?.length) return [];
 
   type AgrRow = {
     user_id: string | null;
+    salary_type: string | null;
     monthly_salary: number | string | null;
     valid_from: string | null;
     valid_to: string | null;
@@ -200,8 +234,9 @@ export async function loadProjectedSalaries(
       return true;
     });
     if (!active) continue;
+    const isHourly = active.salary_type === "hourly";
     const monthly = Number(active.monthly_salary);
-    if (!Number.isFinite(monthly) || monthly <= 0) continue;
+    if (!isHourly && !(Number.isFinite(monthly) && monthly > 0)) continue;
     const dueDay = Number(active.due_day_of_next_month) || 10;
     const name = user?.full_name?.trim() || user?.email?.trim() || "עובד";
 
@@ -211,13 +246,14 @@ export async function loadProjectedSalaries(
       items.push({
         id: `salary_proj:${userId}:${ym}`,
         date: due,
-        amount: monthly,
+        amount: isHourly ? 0 : monthly,
         label: `משכורת ${name}`,
-        sourceLabel: "שכר צפוי",
+        sourceLabel: isHourly ? "שכר צפוי · לפי שעות" : "שכר צפוי",
         sourceHref: "/payroll",
         stage: "scheduled",
         paymentStatus: null,
         origin: "worker_owed",
+        sourceId: null,
         domainName: "שכר עובדים",
         expenseId: null,
         category: null,
@@ -226,6 +262,9 @@ export async function loadProjectedSalaries(
         paidAmount: null,
         descriptionRaw: null,
         notes: null,
+        paymentMethod: null,
+        dueDate: due,
+        paidDate: null,
         overdue: false,
         installmentGroupId: null,
         installmentIndex: null,
@@ -236,7 +275,7 @@ export async function loadProjectedSalaries(
         workerUserId: userId,
         recurringTemplateId: null,
         recurrenceKey: null,
-        variableAmount: false,
+        variableAmount: isHourly,
         autoPaid: false,
       });
     }
@@ -254,7 +293,7 @@ export async function loadProjectedSalaries(
  */
 export async function loadProjectedRecurringExpenses(
   supabase: SupabaseClient,
-  { referenceDate, months = 12 }: { referenceDate: string; months?: number }
+  { referenceDate, months = 12, lookbackMonths = 3 }: { referenceDate: string; months?: number; lookbackMonths?: number }
 ): Promise<PaymentCalendarItem[]> {
   const { data: tplRows, error } = await supabase
     .from("recurring_expense_templates")
@@ -301,9 +340,12 @@ export async function loadProjectedRecurringExpenses(
     }
   }
 
-  // Look back a few months so a due-but-not-yet-generated recurring occurrence
-  // (variable OR fixed) still shows as pending/overdue instead of vanishing.
-  const LOOKBACK_MONTHS = 3;
+  // Look back so a due-but-not-yet-generated recurring occurrence (variable OR
+  // fixed) still shows as pending/overdue instead of vanishing. The alert rule
+  // and the ledger forecast keep the short default; the payments calendar passes
+  // its own scan window so a variable bill (never materialized until paid) shows
+  // every unpaid period back to its start date, not just the last three.
+  const LOOKBACK_MONTHS = Math.max(0, Math.floor(lookbackMonths));
   const refYear = Number(referenceDate.slice(0, 4));
   const refMonth = Number(referenceDate.slice(5, 7));
 
@@ -368,6 +410,7 @@ export async function loadProjectedRecurringExpenses(
         stage: isPast ? "pending" : "scheduled",
         paymentStatus: "not_paid",
         origin: "expense",
+        sourceId: null,
         domainName: tpl.business_domain ? getBusinessDomainLabel(tpl.business_domain) : "",
         expenseId: null,
         category: tpl.category,
@@ -376,6 +419,9 @@ export async function loadProjectedRecurringExpenses(
         paidAmount: null,
         descriptionRaw: desc,
         notes: applyRecurringTokens(tpl.notes_template, occ.key, occ.date),
+        paymentMethod: null,
+        dueDate: occ.date,
+        paidDate: null,
         overdue: isPast,
         installmentGroupId: null,
         installmentIndex: null,
@@ -398,10 +444,11 @@ export async function loadProjectedRecurringExpenses(
  * Credit-card statement lump charges (card_statement_charges — the one
  * account-ledger line per card per statement, see lib/accounts.ts) shown on
  * the payments calendar: every REAL recorded charge on its charge_date, plus
- * a forecast for the next period(s) that don't have a real charge yet —
- * estimated from that card's most recent real charge (amount + day of
- * month) — so a card due for its monthly statement shows up ahead of time,
- * like a bank standing order (הוראת קבע). A forecast disappears the moment a
+ * a forecast for the next period(s) that don't have a real charge yet — on
+ * that card's usual day of month, WITHOUT an amount (the user: guessing next
+ * month's card bill from last month's is wrong; the board should only say
+ * "a charge is coming on this day"). It reads as "משתנה" until the statement
+ * is processed and the real charge recorded. A forecast disappears the moment a
  * real charge is recorded for that period (same "materialized wins" pattern
  * as loadProjectedRecurringExpenses). Both kinds are `autoPaid: true` — the
  * amount already left (or will leave) the account on its own; there is no
@@ -452,6 +499,7 @@ export async function loadCardChargeItems(
       stage: date <= referenceDate ? "posted" : "scheduled",
       paymentStatus: null,
       origin: "expense",
+      sourceId: null,
       domainName: "",
       expenseId: null,
       category: cardLabel,
@@ -460,6 +508,9 @@ export async function loadCardChargeItems(
       paidAmount: date <= referenceDate ? amount : null,
       descriptionRaw: null,
       notes: row.notes,
+      paymentMethod: null,
+      dueDate: date,
+      paidDate: null,
       overdue: false,
       installmentGroupId: null,
       installmentIndex: null,
@@ -480,12 +531,13 @@ export async function loadCardChargeItems(
   // Forecast: for each card with history, project every month from right
   // after its last real charge through one month past today that doesn't
   // already have a real charge — so a statement that's overdue for
-  // processing keeps showing (not just next month's).
+  // processing keeps showing (not just next month's). Day of month comes from
+  // the last real charge; the amount is deliberately unknown (0 + variable).
   const refIdx = Number(referenceDate.slice(0, 4)) * 12 + (Number(referenceDate.slice(5, 7)) - 1);
   for (const [cardLabel, last] of latestByCard) {
     const lastDate = last.charge_date!.slice(0, 10);
     const dueDay = Number(lastDate.slice(8, 10));
-    const amount = Number(last.amount);
+    const amount = 0;
     const lastIdx = Number(lastDate.slice(0, 4)) * 12 + (Number(lastDate.slice(5, 7)) - 1);
     const endIdx = refIdx + 1; // through one month ahead of today
     for (let idx = lastIdx + 1; idx <= endIdx; idx++) {
@@ -506,6 +558,7 @@ export async function loadCardChargeItems(
         stage: date < referenceDate ? "pending" : "scheduled",
         paymentStatus: "not_paid",
         origin: "expense",
+        sourceId: null,
         domainName: "",
         expenseId: null,
         category: cardLabel,
@@ -514,6 +567,9 @@ export async function loadCardChargeItems(
         paidAmount: null,
         descriptionRaw: null,
         notes: null,
+        paymentMethod: null,
+        dueDate: date,
+        paidDate: null,
         overdue: date < referenceDate,
         installmentGroupId: null,
         installmentIndex: null,
@@ -524,7 +580,7 @@ export async function loadCardChargeItems(
         workerUserId: null,
         recurringTemplateId: null,
         recurrenceKey: null,
-        variableAmount: true, // estimated from the last real charge — shown as "משוער"
+        variableAmount: true, // no estimate on purpose — shown as "משתנה"
         autoPaid: true,
       });
     }
@@ -628,6 +684,83 @@ export async function loadCardChargedExpenseIds(supabase: SupabaseClient): Promi
 }
 
 /**
+ * A real row generated from a variable-amount (סכום משתנה) template carries
+ * only the template's ESTIMATE until it is confirmed — flag it so every surface
+ * reads it as "~₪X · משתנה" and mark-paid asks for the real figure. A paid row
+ * already holds the real amount, so it is not flagged. Pure; the id set comes
+ * from `loadVariableTemplateIds`.
+ */
+export function markVariableTemplateRows(
+  items: PaymentCalendarItem[],
+  variableTemplateIds: ReadonlySet<string>
+): PaymentCalendarItem[] {
+  if (variableTemplateIds.size === 0) return items;
+  return items.map((item) =>
+    item.expenseId &&
+    item.recurringTemplateId &&
+    item.stage !== "posted" &&
+    variableTemplateIds.has(item.recurringTemplateId)
+      ? { ...item, variableAmount: true }
+      : item
+  );
+}
+
+async function loadVariableTemplateIds(supabase: SupabaseClient): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from("recurring_expense_templates")
+    .select("id")
+    .eq("is_variable_amount", true);
+  if (error) return new Set();
+  return new Set(((data ?? []) as Array<{ id: string }>).map((r) => r.id));
+}
+
+/**
+ * The bank account a salary / loan instalment / card charge leaves from, as set
+ * on the תשלומים קבועים tab ("מקורות נוספים"), applied to the board's items that
+ * don't carry one of their own — so the account filter and the cash calculator
+ * can scope them. A real row that already names an account keeps it.
+ */
+export function applyOutflowSourceAccounts(
+  items: PaymentCalendarItem[],
+  settings: OutflowSourceSettings
+): PaymentCalendarItem[] {
+  if (settings.size === 0) return items;
+  return items.map((item) => {
+    if (item.accountId) return item;
+    let key: string | null = null;
+    if (item.workerUserId && (item.origin === "worker_owed" || item.origin === "worker_payment")) {
+      key = sourceSettingKey("salary", item.workerUserId);
+    } else if (item.origin === "loan" && item.sourceId) {
+      key = sourceSettingKey("loan", item.sourceId);
+    } else if (item.id.startsWith("ccharge") && item.category) {
+      key = sourceSettingKey("card", item.category);
+    }
+    const accountId = key ? settings.get(key)?.accountId ?? null : null;
+    return accountId ? { ...item, accountId } : item;
+  });
+}
+
+/**
+ * A source switched off on the תשלומים קבועים tab is not shown on the board: its
+ * projections (a salary that hasn't been paid yet, a loan's planned instalment,
+ * a card's next-charge marker) are dropped. History — paid wages, recorded
+ * charges, paid instalments — is never hidden.
+ */
+export function dropInactiveOutflowSources(
+  items: PaymentCalendarItem[],
+  settings: OutflowSourceSettings
+): PaymentCalendarItem[] {
+  if (settings.size === 0) return items;
+  const inactive = (key: string) => settings.get(key)?.isActive === false;
+  return items.filter((item) => {
+    if (item.id.startsWith("salary_proj:") && item.workerUserId) return !inactive(sourceSettingKey("salary", item.workerUserId));
+    if (item.id.startsWith("loan_planned:") && item.sourceId) return !inactive(sourceSettingKey("loan", item.sourceId));
+    if (item.id.startsWith("ccharge_proj:") && item.category) return !inactive(sourceSettingKey("card", item.category));
+    return true;
+  });
+}
+
+/**
  * Load all outgoing payments for the calendar. `monthsBack` widens the scan
  * window so unpaid items from earlier still show (default 13 months, matching the
  * financial page); future-dated scheduled items are always included.
@@ -642,7 +775,7 @@ export async function loadPaymentCalendarItems(
     monthsBack = 13,
     preloaded,
   }: { monthsBack?: number; preloaded?: { entries: FinancialEntry[]; referenceDate: string } } = {}
-): Promise<{ items: PaymentCalendarItem[]; todayIso: string }> {
+): Promise<{ items: PaymentCalendarItem[]; todayIso: string; sourceSettings: OutflowSourceSettingsRecord }> {
   const { entries, referenceDate } = preloaded
     ? preloaded
     : await loadFinancialEntries(supabase, {
@@ -658,17 +791,30 @@ export async function loadPaymentCalendarItems(
   // statement charges (real + forecast) are a separate, independent source —
   // see loadCardChargeItems — since card_statement_charges is deliberately
   // outside loadFinancialEntries.
-  const [projectedSalaries, projectedRecurring, cardCharges, chargedExpenseIds] = await Promise.all([
+  const [projectedSalaries, projectedRecurring, cardCharges, chargedExpenseIds, variableTemplateIds, sourceSettings] = await Promise.all([
     loadProjectedSalaries(supabase, { referenceDate, existingItems: allItems }).catch(() => []),
-    loadProjectedRecurringExpenses(supabase, { referenceDate }).catch(() => []),
+    loadProjectedRecurringExpenses(supabase, { referenceDate, lookbackMonths: monthsBack }).catch(() => []),
     loadCardChargeItems(supabase, { referenceDate }).catch(() => []),
     loadCardChargedExpenseIds(supabase),
+    loadVariableTemplateIds(supabase).catch(() => new Set<string>()),
+    loadOutflowSourceSettings(supabase),
   ]);
   // Drop the itemized card-purchase expenses whose card+period already has a
   // recorded lump charge — the lump sum (in cardCharges) replaces them here,
   // so the calendar doesn't show a day's spend twice.
-  const items = chargedExpenseIds.size
-    ? allItems.filter((i) => !(i.expenseId && chargedExpenseIds.has(i.expenseId)))
-    : allItems;
-  return { items: [...items, ...projectedSalaries, ...projectedRecurring, ...cardCharges], todayIso: referenceDate };
+  const items = markVariableTemplateRows(
+    chargedExpenseIds.size
+      ? allItems.filter((i) => !(i.expenseId && chargedExpenseIds.has(i.expenseId)))
+      : allItems,
+    variableTemplateIds
+  );
+  return {
+    items: dropInactiveOutflowSources(
+      applyOutflowSourceAccounts([...items, ...projectedSalaries, ...projectedRecurring, ...cardCharges], sourceSettings),
+      sourceSettings
+    ),
+    todayIso: referenceDate,
+    // Serializable for the client (the board's alerts bar needs the reminder days).
+    sourceSettings: Object.fromEntries(sourceSettings),
+  };
 }

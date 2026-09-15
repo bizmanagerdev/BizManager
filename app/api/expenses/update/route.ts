@@ -24,6 +24,9 @@ export async function POST(req: Request) {
       bill_to_customer_amount?: number | string | null;
       project_expense_notes?: string;
       payment_status?: string | null;
+      // "תאריך תשלום בפועל". Only applied when the key is present in the body
+      // (a caller that doesn't know it must not clear it); null when not paid.
+      paid_date?: string | null;
       paid_amount?: number | string | null;
       payment_method?: string | null;
       account_id?: string | null;
@@ -146,6 +149,9 @@ export async function POST(req: Request) {
     const accountId = typeof body.account_id === "string" && body.account_id.trim()
       ? body.account_id.trim()
       : null;
+    const paidDateProvided = Object.prototype.hasOwnProperty.call(body, "paid_date");
+    const rawPaidDate = typeof body.paid_date === "string" ? body.paid_date.trim() : "";
+    const paidDate = /^\d{4}-\d{2}-\d{2}$/.test(rawPaidDate) ? rawPaidDate : null;
 
     const baseExpensePayload = {
       amount: amountNumber,
@@ -163,16 +169,27 @@ export async function POST(req: Request) {
       paid_amount: paidAmount,
       payment_method: (paymentStatus === "paid" || paymentStatus === "partial") ? paymentMethod : null,
       account_id: accountId,
+      ...(paidDateProvided ? { paid_date: paymentStatus === "paid" ? paidDate : null } : {}),
     };
     const selectExpense =
       "id,expense_date,amount,category,description,business_domain,project_id,order_id,property_id,notes,recorded_by,payment_status,paid_amount,payment_method,account_id,created_at,updated_at";
 
-    const { data: expenseData, error: expenseUpdateError } = await supabase
-      .from("expenses")
-      .update(baseExpensePayload)
-      .eq("id", expenseId)
-      .select(selectExpense)
-      .maybeSingle();
+    const runExpenseUpdate = (payload: Record<string, unknown>) =>
+      supabase.from("expenses").update(payload).eq("id", expenseId).select(selectExpense).maybeSingle();
+
+    let { data: expenseData, error: expenseUpdateError } = await runExpenseUpdate(baseExpensePayload);
+    // paid_date lives in db/sql/add_paid_date_to_expenses.sql — tolerate a DB
+    // that hasn't run it yet rather than failing the whole edit.
+    if (
+      expenseUpdateError &&
+      "paid_date" in baseExpensePayload &&
+      expenseUpdateError.code === "42703" &&
+      expenseUpdateError.message.toLowerCase().includes("paid_date")
+    ) {
+      const { paid_date: _omitted, ...withoutPaidDate } = baseExpensePayload;
+      void _omitted;
+      ({ data: expenseData, error: expenseUpdateError } = await runExpenseUpdate(withoutPaidDate));
+    }
 
     const expense: Record<string, unknown> | null = expenseData as Record<string, unknown> | null;
     const expenseError = expenseUpdateError ? { message: expenseUpdateError.message } : null;

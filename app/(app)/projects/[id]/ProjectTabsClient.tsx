@@ -248,6 +248,7 @@ export default function ProjectTabsClient({
   assignableUsers,
   expenses,
   expenseRecordedByNameByValue,
+  recurringTemplateNames = {},
   expenseAuditById,
   payments,
   morningDocuments,
@@ -290,6 +291,8 @@ export default function ProjectTabsClient({
   assignableUsers: AssignableUser[];
   expenses: ExpenseListItem[];
   expenseRecordedByNameByValue: Record<string, string>;
+  /** Recurring template id → name, so a generated row reads by its template. */
+  recurringTemplateNames?: Record<string, string>;
   expenseAuditById: Record<string, AuditRecordInfo>;
   payments: PaymentRow[];
   morningDocuments: MorningLocalDocument[];
@@ -1367,9 +1370,11 @@ export default function ProjectTabsClient({
       // Category becomes the row's chip, name becomes its text — "שכר עובד"
       // no longer has to be typed out in front of every worker's name.
       const expenseCategory = session ? null : getString(item.expense, "category");
+      const expenseTemplateId = session ? null : getString(item.expense, "recurring_expense_template_id");
       const expenseName = session
         ? null
-        : getString(item.expense, "description") ??
+        : (expenseTemplateId ? recurringTemplateNames[expenseTemplateId] : undefined) ??
+          getString(item.expense, "description") ??
           getString(item.expense, "vendor_name") ??
           getString(item.expense, "vendor") ??
           (expenseId ? `הוצאה ${expenseId.slice(0, 8)}` : "הוצאה");

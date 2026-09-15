@@ -144,3 +144,134 @@ describe("recurring_expense_confirm", () => {
     expect(items[0].url).toBe(`/financial?focus=${encodeURIComponent("expense:exp-1")}`);
   });
 });
+
+describe("מקורות נוספים heads-ups — work days before a salary / loan instalment / card charge", () => {
+  // Calendar for these cases: 2026-09-05 is a Saturday, 2026-09-10 a Thursday.
+  const charges = [
+    { id: "c1", statement_id: "s1", card_label: "ויזה 9557", account_id: "acc1", amount: 1000, charge_date: "2026-08-05", notes: null },
+  ];
+
+  it("card: fires 3 WORK days before the usual day by default — Sat 05/09 minus 3 work days = Tue 01/09", async () => {
+    const sb = () => makeSupabase({ card_statement_charges: { data: charges } });
+    const on = await rule("card_charge_upcoming").evaluate(sb(), ctx("2026-09-01"));
+    expect(on).toHaveLength(1);
+    expect(on[0].key).toBe("ccharge_proj:ויזה 9557:2026-09");
+    expect(on[0].title).toContain("ויזה 9557");
+    expect(on[0].content).not.toMatch(/₪/); // a forecast carries no amount
+    expect(on[0].url).toBe("/financial/payments-calendar?focus=ccharge_proj%3A%D7%95%D7%99%D7%96%D7%94%209557%3A2026-09&month=2026-09");
+    expect(on[0].behavior).toBe("ping_once");
+    expect(await rule("card_charge_upcoming").evaluate(sb(), ctx("2026-08-31"))).toEqual([]);
+    expect(await rule("card_charge_upcoming").evaluate(sb(), ctx("2026-09-06"))).toEqual([]);
+  });
+
+  it("card: a stored setting overrides the default (1 work day → from Thu 03/09 only)", async () => {
+    const sb = () =>
+      makeSupabase({
+        card_statement_charges: { data: charges },
+        outflow_source_settings: { data: [{ source_kind: "card", source_key: "ויזה 9557", reminder_work_days_before: 1, account_id: null }] },
+      });
+    expect(await rule("card_charge_upcoming").evaluate(sb(), ctx("2026-09-02"))).toEqual([]);
+    expect(await rule("card_charge_upcoming").evaluate(sb(), ctx("2026-09-03"))).toHaveLength(1);
+  });
+
+  it("card: a REAL recorded future charge is alerted with its amount", async () => {
+    const items = await rule("card_charge_upcoming").evaluate(
+      makeSupabase({ card_statement_charges: { data: [{ ...charges[0], charge_date: "2026-09-10" }] } }),
+      ctx("2026-09-08")
+    );
+    expect(items.map((i) => i.key)).toEqual(["ccharge:c1"]);
+    expect(items[0].content).toContain("1,000");
+  });
+
+  it("salary: opt-in — nothing without a setting; with 2 work days before Thu 10/09 it fires from Tue 08/09", async () => {
+    const tables = {
+      salary_agreements: { data: [{ id: "a1", user_id: "u1", salary_type: "monthly", monthly_salary: 8000, valid_from: "2026-01-01", valid_to: null, due_day_of_next_month: 10 }] },
+      users: { data: [{ id: "u1", full_name: "דוד", email: null, active: true }] },
+    };
+    expect(await rule("salary_payment_reminder").evaluate(makeSupabase(tables), ctx("2026-09-08"))).toEqual([]);
+    const withSetting = () =>
+      makeSupabase({
+        ...tables,
+        outflow_source_settings: { data: [{ source_kind: "salary", source_key: "u1", reminder_work_days_before: 2, account_id: null }] },
+      });
+    expect(await rule("salary_payment_reminder").evaluate(withSetting(), ctx("2026-09-07"))).toEqual([]);
+    const on = await rule("salary_payment_reminder").evaluate(withSetting(), ctx("2026-09-08"));
+    expect(on).toHaveLength(1);
+    expect(on[0].key).toBe("salary_proj:u1:2026-09");
+    expect(on[0].title).toContain("דוד");
+    expect(on[0].content).toContain("8,000");
+    expect(on[0].url).toContain("month=2026-09");
+  });
+
+  it("salary: stays quiet once this month's salary was paid, and when the source is switched off", async () => {
+    const tables = {
+      salary_agreements: { data: [{ id: "a1", user_id: "u1", salary_type: "monthly", monthly_salary: 8000, valid_from: "2026-01-01", valid_to: null, due_day_of_next_month: 10 }] },
+      users: { data: [{ id: "u1", full_name: "דוד", email: null, active: true }] },
+    };
+    const paid = await rule("salary_payment_reminder").evaluate(
+      makeSupabase({
+        ...tables,
+        outflow_source_settings: { data: [{ source_kind: "salary", source_key: "u1", reminder_work_days_before: 2, account_id: null }] },
+        worker_payments: { data: [{ user_id: "u1", payment_date: "2026-09-08" }] },
+      }),
+      ctx("2026-09-08")
+    );
+    expect(paid).toEqual([]);
+    const off = await rule("salary_payment_reminder").evaluate(
+      makeSupabase({
+        ...tables,
+        outflow_source_settings: { data: [{ source_kind: "salary", source_key: "u1", reminder_work_days_before: 2, account_id: null, is_active: false }] },
+      }),
+      ctx("2026-09-08")
+    );
+    expect(off).toEqual([]);
+  });
+
+  it("loan: the next planned instalment of a loan the business repays", async () => {
+    const sb = () =>
+      makeSupabase({
+        loans: {
+          data: [{ id: "L1", direction: "taken", lender: "בנק", borrower: null, loan_date: "2026-01-01", loan_method: null, repayment_method: null, documentation: null, amount: 10000, due_date: null, interest_amount: 0, business_domain: "general_business", counterparty_customer_id: null, status: "active", notes: null, account_id: null, created_at: null }],
+        },
+        loan_repayments: {
+          data: [{ id: "r1", loan_id: "L1", repayment_date: "2026-09-10", amount: 1000, interest_amount: 0, method: null, account_id: null, notes: null, created_at: null, status: "planned", installment_index: 1, installment_count: 10 }],
+        },
+        outflow_source_settings: { data: [{ source_kind: "loan", source_key: "L1", reminder_work_days_before: 2, account_id: null }] },
+      });
+    expect(await rule("loan_installment_reminder").evaluate(sb(), ctx("2026-09-07"))).toEqual([]);
+    const on = await rule("loan_installment_reminder").evaluate(sb(), ctx("2026-09-08"));
+    expect(on).toHaveLength(1);
+    expect(on[0].key).toBe("loan_planned:r1");
+    expect(on[0].title).toContain("בנק");
+    expect(on[0].content).toContain("1,000");
+  });
+});
+
+describe("recurring_payment_reminder — a period already paid stops nagging", () => {
+  const template = {
+    id: "t1", template_name: "ארנונה", category: "מיסים", amount: 500, is_variable_amount: false,
+    frequency: "monthly", interval_months: 1, expense_day_of_month: 10, expense_month_of_year: null,
+    start_date: "2026-01-10", created_at: "2026-01-01T00:00:00Z", reminder_work_days_before: 2,
+  };
+
+  it("fires 2 work days before Thu 10/09 (from Tue 08/09) while the period is unpaid", async () => {
+    const items = await rule("recurring_payment_reminder").evaluate(
+      makeSupabase({ recurring_expense_templates: { data: [template] } }),
+      ctx("2026-09-08")
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0].key).toBe("t1:2026-09");
+    expect(items[0].url).toContain("recur_proj%3At1%3A2026-09");
+  });
+
+  it("stays quiet once that period's row is paid (paid early, or a standing order that landed)", async () => {
+    const items = await rule("recurring_payment_reminder").evaluate(
+      makeSupabase({
+        recurring_expense_templates: { data: [template] },
+        expenses: { data: [{ recurring_expense_template_id: "t1", recurrence_key: "2026-09" }] },
+      }),
+      ctx("2026-09-08")
+    );
+    expect(items).toEqual([]);
+  });
+});

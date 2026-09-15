@@ -230,6 +230,8 @@ export type FinancialEntry = {
   expenseInstallmentIndex?: number | null;
   expenseInstallmentCount?: number | null;
   expenseRecurringTemplateId?: string | null;
+  /** True while a row generated from a variable-amount template still carries only its estimate. */
+  expenseVariableEstimate?: boolean;
 };
 
 export type FinancialSummary = {

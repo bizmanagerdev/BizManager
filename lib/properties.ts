@@ -450,6 +450,8 @@ export type PropertyExpense = {
   projectId: string | null;
   orderId: string | null;
   propertyId: string | null;
+  /** Set when the row was generated from a recurring template (labelled by its name). */
+  recurringTemplateId: string | null;
 };
 
 export type PropertyPayment = {
@@ -592,7 +594,7 @@ export async function fetchPropertyActivity(
       supabase
         .from("expenses")
         .select(
-          "id,expense_date,amount,category,description,payment_status,paid_amount,business_domain,notes,payment_method,account_id,project_id,order_id,property_id"
+          "id,expense_date,amount,category,description,payment_status,paid_amount,business_domain,notes,payment_method,account_id,project_id,order_id,property_id,recurring_expense_template_id"
         )
         .eq("property_id", propertyId),
       supabase
@@ -646,6 +648,7 @@ export async function fetchPropertyActivity(
       projectId: str(r.project_id),
       orderId: str(r.order_id),
       propertyId: str(r.property_id),
+      recurringTemplateId: str(r.recurring_expense_template_id),
     }));
     const payments: PropertyPayment[] = ((pmRes.data ?? []) as Row[]).map((r) => ({
       id: str(r.id) ?? "",

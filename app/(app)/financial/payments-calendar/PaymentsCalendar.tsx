@@ -2,11 +2,14 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { AddIcon, AddReminderIcon, CalendarIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ExternalLinkIcon, ListIcon, SplitIcon, WarningIcon } from "@/components/ui/icons";
-import { DeleteButton } from "@/components/ui/icon-button";
+import { AddIcon, AddReminderIcon, CalendarIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, DeleteIcon, EditIcon, ExternalLinkIcon, MoreIcon, SplitIcon, WarningIcon } from "@/components/ui/icons";
+import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { FOCUS_PARAM, flashFocusTarget } from "@/components/layout/FocusHighlighter";
+import type { RecurringExpenseTemplateItem } from "@/app/(app)/financial/RecurringExpensesManager";
 import ReminderFormDialog from "@/components/reminders/ReminderFormDialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -22,6 +25,8 @@ import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
 import type { Account } from "@/lib/accounts";
 import { hebrewFullDate } from "@/lib/hebrew-calendar";
 import { toHebrewError } from "@/lib/error-messages";
+import { replaceSearchParams } from "@/lib/ui/url-state";
+import { isInsideReminderWindow, reminderWorkDaysForItem, type OutflowSourceSettingsRecord } from "@/lib/outflow-source-settings";
 import type { PaymentCalendarItem } from "@/lib/payables";
 import MonthCalendar, {
   MonthNav,
@@ -135,31 +140,163 @@ type Props = {
   properties: Option[];
   orders: Option[];
   accounts: Account[];
+  // The recurring rules behind forecast items — "edit" on a forecast (no row
+  // yet) opens its template.
+  templates: RecurringExpenseTemplateItem[];
+  // Per-source alert settings for salaries / loans / cards (the alerts bar).
+  sourceSettings: OutflowSourceSettingsRecord;
 };
 
-export default function PaymentsCalendar({ items: itemsProp, todayIso, projects, properties, orders, accounts }: Props) {
+// What a mutation wants shown afterwards: the item by calendar id, or the
+// expense row it created/changed (the calendar id of a real row is `expense:<uuid>`).
+type ItemFocus = { id?: string | null; expenseId?: string | null };
+// Resolves only once the board has re-rendered with fresh server data.
+type MutateFn = (focus?: ItemFocus) => Promise<void>;
+
+// A refresh that never completes (offline, server error) must not hold a dialog
+// hostage — after this long the promise resolves regardless, and the user is
+// told the board didn't catch up.
+const REFRESH_WAIT_CAP_MS = 6_000;
+const EMPTY_IDS: ReadonlySet<string> = new Set();
+
+// The month in view lives in the URL (`?month=YYYY-MM`; the current month is
+// the default and writes nothing) so a refresh, or Back from a source page,
+// lands on the same month.
+const MONTH_PARAM = "month";
+function monthFromParam(value: string | null): Date | null {
+  const m = value ? /^(\d{4})-(\d{2})$/.exec(value) : null;
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  if (month < 1 || month > 12) return null;
+  return new Date(year, month - 1, 1);
+}
+function monthToParam(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+export default function PaymentsCalendar({ items: itemsProp, todayIso, projects, properties, orders, accounts, templates, sourceSettings }: Props) {
   const router = useRouter();
-  const [, startTransition] = useTransition();
+  const searchParams = useSearchParams();
+  const [isRefreshing, startTransition] = useTransition();
   const items = useUndoOverlay(itemsProp, (i) => i.id, "payment-calendar-item");
   const [showPaid, setShowPaid] = useState(false);
+  // A `?focus=<item id>` deep link (an alert, the מקורות נוספים "next" link)
+  // must land ON the item: its month, its day selected — the day panel is the
+  // only place a card carrying data-focus-id renders, so without selecting the
+  // day FocusHighlighter would find nothing to flash — and revealed if paid.
+  const focusParam = searchParams.get(FOCUS_PARAM);
+  const focusedItem = focusParam ? itemsProp.find((i) => i.id === focusParam) ?? null : null;
+  const focusedDate = focusedItem ? toDateOnly(focusedItem.date) : null;
+  // The focus link has done its job once the flash has played — drop it from
+  // the URL so a later refresh doesn't jump back to that item.
+  useEffect(() => {
+    if (!focusParam) return;
+    const timer = setTimeout(() => replaceSearchParams({ [FOCUS_PARAM]: null }), 5000);
+    return () => clearTimeout(timer);
+  }, [focusParam]);
+  // Paid items shown DESPITE the paid filter — the ones the user just changed,
+  // so a bill marked paid is seen landing on its pay day instead of vanishing.
+  // Cleared when the paid filter is toggled or the month is changed by hand.
+  const [revealedIds, setRevealedIds] = useState<ReadonlySet<string>>(() =>
+    focusedItem && focusedItem.stage === "posted" ? new Set([focusedItem.id]) : EMPTY_IDS
+  );
   const [recurringOnly, setRecurringOnly] = useState(false);
   const [accountFilter, setAccountFilter] = useState("");
-  const [layout, setLayout] = useState<"calendar" | "list">("calendar");
   const accountNameById = useMemo(() => new Map(accounts.map((a) => [a.id, a.name] as const)), [accounts]);
   const today = useMemo(() => toDateOnly(todayIso) ?? new Date(), [todayIso]);
   // Month + selected day owned here so the calendar, the list and the
   // due-payments banner (which jumps to a day) all stay in sync.
-  const [monthDate, setMonthDate] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
-  const [selectedDate, setSelectedDate] = useState(today);
+  const [monthDate, setMonthDate] = useState(
+    () =>
+      monthFromParam(searchParams.get(MONTH_PARAM)) ??
+      (focusedDate
+        ? new Date(focusedDate.getFullYear(), focusedDate.getMonth(), 1)
+        : new Date(today.getFullYear(), today.getMonth(), 1))
+  );
+  const [selectedDate, setSelectedDate] = useState(focusedDate ?? today);
 
-  // Jump to a specific day (from the due-payments banner): show the calendar,
-  // move to that month, and select the day so its panel opens.
+  // Mirror the month into the URL (no server round trip) so it survives a
+  // refresh and Back. This month is the default and keeps the URL clean.
+  useEffect(() => {
+    const thisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    replaceSearchParams({
+      [MONTH_PARAM]: monthDate.getTime() === thisMonth.getTime() ? null : monthToParam(monthDate),
+    });
+  }, [monthDate, today]);
+
+  // Jump to a specific day (from the alerts bar): move to that month and
+  // select the day so its panel opens.
   const jumpToDay = (dateIso: string) => {
     const d = toDateOnly(dateIso);
     if (!d) return;
-    setLayout("calendar");
     setMonthDate(new Date(d.getFullYear(), d.getMonth(), 1));
     setSelectedDate(d);
+  };
+  // Month changed by hand (nav arrows / swipe): the one-off reveals are over.
+  const changeMonth = (next: Date) => {
+    setMonthDate(next);
+    setRevealedIds(EMPTY_IDS);
+  };
+
+  // ── A refresh that RESOLVES when the fresh data is on screen ──────────────
+  // `router.refresh()` inside a transition keeps `isRefreshing` true until the
+  // new server payload has been committed, so "went from refreshing to not"
+  // is exactly the moment the board shows the new rows. Dialogs await this so
+  // they close only once their item has visibly moved (or gone).
+  const itemsRef = useRef(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+  const refreshWaiters = useRef<Array<() => void>>([]);
+  const wasRefreshing = useRef(false);
+  useEffect(() => {
+    if (wasRefreshing.current && !isRefreshing) {
+      const waiters = refreshWaiters.current;
+      refreshWaiters.current = [];
+      for (const resolve of waiters) resolve();
+    }
+    wasRefreshing.current = isRefreshing;
+  }, [isRefreshing]);
+
+  const refreshAndWait = () =>
+    new Promise<void>((resolve) => {
+      // Offline: the save (if it went through the offline queue) will replay
+      // later; nothing to wait for now, so say so and let the dialog close.
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        toast.warning("אין חיבור — הלוח יתעדכן כשהחיבור יחזור");
+        resolve();
+        return;
+      }
+      const cap = setTimeout(() => {
+        toast.warning("הלוח לא התרענן — רעננו את הדף כדי לראות את השינוי");
+        resolve();
+      }, REFRESH_WAIT_CAP_MS);
+      refreshWaiters.current.push(() => {
+        clearTimeout(cap);
+        resolve();
+      });
+      startTransition(() => router.refresh());
+    });
+
+  // Show WHERE an item landed after a change: its month, its day, and a flash
+  // on its card/row (same effect as the app-wide ?focus= deep link). A paid item
+  // is revealed through the paid filter so the move is visible, not a vanish.
+  const revealItem = (item: PaymentCalendarItem) => {
+    const d = toDateOnly(item.date);
+    if (!d) return;
+    if (item.stage === "posted") setRevealedIds((prev) => new Set(prev).add(item.id));
+    setMonthDate(new Date(d.getFullYear(), d.getMonth(), 1));
+    setSelectedDate(d);
+    flashFocusTarget(item.id, { timeoutMs: 4000 });
+  };
+
+  const afterMutation: MutateFn = async (focus) => {
+    await refreshAndWait();
+    const wantedId = focus?.id ?? (focus?.expenseId ? `expense:${focus.expenseId}` : null);
+    if (!wantedId) return;
+    const landed = itemsRef.current.find((i) => i.id === wantedId);
+    if (landed) revealItem(landed);
   };
 
   // Bank-account scope applies to the whole view (calendar, list, total, banner).
@@ -169,10 +306,12 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
   );
 
   const visibleItems = useMemo(() => {
-    let list = showPaid ? accountScopedItems : accountScopedItems.filter((i) => i.stage !== "posted");
+    let list = showPaid
+      ? accountScopedItems
+      : accountScopedItems.filter((i) => i.stage !== "posted" || revealedIds.has(i.id));
     if (recurringOnly) list = list.filter((i) => i.recurringTemplateId);
     return list;
-  }, [accountScopedItems, showPaid, recurringOnly]);
+  }, [accountScopedItems, showPaid, recurringOnly, revealedIds]);
 
   const itemsByDay = useMemo(() => {
     const map = new Map<string, PaymentCalendarItem[]>();
@@ -197,8 +336,6 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
       return i.stage === "posted" ? sum : sum + i.amount;
     }, 0);
 
-  const afterMutation = () => startTransition(() => router.refresh());
-
   // Dark "total to pay this month" pill shown in the month-nav row (both views).
   const totalPill = (m: Date) => (
     <div className="inline-flex items-center gap-2 rounded-lg bg-foreground px-3 py-1.5 text-background">
@@ -218,6 +355,7 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
         projects={projects}
         properties={properties}
         orders={orders}
+        templates={templates}
         accountNameById={accountNameById}
         onMutate={afterMutation}
       />
@@ -227,14 +365,17 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
   function renderDayContent({ day, holiday }: DayContext) {
     const dayItems = itemsOnDay(day);
     // Aggregate per stage → each shows as "<colored dot> <amount>" on one row.
-    const byStage = new Map<StageKey, { amount: number; variable: boolean }>();
+    const byStage = new Map<StageKey, { amount: number; variable: boolean; unknown: boolean }>();
     for (const item of dayItems) {
       const st = itemStageKey(item);
-      const cur = byStage.get(st) ?? { amount: 0, variable: false };
+      const cur = byStage.get(st) ?? { amount: 0, variable: false, unknown: false };
       // A variable bill's estimate counts toward the total (marked "~" so it reads
       // as approximate); only mark `variable` when it actually has an estimate.
+      // One with NO estimate (a coming card charge) still has to leave a mark on
+      // the day, so the cell can't go blank just because the sum is 0.
       cur.amount += item.amount;
       if (item.variableAmount && item.amount > 0) cur.variable = true;
+      if (item.variableAmount && item.amount <= 0) cur.unknown = true;
       byStage.set(st, cur);
     }
     return (
@@ -245,8 +386,8 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
         {(["overdue", "pending", "scheduled", "posted"] as StageKey[])
           .filter((s) => byStage.has(s))
           .map((s) => {
-            const { amount, variable } = byStage.get(s)!;
-            const text = amount > 0 ? `${variable ? "~" : ""}${fmtIls(amount)}` : null;
+            const { amount, variable, unknown } = byStage.get(s)!;
+            const text = amount > 0 ? `${variable ? "~" : ""}${fmtIls(amount)}` : unknown ? "משתנה" : null;
             if (!text) return null;
             return (
               <span key={s} className="flex max-w-full items-center gap-1 text-[10px] font-semibold leading-tight text-foreground">
@@ -294,28 +435,8 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
     </div>
   );
 
-  // Order in the toolbar (RTL, right→left): month nav first, then the two toggles,
+  // Order in the toolbar (RTL, right→left): month nav first, then the filters,
   // then the total pill last.
-  const viewToggle = (
-    <div className="inline-flex rounded-lg border bg-muted/60 p-0.5">
-      {([
-        { key: "calendar" as const, label: "לוח", icon: <CalendarIcon className="h-3.5 w-3.5" /> },
-        { key: "list" as const, label: "רשימה", icon: <ListIcon className="h-3.5 w-3.5" /> },
-      ]).map((opt) => (
-        <button
-          key={opt.key}
-          type="button"
-          onClick={() => setLayout(opt.key)}
-          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-            layout === opt.key ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          {opt.icon}
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
   const toggle = (on: boolean, set: () => void, label: string) => (
     <button
       type="button"
@@ -330,14 +451,21 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
       {label}
     </button>
   );
-  const showPaidToggle = toggle(showPaid, () => setShowPaid((v) => !v), "הצג ששולמו");
+  const showPaidToggle = toggle(
+    showPaid,
+    () => {
+      setShowPaid((v) => !v);
+      setRevealedIds(EMPTY_IDS);
+    },
+    "הצג ששולמו"
+  );
   const recurringOnlyToggle = toggle(recurringOnly, () => setRecurringOnly((v) => !v), "רק קבועות");
   const accountFilterControl =
     accounts.length > 0 ? (
       <NativeSelect dense
         value={accountFilter}
         onChange={(e) => setAccountFilter(e.target.value)}
-        aria-label="סינון לפי חשבון" className="text-foreground"
+        aria-label="סינון לפי חשבון" className="w-auto min-w-[10rem] text-foreground"
       >
         <option value="">כל החשבונות</option>
         {accounts.map((a) => (
@@ -349,9 +477,8 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
   // Compact toolbar: month nav (right) · toggles (middle) · total pill (far left).
   const toolbar = (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-3 py-2">
-      <MonthNav month={monthDate} todayDate={today} onChange={setMonthDate} />
+      <MonthNav month={monthDate} todayDate={today} onChange={changeMonth} />
       <div className="flex flex-wrap items-center gap-3">
-        {viewToggle}
         {accountFilterControl}
         {recurringOnlyToggle}
         {showPaidToggle}
@@ -362,32 +489,28 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
 
   return (
     <div className="space-y-3">
-      <DuePaymentsBanner items={accountScopedItems} todayIso={todayIso} onJump={jumpToDay} />
-      {/* Full-width toolbar (above both views) — one row, spans the whole page. */}
+      <PaymentsAlertsBanner
+        items={accountScopedItems}
+        todayIso={todayIso}
+        onJump={jumpToDay}
+        templates={templates}
+        sourceSettings={sourceSettings}
+      />
+      {/* Full-width toolbar — one row, spans the whole page. */}
       {toolbar}
-      {layout === "calendar" ? (
-        <MonthCalendar
-          todayIso={todayIso}
-          month={monthDate}
-          onMonthChange={setMonthDate}
-          selected={selectedDate}
-          onSelect={setSelectedDate}
-          hideNav
-          fixedPanel
-          renderSelectedPanel={renderSelectedPanel}
-          renderDayContent={renderDayContent}
-          renderDayHover={renderDayHover}
-          legend={legend}
-        />
-      ) : (
-        <PaymentsMonthList
-          items={visibleItems}
-          month={monthDate}
-          accountNameById={accountNameById}
-          onMutate={afterMutation}
-          legend={legend}
-        />
-      )}
+      <MonthCalendar
+        todayIso={todayIso}
+        month={monthDate}
+        onMonthChange={changeMonth}
+        selected={selectedDate}
+        onSelect={setSelectedDate}
+        hideNav
+        fixedPanel
+        renderSelectedPanel={renderSelectedPanel}
+        renderDayContent={renderDayContent}
+        renderDayHover={renderDayHover}
+        legend={legend}
+      />
     </div>
   );
 }
@@ -466,13 +589,14 @@ export function CashNeedsDialog({
               </button>
             ))}
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* The two filters share one row: the switch on the right, the account on the left. */}
+          <div className="flex items-center justify-between gap-3">
             <button
               type="button"
               role="switch"
               aria-checked={recurringOnly}
               onClick={() => setRecurringOnly((v) => !v)}
-              className="flex items-center gap-2 text-sm font-medium text-muted-foreground"
+              className="flex shrink-0 items-center gap-2 text-sm font-medium text-muted-foreground"
             >
               <span className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${recurringOnly ? "bg-primary" : "bg-muted-foreground/30"}`}>
                 <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${recurringOnly ? "right-0.5" : "right-[18px]"}`} />
@@ -483,7 +607,7 @@ export function CashNeedsDialog({
               <NativeSelect dense
                 value={accountFilter}
                 onChange={(e) => setAccountFilter(e.target.value)}
-                aria-label="סינון לפי חשבון" className="text-foreground"
+                aria-label="סינון לפי חשבון" className="w-auto min-w-[10rem] text-foreground"
               >
                 <option value="">כל החשבונות</option>
                 {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
@@ -499,18 +623,18 @@ export function CashNeedsDialog({
             <div className="text-xs opacity-70">{result.rows.length} תשלומים{result.hasEstimate ? " · כולל הערכות" : ""}</div>
           </div>
 
-          {/* Narrow rundown of exactly what's in the total */}
+          {/* Narrow rundown of exactly what's in the total — small type, one line each */}
           {result.rows.length > 0 ? (
-            <ul className="max-h-56 divide-y overflow-y-auto rounded-lg border text-sm">
+            <ul className="max-h-56 divide-y overflow-y-auto rounded-lg border text-xs">
               {result.rows.map((i) => {
                 const d = toDateOnly(i.date) ?? new Date(i.date);
                 return (
-                  <li key={i.id} className="flex items-center gap-2 px-2.5 py-1">
+                  <li key={i.id} className="flex items-center gap-2 px-2 py-1 leading-snug">
                     <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STAGE_DOT[itemStageKey(i)]}`} />
-                    <span className="w-9 shrink-0 text-xs tabular-nums text-muted-foreground">{d.getDate()}/{d.getMonth() + 1}</span>
-                    <span className="min-w-0 flex-1">{i.label}</span>
-                    {i.variableAmount ? <Badge variant="warning">משתנה</Badge> : null}
-                    <span className="shrink-0 tabular-nums">{amountLabel(i)}</span>
+                    <span className="w-8 shrink-0 tabular-nums text-muted-foreground">{d.getDate()}/{d.getMonth() + 1}</span>
+                    <span className="min-w-0 flex-1 break-words">{i.label}</span>
+                    {i.variableAmount ? <span className="shrink-0 text-warning-strong">משתנה</span> : null}
+                    <span className="shrink-0 font-medium tabular-nums">{amountLabel(i)}</span>
                   </li>
                 );
               })}
@@ -523,10 +647,14 @@ export function CashNeedsDialog({
   );
 }
 
-// ── Due-payments banner — lists every bill due now (overdue / today / next 3
-//    days) with a link that jumps to its day on the calendar. Mirrors the
-//    `payment_outflow_due` alert rule (expense-origin, unpaid, date ≤ today+3),
-//    so the count matches the nav badge — but here it's expandable + per-item. ──
+// ── Alerts bar — every alert the board raises, in ONE collapsible strip ──────────
+//    Two groups: "לתשלום" = bills due now (overdue / today / next 3 days, the
+//    `payment_outflow_due` rule, so the count matches the nav badge) and
+//    "קרובים" = heads-ups inside their reminder window — a recurring bill's
+//    "N work days before", and the per-source setting of a salary / loan
+//    instalment / card charge from the תשלומים קבועים tab. Each row jumps to its
+//    day. The same windows drive the push/inbox rules, so what's here is what
+//    was (or will be) pushed.
 const DUE_HEADS_UP_DAYS = 3;
 const BANNER_TONE: Record<"danger" | "warning" | "info", { wrap: string; head: string }> = {
   danger: { wrap: "border-destructive/30 bg-destructive/[0.04]", head: "text-destructive" },
@@ -534,23 +662,33 @@ const BANNER_TONE: Record<"danger" | "warning" | "info", { wrap: string; head: s
   info: { wrap: "border-border bg-muted/40", head: "text-foreground" },
 };
 
-function DuePaymentsBanner({
+function PaymentsAlertsBanner({
   items,
   todayIso,
   onJump,
+  templates,
+  sourceSettings,
 }: {
   items: PaymentCalendarItem[];
   todayIso: string;
   onJump: (dateIso: string) => void;
+  templates: RecurringExpenseTemplateItem[];
+  sourceSettings: OutflowSourceSettingsRecord;
 }) {
   // Collapsed by default — a quiet header you expand when you want the list.
   const [open, setOpen] = useState(false);
 
-  const { due, severity } = useMemo(() => {
+  const templateReminderDays = useMemo(
+    () => new Map(templates.map((t) => [t.id, t.reminder_work_days_before] as const)),
+    [templates]
+  );
+
+  const { due, upcoming, severity } = useMemo(() => {
     const t = toDateOnly(todayIso) ?? new Date();
     const todayStr = isoLocal(t);
     const horizon = isoLocal(new Date(t.getFullYear(), t.getMonth(), t.getDate() + DUE_HEADS_UP_DAYS));
-    const list = items
+    const byDate = (a: PaymentCalendarItem, b: PaymentCalendarItem) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+    const dueList = items
       // Auto-paid (הוראת קבע) bills need no action, so they're not "to pay".
       // Planned loan installments (origin "loan" + not_paid) ARE payments to make.
       .filter(
@@ -560,14 +698,55 @@ function DuePaymentsBanner({
           i.stage !== "posted" &&
           i.date.slice(0, 10) <= horizon
       )
-      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-    const hasOverdue = list.some((i) => i.date.slice(0, 10) < todayStr);
-    const hasToday = list.some((i) => i.date.slice(0, 10) === todayStr);
-    return { due: list, severity: (hasOverdue ? "danger" : hasToday ? "warning" : "info") as "danger" | "warning" | "info" };
-  }, [items, todayIso]);
+      .sort(byDate);
+    const dueIds = new Set(dueList.map((i) => i.id));
+    const upcomingList = items
+      .filter((i) => {
+        if (i.stage === "posted" || dueIds.has(i.id)) return false;
+        const n = reminderWorkDaysForItem(i, (id) => templateReminderDays.get(id), sourceSettings);
+        return isInsideReminderWindow(i.date, todayStr, n);
+      })
+      .sort(byDate);
+    const hasOverdue = dueList.some((i) => i.date.slice(0, 10) < todayStr);
+    const hasToday = dueList.some((i) => i.date.slice(0, 10) === todayStr);
+    return {
+      due: dueList,
+      upcoming: upcomingList,
+      severity: (hasOverdue ? "danger" : hasToday ? "warning" : "info") as "danger" | "warning" | "info",
+    };
+  }, [items, todayIso, templateReminderDays, sourceSettings]);
 
-  if (due.length === 0) return null;
+  if (due.length === 0 && upcoming.length === 0) return null;
   const tone = BANNER_TONE[severity];
+  const headline = [
+    due.length ? `תשלומים לתשלום: ${due.length}` : null,
+    upcoming.length ? `קרובים: ${upcoming.length}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  const row = (item: PaymentCalendarItem) => {
+    const stage = itemStageKey(item);
+    const day = toDateOnly(item.date) ?? new Date(item.date);
+    return (
+      <li key={item.id}>
+        <button
+          type="button"
+          onClick={() => onJump(item.date.slice(0, 10))}
+          className="flex w-full items-center gap-2 px-3 py-2 text-right transition-colors hover:bg-background/60"
+        >
+          <span className={`h-2 w-2 shrink-0 rounded-full ${STAGE_DOT[stage]}`} />
+          <span className="min-w-0 flex-1 text-sm font-medium">{item.label}</span>
+          <Badge variant={STAGE_BADGE[stage]}>{STAGE_LABEL[stage]}</Badge>
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+            {day.getDate()}/{day.getMonth() + 1}
+          </span>
+          <span className="shrink-0 text-sm font-semibold tabular-nums">{amountLabel(item)}</span>
+          <ChevronLeftIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+        </button>
+      </li>
+    );
+  };
 
   return (
     <div className={`rounded-xl border ${tone.wrap}`}>
@@ -578,35 +757,26 @@ function DuePaymentsBanner({
         aria-expanded={open}
       >
         <WarningIcon className="h-4 w-4 shrink-0" />
-        <span className="flex-1 text-right">תשלומים לתשלום: {due.length}</span>
+        <span className="flex-1 text-right">{headline}</span>
         <ChevronDownIcon className={`h-4 w-4 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open ? (
-        <ul className="max-h-72 divide-y overflow-y-auto border-t">
-          {due.map((item) => {
-            const stage = itemStageKey(item);
-            const day = toDateOnly(item.date) ?? new Date(item.date);
-            const amountText = amountLabel(item);
-            return (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  onClick={() => onJump(item.date.slice(0, 10))}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-right transition-colors hover:bg-background/60"
-                >
-                  <span className={`h-2 w-2 shrink-0 rounded-full ${STAGE_DOT[stage]}`} />
-                  <span className="min-w-0 flex-1 text-sm font-medium">{item.label}</span>
-                  <Badge variant={STAGE_BADGE[stage]}>{STAGE_LABEL[stage]}</Badge>
-                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                    {day.getDate()}/{day.getMonth() + 1}
-                  </span>
-                  <span className="shrink-0 text-sm font-semibold tabular-nums">{amountText}</span>
-                  <ChevronLeftIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+        <div className="max-h-80 overflow-y-auto border-t">
+          {due.length ? (
+            <>
+              <div className="bg-background/40 px-3 py-1 text-[11px] font-semibold text-muted-foreground">לתשלום</div>
+              <ul className="divide-y">{due.map(row)}</ul>
+            </>
+          ) : null}
+          {upcoming.length ? (
+            <>
+              <div className="border-t bg-background/40 px-3 py-1 text-[11px] font-semibold text-muted-foreground">
+                קרובים — בתוך חלון התזכורת שהוגדר
+              </div>
+              <ul className="divide-y">{upcoming.map(row)}</ul>
+            </>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
@@ -619,6 +789,8 @@ function PaymentItemCard({
   onSplit,
   onRemind,
   onDelete,
+  onEdit,
+  editLabel = "עריכה",
   compact = false,
   accountName,
 }: {
@@ -627,6 +799,9 @@ function PaymentItemCard({
   onSplit: () => void;
   onRemind: () => void;
   onDelete: () => void;
+  // Absent on items that have no editable record here (wages, loans, card charges).
+  onEdit?: () => void;
+  editLabel?: string;
   compact?: boolean;
   accountName?: string;
 }) {
@@ -652,48 +827,85 @@ function PaymentItemCard({
   // Compact single-block row for the list view: title + amount on one line,
   // source + icon actions on the next. Icon-only buttons keep rows narrow.
   if (compact) {
+    // The day panel is a narrow column: text gets the full width and wraps
+    // (never clipped), the ONE action people take here — סמן כשולם — stays a
+    // visible button, and everything else lives behind ⋯ (same pattern as the
+    // dense tables). Six icon buttons beside the meta line squeezed it into a
+    // one-word-per-line sliver.
+    const showMarkPaid = canMarkPaid && item.stage !== "posted";
     return (
-      <div className="rounded-lg border bg-background px-2.5 py-1.5" data-focus-id={item.id}>
+      <div className="rounded-lg border bg-background px-3 py-2.5" data-focus-id={item.id}>
         {/* Row 1: name (wraps) + amount. Badges get their own row so nothing crams. */}
         <div className="flex items-start gap-2">
           <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${STAGE_DOT[stage]}`} />
-          <span className="min-w-0 flex-1 text-sm font-medium leading-snug line-clamp-2">{item.label}</span>
+          <span className="min-w-0 flex-1 break-words text-sm font-medium leading-snug">{item.label}</span>
           <span className="shrink-0 text-sm font-semibold tabular-nums">{amountText}</span>
         </div>
         {item.autoPaid || isForecast || item.variableAmount ? (
-          <div className="mt-1 flex flex-wrap gap-1">
+          <div className="mt-1.5 flex flex-wrap gap-1">
             {item.autoPaid ? <Badge variant="outline">הוראת קבע</Badge> : isForecast ? <Badge variant="neutral">קבועה</Badge> : null}
             {item.variableAmount ? <Badge variant="warning">משתנה</Badge> : null}
           </div>
         ) : null}
         {noteText ? (
-          <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">הערה: {noteText}</div>
+          <div className="mt-1.5 break-words text-xs text-muted-foreground">הערה: {noteText}</div>
         ) : null}
-        <div className="mt-1 flex items-center justify-between gap-2">
-          <MetaRow className="min-w-0 flex-1 text-xs text-muted-foreground" items={metaItems} />
-          <div className="flex shrink-0 items-center gap-1">
-            {canMarkPaid && item.stage !== "posted" ? (
-              <Button type="button" size="icon-sm" variant="secondary" onClick={onMarkPaid} title="סמן כשולם" aria-label="סמן כשולם">
-                <CheckIcon className="h-4 w-4" />
-              </Button>
-            ) : null}
-            {canSplit && item.stage !== "posted" ? (
-              <Button type="button" size="icon-sm" variant="secondary" onClick={onSplit} title="פיצול לתשלומים" aria-label="פיצול לתשלומים">
-                <SplitIcon className="h-4 w-4" />
-              </Button>
-            ) : null}
-            {item.sourceHref ? (
-              <Button asChild type="button" size="icon-sm" variant="secondary" title="למקור" aria-label="למקור">
-                <Link href={item.sourceHref}><ExternalLinkIcon className="h-4 w-4" /></Link>
-              </Button>
-            ) : null}
-            <Button type="button" size="icon-sm" variant="secondary" onClick={onRemind} title="תזכורת" aria-label="תזכורת">
-              <AddReminderIcon className="h-4 w-4" />
+        <MetaRow className="mt-1.5 text-xs text-muted-foreground" items={metaItems} />
+        <div className="mt-2 flex items-center justify-between gap-2 border-t pt-2">
+          {showMarkPaid ? (
+            <Button type="button" size="sm" variant="secondary" onClick={onMarkPaid}>
+              <CheckIcon className="h-3.5 w-3.5" />
+              סמן כשולם
             </Button>
-            {canDelete ? (
-              <DeleteButton onClick={onDelete} />
-            ) : null}
-          </div>
+          ) : (
+            <span />
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+                title="פעולות"
+                aria-label={`פעולות — ${item.label}`}
+              >
+                <MoreIcon className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              {onEdit ? (
+                <DropdownMenuItem onClick={onEdit}>
+                  <EditIcon className="me-2 h-4 w-4" />
+                  {editLabel}
+                </DropdownMenuItem>
+              ) : null}
+              {canSplit && item.stage !== "posted" ? (
+                <DropdownMenuItem onClick={onSplit}>
+                  <SplitIcon className="me-2 h-4 w-4" />
+                  פיצול לתשלומים
+                </DropdownMenuItem>
+              ) : null}
+              {item.sourceHref ? (
+                <DropdownMenuItem asChild>
+                  <Link href={item.sourceHref}>
+                    <ExternalLinkIcon className="me-2 h-4 w-4" />
+                    למקור
+                  </Link>
+                </DropdownMenuItem>
+              ) : null}
+              <DropdownMenuItem onClick={onRemind}>
+                <AddReminderIcon className="me-2 h-4 w-4" />
+                תזכורת
+              </DropdownMenuItem>
+              {canDelete ? (
+                <DropdownMenuItem onClick={onDelete} className="text-destructive focus:text-destructive">
+                  <DeleteIcon className="me-2 h-4 w-4" />
+                  מחיקה
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     );
@@ -732,6 +944,7 @@ function PaymentItemCard({
             פיצול לתשלומים
           </Button>
         ) : null}
+        {onEdit ? <EditButton onClick={onEdit} label={editLabel} /> : null}
         {item.sourceHref ? (
           <Button asChild type="button" size="sm" variant="secondary">
             <Link href={item.sourceHref}>
@@ -752,167 +965,153 @@ function PaymentItemCard({
   );
 }
 
-// ── List view — the selected month's payments as a table ─────────────────────────
-function PaymentsMonthList({
-  items,
-  month,
-  accountNameById,
+// ── Per-item actions + their dialogs (shared by the day panel and the list) ──────
+// Every action that changes data goes through `onMutate`, which resolves only
+// once the board has re-rendered with fresh server data — so a dialog stays
+// busy until its item has visibly moved (or gone), and the board then selects
+// and flashes it wherever it landed.
+type ItemActions = {
+  onMarkPaid: () => void;
+  onSplit: () => void;
+  onRemind: () => void;
+  onDelete: () => void;
+  onEdit?: () => void;
+  editLabel?: string;
+};
+
+function usePaymentItemActions({
   onMutate,
-  legend,
+  templates,
+  projects,
+  properties,
+  orders,
 }: {
-  items: PaymentCalendarItem[];
-  month: Date;
-  accountNameById: Map<string, string>;
-  onMutate: () => void;
-  legend: ReactNode;
+  onMutate: MutateFn;
+  templates: RecurringExpenseTemplateItem[];
+  projects: Option[];
+  properties: Option[];
+  orders: Option[];
 }) {
   const [splitItem, setSplitItem] = useState<PaymentCalendarItem | null>(null);
-  const [splitOpen, setSplitOpen] = useState(false);
   const [markItem, setMarkItem] = useState<PaymentCalendarItem | null>(null);
   const [remindItem, setRemindItem] = useState<PaymentCalendarItem | null>(null);
   const [deleteItem, setDeleteItem] = useState<PaymentCalendarItem | null>(null);
+  const [editItem, setEditItem] = useState<PaymentCalendarItem | null>(null);
+  const [editTemplate, setEditTemplate] = useState<RecurringExpenseTemplateItem | null>(null);
 
-  // Only this month's payments, sorted by date ascending.
-  const monthItems = useMemo(() => {
-    return items
-      .filter((i) => {
-        const d = toDateOnly(i.date);
-        return d && d.getMonth() === month.getMonth() && d.getFullYear() === month.getFullYear();
-      })
-      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  }, [items, month]);
+  const actionsFor = (item: PaymentCalendarItem): ItemActions => {
+    const isForecast = Boolean(item.recurringTemplateId) && !item.expenseId;
+    const template = isForecast ? templates.find((t) => t.id === item.recurringTemplateId) ?? null : null;
+    return {
+      onMarkPaid: () => setMarkItem(item),
+      onSplit: () => setSplitItem(item),
+      onRemind: () => setRemindItem(item),
+      onDelete: () => setDeleteItem(item),
+      // A real expense row edits in place (the shared dialog, same as the
+      // ledger). A forecast has no row yet, so "edit" is the recurring rule it
+      // came from. Wages / loans / card charges edit on their own pages (למקור).
+      ...(item.expenseId
+        ? { onEdit: () => setEditItem(item), editLabel: "עריכה" }
+        : template
+          ? { onEdit: () => setEditTemplate(template), editLabel: "עריכת ההוצאה הקבועה" }
+          : {}),
+    };
+  };
 
-  const monthName = useMemo(() => new Intl.DateTimeFormat("he-IL", { month: "long" }).format(month), [month]);
+  const dialogs = (
+    <>
+      {/* Edit a real expense — the shared dialog, seeded exactly as the ledger
+          seeds it. `dueDate` (expense_date), not `date`: a paid row's `date` is
+          its paid_date, and saving that back would overwrite the schedule. */}
+      <ExpenseDialog
+        open={Boolean(editItem)}
+        onOpenChange={(o) => {
+          if (!o) setEditItem(null);
+        }}
+        editingExpense={
+          editItem?.expenseId
+            ? {
+                id: editItem.expenseId,
+                amount: editItem.amount,
+                category: editItem.category,
+                description: editItem.descriptionRaw,
+                notes: editItem.notes,
+                expense_date: editItem.dueDate,
+                business_domain: editItem.businessDomain,
+                payment_status: editItem.paymentStatus,
+                paid_amount: editItem.paidAmount,
+                payment_method: editItem.paymentMethod,
+                paid_date: editItem.paidDate,
+                account_id: editItem.accountId,
+                project_id: editItem.expenseProjectId,
+                order_id: editItem.expenseOrderId,
+                property_id: editItem.expensePropertyId,
+              }
+            : null
+        }
+        editingSourceLabel={editItem?.sourceLabel ?? null}
+        lockedProjectId={editItem?.expenseProjectId}
+        lockedOrderId={editItem?.expenseOrderId}
+        recurringProjects={projects}
+        recurringOrders={orders}
+        recurringProperties={properties}
+        // The dialog awaits this before closing, so it stays busy until the
+        // board shows the row on its (possibly new) day.
+        onSaved={(data) => onMutate({ expenseId: data.expenseId || editItem?.expenseId })}
+      />
 
-  return (
-    <div className="space-y-3">
-      {monthItems.length === 0 ? (
-        <div className="rounded-xl border p-10 text-center text-sm text-muted-foreground">אין תשלומים בחודש זה.</div>
-      ) : (
-        <div className="overflow-x-auto rounded-xl border">
-          <table dir="rtl" className="w-full text-sm">
-            <thead className="border-b bg-muted/40 text-xs text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 text-right font-medium">תאריך</th>
-                <th className="px-3 py-2 text-right font-medium">תשלום</th>
-                <th className="px-3 py-2 text-right font-medium">סטטוס</th>
-                <th className="px-3 py-2 text-right font-medium">סכום</th>
-                <th className="px-3 py-2 text-right font-medium">פעולות</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {monthItems.map((item) => {
-                const stage = itemStageKey(item);
-                const isForecast = Boolean(item.recurringTemplateId) && !item.expenseId;
-                // Auto-paid (הוראת קבע) needs no approval → no mark-paid button.
-  // A forecast is a period that has no expense row yet, so it always needs a way
-  // to be recorded — INCLUDING a standing order. "Auto-paid" only means the
-  // generator stamps it paid when it creates it; until then there is nothing in
-  // the ledger, nothing to reconcile against the bank, and no other way in.
-  // Rows that already exist and are paid are filtered by the stage check below.
-  const canMarkPaid = Boolean(item.expenseId) || isForecast;
-                const canSplit = Boolean(item.expenseId);
-                const canDelete = Boolean(item.expenseId);
-                const day = toDateOnly(item.date) ?? new Date(item.date);
-                const accountName = item.accountId ? accountNameById.get(item.accountId) : undefined;
-                const meta = [item.domainName, item.sourceLabel, accountName ? `מחשבון ${accountName}` : null]
-                  .filter(Boolean)
-                  .join(" • ");
-                return (
-                  <tr key={item.id} data-focus-id={item.id} className="align-top hover:bg-secondary/10">
-                    <td className="whitespace-nowrap px-3 py-2">
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="text-lg font-bold tabular-nums">{day.getDate()}</span>
-                        <span className="text-xs text-muted-foreground">{monthName}</span>
-                      </div>
-                      <div className="text-[11px] text-muted-foreground">{hebrewFullDate(day)}</div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="font-medium">{item.label}</div>
-                      {meta ? <div className="text-xs text-muted-foreground">{meta}</div> : null}
-                      {item.notes?.trim() ? <div className="text-xs text-muted-foreground">הערה: {item.notes.trim()}</div> : null}
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex flex-wrap gap-1">
-                        <Badge variant={STAGE_BADGE[stage]}>{STAGE_LABEL[stage]}</Badge>
-                        {item.autoPaid ? <Badge variant="outline">הוראת קבע</Badge> : isForecast ? <Badge variant="neutral">קבועה</Badge> : null}
-                        {item.variableAmount ? <Badge variant="warning">משתנה</Badge> : null}
-                      </div>
-                    </td>
-                    <td dir="ltr" className="whitespace-nowrap px-3 py-2 text-left font-semibold tabular-nums">
-                      {amountLabel(item)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2">
-                      <div className="flex items-center gap-1">
-                        {canMarkPaid && item.stage !== "posted" ? (
-                          <Button type="button" size="icon-sm" variant="secondary" onClick={() => setMarkItem(item)} title="סמן כשולם" aria-label="סמן כשולם">
-                            <CheckIcon className="h-4 w-4" />
-                          </Button>
-                        ) : null}
-                        {canSplit && item.stage !== "posted" ? (
-                          <Button type="button" size="icon-sm" variant="secondary" onClick={() => { setSplitItem(item); setSplitOpen(true); }} title="פיצול לתשלומים" aria-label="פיצול לתשלומים">
-                            <SplitIcon className="h-4 w-4" />
-                          </Button>
-                        ) : null}
-                        {item.sourceHref ? (
-                          <Button asChild type="button" size="icon-sm" variant="secondary" title="למקור" aria-label="למקור">
-                            <Link href={item.sourceHref}><ExternalLinkIcon className="h-4 w-4" /></Link>
-                          </Button>
-                        ) : null}
-                        <Button type="button" size="icon-sm" variant="secondary" onClick={() => setRemindItem(item)} title="תזכורת" aria-label="תזכורת">
-                          <AddReminderIcon className="h-4 w-4" />
-                        </Button>
-                        {canDelete ? (
-                          <DeleteButton onClick={() => setDeleteItem(item)} />
-                        ) : null}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {legend}
-
-      <ReminderFormDialog
-        mode="create"
-        open={Boolean(remindItem)}
-        onOpenChange={(o) => { if (!o) setRemindItem(null); }}
-        category="task"
-        links={remindItem?.expenseId ? { expense_id: remindItem.expenseId } : {}}
-        defaultNote={remindItem ? reminderNoteFor(remindItem) : undefined}
-        onSaved={() => setRemindItem(null)}
+      {/* Edit the recurring rule behind a forecast item */}
+      <ExpenseDialog
+        open={Boolean(editTemplate)}
+        onOpenChange={(o) => {
+          if (!o) setEditTemplate(null);
+        }}
+        editingRecurringTemplate={editTemplate}
+        recurringProjects={projects}
+        recurringOrders={orders}
+        recurringProperties={properties}
+        onSaved={() => onMutate()}
       />
 
       <SplitPaymentDialog
-        open={splitOpen}
+        open={Boolean(splitItem)}
         onOpenChange={(o) => {
-          setSplitOpen(o);
           if (!o) setSplitItem(null);
         }}
         sourceItem={splitItem}
-        onSaved={() => {
-          setSplitOpen(false);
+        onSaved={async () => {
+          await onMutate({ id: splitItem?.id });
           setSplitItem(null);
-          onMutate();
         }}
       />
 
       <MarkPaidDialog
         item={markItem}
         onClose={() => setMarkItem(null)}
-        onSaved={() => {
+        onSaved={async ({ expenseId }) => {
+          await onMutate({ expenseId });
           setMarkItem(null);
-          onMutate();
         }}
       />
 
+      <ReminderFormDialog
+        mode="create"
+        open={Boolean(remindItem)}
+        onOpenChange={(o) => {
+          if (!o) setRemindItem(null);
+        }}
+        category="task"
+        links={remindItem?.expenseId ? { expense_id: remindItem.expenseId } : {}}
+        defaultNote={remindItem ? reminderNoteFor(remindItem) : undefined}
+        onSaved={() => setRemindItem(null)}
+      />
+
+      {/* Delete this expense (e.g. an orphaned recurring bill) — deferred with undo */}
       <ConfirmDialog
         open={Boolean(deleteItem)}
-        onOpenChange={(o) => { if (!o) setDeleteItem(null); }}
+        onOpenChange={(o) => {
+          if (!o) setDeleteItem(null);
+        }}
         title="מחיקת תשלום"
         description={deleteItem ? `למחוק את "${deleteItem.label}"?` : ""}
         confirmLabel="מחיקה"
@@ -921,14 +1120,18 @@ function PaymentsMonthList({
           if (!deleteItem) return;
           const target = deleteItem;
           setDeleteItem(null);
-          scheduleExpenseItemDelete(target, onMutate);
+          scheduleExpenseItemDelete(target, () => {
+            void onMutate();
+          });
         }}
       />
-    </div>
+    </>
   );
+
+  return { actionsFor, dialogs };
 }
 
-// ── Selected-day panel (owns its own add/mark/split dialog state) ─────────────────
+// ── Selected-day panel (owns its own add dialog; item dialogs come from the hook) ─
 function PaymentsDayPanel({
   day,
   holiday,
@@ -938,6 +1141,7 @@ function PaymentsDayPanel({
   projects,
   properties,
   orders,
+  templates,
   accountNameById,
   onMutate,
 }: {
@@ -949,56 +1153,46 @@ function PaymentsDayPanel({
   projects: Option[];
   properties: Option[];
   orders: Option[];
+  templates: RecurringExpenseTemplateItem[];
   accountNameById: Map<string, string>;
-  onMutate: () => void;
+  onMutate: MutateFn;
 }) {
   const [addOpen, setAddOpen] = useState(false);
-  const [splitItem, setSplitItem] = useState<PaymentCalendarItem | null>(null);
-  const [splitOpen, setSplitOpen] = useState(false);
-  const [markItem, setMarkItem] = useState<PaymentCalendarItem | null>(null);
-  const [remindItem, setRemindItem] = useState<PaymentCalendarItem | null>(null);
-  const [deleteItem, setDeleteItem] = useState<PaymentCalendarItem | null>(null);
+  const { actionsFor, dialogs } = usePaymentItemActions({ onMutate, templates, projects, properties, orders });
 
   const dayIso = isoLocal(day);
 
   return (
     <div className="flex h-full flex-col rounded-2xl border bg-card p-4">
-      <div>
-        <div className="text-xs font-semibold text-primary">{isToday ? "היום · נבחר" : "נבחר"}</div>
-        <div className="text-lg font-bold leading-tight">{fmtFullDay(day)}</div>
-        <div className="text-xs text-muted-foreground">{hebrewFullDate(day)}</div>
-        {holiday ? (
-          <div className="mt-0.5 text-sm font-medium text-secondary">{holiday}</div>
+      {/* Header — a header: eyebrow, the date large, its Hebrew date and holiday
+          small, the day's total on its own line, and a rule before the list. */}
+      <div className="border-b pb-3">
+        {isToday ? <div className="text-[11px] font-semibold text-primary">היום</div> : null}
+        <div className="mt-0.5 text-xl font-bold leading-tight">{fmtFullDay(day)}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{hebrewFullDate(day)}</div>
+        {holiday ? <div className="mt-0.5 text-xs font-medium text-secondary">{holiday}</div> : null}
+        {total > 0 ? (
+          <div className="mt-3 flex items-baseline justify-between gap-3 rounded-lg bg-muted/40 px-3 py-2">
+            <span className="text-xs font-medium text-muted-foreground">לתשלום ביום זה</span>
+            <span className="text-base font-bold tabular-nums">{fmtIls(total)}</span>
+          </div>
+        ) : items.length > 0 ? (
+          <div className="mt-3 rounded-lg bg-success/10 px-3 py-2 text-xs font-medium text-success">כל התשלומים ביום זה שולמו</div>
         ) : null}
-        <div className="mt-1 text-sm text-muted-foreground">
-          {total > 0 ? (
-            <>
-              לתשלום ביום זה: <span className="font-semibold text-foreground">{fmtIls(total)}</span>
-            </>
-          ) : items.length > 0 ? (
-            "כל התשלומים ביום זה שולמו"
-          ) : null}
-        </div>
       </div>
 
       {/* Body — fills the panel and scrolls when there are many payments, so the
           panel keeps a fixed height and the add button stays pinned at the bottom */}
       <div className="mt-3 min-h-0 flex-1 overflow-y-auto">
         {items.length > 0 ? (
-          <div className="space-y-1.5">
+          <div className="space-y-2.5">
             {items.map((item) => (
               <PaymentItemCard
                 key={item.id}
                 item={item}
                 compact
                 accountName={item.accountId ? accountNameById.get(item.accountId) : undefined}
-                onMarkPaid={() => setMarkItem(item)}
-                onSplit={() => {
-                  setSplitItem(item);
-                  setSplitOpen(true);
-                }}
-                onRemind={() => setRemindItem(item)}
-                onDelete={() => setDeleteItem(item)}
+                {...actionsFor(item)}
               />
             ))}
           </div>
@@ -1015,18 +1209,22 @@ function PaymentsDayPanel({
 
       {/* Add — pinned to the bottom, full width */}
       <div className="mt-3">
-        <Button type="button" className="w-full" onClick={() => setAddOpen(true)}>
+        <Button type="button" variant="outline" className="w-full" onClick={() => setAddOpen(true)}>
           <AddIcon className="h-4 w-4" />
           הוסף תשלום ליום זה
         </Button>
-        <div className="mt-2 text-center text-xs text-muted-foreground">
-          לחצו על יום כדי לראות את התשלומים, או הוסיפו תשלום חדש.
-        </div>
+        {/* Only worth saying on an empty day — with payments listed it is just noise. */}
+        {items.length === 0 ? (
+          <div className="mt-2 text-center text-xs text-muted-foreground">
+            לחצו על יום כדי לראות את התשלומים, או הוסיפו תשלום חדש.
+          </div>
+        ) : null}
       </div>
 
       {/* Add expense/payment — the full shared expense dialog (one-time or
           recurring), prefilled to this day. No `users` prop, so the worker-session
-          category is omitted on the payments calendar. */}
+          category is omitted on the payments calendar. The dialog awaits onSaved
+          and closes itself once the new payment is on the board. */}
       <ExpenseDialog
         open={addOpen}
         onOpenChange={setAddOpen}
@@ -1035,63 +1233,10 @@ function PaymentsDayPanel({
         recurringProjects={projects}
         recurringOrders={orders}
         recurringProperties={properties}
-        onSaved={() => {
-          setAddOpen(false);
-          onMutate();
-        }}
+        onSaved={(data) => onMutate({ expenseId: data.expenseId || null })}
       />
 
-      {/* Split */}
-      <SplitPaymentDialog
-        open={splitOpen}
-        onOpenChange={(o) => {
-          setSplitOpen(o);
-          if (!o) setSplitItem(null);
-        }}
-        sourceItem={splitItem}
-        onSaved={() => {
-          setSplitOpen(false);
-          setSplitItem(null);
-          onMutate();
-        }}
-      />
-
-      {/* Mark paid */}
-      <MarkPaidDialog
-        item={markItem}
-        onClose={() => setMarkItem(null)}
-        onSaved={() => {
-          setMarkItem(null);
-          onMutate();
-        }}
-      />
-
-      {/* Reminder for this payment */}
-      <ReminderFormDialog
-        mode="create"
-        open={Boolean(remindItem)}
-        onOpenChange={(o) => { if (!o) setRemindItem(null); }}
-        category="task"
-        links={remindItem?.expenseId ? { expense_id: remindItem.expenseId } : {}}
-        defaultNote={remindItem ? reminderNoteFor(remindItem) : undefined}
-        onSaved={() => setRemindItem(null)}
-      />
-
-      {/* Delete this expense (e.g. an orphaned recurring bill) */}
-      <ConfirmDialog
-        open={Boolean(deleteItem)}
-        onOpenChange={(o) => { if (!o) setDeleteItem(null); }}
-        title="מחיקת תשלום"
-        description={deleteItem ? `למחוק את "${deleteItem.label}"?` : ""}
-        confirmLabel="מחיקה"
-        destructive
-        onConfirm={() => {
-          if (!deleteItem) return;
-          const target = deleteItem;
-          setDeleteItem(null);
-          scheduleExpenseItemDelete(target, onMutate);
-        }}
-      />
+      {dialogs}
     </div>
   );
 }
@@ -1104,7 +1249,9 @@ function MarkPaidDialog({
 }: {
   item: PaymentCalendarItem | null;
   onClose: () => void;
-  onSaved: () => void;
+  // Given the expense row that now holds the payment (a forecast gets one on
+  // the spot). Awaited: the dialog stays busy until the board has caught up.
+  onSaved: (saved: { expenseId: string | null }) => void | Promise<void>;
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -1158,12 +1305,19 @@ function MarkPaidDialog({
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
               id: item.expenseId,
+              // A row from a variable-amount template holds only the estimate
+              // until now — this is the real figure.
+              amount: isVariable ? amountNum : null,
               payment_method: method || null,
               account_id: accountId || null,
               paid_date: paidDate,
             }),
           });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        id?: string;
+        expense?: { id?: string };
+      };
       if (!res.ok) {
         const msg = toHebrewError(json.error, "סימון התשלום נכשל.");
         setError(msg);
@@ -1171,7 +1325,9 @@ function MarkPaidDialog({
         return;
       }
       toast.success("התשלום סומן כשולם");
-      onSaved();
+      // A paid bill flows on its paid_date, so it usually MOVES — stay busy
+      // until the board shows it on its new day.
+      await onSaved({ expenseId: json.id ?? json.expense?.id ?? item.expenseId ?? null });
     } catch (err) {
       const msg = toHebrewError(err, "סימון התשלום נכשל.");
       setError(msg);

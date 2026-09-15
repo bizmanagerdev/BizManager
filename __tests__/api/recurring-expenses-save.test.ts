@@ -17,7 +17,12 @@ const {
   invalidateRecurringExpensesEnsureCache,
 } = vi.hoisted(() => ({
   requireRouteAccess: vi.fn(),
-  ensureRecurringExpensesForDate: vi.fn(async () => ({ ok: true, createdCount: 0 })),
+  ensureRecurringExpensesForDate: vi.fn(
+    async (): Promise<{ ok: boolean; createdCount: number; error?: string; skippedMissingSchema?: boolean }> => ({
+      ok: true,
+      createdCount: 0,
+    })
+  ),
   invalidateRecurringExpensesEnsureCache: vi.fn(),
 }));
 
@@ -208,10 +213,19 @@ describe("POST /api/recurring-expenses/save — amount_propagation", () => {
     expect(database.calls.update.expenses[1]).toMatchObject({ paid_amount: 500 });
   });
 
-  it("never reprices a variable-amount template", async () => {
-    const database = sb({ existingAmount: 0 });
+  // A variable bill's rows carry its ESTIMATE until confirmed, so a changed
+  // estimate propagates exactly like a fixed amount (user request, 2026-09-15).
+  it("reprices a variable-amount template's rows like any other when the estimate changes", async () => {
+    const database = sb({ existingAmount: 500 });
     grant(database);
-    await post({ ...VALID_NEW, id: "tpl-1", is_variable_amount: true, amount: 999, amount_propagation: "all" });
+    await post({ ...VALID_NEW, id: "tpl-1", is_variable_amount: true, amount: 999, amount_propagation: "unpaid" });
+    expect(database.calls.update.expenses[0]).toMatchObject({ amount: 999 });
+  });
+
+  it("never writes a 0 estimate over existing rows", async () => {
+    const database = sb({ existingAmount: 500 });
+    grant(database);
+    await post({ ...VALID_NEW, id: "tpl-1", is_variable_amount: true, amount: 0, amount_propagation: "all" });
     expect(database.calls.update.expenses ?? []).toHaveLength(0);
   });
 });
@@ -228,7 +242,35 @@ describe("POST /api/recurring-expenses/save — best-effort post-save generation
     ensureRecurringExpensesForDate.mockResolvedValueOnce({ ok: true, createdCount: 2 });
     grant(sb({ rpcData: 3 }));
     const res = await post(VALID_NEW);
-    expect((await res.json()).generatedCount).toBe(5);
+    const json = await res.json();
+    expect(json.generatedCount).toBe(5);
+    expect(json.generationError).toBeNull();
+  });
+
+  // "I moved the start date back and nothing appeared" must not be silent.
+  it("names the missing backfill migration when that RPC does not exist (save still succeeds)", async () => {
+    grant(sb({ rpcError: { message: 'function public.backfill_recurring_expense(uuid) does not exist' } }));
+    const res = await post(VALID_NEW);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+    expect(json.generationError).toContain("20260809000000");
+  });
+
+  it("reports a generator failure as generationError (save still succeeds)", async () => {
+    ensureRecurringExpensesForDate.mockResolvedValueOnce({ ok: false, createdCount: 0, error: "נדחה" });
+    grant(sb());
+    const res = await post(VALID_NEW);
+    expect(res.status).toBe(200);
+    expect((await res.json()).generationError).toBe("נדחה");
+  });
+
+  it("reports a thrown generator as generationError", async () => {
+    ensureRecurringExpensesForDate.mockRejectedValueOnce(new Error("boom"));
+    grant(sb());
+    const res = await post(VALID_NEW);
+    expect(res.status).toBe(200);
+    expect((await res.json()).generationError).toBeTruthy();
   });
 });
 

@@ -159,6 +159,10 @@ export type EditingExpenseData = {
   paid_amount?: number | string | null;
   payment_method?: string | null;
   account_id?: string | null;
+  // The day the money actually left (the row flows on it when paid). Pass the
+  // key — even as null — when the caller knows it; a caller that doesn't carry
+  // it should leave the key out so saving never wipes a stored value.
+  paid_date?: string | null;
   project_id?: string | null;
   order_id?: string | null;
   property_id?: string | null;
@@ -385,6 +389,7 @@ export function ExpenseDialog({
   const isEditingSession = Boolean(editingSession);
   const isEditingTemplate = Boolean(editingRecurringTemplate);
   const isEditing = Boolean(editingExpense) || isEditingSession;
+  const paidDateProvided = Boolean(editingExpense && "paid_date" in editingExpense);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   // Labor cost as originally saved on the session (edit) — drives whether we let
@@ -406,6 +411,8 @@ export function ExpenseDialog({
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>("paid");
   const [paidAmount, setPaidAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
+  // "תאריך תשלום בפועל" — only meaningful while status is paid.
+  const [paidDate, setPaidDate] = useState("");
   const [accountId, setAccountId] = useState("");
   const [accountsList, setAccountsList] = useState<Account[]>([]);
   const [category, setCategory] = useState(defaultCategory ?? "");
@@ -615,6 +622,7 @@ export function ExpenseDialog({
       setPaymentStatus("paid");
       setPaidAmount("");
       setPaymentMethod("");
+      setPaidDate("");
       setAccountId(typeof t.account_id === "string" ? t.account_id : "");
       const cat = t.category ?? "";
       if (cat && KNOWN_CATEGORIES.has(cat)) {
@@ -647,6 +655,7 @@ export function ExpenseDialog({
       const rawPaid = editingExpense.paid_amount;
       setPaidAmount(rawPaid != null ? String(rawPaid) : "");
       setPaymentMethod(typeof editingExpense.payment_method === "string" ? editingExpense.payment_method : "");
+      setPaidDate(typeof editingExpense.paid_date === "string" ? editingExpense.paid_date.slice(0, 10) : "");
       setAccountId(typeof editingExpense.account_id === "string" ? editingExpense.account_id : "");
       const cat = editingExpense.category ?? "";
       if (cat && KNOWN_CATEGORIES.has(cat)) {
@@ -1145,12 +1154,19 @@ export function ExpenseDialog({
         error?: string;
         repricedCount?: number;
         generatedCount?: number;
+        generationError?: string | null;
       };
       if (!res.ok) {
         const msg = toHebrewError(json.error, "שמירת ההוצאה הקבועה נכשלה.");
         setErrorMessage(msg);
         toast.error("שגיאה בשמירת הוצאה קבועה", { description: msg });
         return;
+      }
+      // The template is saved, but its periods could not be created (generator
+      // or backfill missing/refused). Say so — otherwise a start date moved back
+      // "just doesn't work" with no clue why.
+      if (json.generationError) {
+        toast.error("ההוצאה הקבועה נשמרה, אך יצירת החיובים נכשלה", { description: json.generationError });
       }
       const repriced = Number(json.repricedCount) || 0;
       // Say what happened to the existing rows either way — "0 updated" is the
@@ -1266,6 +1282,14 @@ export function ExpenseDialog({
         paid_amount: paymentStatus === "partial" ? (Number(paidAmount) || null) : null,
         payment_method: (paymentStatus === "paid" || paymentStatus === "partial") ? (paymentMethod || null) : null,
         account_id: accountId || null,
+        // The real pay day. Sent when the dialog was handed one or the user
+        // typed one, so a caller without it never wipes a stored value; a row
+        // that is no longer paid has no pay day.
+        ...(paymentStatus !== "paid"
+          ? isEditing ? { paid_date: null } : {}
+          : paidDate || paidDateProvided
+            ? { paid_date: paidDate || null }
+            : {}),
         tag_ids: tagIds,
       };
 
@@ -3310,6 +3334,15 @@ export function ExpenseDialog({
                       setAccountId((prev) => prev || defaultAccountForMethod(list, paymentMethod));
                     }}
                   />
+                  {paymentStatus === "paid" && (
+                    <div className="space-y-1">
+                      <div className="text-sm font-medium">תאריך תשלום בפועל</div>
+                      <DateInput value={paidDate} onChange={(e) => setPaidDate(e.target.value)} />
+                      <div className="text-xs text-muted-foreground">
+                        היום שבו הכסף יצא — לפי תאריך זה התשלום מופיע בלוח. ריק = תאריך ההוצאה.
+                      </div>
+                    </div>
+                  )}
                   {paymentStatus === "partial" && (
                     <div className="space-y-1">
                       <div className="text-sm font-medium">סכום ששולם</div>

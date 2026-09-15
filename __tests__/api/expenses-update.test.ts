@@ -157,6 +157,38 @@ describe("POST /api/expenses/update — payment_status/paid_amount/payment_metho
   });
 });
 
+// "תאריך תשלום בפועל" — the day the money left, which is the day a paid row
+// sits on in the ledger/calendar. Applied only when the caller sends the key.
+describe("POST /api/expenses/update — paid_date", () => {
+  it("writes a valid paid_date when the row is paid", async () => {
+    const database = sb(standaloneExpenseRow());
+    grant(database);
+    await post({ ...VALID, payment_status: "paid", payment_method: "cash", paid_date: "2026-06-20" });
+    expect(database.calls.update.expenses[0]).toMatchObject({ payment_status: "paid", paid_date: "2026-06-20" });
+  });
+
+  it("leaves paid_date untouched when the body doesn't carry the key (callers that don't know it must not wipe it)", async () => {
+    const database = sb(standaloneExpenseRow());
+    grant(database);
+    await post({ ...VALID, payment_status: "paid", payment_method: "cash" });
+    expect(database.calls.update.expenses[0]).not.toHaveProperty("paid_date");
+  });
+
+  it("clears paid_date when the key is sent and the row is no longer paid", async () => {
+    const database = sb(standaloneExpenseRow());
+    grant(database);
+    await post({ ...VALID, payment_status: "not_paid", paid_date: "2026-06-20" });
+    expect(database.calls.update.expenses[0]).toMatchObject({ payment_status: "not_paid", paid_date: null });
+  });
+
+  it("stores null for a malformed date rather than garbage", async () => {
+    const database = sb(standaloneExpenseRow());
+    grant(database);
+    await post({ ...VALID, payment_status: "paid", paid_date: "20/06/2026" });
+    expect(database.calls.update.expenses[0]).toMatchObject({ paid_date: null });
+  });
+});
+
 describe("POST /api/expenses/update — persistence & audit", () => {
   it("updates expenses only (no project_expenses row) for a standalone expense", async () => {
     const database = sb(standaloneExpenseRow());
