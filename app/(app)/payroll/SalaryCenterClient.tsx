@@ -242,6 +242,8 @@ function workerFormFromUser(user: SalaryCenterUserRow): WorkerFormState {
     payroll_worker_type: normalizePayrollWorkerType(user.payroll_worker_type, user.pay_tracking_mode),
     locale: user.locale === "ar" ? "ar" : "he",
     section_access: sanitizeSectionAccess(user.section_access),
+    // Never hydrated from the row — a password is only ever write-only input.
+    password: "",
   };
 }
 
@@ -319,6 +321,7 @@ export default function SalaryCenterClient({
     payroll_worker_type: "session_only",
     locale: "he",
     section_access: DEFAULT_SECTION_ACCESS,
+    password: "",
   });
   const [agreementForm, setAgreementForm] = useState<AgreementFormState>(DEFAULT_AGREEMENT_FORM);
   // Pre-edit snapshot of the agreement being edited (null when the dialog is in
@@ -703,6 +706,10 @@ export default function SalaryCenterClient({
     ? normalizePayrollWorkerType(selectedWorker.payroll_worker_type, selectedWorker.pay_tracking_mode)
     : null;
   const isSelectedWorkerSalaryTracked = selectedWorker ? isSalaryTrackedWorker(selectedWorker) : false;
+  /** Does an actual login account exist for this worker (not just "allowed in")?
+   *  False for anyone first created as "עובד ללא גישה" — granting them access
+   *  needs a password here, because there is nothing to sign in with yet. */
+  const selectedWorkerHasLogin = selectedWorker?.has_login === true;
   const canSelectedWorkerHaveAgreement = Boolean(
     selectedWorker &&
       selectedWorkerType &&
@@ -1048,6 +1055,19 @@ export default function SalaryCenterClient({
     if (!selectedWorker) return;
     const workerId = selectedWorker.id;
     const previousSnapshot = workerFormFromUser(selectedWorker);
+    const grantsAccess = workerForm.role !== "worker_no_access" && workerForm.system_access;
+
+    // Caught here as well as in the route so the admin isn't told only after a
+    // round trip that the access they just granted is unusable.
+    if (grantsAccess && !workerForm.email.trim()) {
+      toast.error("יש להזין אימייל למשתמש עם גישה.");
+      return;
+    }
+    if (grantsAccess && !selectedWorkerHasLogin && !workerForm.password.trim()) {
+      toast.error("לעובד זה אין עדיין חשבון כניסה. יש להזין סיסמה כדי לפתוח לו גישה.");
+      return;
+    }
+
     runAction(async () => {
       await postJson("/api/payroll/workers/update", {
         user_id: workerId,
@@ -1060,6 +1080,7 @@ export default function SalaryCenterClient({
         payroll_worker_type: workerForm.payroll_worker_type,
         locale: workerForm.locale,
         section_access: workerForm.section_access,
+        password: grantsAccess ? workerForm.password.trim() : "",
       });
       await refreshAll({ reloadProtected: false });
       setWorkerAccessDialogOpen(false);
@@ -4895,6 +4916,34 @@ export default function SalaryCenterClient({
                 <option value="no">{"לא"}</option>
               </NativeSelect>
             </Field>
+            {/* "גישה למערכת: כן" only marks the PROFILE as allowed in — signing
+                in needs a real auth account, which a worker created as "עובד
+                ללא גישה" has never had. So the password is mandatory the first
+                time access is granted, and an optional reset from then on. */}
+            {workerForm.role !== "worker_no_access" && workerForm.system_access ? (
+              <div className="md:col-span-2">
+                <Field label={selectedWorkerHasLogin ? "איפוס סיסמה" : "סיסמה לכניסה *"}>
+                  <Input
+                    type="password"
+                    autoComplete="new-password"
+                    value={workerForm.password}
+                    onChange={(event) =>
+                      setWorkerForm((current) => ({ ...current, password: event.target.value }))
+                    }
+                    placeholder={
+                      selectedWorkerHasLogin
+                        ? "השאירו ריק כדי לא לשנות את הסיסמה הקיימת"
+                        : "נדרשת סיסמה — לעובד זה אין עדיין חשבון כניסה"
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {selectedWorkerHasLogin
+                      ? "העובד מתחבר עם האימייל שלמעלה. מילוי השדה יחליף לו את הסיסמה."
+                      : "יווצר לעובד חשבון כניסה עם האימייל שלמעלה והסיסמה הזו."}
+                  </p>
+                </Field>
+              </div>
+            ) : null}
             {/* Only a worker is ever offered Arabic — office/admin stay Hebrew,
                 so this field is meaningless (and hidden) for every other role. */}
             {workerForm.role === "worker" ? (

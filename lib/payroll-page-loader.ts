@@ -23,6 +23,10 @@ function mapUsers(rows: Row[] | null | undefined): SalaryCenterUserRow[] {
         : null,
     locale: row.locale === "ar" ? "ar" : "he",
     section_access: sanitizeSectionAccess(row.section_access),
+    // Collapsed to a boolean here, server-side: the worker-access dialog needs
+    // to know "is there a login account at all" to decide whether a password is
+    // required, but the auth uuid itself has no business crossing to the client.
+    has_login: typeof row.auth_user_id === "string" && row.auth_user_id.trim().length > 0,
   }));
 }
 
@@ -133,7 +137,7 @@ export async function loadAttendanceRefData(supabase: SupabaseClient): Promise<A
   const [usersResult, options] = await Promise.all([
     supabase
       .from("users")
-      .select("id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode,locale,section_access")
+      .select("id,auth_user_id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode,locale,section_access")
       .or("role.eq.admin,role.eq.office,role.eq.worker,role.eq.worker_no_access")
       .order("full_name", { ascending: true })
       .range(0, 999),
@@ -191,7 +195,7 @@ export async function loadPayrollPageData(
   ] = await Promise.all([
     supabase
       .from("users")
-      .select("id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode,locale,section_access")
+      .select("id,auth_user_id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode,locale,section_access")
       .or("role.eq.admin,role.eq.office,role.eq.worker,role.eq.worker_no_access")
       .order("full_name", { ascending: true })
       .range(0, 999),

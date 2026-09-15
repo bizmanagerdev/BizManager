@@ -41,6 +41,17 @@ export type SalaryCenterUserRow = {
   locale: "he" | "ar";
   /** Per-worker "which sections can he reach" map; admin-set here, meaningless for staff. */
   section_access: SectionAccess;
+  /**
+   * Whether an actual Supabase Auth account is linked to this profile
+   * (`users.auth_user_id is not null`) — i.e. whether there is anything to log
+   * in *with*. Distinct from `system_access`, which only says the profile is
+   * *allowed* in. A worker created as "worker_no_access" has no auth account,
+   * so flipping system_access on is not enough; a password has to be set too.
+   * The raw auth id deliberately never reaches the client — only this boolean.
+   * Optional because callers that build rows from a plain `users` select (which
+   * doesn't ask for auth_user_id) legitimately don't know.
+   */
+  has_login?: boolean;
 };
 
 export type SalaryCenterProjectOption = {

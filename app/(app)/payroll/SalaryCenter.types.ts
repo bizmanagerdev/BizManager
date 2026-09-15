@@ -66,6 +66,12 @@ export type WorkerFormState = {
   locale: "he" | "ar";
   /** Per-worker "which sections can he reach" map; only meaningful for role="worker". */
   section_access: SectionAccess;
+  /**
+   * New login password. Required when granting system access to a worker who
+   * has no auth account yet (`has_login === false`); otherwise optional, and an
+   * empty string means "leave the existing password alone".
+   */
+  password: string;
 };
 
 export type CreateUserFormState = {
