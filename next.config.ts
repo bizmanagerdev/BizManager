@@ -51,23 +51,18 @@ const nextConfig: NextConfig = {
   // for the e2e webServer specifically (playwright.config.ts sets
   // NODE_ENV=test there) — normal `npm run dev` keeps the indicator.
   devIndicators: process.env.NODE_ENV === "test" ? false : undefined,
-  // Next dev mode disposes an on-demand-compiled page/chunk after 60s of no
-  // requests (default onDemandEntries.maxInactiveAge), keeping only the 5
-  // most-recently-used (default pagesBufferLength) — so a route warmed up at
-  // the start of a long, sequential e2e run gets evicted and silently
-  // RE-compiled the next time a later test needs it, reproducing the exact
-  // "on-demand compile -> Fast Refresh remount mid-interaction" instability
-  // global-setup.ts's own warmup exists to avoid (see its header comment) —
-  // confirmed via a real CI run: the SAME "element was detached from the DOM"
-  // failure kept recurring, just as broadly, even after that warmup fix and
-  // an unrelated auto-reload fix landed. Generous, test-only numbers (this
-  // key is a `next dev`-only mechanism with zero effect on a production
-  // build) so every route/dialog chunk the suite touches stays compiled for
-  // the whole run instead of cycling in and out.
-  onDemandEntries:
-    process.env.NODE_ENV === "test"
-      ? { maxInactiveAge: 60 * 60 * 1000, pagesBufferLength: 100 }
-      : undefined,
+  // NOTE: `onDemandEntries` (webpack dev server's compiled-page cache TTL) was
+  // tried here to fight an e2e instability where a warmed-up route got
+  // silently RE-compiled mid-test — but it did nothing, because `next dev`
+  // (see package.json's `dev` script — no `--webpack` flag) runs on
+  // TURBOPACK by default as of this Next version (confirmed straight from
+  // Next's own source: lib/bundler.js's parseBundlerArgs — "The default is
+  // turbopack when nothing is configured"). Turbopack's hot-reloader
+  // (server/dev/hot-reloader-turbopack.js) has no onDemandEntries handling at
+  // all; that option only exists in the webpack hot-reloader. Left as a
+  // pointer so a future attempt doesn't retry the same dead end — the actual
+  // fix belongs in e2e/global-setup.ts's warmup instead (wait for the
+  // dialog's own content, not a fixed timeout).
   async headers() {
     return [
       {
