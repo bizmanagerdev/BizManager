@@ -223,6 +223,31 @@ jobs:
           echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY" >> .env.test.local
           echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_KEY" >> .env.test.local
 
+      - name: Build the app
+        # Runs the e2e suite against a real production build instead of
+        # `next dev` — see playwright.config.ts's webServer comment for the
+        # full story: four separate attempts at patching around dev mode's
+        # on-demand compilation + Fast Refresh remounting all failed to fix
+        # an "element was detached from the DOM" instability broad enough
+        # (including plain nav-redirect tests touching no dialog at all) to
+        # point at this runner's own resource pressure — a standard 2-core
+        # box running Postgres + a live-compiling dev server + a full browser
+        # all at once — rather than any single interaction. A finished build
+        # has none of that live-compilation machinery, and building here (no
+        # tests/browser running yet) means it isn't competing for CPU either.
+        #
+        # NEXT_PUBLIC_* vars must be present at BUILD time to get baked into
+        # the client bundle, so .env.test.local (written by the previous
+        # step) is sourced into this step's own shell — these are throwaway
+        # local-stack credentials scoped to this one job run, not secrets
+        # other steps need, so no reason to promote them via $GITHUB_ENV.
+        run: |
+          set -a
+          source .env.test.local
+          set +a
+          npm run build
+        timeout-minutes: 10
+
       - name: Install Playwright's chromium
         run: npx playwright install --with-deps chromium
 

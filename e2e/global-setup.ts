@@ -35,8 +35,17 @@ import { E2E_USERS } from "./fixtures";
  * once, rather than padding every test that happens to touch a lazy-loaded
  * chunk. The same dev server process serves every test in the run, so this
  * one-time cost benefits all of them.
+ *
+ * CI SKIPS ALL OF THIS ENTIRELY: after four separate attempts at patching
+ * around dev-mode instability kept hitting the same wall (see
+ * playwright.config.ts's webServer comment for the full account), CI was
+ * switched to serve an already-built app instead of `next dev` — which has
+ * none of the on-demand compilation this warmup exists to work around, so
+ * running it there would just be pure wasted time on every run. Still runs
+ * for local `npm run test:e2e`, which stays on `next dev` for fast iteration.
  */
 export default async function globalSetup() {
+  if (process.env.CI) return;
   const baseURL = "http://127.0.0.1:3000";
   const browser = await chromium.launch();
   try {
