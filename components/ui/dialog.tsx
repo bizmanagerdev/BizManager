@@ -1,8 +1,26 @@
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { CloseIcon } from "@/components/ui/icons";
+import { consumeNativeSurfaceGuard } from "@/components/ui/native-surface";
 
 import { cn } from "@/lib/utils";
+
+type ContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>;
+
+// Every dialog content below composes this. A date picker, a native select's
+// option list, the file chooser and the share sheet are all drawn by the OS on
+// top of the page, and the tap that dismisses one comes back down to the page —
+// landing on the backdrop, which Radix can only read as "dismiss me". See
+// components/ui/native-surface.ts for the full story; whoever opens such a
+// surface arms the guard, and this is where it gets spent.
+function withNativeSurfaceGuard(
+  onInteractOutside: ContentProps["onInteractOutside"]
+): ContentProps["onInteractOutside"] {
+  return (event) => {
+    if (consumeNativeSurfaceGuard()) event.preventDefault();
+    onInteractOutside?.(event);
+  };
+}
 
 export const Dialog = DialogPrimitive.Root;
 export const DialogTrigger = DialogPrimitive.Trigger;
@@ -27,11 +45,12 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 export const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { hideClose?: boolean }
->(({ className, children, onClick, hideClose = false, ...props }, ref) => (
+>(({ className, children, onClick, onInteractOutside, hideClose = false, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
+      onInteractOutside={withNativeSurfaceGuard(onInteractOutside)}
       className={cn(
         // max-h + overflow-y guard so a dialog taller than the viewport (e.g. at
         // large --font-scale) scrolls inside its own box instead of overflowing
@@ -74,11 +93,12 @@ DialogContent.displayName = DialogPrimitive.Content.displayName;
 export const ResponsiveSheetContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { hideClose?: boolean }
->(({ className, children, onClick, hideClose = false, ...props }, ref) => (
+>(({ className, children, onClick, onInteractOutside, hideClose = false, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
+      onInteractOutside={withNativeSurfaceGuard(onInteractOutside)}
       className={cn(
         "fixed inset-x-0 bottom-0 top-auto z-50 flex max-h-[92svh] w-full translate-x-0 translate-y-0 flex-col gap-0 rounded-t-2xl border bg-background p-0 shadow-lg duration-200",
         "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
@@ -122,11 +142,12 @@ ResponsiveSheetContent.displayName = "ResponsiveSheetContent";
 export const FullScreenDialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { hideClose?: boolean }
->(({ className, children, onClick, hideClose = false, ...props }, ref) => (
+>(({ className, children, onClick, onInteractOutside, hideClose = false, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
+      onInteractOutside={withNativeSurfaceGuard(onInteractOutside)}
       className={cn(
         "fixed inset-x-0 bottom-0 top-3 z-50 w-full overflow-hidden rounded-t-2xl border-0 bg-background shadow-2xl duration-200",
         "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",

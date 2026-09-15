@@ -13,6 +13,7 @@ import {
 import { toast } from "sonner";
 import { compressImageFiles } from "@/lib/images";
 import { Button, type ButtonProps } from "@/components/ui/button";
+import { armNativeSurfaceGuard } from "@/components/ui/native-surface";
 import {
   Dialog,
   DialogContent,
@@ -131,6 +132,9 @@ export function FileUploadActions({
         return;
       }
 
+      // The camera permission prompt is browser chrome over the page — see
+      // components/ui/native-surface.ts.
+      armNativeSurfaceGuard();
       setStartingCamera(true);
       setCameraError("");
       setCameraReady(false);
@@ -253,7 +257,12 @@ export function FileUploadActions({
           variant={chooseVariant}
           size={size}
           disabled={disabled}
-          onClick={() => fileInputRef.current?.click()}
+          onClick={() => {
+            // The file chooser is an OS surface over the page — see
+            // components/ui/native-surface.ts.
+            armNativeSurfaceGuard();
+            fileInputRef.current?.click();
+          }}
         >
           <UploadIcon className="h-4 w-4" />
           {chooseLabel}

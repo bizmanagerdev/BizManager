@@ -10,6 +10,7 @@
 // enough to need typing, reach for SearchableSelect instead.
 
 import * as React from "react";
+import { armNativeSurfaceGuard } from "@/components/ui/native-surface";
 import { cn } from "@/lib/utils";
 
 export const NativeSelect = React.forwardRef<
@@ -18,9 +19,17 @@ export const NativeSelect = React.forwardRef<
     /** Compact row height for toolbars and table cells. */
     dense?: boolean;
   }
->(({ className, dense = false, ...props }, ref) => (
+>(({ className, dense = false, onPointerDown, ...props }, ref) => (
   <select
     ref={ref}
+    onPointerDown={(event) => {
+      // On a phone the option list is an OS surface over the page (that's the
+      // point of a native select) — so inside a dialog, the tap that closes it
+      // can come back as a tap on the dialog's backdrop. See
+      // components/ui/native-surface.ts.
+      armNativeSurfaceGuard();
+      onPointerDown?.(event);
+    }}
     className={cn(
       "w-full border border-input bg-background/80 shadow-sm ring-offset-background transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
       dense

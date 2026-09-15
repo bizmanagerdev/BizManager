@@ -33,6 +33,7 @@ import type { MyPaymentAllocationRow, MyPaymentRow } from "@/lib/my-payroll";
 import { t } from "@/lib/i18n/t";
 import type { Locale } from "@/lib/i18n/types";
 import { profileDict } from "@/lib/i18n/dictionaries/profile";
+import { armNativeSurfaceGuard } from "@/components/ui/native-surface";
 
 // The same "סיכום עבודה ותשלומים לעובד" report an admin can print for any
 // worker from the salary center — here scoped to the signed-in worker's own
@@ -317,6 +318,9 @@ export default function WorkerSummaryExport(props: ReportInputs & { locale?: Loc
         "canShare" in navigator &&
         navigator.canShare(shareData)
       ) {
+        // The OS share sheet is drawn over the page, and dismissing it hands the
+        // tap back down — see components/ui/native-surface.ts.
+        armNativeSurfaceGuard();
         await navigator.share(shareData);
         return;
       }

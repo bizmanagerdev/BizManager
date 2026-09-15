@@ -22,6 +22,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { armNativeSurfaceGuard } from "@/components/ui/native-surface";
 
 type CategoryOption = {
   id: string;
@@ -379,6 +380,9 @@ export default function PriceListClient({
         "canShare" in navigator &&
         navigator.canShare(fileShareData)
       ) {
+        // The OS share sheet is drawn over the page, and dismissing it hands the
+        // tap back down — see components/ui/native-surface.ts.
+        armNativeSurfaceGuard();
         await navigator.share(shareData);
         setShareMessage("המחירון מוכן ונפתח בחלון השיתוף של המכשיר ל-WhatsApp, מייל או כל אפליקציה אחרת.");
         return;

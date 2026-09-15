@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { CameraIcon, CloseIcon, SpinnerIcon, VehicleIcon } from "@/components/ui/icons";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { armNativeSurfaceGuard } from "@/components/ui/native-surface";
 import { offlineUpload } from "@/lib/offline-upload";
 import { toHebrewError } from "@/lib/error-messages";
 import { registerReversibleAction, scheduleDeferredEdit } from "@/lib/undo-engine";
@@ -126,7 +127,12 @@ export default function VehiclePhotoAvatar({ tagId, name, photoUrl, size = "sm",
             aria-label={photoUrl ? "החלפת תמונה" : "הוספת תמונה"}
             title={photoUrl ? "החלפת תמונה" : "הוספת תמונה"}
             disabled={busy}
-            onClick={() => inputRef.current?.click()}
+            onClick={() => {
+              // The file chooser is an OS surface over the page — see
+              // components/ui/native-surface.ts.
+              armNativeSurfaceGuard();
+              inputRef.current?.click();
+            }}
             className="absolute inset-0 flex items-end justify-center overflow-hidden rounded-xl disabled:cursor-default"
           >
             <span className="mb-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white">

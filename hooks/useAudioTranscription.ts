@@ -7,6 +7,7 @@
 // browsers (anything with getUserMedia + MediaRecorder, including iOS Safari).
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { armNativeSurfaceGuard } from "@/components/ui/native-surface";
 
 export type TranscriptionState = "idle" | "recording" | "transcribing";
 
@@ -136,6 +137,9 @@ export function useAudioTranscription({
     ) {
       return;
     }
+    // The mic permission prompt is browser chrome drawn over the page, and
+    // dismissing it hands the tap back down — see components/ui/native-surface.ts.
+    armNativeSurfaceGuard();
     void navigator.mediaDevices
       .getUserMedia({
         audio: {

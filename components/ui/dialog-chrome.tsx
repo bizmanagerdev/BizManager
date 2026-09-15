@@ -45,6 +45,19 @@ export const DIALOG_CHROME_CONTENT_PAGE =
  *  panel's 72px since a full page gives far more surface to graze by accident. */
 export const FULL_SCREEN_DISMISS_THRESHOLD = 120;
 
+/** A touch landing on one of these never starts a swipe-down drag. Two reasons,
+ *  and a date field is both: dragging off a control is a fiddle with that
+ *  control, not a gesture on the sheet; and anything that hands the gesture to
+ *  an OS-level surface — a date/time picker, a native select, the keyboard —
+ *  means the page never sees the touchend that would have ended the drag,
+ *  leaving its anchor behind for some later, unrelated touch to be measured
+ *  against. Swiping from the header, the grabber or any blank space in the form
+ *  still works. (Not the cause of the 2026-09-15 date-field report — that was
+ *  the native picker reading as an outside click, see
+ *  components/ui/native-surface.ts — but the same class of hole.) */
+const NO_DRAG_TARGET_SELECTOR =
+  'input, select, textarea, button, a, label, [role="button"], [contenteditable="true"]';
+
 /**
  * Swipe-down-to-close for a full-page mobile dialog. Shared by FormDialog,
  * StepWizardDialog and any bespoke dialog (TaskUpsertDialog, the order/project
@@ -88,12 +101,25 @@ export function useSwipeToDismiss({
 
   return {
     onTouchStart: (event: ReactTouchEvent) => {
+      // Clear first, bail second. A touchstart is NOT guaranteed a matching
+      // touchend (see NO_DRAG_TARGET_SELECTOR), and every `return` below used
+      // to leave the previous sequence's anchor in place — so the next drag was
+      // measured from wherever the finger had been two gestures ago.
+      if (dragStartY.current !== null) resetDragStyle();
+      dragStartY.current = null;
+      dragDistanceRef.current = 0;
+
+      if (event.touches.length !== 1) return; // a second finger is a pinch, not a dismiss
       if ((bodyRef.current?.scrollTop ?? 0) > 0) return;
+      const target = event.target as Element | null;
+      if (target?.closest?.(NO_DRAG_TARGET_SELECTOR)) return;
+
       dragStartY.current = event.touches[0]?.clientY ?? null;
       dragNodeRef.current = event.currentTarget as HTMLElement;
     },
     onTouchMove: (event: ReactTouchEvent) => {
       if (dragStartY.current === null) return;
+      if (event.touches.length !== 1) return;
       const delta = (event.touches[0]?.clientY ?? 0) - dragStartY.current;
       const next = delta > 0 ? delta : 0;
       dragDistanceRef.current = next;
@@ -121,6 +147,20 @@ export function useSwipeToDismiss({
         node.style.transform = `translateY(${node.offsetHeight || window.innerHeight}px)`;
         dragNodeRef.current = null;
         onDismiss();
+
+        // …but onDismiss is allowed to REFUSE: an unsaved-changes prompt or a
+        // save in flight keeps the dialog mounted. Without this it stayed
+        // mounted *off-screen* — drag state already cleared, so nothing was
+        // ever going to put it back — and answering "continue editing" returned
+        // you to an invisible dialog with the app apparently frozen behind the
+        // overlay. onDismiss runs inside a discrete event, so React has flushed
+        // by the time this fires and data-state already says whether the close
+        // took.
+        window.setTimeout(() => {
+          if (!node.isConnected || node.dataset.state === "closed") return;
+          node.style.transition = "transform 150ms ease-out";
+          node.style.transform = "";
+        }, 0);
         return;
       }
 

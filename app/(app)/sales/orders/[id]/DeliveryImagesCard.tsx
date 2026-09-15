@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { AddIcon, DeliveryIcon } from "@/components/ui/icons";
 import { DeleteButton, EditButton, IconButton } from "@/components/ui/icon-button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { armNativeSurfaceGuard } from "@/components/ui/native-surface";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { SectionCard } from "@/components/ui/section-card";
@@ -155,6 +156,9 @@ export default function DeliveryImagesCard({
 
   function openReplace(imageId: string) {
     replaceTargetRef.current = imageId;
+    // The file chooser is an OS surface over the page — see
+    // components/ui/native-surface.ts.
+    armNativeSurfaceGuard();
     replaceInputRef.current?.click();
   }
 

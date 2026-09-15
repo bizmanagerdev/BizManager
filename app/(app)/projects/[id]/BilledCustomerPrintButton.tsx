@@ -5,6 +5,7 @@ import { ShareIcon, SpinnerIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { toHebrewError } from "@/lib/error-messages";
+import { armNativeSurfaceGuard } from "@/components/ui/native-surface";
 
 // Compact print sheet for the "לחיוב לקוח" card: one line per charge
 // (תאריך · פירוט · סכום) and the total — without the on-screen detail
@@ -227,6 +228,9 @@ export default function BilledCustomerPrintButton({ data }: { data: BilledPrintD
         "canShare" in navigator &&
         navigator.canShare(shareData)
       ) {
+        // The OS share sheet is drawn over the page, and dismissing it hands the
+        // tap back down — see components/ui/native-surface.ts.
+        armNativeSurfaceGuard();
         await navigator.share(shareData);
         return;
       }

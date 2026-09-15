@@ -8,6 +8,8 @@
 // Both plugins are pulled in with dynamic import() so nothing here is bundled
 // into the server build or evaluated during SSR — see lib/native-push.ts.
 
+import { armNativeSurfaceGuard } from "@/components/ui/native-surface";
+
 export type NativeShareResult = "shared" | "cancelled" | "unavailable";
 
 /** True only inside the real Capacitor shell (the APK). False in every browser. */
@@ -58,6 +60,9 @@ export async function shareImageNative(
     const { uri } = await Filesystem.getUri({ path: fileName, directory: Directory.Cache });
 
     try {
+      // The share sheet is an OS surface over the page, and dismissing it hands
+      // the tap back down — see components/ui/native-surface.ts.
+      armNativeSurfaceGuard();
       await Share.share({ title, files: [uri] });
       return "shared";
     } finally {

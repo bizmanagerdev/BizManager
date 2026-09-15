@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
 import { CalendarIcon } from "@/components/ui/icons";
+import { armNativeSurfaceGuard } from "@/components/ui/native-surface";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 
@@ -151,6 +152,10 @@ function reformatTypedDate(
 function openNativePicker(ref: React.RefObject<HTMLInputElement | null>) {
   const el = ref.current;
   if (!el) return;
+  // The picker is drawn by the OS over the page, so the tap that dismisses it
+  // lands back on whatever is underneath — a dialog's backdrop, as far as Radix
+  // can tell. Warn the dialog chrome before it opens, not after.
+  armNativeSurfaceGuard();
   try {
     (el as HTMLInputElement & { showPicker?: () => void }).showPicker?.();
   } catch {

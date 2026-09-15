@@ -48,8 +48,12 @@ function SwipeHarness({ enabled, onDismiss }: { enabled: boolean; onDismiss: () 
   const bodyRef = useRef<HTMLDivElement>(null);
   const swipeProps = useSwipeToDismiss({ enabled, bodyRef, onDismiss });
   return (
-    <div data-testid="panel" {...swipeProps}>
-      <div ref={bodyRef} data-testid="body" />
+    <div data-testid="panel" data-state="open" {...swipeProps}>
+      <div ref={bodyRef} data-testid="body">
+        <button type="button" data-testid="calendar-icon">
+          בחר תאריך
+        </button>
+      </div>
     </div>
   );
 }
@@ -102,5 +106,68 @@ describe("useSwipeToDismiss", () => {
     fireEvent.touchCancel(panel);
     fireEvent.touchEnd(panel);
     expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  // The calendar icon opens an OS date picker, which swallows the touchend —
+  // so the drag must never be armed from a control in the first place, and a
+  // sequence that never ended must not anchor the NEXT one.
+  it("never starts a drag from a control (the OS picker would swallow the touchend)", () => {
+    const onDismiss = vi.fn();
+    render(<SwipeHarness enabled onDismiss={onDismiss} />);
+    const panel = screen.getByTestId("panel");
+
+    fireEvent.touchStart(screen.getByTestId("calendar-icon"), { touches: [{ clientY: 100 }] });
+    fireEvent.touchMove(panel, { touches: [{ clientY: 400 }] });
+    fireEvent.touchEnd(panel);
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it("does not measure a drag against an abandoned sequence's anchor", () => {
+    const onDismiss = vi.fn();
+    render(<SwipeHarness enabled onDismiss={onDismiss} />);
+    const panel = screen.getByTestId("panel");
+    const body = screen.getByTestId("body");
+
+    // A touch that starts at the top and never ends — the picker took over.
+    fireEvent.touchStart(panel, { touches: [{ clientY: 0 }] });
+
+    // The field scrolled into view, so the next touchstart is a no-drag one.
+    Object.defineProperty(body, "scrollTop", { value: 120, configurable: true });
+    fireEvent.touchStart(panel, { touches: [{ clientY: 250 }] });
+    fireEvent.touchMove(panel, { touches: [{ clientY: 400 }] });
+    fireEvent.touchEnd(panel);
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it("puts the panel back when onDismiss refuses to close (unsaved-changes prompt)", async () => {
+    // onDismiss that doesn't close: data-state stays "open", the way FormDialog
+    // leaves it while the discard prompt is up.
+    const onDismiss = vi.fn();
+    render(<SwipeHarness enabled onDismiss={onDismiss} />);
+    const panel = screen.getByTestId("panel");
+
+    fireEvent.touchStart(panel, { touches: [{ clientY: 0 }] });
+    fireEvent.touchMove(panel, { touches: [{ clientY: 300 }] });
+    fireEvent.touchEnd(panel);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(panel.style.transform).not.toBe("");
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(panel.style.transform).toBe("");
+  });
+
+  it("leaves the panel off-screen when the close actually took", async () => {
+    const onDismiss = vi.fn();
+    render(<SwipeHarness enabled onDismiss={onDismiss} />);
+    const panel = screen.getByTestId("panel");
+    onDismiss.mockImplementation(() => panel.setAttribute("data-state", "closed"));
+
+    fireEvent.touchStart(panel, { touches: [{ clientY: 0 }] });
+    fireEvent.touchMove(panel, { touches: [{ clientY: 300 }] });
+    fireEvent.touchEnd(panel);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Snapping back here is the "jump" the off-screen transform exists to avoid.
+    expect(panel.style.transform).not.toBe("");
   });
 });

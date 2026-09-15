@@ -10,6 +10,7 @@ import { formatDeliveryAddress } from "@/lib/ui/cities";
 import { paymentStatusLabel } from "@/lib/orders/paymentStatus";
 import { pinFrom, wazeLinkForPin, type DeliveryPin } from "@/lib/delivery-location";
 import { isNativePlatform, shareImageNative } from "@/lib/native-share";
+import { armNativeSurfaceGuard } from "@/components/ui/native-surface";
 import { combinedCustomerName, type DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
 
 function formatCurrency(value: number | null) {
@@ -248,6 +249,9 @@ export default function DeliveryShareActions({
           ) {
             try {
               const HUNG = Symbol("hung");
+              // The OS share sheet is drawn over the page, and dismissing it hands the
+              // tap back down — see components/ui/native-surface.ts.
+              armNativeSurfaceGuard();
               const outcome = await Promise.race([
                 navigator.share(shareData).then(() => "shared" as const),
                 new Promise<typeof HUNG>((resolve) => setTimeout(() => resolve(HUNG), 6000)),
