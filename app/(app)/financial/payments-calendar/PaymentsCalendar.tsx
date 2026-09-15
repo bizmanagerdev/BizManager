@@ -5,9 +5,9 @@ import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { AddIcon, AddReminderIcon, CalendarIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, DeleteIcon, EditIcon, ExternalLinkIcon, MoreIcon, SplitIcon, WarningIcon } from "@/components/ui/icons";
+import { AddIcon, AddReminderIcon, CalendarIcon, CheckIcon, ChevronDownIcon, DeleteIcon, EditIcon, ExternalLinkIcon, MoreIcon, SplitIcon, WarningIcon } from "@/components/ui/icons";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FOCUS_PARAM, flashFocusTarget } from "@/components/layout/FocusHighlighter";
 import type { RecurringExpenseTemplateItem } from "@/app/(app)/financial/RecurringExpensesManager";
 import ReminderFormDialog from "@/components/reminders/ReminderFormDialog";
@@ -101,6 +101,23 @@ function scheduleExpenseItemDelete(item: PaymentCalendarItem, onMutate: () => vo
 function reminderNoteFor(item: PaymentCalendarItem): string {
   const amt = amountLabel(item);
   return `תשלום: ${item.label} — ${amt}`;
+}
+
+// A filter chip — the app's control for an on/off filter (see the calendar
+// page's chips): a pill that reads its state at a glance, `aria-pressed`.
+function FilterChip({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`shrink-0 rounded-full border-2 px-3 py-1 text-xs font-medium transition-colors ${
+        active ? "border-secondary bg-secondary/10 text-secondary" : "border-border bg-background text-muted-foreground hover:bg-secondary/5"
+      }`}
+    >
+      {label}
+    </button>
+  );
 }
 
 // ── Stage presentation ──────────────────────────────────────────────────────────
@@ -436,30 +453,20 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
   );
 
   // Order in the toolbar (RTL, right→left): month nav first, then the filters,
-  // then the total pill last.
-  const toggle = (on: boolean, set: () => void, label: string) => (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      onClick={set}
-      className="flex items-center gap-2 text-xs font-medium text-muted-foreground"
-    >
-      <span className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${on ? "bg-primary" : "bg-muted-foreground/30"}`}>
-        <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${on ? "right-0.5" : "right-[18px]"}`} />
-      </span>
-      {label}
-    </button>
+  // then the total pill last. The two filters are CHIPS (aria-pressed), the
+  // same control the rest of the app uses for a filter — a switch reads as a
+  // setting and is slower to scan.
+  const showPaidToggle = (
+    <FilterChip
+      active={showPaid}
+      label="הצג ששולמו"
+      onClick={() => {
+        setShowPaid((v) => !v);
+        setRevealedIds(EMPTY_IDS);
+      }}
+    />
   );
-  const showPaidToggle = toggle(
-    showPaid,
-    () => {
-      setShowPaid((v) => !v);
-      setRevealedIds(EMPTY_IDS);
-    },
-    "הצג ששולמו"
-  );
-  const recurringOnlyToggle = toggle(recurringOnly, () => setRecurringOnly((v) => !v), "רק קבועות");
+  const recurringOnlyToggle = <FilterChip active={recurringOnly} label="רק קבועות" onClick={() => setRecurringOnly((v) => !v)} />;
   const accountFilterControl =
     accounts.length > 0 ? (
       <NativeSelect dense
@@ -479,6 +486,13 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-3 py-2">
       <MonthNav month={monthDate} todayDate={today} onChange={changeMonth} />
       <div className="flex flex-wrap items-center gap-3">
+        <PaymentsAlertsChip
+          items={accountScopedItems}
+          todayIso={todayIso}
+          onJump={jumpToDay}
+          templates={templates}
+          sourceSettings={sourceSettings}
+        />
         {accountFilterControl}
         {recurringOnlyToggle}
         {showPaidToggle}
@@ -489,13 +503,6 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
 
   return (
     <div className="space-y-3">
-      <PaymentsAlertsBanner
-        items={accountScopedItems}
-        todayIso={todayIso}
-        onJump={jumpToDay}
-        templates={templates}
-        sourceSettings={sourceSettings}
-      />
       {/* Full-width toolbar — one row, spans the whole page. */}
       {toolbar}
       <MonthCalendar
@@ -589,20 +596,9 @@ export function CashNeedsDialog({
               </button>
             ))}
           </div>
-          {/* The two filters share one row: the switch on the right, the account on the left. */}
+          {/* The two filters share one row: the chip on the right, the account on the left. */}
           <div className="flex items-center justify-between gap-3">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={recurringOnly}
-              onClick={() => setRecurringOnly((v) => !v)}
-              className="flex shrink-0 items-center gap-2 text-sm font-medium text-muted-foreground"
-            >
-              <span className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${recurringOnly ? "bg-primary" : "bg-muted-foreground/30"}`}>
-                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${recurringOnly ? "right-0.5" : "right-[18px]"}`} />
-              </span>
-              רק הוצאות קבועות
-            </button>
+            <FilterChip active={recurringOnly} label="רק הוצאות קבועות" onClick={() => setRecurringOnly((v) => !v)} />
             {accounts.length > 0 ? (
               <NativeSelect dense
                 value={accountFilter}
@@ -647,22 +643,27 @@ export function CashNeedsDialog({
   );
 }
 
-// ── Alerts bar — every alert the board raises, in ONE collapsible strip ──────────
-//    Two groups: "לתשלום" = bills due now (overdue / today / next 3 days, the
-//    `payment_outflow_due` rule, so the count matches the nav badge) and
-//    "קרובים" = heads-ups inside their reminder window — a recurring bill's
-//    "N work days before", and the per-source setting of a salary / loan
-//    instalment / card charge from the תשלומים קבועים tab. Each row jumps to its
-//    day. The same windows drive the push/inbox rules, so what's here is what
-//    was (or will be) pushed.
+// ── Alerts chip — every alert the board raises, behind ONE small chip in the
+//    control bar. Two groups inside: "לתשלום" = bills due now (overdue / today /
+//    next 3 days, the `payment_outflow_due` rule, so the count matches the nav
+//    badge) and "קרובים" = heads-ups inside their reminder window — a recurring
+//    bill's "N work days before", or the per-source setting of a salary / loan
+//    instalment / card charge. Each row jumps to its day. The same windows
+//    drive the push/inbox rules, so what's here is what was (or will be) pushed.
+//
+//    It is a chip, not a strip: a handful of overdue bills is this business's
+//    standing state, and a permanent red band across every visit stops being
+//    read within a week. The chip stays neutral, turns amber when something is
+//    due today or overdue, and red only once a bill is more than a week late.
 const DUE_HEADS_UP_DAYS = 3;
-const BANNER_TONE: Record<"danger" | "warning" | "info", { wrap: string; head: string }> = {
-  danger: { wrap: "border-destructive/30 bg-destructive/[0.04]", head: "text-destructive" },
-  warning: { wrap: "border-warning/40 bg-warning/[0.05]", head: "text-warning-strong" },
-  info: { wrap: "border-border bg-muted/40", head: "text-foreground" },
+const OVERDUE_RED_AFTER_DAYS = 7;
+const CHIP_TONE: Record<"danger" | "warning" | "info", string> = {
+  danger: "border-destructive/40 bg-destructive/[0.06] text-destructive",
+  warning: "border-warning/50 bg-warning/[0.08] text-warning-strong",
+  info: "border-input bg-background text-foreground",
 };
 
-function PaymentsAlertsBanner({
+function PaymentsAlertsChip({
   items,
   todayIso,
   onJump,
@@ -675,9 +676,6 @@ function PaymentsAlertsBanner({
   templates: RecurringExpenseTemplateItem[];
   sourceSettings: OutflowSourceSettingsRecord;
 }) {
-  // Collapsed by default — a quiet header you expand when you want the list.
-  const [open, setOpen] = useState(false);
-
   const templateReminderDays = useMemo(
     () => new Map(templates.map((t) => [t.id, t.reminder_work_days_before] as const)),
     [templates]
@@ -687,6 +685,7 @@ function PaymentsAlertsBanner({
     const t = toDateOnly(todayIso) ?? new Date();
     const todayStr = isoLocal(t);
     const horizon = isoLocal(new Date(t.getFullYear(), t.getMonth(), t.getDate() + DUE_HEADS_UP_DAYS));
+    const redLine = isoLocal(new Date(t.getFullYear(), t.getMonth(), t.getDate() - OVERDUE_RED_AFTER_DAYS));
     const byDate = (a: PaymentCalendarItem, b: PaymentCalendarItem) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
     const dueList = items
       // Auto-paid (הוראת קבע) bills need no action, so they're not "to pay".
@@ -707,78 +706,64 @@ function PaymentsAlertsBanner({
         return isInsideReminderWindow(i.date, todayStr, n);
       })
       .sort(byDate);
-    const hasOverdue = dueList.some((i) => i.date.slice(0, 10) < todayStr);
-    const hasToday = dueList.some((i) => i.date.slice(0, 10) === todayStr);
+    const hasVeryLate = dueList.some((i) => i.date.slice(0, 10) < redLine);
+    const hasDueNow = dueList.some((i) => i.date.slice(0, 10) <= todayStr);
     return {
       due: dueList,
       upcoming: upcomingList,
-      severity: (hasOverdue ? "danger" : hasToday ? "warning" : "info") as "danger" | "warning" | "info",
+      severity: (hasVeryLate ? "danger" : hasDueNow ? "warning" : "info") as "danger" | "warning" | "info",
     };
   }, [items, todayIso, templateReminderDays, sourceSettings]);
 
   if (due.length === 0 && upcoming.length === 0) return null;
-  const tone = BANNER_TONE[severity];
-  const headline = [
-    due.length ? `תשלומים לתשלום: ${due.length}` : null,
-    upcoming.length ? `קרובים: ${upcoming.length}` : null,
-  ]
+  const label = [due.length ? `לתשלום ${due.length}` : null, upcoming.length ? `קרובים ${upcoming.length}` : null]
     .filter(Boolean)
     .join(" · ");
 
+  // One row = dot · name · date · amount. No status badge: inside a list that
+  // is entirely "due", the date and the amount already say it.
   const row = (item: PaymentCalendarItem) => {
-    const stage = itemStageKey(item);
     const day = toDateOnly(item.date) ?? new Date(item.date);
     return (
-      <li key={item.id}>
-        <button
-          type="button"
-          onClick={() => onJump(item.date.slice(0, 10))}
-          className="flex w-full items-center gap-2 px-3 py-2 text-right transition-colors hover:bg-background/60"
-        >
-          <span className={`h-2 w-2 shrink-0 rounded-full ${STAGE_DOT[stage]}`} />
-          <span className="min-w-0 flex-1 text-sm font-medium">{item.label}</span>
-          <Badge variant={STAGE_BADGE[stage]}>{STAGE_LABEL[stage]}</Badge>
-          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-            {day.getDate()}/{day.getMonth() + 1}
-          </span>
-          <span className="shrink-0 text-sm font-semibold tabular-nums">{amountLabel(item)}</span>
-          <ChevronLeftIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-        </button>
-      </li>
+      <DropdownMenuItem key={item.id} onSelect={() => onJump(item.date.slice(0, 10))} className="gap-2">
+        <span className={`h-2 w-2 shrink-0 rounded-full ${STAGE_DOT[itemStageKey(item)]}`} />
+        <span className="min-w-0 flex-1 break-words text-sm">{item.label}</span>
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          {day.getDate()}/{day.getMonth() + 1}
+        </span>
+        <span className="shrink-0 text-sm font-semibold tabular-nums">{amountLabel(item)}</span>
+      </DropdownMenuItem>
     );
   };
 
   return (
-    <div className={`rounded-xl border ${tone.wrap}`}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className={`flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold ${tone.head}`}
-        aria-expanded={open}
-      >
-        <WarningIcon className="h-4 w-4 shrink-0" />
-        <span className="flex-1 text-right">{headline}</span>
-        <ChevronDownIcon className={`h-4 w-4 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-      {open ? (
-        <div className="max-h-80 overflow-y-auto border-t">
-          {due.length ? (
-            <>
-              <div className="bg-background/40 px-3 py-1 text-[11px] font-semibold text-muted-foreground">לתשלום</div>
-              <ul className="divide-y">{due.map(row)}</ul>
-            </>
-          ) : null}
-          {upcoming.length ? (
-            <>
-              <div className="border-t bg-background/40 px-3 py-1 text-[11px] font-semibold text-muted-foreground">
-                קרובים — בתוך חלון התזכורת שהוגדר
-              </div>
-              <ul className="divide-y">{upcoming.map(row)}</ul>
-            </>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${CHIP_TONE[severity]}`}
+          aria-label={`התראות תשלומים: ${label}`}
+        >
+          <WarningIcon className="h-3.5 w-3.5 shrink-0" />
+          <span>{label}</span>
+          <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 opacity-70" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="max-h-80 w-[22rem] max-w-[calc(100vw-2rem)] overflow-y-auto">
+        {due.length ? (
+          <>
+            <DropdownMenuLabel className="text-[11px] text-muted-foreground">לתשלום — באיחור, היום או ב-3 הימים הקרובים</DropdownMenuLabel>
+            {due.map(row)}
+          </>
+        ) : null}
+        {upcoming.length ? (
+          <>
+            <DropdownMenuLabel className="text-[11px] text-muted-foreground">קרובים — בתוך חלון התזכורת שהוגדר</DropdownMenuLabel>
+            {upcoming.map(row)}
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

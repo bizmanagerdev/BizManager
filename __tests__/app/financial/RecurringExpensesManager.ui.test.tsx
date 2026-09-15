@@ -77,8 +77,12 @@ describe("RecurringExpensesManager (תשלומים קבועים)", () => {
     expect(within(table).getByLabelText("חשבון — משכורת דוד")).toBeTruthy();
     expect(within(table).getByLabelText("תזכורת — משכורת דוד")).toBeTruthy();
     expect(within(table).getByLabelText("פעיל — משכורת דוד").getAttribute("aria-checked")).toBe("true");
-    // A card's charge is automatic; a bill without a standing order is not.
+    // A card's charge is automatic — said as a caption under its amount.
     expect(within(table).getByText("אוטומטי")).toBeTruthy();
+    // Bills edit the same three fields in place, the same way sources do.
+    expect(within(table).getByLabelText("חשבון — שכירות")).toBeTruthy();
+    expect(within(table).getByLabelText("תזכורת — שכירות")).toBeTruthy();
+    expect(within(table).getByLabelText("פעיל — שכירות").getAttribute("aria-checked")).toBe("true");
   });
 
   it("sums only what leaves every month and says what it left out", async () => {
@@ -86,8 +90,8 @@ describe("RecurringExpensesManager (תשלומים קבועים)", () => {
     await screen.findAllByText("משכורת דוד");
     // 300 + 5,000 + 8,000 — the one-off loan and the card are listed, not summed.
     expect(screen.getByText(/13,300/)).toBeTruthy();
-    expect(screen.getByText(/1 הלוואות בהחזר חד-פעמי לא נכללות/)).toBeTruthy();
-    expect(screen.getByText(/1 כרטיסי אשראי לא נכללים/)).toBeTruthy();
+    expect(screen.getByText(/1 הלוואות בהחזר חד-פעמי/)).toBeTruthy();
+    expect(screen.getByText(/1 כרטיסי אשראי/)).toBeTruthy();
   });
 
   it("saves a changed reminder for a source through the settings API", async () => {
