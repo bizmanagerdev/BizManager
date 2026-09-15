@@ -171,12 +171,17 @@ export async function findProjectIdsMatchingContent(
     if (projectId && snippet && !contextById.has(projectId)) contextById.set(projectId, { label, snippet });
   };
 
-  // The project's own text (name / notes / items to move) — fuzzy.
+  // The project's own text — fuzzy. items_to_move is deliberately excluded:
+  // it's text[], and findMatchingRowIds's fast path filters with `ilike`,
+  // which Postgres has no operator for on an array column ("operator does
+  // not exist: text[] ~~* unknown" — same class of bug as project_type_enum,
+  // see projectTypeLabels.ts). The error was silently swallowed and every
+  // project search fell through to the slow full-table fuzzy scan; confirmed
+  // live 2026-09-15 from repeated 42883 errors in the Postgres logs.
   const ownText = await findMatchingRowIds(supabase, {
     table: "projects",
     columns: [
       { name: "notes", label: "הערה" },
-      { name: "items_to_move", label: "פריטים" },
       { name: "name", label: "שם" },
     ],
     query,
