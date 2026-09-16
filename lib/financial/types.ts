@@ -170,6 +170,10 @@ export type FinancialPageFilters = {
   q?: string | null;
   ledgerPage?: number | null;
   upcomingPage?: number | null;
+  /** Books start date ("YYYY-MM-01"): nothing before it counts — `from` is raised to
+   *  it and the previous-period comparison is dropped when it would reach before it.
+   *  Reports pass it; the ledger (flow view) doesn't, so its history stays complete. */
+  notBefore?: string | null;
 };
 
 export type FinancialEntryType = "inflow" | "outflow";

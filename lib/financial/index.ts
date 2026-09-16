@@ -41,6 +41,7 @@ import {
   summarizeEntries,
 } from "./entries";
 import { fetchLoans, summarizeLoans, type Loan, type LoansSummary } from "@/lib/loans";
+import { clampFromToBooksStart } from "@/lib/settings/booksStartDate";
 import {
   type FinancialEntry,
   type FinancialPageData,
@@ -352,20 +353,24 @@ export async function getFinancialPageData(
   filters: FinancialPageFilters = {},
   injected: { projectedOutflowEntries?: FinancialEntry[] } = {}
 ): Promise<FinancialPageData> {
-  const from = normalizeDate(filters.from);
+  // Books start date: nothing before it counts, so an earlier (or empty) `from` is raised to it.
+  const notBefore = normalizeDate(filters.notBefore);
+  const from = clampFromToBooksStart(normalizeDate(filters.from), notBefore);
   const to = normalizeDate(filters.to);
   // When an explicit period is selected, also cover the immediately-preceding
-  // equal-length period so the P&L can show a period-over-period comparison.
+  // equal-length period so the P&L can show a period-over-period comparison —
+  // unless that period reaches before the books start (its numbers aren't real).
   const previousPeriod =
-    from && to
+    from && to && from <= to
       ? (() => {
           const lengthDays =
             Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000) + 1;
-          return { from: addDaysToIso(from, -lengthDays), to: addDaysToIso(from, -1) };
+          const period = { from: addDaysToIso(from, -lengthDays), to: addDaysToIso(from, -1) };
+          return notBefore && period.from < notBefore ? null : period;
         })()
       : null;
   const { entries, referenceDate, loansSummary } = await loadFinancialEntries(supabase, {
-    from: previousPeriod ? previousPeriod.from : filters.from,
+    from: previousPeriod ? previousPeriod.from : from,
     customerId: filters.customerId,
   });
   const domain = normalizeDomain(filters.domain);

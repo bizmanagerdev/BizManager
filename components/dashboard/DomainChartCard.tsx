@@ -12,6 +12,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { loadDomainChartMonth } from "@/app/(app)/dashboard/actions";
 import { monthChoices, type DomainBar, type MonthKey } from "@/lib/dashboard/domain-chart";
+import { isMonthBeforeBooksStart } from "@/lib/settings/booksStartDate";
 import { t } from "@/lib/i18n/t";
 import { dashboardDict } from "@/lib/i18n/dictionaries/dashboard";
 import type { Locale } from "@/lib/i18n/types";
@@ -45,6 +46,7 @@ export default function DomainChartCard({
   initialBars,
   initialMonth,
   todayIso,
+  booksStartDate = null,
   locale,
 }: {
   /** The first month's bars, loaded server-side with the page. */
@@ -53,13 +55,18 @@ export default function DomainChartCard({
   initialMonth: MonthKey;
   /** The server's date, so the picker's list is identical on both sides. */
   todayIso: string;
+  /** "YYYY-MM-01" — the picker doesn't offer months before it (Settings → כספים). */
+  booksStartDate?: string | null;
   locale: Locale;
 }) {
   const [month, setMonth] = useState<MonthKey>(initialMonth);
   const [bars, setBars] = useState<DomainBar[]>(initialBars);
   const [pending, startTransition] = useTransition();
 
-  const choices = useMemo(() => monthChoices(todayIso), [todayIso]);
+  const choices = useMemo(
+    () => monthChoices(todayIso).filter((choice) => !isMonthBeforeBooksStart(choice.value, booksStartDate)),
+    [todayIso, booksStartDate]
+  );
 
   function pickMonth(next: MonthKey) {
     if (next === month) return;

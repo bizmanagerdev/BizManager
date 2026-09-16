@@ -22,6 +22,7 @@ import { loadCustomerRanking, type CustomerRankingReport } from "@/lib/financial
 import { ensureRecurringExpensesForDate } from "@/lib/recurring-expenses";
 import { loadProjectedOutflowEntries } from "@/lib/payables";
 import { propertyDisplayName } from "@/lib/properties";
+import { clampFromToBooksStart, getBooksStartDate } from "@/lib/settings/booksStartDate";
 
 type Row = Record<string, unknown>;
 
@@ -87,6 +88,11 @@ export default async function CashFlowPageContent({
   const customerPage = firstValue(searchParams.customer_page)?.trim() ?? "";
   const initialFilters = normalizeFinancialSearchParams(searchParams);
 
+  // Reports count only from the books start date (Settings → כספים). The flow
+  // view's ledger is history, not a total, so it keeps every row. Started now so
+  // the read overlaps the recurring/projection work below.
+  const booksStartDatePromise = view === "reports" ? getBooksStartDate(supabase) : Promise.resolve(null);
+
   // Expected outgoing money (upcoming salaries + recurring bills) to show in the
   // future/forecast views alongside expected income — 6-month horizon, calendar-
   // parity. Only for the roles that can see cash flow; never blocks the page.
@@ -101,12 +107,16 @@ export default async function CashFlowPageContent({
       }).catch(() => [])
     : [];
 
+  const booksStartDate = await booksStartDatePromise;
+  const reportFrom = clampFromToBooksStart(initialFilters.from, booksStartDate);
+
   const data = await getFinancialPageData(
     supabase,
     {
       customerId: customerId || null,
       from: initialFilters.from || null,
       to: initialFilters.to || null,
+      notBefore: booksStartDate,
       domain: initialFilters.domain || null,
       sourceId: initialFilters.sourceId || null,
       type: initialFilters.type === "all" ? null : initialFilters.type,
@@ -131,21 +141,21 @@ export default async function CashFlowPageContent({
   if (view === "reports") {
     [earnedRevenue, projectBreakdown, domainProof, customerRanking, productMargin] = await Promise.all([
       loadEarnedRevenueByMonth(supabase, {
-        from: initialFilters.from || null,
+        from: reportFrom,
         to: initialFilters.to || null,
       }),
       loadProjectPeriodBreakdown(supabase, {
-        from: initialFilters.from || null,
+        from: reportFrom,
         to: initialFilters.to || null,
       }),
       loadDomainProof(supabase, {
-        from: initialFilters.from || null,
+        from: reportFrom,
         to: initialFilters.to || null,
       }),
       // Customer analytics are book-wide (not date-scoped) — always the latest picture.
       loadCustomerRanking(supabase),
       loadProductMarginByMonth(supabase, {
-        from: initialFilters.from || null,
+        from: reportFrom,
         to: initialFilters.to || null,
       }),
     ]);
@@ -225,6 +235,7 @@ export default async function CashFlowPageContent({
         domainProof={domainProof}
         customerRanking={customerRanking}
         productMargin={productMargin}
+        booksStartDate={booksStartDate}
         initialFilters={initialFilters}
         view={view}
         canManageExpenses={canManageExpenses}

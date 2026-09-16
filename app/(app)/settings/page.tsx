@@ -6,6 +6,7 @@ import SettingsTabs from "@/app/(app)/settings/SettingsTabs";
 import { loadMorningSettings, type MorningSettings } from "@/lib/morning/settings";
 import { getCurrentVatRate } from "@/lib/settings/vat";
 import { getCurrentCcFeeRate } from "@/lib/settings/ccFee";
+import { getBooksStartDate } from "@/lib/settings/booksStartDate";
 import { loadAccounts, type Account } from "@/lib/accounts";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { describeDevice } from "@/lib/notifications/devices";
@@ -77,9 +78,9 @@ export default async function SettingsPage() {
   const isAdmin = true;
   const admin = createSupabaseAdminClient();
 
-  // Seven independent reads (the shared user list + six admin-only lookups)
+  // Eight independent reads (the shared user list + seven admin-only lookups)
   // run as ONE round trip instead of sequentially.
-  const [usersResult, morningSettings, vatRate, ccFeeRate, accounts, auditCfgResult, devices] = await Promise.all([
+  const [usersResult, morningSettings, vatRate, ccFeeRate, booksStartDate, accounts, auditCfgResult, devices] = await Promise.all([
     // Only users who can actually log in and use the system are valid alert
     // recipients — match the access rule used in requireProfile / requireRouteAccess
     // (active AND system_access AND role != worker_no_access).
@@ -94,6 +95,7 @@ export default async function SettingsPage() {
     isAdmin ? loadMorningSettings(supabase) : Promise.resolve(null as MorningSettings | null),
     isAdmin ? getCurrentVatRate(supabase) : Promise.resolve(0.18),
     isAdmin ? getCurrentCcFeeRate(supabase) : Promise.resolve(0.14),
+    isAdmin ? getBooksStartDate(supabase) : Promise.resolve(null),
     isAdmin ? loadAccounts(supabase) : Promise.resolve([] as Account[]),
     isAdmin
       ? supabase.from("business_settings").select("audit_logging_enabled").eq("id", true).maybeSingle()
@@ -125,6 +127,8 @@ export default async function SettingsPage() {
           morningSettings={morningSettings}
           vatRate={vatRate}
           ccFeeRate={ccFeeRate}
+          booksStartDate={booksStartDate}
+          todayIso={new Date().toISOString().slice(0, 10)}
           auditLoggingEnabled={auditLoggingEnabled}
           accounts={accounts}
         />

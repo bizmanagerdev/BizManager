@@ -10,6 +10,7 @@ import {
   type DomainBar,
   type MonthKey,
 } from "@/lib/dashboard/domain-chart";
+import { getBooksStartDate, isMonthBeforeBooksStart } from "@/lib/settings/booksStartDate";
 
 export type DomainChartResult = { ok: true; bars: DomainBar[] } | { ok: false; error: string };
 
@@ -41,10 +42,16 @@ export async function loadDomainChartMonth(month: MonthKey): Promise<DomainChart
     // its own full round trip.
     const currentWindow = monthWindow(month, todayIso);
     const previousWindow = monthWindow(previousMonth(month), todayIso);
-    const { entries } = await loadFinancialEntries(supabase, { from: previousWindow.from });
+    // A month before the books start date (Settings → כספים) charts as empty.
+    const [{ entries }, booksStartDate] = await Promise.all([
+      loadFinancialEntries(supabase, { from: previousWindow.from }),
+      getBooksStartDate(supabase),
+    ]);
     const [points, previous] = await Promise.all([
-      loadDomainCashBreakdown(supabase, currentWindow, entries),
-      loadDomainCashBreakdown(supabase, previousWindow, entries),
+      isMonthBeforeBooksStart(month, booksStartDate) ? [] : loadDomainCashBreakdown(supabase, currentWindow, entries),
+      isMonthBeforeBooksStart(previousMonth(month), booksStartDate)
+        ? []
+        : loadDomainCashBreakdown(supabase, previousWindow, entries),
     ]);
     return { ok: true, bars: toBars(points, previous) };
   } catch {

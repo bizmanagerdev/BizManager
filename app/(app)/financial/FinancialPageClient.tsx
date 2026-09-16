@@ -43,6 +43,7 @@ import {
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
 import { monthRange, recentMonthKeys } from "@/lib/financial/periodPresets";
+import { clampFromToBooksStart, isMonthBeforeBooksStart } from "@/lib/settings/booksStartDate";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import DomainMultiSelect from "@/components/financial/DomainMultiSelect";
 import AccountSelect from "@/components/financial/AccountSelect";
@@ -117,6 +118,8 @@ type Props = {
   domainProof?: DomainProofMap | null;
   customerRanking?: CustomerRankingReport | null;
   productMargin?: ProductMarginReport | null;
+  /** Reports only: "YYYY-MM-01" the numbers count from (Settings → כספים), or null. */
+  booksStartDate?: string | null;
   initialFilters: InitialFilters;
   /** "flow" = the cash-flow ledger page; "reports" = totals + domain views + P&L. */
   view?: "flow" | "reports";
@@ -235,6 +238,7 @@ export default function FinancialPageClient({
   domainProof = null,
   customerRanking = null,
   productMargin = null,
+  booksStartDate = null,
   canManageExpenses,
   canViewCashflow,
   recurringProjects,
@@ -916,7 +920,7 @@ export default function FinancialPageClient({
       }} className="w-36"
     >
       <option value="">כל התקופה</option>
-      {recentMonthKeys(data.todayIso).map((key) => (
+      {recentMonthKeys(data.todayIso).filter((key) => !isMonthBeforeBooksStart(key, booksStartDate)).map((key) => (
         <option key={key} value={key}>
           {key.slice(5)}/{key.slice(2, 4)}
         </option>
@@ -1020,14 +1024,25 @@ export default function FinancialPageClient({
 
   // "מציג:" summary — the active period + basis, shown as chips under the control
   // row so the current view is unmistakable no matter which tab is open.
+  // The period the reports actually count — never before the books start date,
+  // matching the server (CashFlowPageContent raises `from` the same way).
+  const reportFrom = clampFromToBooksStart(from, booksStartDate) ?? "";
+  const booksStartLabel = booksStartDate
+    ? `${HE_MONTHS[Number(booksStartDate.slice(5, 7)) - 1]} ${booksStartDate.slice(0, 4)}`
+    : null;
+  const periodBeforeBooksStart = Boolean(booksStartDate && to && to < booksStartDate);
   const reportPeriodMonthKey =
-    from && to && monthRange(from.slice(0, 7))?.from === from && monthRange(from.slice(0, 7))?.to === to
-      ? from.slice(0, 7)
+    reportFrom && to && monthRange(reportFrom.slice(0, 7))?.from === reportFrom && monthRange(reportFrom.slice(0, 7))?.to === to
+      ? reportFrom.slice(0, 7)
       : null;
-  const reportPeriodLabel = reportPeriodMonthKey
+  const reportPeriodLabel = periodBeforeBooksStart
+    ? "התקופה שנבחרה לפני תחילת הספירה"
+    : reportPeriodMonthKey
     ? `${HE_MONTHS[Number(reportPeriodMonthKey.slice(5, 7)) - 1]} ${reportPeriodMonthKey.slice(0, 4)}`
-    : from || to
-    ? `${from || "…"} – ${to || "…"}`
+    : !to && booksStartLabel && reportFrom === booksStartDate
+    ? `מ${booksStartLabel} והלאה`
+    : reportFrom || to
+    ? `${reportFrom || "…"} – ${to || "…"}`
     : "כל התקופה";
   const reportBasisLabel = reportBasis === "earned" ? "הרווחתי" : "נכנס בפועל";
 
@@ -1193,6 +1208,15 @@ export default function FinancialPageClient({
             <span className="inline-flex items-center rounded-full border bg-background px-2 py-0.5 font-medium">
               שיטה: {reportBasisLabel}
             </span>
+            {booksStartLabel ? (
+              <Link
+                href="/settings?tab=finance"
+                title="תחילת ספירת הכספים — נקבע בהגדרות"
+                className="inline-flex items-center rounded-full border bg-background px-2 py-0.5 font-medium hover:bg-muted"
+              >
+                סופרים מ{booksStartLabel}
+              </Link>
+            ) : null}
             {includeOpen && reportBasis !== "earned" ? (
               <span className="inline-flex items-center rounded-full border bg-background px-2 py-0.5 font-medium">כולל פתוחים</span>
             ) : null}
@@ -1340,7 +1364,7 @@ export default function FinancialPageClient({
             expenseCategories={data.profitLossExpenseCategories}
             previousRows={data.profitLossPrevious}
             previousPeriod={data.profitLossPreviousPeriod}
-            from={initialFilters.from || null}
+            from={clampFromToBooksStart(initialFilters.from, booksStartDate)}
             to={initialFilters.to || null}
             basis={plBasis}
             includeHomeCharity={includeHomeCharity}

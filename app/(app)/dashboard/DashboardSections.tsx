@@ -52,6 +52,7 @@ import MissedDigestCell from "@/components/dashboard/MissedDigestCard";
 import { loadDomainCashBreakdown, loadFinancialEntries, type FinancialEntry } from "@/lib/financial";
 import DomainChartCard from "@/components/dashboard/DomainChartCard";
 import { monthWindow, previousMonth, toBars, type MonthKey } from "@/lib/dashboard/domain-chart";
+import { getBooksStartDate, isMonthBeforeBooksStart } from "@/lib/settings/booksStartDate";
 import type { Locale } from "@/lib/i18n/types";
 
 /** One domain's cash in a window — what loadDomainCashBreakdown returns. */
@@ -358,25 +359,37 @@ async function PropertiesSlowCell({
 async function DomainChartSlowCell({
   breakdownPromise,
   prevBreakdownPromise,
+  booksStartDatePromise,
   currentMonth,
   todayIso,
   locale,
 }: {
   breakdownPromise: Promise<CashPoint[]>;
   prevBreakdownPromise: Promise<CashPoint[]>;
+  booksStartDatePromise: Promise<string | null>;
   currentMonth: MonthKey;
   todayIso: string;
   locale: Locale;
 }) {
   // Income vs expenses per business domain, for the month the card opens on.
-  const [domainBreakdown, domainPrevBreakdown] = await Promise.all([breakdownPromise, prevBreakdownPromise]);
+  const [domainBreakdown, domainPrevBreakdown, booksStartDate] = await Promise.all([
+    breakdownPromise,
+    prevBreakdownPromise,
+    booksStartDatePromise,
+  ]);
   const domainBars = toBars(domainBreakdown, domainPrevBreakdown);
   // The card owns its month from here on: it opens on `currentMonth` and its
   // header's picker fetches any other month itself. The widget still only
   // appears when THIS month has something — an empty board card is still an
   // empty card, picker or not.
   return domainBars.length > 0 ? (
-    <DomainChartCard initialBars={domainBars} initialMonth={currentMonth} todayIso={todayIso} locale={locale} />
+    <DomainChartCard
+      initialBars={domainBars}
+      initialMonth={currentMonth}
+      todayIso={todayIso}
+      booksStartDate={booksStartDate}
+      locale={locale}
+    />
   ) : null;
 }
 
@@ -501,14 +514,25 @@ export async function DashboardPanels() {
   const propertiesPromise = show("properties") && isAdminOrOffice
     ? getPropertiesSummary(supabase, todayIso).catch(() => null)
     : Promise.resolve(null);
+  // Money before the books start date (Settings → כספים) isn't real — a month
+  // before it charts as empty, including the "last month" ghost bars.
+  const booksStartDatePromise = needDomainChart ? getBooksStartDate(supabase) : Promise.resolve(null);
   const domainBreakdownPromise = needDomainChart
-    ? financialEntriesPromise
-        .then((shared) => loadDomainCashBreakdown(supabase, currentMonthWindow, shared?.entries))
+    ? Promise.all([financialEntriesPromise, booksStartDatePromise])
+        .then(([shared, booksStartDate]) =>
+          isMonthBeforeBooksStart(currentMonth, booksStartDate)
+            ? []
+            : loadDomainCashBreakdown(supabase, currentMonthWindow, shared?.entries)
+        )
         .catch(() => [] as CashPoint[])
     : Promise.resolve([] as CashPoint[]);
   const domainPrevBreakdownPromise = needDomainChart
-    ? financialEntriesPromise
-        .then((shared) => loadDomainCashBreakdown(supabase, previousMonthWindow, shared?.entries))
+    ? Promise.all([financialEntriesPromise, booksStartDatePromise])
+        .then(([shared, booksStartDate]) =>
+          isMonthBeforeBooksStart(previousMonth(currentMonth), booksStartDate)
+            ? []
+            : loadDomainCashBreakdown(supabase, previousMonthWindow, shared?.entries)
+        )
         .catch(() => [] as CashPoint[])
     : Promise.resolve([] as CashPoint[]);
 
@@ -632,6 +656,7 @@ export async function DashboardPanels() {
         <DomainChartSlowCell
           breakdownPromise={domainBreakdownPromise}
           prevBreakdownPromise={domainPrevBreakdownPromise}
+          booksStartDatePromise={booksStartDatePromise}
           currentMonth={currentMonth}
           todayIso={todayIso}
           locale={locale}
