@@ -513,8 +513,6 @@ export async function fetchSalaryCenterProtectedPayload(
     sessionCostsResult,
     workerBalancesResult,
     workerPaymentsResult,
-    workerDebtItemsInitialResult,
-    sessionEffectivePaymentsResult,
     workerAbsencesResult,
   ] = await Promise.all([
     query(supabase.from("salary_agreements"))
@@ -557,8 +555,31 @@ export async function fetchSalaryCenterProtectedPayload(
         .order("payment_date", { ascending: false })
         .range(lo, hi)
     ),
-    // These two views depend only on safeUserIds, so they run with the first batch instead
-    // of after it. The debt view's missing-column fallback is handled below, post-await.
+    // Days off. Tolerant below — before the migration runs the table doesn't
+    // exist, and the rest of the salary centre still works.
+    fetchAllPagedResult((lo, hi) =>
+      query(supabase.from(WORKER_ABSENCES_TABLE))
+        .select(WORKER_ABSENCE_COLUMNS)
+        .in("user_id", safeUserIds)
+        .order("absence_date", { ascending: false })
+        .range(lo, hi)
+    ),
+  ]);
+
+  // worker_debt_items_view and session_effective_payment_view are each the
+  // deepest join in this payload (attendance_sessions/payslips/salary_agreements/
+  // worker_payment_allocations, and the latter joins the former twice). Firing
+  // them alongside the other 8 queries above used to be fine, but confirmed live
+  // 2026-09-15/16: session_effective_payment_view repeatedly hit a Postgres
+  // statement timeout while the salary centre was in active use — including two
+  // simultaneous failures at the same timestamp, consistent with two viewers
+  // loading the page at once and doubling this endpoint's peak concurrent query
+  // count. EXPLAIN ANALYZE showed each query alone runs in single-digit ms, so
+  // this is contention, not query cost — sequencing these two after the rest
+  // (instead of inside the same burst) trims peak concurrency at negligible
+  // added latency. The debt view's missing-column fallback is handled below,
+  // post-await.
+  const [workerDebtItemsInitialResult, sessionEffectivePaymentsResult] = await Promise.all([
     fetchAllPagedResult((lo, hi) =>
       query(supabase.from("worker_debt_items_view"))
         .select(
@@ -571,15 +592,6 @@ export async function fetchSalaryCenterProtectedPayload(
       query(supabase.from("session_effective_payment_view"))
         .select("session_id,user_id,payment_status,paid_amount,owed_amount,last_payment_date,is_payslip_covered")
         .in("user_id", safeUserIds)
-        .range(lo, hi)
-    ),
-    // Days off. Tolerant below — before the migration runs the table doesn't
-    // exist, and the rest of the salary centre still works.
-    fetchAllPagedResult((lo, hi) =>
-      query(supabase.from(WORKER_ABSENCES_TABLE))
-        .select(WORKER_ABSENCE_COLUMNS)
-        .in("user_id", safeUserIds)
-        .order("absence_date", { ascending: false })
         .range(lo, hi)
     ),
   ]);
