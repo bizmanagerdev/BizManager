@@ -119,9 +119,11 @@ export function summarizeFixedPayments(
     variableCount,
     sourceCount: activeSources.length,
     monthlySourceCount: activeSources.length - notMonthly.length,
-    oneOffLoanCount: notMonthly.filter((s) => s.kind === "loan").length,
+    oneOffLoanCount: notMonthly.filter((s) => s.kind === "loan" || s.kind === "loan_in").length,
     hourlyCount: notMonthly.filter((s) => s.kind === "salary").length,
-    cardCount: notMonthly.filter((s) => s.kind === "card").length,
+    // A card charge and a clearing deposit are the same story: the figure is
+    // only known once the statement/batch is processed.
+    cardCount: notMonthly.filter((s) => s.kind === "card" || s.kind === "settlement").length,
     monthlyTotal: templatesTotal + sourcesTotal,
   };
 }

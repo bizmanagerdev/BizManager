@@ -322,19 +322,41 @@ export default function RecurringExpensesManager(props: Props) {
     [sourceRows, accountFilter, kindFilter, sources.stateOf]
   );
 
+  // Exactly the templates the list shows — the summary must count these too.
+  const listTemplates = useMemo(() => (showTemplates ? filteredTemplates : []), [showTemplates, filteredTemplates]);
+
   // One list, by the day of the month the money leaves (lib/fixed-payments).
   const rows = useMemo<UnifiedRow[]>(
-    () => buildFixedPaymentRows(showTemplates ? filteredTemplates : [], filteredSources),
-    [showTemplates, filteredTemplates, filteredSources]
+    () => buildFixedPaymentRows(listTemplates, filteredSources),
+    [listTemplates, filteredSources]
   );
 
   // The monthly-commitment pill (lib/fixed-payments): only what really leaves
   // every month is summed; one-off loans, hourly workers and cards are counted.
-  const summary = useMemo(
-    () => summarizeFixedPayments(filteredTemplates, filteredSources, (s) => sources.stateOf(s).active),
+  // One summary per direction, each over exactly the rows the list is showing.
+  // A single mixed figure would be meaningless, and counting bills while the
+  // list hides them (the נכנס view) was simply wrong.
+  const outSources = useMemo(() => filteredSources.filter((r) => rowDirection(r) === "out"), [filteredSources]);
+  const inSources = useMemo(() => filteredSources.filter((r) => rowDirection(r) === "in"), [filteredSources]);
+  const isActive = (s: OutflowSourceRow) => sources.stateOf(s).active;
+  const outSummary = useMemo(
+    () => summarizeFixedPayments(listTemplates, outSources, isActive),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [filteredTemplates, filteredSources, sources.stateOf]
+    [listTemplates, outSources, sources.stateOf]
   );
+  const inSummary = useMemo(
+    () => summarizeFixedPayments([], inSources, isActive),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [inSources, sources.stateOf]
+  );
+  // The one the single-direction views headline.
+  const summary = direction === "in" ? inSummary : outSummary;
+  // What was left out of the figure(s), across whichever directions are shown.
+  const excluded = {
+    oneOff: outSummary.oneOffLoanCount + inSummary.oneOffLoanCount,
+    hourly: outSummary.hourlyCount + inSummary.hourlyCount,
+    card: outSummary.cardCount + inSummary.cardCount,
+  };
 
   function openEdit(template: RecurringExpenseTemplateItem) {
     setEditingTemplate(template);
@@ -790,9 +812,31 @@ export default function RecurringExpensesManager(props: Props) {
               {sources.loading ? (
                 <div className="h-7 w-32 animate-pulse rounded-md bg-background/20" aria-label="טוען סכום" />
               ) : (
-                <div className="text-xl font-bold tabular-nums">{formatCurrency(summary.monthlyTotal)}</div>
+                <div className="text-xl font-bold tabular-nums">
+                  {direction === "all" ? (
+                    // Two directions, two figures — one mixed number would say nothing.
+                    <span className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                      <span>
+                        <span className="text-destructive">−</span>
+                        {formatCurrency(outSummary.monthlyTotal)}
+                      </span>
+                      <span>
+                        <span className="text-success">+</span>
+                        {formatCurrency(inSummary.monthlyTotal)}
+                      </span>
+                    </span>
+                  ) : (
+                    formatCurrency(summary.monthlyTotal)
+                  )}
+                </div>
               )}
-              <div className="text-xs opacity-70">סה״כ התחייבות חודשית קבועה · רק מה שיוצא כל חודש</div>
+              <div className="text-xs opacity-70">
+                {direction === "in"
+                  ? "סה״כ הכנסה חודשית קבועה · רק מה שנכנס כל חודש"
+                  : direction === "all"
+                    ? "קבוע כל חודש · יוצא מול נכנס"
+                    : "סה״כ התחייבות חודשית קבועה · רק מה שיוצא כל חודש"}
+              </div>
             </div>
             <div className="text-xs opacity-90">
               {sources.loading ? (
@@ -803,23 +847,26 @@ export default function RecurringExpensesManager(props: Props) {
               ) : (
                 <MetaRow
                   items={[
-                    `${summary.activeCount} הוצאות קבועות`,
-                    summary.monthlySourceCount ? `${summary.monthlySourceCount} משכורות והלוואות חודשיות` : null,
-                    summary.variableCount ? `${summary.variableCount} בסכום משתנה` : null,
+                    outSummary.activeCount ? `${outSummary.activeCount} הוצאות קבועות` : null,
+                    outSummary.monthlySourceCount
+                      ? `${outSummary.monthlySourceCount} משכורות והלוואות חודשיות`
+                      : null,
+                    inSummary.monthlySourceCount ? `${inSummary.monthlySourceCount} מקורות הכנסה חודשיים` : null,
+                    outSummary.variableCount ? `${outSummary.variableCount} בסכום משתנה` : null,
                   ]}
                 />
               )}
             </div>
           </div>
-          {!sources.loading && (summary.oneOffLoanCount || summary.hourlyCount || summary.cardCount) ? (
+          {!sources.loading && (excluded.oneOff || excluded.hourly || excluded.card) ? (
             <p className="text-sm text-muted-foreground">
               <span className="font-medium text-foreground">לא נכלל בסכום: </span>
               <MetaRow
                 className="inline"
                 items={[
-                  summary.oneOffLoanCount ? `${summary.oneOffLoanCount} הלוואות בהחזר חד-פעמי` : null,
-                  summary.hourlyCount ? `${summary.hourlyCount} עובדים לפי שעות` : null,
-                  summary.cardCount ? `${summary.cardCount} כרטיסי אשראי — הסכום ידוע רק כשהדף מעובד` : null,
+                  excluded.oneOff ? `${excluded.oneOff} הלוואות בהחזר חד-פעמי` : null,
+                  excluded.hourly ? `${excluded.hourly} עובדים לפי שעות` : null,
+                  excluded.card ? `${excluded.card} סכומים שידועים רק כשהדף מעובד` : null,
                 ]}
               />
             </p>

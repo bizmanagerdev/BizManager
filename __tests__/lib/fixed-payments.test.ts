@@ -109,3 +109,41 @@ describe("summarizeFixedPayments — the monthly pill", () => {
     expect(s.sourceCount).toBe(4);
   });
 });
+
+describe("summarizeFixedPayments — incoming sources", () => {
+  // The list shows rent and loans-given as monthly income; the summary above it
+  // has to count those, not the outgoing bills the list is hiding.
+  const inflow = (over: Partial<OutflowSourceRow> & { kind: OutflowSourceRow["kind"]; key: string }): OutflowSourceRow => ({
+    name: "x", scheduleLabel: "", nextDate: "2099-01-10", focusId: null, amount: null, href: "/",
+    reminderWorkDaysBefore: null, effectiveReminderDays: 0, accountId: null, isActive: true,
+    settled: false, monthly: true, direction: "in", configurable: false,
+    ...over,
+  });
+
+  it("sums monthly rent with no templates in the mix", () => {
+    const s = summarizeFixedPayments([], [
+      inflow({ kind: "rent", key: "L1", amount: 4000 }),
+      inflow({ kind: "rent", key: "L2", amount: 3300 }),
+    ]);
+    expect(s.monthlyTotal).toBe(7300);
+    expect(s.monthlySourceCount).toBe(2);
+    expect(s.activeCount).toBe(0);
+  });
+
+  it("leaves the clearing deposit out, like a card charge — the amount isn't known ahead", () => {
+    const s = summarizeFixedPayments([], [
+      inflow({ kind: "rent", key: "L1", amount: 4000 }),
+      inflow({ kind: "settlement", key: "grow", amount: null, monthly: false }),
+    ]);
+    expect(s.monthlyTotal).toBe(4000);
+    expect(s.cardCount).toBe(1);
+  });
+
+  it("counts a one-off repayment on a loan given as not monthly", () => {
+    const s = summarizeFixedPayments([], [
+      inflow({ kind: "loan_in", key: "L9", amount: 50000, monthly: false }),
+    ]);
+    expect(s.monthlyTotal).toBe(0);
+    expect(s.oneOffLoanCount).toBe(1);
+  });
+});

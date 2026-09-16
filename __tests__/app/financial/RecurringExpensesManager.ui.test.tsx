@@ -101,7 +101,8 @@ describe("RecurringExpensesManager (תשלומים קבועים)", () => {
     // 300 + 5,000 + 8,000 — the one-off loan and the card are listed, not summed.
     expect(screen.getByText(/13,300/)).toBeTruthy();
     expect(screen.getByText(/1 הלוואות בהחזר חד-פעמי/)).toBeTruthy();
-    expect(screen.getByText(/1 כרטיסי אשראי/)).toBeTruthy();
+    // Worded to cover the clearing deposit as well as a card statement.
+    expect(screen.getByText(/1 סכומים שידועים/)).toBeTruthy();
   });
 
   it("saves a changed reminder for a source through the settings API", async () => {
