@@ -9,10 +9,25 @@ export type OutflowSourceKind = "salary" | "loan" | "card";
 
 export const OUTFLOW_SOURCE_KINDS: readonly OutflowSourceKind[] = ["salary", "loan", "card"];
 
-export const OUTFLOW_SOURCE_KIND_LABEL: Record<OutflowSourceKind, string> = {
+/**
+ * The INCOMING counterparts (lib/inflow-sources.ts). They share the row shape
+ * and the one list, but they are NOT stored in `outflow_source_settings` — its
+ * source_kind CHECK only knows the three above, and an incoming source has
+ * nothing to configure yet. Rows carry `configurable: false` to say so.
+ */
+export type InflowSourceKind = "rent" | "loan_in" | "settlement";
+
+export const INFLOW_SOURCE_KINDS: readonly InflowSourceKind[] = ["rent", "loan_in", "settlement"];
+
+export type SourceKind = OutflowSourceKind | InflowSourceKind;
+
+export const OUTFLOW_SOURCE_KIND_LABEL: Record<SourceKind, string> = {
   salary: "משכורת",
   loan: "הלוואה",
   card: "כרטיס אשראי",
+  rent: "שכר דירה",
+  loan_in: "הלוואה שנתנה",
+  settlement: "סליקת אשראי",
 };
 
 /**
@@ -37,7 +52,7 @@ export type OutflowSourceSetting = {
 export type OutflowSourceSettings = Map<string, OutflowSourceSetting>;
 export type OutflowSourceSettingsRecord = Record<string, OutflowSourceSetting>;
 
-export function sourceSettingKey(kind: OutflowSourceKind, key: string) {
+export function sourceSettingKey(kind: SourceKind, key: string) {
   return `${kind}:${key}`;
 }
 
@@ -46,14 +61,18 @@ export function isOutflowSourceKind(value: unknown): value is OutflowSourceKind 
 }
 
 /** Stored value wins; null (no row / never set) falls back to the kind's default. */
-export function effectiveReminderWorkDays(kind: OutflowSourceKind, setting?: OutflowSourceSetting | null): number {
+export function effectiveReminderWorkDays(kind: SourceKind, setting?: OutflowSourceSetting | null): number {
   const stored = setting?.reminderWorkDaysBefore;
-  if (stored == null || !Number.isFinite(stored)) return DEFAULT_REMINDER_WORK_DAYS[kind];
+  if (stored == null || !Number.isFinite(stored)) return DEFAULT_REMINDER_WORK_DAYS[kind as OutflowSourceKind] ?? 0;
   return Math.max(0, Math.floor(stored));
 }
 
 export type OutflowSourceRow = {
-  kind: OutflowSourceKind;
+  kind: SourceKind;
+  /** Which way this source moves money. Absent on older rows ⇒ outgoing. */
+  direction?: "out" | "in";
+  /** False when there is nowhere to store settings for it (every incoming source). */
+  configurable?: boolean;
   key: string;
   name: string;
   /** "10 לכל חודש" — how the timing reads; NOT a concrete date. */

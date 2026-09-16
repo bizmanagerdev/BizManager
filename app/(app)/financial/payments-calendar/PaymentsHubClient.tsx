@@ -212,6 +212,7 @@ export default function PaymentsHubClient({
           orders={orders}
           accounts={accounts}
           missingSchema={expenseMissingSchema}
+          direction={direction}
         />
       </TabsContent>
 

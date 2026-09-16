@@ -83,6 +83,11 @@ export type RecurringExpenseTemplateItem = {
   is_active: boolean;
 };
 
+/** A source row's direction; older rows without the field are outgoing. */
+function rowDirection(row: OutflowSourceRow): "out" | "in" {
+  return row.direction === "in" ? "in" : "out";
+}
+
 type Props = {
   templates: RecurringExpenseTemplateItem[];
   projects: Option[];
@@ -90,6 +95,12 @@ type Props = {
   properties: Option[];
   accounts: Account[];
   missingSchema?: boolean;
+  /**
+   * Which way the money goes, from the hub's switch. The same control that
+   * scopes the board scopes this list: both answer "what moves, and when".
+   * Defaults to outgoing so the tab's other caller keeps its behaviour.
+   */
+  direction?: "out" | "in" | "all";
 };
 
 const MONTH_OPTIONS = [
@@ -168,6 +179,9 @@ const SOURCE_OWNER: Record<OutflowSourceRow["kind"], string> = {
   salary: "מנוהל בשכר",
   loan: "מנוהל בדף ההלוואה",
   card: "מנוהל בדפי האשראי",
+  rent: "מנוהל בחוזה השכירות",
+  loan_in: "מנוהל בדף ההלוואה",
+  settlement: "מגיע מחברת הסליקה",
 };
 
 function sourceBoardHref(row: OutflowSourceRow) {
@@ -275,8 +289,16 @@ export default function RecurringExpensesManager(props: Props) {
 
   // Bank-account scope for the list + summary — templates by their account,
   // sources by the account set for them (or their own).
-  const sourceRows = useMemo(() => sources.rows ?? [], [sources.rows]);
-  // The type filter scopes the list AND the summary, same as the account filter.
+  // The same יוצא/נכנס/הכל switch that scopes the board scopes this list:
+  // both answer "what money moves, and when".
+  const direction = props.direction ?? "out";
+  const sourceRows = useMemo(() => {
+    const all = sources.rows ?? [];
+    const dir = props.direction ?? "out";
+    return dir === "all" ? all : all.filter((r) => rowDirection(r) === dir);
+  }, [sources.rows, props.direction]);
+  // Recurring BILLS are outgoing by definition, so the נכנס view has none.
+  const showTemplates = direction !== "in";
   const filteredTemplates = useMemo(
     () =>
       kindFilter && kindFilter !== "template"
@@ -301,7 +323,10 @@ export default function RecurringExpensesManager(props: Props) {
   );
 
   // One list, by the day of the month the money leaves (lib/fixed-payments).
-  const rows = useMemo<UnifiedRow[]>(() => buildFixedPaymentRows(filteredTemplates, filteredSources), [filteredTemplates, filteredSources]);
+  const rows = useMemo<UnifiedRow[]>(
+    () => buildFixedPaymentRows(showTemplates ? filteredTemplates : [], filteredSources),
+    [showTemplates, filteredTemplates, filteredSources]
+  );
 
   // The monthly-commitment pill (lib/fixed-payments): only what really leaves
   // every month is summed; one-off loans, hourly workers and cards are counted.
@@ -680,8 +705,22 @@ export default function RecurringExpensesManager(props: Props) {
     }
   };
 
+  // True when the row has nowhere to store what the controls would change.
+  const isReadOnlySource = (row: UnifiedRow) => row.kind === "source" && row.source.configurable === false;
+
   const tableCell = (row: UnifiedRow, field: EditField) => {
     const { name, st } = controlsOf(row);
+    // An incoming source has nowhere to store an account, a reminder or an
+    // on/off flag (outflow_source_settings only knows the three outgoing
+    // kinds), so the cell states the fact instead of offering a control that
+    // would throw the change away.
+    if (isReadOnlySource(row)) {
+      return (
+        <span className="flex h-9 items-center px-3 text-sm text-muted-foreground">
+          {field === "active" ? "פעיל" : "—"}
+        </span>
+      );
+    }
     if (editing?.rowId === row.id) {
       const focus = editing.field === field ? focusOnMount(editing.open) : undefined;
       const done = () => setEditing(null);

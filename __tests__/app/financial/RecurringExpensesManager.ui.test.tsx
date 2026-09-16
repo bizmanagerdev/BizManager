@@ -127,3 +127,70 @@ describe("RecurringExpensesManager (תשלומים קבועים)", () => {
     });
   });
 });
+
+// ── The incoming half of the same list ──────────────────────────────────────
+// Rent, loans the business gave out and the card settlement are "what happens
+// every month" too. They share the row shape but have nowhere to store
+// settings, so they are listed, not managed.
+
+const inflowSources = [
+  src({
+    kind: "rent", key: "L1", name: "שכר דירה — הרצל 5", scheduleLabel: "10 לכל חודש",
+    nextDate: "2099-01-10", amount: 4000, monthly: true, href: "/properties/p1",
+    direction: "in", configurable: false,
+  }),
+];
+
+describe("RecurringExpensesManager — incoming sources", () => {
+  it("shows only incoming rows in the נכנס view, with no recurring bills", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ rows: [...sources, ...inflowSources], todayIso: "2026-09-15" }) }))
+    );
+    render(
+      <RecurringExpensesManager
+        templates={templates}
+        projects={[]}
+        orders={[]}
+        properties={[]}
+        accounts={[]}
+        direction="in"
+      />
+    );
+    await screen.findAllByText("שכר דירה — הרצל 5");
+    const table = screen.getByRole("table");
+    const body = within(table).getAllByRole("row").slice(1).map((r) => r.textContent ?? "");
+    expect(body.filter((t) => t.includes("שכר דירה"))).toHaveLength(1);
+    // Bills are outgoing by definition, and so are salaries. (Checked by the
+    // kind badge, not by name: the rent row says "מנוהל בחוזה השכירות",
+    // which contains a template name as a substring.)
+    expect(body.filter((t) => t.includes("הוצאה קבועה"))).toHaveLength(0);
+    expect(body.filter((t) => t.includes("משכורת דוד"))).toHaveLength(0);
+  });
+
+  it("offers no settings controls on a row that has nowhere to store them", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ rows: inflowSources, todayIso: "2026-09-15" }) }))
+    );
+    render(
+      <RecurringExpensesManager templates={[]} projects={[]} orders={[]} properties={[]} accounts={[]} direction="in" />
+    );
+    await screen.findAllByText("שכר דירה — הרצל 5");
+    const table = screen.getByRole("table");
+    // A control that threw the change away would be worse than none.
+    expect(within(table).queryByLabelText(/חשבון — שכר דירה/)).toBeNull();
+    expect(within(table).queryByLabelText(/תזכורת — שכר דירה/)).toBeNull();
+  });
+
+  it("keeps the outgoing list unchanged when no direction is given", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ rows: [...sources, ...inflowSources], todayIso: "2026-09-15" }) }))
+    );
+    render(<RecurringExpensesManager templates={templates} projects={[]} orders={[]} properties={[]} accounts={[]} />);
+    await screen.findAllByText("משכורת דוד");
+    const body = within(screen.getByRole("table")).getAllByRole("row").slice(1).map((r) => r.textContent ?? "");
+    expect(body.filter((t) => t.includes("שכר דירה"))).toHaveLength(0);
+  });
+});
