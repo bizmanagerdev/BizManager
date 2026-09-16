@@ -32,6 +32,13 @@
 // since it had no CI log access to confirm directly). public/sw.js already
 // treats dev/localhost as a separate case for the same class of reason
 // (IS_DEV_HOST) — this just didn't.
+//
+// ALSO gated on NEXT_PUBLIC_E2E_TEST (2026-09-16): switching e2e CI off
+// `next dev` onto a real production build (see playwright.config.ts) made
+// THIS run for the first time — every earlier CI run was dev mode, where the
+// guard above already disabled it. Any transient static-asset hiccup on a
+// loaded CI runner now triggers a full reload mid-test, same failure shape
+// as the dev-mode case this guard was already written for.
 const RELOAD_KEY = "__chunk_reload__";
 
 const STALE_BUILD_RX =
@@ -40,7 +47,7 @@ const STALE_BUILD_RX =
 /** Returns true if it triggered a reload (caller can skip its own fallback UI work). */
 export function reloadIfStaleBuild(error: Error): boolean {
   if (typeof window === "undefined") return false;
-  if (process.env.NODE_ENV !== "production") return false;
+  if (process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_E2E_TEST === "1") return false;
   if (!STALE_BUILD_RX.test(error.message ?? "")) return false;
   try {
     if (sessionStorage.getItem(RELOAD_KEY)) return false;
