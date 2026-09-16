@@ -8,7 +8,7 @@ import { NavLink } from "@/components/NavLink";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useNavCounts, type NavCount } from "@/lib/ui/nav-counts-store";
-import type { SidebarNavItem } from "@/components/layout/nav-items";
+import { EXACT_MATCH_CHILDREN, type SidebarNavItem } from "@/components/layout/nav-items";
 import { RAIL_WIDTH, useSidebarCollapse } from "@/components/layout/sidebar-collapse-context";
 
 interface Props {
@@ -30,10 +30,6 @@ const subLinkBase =
 // Routes that share one filter bar (Flow + Reports) — switching between them via
 // the sidebar carries the current filters (date/domain/…) so context isn't lost.
 const FILTER_SHARED_ROUTES = new Set(["/financial", "/financial/reports"]);
-
-// Sub-tabs whose own children are separate sub-tabs: matched exactly, so the
-// section root ("/payroll") doesn't stay lit while you're on "/payroll/attendance".
-const EXACT_MATCH_CHILDREN = new Set(["/financial", "/payroll"]);
 
 // Lower = more urgent, for picking a group's roll-up tone.
 const SEVERITY_ORDER: Record<NavCount["severity"], number> = { danger: 0, warning: 1, info: 2 };

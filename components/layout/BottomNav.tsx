@@ -5,7 +5,8 @@ import { MoreIcon } from "@/components/ui/icons";
 import { NavLink } from "@/components/NavLink";
 import { ClientOnly } from "@/components/ClientOnly";
 import { QuickCreateMenu } from "@/components/layout/QuickCreateMenu";
-import type { SidebarNavItem } from "@/components/layout/nav-items";
+import { EXACT_MATCH_CHILDREN, type SidebarNavItem } from "@/components/layout/nav-items";
+import { cn } from "@/lib/utils";
 import {
   Sheet,
   SheetContent,
@@ -25,6 +26,25 @@ type Props = {
   viewerLocale?: Locale;
 };
 
+type MoreSection = { title?: string; items: SidebarNavItem[] };
+
+// עוד mirrors the sidebar's grouping: a group (פיננסי, עובדים…) becomes a
+// titled section holding its sub-tabs, and runs of plain tabs between groups
+// share an untitled one.
+function toMoreSections(items: SidebarNavItem[]): MoreSection[] {
+  const sections: MoreSection[] = [];
+  for (const item of items) {
+    if (item.children && item.children.length > 0) {
+      sections.push({ title: item.title, items: item.children });
+      continue;
+    }
+    const last = sections[sections.length - 1];
+    if (last && !last.title) last.items.push(item);
+    else sections.push({ items: [item] });
+  }
+  return sections;
+}
+
 export function BottomNav({ items, moreItems = [], viewerRole, viewerLocale = "he" }: Props) {
   const [moreOpen, setMoreOpen] = useState(false);
   const moreBodyRef = useRef<HTMLDivElement>(null);
@@ -42,6 +62,7 @@ export function BottomNav({ items, moreItems = [], viewerRole, viewerLocale = "h
   // happened to be even; a worker board with an odd tab count (e.g. Arabic
   // locale's 3-item nav, no "עוד" needed) threw it off (user, 2026-08-20).
   const tabCount = items.length + (moreItems.length > 0 ? 1 : 0);
+  const moreSections = toMoreSections(moreItems);
   const leading = items.slice(0, Math.ceil(tabCount / 2));
   const trailing = items.slice(Math.ceil(tabCount / 2));
 
@@ -129,26 +150,50 @@ export function BottomNav({ items, moreItems = [], viewerRole, viewerLocale = "h
                   {...moreSwipeProps}
                 >
                   <div className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-white/25" aria-hidden />
-                  <SheetHeader className="shrink-0 border-b border-white/10 px-6 py-4">
+                  <SheetHeader className="shrink-0 border-b border-white/10 px-4 py-3">
                     <SheetTitle className="text-sidebar-foreground">{t(topbarDict, viewerLocale, "more")}</SheetTitle>
                   </SheetHeader>
+                  {/* Compact on purpose: four small tiles a row, tight section
+                      spacing. Three big tiles a row left the short groups (נכסים,
+                      עובדים) as mostly-empty rows (user, 2026-09-17: "too much
+                      wasted space"). Labels still wrap, never truncate. */}
                   <div
                     ref={moreBodyRef}
-                    className="grid grid-cols-3 gap-3 overflow-y-auto overscroll-contain px-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-4"
+                    className="flex flex-col gap-2.5 overflow-y-auto overscroll-contain px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-3"
                   >
-                    {moreItems.map((item) => (
-                        <NavLink
-                          key={item.title}
-                          to={item.url}
-                          className="flex min-w-0 flex-col items-center gap-1.5 rounded-2xl p-3 text-sidebar-foreground/70 transition-colors hover:bg-white/10 hover:text-white"
-                          activeClassName="bg-secondary text-secondary-foreground"
-                          pendingClassName="bg-white/10 opacity-70"
-                          onClick={() => setMoreOpen(false)}
-                        >
-                          <item.icon className="h-6 w-6 shrink-0" />
-                          <span className="w-full text-center text-xs font-medium leading-tight">{item.title}</span>
-                        </NavLink>
-                      ))}
+                    {moreSections.map((section, index) => (
+                      <section
+                        key={section.title ?? `plain-${index}`}
+                        // A hairline between sections, so the plain tabs after a
+                        // group don't read as more of that group's sub-tabs.
+                        className={cn(index > 0 && "border-t border-white/10 pt-2.5")}
+                      >
+                        {/* Group name, styled like the desktop flyout's header — a
+                            label, never a selectable tab, so only the page you're
+                            on is highlighted. */}
+                        {section.title ? (
+                          <div className="mb-1 px-1 text-xs font-semibold tracking-wide text-sidebar-foreground/55">
+                            {section.title}
+                          </div>
+                        ) : null}
+                        <div className="grid grid-cols-4 gap-1">
+                          {section.items.map((item) => (
+                            <NavLink
+                              key={item.url + item.title}
+                              to={item.url}
+                              end={EXACT_MATCH_CHILDREN.has(item.url)}
+                              className="flex min-w-0 flex-col items-center gap-1 rounded-xl px-1 py-2 text-sidebar-foreground/70 transition-colors hover:bg-white/10 hover:text-white"
+                              activeClassName="bg-secondary text-secondary-foreground"
+                              pendingClassName="bg-white/10 opacity-70"
+                              onClick={() => setMoreOpen(false)}
+                            >
+                              <item.icon className="h-5 w-5 shrink-0" />
+                              <span className="w-full text-center text-xs font-medium leading-tight">{item.title}</span>
+                            </NavLink>
+                          ))}
+                        </div>
+                      </section>
+                    ))}
                   </div>
                 </SheetContent>
                 </Sheet>
