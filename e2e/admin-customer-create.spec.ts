@@ -22,69 +22,11 @@ test.describe("admin — customer creation", () => {
     test.setTimeout(60_000);
     const customerName = `E2E new customer ${Date.now()}`;
     let customerId: string | null = null;
-
-    // TEMPORARY DIAGNOSTIC — this test has failed identically ("element was
-    // detached from the DOM, retrying" on the same "לקוח" tile click) across
-    // seven different fix/round attempts now. Rounds 1-2's fixes (Service
-    // Worker dev-host self-destruct, auto-recover chunk-reload pair) both
-    // landed with ZERO change. Round 3 confirmed the mass net::ERR_ABORTED
-    // RSC-prefetch noise really was harmless. Round 4 logged every actual
-    // <script> load by Playwright's own resourceType() (catches third-party
-    // origins too, not just /_next/) — EVERY one came back 200 with the
-    // correct content-type, zero anomalies, but the important tail of the
-    // dump (the pageerror + ORIGINAL ERROR) got silently cut off by GitHub's
-    // 4096-char annotation cap, buried under listing every single clean
-    // script load. Round 5: since scripts are now confirmed clean, only log
-    // an anomaly (never a routine 200 + correct content-type), and put the
-    // pageerror + ORIGINAL ERROR FIRST in the thrown message so they can
-    // never be truncated away regardless of how much routine noise
-    // preceded them.
-    const diag: string[] = [];
-    let scriptOkCount = 0;
-    page.on("console", (msg) => {
-      if (msg.text().includes("realtime/v1/websocket")) return;
-      diag.push(`[console:${msg.type()}] ${msg.text().slice(0, 300)}`);
-    });
-    page.on("pageerror", (err) => diag.push(`[pageerror] ${err.message.slice(0, 300)} | stack: ${(err.stack ?? "").slice(0, 400)}`));
-    page.on("requestfailed", (req) => {
-      // The mass RSC-prefetch abort noise is now a known, unchanging
-      // constant across every fix attempt — keep the dump focused on
-      // anything that ISN'T that.
-      if (req.url().includes("_rsc=") && req.failure()?.errorText === "net::ERR_ABORTED") return;
-      diag.push(`[requestfailed] ${req.url()} (${req.resourceType()}) ${req.failure()?.errorText}`);
-    });
-    page.on("response", (res) => {
-      if (res.status() >= 400) diag.push(`[response ${res.status()}] ${res.request().method()} ${res.url()}`);
-      // Every actual <script> resource, regardless of origin — first-party
-      // chunk or third-party (Sentry/Speed Insights) alike. Round 4 showed
-      // these are all clean, so only an ANOMALY gets logged now; a clean one
-      // just increments a counter to keep the dump from drowning the signal.
-      if (res.request().resourceType() !== "script") return;
-      const contentType = res.headers()["content-type"] ?? "";
-      if (res.status() === 200 && contentType.includes("javascript")) {
-        scriptOkCount++;
-      } else {
-        diag.push(`[SCRIPT ANOMALY] ${res.url()} -> status=${res.status()} content-type=${contentType}`);
-      }
-    });
-
     try {
       await loginAs(page, "admin");
 
       await page.getByRole("button", { name: "הוספה מהירה" }).click();
-      try {
-        await page.getByRole("button", { name: "לקוח" }).click();
-      } catch (err) {
-        const pageErrors = diag.filter((d) => d.startsWith("[pageerror]"));
-        const nonRoutine = diag.filter((d) => !d.startsWith("[console:"));
-        throw new Error(
-          `ORIGINAL ERROR: ${(err as Error).message.slice(0, 800)}\n\n` +
-            `PAGE ERRORS (${pageErrors.length}): ${pageErrors.join(" | ") || "none"}\n\n` +
-            `${scriptOkCount} scripts loaded clean (200 + correct content-type), 0 anomalies.\n\n` +
-            `NON-ROUTINE EVENTS (${nonRoutine.length} of ${diag.length} total, last 30 shown):\n` +
-            nonRoutine.slice(-30).join("\n")
-        );
-      }
+      await page.getByRole("button", { name: "לקוח" }).click();
 
       // name
       await page.getByRole("textbox").fill(customerName);

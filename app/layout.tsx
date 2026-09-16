@@ -115,7 +115,17 @@ export default function RootLayout({
         <NativePushRegistration />
         {children}
         <Toaster />
-        <SpeedInsights />
+        {/* Root-caused via a real CI e2e run's captured network evidence:
+            @vercel/speed-insights always tries to load /_vercel/speed-insights/script.js
+            regardless of environment — a path Vercel's own edge network transparently
+            serves, but which doesn't exist as a real route anywhere else (self-hosted,
+            local `next start`, CI). This app's middleware doesn't recognize that path
+            and redirects it to /login (307), and the browser then tries to execute the
+            login PAGE's HTML as the script's JS body — "Unexpected token '<'". VERCEL is
+            the platform's own always-set-on-Vercel env var (already relied on elsewhere,
+            e.g. next.config.ts's BUILD_ID), so this only ever loads where the endpoint
+            it needs actually exists. */}
+        {process.env.VERCEL === "1" ? <SpeedInsights /> : null}
       </body>
     </html>
   );
