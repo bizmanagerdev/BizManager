@@ -133,11 +133,13 @@ function hasInvalidRefundEntry(entries: ReturnType<typeof normalizePaymentEntrie
 export async function POST(req: Request) {
   try {
     // Auth first so a queued offline confirm can be deduped by Idempotency-Key
-    // before any work runs. orders/update is multi-step and NOT atomic (image
-    // upload → RPC → payments → refunds), so a blind replay could double-insert
-    // payments or double-consume stock — withIdempotency makes a replay a no-op
-    // that returns the original cached response. Only the multipart "אישור
-    // אספקה" flow sends a key; the JSON edit path has none → runs unwrapped.
+    // before any work runs. The order, its items, stock movements AND the
+    // payment/refund rows are written by one RPC transaction (migration
+    // 20260915213319), but the image upload still happens before it, so a
+    // blind replay could re-upload photos or re-run the save — withIdempotency
+    // makes a replay a no-op that returns the original cached response. Only
+    // the multipart "אישור אספקה" flow sends a key; the JSON edit path has
+    // none → runs unwrapped.
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
     const { supabase, user, profile } = access.value;
@@ -252,7 +254,8 @@ export async function POST(req: Request) {
     // Build the new payment / refund rows up front so (a) the stored payment_status
     // counts COLLECTED money only — a future-dated check / net-term line is
     // 'pending' and must not stamp the order שולם (matches order_overview_view) —
-    // and (b) the exact same rows are inserted below.
+    // and (b) the exact same rows go into the RPC, which inserts them in the
+    // same transaction as the order update.
     // Pay-ahead customers (customers.requires_prepayment) are intentionally NOT
     // blocked here — the order is flagged red in the UI until paid rather than
     // refused (which lost sales). See lib/orders/prepayment.
@@ -399,6 +402,12 @@ export async function POST(req: Request) {
       p_delivery_date: deliveryDate,
       p_requested_delivery_date: requestedDeliveryDate,
       p_branch_id: branchId,
+      // Money rows ride inside the RPC's transaction: a rejected payment rolls
+      // the whole save back instead of leaving the order closed + unpaid with
+      // the collected cash unrecorded (2026-09-15). Identity columns (order_id,
+      // business_domain, recorded_by) are re-stamped server-side by the RPC.
+      p_payments: paymentInserts,
+      p_refunds: refundInserts,
     });
 
     if (error) {
@@ -444,13 +453,26 @@ export async function POST(req: Request) {
         );
       }
 
+      // A refund is a negative payments row; the legacy CHECK constraints
+      // rejected those until db/sql/allow_order_refunds_in_payments.sql ran.
+      if (
+        error.message.includes("payments_amount_total_check") ||
+        error.message.includes("payments_net_amount_check") ||
+        error.message.includes("payments_amount_before_vat_check")
+      ) {
+        return NextResponse.json(
+          { error: "הטבלה payments עדיין לא מאפשרת החזרים. יש להריץ db/sql/allow_order_refunds_in_payments.sql" },
+          { status: 400 }
+        );
+      }
+
       const missingRpc =
         error.message.includes("update_sales_order") || error.message.includes("function");
       if (missingRpc) {
         return NextResponse.json(
           {
             error:
-              "חסרה פונקציית מסד הנתונים update_sales_order. יש להריץ db/sql/update_sales_order_rpc.sql",
+              "חסרה פונקציית מסד הנתונים update_sales_order. יש להריץ את המיגרציה 20260915213319_atomic_order_update_payments.sql",
           },
           { status: 400 }
         );
@@ -458,48 +480,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
     }
 
-    const insertedPaymentIds: string[] = [];
-    if (paymentInserts.length > 0) {
-      const { data: insertedPaymentRows, error: paymentsInsertError } = await supabase
-        .from("payments")
-        .insert(paymentInserts)
-        .select("id");
-
-      if (paymentsInsertError) {
-        await cleanupUploadedDocument(supabase, uploadedDocuments);
-        console.error("orders/update payments insert failed", { orderId, message: paymentsInsertError.message });
-        Sentry.captureException(new Error(`payments insert failed: ${paymentsInsertError.message}`), {
-          tags: { route: "orders/update", op: "payments_insert" },
-          extra: { orderId, customerId, paymentCount: paymentInserts.length },
-        });
-        return NextResponse.json({ error: toHebrewError(paymentsInsertError.message) }, { status: 400 });
-      }
-      for (const row of insertedPaymentRows ?? []) {
-        if (row && typeof (row as { id?: unknown }).id === "string") {
-          insertedPaymentIds.push((row as { id: string }).id);
-        }
-      }
-    }
-
-    if (refundInserts.length > 0) {
-      const { error: refundsInsertError } = await supabase.from("payments").insert(refundInserts);
-
-      if (refundsInsertError) {
-        await cleanupUploadedDocument(supabase, uploadedDocuments);
-        console.error("orders/update refunds insert failed", { orderId, message: refundsInsertError.message });
-        Sentry.captureException(new Error(`refunds insert failed: ${refundsInsertError.message}`), {
-          tags: { route: "orders/update", op: "refunds_insert" },
-          extra: { orderId, customerId, refundCount: refundInserts.length },
-        });
-        const message =
-          refundsInsertError.message.includes("payments_amount_total_check") ||
-          refundsInsertError.message.includes("payments_net_amount_check") ||
-          refundsInsertError.message.includes("payments_amount_before_vat_check")
-          ? "הטבלה payments עדיין לא מאפשרת החזרים. יש להריץ db/sql/allow_order_refunds_in_payments.sql"
-          : refundsInsertError.message;
-        return NextResponse.json({ error: message }, { status: 400 });
-      }
-    }
+    // The RPC returns {order_id, payment_ids, refund_ids}. The payment ids feed
+    // the Morning receipt auto-issue below; refunds never get a receipt.
+    const rpcResult = (data && typeof data === "object" ? data : {}) as {
+      order_id?: unknown;
+      payment_ids?: unknown;
+    };
+    const insertedPaymentIds = Array.isArray(rpcResult.payment_ids)
+      ? rpcResult.payment_ids.filter((id): id is string => typeof id === "string")
+      : [];
 
     // payment_status / payment_terms / due_date / delivery_confirmed_at are now
     // written inside update_sales_order's single UPDATE above.
@@ -532,7 +521,7 @@ export async function POST(req: Request) {
       }
     }
 
-    const updatedOrderId = typeof data === "string" ? data : orderId;
+    const updatedOrderId = typeof rpcResult.order_id === "string" ? rpcResult.order_id : orderId;
 
     // Best-effort Morning auto-issue: invoice when order is completed, receipt for each
     // new payment row. Failures are logged via audit and never abort the order save.
