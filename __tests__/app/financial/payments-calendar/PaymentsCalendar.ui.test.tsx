@@ -100,12 +100,17 @@ const accounts = [{ id: "acc-1", name: "לאומי" }] as never[];
 const noIncomeOptions = { projects: [], orders: [], properties: [] };
 
 let slot: HTMLDivElement;
+// The board portals its alerts chip and its data filters into the page header,
+// so a test has to provide both landing spots.
+let filters: HTMLDivElement;
 beforeEach(() => {
   slot = document.createElement("div");
-  document.body.appendChild(slot);
+  filters = document.createElement("div");
+  document.body.append(slot, filters);
 });
 afterEach(() => {
   slot.remove();
+  filters.remove();
 });
 
 function renderBoard(over: Partial<React.ComponentProps<typeof PaymentsCalendar>> = {}) {
@@ -120,6 +125,7 @@ function renderBoard(over: Partial<React.ComponentProps<typeof PaymentsCalendar>
       templates={templates}
       incomeOptions={noIncomeOptions}
       alertsSlot={slot}
+      filtersSlot={filters}
       direction="out"
       {...over}
     />
@@ -233,31 +239,64 @@ describe("PaymentsCalendar (לוח תשלומים) — the board as it stands", 
 });
 
 
-// The calculator's headline figure (the rundown below it repeats each row's amount).
-function cashTotal(): string {
-  return ((screen.queryByText("כמה חסר") ?? screen.getByText("סה״כ נדרש")).nextElementSibling?.textContent ?? "").replace(/ /g, " ");
+// The calculator reads as a statement: each step is a heading with its own
+// total, and the running lines between them carry the answer. A step's total
+// sits next to its title; a running line's sits next to its label.
+function stepTotal(title: string): string {
+  const heading = screen.getByText(title);
+  const row = heading.parentElement as HTMLElement;
+  return (row.textContent ?? "").replace(title, "").replace(/\u00a0/g, " ").trim();
 }
 
-describe("CashNeedsDialog (כמה צריך?)", () => {
-  it("sums the unpaid amounts in the range, defaulting to the coming week", () => {
+describe("CashNeedsDialog (\u05db\u05de\u05d4 \u05e6\u05e8\u05d9\u05da?)", () => {
+  it("lists what goes out in the range, with that step's total", () => {
     render(<CashNeedsDialog open onOpenChange={() => {}} items={items} accounts={accounts} todayIso={TODAY} />);
-    // 16..23: ארנונה (20th) + the card marker (18th, no amount).
-    expect(cashTotal()).toBe(ils(1200));
-    expect(screen.getByText("2 שורות")).toBeTruthy();
+    // 16..23: \u05d0\u05e8\u05e0\u05d5\u05e0\u05d4 on the 20th + the card marker on the 18th (no amount).
+    expect(stepTotal("\u05d9\u05d5\u05e6\u05d0")).toBe(`\u2212${ils(1200)}`);
+    expect(screen.getByText("\u05d0\u05e8\u05e0\u05d5\u05e0\u05d4")).toBeTruthy();
   });
 
-  it("the quick ranges and the recurring-only chip narrow it", () => {
+  it("the quick ranges and the recurring-only chip narrow the step", () => {
     render(<CashNeedsDialog open onOpenChange={() => {}} items={items} accounts={accounts} todayIso={TODAY} />);
-    fireEvent.click(screen.getByRole("button", { name: "חודש" }));
+    fireEvent.click(screen.getByRole("button", { name: "\u05d7\u05d5\u05d3\u05e9" }));
     // + the salary on the 25th; the late bill (1st) and paid rows never count.
-    expect(cashTotal()).toBe(ils(9200));
-    expect(screen.getByText("3 שורות")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "רק הוצאות קבועות" }));
-    expect(cashTotal()).toBe(ils(1200));
-    expect(screen.getByText("1 שורות")).toBeTruthy();
+    expect(stepTotal("\u05d9\u05d5\u05e6\u05d0")).toBe(`\u2212${ils(9200)}`);
+    fireEvent.click(screen.getByRole("button", { name: "\u05e8\u05e7 \u05d4\u05d5\u05e6\u05d0\u05d5\u05ea \u05e7\u05d1\u05d5\u05e2\u05d5\u05ea" }));
+    expect(stepTotal("\u05d9\u05d5\u05e6\u05d0")).toBe(`\u2212${ils(1200)}`);
+  });
+
+  it("separates money that will arrive from money that depends on collection", () => {
+    const rows = [
+      item({ id: "expense:a", date: "2026-09-18", amount: 5000, label: "\u05e1\u05e4\u05e7", expenseId: "a" }),
+      item({ id: "payment:b", direction: "in", date: "2026-09-19", amount: 3000, label: "\u05e6\u05f3\u05e7", origin: "payment", stage: "scheduled", paymentId: "b" }),
+      item({ id: "order-receivable:c", direction: "in", date: "2026-09-19", amount: 8000, label: "\u05d3\u05d5\u05d3 \u05dc\u05d5\u05d9", origin: "order_receivable", stage: "pending" }),
+    ];
+    render(<CashNeedsDialog open onOpenChange={() => {}} items={rows} accounts={accounts} todayIso={TODAY} direction="all" />);
+    expect(stepTotal("\u05d9\u05d5\u05e6\u05d0")).toBe(`\u2212${ils(5000)}`);
+    expect(stepTotal("\u05e0\u05db\u05e0\u05e1")).toBe(`+${ils(3000)}`);
+    expect(stepTotal("\u05e0\u05db\u05e0\u05e1 \u00b7 \u05ea\u05dc\u05d5\u05d9 \u05d1\u05d2\u05d1\u05d9\u05d9\u05d4")).toBe(`+${ils(8000)}`);
+    // 3,000 against 5,000 \u2014 short 2,000 on money that will actually arrive.
+    expect(stepTotal("\u05e6\u05e8\u05d9\u05da")).toBe(ils(2000));
+    // 11,000 against 5,000 if the debt is collected too.
+    expect(stepTotal("\u05e2\u05d5\u05d3\u05e3 \u05d0\u05d7\u05e8\u05d9 \u05d2\u05d1\u05d9\u05d9\u05d4")).toBe(ils(6000));
+  });
+
+  it("shows no collection step when every incoming shekel is already committed", () => {
+    const rows = [
+      item({ id: "expense:a", date: "2026-09-18", amount: 5000, label: "\u05e1\u05e4\u05e7", expenseId: "a" }),
+      item({ id: "payment:b", direction: "in", date: "2026-09-19", amount: 9000, label: "\u05e6\u05f3\u05e7", origin: "payment", stage: "scheduled", paymentId: "b" }),
+    ];
+    render(<CashNeedsDialog open onOpenChange={() => {}} items={rows} accounts={accounts} todayIso={TODAY} direction="all" />);
+    expect(screen.queryByText("\u05e0\u05db\u05e0\u05e1 \u00b7 \u05ea\u05dc\u05d5\u05d9 \u05d1\u05d2\u05d1\u05d9\u05d9\u05d4")).toBeNull();
+    expect(screen.queryByText(/\u05d0\u05d7\u05e8\u05d9 \u05d2\u05d1\u05d9\u05d9\u05d4/)).toBeNull();
+    expect(stepTotal("\u05e2\u05d5\u05d3\u05e3")).toBe(ils(4000));
+  });
+
+  it("says so when the range is empty", () => {
+    render(<CashNeedsDialog open onOpenChange={() => {}} items={[]} accounts={accounts} todayIso={TODAY} />);
+    expect(screen.getByText("\u05d0\u05d9\u05df \u05ea\u05e0\u05d5\u05e2\u05d5\u05ea \u05d1\u05d8\u05d5\u05d5\u05d7 \u05e9\u05e0\u05d1\u05d7\u05e8.")).toBeTruthy();
   });
 });
-
 
 // ── The incoming half, and both together ─────────────────────────────────────
 // Same board, same grid, same day panel; what changes is which rows are on it
@@ -344,26 +383,6 @@ describe("PaymentsCalendar \u2014 \u05d4\u05db\u05dc (both directions)", () => {
   });
 });
 
-describe("CashNeedsDialog with money coming in", () => {
-  it("leads with what is actually missing and shows both sides behind it", () => {
-    const rows = [
-      item({ id: "expense:a", date: "2026-09-18", amount: 5000, label: "\u05e1\u05e4\u05e7", expenseId: "a" }),
-      item({ id: "payment:b", direction: "in", date: "2026-09-19", amount: 3000, label: "\u05e6\u05f3\u05e7", origin: "payment", stage: "scheduled", paymentId: "b" }),
-    ];
-    render(<CashNeedsDialog open onOpenChange={() => {}} items={rows} accounts={accounts} todayIso={TODAY} direction="all" />);
-    // 5,000 out against 3,000 in — 2,000 short.
-    expect(screen.getByText("\u05db\u05de\u05d4 \u05d7\u05e1\u05e8")).toBeTruthy();
-    expect(cashTotal()).toBe(ils(2000));
-    expect(screen.getByText(/\u05e6\u05e4\u05d5\u05d9 \u05dc\u05d4\u05d9\u05db\u05e0\u05e1/)).toBeTruthy();
-  });
-
-  it("stays the plain \u05e1\u05d4\u05f4\u05db \u05e0\u05d3\u05e8\u05e9 figure when nothing comes in", () => {
-    render(<CashNeedsDialog open onOpenChange={() => {}} items={items} accounts={accounts} todayIso={TODAY} direction="out" />);
-    expect(screen.getByText("\u05e1\u05d4\u05f4\u05db \u05e0\u05d3\u05e8\u05e9")).toBeTruthy();
-    expect(cashTotal()).toBe(ils(1200));
-  });
-});
-
 describe("Recording money that comes in", () => {
   const ADD_PAYMENT = "\u05d4\u05d5\u05e1\u05e3 \u05ea\u05e9\u05dc\u05d5\u05dd \u05dc\u05d9\u05d5\u05dd \u05d6\u05d4";
   const ADD_RECEIPT = "\u05d4\u05d5\u05e1\u05e3 \u05ea\u05e7\u05d1\u05d5\u05dc \u05dc\u05d9\u05d5\u05dd \u05d6\u05d4";
@@ -378,9 +397,9 @@ describe("Recording money that comes in", () => {
     expect(screen.queryByRole("button", { name: ADD_RECEIPT })).toBeNull();
   });
 
-  it("offers both on \u05d4\u05db\u05dc \u2014 a payment and a receipt are different dialogs", () => {
+  it("offers neither on \u05d4\u05db\u05dc \u2014 two buttons crowded the panel, and the app's + creates either kind", () => {
     renderBoard({ items: [...items, ...incomingItems], direction: "all" });
-    expect(screen.getByRole("button", { name: ADD_PAYMENT })).toBeTruthy();
-    expect(screen.getByRole("button", { name: ADD_RECEIPT })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: ADD_PAYMENT })).toBeNull();
+    expect(screen.queryByRole("button", { name: ADD_RECEIPT })).toBeNull();
   });
 });

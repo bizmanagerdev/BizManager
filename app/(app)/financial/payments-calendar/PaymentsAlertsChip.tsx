@@ -6,7 +6,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { TOOLBAR_CONTROL } from "@/components/ui/filter-chip";
 import { toDateOnly } from "@/components/ui/month-calendar";
 import type { PaymentCalendarItem } from "@/lib/payables";
-import { DIRECTION_WORDS, STAGE_DOT, amountLabel, itemStageKey, lateItems, type AlertSeverity, type DirectionFilter } from "./calendar.helpers";
+import { DIRECTION_WORDS, MONEY_SIGN, STAGE_DOT, amountLabel, itemStageKey, lateItems, type AlertSeverity, type DirectionFilter } from "./calendar.helpers";
 
 // ── Late-payments chip — in the page header, beside כמה צריך?. It lists ONLY
 //    payments that are past their date and still unpaid: what's coming up is
@@ -35,9 +35,20 @@ export default function PaymentsAlertsChip({
   const { late, severity } = useMemo(() => lateItems(items, todayIso), [items, todayIso]);
 
   if (late.length === 0) return null;
-  const label = `באיחור ${late.length}`;
-  // Showing both directions, the chip can't claim they're all bills.
-  const what = direction === "all" ? "תשלומים ותקבולים באיחור" : DIRECTION_WORDS[direction].late;
+  // Showing both directions, "באיחור 47" doesn't say late at WHAT — so the
+  // count is split into the two things it can mean.
+  const outCount = late.filter((i) => i.direction !== "in").length;
+  const inCount = late.length - outCount;
+  const both = direction === "all" && outCount > 0 && inCount > 0;
+  const label = both ? `באיחור ${outCount} לתשלום · ${inCount} לגבייה` : `באיחור ${late.length}`;
+  const what =
+    direction === "all"
+      ? outCount === 0
+        ? DIRECTION_WORDS.in.late
+        : inCount === 0
+          ? DIRECTION_WORDS.out.late
+          : "תשלומים ותקבולים באיחור"
+      : DIRECTION_WORDS[direction].late;
 
   return (
     <DropdownMenu>
@@ -67,7 +78,7 @@ export default function PaymentsAlertsChip({
               </span>
               <span className="shrink-0 text-sm font-semibold tabular-nums">
                 {direction === "all" ? (
-                  <span className={item.direction === "in" ? "text-success" : "text-destructive"}>
+                  <span className={`${MONEY_SIGN} ${item.direction === "in" ? "text-success" : "text-destructive"}`}>
                     {item.direction === "in" ? "+" : "−"}
                   </span>
                 ) : null}

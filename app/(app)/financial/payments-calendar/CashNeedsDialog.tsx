@@ -8,7 +8,7 @@ import { FilterChip } from "@/components/ui/filter-chip";
 import { toDateOnly } from "@/components/ui/month-calendar";
 import type { Account } from "@/lib/accounts";
 import type { PaymentCalendarItem } from "@/lib/payables";
-import { STAGE_DOT, addDaysIso, amountLabel, cashNeeds, fmtIls, itemStageKey, type DirectionFilter } from "./calendar.helpers";
+import { MONEY_SIGN, STAGE_DOT, addDaysIso, amountLabel, cashNeeds, fmtIls, itemCertainty, itemStageKey, type DirectionFilter } from "./calendar.helpers";
 
 // ── Cash-needs calculator — "how much will I need between X and Y?" ─────────────
 // Sums every not-yet-paid outflow in a date range (honoring the page's account
@@ -40,10 +40,11 @@ export default function CashNeedsDialog({
     () => cashNeeds(items, { from, to, recurringOnly, accountFilter }),
     [items, from, to, recurringOnly, accountFilter]
   );
-  // The calculator was built to answer "how much has to go out?". Once money
-  // comes in too, the honest answer is the net — so it leads, with both sides
-  // under it. With nothing incoming in range, it stays the single figure.
-  const showNet = result.incoming > 0;
+
+  const outRows = result.rows.filter((i) => i.direction !== "in");
+  const incomingRows = result.rows.filter((i) => i.direction === "in");
+  const certainRows = incomingRows.filter((i) => itemCertainty(i) === "committed");
+  const owedRows = incomingRows.filter((i) => itemCertainty(i) === "owed");
 
   const quickRanges: Array<[string, number]> = [["היום", 0], ["יומיים", 2], ["שבוע", 7], ["חודש", 30]];
 
@@ -95,55 +96,113 @@ export default function CashNeedsDialog({
             ) : null}
           </div>
 
-          <div className="rounded-xl bg-foreground px-4 py-3 text-background">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-xs opacity-70">{showNet ? "כמה חסר" : "סה״כ נדרש"}</div>
-                <div className="text-2xl font-bold tabular-nums">
-                  {result.hasEstimate ? "~" : ""}
-                  {showNet ? fmtIls(Math.abs(Math.min(result.net, 0))) : fmtIls(result.total)}
-                </div>
-              </div>
-              <div className="text-xs opacity-70">
-                {result.rows.length} שורות{result.hasEstimate ? " · כולל הערכות" : ""}
-              </div>
-            </div>
-            {showNet ? (
-              // The two sides behind that figure, so it can be checked.
-              <div className="mt-2 flex items-center gap-4 border-t border-background/20 pt-2 text-xs">
-                <span className="opacity-70">צפוי להיכנס <span className="font-semibold tabular-nums opacity-100">{fmtIls(result.incoming)}</span></span>
-                <span className="opacity-70">צפוי לצאת <span className="font-semibold tabular-nums opacity-100">{fmtIls(result.total)}</span></span>
-              </div>
-            ) : null}
-          </div>
-
-          {/* Narrow rundown of exactly what's in the total — small type, one line each */}
-          {result.rows.length > 0 ? (
-            <ul className="max-h-56 divide-y overflow-y-auto rounded-lg border text-xs">
-              {result.rows.map((i) => {
-                const d = toDateOnly(i.date) ?? new Date(i.date);
-                return (
-                  <li key={i.id} className="flex items-center gap-2 px-2 py-1 leading-snug">
-                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STAGE_DOT[itemStageKey(i)]}`} />
-                    <span className="w-8 shrink-0 tabular-nums text-muted-foreground">{d.getDate()}/{d.getMonth() + 1}</span>
-                    <span className="min-w-0 flex-1 break-words">{i.label}</span>
-                    {i.variableAmount ? <span className="shrink-0 text-warning-strong">משתנה</span> : null}
-                    <span className="shrink-0 font-medium tabular-nums">
-                      {showNet ? (
-                        <span className={i.direction === "in" ? "text-success" : "text-destructive"}>
-                          {i.direction === "in" ? "+" : "−"}
-                        </span>
-                      ) : null}
-                      {amountLabel(i)}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
+          {/* Read it downwards: what goes out, what is certain to come in, the
+              balance of those two — then the money that depends on collection
+              and what the balance becomes if it all lands. Every step carries
+              its own total, and nothing is left off the page. */}
+          {result.rows.length === 0 ? (
             <div className="rounded-lg border p-4 text-center text-sm text-muted-foreground">אין תנועות בטווח שנבחר.</div>
+          ) : (
+            <div className="space-y-2">
+              <Section title="יוצא" total={result.total} rows={outRows} sign="−" />
+              <Section title="נכנס" total={result.incoming} rows={certainRows} sign="+" />
+              {/* Not "missing" — nothing is missing yet. This is the amount that
+                  has to BE there to cover the range, which is what the user
+                  then goes and checks the accounts against. */}
+              <Running
+                label={result.net >= 0 ? "עודף" : "צריך"}
+                value={result.net}
+                strong={result.owed === 0}
+                hasEstimate={result.hasEstimate}
+              />
+              {result.owed > 0 ? (
+                <>
+                  <Section title="נכנס · תלוי בגבייה" total={result.owed} rows={owedRows} sign="+" />
+                  <Running
+                    label={result.netIfAll >= 0 ? "עודף אחרי גבייה" : "צריך גם אחרי גבייה"}
+                    value={result.netIfAll}
+                    strong
+                    hasEstimate={result.hasEstimate}
+                  />
+                </>
+              ) : null}
+            </div>
           )}
         </div>
     </ViewDialog>
+  );
+}
+
+// One step of the statement: a heading with its own total, then its rows.
+function Section({
+  title,
+  total,
+  rows,
+  sign,
+}: {
+  title: string;
+  total: number;
+  rows: PaymentCalendarItem[];
+  sign: "+" | "−";
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="overflow-hidden rounded-lg border">
+      <div className="flex items-baseline justify-between gap-3 bg-muted/40 px-3 py-1.5">
+        <span className="text-xs font-semibold">{title}</span>
+        <span className="text-sm font-bold tabular-nums">
+          <span className={`${MONEY_SIGN} ${sign === "+" ? "text-success" : "text-destructive"}`}>{sign}</span>
+          {fmtIls(total)}
+        </span>
+      </div>
+      <ul className="max-h-[16vh] min-h-0 divide-y overflow-y-auto text-xs">
+        {rows.map((i) => {
+          const d = toDateOnly(i.date) ?? new Date(i.date);
+          return (
+            <li key={i.id} className="flex items-center gap-2 px-2 py-1 leading-snug">
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STAGE_DOT[itemStageKey(i)]}`} />
+              <span className="w-8 shrink-0 tabular-nums text-muted-foreground">
+                {d.getDate()}/{d.getMonth() + 1}
+              </span>
+              <span className="min-w-0 flex-1 break-words">{i.label}</span>
+              {i.variableAmount && i.amount > 0 ? (
+                <span className="shrink-0 text-warning-strong">משתנה</span>
+              ) : null}
+              <span className="shrink-0 font-medium tabular-nums">{amountLabel(i)}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+// A running total between the steps. The last one is the answer, so it is the
+// one that gets the dark bar.
+function Running({
+  label,
+  value,
+  strong,
+  hasEstimate,
+}: {
+  label: string;
+  value: number;
+  strong: boolean;
+  hasEstimate: boolean;
+}) {
+  return (
+    <div
+      className={
+        strong
+          ? "flex items-baseline justify-between gap-3 rounded-lg bg-foreground px-3 py-2 text-background"
+          : "flex items-baseline justify-between gap-3 px-3 py-1"
+      }
+    >
+      <span className={strong ? "text-xs font-semibold" : "text-xs font-medium text-muted-foreground"}>{label}</span>
+      <span className={strong ? "text-xl font-bold tabular-nums" : "text-sm font-semibold tabular-nums"}>
+        {hasEstimate ? "~" : ""}
+        {fmtIls(Math.abs(value))}
+      </span>
+    </div>
   );
 }

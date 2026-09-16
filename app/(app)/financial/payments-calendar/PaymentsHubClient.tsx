@@ -42,7 +42,9 @@ type Props = {
 
 const TABS = [
   // The board itself.
-  { key: "calendar", label: "לוח תשלומים", icon: CalendarIcon },
+  // Just "the board": it carries money going out AND coming in now, so naming
+  // it after one direction would be wrong.
+  { key: "calendar", label: "לוח", icon: CalendarIcon },
   // What feeds it: bills AND the other fixed outflows (salaries, loans, cards),
   // one list by day with each one's rules — named for what it answers.
   { key: "recurring", label: "פירוט", icon: RecurringIcon },
@@ -104,6 +106,9 @@ export default function PaymentsHubClient({
   // Header spot the calendar portals its alerts chip into — the chip needs the
   // calendar's account filter, so it stays owned there but reads up here.
   const [alertsSlot, setAlertsSlot] = useState<HTMLDivElement | null>(null);
+  // Where the board's data filters render — beside the mode switcher, since
+  // they do the same kind of thing.
+  const [filtersSlot, setFiltersSlot] = useState<HTMLDivElement | null>(null);
   // "השלמת חיובים חסרים" for every template — lives up here beside "new", not
   // buried above the list.
   const backfill = useBackfillMissing();
@@ -149,6 +154,7 @@ export default function PaymentsHubClient({
               </button>
             ))}
           </div>
+          {activeTab === "calendar" ? <div ref={setFiltersSlot} className="contents" /> : null}
           {activeTab === "calendar" ? <div ref={setAlertsSlot} className="contents" /> : null}
           {/* The cash-needs calculator is useful from either tab. */}
           <Button type="button" size="sm" variant="secondary" onClick={() => setCashOpen(true)}>
@@ -194,6 +200,7 @@ export default function PaymentsHubClient({
           templates={templates}
           incomeOptions={incomeOptions}
           alertsSlot={alertsSlot}
+          filtersSlot={filtersSlot}
           direction={direction}
         />
       </TabsContent>

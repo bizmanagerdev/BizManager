@@ -152,6 +152,49 @@ export function itemCapabilities(
 }
 
 // ── Stage presentation ──────────────────────────────────────────────────────────
+// ── Certainty: money you can plan on vs money you are merely owed ────────────
+// The stage says WHEN something is due. It does not say whether it will happen.
+// A check with a deposit date is an instrument sitting in a drawer; a customer
+// balance on the same day is a hope. Both belong on the calendar — you want to
+// chase the second — but only the first can be added up into "what will I have".
+//
+//   committed — a real payments row (a check, an agreed transfer), or a card
+//               settlement, where the customer has already paid and the
+//               clearing company owes US. Also every OUTGOING row: a bill is a
+//               bill whether or not it has been generated yet.
+//   owed      — derived from a debt with no instrument behind it: an order or
+//               project balance, a promise, a projected rent month.
+export type Certainty = "committed" | "owed";
+
+export function itemCertainty(item: PaymentCalendarItem): Certainty {
+  if (item.direction === "out") return "committed";
+  if (item.paymentId) return "committed";
+  if (item.id.startsWith("grow_batch:")) return "committed";
+  return "owed";
+}
+
+// The +/− in front of an amount is the fastest way to read a mixed day, so it
+// is drawn heavier than the figure beside it. Sized in `em` so it scales with
+// whatever text it sits in — a 10px grid cell and a 20px total both get a sign
+// that stands out by the same proportion. Per the house rule, only the SIGN is
+// coloured; the number itself stays foreground.
+export const MONEY_SIGN = "text-[1.3em] font-black leading-none";
+
+// Showing both directions, the settled stage can't be called שולם (a collected
+// receipt wasn't paid) or נגבה (a paid bill wasn't collected). One neutral word
+// covers both: it happened.
+export const SETTLED_BOTH = "בוצע";
+
+/** The settled stage's word for whichever direction(s) are on screen. */
+export function settledWordFor(direction: DirectionFilter): string {
+  return direction === "all" ? SETTLED_BOTH : DIRECTION_WORDS[direction].settled;
+}
+
+export const CERTAINTY_LABEL: Record<Certainty, string> = {
+  committed: "נכנס",
+  owed: "תלוי בגבייה",
+};
+
 export type StageKey = "overdue" | "pending" | "scheduled" | "posted";
 export function itemStageKey(item: PaymentCalendarItem): StageKey {
   if (item.stage === "posted") return "posted";
@@ -213,18 +256,49 @@ export function groupByDay(items: PaymentCalendarItem[]): Map<string, PaymentCal
   return map;
 }
 
-// A day's still-open money (scheduled + pending), per direction. `net` is what
-// the day actually does to the bank: in minus out.
-export type DayTotals = { out: number; in: number; net: number };
+// A day's still-open money (scheduled + pending), per direction.
+//
+// `in` is everything expected that day; `inCommitted` is the part backed by an
+// actual payment instrument. `net` deliberately uses ONLY the committed part:
+// a day where ₪40,000 of customer balances happen to fall due is not a day you
+// can plan ₪40,000 around, and a net that pretends otherwise is worse than no
+// net at all. `inOwed` is what was left out, so it can be shown rather than
+// silently dropped.
+// `settledIn`/`settledOut` are the money that has ALREADY moved that day. They
+// are kept apart from the open figures (a paid bill is not something to pay)
+// but they are not thrown away: with "הצג ששולמו" on, those rows are on
+// screen, and a headline that ignored them would not add up to the list under
+// it — which is exactly what made the grid look wrong.
+export type DayTotals = {
+  out: number;
+  in: number;
+  inCommitted: number;
+  inOwed: number;
+  net: number;
+  settledIn: number;
+  settledOut: number;
+};
 export function openTotals(items: PaymentCalendarItem[]): DayTotals {
   let out = 0;
-  let incoming = 0;
+  let committed = 0;
+  let owed = 0;
+  let settledIn = 0;
+  let settledOut = 0;
   for (const i of items) {
-    if (i.stage === "posted") continue;
-    if (i.direction === "in") incoming += i.amount;
-    else out += i.amount;
+    if (i.stage === "posted") {
+      if (i.direction === "in") settledIn += i.amount;
+      else settledOut += i.amount;
+      continue;
+    }
+    if (i.direction !== "in") {
+      out += i.amount;
+    } else if (itemCertainty(i) === "committed") {
+      committed += i.amount;
+    } else {
+      owed += i.amount;
+    }
   }
-  return { out, in: incoming, net: incoming - out };
+  return { out, in: committed + owed, inCommitted: committed, inOwed: owed, net: committed - out, settledIn, settledOut };
 }
 
 // "To pay" total for a day = amounts not yet paid (scheduled + pending).
@@ -295,7 +369,7 @@ export type CashNeedsFilter = { from: string; to: string; recurringOnly: boolean
 export function cashNeeds(
   items: PaymentCalendarItem[],
   { from, to, recurringOnly, accountFilter }: CashNeedsFilter
-): { total: number; incoming: number; net: number; rows: PaymentCalendarItem[]; hasEstimate: boolean } {
+): { total: number; incoming: number; owed: number; net: number; netIfAll: number; rows: PaymentCalendarItem[]; hasEstimate: boolean } {
   const lo = from <= to ? from : to;
   const hi = from <= to ? to : from;
   const rows = items
@@ -311,6 +385,18 @@ export function cashNeeds(
   const totals = openTotals(rows);
   const hasEstimate = rows.some((i) => i.variableAmount && i.amount > 0);
   // `total` stays "what has to go out" — the question the calculator was built
-  // to answer. With money coming in too, `net` is what you really need to find.
-  return { total: totals.out, incoming: totals.in, net: totals.net, rows, hasEstimate };
+  // to answer. `incoming` counts only money with an instrument behind it, and
+  // `owed` is the rest, reported separately so nobody plans around a debt.
+  return {
+    total: totals.out,
+    incoming: totals.inCommitted,
+    owed: totals.inOwed,
+    net: totals.net,
+    // What the range looks like if every expected shekel actually lands. Shown
+    // beside the conservative figure rather than instead of it: the gap between
+    // the two IS the amount riding on collection.
+    netIfAll: totals.inCommitted + totals.inOwed - totals.out,
+    rows,
+    hasEstimate,
+  };
 }

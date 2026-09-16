@@ -163,9 +163,37 @@ describe("toIncomeCalendarItems", () => {
     expect(items.every((i) => i.direction === "in")).toBe(true);
   });
 
-  it("puts the customer in front of an order number nobody can read", () => {
-    expect(items[1].sourceLabel).toBe("מאפיית לחם · הזמנה 4f3c1b2a");
+  it("headlines the row with WHO owes it, not with what kind of row it is", () => {
+    // A day showing five rows of "הכנסה מתוכננת מלקוח" is unusable; the
+    // category and the order belong on the meta line under the name.
+    expect(items[1].label).toBe("מאפיית לחם");
+    // "הזמנה 4f3c1b2a" is an id fragment; with a name to show it is noise.
+    expect(items[1].sourceLabel).toBe("יתרת לקוח לתשלום");
     expect(items[1].customerName).toBe("מאפיית לחם");
+  });
+
+  it("keeps the order reference when there is no customer name to show instead", () => {
+    const [row] = toIncomeCalendarItems([entry({ id: "payment:p7", description: "תקבול" })], TODAY);
+    expect(row.label).toBe("תקבול");
+    expect(row.sourceLabel).toBe("הזמנה 4f3c1b2a");
+  });
+
+  it("falls back to the project or property name when there is no customer", () => {
+    const [row] = toIncomeCalendarItems(
+      [entry({ id: "payment:p9", sourceKind: "project", sourceLabel: "מטבח הרצל", sourceHref: "/projects/x", description: "תקבול" })],
+      TODAY
+    );
+    expect(row.label).toBe("מטבח הרצל");
+    expect(row.sourceLabel).toBe("תקבול");
+  });
+
+  it("keeps the description as the headline for income with nobody behind it", () => {
+    const [row] = toIncomeCalendarItems(
+      [entry({ id: "payment:p8", sourceKind: "general", sourceLabel: "פעילות שוטפת", description: "הכנסה" })],
+      TODAY
+    );
+    expect(row.label).toBe("הכנסה");
+    expect(row.sourceLabel).toBe("פעילות שוטפת");
   });
 
   it("carries the payment row id and its reference so the row can be acted on", () => {

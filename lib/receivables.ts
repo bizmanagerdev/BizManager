@@ -117,15 +117,26 @@ export function toIncomeCalendarItems(
     .map((entry) => {
       const customerName = entry.customerId ? customerNames?.get(entry.customerId) ?? null : null;
       const paymentId = entry.id.startsWith("payment:") ? entry.id.slice("payment:".length) : null;
+      // WHO the money is from leads the row. The engine's description is a
+      // category — "יתרת לקוח לתשלום", "הכנסה מתוכננת מלקוח" — and a day
+      // with five of those tells you nothing you can act on. The category and
+      // the order/project move to the meta line, which is where the outgoing
+      // side already puts them.
+      const who = customerName ?? (entry.sourceKind === "project" || entry.sourceKind === "property" ? entry.sourceLabel : null);
+      // buildSource labels an order "הזמנה 4f3c1b2a" — an id fragment, which
+      // means nothing to a person reading a calendar. Once the customer's name
+      // is the headline it adds only noise, so it is dropped; it survives only
+      // when there is no name to show instead.
+      const isOrderRef = entry.sourceKind === "order";
+      const where =
+        entry.sourceLabel && entry.sourceLabel !== who && !(isOrderRef && who) ? entry.sourceLabel : null;
       return {
         id: entry.id,
         direction: "in" as const,
         date: entry.flowDate,
         amount: entry.amount,
-        label: entry.description,
-        // The customer is who this is from — worth more on a collections row
-        // than "הזמנה 4f3c1b2a", which is what buildSource can produce.
-        sourceLabel: customerName ? `${customerName} · ${entry.sourceLabel}` : entry.sourceLabel,
+        label: who ?? entry.description,
+        sourceLabel: who ? [entry.description, where].filter(Boolean).join(" · ") : entry.sourceLabel,
         sourceHref: incomeSourceHref(entry),
         stage: entry.stage,
         paymentStatus: entry.paymentStatus,

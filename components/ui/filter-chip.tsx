@@ -20,6 +20,10 @@ export function FilterChip({ active, label, onClick }: { active: boolean; label:
       }`}
     >
       {label}
+      {/* Present only when the filter is ON: the clearest possible signal that
+          the view is narrowed, and the way to widen it again. A view showing
+          fewer rows for no visible reason reads as missing data. */}
+      {active ? <span aria-hidden className="ms-1.5 text-sm leading-none opacity-80">×</span> : null}
     </button>
   );
 }

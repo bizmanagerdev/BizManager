@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MetaRow } from "@/components/ui/meta-row";
 import type { PaymentCalendarItem } from "@/lib/payables";
-import { DIRECTION_WORDS, STAGE_BADGE, STAGE_DOT, amountLabel, itemStageKey, stageLabelFor } from "./calendar.helpers";
+import { DIRECTION_WORDS, MONEY_SIGN, STAGE_BADGE, STAGE_DOT, amountLabel, itemStageKey, stageLabelFor } from "./calendar.helpers";
 
 // ── Shared item card (used by the day panel and anywhere a payment is listed) ───
 export default function PaymentItemCard({
@@ -76,7 +76,7 @@ export default function PaymentItemCard({
           <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${STAGE_DOT[stage]}`} />
           <span className="min-w-0 flex-1 break-words text-sm font-medium leading-snug">{item.label}</span>
           <span className="shrink-0 text-sm font-semibold tabular-nums">
-            <span className={incoming ? "text-success" : "text-destructive"}>{incoming ? "+" : "−"}</span>
+            <span className={`${MONEY_SIGN} ${incoming ? "text-success" : "text-destructive"}`}>{incoming ? "+" : "−"}</span>
             {amountText}
           </span>
         </div>

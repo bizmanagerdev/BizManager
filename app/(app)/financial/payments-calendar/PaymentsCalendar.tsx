@@ -23,7 +23,7 @@ import PaymentsAlertsChip from "./PaymentsAlertsChip";
 import PaymentsDayPanel from "./PaymentsDayPanel";
 import { useRefreshAndWait } from "./useRefreshAndWait";
 import {
-  DIRECTION_WORDS,
+  MONEY_SIGN,
   MONTH_PARAM,
   STAGE_DOT,
   STAGE_ORDER,
@@ -36,6 +36,7 @@ import {
   monthFromParam,
   monthToParam,
   openTotals,
+  settledWordFor,
   summarizeDayByStage,
   type DirectionFilter,
   type IncomeOptions,
@@ -63,6 +64,11 @@ type Props = {
   // beside the tabs. Null until that header mounts — the chip waits for it
   // rather than flashing above the calendar first.
   alertsSlot?: HTMLElement | null;
+  // Same trick for the data filters. They scope the day panel and the cash
+  // calculator as well as the grid, so sitting on the grid's own toolbar
+  // implied a narrower reach than they have. State stays here (it is the
+  // board's), only the controls are rendered up there.
+  filtersSlot?: HTMLElement | null;
   // Which way the money goes: owned by the hub (it draws the switch beside the
   // tabs) and pushed down here, so the board, the day panel and the alerts chip
   // all answer about the same side of the ledger.
@@ -71,7 +77,7 @@ type Props = {
 
 const EMPTY_IDS: ReadonlySet<string> = new Set();
 
-export default function PaymentsCalendar({ items: allItems, todayIso, projects, properties, orders, accounts, templates, incomeOptions, alertsSlot, direction }: Props) {
+export default function PaymentsCalendar({ items: allItems, todayIso, projects, properties, orders, accounts, templates, incomeOptions, alertsSlot, filtersSlot, direction }: Props) {
   const searchParams = useSearchParams();
   const { refreshAndWait } = useRefreshAndWait();
   const itemsProp = useMemo(() => filterByDirection(allItems, direction), [allItems, direction]);
@@ -205,19 +211,22 @@ export default function PaymentsCalendar({ items: allItems, todayIso, projects, 
     // eight rows in a cell that fits two. Show the two sides instead, signed —
     // the day panel still has the full detail.
     if (direction === "all") {
-      const totals = openTotals(dayItems);
+      const t = openTotals(dayItems);
+      // Everything on this day, settled or not — the cell must equal the list
+      // it opens. (With "הצג ששולמו" off there is nothing settled to add.)
+      const totals = { in: t.in + t.settledIn, out: t.out + t.settledOut };
       return (
         <>
           {holidayLabel}
           {totals.in > 0 ? (
             <span className="flex max-w-full items-center gap-1 text-[10px] font-semibold leading-tight text-foreground">
-              <span className="text-success">+</span>
+              <span className={`${MONEY_SIGN} text-success`}>+</span>
               <span className="truncate">{fmtIls(totals.in)}</span>
             </span>
           ) : null}
           {totals.out > 0 ? (
             <span className="flex max-w-full items-center gap-1 text-[10px] font-semibold leading-tight text-foreground">
-              <span className="text-destructive">−</span>
+              <span className={`${MONEY_SIGN} text-destructive`}>−</span>
               <span className="truncate">{fmtIls(totals.out)}</span>
             </span>
           ) : null}
@@ -243,11 +252,20 @@ export default function PaymentsCalendar({ items: allItems, todayIso, projects, 
     );
   }
 
+  // Hovering a day previews it without selecting it: the day's headline figure,
+  // then one row per item — who it is from, what it is for underneath, and the
+  // amount. Signed per row when both directions share the board.
   function renderDayHover({ day }: DayContext) {
     const dayItems = itemsOnDay(day);
     if (dayItems.length === 0) return null;
-    const totals = openTotals(dayItems);
-    const headline = direction === "all" ? totals.net : direction === "in" ? totals.in : totals.out;
+    const t = openTotals(dayItems);
+    // Same rule as the grid cell: the header adds up the rows listed below it.
+    const headline =
+      direction === "all"
+        ? t.in + t.settledIn - (t.out + t.settledOut)
+        : direction === "in"
+          ? t.in + t.settledIn
+          : t.out + t.settledOut;
     return (
       <div>
         <div className="mb-1.5 flex items-baseline justify-between gap-2 border-b pb-1.5">
@@ -255,7 +273,7 @@ export default function PaymentsCalendar({ items: allItems, todayIso, projects, 
           {headline !== 0 ? (
             <span className="text-xs font-semibold">
               {direction === "all" ? (
-                <span className={headline >= 0 ? "text-success" : "text-destructive"}>{headline >= 0 ? "+" : "−"}</span>
+                <span className={`${MONEY_SIGN} ${headline >= 0 ? "text-success" : "text-destructive"}`}>{headline >= 0 ? "+" : "\u2212"}</span>
               ) : null}
               {fmtIls(Math.abs(headline))}
             </span>
@@ -263,13 +281,18 @@ export default function PaymentsCalendar({ items: allItems, todayIso, projects, 
         </div>
         <ul className="space-y-1">
           {dayItems.map((item) => (
-            <li key={item.id} className="flex items-center gap-1.5 text-xs">
-              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STAGE_DOT[itemStageKey(item)]}`} />
-              <span className="min-w-0 flex-1">{item.label}</span>
+            <li key={item.id} className="flex items-start gap-1.5 text-xs">
+              <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${STAGE_DOT[itemStageKey(item)]}`} />
+              <span className="min-w-0 flex-1">
+                <span className="break-words">{item.label}</span>
+                {item.sourceLabel ? (
+                  <span className="block break-words text-[11px] leading-tight text-muted-foreground">{item.sourceLabel}</span>
+                ) : null}
+              </span>
               <span className="shrink-0 font-medium">
                 {direction === "all" ? (
-                  <span className={item.direction === "in" ? "text-success" : "text-destructive"}>
-                    {item.direction === "in" ? "+" : "−"}
+                  <span className={`${MONEY_SIGN} ${item.direction === "in" ? "text-success" : "text-destructive"}`}>
+                    {item.direction === "in" ? "+" : "\u2212"}
                   </span>
                 ) : null}
                 {amountLabel(item)}
@@ -289,7 +312,7 @@ export default function PaymentsCalendar({ items: allItems, todayIso, projects, 
       <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-destructive" />באיחור</span>
       <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-warning" />ממתין</span>
       <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-muted-foreground/60" />צפוי</span>
-      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-success" />{DIRECTION_WORDS[direction === "in" ? "in" : "out"].settled}</span>
+      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-success" />{settledWordFor(direction)}</span>
     </div>
   );
 
@@ -316,7 +339,8 @@ export default function PaymentsCalendar({ items: allItems, todayIso, projects, 
       <NativeSelect dense
         value={accountFilter}
         onChange={(e) => setAccountFilter(e.target.value)}
-        aria-label="סינון לפי חשבון" className={`w-auto border-input text-xs text-foreground shadow-none ${TOOLBAR_CONTROL}`}
+        aria-label="סינון לפי חשבון"
+        className={`w-auto min-w-0 max-w-[10rem] shrink border-input text-xs text-foreground shadow-none ${TOOLBAR_CONTROL}`}
       >
         <option value="">כל החשבונות</option>
         {accounts.map((a) => (
@@ -342,25 +366,32 @@ export default function PaymentsCalendar({ items: allItems, todayIso, projects, 
       )
     : null;
 
-  // The month is the grid's title — centered in the calendar's own header
-  // strip, bold, between the filters and the legend.
+  // Month navigation sits at the START of the grid's toolbar, grouped with
+  // היום: it navigates the grid and nothing else, and "where am I" reads
+  // before "what am I looking at".
   const monthSwitcher = (
     <MonthNav month={monthDate} todayDate={today} onChange={changeMonth} labelClassName="text-base font-bold" />
   );
 
-  // The filters change what the grid shows, so they live inside its border,
-  // on the strip above the weekday header, opposite the legend.
-  const gridFilters = (
-    <>
-      {accountFilterControl}
-      {recurringOnlyToggle}
-      {showPaidToggle}
-    </>
-  );
+  // The three data filters, portaled into the page header beside the mode
+  // switcher: all four change WHAT DATA is on the page, so they belong
+  // together. What stays on the grid's own toolbar is only what is about the
+  // grid — month navigation and the legend.
+  const filterControls = filtersSlot
+    ? createPortal(
+        <>
+          {accountFilterControl}
+          {recurringOnlyToggle}
+          {showPaidToggle}
+        </>,
+        filtersSlot
+      )
+    : null;
 
   return (
     <div className="space-y-3">
       {alertsChip}
+      {filterControls}
       <MonthCalendar
         todayIso={todayIso}
         month={monthDate}
@@ -374,8 +405,8 @@ export default function PaymentsCalendar({ items: allItems, todayIso, projects, 
         renderDayHover={renderDayHover}
         legend={legend}
         legendPlacement="above"
-        gridHeader={gridFilters}
-        gridHeaderCenter={monthSwitcher}
+        // "Where am I" at the start, "what am I looking at" at the end.
+        gridHeader={monthSwitcher}
       />
     </div>
   );

@@ -68,11 +68,18 @@ export default async function PaymentsCalendarPage() {
       d.setMonth(d.getMonth() - 13);
       return d.toISOString().slice(0, 10);
     })();
+    // How far ahead the forecasts reach. A year covers a rent schedule and any
+    // settlement date the clearing company could hand us.
+    const horizon = (() => {
+      const d = new Date();
+      d.setMonth(d.getMonth() + 12);
+      return d.toISOString().slice(0, 10);
+    })();
     const { entries, referenceDate } = await loadFinancialEntries(supabase, { from });
     const [outgoing, incoming] = await Promise.all([
       loadPaymentCalendarItems(supabase, { preloaded: { entries, referenceDate } }),
       // Incoming is additive: if it fails, the board is still the board it was.
-      loadIncomeCalendarItems(supabase, { entries, referenceDate }).catch(() => [] as PaymentCalendarItem[]),
+      loadIncomeCalendarItems(supabase, { entries, referenceDate, fromIso: from, toIso: horizon }).catch(() => [] as PaymentCalendarItem[]),
     ]);
     items = [...outgoing.items, ...incoming];
     todayIso = outgoing.todayIso;

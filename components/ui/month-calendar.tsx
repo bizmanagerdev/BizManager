@@ -193,7 +193,13 @@ export default function MonthCalendar({
     const startOffset = firstDay.getDay(); // 0=Sun … 6=Sat
     const gridStart = new Date(firstDay);
     gridStart.setDate(firstDay.getDate() - startOffset);
-    return Array.from({ length: 42 }).map((_, i) => {
+    // Only the weeks this month actually touches. A fixed six-week grid adds a
+    // whole row of the NEXT month whenever the month fits in five — a row of
+    // days that aren't being looked at, taking space from the ones that are.
+    // Neighbouring days still appear where they share a week with this month.
+    const daysInMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
+    const weeks = Math.ceil((startOffset + daysInMonth) / 7);
+    return Array.from({ length: weeks * 7 }).map((_, i) => {
       const d = new Date(gridStart);
       d.setDate(gridStart.getDate() + i);
       return d;
@@ -296,9 +302,13 @@ export default function MonthCalendar({
               // Three columns (1fr · auto · 1fr) keep the center truly centered
               // on the grid whatever the side groups' widths; narrow screens
               // stack it, center first.
-              <div className="flex flex-col items-center gap-2 border-b bg-card px-3 py-2 xl:grid xl:grid-cols-[1fr_auto_1fr] xl:gap-4">
+              <div className="flex flex-col items-center gap-2 border-b bg-card px-3 py-2 xl:grid xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] xl:gap-4">
                 <div className="xl:order-2">{gridHeaderCenter}</div>
-                <div className="flex flex-wrap items-center justify-center gap-2 xl:order-1 xl:justify-self-start">{gridHeader}</div>
+                {/* xl: one line, whatever the width — the column gives way (min-w-0
+                    + shrink on the group) rather than the filters stacking. */}
+                <div className="flex flex-wrap items-center justify-center gap-2 xl:order-1 xl:min-w-0 xl:flex-nowrap xl:justify-self-start">
+                  {gridHeader}
+                </div>
                 <div className="xl:order-3 xl:justify-self-end">{legend && legendPlacement === "above" ? legend : null}</div>
               </div>
             ) : gridHeader || (legend && legendPlacement === "above") ? (
@@ -348,7 +358,7 @@ export default function MonthCalendar({
                 }
                 onMouseLeave={renderDayHover ? scheduleClose : undefined}
                 title={holiday ?? undefined}
-                className={`flex min-h-[3.75rem] flex-col gap-1 px-1.5 py-1.5 transition-colors ${
+                className={`flex min-h-[4.5rem] flex-col gap-1 px-1.5 py-1.5 transition-colors ${
                   !inMonth
                     ? "bg-muted/20 text-muted-foreground/45"
                     : isHoliday
