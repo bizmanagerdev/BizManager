@@ -68,7 +68,7 @@ export default function LoanDetailClient({ loan }: { loan: Loan }) {
         <div className="min-w-0 space-y-1">
           <nav className="flex items-center gap-1.5 text-xs text-muted-foreground" aria-label="ניווט">
             <Link href="/financial/loans" className="hover:text-foreground hover:underline">
-              הלוואות וחובות
+              חובות
             </Link>
             <ChevronLeftIcon className="h-3.5 w-3.5" />
             <h1 className="text-lg font-bold text-foreground">{counterparty}</h1>

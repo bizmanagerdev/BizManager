@@ -31,7 +31,9 @@ function looksLikeMissingSchema(msg: string) {
   return m.includes("does not exist") || m.includes("could not find") || m.includes("schema cache");
 }
 
-// "לוח תשלומים" — the home for all expense management. Two tabs:
+// "צפי תזרים" — scheduled money, in both directions (the neighbour of תזרים,
+// which is what already happened). The route keeps its old path so existing
+// links, alerts and bookmarks keep working. Two tabs:
 //   • יומן — the outgoing-payments calendar (every upcoming payment: unpaid/
 //     scheduled expenses, recurring bills, loan repayments, worker wages, plus
 //     hand-added payments). Add a payment to a day, mark it paid, split it.

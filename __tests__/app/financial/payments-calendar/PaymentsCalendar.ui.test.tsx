@@ -152,7 +152,7 @@ function selectedPanel(): HTMLElement {
   return aside as HTMLElement;
 }
 
-describe("PaymentsCalendar (לוח תשלומים) — the board as it stands", () => {
+describe("PaymentsCalendar (צפי תזרים · לוח) — the board as it stands", () => {
   it("opens on today's month with unpaid amounts per day, paid ones hidden, and a marker for a variable charge", () => {
     renderBoard();
     expect(within(dayCell(20)).getByText(ils(1200))).toBeTruthy();

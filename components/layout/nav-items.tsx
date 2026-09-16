@@ -63,15 +63,19 @@ const SIDEBAR_ITEMS: SidebarNavItem[] = [
     url: "/financial",
     icon: BankIcon,
     children: [
+      // Order chosen by the user (2026-09-17). תזרים = actual movements,
+      // צפי תזרים = scheduled ones in both directions, גבייה = the working list
+      // for chasing receivables — the first two are the same question in two
+      // tenses, so they sit together.
       { title: "תזרים", url: "/financial", icon: BankIcon },
+      { title: "צפי תזרים", url: "/financial/payments-calendar", icon: ScheduleIcon },
       { title: "גבייה", url: "/collections", icon: CoinsIcon },
-      { title: "תשלומים", url: "/financial/payments-calendar", icon: ScheduleIcon },
-      { title: "דוחות", url: "/financial/reports", icon: ReportIcon },
       { title: "חשבונות", url: "/financial/bank", icon: TransferIcon },
-      { title: "מע״מ ומסים", url: "/financial/taxes", icon: ReceiptIcon },
+      { title: "דוחות", url: "/financial/reports", icon: ReportIcon },
+      { title: "חובות", url: "/financial/loans", icon: PaymentIcon },
       { title: "צ׳קים", url: "/checks", icon: CashIcon },
-      { title: "הלוואות וחובות", url: "/financial/loans", icon: PaymentIcon },
       { title: "כ. אשראי", url: "/financial/statements", icon: CardIcon },
+      { title: "מע״מ ומסים", url: "/financial/taxes", icon: ReceiptIcon },
     ],
   },
   {
@@ -79,10 +83,10 @@ const SIDEBAR_ITEMS: SidebarNavItem[] = [
     url: "/payroll",
     icon: WalletIcon,
     children: [
-      { title: "עובדים ושכר", url: "/payroll", icon: WalletIcon },
+      { title: "שכר", url: "/payroll", icon: WalletIcon },
       // The attendance queue is its own destination, not a tab inside the salary
       // center: it's the daily approve-shifts job, and it carries a count badge.
-      { title: "דיווחי נוכחות", url: "/payroll/attendance", icon: ClockIcon },
+      { title: "נוכחות", url: "/payroll/attendance", icon: ClockIcon },
     ],
   },
   { title: "מסמכים", url: "/documents", icon: FolderIcon },
@@ -99,31 +103,16 @@ const BOTTOM_NAV_ITEMS: SidebarNavItem[] = [
   { title: "מכירות", url: "/sales", icon: OrderIcon },
 ];
 
-const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
-  { title: "לקוחות", url: "/customers", icon: UsersIcon },
-  { title: "יומן", url: "/calendar", icon: CalendarIcon },
-  { title: "גבייה", url: "/collections", icon: CoinsIcon },
-  // משימות / דירות / תשלומים share a row on purpose (user, 2026-09-09) — they
-  // used to fall on the same COLUMN three rows apart instead, which a tight
-  // screenshot reads as stacked rather than grouped.
-  { title: "משימות", url: "/tasks", icon: TaskIcon },
-  { title: "דירות", url: "/properties", icon: HomeIcon },
-  { title: "תשלומים", url: "/financial/payments-calendar", icon: ScheduleIcon },
-  { title: "תיעוד פניות", url: "/communications", icon: ChatIcon },
-  { title: "רכבים", url: "/vehicles", icon: VehicleIcon },
-  { title: "פיננסי", url: "/financial", icon: BankIcon },
-  { title: "דוחות", url: "/financial/reports", icon: ReportIcon },
-  { title: "חשבונות", url: "/financial/bank", icon: TransferIcon },
-  { title: "מע״מ ומסים", url: "/financial/taxes", icon: ReceiptIcon },
-  { title: "צ׳קים", url: "/checks", icon: CashIcon },
-  { title: "הלוואות וחובות", url: "/financial/loans", icon: PaymentIcon },
-  { title: "כ. אשראי", url: "/financial/statements", icon: CardIcon },
-  { title: "עובדים", url: "/payroll", icon: WalletIcon },
-  { title: "דיווחי נוכחות", url: "/payroll/attendance", icon: ClockIcon },
-  { title: "מסמכים", url: "/documents", icon: FolderIcon },
-  { title: "פעילות", url: "/activity", icon: ActivityIcon },
-  { title: "הגדרות ניהול", url: "/settings", icon: SettingsIcon },
-];
+// עוד IS the sidebar minus the bar's own tabs — same order, same groups, same
+// labels — derived rather than hand-listed, so mobile can't drift from desktop
+// again (user, 2026-09-17: a hand-kept copy had hoisted גבייה out of פיננסי).
+const BOTTOM_NAV_URLS = new Set(BOTTOM_NAV_ITEMS.map((item) => item.url));
+const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = SIDEBAR_ITEMS.filter((item) => !BOTTOM_NAV_URLS.has(item.url));
+
+// Sub-tabs that are a section's root while their siblings live under the same
+// prefix: matched exactly, so "/payroll" doesn't stay lit on "/payroll/attendance"
+// — one selected tab at a time, in the sidebar and in עוד alike.
+export const EXACT_MATCH_CHILDREN = new Set(["/financial", "/payroll"]);
 
 const ADMIN_ONLY_URLS = new Set(["/activity", "/financial", "/settings", "/financial/loans", "/financial/reports", "/financial/bank"]);
 const ADMIN_OR_OFFICE_URLS = new Set<string>(["/payroll", "/payroll/attendance", "/collections", "/communications", "/checks", "/financial/statements", "/financial/taxes", "/financial/payments-calendar", "/vehicles"]);

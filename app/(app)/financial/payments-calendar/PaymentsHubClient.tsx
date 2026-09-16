@@ -45,9 +45,13 @@ const TABS = [
   // Just "the board": it carries money going out AND coming in now, so naming
   // it after one direction would be wrong.
   { key: "calendar", label: "לוח", icon: CalendarIcon },
-  // What feeds it: bills AND the other fixed outflows (salaries, loans, cards),
-  // one list by day with each one's rules — named for what it answers.
-  { key: "recurring", label: "פירוט", icon: RecurringIcon },
+  // Everything that repeats, in whichever direction the switch shows: bills,
+  // salaries, loans and cards going out; rent, loans given and the card
+  // settlement coming in. Not a detail view of the calendar but its own thing,
+  // with its own summary and add button. "קבועות" rather than
+  // "התחייבויות קבועות", because in נכנס it lists rent — income, not an
+  // obligation. The key stays "recurring" so ?tab=recurring links still work.
+  { key: "recurring", label: "קבועות", icon: RecurringIcon },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -60,8 +64,8 @@ function tabFromParam(value: string | null): TabKey {
   return value === "recurring" ? "recurring" : "calendar";
 }
 
-// The יומן תשלומים hub: a calendar/list of upcoming payments + management of the
-// recurring-expense templates that feed it.
+// The צפי תזרים hub: scheduled money in both directions, as a calendar (לוח)
+// and as the list of what repeats (קבועות).
 export default function PaymentsHubClient({
   items,
   todayIso,
