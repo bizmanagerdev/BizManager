@@ -61,6 +61,11 @@ export default defineConfig({
       NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
       NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
       SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
+      // See PwaRegistration.tsx's own comment — tells it to skip Service
+      // Worker registration. Only actually matters at BUILD time for that
+      // client-side check (already set there by ci.yml's "Build the app"
+      // step); passed through here too in case anything ever reads it live.
+      NEXT_PUBLIC_E2E_TEST: process.env.NEXT_PUBLIC_E2E_TEST ?? "",
     },
   },
 });

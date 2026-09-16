@@ -236,6 +236,16 @@ jobs:
         # has none of that live-compilation machinery, and building here (no
         # tests/browser running yet) means it isn't competing for CPU either.
         #
+        # NEXT_PUBLIC_E2E_TEST=1 tells PwaRegistration.tsx to skip Service
+        # Worker registration — confirmed via a real CI run's captured
+        # console/network output (a mass net::ERR_ABORTED across every nav
+        # link's prefetch plus an "Unexpected token '<'" pageerror) that
+        # sw.js's own IS_DEV_HOST guard matches this runner's 127.0.0.1 host,
+        # self-destructs, and force-navigates every open tab the instant it
+        # activates — mid-test. Right behavior for a real dev machine, wrong
+        # for a from-scratch e2e build with nothing stale to clean up. See
+        # PwaRegistration.tsx's own comment for the full account.
+        #
         # NEXT_PUBLIC_* vars must be present at BUILD time to get baked into
         # the client bundle, so .env.test.local (written by the previous
         # step) is sourced into this step's own shell — these are throwaway
@@ -245,7 +255,7 @@ jobs:
           set -a
           source .env.test.local
           set +a
-          npm run build
+          NEXT_PUBLIC_E2E_TEST=1 npm run build
         timeout-minutes: 10
 
       - name: Install Playwright's chromium

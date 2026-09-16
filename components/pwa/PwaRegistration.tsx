@@ -35,7 +35,20 @@ export default function PwaRegistration() {
     // intercepted by the SW BEFORE this cleanup code can run. So: unregister,
     // wipe all caches, and force a one-time reload so the NEXT page load
     // bypasses the SW entirely.
-    if (process.env.NODE_ENV !== "production") {
+    //
+    // Also skipped for e2e (NEXT_PUBLIC_E2E_TEST, baked in at build time by
+    // .github/workflows/ci.yml's "Build the app" step): CI now tests a real
+    // production build served from 127.0.0.1, which is exactly the hostname
+    // sw.js's own IS_DEV_HOST guard treats as a developer's stray localhost
+    // session — it self-destructs AND force-navigates every open tab the
+    // moment it activates, mid-test. That's the right call for a real dev
+    // machine, but there's nothing stale about a fresh e2e build; this only
+    // stops the SW from registering at all so its dev-host cleanup never has
+    // a reason to fire. Root-caused after switching CI off `next dev` (see
+    // playwright.config.ts's webServer comment) didn't fix the SAME "element
+    // detached from the DOM" instability — proof it was never really about
+    // dev-mode compilation, at least not only.
+    if (process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_E2E_TEST === "1") {
       void (async () => {
         const regs = await navigator.serviceWorker.getRegistrations();
         const hadSw = regs.length > 0;
