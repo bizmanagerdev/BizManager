@@ -75,7 +75,18 @@ export function useHoverPanel(delayMs = 180) {
       cancel();
       setOpen(false);
     }, [cancel]),
-    triggerProps: { onMouseEnter: show, onMouseLeave: hideSoon, onFocus: show },
-    panelProps: { onMouseEnter: show, onMouseLeave: hideSoon },
+    // onPointerDownCapture (not onClick — every call site already defines its
+    // own, which would silently win the prop over mine in a spread) cancels
+    // any pending hideSoon the instant a real interaction starts anywhere in
+    // the trigger or panel, regardless of a mouseleave that fired moments
+    // earlier crossing the gap between them. Root-caused via a real CI e2e
+    // run's captured DOM evidence: a click that moves the pointer straight
+    // from the trigger to a tile inside the panel can register mouseleave
+    // (starting the 180ms close timer) before mouseenter on the panel
+    // registers, especially under load — closing the panel out from under a
+    // click already in flight. Capture phase fires before the click itself,
+    // so this always wins the race regardless of that gap.
+    triggerProps: { onMouseEnter: show, onMouseLeave: hideSoon, onFocus: show, onPointerDownCapture: cancel },
+    panelProps: { onMouseEnter: show, onMouseLeave: hideSoon, onPointerDownCapture: cancel },
   };
 }

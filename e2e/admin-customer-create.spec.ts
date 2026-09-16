@@ -22,84 +22,11 @@ test.describe("admin — customer creation", () => {
     test.setTimeout(60_000);
     const customerName = `E2E new customer ${Date.now()}`;
     let customerId: string | null = null;
-
-    // TEMPORARY DIAGNOSTIC, round 9 — three confirmed-real, verified bugs
-    // fixed in a row (Service Worker dev-host self-destruct, auto-recover
-    // chunk-reload pair, @vercel/speed-insights redirecting to /login) with
-    // ZERO effect on this test's "element was detached from the DOM"
-    // failure each time. Round 8 proved (via a real `framenavigated`
-    // listener) that NO browser navigation happens during the failure at
-    // all — ruling out every reload/navigate-based theory for good — but
-    // its MutationObserver technique itself broke: reading the log back via
-    // a SECOND page.evaluate() after the failure threw ("could not read
-    // mutation log"), meaning something invalidates the JS execution
-    // context WITHOUT a traditional frame navigation firing. This round
-    // replaces read-back-at-the-end with page.exposeFunction() so the
-    // browser pushes each event to Node.js the INSTANT it happens — immune
-    // to that failure mode — and also watches attribute changes and
-    // pagehide/beforeunload/visibilitychange directly.
-    const diag: string[] = [];
-    const t0 = Date.now();
-    const ts = () => `+${Date.now() - t0}ms`;
-    await page.exposeFunction("__e2ePush", (line: string) => diag.push(`${ts()} ${line}`));
-    page.on("framenavigated", (frame) => {
-      if (frame === page.mainFrame()) diag.push(`${ts()} [NAVIGATION] ${frame.url()}`);
-    });
-    page.on("console", (msg) => {
-      if (msg.text().includes("realtime/v1/websocket")) return;
-      diag.push(`${ts()} [console:${msg.type()}] ${msg.text().slice(0, 200)}`);
-    });
-    page.on("pageerror", (err) => diag.push(`${ts()} [pageerror] ${err.message.slice(0, 200)}`));
-
     try {
       await loginAs(page, "admin");
 
       await page.getByRole("button", { name: "הוספה מהירה" }).click();
-
-      // Tag the exact node so a MutationObserver can report precisely when
-      // (and what ancestor) removes it — pushed live via __e2ePush rather
-      // than accumulated for a later read-back, which round 8 showed can
-      // itself fail silently.
-      await page.evaluate(() => {
-        const push = (window as unknown as { __e2ePush: (s: string) => void }).__e2ePush;
-        window.addEventListener("pagehide", () => push("[pagehide]"));
-        window.addEventListener("beforeunload", () => push("[beforeunload]"));
-        document.addEventListener("visibilitychange", () => push(`[visibilitychange] ${document.visibilityState}`));
-
-        const btn = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("לקוח"));
-        if (!btn) {
-          push("[TAG] button not found at tag time");
-          return;
-        }
-        btn.setAttribute("data-e2e-watch", "1");
-        push("[TAG] tagged OK");
-        const obs = new MutationObserver((mutations) => {
-          for (const m of mutations) {
-            m.removedNodes.forEach((n) => {
-              if (!(n instanceof HTMLElement)) return;
-              const isTarget = n.getAttribute("data-e2e-watch") === "1" || n.querySelector('[data-e2e-watch="1"]');
-              if (isTarget) push(`[REMOVED] <${n.tagName} class="${n.className.toString().slice(0, 60)}">`);
-            });
-            if (
-              m.type === "attributes" &&
-              m.target instanceof HTMLElement &&
-              m.target.getAttribute("data-e2e-watch") === "1"
-            ) {
-              push(`[ATTR CHANGE on target] ${m.attributeName}`);
-            }
-          }
-        });
-        obs.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
-      });
-
-      try {
-        await page.getByRole("button", { name: "לקוח" }).click();
-      } catch (err) {
-        throw new Error(
-          `ORIGINAL ERROR: ${(err as Error).message.slice(0, 500)}\n\n` +
-            `TIMELINE (${diag.length} events, last 30 shown):\n${diag.slice(-30).join("\n") || "none"}`
-        );
-      }
+      await page.getByRole("button", { name: "לקוח" }).click();
 
       // name
       await page.getByRole("textbox").fill(customerName);
