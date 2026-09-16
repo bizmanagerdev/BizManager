@@ -49,7 +49,23 @@ HoverPanelContent.displayName = "HoverPanelContent";
  * after a short grace period so the pointer can cross the gap between them.
  */
 export function useHoverPanel(delayMs = 180) {
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpenRaw] = React.useState(false);
+  // TEMPORARY DIAGNOSTIC — round 11 of an e2e investigation. Round 10 proved
+  // (by patching setTimeout/clearTimeout) that hideSoon's own 180ms timer
+  // never even gets scheduled for the specific removal being chased, yet the
+  // panel still closes near-instantly — meaning something OTHER than
+  // hideSoon is calling the raw `setOpen` this hook returns (every call site
+  // wires it straight to Radix Popover's own onOpenChange, which fires for
+  // Radix's OWN internal dismiss logic too, e.g. its "pointer down outside"
+  // detection — completely bypassing hideSoon). Logs a stack trace on every
+  // call so the real caller shows up directly. window.__e2ePush only exists
+  // during the instrumented e2e test; guarded so this is inert everywhere
+  // else. Remove once root-caused.
+  const setOpen = React.useCallback((value: boolean | ((prev: boolean) => boolean)) => {
+    const push = (window as unknown as { __e2ePush?: (s: string) => void }).__e2ePush;
+    if (push) push(`[setOpen(${typeof value === "function" ? "fn" : value})] ${new Error().stack?.split("\n").slice(1, 5).join(" <- ") ?? ""}`);
+    setOpenRaw(value);
+  }, []);
   const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cancel = React.useCallback(() => {
@@ -59,11 +75,11 @@ export function useHoverPanel(delayMs = 180) {
   const show = React.useCallback(() => {
     cancel();
     setOpen(true);
-  }, [cancel]);
+  }, [cancel, setOpen]);
   const hideSoon = React.useCallback(() => {
     cancel();
     timer.current = setTimeout(() => setOpen(false), delayMs);
-  }, [cancel, delayMs]);
+  }, [cancel, delayMs, setOpen]);
 
   React.useEffect(() => cancel, [cancel]);
 
@@ -74,7 +90,7 @@ export function useHoverPanel(delayMs = 180) {
     hide: React.useCallback(() => {
       cancel();
       setOpen(false);
-    }, [cancel]),
+    }, [cancel, setOpen]),
     // onPointerDownCapture (not onClick — every call site already defines its
     // own, which would silently win the prop over mine in a spread) cancels
     // any pending hideSoon the instant a real interaction starts anywhere in
