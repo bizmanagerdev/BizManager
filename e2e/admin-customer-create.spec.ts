@@ -25,22 +25,22 @@ test.describe("admin — customer creation", () => {
 
     // TEMPORARY DIAGNOSTIC — this test has failed identically ("element was
     // detached from the DOM, retrying" on the same "לקוח" tile click) across
-    // six different fix/round attempts now. Rounds 1-2's fixes (Service
+    // seven different fix/round attempts now. Rounds 1-2's fixes (Service
     // Worker dev-host self-destruct, auto-recover chunk-reload pair) both
-    // landed with ZERO change. Round 3 filtered the mass net::ERR_ABORTED
-    // RSC-prefetch noise out and confirmed it really was just noise — doing
-    // that revealed the ENTIRE remaining signal is exactly ONE
-    // "[pageerror] Unexpected token '<'" (the classic symptom of a <script>
-    // tag's response being HTML instead of JS), with an empty stack, and
-    // NOTHING from a content-type check scoped to /_next/static/ or _rsc=
-    // URLs — meaning the culprit isn't a first-party Next.js chunk/RSC
-    // request at all. The app loads two third-party scripts (Sentry,
-    // Vercel Speed Insights) neither of which matches that URL scoping.
-    // Round 4: use Playwright's own resourceType() classification (works
-    // regardless of origin/URL shape) to log every actual <script> response's
-    // content-type + status, so the culprit shows up by direct comparison
-    // instead of another URL-pattern guess.
+    // landed with ZERO change. Round 3 confirmed the mass net::ERR_ABORTED
+    // RSC-prefetch noise really was harmless. Round 4 logged every actual
+    // <script> load by Playwright's own resourceType() (catches third-party
+    // origins too, not just /_next/) — EVERY one came back 200 with the
+    // correct content-type, zero anomalies, but the important tail of the
+    // dump (the pageerror + ORIGINAL ERROR) got silently cut off by GitHub's
+    // 4096-char annotation cap, buried under listing every single clean
+    // script load. Round 5: since scripts are now confirmed clean, only log
+    // an anomaly (never a routine 200 + correct content-type), and put the
+    // pageerror + ORIGINAL ERROR FIRST in the thrown message so they can
+    // never be truncated away regardless of how much routine noise
+    // preceded them.
     const diag: string[] = [];
+    let scriptOkCount = 0;
     page.on("console", (msg) => {
       if (msg.text().includes("realtime/v1/websocket")) return;
       diag.push(`[console:${msg.type()}] ${msg.text().slice(0, 300)}`);
@@ -56,10 +56,16 @@ test.describe("admin — customer creation", () => {
     page.on("response", (res) => {
       if (res.status() >= 400) diag.push(`[response ${res.status()}] ${res.request().method()} ${res.url()}`);
       // Every actual <script> resource, regardless of origin — first-party
-      // chunk or third-party (Sentry/Speed Insights) alike.
+      // chunk or third-party (Sentry/Speed Insights) alike. Round 4 showed
+      // these are all clean, so only an ANOMALY gets logged now; a clean one
+      // just increments a counter to keep the dump from drowning the signal.
       if (res.request().resourceType() !== "script") return;
       const contentType = res.headers()["content-type"] ?? "";
-      diag.push(`[script] ${res.url()} -> status=${res.status()} content-type=${contentType}`);
+      if (res.status() === 200 && contentType.includes("javascript")) {
+        scriptOkCount++;
+      } else {
+        diag.push(`[SCRIPT ANOMALY] ${res.url()} -> status=${res.status()} content-type=${contentType}`);
+      }
     });
 
     try {
@@ -69,10 +75,14 @@ test.describe("admin — customer creation", () => {
       try {
         await page.getByRole("button", { name: "לקוח" }).click();
       } catch (err) {
+        const pageErrors = diag.filter((d) => d.startsWith("[pageerror]"));
+        const nonRoutine = diag.filter((d) => !d.startsWith("[console:"));
         throw new Error(
-          `DIAGNOSTIC dump (${diag.length} events, last 50 shown):\n` +
-            diag.slice(-50).join("\n") +
-            `\n\nORIGINAL ERROR: ${(err as Error).message}`
+          `ORIGINAL ERROR: ${(err as Error).message.slice(0, 800)}\n\n` +
+            `PAGE ERRORS (${pageErrors.length}): ${pageErrors.join(" | ") || "none"}\n\n` +
+            `${scriptOkCount} scripts loaded clean (200 + correct content-type), 0 anomalies.\n\n` +
+            `NON-ROUTINE EVENTS (${nonRoutine.length} of ${diag.length} total, last 30 shown):\n` +
+            nonRoutine.slice(-30).join("\n")
         );
       }
 
