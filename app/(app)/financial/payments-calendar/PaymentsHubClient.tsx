@@ -108,17 +108,15 @@ export default function PaymentsHubClient({
           })}
         </TabsList>
         <div className="flex flex-wrap items-center gap-2">
-          {activeTab === "calendar" ? (
-            <>
-              <Button type="button" size="sm" variant="secondary" onClick={() => setCashOpen(true)}>
-                <CalculatorIcon className="h-4 w-4" />
-                כמה צריך?
-              </Button>
-              {/* No generic "הוסף תשלום" here — a one-off payment is "הוצאה" in
-                  the app's one quick-create +. The calendar's own per-day add
-                  stays: it carries the day you clicked. */}
-            </>
-          ) : (
+          {/* The cash-needs calculator is useful from either tab. */}
+          <Button type="button" size="sm" variant="secondary" onClick={() => setCashOpen(true)}>
+            <CalculatorIcon className="h-4 w-4" />
+            כמה צריך?
+          </Button>
+          {/* The calendar tab has no generic "הוסף תשלום" — a one-off payment is
+              "הוצאה" in the app's one quick-create +. The calendar's own per-day
+              add stays: it carries the day you clicked. */}
+          {activeTab === "recurring" ? (
             <>
               {/* No "create current cycle" button: the generator runs on every
                   page load (memoized for a minute) and walks every period from
@@ -139,7 +137,7 @@ export default function PaymentsHubClient({
                 השלמת חיובים חסרים
               </Button>
             </>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -166,7 +164,7 @@ export default function PaymentsHubClient({
         />
       </TabsContent>
 
-      {/* Cash-needs calculator (calendar tab) — "how much will I need between X and Y?" */}
+      {/* Cash-needs calculator (both tabs) — "how much will I need between X and Y?" */}
       <CashNeedsDialog
         key={cashOpen ? "cash-open" : "cash-closed"}
         open={cashOpen}
