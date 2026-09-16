@@ -25,32 +25,43 @@ test.describe("admin — customer creation", () => {
 
     // TEMPORARY DIAGNOSTIC — this test has failed identically ("element was
     // detached from the DOM, retrying" on the same "לקוח" tile click) across
-    // three different fix attempts (global-setup warmup, auto-reload
-    // production-only guard, onDemandEntries tuning), with zero change in the
-    // failure. That reproducibility with no reaction to any fix means further
-    // fixes would be guessing — this captures real console/network evidence
-    // from the CI browser via the thrown error's own message (readable
-    // through the Checks annotations API even without log/artifact access).
-    // Remove once root-caused.
-    //
-    // Round 2: console/pageerror/requestfailed alone only turned up the
-    // already-known, already-ruled-out Realtime websocket noise (Realtime is
-    // off in the e2e Supabase stack; the notification bell still tries to
-    // connect every run, pass or fail alike — confirmed present regardless of
-    // outcome, so not a lead). Widened to also catch a real API call that
-    // responds with an error STATUS, which requestfailed can't see (it only
-    // fires on network-level failures, not on a "successful" HTTP response
-    // that happens to be 4xx/5xx) — filtering out the known websocket noise
-    // to keep the dump focused on anything actually new.
+    // five different fix attempts now, with zero change in the failure
+    // signature each time — a "[pageerror] Unexpected token '<'" (the classic
+    // symptom of a <script> tag's response being HTML instead of JS) plus a
+    // mass net::ERR_ABORTED across every nav link's RSC prefetch. Two
+    // consecutive targeted fixes (the Service Worker's dev-host self-destruct,
+    // the auto-recover chunk-reload pair) both being ruled OUT by zero change
+    // means the mass ERR_ABORTED is very likely benign Next.js router-prefetch
+    // cancellation noise, not evidence of a forced reload — the real signal is
+    // probably just the "Unexpected token '<'" itself. Round 3: capture the
+    // actual redirect chain + content-type for RSC/script responses, to see
+    // directly whether something is serving HTML where JS/RSC was expected
+    // (e.g. a momentary auth/middleware race redirecting a prefetch to
+    // /login) instead of continuing to guess from a bare error message.
     const diag: string[] = [];
     page.on("console", (msg) => {
       if (msg.text().includes("realtime/v1/websocket")) return;
       diag.push(`[console:${msg.type()}] ${msg.text().slice(0, 300)}`);
     });
-    page.on("pageerror", (err) => diag.push(`[pageerror] ${err.message.slice(0, 300)}`));
-    page.on("requestfailed", (req) => diag.push(`[requestfailed] ${req.url()} ${req.failure()?.errorText}`));
+    page.on("pageerror", (err) => diag.push(`[pageerror] ${err.message.slice(0, 300)} | stack: ${(err.stack ?? "").slice(0, 400)}`));
+    page.on("requestfailed", (req) => {
+      // The mass RSC-prefetch abort noise is now a known, unchanging
+      // constant across every fix attempt — keep the dump focused on
+      // anything that ISN'T that.
+      if (req.url().includes("_rsc=") && req.failure()?.errorText === "net::ERR_ABORTED") return;
+      diag.push(`[requestfailed] ${req.url()} ${req.failure()?.errorText}`);
+    });
     page.on("response", (res) => {
       if (res.status() >= 400) diag.push(`[response ${res.status()}] ${res.request().method()} ${res.url()}`);
+      const url = res.url();
+      const isScriptOrRsc = url.includes("/_next/static/") || url.includes("_rsc=");
+      if (!isScriptOrRsc) return;
+      const contentType = res.headers()["content-type"] ?? "";
+      if (contentType.includes("text/html")) {
+        diag.push(
+          `[WRONG CONTENT-TYPE] ${res.request().method()} ${url} -> status=${res.status()} content-type=${contentType} finalUrl=${res.url()} redirected=${res.request().redirectedFrom() !== null}`
+        );
+      }
     });
 
     try {
