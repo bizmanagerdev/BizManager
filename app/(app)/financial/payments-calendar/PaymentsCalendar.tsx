@@ -23,18 +23,22 @@ import PaymentsAlertsChip from "./PaymentsAlertsChip";
 import PaymentsDayPanel from "./PaymentsDayPanel";
 import { useRefreshAndWait } from "./useRefreshAndWait";
 import {
+  DIRECTION_WORDS,
   MONTH_PARAM,
   STAGE_DOT,
   STAGE_ORDER,
   amountLabel,
   dayStageText,
+  filterByDirection,
   fmtIls,
   groupByDay,
   itemStageKey,
   monthFromParam,
   monthToParam,
+  openTotals,
   summarizeDayByStage,
-  unpaidTotal,
+  type DirectionFilter,
+  type IncomeOptions,
   type MutateFn,
   type Option,
 } from "./calendar.helpers";
@@ -53,17 +57,24 @@ type Props = {
   // The recurring rules behind forecast items — "edit" on a forecast (no row
   // yet) opens its template.
   templates: RecurringExpenseTemplateItem[];
+  // Pickers for the day panel's "add a receipt" dialog.
+  incomeOptions: IncomeOptions;
   // Page-header element the alerts chip is portaled into (PaymentsHubClient),
   // beside the tabs. Null until that header mounts — the chip waits for it
   // rather than flashing above the calendar first.
   alertsSlot?: HTMLElement | null;
+  // Which way the money goes: owned by the hub (it draws the switch beside the
+  // tabs) and pushed down here, so the board, the day panel and the alerts chip
+  // all answer about the same side of the ledger.
+  direction: DirectionFilter;
 };
 
 const EMPTY_IDS: ReadonlySet<string> = new Set();
 
-export default function PaymentsCalendar({ items: itemsProp, todayIso, projects, properties, orders, accounts, templates, alertsSlot }: Props) {
+export default function PaymentsCalendar({ items: allItems, todayIso, projects, properties, orders, accounts, templates, incomeOptions, alertsSlot, direction }: Props) {
   const searchParams = useSearchParams();
   const { refreshAndWait } = useRefreshAndWait();
+  const itemsProp = useMemo(() => filterByDirection(allItems, direction), [allItems, direction]);
   const items = useUndoOverlay(itemsProp, (i) => i.id, "payment-calendar-item");
   const [showPaid, setShowPaid] = useState(false);
   // A `?focus=<item id>` deep link (an alert, the מקורות נוספים "next" link)
@@ -173,11 +184,12 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
         holiday={holiday}
         isToday={isToday}
         items={itemsOnDay(day)}
-        total={unpaidTotal(itemsOnDay(day))}
+        direction={direction}
         projects={projects}
         properties={properties}
         orders={orders}
         templates={templates}
+        incomeOptions={incomeOptions}
         accountNameById={accountNameById}
         onMutate={afterMutation}
       />
@@ -185,13 +197,38 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
   }
 
   function renderDayContent({ day, holiday }: DayContext) {
+    const dayItems = itemsOnDay(day);
+    const holidayLabel = holiday ? (
+      <span className="max-w-full truncate text-[9px] leading-tight text-secondary">{holiday}</span>
+    ) : null;
+    // With both directions on the board, a day's stage breakdown would need
+    // eight rows in a cell that fits two. Show the two sides instead, signed —
+    // the day panel still has the full detail.
+    if (direction === "all") {
+      const totals = openTotals(dayItems);
+      return (
+        <>
+          {holidayLabel}
+          {totals.in > 0 ? (
+            <span className="flex max-w-full items-center gap-1 text-[10px] font-semibold leading-tight text-foreground">
+              <span className="text-success">+</span>
+              <span className="truncate">{fmtIls(totals.in)}</span>
+            </span>
+          ) : null}
+          {totals.out > 0 ? (
+            <span className="flex max-w-full items-center gap-1 text-[10px] font-semibold leading-tight text-foreground">
+              <span className="text-destructive">−</span>
+              <span className="truncate">{fmtIls(totals.out)}</span>
+            </span>
+          ) : null}
+        </>
+      );
+    }
     // Aggregate per stage → each shows as "<colored dot> <amount>" on one row.
-    const byStage = summarizeDayByStage(itemsOnDay(day));
+    const byStage = summarizeDayByStage(dayItems);
     return (
       <>
-        {holiday ? (
-          <span className="max-w-full truncate text-[9px] leading-tight text-secondary">{holiday}</span>
-        ) : null}
+        {holidayLabel}
         {STAGE_ORDER.filter((s) => byStage.has(s)).map((s) => {
           const text = dayStageText(byStage.get(s)!);
           if (!text) return null;
@@ -209,19 +246,34 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
   function renderDayHover({ day }: DayContext) {
     const dayItems = itemsOnDay(day);
     if (dayItems.length === 0) return null;
-    const total = unpaidTotal(dayItems);
+    const totals = openTotals(dayItems);
+    const headline = direction === "all" ? totals.net : direction === "in" ? totals.in : totals.out;
     return (
       <div>
         <div className="mb-1.5 flex items-baseline justify-between gap-2 border-b pb-1.5">
           <span className="text-sm font-semibold">{fmtFullDay(day)}</span>
-          {total > 0 ? <span className="text-xs font-semibold">{fmtIls(total)}</span> : null}
+          {headline !== 0 ? (
+            <span className="text-xs font-semibold">
+              {direction === "all" ? (
+                <span className={headline >= 0 ? "text-success" : "text-destructive"}>{headline >= 0 ? "+" : "−"}</span>
+              ) : null}
+              {fmtIls(Math.abs(headline))}
+            </span>
+          ) : null}
         </div>
         <ul className="space-y-1">
           {dayItems.map((item) => (
             <li key={item.id} className="flex items-center gap-1.5 text-xs">
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STAGE_DOT[itemStageKey(item)]}`} />
               <span className="min-w-0 flex-1">{item.label}</span>
-              <span className="shrink-0 font-medium">{amountLabel(item)}</span>
+              <span className="shrink-0 font-medium">
+                {direction === "all" ? (
+                  <span className={item.direction === "in" ? "text-success" : "text-destructive"}>
+                    {item.direction === "in" ? "+" : "−"}
+                  </span>
+                ) : null}
+                {amountLabel(item)}
+              </span>
             </li>
           ))}
         </ul>
@@ -237,7 +289,7 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
       <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-destructive" />באיחור</span>
       <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-warning" />ממתין</span>
       <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-muted-foreground/60" />צפוי</span>
-      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-success" />שולם</span>
+      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-success" />{DIRECTION_WORDS[direction === "in" ? "in" : "out"].settled}</span>
     </div>
   );
 
@@ -253,7 +305,12 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
       }}
     />
   );
-  const recurringOnlyToggle = <FilterChip active={recurringOnly} label="רק קבועות" onClick={() => setRecurringOnly((v) => !v)} />;
+  // Recurring bills only exist on the outgoing side (there is no recurring
+  // income rule yet), so the chip would filter every incoming row away.
+  const recurringOnlyToggle =
+    direction === "in" ? null : (
+      <FilterChip active={recurringOnly} label="רק קבועות" onClick={() => setRecurringOnly((v) => !v)} />
+    );
   const accountFilterControl =
     accounts.length > 0 ? (
       <NativeSelect dense
@@ -278,6 +335,7 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
         <PaymentsAlertsChip
           items={accountScopedItems}
           todayIso={todayIso}
+          direction={direction}
           onJump={jumpToDay}
         />,
         alertsSlot

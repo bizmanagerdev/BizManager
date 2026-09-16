@@ -6,7 +6,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { TOOLBAR_CONTROL } from "@/components/ui/filter-chip";
 import { toDateOnly } from "@/components/ui/month-calendar";
 import type { PaymentCalendarItem } from "@/lib/payables";
-import { STAGE_DOT, amountLabel, itemStageKey, lateItems, type AlertSeverity } from "./calendar.helpers";
+import { DIRECTION_WORDS, STAGE_DOT, amountLabel, itemStageKey, lateItems, type AlertSeverity, type DirectionFilter } from "./calendar.helpers";
 
 // ── Late-payments chip — in the page header, beside כמה צריך?. It lists ONLY
 //    payments that are past their date and still unpaid: what's coming up is
@@ -24,16 +24,20 @@ const CHIP_TONE: Record<AlertSeverity, string> = {
 export default function PaymentsAlertsChip({
   items,
   todayIso,
+  direction,
   onJump,
 }: {
   items: PaymentCalendarItem[];
   todayIso: string;
+  direction: DirectionFilter;
   onJump: (dateIso: string) => void;
 }) {
   const { late, severity } = useMemo(() => lateItems(items, todayIso), [items, todayIso]);
 
   if (late.length === 0) return null;
   const label = `באיחור ${late.length}`;
+  // Showing both directions, the chip can't claim they're all bills.
+  const what = direction === "all" ? "תשלומים ותקבולים באיחור" : DIRECTION_WORDS[direction].late;
 
   return (
     <DropdownMenu>
@@ -41,7 +45,7 @@ export default function PaymentsAlertsChip({
         <button
           type="button"
           className={`inline-flex items-center gap-1.5 px-3 text-xs font-semibold transition-colors ${TOOLBAR_CONTROL} ${CHIP_TONE[severity]}`}
-          aria-label={`תשלומים באיחור: ${late.length}`}
+          aria-label={`${what}: ${late.length}`}
         >
           <WarningIcon className="h-3.5 w-3.5 shrink-0" />
           <span>{label}</span>
@@ -61,7 +65,14 @@ export default function PaymentsAlertsChip({
               <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                 {day.getDate()}/{day.getMonth() + 1}
               </span>
-              <span className="shrink-0 text-sm font-semibold tabular-nums">{amountLabel(item)}</span>
+              <span className="shrink-0 text-sm font-semibold tabular-nums">
+                {direction === "all" ? (
+                  <span className={item.direction === "in" ? "text-success" : "text-destructive"}>
+                    {item.direction === "in" ? "+" : "−"}
+                  </span>
+                ) : null}
+                {amountLabel(item)}
+              </span>
             </DropdownMenuItem>
           );
         })}

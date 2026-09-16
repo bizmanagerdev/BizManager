@@ -18,7 +18,11 @@ import { sourceSettingKey, type OutflowSourceSettings, type OutflowSourceSetting
 
 export type PaymentCalendarItem = {
   id: string;
-  date: string; // YYYY-MM-DD (the flow date the money leaves)
+  // Which way the money goes. The board renders both and can show either or
+  // the net of the two; everything below is shared, and the handful of fields
+  // only one direction fills are marked as such.
+  direction: CalendarDirection;
+  date: string; // YYYY-MM-DD (the flow date the money moves)
   amount: number;
   label: string;
   sourceLabel: string;
@@ -65,7 +69,17 @@ export type PaymentCalendarItem = {
   // on its date, so it's shown for cash flow but is NOT something "to pay" (no
   // manual action / no due-payment alert).
   autoPaid: boolean;
+  // ── Incoming-only (see lib/receivables.ts). Absent on outgoing items. ──
+  /** The `payments` row behind this item — present ⇒ it can be collected/edited. */
+  paymentId?: string | null;
+  customerId?: string | null;
+  customerName?: string | null;
+  /** Check number / transfer reference, shown on the card. */
+  reference?: string | null;
 };
+
+/** Money leaving (תשלומים) or arriving (תקבולים). */
+export type CalendarDirection = "out" | "in";
 
 /**
  * Map the full financial ledger to outgoing calendar items. Keeps only outflow
@@ -95,6 +109,7 @@ export function toPaymentCalendarItems(entries: FinancialEntry[], todayIso: stri
     .filter((entry) => entry.type === "outflow")
     .map((entry) => ({
       id: entry.id,
+      direction: "out" as const,
       date: entry.flowDate,
       amount: entry.amount,
       label: entry.description,
@@ -245,6 +260,7 @@ export async function loadProjectedSalaries(
       if (realWageMonths.has(`${userId}:${ym}`)) continue;
       items.push({
         id: `salary_proj:${userId}:${ym}`,
+        direction: "out" as const,
         date: due,
         amount: isHourly ? 0 : monthly,
         label: `משכורת ${name}`,
@@ -402,6 +418,7 @@ export async function loadProjectedRecurringExpenses(
       const isPast = occ.date < referenceDate;
       items.push({
         id: `recur_proj:${tpl.id}:${occ.key}`,
+        direction: "out" as const,
         date: occ.date,
         amount,
         label,
@@ -491,6 +508,7 @@ export async function loadCardChargeItems(
     coveredMonths.add(`${cardLabel}:${date.slice(0, 7)}`);
     items.push({
       id: `ccharge:${row.id}`,
+      direction: "out" as const,
       date,
       amount,
       label: `חיוב כרטיס: ${cardLabel}`,
@@ -550,6 +568,7 @@ export async function loadCardChargeItems(
       const date = `${y}-${pad2(m)}-${pad2(day)}`;
       items.push({
         id: `ccharge_proj:${cardLabel}:${ym}`,
+        direction: "out" as const,
         date,
         amount,
         label: `חיוב כרטיס: ${cardLabel}`,

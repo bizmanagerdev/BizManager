@@ -8,7 +8,7 @@ import { FilterChip } from "@/components/ui/filter-chip";
 import { toDateOnly } from "@/components/ui/month-calendar";
 import type { Account } from "@/lib/accounts";
 import type { PaymentCalendarItem } from "@/lib/payables";
-import { STAGE_DOT, addDaysIso, amountLabel, cashNeeds, fmtIls, itemStageKey } from "./calendar.helpers";
+import { STAGE_DOT, addDaysIso, amountLabel, cashNeeds, fmtIls, itemStageKey, type DirectionFilter } from "./calendar.helpers";
 
 // ── Cash-needs calculator — "how much will I need between X and Y?" ─────────────
 // Sums every not-yet-paid outflow in a date range (honoring the page's account
@@ -20,12 +20,15 @@ export default function CashNeedsDialog({
   items,
   accounts,
   todayIso,
+  direction = "out",
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   items: PaymentCalendarItem[];
   accounts: Account[];
   todayIso: string;
+  /** Scopes the rundown; the totals always show both sides when money comes in. */
+  direction?: DirectionFilter;
 }) {
   // Parent remounts this on open (via key), so the range initializes fresh each time.
   const [from, setFrom] = useState(todayIso);
@@ -37,6 +40,10 @@ export default function CashNeedsDialog({
     () => cashNeeds(items, { from, to, recurringOnly, accountFilter }),
     [items, from, to, recurringOnly, accountFilter]
   );
+  // The calculator was built to answer "how much has to go out?". Once money
+  // comes in too, the honest answer is the net — so it leads, with both sides
+  // under it. With nothing incoming in range, it stays the single figure.
+  const showNet = result.incoming > 0;
 
   const quickRanges: Array<[string, number]> = [["היום", 0], ["יומיים", 2], ["שבוע", 7], ["חודש", 30]];
 
@@ -73,7 +80,9 @@ export default function CashNeedsDialog({
           </div>
           {/* The two filters share one row: the chip on the right, the account on the left. */}
           <div className="flex items-center justify-between gap-3">
-            <FilterChip active={recurringOnly} label="רק הוצאות קבועות" onClick={() => setRecurringOnly((v) => !v)} />
+            {direction === "in" ? <span /> : (
+              <FilterChip active={recurringOnly} label="רק הוצאות קבועות" onClick={() => setRecurringOnly((v) => !v)} />
+            )}
             {accounts.length > 0 ? (
               <NativeSelect dense
                 value={accountFilter}
@@ -86,12 +95,26 @@ export default function CashNeedsDialog({
             ) : null}
           </div>
 
-          <div className="flex items-center justify-between rounded-xl bg-foreground px-4 py-3 text-background">
-            <div>
-              <div className="text-xs opacity-70">סה״כ נדרש</div>
-              <div className="text-2xl font-bold tabular-nums">{result.hasEstimate ? "~" : ""}{fmtIls(result.total)}</div>
+          <div className="rounded-xl bg-foreground px-4 py-3 text-background">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xs opacity-70">{showNet ? "כמה חסר" : "סה״כ נדרש"}</div>
+                <div className="text-2xl font-bold tabular-nums">
+                  {result.hasEstimate ? "~" : ""}
+                  {showNet ? fmtIls(Math.abs(Math.min(result.net, 0))) : fmtIls(result.total)}
+                </div>
+              </div>
+              <div className="text-xs opacity-70">
+                {result.rows.length} שורות{result.hasEstimate ? " · כולל הערכות" : ""}
+              </div>
             </div>
-            <div className="text-xs opacity-70">{result.rows.length} תשלומים{result.hasEstimate ? " · כולל הערכות" : ""}</div>
+            {showNet ? (
+              // The two sides behind that figure, so it can be checked.
+              <div className="mt-2 flex items-center gap-4 border-t border-background/20 pt-2 text-xs">
+                <span className="opacity-70">צפוי להיכנס <span className="font-semibold tabular-nums opacity-100">{fmtIls(result.incoming)}</span></span>
+                <span className="opacity-70">צפוי לצאת <span className="font-semibold tabular-nums opacity-100">{fmtIls(result.total)}</span></span>
+              </div>
+            ) : null}
           </div>
 
           {/* Narrow rundown of exactly what's in the total — small type, one line each */}
@@ -105,13 +128,20 @@ export default function CashNeedsDialog({
                     <span className="w-8 shrink-0 tabular-nums text-muted-foreground">{d.getDate()}/{d.getMonth() + 1}</span>
                     <span className="min-w-0 flex-1 break-words">{i.label}</span>
                     {i.variableAmount ? <span className="shrink-0 text-warning-strong">משתנה</span> : null}
-                    <span className="shrink-0 font-medium tabular-nums">{amountLabel(i)}</span>
+                    <span className="shrink-0 font-medium tabular-nums">
+                      {showNet ? (
+                        <span className={i.direction === "in" ? "text-success" : "text-destructive"}>
+                          {i.direction === "in" ? "+" : "−"}
+                        </span>
+                      ) : null}
+                      {amountLabel(i)}
+                    </span>
                   </li>
                 );
               })}
             </ul>
           ) : (
-            <div className="rounded-lg border p-4 text-center text-sm text-muted-foreground">אין תשלומים בטווח שנבחר.</div>
+            <div className="rounded-lg border p-4 text-center text-sm text-muted-foreground">אין תנועות בטווח שנבחר.</div>
           )}
         </div>
     </ViewDialog>

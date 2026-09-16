@@ -7,7 +7,9 @@ import { AddDateIcon, AddIcon, CalculatorIcon, CalendarIcon, RecurringIcon, Warn
 import { useBackfillMissing } from "@/app/(app)/financial/useBackfillMissing";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { FOCUS_PARAM } from "@/components/layout/FocusHighlighter";
 import { replaceSearchParams } from "@/lib/ui/url-state";
+import { DIRECTION_OPTIONS, DIRECTION_PARAM, directionFromParam, type DirectionFilter, type IncomeOptions } from "./calendar.helpers";
 import type { PaymentCalendarItem } from "@/lib/payables";
 import type { Account } from "@/lib/accounts";
 import RecurringExpensesManager, {
@@ -30,6 +32,8 @@ type Props = {
   properties: Option[];
   orders: Option[];
   accounts: Account[];
+  /** Pickers for recording a receipt from a day (the income dialog's shapes). */
+  incomeOptions: IncomeOptions;
   expenseMissingSchema: boolean;
   // Set when this load's recurring-expense generator failed — the board may be
   // missing this month's bills, and the user must know that rather than trust it.
@@ -64,6 +68,7 @@ export default function PaymentsHubClient({
   properties,
   orders,
   accounts,
+  incomeOptions,
   expenseMissingSchema,
   generatorError = null,
 }: Props) {
@@ -74,6 +79,25 @@ export default function PaymentsHubClient({
   const changeTab = (next: TabKey) => {
     setActiveTab(next);
     replaceSearchParams({ [TAB_PARAM]: next === "calendar" ? null : next });
+  };
+  // Which way the money goes. Lives in the URL like the tab and the month, so a
+  // refresh or Back from a source page comes back to the same side of the
+  // ledger. Outgoing is the default and writes nothing.
+  //
+  // A `?focus=<item id>` deep link (an alert, a "go to source" link) has to land
+  // ON its item — and an incoming item is not on the outgoing board at all. So
+  // when the URL asks to focus something and does NOT say which direction, the
+  // focused item's own direction wins over the default.
+  const [direction, setDirection] = useState<DirectionFilter>(() => {
+    const explicit = searchParams.get(DIRECTION_PARAM);
+    if (explicit) return directionFromParam(explicit);
+    const focusId = searchParams.get(FOCUS_PARAM);
+    const focused = focusId ? items.find((i) => i.id === focusId) : null;
+    return focused ? focused.direction : "out";
+  });
+  const changeDirection = (next: DirectionFilter) => {
+    setDirection(next);
+    replaceSearchParams({ [DIRECTION_PARAM]: next === "out" ? null : next });
   };
   const [newTemplateOpen, setNewTemplateOpen] = useState(false);
   const [cashOpen, setCashOpen] = useState(false);
@@ -106,6 +130,25 @@ export default function PaymentsHubClient({
           })}
         </TabsList>
         <div className="flex flex-wrap items-center gap-2">
+          {/* Out / in / both. A segmented control, not three chips: these are
+              mutually exclusive views of the same board. */}
+          <div role="group" aria-label="כיוון הכסף" className="inline-flex h-[34px] overflow-hidden rounded-lg border border-input">
+            {DIRECTION_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                aria-pressed={direction === opt.value}
+                onClick={() => changeDirection(opt.value)}
+                className={`px-3 text-xs font-semibold transition-colors ${
+                  direction === opt.value
+                    ? "bg-secondary text-secondary-foreground"
+                    : "bg-background text-muted-foreground hover:bg-secondary/5 hover:text-foreground"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
           {activeTab === "calendar" ? <div ref={setAlertsSlot} className="contents" /> : null}
           {/* The cash-needs calculator is useful from either tab. */}
           <Button type="button" size="sm" variant="secondary" onClick={() => setCashOpen(true)}>
@@ -149,7 +192,9 @@ export default function PaymentsHubClient({
           orders={orders}
           accounts={accounts}
           templates={templates}
+          incomeOptions={incomeOptions}
           alertsSlot={alertsSlot}
+          direction={direction}
         />
       </TabsContent>
       <TabsContent value="recurring">
@@ -171,6 +216,7 @@ export default function PaymentsHubClient({
         items={items}
         accounts={accounts}
         todayIso={todayIso}
+        direction={direction}
       />
 
       {backfill.dialog}

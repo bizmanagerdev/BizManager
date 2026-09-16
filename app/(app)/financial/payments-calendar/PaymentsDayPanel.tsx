@@ -8,9 +8,10 @@ import { fmtFullDay, isoLocal } from "@/components/ui/month-calendar";
 import type { PaymentCalendarItem } from "@/lib/payables";
 import type { RecurringExpenseTemplateItem } from "@/app/(app)/financial/RecurringExpensesManager";
 import { ExpenseDialog } from "./LazyExpenseDialog";
+import { IncomeDialog } from "./LazyIncomeDialog";
 import PaymentItemCard from "./PaymentItemCard";
 import usePaymentItemActions from "./usePaymentItemActions";
-import { fmtIls, type MutateFn, type Option } from "./calendar.helpers";
+import { DIRECTION_WORDS, fmtIls, openTotals, type DirectionFilter, type IncomeOptions, type MutateFn, type Option } from "./calendar.helpers";
 
 // ── Selected-day panel (owns its own add dialog; item dialogs come from the hook) ─
 export default function PaymentsDayPanel({
@@ -18,11 +19,12 @@ export default function PaymentsDayPanel({
   holiday,
   isToday,
   items,
-  total,
+  direction,
   projects,
   properties,
   orders,
   templates,
+  incomeOptions,
   accountNameById,
   onMutate,
 }: {
@@ -30,18 +32,29 @@ export default function PaymentsDayPanel({
   holiday: string | null;
   isToday: boolean;
   items: PaymentCalendarItem[];
-  total: number;
+  /** Which direction the board is showing — decides the wording and whether
+   *  the header shows one figure or the day's two sides and their net. */
+  direction: DirectionFilter;
   projects: Option[];
   properties: Option[];
   orders: Option[];
   templates: RecurringExpenseTemplateItem[];
+  /** The richer pickers the income dialog needs (see calendar.helpers). */
+  incomeOptions: IncomeOptions;
   accountNameById: Map<string, string>;
   onMutate: MutateFn;
 }) {
   const [addOpen, setAddOpen] = useState(false);
+  const [addIncomeOpen, setAddIncomeOpen] = useState(false);
   const { actionsFor, dialogs } = usePaymentItemActions({ onMutate, templates, projects, properties, orders });
 
   const dayIso = isoLocal(day);
+  const totals = openTotals(items);
+  const showBoth = direction === "all";
+  // In a single direction the panel speaks that direction's language; in "הכל"
+  // it stays neutral and lets the two figures say which is which.
+  const words = DIRECTION_WORDS[direction === "in" ? "in" : "out"];
+  const singleTotal = direction === "in" ? totals.in : totals.out;
 
   return (
     <div className="flex h-full flex-col rounded-2xl border bg-card p-4">
@@ -52,13 +65,36 @@ export default function PaymentsDayPanel({
         <div className="mt-0.5 text-xl font-bold leading-tight">{fmtFullDay(day)}</div>
         <div className="mt-1 text-xs text-muted-foreground">{hebrewFullDate(day)}</div>
         {holiday ? <div className="mt-0.5 text-xs font-medium text-secondary">{holiday}</div> : null}
-        {total > 0 ? (
+        {showBoth && (totals.in > 0 || totals.out > 0) ? (
+          // Both sides of the day, and what it actually does to the bank.
+          <div className="mt-3 space-y-1.5 rounded-lg bg-muted/40 px-3 py-2">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-xs font-medium text-muted-foreground">{DIRECTION_WORDS.in.dayTotal}</span>
+              <span className="text-sm font-semibold tabular-nums">
+                <span className="text-success">+</span>{fmtIls(totals.in)}
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-xs font-medium text-muted-foreground">{DIRECTION_WORDS.out.dayTotal}</span>
+              <span className="text-sm font-semibold tabular-nums">
+                <span className="text-destructive">−</span>{fmtIls(totals.out)}
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between gap-3 border-t pt-1.5">
+              <span className="text-xs font-semibold">נטו</span>
+              <span className="text-base font-bold tabular-nums">
+                <span className={totals.net >= 0 ? "text-success" : "text-destructive"}>{totals.net >= 0 ? "+" : "−"}</span>
+                {fmtIls(Math.abs(totals.net))}
+              </span>
+            </div>
+          </div>
+        ) : !showBoth && singleTotal > 0 ? (
           <div className="mt-3 flex items-baseline justify-between gap-3 rounded-lg bg-muted/40 px-3 py-2">
-            <span className="text-xs font-medium text-muted-foreground">לתשלום ביום זה</span>
-            <span className="text-base font-bold tabular-nums">{fmtIls(total)}</span>
+            <span className="text-xs font-medium text-muted-foreground">{words.dayTotal}</span>
+            <span className="text-base font-bold tabular-nums">{fmtIls(singleTotal)}</span>
           </div>
         ) : items.length > 0 ? (
-          <div className="mt-3 rounded-lg bg-success/10 px-3 py-2 text-xs font-medium text-success">כל התשלומים ביום זה שולמו</div>
+          <div className="mt-3 rounded-lg bg-success/10 px-3 py-2 text-xs font-medium text-success">{words.allSettled}</div>
         ) : null}
       </div>
 
@@ -82,17 +118,27 @@ export default function PaymentsDayPanel({
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
               <CalendarIcon className="h-6 w-6" />
             </div>
-            <div className="text-sm font-medium">אין תשלומים ביום זה</div>
+            <div className="text-sm font-medium">{words.empty}</div>
           </div>
         )}
       </div>
 
-      {/* Add — pinned to the bottom, full width */}
-      <div className="mt-3">
-        <Button type="button" variant="outline" className="w-full" onClick={() => setAddOpen(true)}>
-          <AddIcon className="h-4 w-4" />
-          הוסף תשלום ליום זה
-        </Button>
+      {/* Add — pinned to the bottom. One button per direction the board is
+          showing, since a payment and a receipt are two different dialogs;
+          in הכל they share the row. */}
+      <div className="mt-3 flex gap-2">
+        {direction === "in" ? null : (
+          <Button type="button" variant="outline" className="w-full" onClick={() => setAddOpen(true)}>
+            <AddIcon className="h-4 w-4" />
+            {DIRECTION_WORDS.out.add}
+          </Button>
+        )}
+        {direction === "out" ? null : (
+          <Button type="button" variant="outline" className="w-full" onClick={() => setAddIncomeOpen(true)}>
+            <AddIcon className="h-4 w-4" />
+            {DIRECTION_WORDS.in.add}
+          </Button>
+        )}
       </div>
 
       {/* Add expense/payment — the full shared expense dialog (one-time or
@@ -108,6 +154,22 @@ export default function PaymentsDayPanel({
         recurringOrders={orders}
         recurringProperties={properties}
         onSaved={(data: { expenseId?: string | null }) => onMutate({ expenseId: data.expenseId || null })}
+      />
+
+      {/* Record money received on this day — the app's one income dialog,
+          prefilled to the day that was clicked. It closes itself on save, so
+          the board simply refreshes behind it. */}
+      <IncomeDialog
+        open={addIncomeOpen}
+        onOpenChange={setAddIncomeOpen}
+        defaultDate={dayIso}
+        projects={incomeOptions.projects}
+        orders={incomeOptions.orders}
+        properties={incomeOptions.properties}
+        onSaved={() => {
+          setAddIncomeOpen(false);
+          void onMutate();
+        }}
       />
 
       {dialogs}

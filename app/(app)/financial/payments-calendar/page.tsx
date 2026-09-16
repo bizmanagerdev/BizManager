@@ -4,6 +4,8 @@ import { requireProfile } from "@/lib/auth/requireProfile";
 import { Card, CardContent } from "@/components/ui/card";
 import { ensureRecurringExpensesForDate } from "@/lib/recurring-expenses";
 import { loadPaymentCalendarItems, type PaymentCalendarItem } from "@/lib/payables";
+import { loadFinancialEntries } from "@/lib/financial";
+import { loadIncomeCalendarItems } from "@/lib/receivables-load";
 import { loadAccounts, type Account } from "@/lib/accounts";
 import { propertyDisplayName } from "@/lib/properties";
 import type { RecurringExpenseTemplateItem } from "@/app/(app)/financial/RecurringExpensesManager";
@@ -58,9 +60,22 @@ export default async function PaymentsCalendarPage() {
   let todayIso = new Date().toISOString().slice(0, 10);
   let error: string | null = null;
   try {
-    const result = await loadPaymentCalendarItems(supabase);
-    items = result.items;
-    todayIso = result.todayIso;
+    // One ledger read feeds both directions — the outgoing loader adds its
+    // forecasts (bills, wages, card charges), the incoming one re-dates
+    // receivables by their payment terms and drops bounced money.
+    const from = (() => {
+      const d = new Date();
+      d.setMonth(d.getMonth() - 13);
+      return d.toISOString().slice(0, 10);
+    })();
+    const { entries, referenceDate } = await loadFinancialEntries(supabase, { from });
+    const [outgoing, incoming] = await Promise.all([
+      loadPaymentCalendarItems(supabase, { preloaded: { entries, referenceDate } }),
+      // Incoming is additive: if it fails, the board is still the board it was.
+      loadIncomeCalendarItems(supabase, { entries, referenceDate }).catch(() => [] as PaymentCalendarItem[]),
+    ]);
+    items = [...outgoing.items, ...incoming];
+    todayIso = outgoing.todayIso;
   } catch (err) {
     error = (err as { message?: string })?.message ?? "שגיאה בטעינת התשלומים";
   }
@@ -143,6 +158,32 @@ export default async function PaymentsCalendarPage() {
     }))
     .filter((o) => o.id && o.label);
 
+  // The income dialog's pickers want more than {id,label}: a project shows its
+  // customer, an order its date. Same three queries, read a second way.
+  const incomeOptions = {
+    projects: ((projectsResult.data ?? []) as Row[])
+      .map((r) => ({
+        id: getString(r, "id") ?? "",
+        name: getString(r, "name") ?? "",
+        customerName: getString(r, "customer_name") ?? "",
+      }))
+      .filter((o) => o.id && o.name),
+    orders: ((ordersResult.data ?? []) as Row[])
+      .map((r) => ({
+        id: getString(r, "order_id") ?? "",
+        name: getString(r, "customer_name") || `הזמנה ${(getString(r, "order_id") ?? "").slice(0, 8)}`,
+        subtitle: getString(r, "order_date") ?? undefined,
+      }))
+      .filter((o) => o.id),
+    properties: ((propertiesResult.data ?? []) as Row[])
+      .filter((r) => r.is_active !== false)
+      .map((r) => ({
+        id: getString(r, "id") ?? "",
+        name: propertyDisplayName({ name: getString(r, "name"), address: getString(r, "address") ?? "" }),
+      }))
+      .filter((o) => o.id && o.name),
+  };
+
   const orderOptions: Option[] = ((ordersResult.data ?? []) as Row[])
     .map((r) => {
       const id = getString(r, "order_id") ?? "";
@@ -168,6 +209,7 @@ export default async function PaymentsCalendarPage() {
             properties={propertyOptions}
             orders={orderOptions}
             accounts={accounts}
+            incomeOptions={incomeOptions}
             expenseMissingSchema={expenseMissingSchema}
             generatorError={generatorError}
           />

@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MetaRow } from "@/components/ui/meta-row";
 import type { PaymentCalendarItem } from "@/lib/payables";
-import { STAGE_BADGE, STAGE_DOT, STAGE_LABEL, amountLabel, itemStageKey } from "./calendar.helpers";
+import { DIRECTION_WORDS, STAGE_BADGE, STAGE_DOT, amountLabel, itemStageKey, stageLabelFor } from "./calendar.helpers";
 
 // ── Shared item card (used by the day panel and anywhere a payment is listed) ───
 export default function PaymentItemCard({
@@ -35,6 +35,8 @@ export default function PaymentItemCard({
   accountName?: string;
 }) {
   const stage = itemStageKey(item);
+  const words = DIRECTION_WORDS[item.direction];
+  const incoming = item.direction === "in";
   const isForecast = Boolean(item.recurringTemplateId) && !item.expenseId;
   // Auto-paid (הוראת קבע) needs no approval → no mark-paid button.
   // A forecast is a period that has no expense row yet, so it always needs a way
@@ -42,13 +44,18 @@ export default function PaymentItemCard({
   // generator stamps it paid when it creates it; until then there is nothing in
   // the ledger, nothing to reconcile against the bank, and no other way in.
   // Rows that already exist and are paid are filtered by the stage check below.
-  const canMarkPaid = Boolean(item.expenseId) || isForecast;
+  const canMarkPaid = incoming ? Boolean(item.paymentId) : Boolean(item.expenseId) || isForecast;
   const canSplit = Boolean(item.expenseId);
   const canDelete = Boolean(onDelete);
   // Drop the source label from the meta when a type badge (הוראת קבע / קבועה) already
   // says the same thing — no info twice.
   const showsTypeBadge = item.autoPaid || isForecast;
-  const metaItems = [item.domainName, showsTypeBadge ? null : item.sourceLabel, accountName ? `מחשבון ${accountName}` : null];
+  const metaItems = [
+    item.domainName,
+    showsTypeBadge ? null : item.sourceLabel,
+    incoming && item.reference ? `אסמכתא ${item.reference}` : null,
+    accountName ? `${incoming ? "לחשבון" : "מחשבון"} ${accountName}` : null,
+  ];
   const metaLine = metaItems.filter(Boolean).join(" • ");
   const amountText = amountLabel(item);
   const noteText = item.notes?.trim() || "";
@@ -68,7 +75,10 @@ export default function PaymentItemCard({
         <div className="flex items-start gap-2">
           <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${STAGE_DOT[stage]}`} />
           <span className="min-w-0 flex-1 break-words text-sm font-medium leading-snug">{item.label}</span>
-          <span className="shrink-0 text-sm font-semibold tabular-nums">{amountText}</span>
+          <span className="shrink-0 text-sm font-semibold tabular-nums">
+            <span className={incoming ? "text-success" : "text-destructive"}>{incoming ? "+" : "−"}</span>
+            {amountText}
+          </span>
         </div>
         {item.autoPaid || isForecast || item.variableAmount ? (
           <div className="mt-1.5 flex flex-wrap gap-1">
@@ -84,7 +94,7 @@ export default function PaymentItemCard({
           {showMarkPaid ? (
             <Button type="button" size="sm" variant="secondary" onClick={onMarkPaid}>
               <CheckIcon className="h-3.5 w-3.5" />
-              סמן כשולם
+              {words.markAction}
             </Button>
           ) : (
             <span />
@@ -145,7 +155,7 @@ export default function PaymentItemCard({
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium">{item.label}</span>
         <span className="font-semibold">{amountText}</span>
-        <Badge variant={STAGE_BADGE[stage]}>{STAGE_LABEL[stage]}</Badge>
+        <Badge variant={STAGE_BADGE[stage]}>{stageLabelFor(item, stage)}</Badge>
         {item.autoPaid ? <Badge variant="outline">הוראת קבע</Badge> : isForecast ? <Badge variant="neutral">הוצאה קבועה</Badge> : null}
         {item.variableAmount ? <Badge variant="warning">משתנה</Badge> : null}
         {item.installmentGroupId && item.installmentIndex && item.installmentCount ? (
@@ -164,7 +174,7 @@ export default function PaymentItemCard({
         {canMarkPaid && item.stage !== "posted" ? (
           <Button type="button" size="sm" variant="secondary" onClick={onMarkPaid}>
             <CheckIcon className="h-3.5 w-3.5" />
-            סמן כשולם
+            {words.markAction}
           </Button>
         ) : null}
         {canSplit && item.stage !== "posted" ? (

@@ -28,6 +28,7 @@ const ils = (n: number) =>
 
 function item(over: Partial<PaymentCalendarItem> & { id: string; date: string }): PaymentCalendarItem {
   return {
+    direction: "out",
     amount: 0,
     label: over.id,
     sourceLabel: "",
@@ -95,6 +96,8 @@ const items: PaymentCalendarItem[] = [
 ];
 
 const accounts = [{ id: "acc-1", name: "לאומי" }] as never[];
+// The income dialog's pickers; the add-a-receipt flow has its own test.
+const noIncomeOptions = { projects: [], orders: [], properties: [] };
 
 let slot: HTMLDivElement;
 beforeEach(() => {
@@ -115,7 +118,9 @@ function renderBoard(over: Partial<React.ComponentProps<typeof PaymentsCalendar>
       orders={[]}
       accounts={accounts}
       templates={templates}
+      incomeOptions={noIncomeOptions}
       alertsSlot={slot}
+      direction="out"
       {...over}
     />
   );
@@ -132,8 +137,13 @@ function dayCell(dayOfMonth: number): HTMLElement {
   return cells[0];
 }
 
+// The selected-day panel is the calendar's <aside>. Anchoring on it (rather
+// than on something inside) keeps the helper working whatever the panel offers
+// for the direction on screen.
 function selectedPanel(): HTMLElement {
-  return screen.getByText("הוסף תשלום ליום זה").closest("aside") as HTMLElement;
+  const aside = document.querySelector("aside");
+  if (!aside) throw new Error("no day panel rendered");
+  return aside as HTMLElement;
 }
 
 describe("PaymentsCalendar (לוח תשלומים) — the board as it stands", () => {
@@ -225,7 +235,7 @@ describe("PaymentsCalendar (לוח תשלומים) — the board as it stands", 
 
 // The calculator's headline figure (the rundown below it repeats each row's amount).
 function cashTotal(): string {
-  return (screen.getByText("סה״כ נדרש").nextElementSibling?.textContent ?? "").replace(/ /g, " ");
+  return ((screen.queryByText("כמה חסר") ?? screen.getByText("סה״כ נדרש")).nextElementSibling?.textContent ?? "").replace(/ /g, " ");
 }
 
 describe("CashNeedsDialog (כמה צריך?)", () => {
@@ -233,7 +243,7 @@ describe("CashNeedsDialog (כמה צריך?)", () => {
     render(<CashNeedsDialog open onOpenChange={() => {}} items={items} accounts={accounts} todayIso={TODAY} />);
     // 16..23: ארנונה (20th) + the card marker (18th, no amount).
     expect(cashTotal()).toBe(ils(1200));
-    expect(screen.getByText("2 תשלומים")).toBeTruthy();
+    expect(screen.getByText("2 שורות")).toBeTruthy();
   });
 
   it("the quick ranges and the recurring-only chip narrow it", () => {
@@ -241,9 +251,136 @@ describe("CashNeedsDialog (כמה צריך?)", () => {
     fireEvent.click(screen.getByRole("button", { name: "חודש" }));
     // + the salary on the 25th; the late bill (1st) and paid rows never count.
     expect(cashTotal()).toBe(ils(9200));
-    expect(screen.getByText("3 תשלומים")).toBeTruthy();
+    expect(screen.getByText("3 שורות")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "רק הוצאות קבועות" }));
     expect(cashTotal()).toBe(ils(1200));
-    expect(screen.getByText("1 תשלומים")).toBeTruthy();
+    expect(screen.getByText("1 שורות")).toBeTruthy();
+  });
+});
+
+
+// ── The incoming half, and both together ─────────────────────────────────────
+// Same board, same grid, same day panel; what changes is which rows are on it
+// and the words used about them.
+
+const incomingItems: PaymentCalendarItem[] = [
+  // A post-dated check due later this month, from a named customer.
+  item({
+    id: "payment:pay1", direction: "in", date: "2026-09-22", amount: 4000, label: "\u05e6\u05f3\u05e7 4321",
+    origin: "payment", stage: "scheduled", paymentStatus: "pending", paymentId: "pay1",
+    customerId: "c1", customerName: "\u05de\u05d0\u05e4\u05d9\u05d9\u05ea \u05dc\u05d7\u05dd", reference: "4321",
+    sourceLabel: "\u05de\u05d0\u05e4\u05d9\u05d9\u05ea \u05dc\u05d7\u05dd \u00b7 \u05d4\u05d6\u05de\u05e0\u05d4 4f3c1b2a",
+  }),
+  // A customer balance that went past its due date.
+  item({
+    id: "order-receivable:o9", direction: "in", date: "2026-09-02", amount: 1500, label: "\u05d9\u05ea\u05e8\u05ea \u05dc\u05e7\u05d5\u05d7 \u05dc\u05ea\u05e9\u05dc\u05d5\u05dd",
+    origin: "order_receivable", stage: "pending", paymentStatus: "pending", overdue: true,
+    customerId: "c2", customerName: "\u05d3\u05d5\u05d3 \u05dc\u05d5\u05d9", sourceLabel: "\u05d3\u05d5\u05d3 \u05dc\u05d5\u05d9 \u00b7 \u05d4\u05d6\u05de\u05e0\u05d4 9a8b7c6d",
+  }),
+];
+
+describe("PaymentsCalendar \u2014 \u05e0\u05db\u05e0\u05e1 (incoming)", () => {
+  it("shows only incoming rows and calls the day's money collection, not payment", () => {
+    renderBoard({ items: [...items, ...incomingItems], direction: "in" });
+    // The outgoing bill on the 20th is gone; the check on the 22nd is there.
+    expect(within(dayCell(22)).getByText(ils(4000))).toBeTruthy();
+    expect(within(dayCell(20)).queryByText(ils(1200))).toBeNull();
+    fireEvent.click(dayCell(22));
+    const panel = selectedPanel();
+    expect(within(panel).getByText("\u05dc\u05d2\u05d1\u05d9\u05d9\u05d4 \u05d1\u05d9\u05d5\u05dd \u05d6\u05d4")).toBeTruthy();
+    expect(within(panel).getByRole("button", { name: "\u05e1\u05de\u05df \u05db\u05e0\u05d2\u05d1\u05d4" })).toBeTruthy();
+    // The customer is on the row, not just an unreadable order number.
+    expect(within(panel).getByText(/\u05de\u05d0\u05e4\u05d9\u05d9\u05ea \u05dc\u05d7\u05dd/)).toBeTruthy();
+  });
+
+  it("says \u05d0\u05d9\u05df \u05ea\u05e7\u05d1\u05d5\u05dc\u05d9\u05dd on an empty day and drops the bills-only filter", () => {
+    renderBoard({ items: [...items, ...incomingItems], direction: "in" });
+    expect(within(selectedPanel()).getByText("\u05d0\u05d9\u05df \u05ea\u05e7\u05d1\u05d5\u05dc\u05d9\u05dd \u05d1\u05d9\u05d5\u05dd \u05d6\u05d4")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "\u05e8\u05e7 \u05e7\u05d1\u05d5\u05e2\u05d5\u05ea" })).toBeNull();
+  });
+
+  it("counts an overdue receivable in the chip, worded for money owed to us", () => {
+    renderBoard({ items: incomingItems, direction: "in" });
+    expect(within(slot).getByLabelText("\u05ea\u05e7\u05d1\u05d5\u05dc\u05d9\u05dd \u05d1\u05d0\u05d9\u05d7\u05d5\u05e8: 1")).toBeTruthy();
+  });
+
+  it("offers no mark-collected on a receivable that has no payment row yet", () => {
+    renderBoard({ items: incomingItems, direction: "in" });
+    fireEvent.click(dayCell(2));
+    const panel = selectedPanel();
+    expect(within(panel).getByText("\u05d9\u05ea\u05e8\u05ea \u05dc\u05e7\u05d5\u05d7 \u05dc\u05ea\u05e9\u05dc\u05d5\u05dd")).toBeTruthy();
+    expect(within(panel).queryByRole("button", { name: "\u05e1\u05de\u05df \u05db\u05e0\u05d2\u05d1\u05d4" })).toBeNull();
+  });
+});
+
+describe("PaymentsCalendar \u2014 \u05d4\u05db\u05dc (both directions)", () => {
+  const both = [...items, ...incomingItems];
+
+  it("shows a day's two sides in the grid instead of a stage breakdown", () => {
+    renderBoard({ items: both, direction: "all" });
+    expect(within(dayCell(22)).getByText(ils(4000))).toBeTruthy();
+    expect(within(dayCell(20)).getByText(ils(1200))).toBeTruthy();
+    // The signs are what tell them apart.
+    expect(within(dayCell(22)).getByText("+")).toBeTruthy();
+    expect(within(dayCell(20)).getByText("\u2212")).toBeTruthy();
+  });
+
+  it("gives a mixed day both figures and their net", () => {
+    // The 20th has a bill out; add a receipt on the same day.
+    const sameDay = [...both, item({ id: "payment:same", direction: "in", date: "2026-09-20", amount: 2000, label: "\u05d4\u05e2\u05d1\u05e8\u05d4", origin: "payment", stage: "scheduled", paymentId: "same" })];
+    renderBoard({ items: sameDay, direction: "all" });
+    fireEvent.click(dayCell(20));
+    const panel = selectedPanel();
+    expect(within(panel).getByText("\u05dc\u05d2\u05d1\u05d9\u05d9\u05d4 \u05d1\u05d9\u05d5\u05dd \u05d6\u05d4")).toBeTruthy();
+    expect(within(panel).getByText("\u05dc\u05ea\u05e9\u05dc\u05d5\u05dd \u05d1\u05d9\u05d5\u05dd \u05d6\u05d4")).toBeTruthy();
+    expect(within(panel).getByText("\u05e0\u05d8\u05d5")).toBeTruthy();
+    // 2,000 in - 1,200 out = 800 to the good.
+    expect(within(panel).getByText(ils(800))).toBeTruthy();
+  });
+
+  it("the chip stops claiming everything late is a bill", () => {
+    renderBoard({ items: both, direction: "all" });
+    expect(within(slot).getByLabelText("\u05ea\u05e9\u05dc\u05d5\u05de\u05d9\u05dd \u05d5\u05ea\u05e7\u05d1\u05d5\u05dc\u05d9\u05dd \u05d1\u05d0\u05d9\u05d7\u05d5\u05e8: 2")).toBeTruthy();
+  });
+});
+
+describe("CashNeedsDialog with money coming in", () => {
+  it("leads with what is actually missing and shows both sides behind it", () => {
+    const rows = [
+      item({ id: "expense:a", date: "2026-09-18", amount: 5000, label: "\u05e1\u05e4\u05e7", expenseId: "a" }),
+      item({ id: "payment:b", direction: "in", date: "2026-09-19", amount: 3000, label: "\u05e6\u05f3\u05e7", origin: "payment", stage: "scheduled", paymentId: "b" }),
+    ];
+    render(<CashNeedsDialog open onOpenChange={() => {}} items={rows} accounts={accounts} todayIso={TODAY} direction="all" />);
+    // 5,000 out against 3,000 in — 2,000 short.
+    expect(screen.getByText("\u05db\u05de\u05d4 \u05d7\u05e1\u05e8")).toBeTruthy();
+    expect(cashTotal()).toBe(ils(2000));
+    expect(screen.getByText(/\u05e6\u05e4\u05d5\u05d9 \u05dc\u05d4\u05d9\u05db\u05e0\u05e1/)).toBeTruthy();
+  });
+
+  it("stays the plain \u05e1\u05d4\u05f4\u05db \u05e0\u05d3\u05e8\u05e9 figure when nothing comes in", () => {
+    render(<CashNeedsDialog open onOpenChange={() => {}} items={items} accounts={accounts} todayIso={TODAY} direction="out" />);
+    expect(screen.getByText("\u05e1\u05d4\u05f4\u05db \u05e0\u05d3\u05e8\u05e9")).toBeTruthy();
+    expect(cashTotal()).toBe(ils(1200));
+  });
+});
+
+describe("Recording money that comes in", () => {
+  const ADD_PAYMENT = "\u05d4\u05d5\u05e1\u05e3 \u05ea\u05e9\u05dc\u05d5\u05dd \u05dc\u05d9\u05d5\u05dd \u05d6\u05d4";
+  const ADD_RECEIPT = "\u05d4\u05d5\u05e1\u05e3 \u05ea\u05e7\u05d1\u05d5\u05dc \u05dc\u05d9\u05d5\u05dd \u05d6\u05d4";
+
+  it("offers a receipt button on the incoming board and a payment button on the outgoing one", () => {
+    const { unmount } = renderBoard({ items: incomingItems, direction: "in" });
+    expect(screen.getByRole("button", { name: ADD_RECEIPT })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: ADD_PAYMENT })).toBeNull();
+    unmount();
+    renderBoard({ items, direction: "out" });
+    expect(screen.getByRole("button", { name: ADD_PAYMENT })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: ADD_RECEIPT })).toBeNull();
+  });
+
+  it("offers both on \u05d4\u05db\u05dc \u2014 a payment and a receipt are different dialogs", () => {
+    renderBoard({ items: [...items, ...incomingItems], direction: "all" });
+    expect(screen.getByRole("button", { name: ADD_PAYMENT })).toBeTruthy();
+    expect(screen.getByRole("button", { name: ADD_RECEIPT })).toBeTruthy();
   });
 });

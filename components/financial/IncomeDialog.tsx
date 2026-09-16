@@ -123,6 +123,7 @@ export function IncomeDialog({
   orders,
   properties,
   defaultAccountId,
+  defaultDate,
   lockedPropertyId,
   onSaved,
 }: {
@@ -133,6 +134,8 @@ export function IncomeDialog({
   properties: IncomeEntityOption[];
   /** Pre-select the account the money lands in (opened from that account's page). */
   defaultAccountId?: string;
+  /** Start on a specific day (opened from a calendar day) instead of today. */
+  defaultDate?: string;
   /** Lock to a property (e.g. opened from a property's own page) — hides the
    *  domain + property pickers and forces business_domain=property_management. */
   lockedPropertyId?: string | null;
@@ -168,6 +171,12 @@ export function IncomeDialog({
   useEffect(() => {
     if (open && defaultAccountId) setAccountId(defaultAccountId);
   }, [open, defaultAccountId]);
+
+  // Opened from a day on the payments board — that day, not today. Same
+  // per-open application, and the internal reset still returns it to today.
+  useEffect(() => {
+    if (open && defaultDate) setDate(defaultDate);
+  }, [open, defaultDate]);
 
   // Preload accounts on open so the "account" step can render one tappable
   // card per account (same reasoning as ExpenseDialog's express mode).

@@ -42,7 +42,7 @@ describe("applyOutflowSourceAccounts", () => {
     paidAmount: null, descriptionRaw: null, notes: null, paymentMethod: null, dueDate: "2026-09-10", paidDate: null,
     overdue: false, installmentGroupId: null, installmentIndex: null, installmentCount: null, expenseProjectId: null,
     expenseOrderId: null, expensePropertyId: null, workerUserId: null, recurringTemplateId: null, recurrenceKey: null,
-    variableAmount: false, autoPaid: false, sourceId: null,
+    variableAmount: false, autoPaid: false, sourceId: null, direction: "out" as const,
   };
   const items: PaymentCalendarItem[] = [
     { ...base, id: "salary_proj:u1:2026-09", origin: "worker_owed", workerUserId: "u1" },
@@ -74,7 +74,7 @@ describe("dropInactiveOutflowSources", () => {
     paidAmount: null, descriptionRaw: null, notes: null, paymentMethod: null, dueDate: "2026-09-10", paidDate: null,
     overdue: false, installmentGroupId: null, installmentIndex: null, installmentCount: null, expenseProjectId: null,
     expenseOrderId: null, expensePropertyId: null, workerUserId: null, recurringTemplateId: null, recurrenceKey: null,
-    variableAmount: false, autoPaid: false, sourceId: null,
+    variableAmount: false, autoPaid: false, sourceId: null, direction: "out" as const,
   };
   const items: PaymentCalendarItem[] = [
     { ...base, id: "salary_proj:u1:2026-09", origin: "worker_owed", workerUserId: "u1" },

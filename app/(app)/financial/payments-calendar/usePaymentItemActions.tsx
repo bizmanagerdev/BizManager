@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import ReminderFormDialog from "@/components/reminders/ReminderFormDialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toHebrewError } from "@/lib/error-messages";
@@ -10,7 +10,9 @@ import type { RecurringExpenseTemplateItem } from "@/app/(app)/financial/Recurri
 import { ExpenseDialog } from "./LazyExpenseDialog";
 import { SplitPaymentDialog } from "./SplitPaymentDialog";
 import MarkPaidDialog from "./MarkPaidDialog";
-import { reminderNoteFor, type ItemActions, type MutateFn, type Option } from "./calendar.helpers";
+import MarkCollectedDialog from "./MarkCollectedDialog";
+import { PaymentEditDialog } from "@/components/financial/PaymentEditDialog";
+import { incomeReminderNoteFor, itemCapabilities, reminderNoteFor, type ItemActions, type MutateFn, type Option } from "./calendar.helpers";
 
 // Delete an expense-origin payment row (e.g. an orphaned recurring bill left
 // behind after its template was deleted). Real expenses only. Deferred: the
@@ -67,27 +69,35 @@ export default function usePaymentItemActions({
 }) {
   const [splitItem, setSplitItem] = useState<PaymentCalendarItem | null>(null);
   const [markItem, setMarkItem] = useState<PaymentCalendarItem | null>(null);
+  const [collectItem, setCollectItem] = useState<PaymentCalendarItem | null>(null);
+  const [editPaymentId, setEditPaymentId] = useState<string | null>(null);
   const [remindItem, setRemindItem] = useState<PaymentCalendarItem | null>(null);
   const [deleteItem, setDeleteItem] = useState<PaymentCalendarItem | null>(null);
   const [editItem, setEditItem] = useState<PaymentCalendarItem | null>(null);
   const [editTemplate, setEditTemplate] = useState<RecurringExpenseTemplateItem | null>(null);
 
+  // What each row allows is decided once, purely, in calendar.helpers; this
+  // only hands those decisions their dialogs.
+  const liveTemplateIds = useMemo(() => new Set(templates.map((t) => t.id)), [templates]);
+
   const actionsFor = (item: PaymentCalendarItem): ItemActions => {
-    const isForecast = Boolean(item.recurringTemplateId) && !item.expenseId;
-    const template = isForecast ? templates.find((t) => t.id === item.recurringTemplateId) ?? null : null;
-    // No delete for a bill that belongs to a live recurring template: the
-    // generator walks every period and would just create it again, and a
-    // monthly bill isn't something to delete one month of. (Skip a month by
-    // editing the rule; stop it by deactivating/deleting the template.) An
-    // orphan — its template already deleted — still gets מחיקה, since nothing
-    // will recreate it. Only real expense rows are deletable at all.
-    const fromLiveTemplate = Boolean(item.recurringTemplateId) && templates.some((t) => t.id === item.recurringTemplateId);
-    const canDelete = Boolean(item.expenseId) && !fromLiveTemplate;
+    const can = itemCapabilities(item, liveTemplateIds);
+    if (item.direction === "in") {
+      return {
+        onMarkPaid: () => setCollectItem(item),
+        onSplit: () => {},
+        onRemind: () => setRemindItem(item),
+        // A real payments row edits through the shared editor (the same one the
+        // חשבונות page uses — it loads its own context by id).
+        ...(can.canEdit ? { onEdit: () => setEditPaymentId(item.paymentId ?? null), editLabel: "עריכה" } : {}),
+      };
+    }
+    const template = can.editsTemplateId ? templates.find((t) => t.id === can.editsTemplateId) ?? null : null;
     return {
       onMarkPaid: () => setMarkItem(item),
       onSplit: () => setSplitItem(item),
       onRemind: () => setRemindItem(item),
-      ...(canDelete ? { onDelete: () => setDeleteItem(item) } : {}),
+      ...(can.canDelete ? { onDelete: () => setDeleteItem(item) } : {}),
       // A real expense row edits in place (the shared dialog, same as the
       // ledger). A forecast has no row yet, so "edit" is the recurring rule it
       // came from. Wages / loans / card charges edit on their own pages (למקור).
@@ -175,6 +185,29 @@ export default function usePaymentItemActions({
         }}
       />
 
+      <MarkCollectedDialog
+        item={collectItem}
+        onClose={() => setCollectItem(null)}
+        onSaved={async ({ id }) => {
+          await onMutate({ id });
+          setCollectItem(null);
+        }}
+      />
+
+      {/* Edit an incoming payment row — amount, date, method, account, check
+          number. Self-loading by id, so nothing has to be seeded here. */}
+      <PaymentEditDialog
+        paymentId={editPaymentId}
+        onOpenChange={(open) => {
+          if (!open) setEditPaymentId(null);
+        }}
+        onSaved={() => {
+          const id = editPaymentId;
+          setEditPaymentId(null);
+          void onMutate(id ? { id: `payment:${id}` } : undefined);
+        }}
+      />
+
       <ReminderFormDialog
         mode="create"
         open={Boolean(remindItem)}
@@ -182,8 +215,20 @@ export default function usePaymentItemActions({
           if (!o) setRemindItem(null);
         }}
         category="task"
-        links={remindItem?.expenseId ? { expense_id: remindItem.expenseId } : {}}
-        defaultNote={remindItem ? reminderNoteFor(remindItem) : undefined}
+        links={
+          remindItem?.expenseId
+            ? { expense_id: remindItem.expenseId }
+            : remindItem?.customerId
+              ? { customer_id: remindItem.customerId }
+              : {}
+        }
+        defaultNote={
+          remindItem
+            ? remindItem.direction === "in"
+              ? incomeReminderNoteFor(remindItem)
+              : reminderNoteFor(remindItem)
+            : undefined
+        }
         onSaved={() => setRemindItem(null)}
       />
 

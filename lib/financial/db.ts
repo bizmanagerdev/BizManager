@@ -25,7 +25,13 @@ async function scanRows<T extends Record<string, unknown>>(
   table: string,
   selectColumns: string,
   dateColumn: string,
-  since?: string | null
+  since?: string | null,
+  // A second date column that can also put a row inside the window. Payments
+  // need this: a post-dated check is dated when it was HANDED OVER but is money
+  // on its due_date, so scanning on payment_date alone silently drops a check
+  // written more than `since` ago and cashable next month. (lib/accounts.ts has
+  // always read payments this way; the ledger scan did not.)
+  orDateColumn?: string
 ) {
   const rows: T[] = [];
   for (let rangeStart = 0; ; rangeStart += SCAN_CHUNK_SIZE) {
@@ -36,7 +42,7 @@ async function scanRows<T extends Record<string, unknown>>(
       .not(dateColumn, "is", null)
       .order(dateColumn, { ascending: false })
       .order("id", { ascending: false });
-    if (since) q = q.gte(dateColumn, since);
+    if (since) q = orDateColumn ? q.or(`${dateColumn}.gte.${since},${orDateColumn}.gte.${since}`) : q.gte(dateColumn, since);
     const { data, error } = await q.range(rangeStart, rangeEnd);
     if (error) throw error;
     const chunk = (data ?? []) as unknown as T[];
@@ -65,7 +71,10 @@ export async function scanPaymentRows(supabase: SupabaseClient, since?: string |
   let lastError: unknown = null;
   for (const selectColumns of selectVariants) {
     try {
-      return await scanRows<PaymentRow>(supabase, "payments", selectColumns, "payment_date", since);
+      // Only the variants that actually select due_date can filter on it; the
+      // fallbacks below exist precisely for a schema without that column.
+      const orColumn = selectColumns.includes("due_date") ? "due_date" : undefined;
+      return await scanRows<PaymentRow>(supabase, "payments", selectColumns, "payment_date", since, orColumn);
     } catch (error) {
       lastError = error;
       if (

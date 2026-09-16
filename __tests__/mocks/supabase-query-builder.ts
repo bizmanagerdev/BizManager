@@ -39,7 +39,7 @@ export function makeSupabase(config: Record<string, MockTableConfig> = {}) {
     let resp = readResp;
 
     const builder: Record<string, unknown> = {};
-    for (const m of ["select", "eq", "not", "gte", "lte", "in", "order", "limit", "is", "range"]) {
+    for (const m of ["select", "eq", "not", "gte", "lte", "in", "order", "limit", "is", "range", "or"]) {
       builder[m] = () => builder;
     }
     builder.insert = (values: unknown) => {
