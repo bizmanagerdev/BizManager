@@ -25,19 +25,21 @@ test.describe("admin — customer creation", () => {
 
     // TEMPORARY DIAGNOSTIC — this test has failed identically ("element was
     // detached from the DOM, retrying" on the same "לקוח" tile click) across
-    // five different fix attempts now, with zero change in the failure
-    // signature each time — a "[pageerror] Unexpected token '<'" (the classic
-    // symptom of a <script> tag's response being HTML instead of JS) plus a
-    // mass net::ERR_ABORTED across every nav link's RSC prefetch. Two
-    // consecutive targeted fixes (the Service Worker's dev-host self-destruct,
-    // the auto-recover chunk-reload pair) both being ruled OUT by zero change
-    // means the mass ERR_ABORTED is very likely benign Next.js router-prefetch
-    // cancellation noise, not evidence of a forced reload — the real signal is
-    // probably just the "Unexpected token '<'" itself. Round 3: capture the
-    // actual redirect chain + content-type for RSC/script responses, to see
-    // directly whether something is serving HTML where JS/RSC was expected
-    // (e.g. a momentary auth/middleware race redirecting a prefetch to
-    // /login) instead of continuing to guess from a bare error message.
+    // six different fix/round attempts now. Rounds 1-2's fixes (Service
+    // Worker dev-host self-destruct, auto-recover chunk-reload pair) both
+    // landed with ZERO change. Round 3 filtered the mass net::ERR_ABORTED
+    // RSC-prefetch noise out and confirmed it really was just noise — doing
+    // that revealed the ENTIRE remaining signal is exactly ONE
+    // "[pageerror] Unexpected token '<'" (the classic symptom of a <script>
+    // tag's response being HTML instead of JS), with an empty stack, and
+    // NOTHING from a content-type check scoped to /_next/static/ or _rsc=
+    // URLs — meaning the culprit isn't a first-party Next.js chunk/RSC
+    // request at all. The app loads two third-party scripts (Sentry,
+    // Vercel Speed Insights) neither of which matches that URL scoping.
+    // Round 4: use Playwright's own resourceType() classification (works
+    // regardless of origin/URL shape) to log every actual <script> response's
+    // content-type + status, so the culprit shows up by direct comparison
+    // instead of another URL-pattern guess.
     const diag: string[] = [];
     page.on("console", (msg) => {
       if (msg.text().includes("realtime/v1/websocket")) return;
@@ -49,19 +51,15 @@ test.describe("admin — customer creation", () => {
       // constant across every fix attempt — keep the dump focused on
       // anything that ISN'T that.
       if (req.url().includes("_rsc=") && req.failure()?.errorText === "net::ERR_ABORTED") return;
-      diag.push(`[requestfailed] ${req.url()} ${req.failure()?.errorText}`);
+      diag.push(`[requestfailed] ${req.url()} (${req.resourceType()}) ${req.failure()?.errorText}`);
     });
     page.on("response", (res) => {
       if (res.status() >= 400) diag.push(`[response ${res.status()}] ${res.request().method()} ${res.url()}`);
-      const url = res.url();
-      const isScriptOrRsc = url.includes("/_next/static/") || url.includes("_rsc=");
-      if (!isScriptOrRsc) return;
+      // Every actual <script> resource, regardless of origin — first-party
+      // chunk or third-party (Sentry/Speed Insights) alike.
+      if (res.request().resourceType() !== "script") return;
       const contentType = res.headers()["content-type"] ?? "";
-      if (contentType.includes("text/html")) {
-        diag.push(
-          `[WRONG CONTENT-TYPE] ${res.request().method()} ${url} -> status=${res.status()} content-type=${contentType} finalUrl=${res.url()} redirected=${res.request().redirectedFrom() !== null}`
-        );
-      }
+      diag.push(`[script] ${res.url()} -> status=${res.status()} content-type=${contentType}`);
     });
 
     try {
