@@ -53,6 +53,7 @@ function lease(overrides: Partial<LeaseAgreement>): LeaseAgreement {
   return {
     id: "lease-1",
     propertyId: "prop-1",
+    rentDayOfMonth: null,
     customerId: "cust-1",
     customerName: "שוכר",
     startDate: "2024-01-01",

@@ -19,6 +19,7 @@ export type LeaseInput = {
   deposit_amount: string;
   deposit_reference: string;
   keys_handed_over: string; // how many keys this tenant got at move-in
+  rent_day_of_month: string; // "" → null (fall back to the start date's day)
 };
 
 function clean(value: string | null | undefined) {
@@ -194,7 +195,16 @@ function leaseFields(input: LeaseInput) {
     deposit_amount: numOrNull(input.deposit_amount),
     deposit_reference: clean(input.deposit_reference),
     keys_handed_over: numOrNull(input.keys_handed_over),
+    rent_day_of_month: rentDay(input.rent_day_of_month),
   };
+}
+
+/** 1–31, or null to keep falling back to the lease's start day. */
+function rentDay(value: string | null | undefined): number | null {
+  const n = Number(typeof value === "string" ? value.trim() : value);
+  if (!Number.isFinite(n)) return null;
+  const day = Math.round(n);
+  return day >= 1 && day <= 31 ? day : null;
 }
 
 export async function createLease(propertyId: string, input: LeaseInput): Promise<ActionResult> {

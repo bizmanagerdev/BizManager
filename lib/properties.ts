@@ -77,6 +77,11 @@ export type LeaseAgreement = {
   depositReference: string | null;
   /** How many keys this tenant received at move-in — checked against at move-out. */
   keysHandedOver: number | null;
+  /**
+   * Day of the month rent is due. Null ⇒ fall back to the day in startDate,
+   * which is what the app did before the column existed.
+   */
+  rentDayOfMonth: number | null;
   createdAt: string | null;
 };
 
@@ -189,6 +194,7 @@ function normalizeLease(row: Row): LeaseAgreement {
     depositAmount: numOrNull(row.deposit_amount),
     depositReference: str(row.deposit_reference),
     keysHandedOver: numOrNull(row.keys_handed_over),
+    rentDayOfMonth: numOrNull(row.rent_day_of_month),
     createdAt: str(row.created_at),
   };
 }
@@ -303,7 +309,7 @@ export function pickCurrentLease(leases: LeaseAgreement[]): LeaseAgreement | nul
 }
 
 const LEASE_SELECT =
-  "id,property_id,customer_id,start_date,end_date,monthly_rent_amount,document_id,status,notes,deposit_type,deposit_amount,deposit_reference,keys_handed_over,created_at,customer:customers(name)";
+  "id,property_id,customer_id,start_date,end_date,monthly_rent_amount,document_id,status,notes,deposit_type,deposit_amount,deposit_reference,keys_handed_over,rent_day_of_month,created_at,customer:customers(name)";
 
 /**
  * Every property with its current lease + income/expense rollup, computed in

@@ -208,3 +208,36 @@ describe("projectRent", () => {
     expect(projectRent([lease({ monthlyAmount: 0 })], new Map(), window)).toEqual([]);
   });
 });
+
+describe("projectRent — the agreed rent day", () => {
+  // A lease signed on the 17th does not mean rent is due on the 17th. The
+  // agreed day wins; the start day is only the fallback for leases that
+  // predate the column.
+  const base: LeaseRow = {
+    id: "L1", propertyId: "prop1", customerId: "c1", propertyLabel: "הרצל 5",
+    startDate: "2026-01-17", endDate: null, monthlyAmount: 4000,
+  };
+  const window = { fromIso: "2026-09-01", toIso: "2026-11-30", todayIso: TODAY };
+
+  it("uses the agreed day, not the day the lease started", () => {
+    const rows = projectRent([{ ...base, rentDay: 1 }], new Map(), window);
+    expect(rows.map((r) => r.date)).toEqual(["2026-09-01", "2026-10-01", "2026-11-01"]);
+  });
+
+  it("falls back to the start day when no day is agreed", () => {
+    expect(projectRent([base], new Map(), window).map((r) => r.date)).toEqual([
+      "2026-09-17", "2026-10-17", "2026-11-17",
+    ]);
+    expect(projectRent([{ ...base, rentDay: null }], new Map(), window)[0].date).toBe("2026-09-17");
+  });
+
+  it("ignores a nonsense day rather than producing an invalid date", () => {
+    expect(projectRent([{ ...base, rentDay: 0 }], new Map(), window)[0].date).toBe("2026-09-17");
+    expect(projectRent([{ ...base, rentDay: 99 }], new Map(), window)[0].date).toBe("2026-09-17");
+  });
+
+  it("still clamps the agreed day to a short month", () => {
+    const rows = projectRent([{ ...base, rentDay: 31 }], new Map(), { ...window, toIso: "2026-11-30" });
+    expect(rows.map((r) => r.date)).toEqual(["2026-09-30", "2026-10-31", "2026-11-30"]);
+  });
+});

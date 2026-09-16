@@ -29,6 +29,14 @@ function num(row: Row, key: string): number {
   return 0;
 }
 
+/** A lease's rent day: the agreed one, else the day it started. */
+export function rentDayOf(row: { rent_day_of_month?: unknown }, startDate: string): number {
+  const stored = row.rent_day_of_month;
+  const n = typeof stored === "number" ? stored : typeof stored === "string" ? Number(stored) : NaN;
+  if (Number.isFinite(n) && n >= 1 && n <= 31) return Math.round(n);
+  return Number(startDate.slice(8, 10)) || 1;
+}
+
 function isoLocal(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
@@ -76,7 +84,7 @@ export async function loadRentSources(
 ): Promise<OutflowSourceRow[]> {
   const { data, error } = await supabase
     .from("lease_agreements")
-    .select("id,property_id,start_date,end_date,monthly_rent_amount,status")
+    .select("id,property_id,start_date,end_date,monthly_rent_amount,rent_day_of_month,status")
     .eq("status", "active");
   if (error || !data) return [];
 
@@ -96,8 +104,9 @@ export async function loadRentSources(
     const propertyId = str(r, "property_id");
     const start = str(r, "start_date");
     if (!id || !propertyId || !start) return [];
-    // The lease has no rent day-of-month column, so its start day is the day.
-    const day = Number(start.slice(8, 10)) || 1;
+    // The agreed rent day when the lease has one; otherwise the day it started,
+    // which is all the app had before the column existed.
+    const day = rentDayOf(r, start);
     const end = str(r, "end_date");
     const next = nextMonthlyDate(day, todayIso);
     // A lease that has already ended is not monthly income any more.

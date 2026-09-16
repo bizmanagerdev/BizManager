@@ -365,6 +365,7 @@ const EMPTY_LEASE_FORM = {
   deposit_amount: "",
   deposit_reference: "",
   keys_handed_over: "",
+  rent_day_of_month: "",
 };
 
 type LeaseForm = typeof EMPTY_LEASE_FORM;
@@ -381,6 +382,7 @@ function toLeaseForm(lease: LeaseAgreement): LeaseForm {
     deposit_amount: lease.depositAmount != null ? String(lease.depositAmount) : "",
     deposit_reference: lease.depositReference ?? "",
     keys_handed_over: lease.keysHandedOver != null ? String(lease.keysHandedOver) : "",
+    rent_day_of_month: lease.rentDayOfMonth != null ? String(lease.rentDayOfMonth) : "",
   };
 }
 
@@ -757,6 +759,7 @@ export default function PropertyDetailClient({
       deposit_amount: leaseForm.deposit_amount,
       deposit_reference: leaseForm.deposit_reference,
       keys_handed_over: leaseForm.keys_handed_over,
+      rent_day_of_month: leaseForm.rent_day_of_month,
     };
     setLeaseBusy(true);
     try {
@@ -1442,6 +1445,20 @@ export default function PropertyDetailClient({
                 onChange={(e) => setLeaseForm((prev) => ({ ...prev, keys_handed_over: e.target.value }))}
                 placeholder={property.keyCount != null ? `בדירה יש ${property.keyCount}` : undefined}
               />
+            </div>
+            <div className="space-y-1">
+              {/* Drives where rent lands on the payments board. Left empty it
+                  falls back to the day the lease started, which is what the
+                  board used before this existed — and why rent showed up
+                  scattered across the month. */}
+              <div className="text-sm font-medium">יום תשלום בחודש</div>
+              <Input
+                inputMode="numeric"
+                value={leaseForm.rent_day_of_month}
+                onChange={(e) => setLeaseForm((prev) => ({ ...prev, rent_day_of_month: e.target.value }))}
+                placeholder={leaseForm.start_date ? `כברירת מחדל: ${Number(leaseForm.start_date.slice(8, 10)) || 1}` : "1–31"}
+              />
+              <div className="text-xs text-muted-foreground">ריק = לפי היום שבו החוזה התחיל</div>
             </div>
           </div>
           <div className="space-y-1">

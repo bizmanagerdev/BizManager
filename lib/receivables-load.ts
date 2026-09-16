@@ -17,6 +17,7 @@ import {
 } from "@/lib/receivables-forecast";
 import { getCurrentCcFeeRate } from "@/lib/settings/ccFee";
 import { propertyDisplayName } from "@/lib/properties";
+import { rentDayOf } from "@/lib/inflow-sources";
 
 type Row = Record<string, unknown>;
 function str(row: Row, key: string): string | null {
@@ -158,7 +159,7 @@ export async function loadLeasesAndBookedMonths(
 ): Promise<{ leases: LeaseRow[]; bookedMonths: Map<string, Set<string>> }> {
   const { data, error } = await supabase
     .from("lease_agreements")
-    .select("id,property_id,customer_id,start_date,end_date,monthly_rent_amount,status")
+    .select("id,property_id,customer_id,start_date,end_date,monthly_rent_amount,rent_day_of_month,status")
     .eq("status", "active");
   if (error || !data) return { leases: [], bookedMonths: new Map() };
 
@@ -200,6 +201,8 @@ export async function loadLeasesAndBookedMonths(
       startDate: (str(r, "start_date") ?? "").slice(0, 10),
       endDate: str(r, "end_date"),
       monthlyAmount: num(r, "monthly_rent_amount"),
+      // The agreed rent day; projectRent falls back to the start day when null.
+      rentDay: rentDayOf(r, (str(r, "start_date") ?? "").slice(0, 10)),
     }))
     .filter((l) => l.id && l.propertyId && l.startDate && l.monthlyAmount > 0);
 

@@ -230,6 +230,8 @@ export type LeaseRow = {
   startDate: string;
   endDate: string | null;
   monthlyAmount: number;
+  /** Day of the month rent is due; falls back to the start day when absent. */
+  rentDay?: number | null;
 };
 
 function ym(iso: string): string {
@@ -270,8 +272,11 @@ export function projectRent(
   for (const lease of leases) {
     if (!(lease.monthlyAmount > 0) || !lease.startDate) continue;
     const startIso = lease.startDate.slice(0, 10);
-    const [sy, sm, sd] = startIso.split("-").map(Number);
-    if (!sy || !sm || !sd) continue;
+    const [sy, sm, startDay] = startIso.split("-").map(Number);
+    if (!sy || !sm || !startDay) continue;
+    // The agreed rent day wins; the lease's start day is only the fallback.
+    const sd =
+      typeof lease.rentDay === "number" && lease.rentDay >= 1 && lease.rentDay <= 31 ? lease.rentDay : startDay;
     const taken = existingMonthsByProperty.get(lease.propertyId) ?? new Set<string>();
     const endIso = lease.endDate ? lease.endDate.slice(0, 10) : null;
     // Start at whichever month is later: the lease's or the window's.
