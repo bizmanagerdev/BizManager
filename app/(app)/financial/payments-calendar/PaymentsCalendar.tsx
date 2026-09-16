@@ -751,7 +751,8 @@ function PaymentItemCard({
   onMarkPaid: () => void;
   onSplit: () => void;
   onRemind: () => void;
-  onDelete: () => void;
+  // Absent when the row can't be deleted from the board (see actionsFor).
+  onDelete?: () => void;
   // Absent on items that have no editable record here (wages, loans, card charges).
   onEdit?: () => void;
   editLabel?: string;
@@ -768,7 +769,7 @@ function PaymentItemCard({
   // Rows that already exist and are paid are filtered by the stage check below.
   const canMarkPaid = Boolean(item.expenseId) || isForecast;
   const canSplit = Boolean(item.expenseId);
-  const canDelete = Boolean(item.expenseId);
+  const canDelete = Boolean(onDelete);
   // Drop the source label from the meta when a type badge (הוראת קבע / קבועה) already
   // says the same thing — no info twice.
   const showsTypeBadge = item.autoPaid || isForecast;
@@ -927,7 +928,7 @@ type ItemActions = {
   onMarkPaid: () => void;
   onSplit: () => void;
   onRemind: () => void;
-  onDelete: () => void;
+  onDelete?: () => void;
   onEdit?: () => void;
   editLabel?: string;
 };
@@ -955,11 +956,19 @@ function usePaymentItemActions({
   const actionsFor = (item: PaymentCalendarItem): ItemActions => {
     const isForecast = Boolean(item.recurringTemplateId) && !item.expenseId;
     const template = isForecast ? templates.find((t) => t.id === item.recurringTemplateId) ?? null : null;
+    // No delete for a bill that belongs to a live recurring template: the
+    // generator walks every period and would just create it again, and a
+    // monthly bill isn't something to delete one month of. (Skip a month by
+    // editing the rule; stop it by deactivating/deleting the template.) An
+    // orphan — its template already deleted — still gets מחיקה, since nothing
+    // will recreate it. Only real expense rows are deletable at all.
+    const fromLiveTemplate = Boolean(item.recurringTemplateId) && templates.some((t) => t.id === item.recurringTemplateId);
+    const canDelete = Boolean(item.expenseId) && !fromLiveTemplate;
     return {
       onMarkPaid: () => setMarkItem(item),
       onSplit: () => setSplitItem(item),
       onRemind: () => setRemindItem(item),
-      onDelete: () => setDeleteItem(item),
+      ...(canDelete ? { onDelete: () => setDeleteItem(item) } : {}),
       // A real expense row edits in place (the shared dialog, same as the
       // ledger). A forecast has no row yet, so "edit" is the recurring rule it
       // came from. Wages / loans / card charges edit on their own pages (למקור).
