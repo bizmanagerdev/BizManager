@@ -98,3 +98,19 @@ describe("PaymentsHubClient \u2014 the direction switch", () => {
     expect(screen.getByTestId("board").textContent).toBe("all");
   });
 });
+
+describe("PaymentsHubClient — the switch does not move", () => {
+  // It used to sit at the moving edge of the controls group, so showing or
+  // hiding a filter shoved it sideways under the pointer. It now shares a fixed
+  // cluster with the tabs, which never change width. Layout can't be measured
+  // in jsdom, so this locks the structure that guarantees it.
+  it("sits in the same cluster as the tabs, not among the controls that grow and shrink", () => {
+    renderHub();
+    const tabs = screen.getByRole("tablist");
+    const switchGroup = screen.getByRole("group", { name: "כיוון הכסף" });
+    expect(switchGroup.parentElement).toBe(tabs.parentElement);
+    // And the cash calculator — part of the variable side — is NOT in there.
+    const cashButton = screen.getByRole("button", { name: /כמה צריך/ });
+    expect(cashButton.parentElement).not.toBe(tabs.parentElement);
+  });
+});

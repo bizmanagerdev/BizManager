@@ -123,18 +123,25 @@ export default function PaymentsHubClient({
       ) : null}
       {/* Header — tab bar + the actions for the active tab, on one baseline */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <TabsList variant="underline" className="w-auto">
-          {TABS.map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <TabsTrigger key={tab.key} value={tab.key}>
-                <Icon className="h-4 w-4" />
-                {tab.label}
-              </TabsTrigger>
-            );
-          })}
-        </TabsList>
-        <div className="flex flex-wrap items-center gap-2">
+        {/* The tabs and the direction switch are one fixed cluster. Both frame
+            everything below them and apply to both tabs, and — the reason
+            they are here together — neither ever changes width. The switch
+            used to sit at the moving edge of the controls group, so every
+            click that showed or hid a filter (רק קבועות is meaningless in
+            נכנס) or relabelled the overdue chip shoved it sideways, right
+            under the pointer of someone clicking through the three options. */}
+        <div className="flex flex-wrap items-center gap-3">
+          <TabsList variant="underline" className="w-auto">
+            {TABS.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <TabsTrigger key={tab.key} value={tab.key}>
+                  <Icon className="h-4 w-4" />
+                  {tab.label}
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
           {/* Out / in / both. A segmented control, not three chips: these are
               mutually exclusive views of the same board. */}
           <div role="group" aria-label="כיוון הכסף" className="inline-flex h-[34px] overflow-hidden rounded-lg border border-input">
@@ -154,6 +161,11 @@ export default function PaymentsHubClient({
               </button>
             ))}
           </div>
+        </div>
+        {/* Everything whose width depends on the direction or the tab lives
+            here, on the far side, where growing and shrinking moves nothing
+            the user is aiming at. */}
+        <div className="flex flex-wrap items-center gap-2">
           {activeTab === "calendar" ? <div ref={setFiltersSlot} className="contents" /> : null}
           {activeTab === "calendar" ? <div ref={setAlertsSlot} className="contents" /> : null}
           {/* The cash-needs calculator is useful from either tab. */}
