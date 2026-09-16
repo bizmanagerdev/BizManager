@@ -71,18 +71,28 @@ describe("RecurringExpensesManager (תשלומים קבועים)", () => {
     render(<RecurringExpensesManager templates={templates} projects={[]} orders={[]} properties={[]} accounts={[{ id: "acc-1", name: "לאומי" } as never]} />);
     await screen.findAllByText("משכורת דוד");
     const table = screen.getByRole("table");
-    expect(within(table).getAllByText("הוצאה קבועה").length).toBe(2);
-    expect(within(table).getAllByText("משכורת").length).toBe(1);
-    expect(within(table).getAllByText("כרטיס אשראי").length).toBe(1);
-    expect(within(table).getByLabelText("חשבון — משכורת דוד")).toBeTruthy();
-    expect(within(table).getByLabelText("תזכורת — משכורת דוד")).toBeTruthy();
-    expect(within(table).getByLabelText("פעיל — משכורת דוד").getAttribute("aria-checked")).toBe("true");
+    // Counted over the body rows only — the kind filter in the column header
+    // offers the same words as options.
+    const bodyText = within(table).getAllByRole("row").slice(1).map((r) => r.textContent ?? "");
+    const countRowsWith = (needle: string) => bodyText.filter((t) => t.includes(needle)).length;
+    expect(countRowsWith("הוצאה קבועה")).toBe(2);
+    expect(countRowsWith("משכורת")).toBe(1);
+    expect(countRowsWith("כרטיס אשראי")).toBe(1);
+    // Each of the three fields is a cell showing its value that swaps to the
+    // real control when opened — the same on a source row and a bill row.
+    expect(within(table).getByLabelText("חשבון — משכורת דוד: עריכה")).toBeTruthy();
+    expect(within(table).getByLabelText("תזכורת — משכורת דוד: עריכה")).toBeTruthy();
+    expect(within(table).getByLabelText("פעיל — משכורת דוד: עריכה")).toBeTruthy();
     // A card's charge is automatic — said as a caption under its amount.
     expect(within(table).getByText("אוטומטי")).toBeTruthy();
     // Bills edit the same three fields in place, the same way sources do.
-    expect(within(table).getByLabelText("חשבון — שכירות")).toBeTruthy();
-    expect(within(table).getByLabelText("תזכורת — שכירות")).toBeTruthy();
-    expect(within(table).getByLabelText("פעיל — שכירות").getAttribute("aria-checked")).toBe("true");
+    expect(within(table).getByLabelText("חשבון — שכירות: עריכה")).toBeTruthy();
+    expect(within(table).getByLabelText("תזכורת — שכירות: עריכה")).toBeTruthy();
+    expect(within(table).getByLabelText("פעיל — שכירות: עריכה")).toBeTruthy();
+    // Opening the active cell reveals the switch itself, already on.
+    const { fireEvent } = await import("@testing-library/react");
+    fireEvent.mouseDown(within(table).getByLabelText("פעיל — משכורת דוד: עריכה"));
+    expect(within(table).getByLabelText("פעיל — משכורת דוד").getAttribute("aria-checked")).toBe("true");
   });
 
   it("sums only what leaves every month and says what it left out", async () => {
@@ -105,8 +115,10 @@ describe("RecurringExpensesManager (תשלומים קבועים)", () => {
     render(<RecurringExpensesManager templates={templates} projects={[]} orders={[]} properties={[]} accounts={[]} />);
     await screen.findAllByText("משכורת דוד");
     const table = screen.getByRole("table");
-    const select = within(table).getByLabelText("תזכורת — משכורת דוד") as HTMLSelectElement;
     const { fireEvent } = await import("@testing-library/react");
+    // The cell opens into the select, then the choice saves.
+    fireEvent.mouseDown(within(table).getByLabelText("תזכורת — משכורת דוד: עריכה"));
+    const select = within(table).getByLabelText("תזכורת — משכורת דוד") as HTMLSelectElement;
     fireEvent.change(select, { target: { value: "2" } });
     await vi.waitFor(() => {
       const call = fetchMock.mock.calls.find((c) => String(c[0]).endsWith("/api/outflow-sources/settings"));
