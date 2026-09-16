@@ -4,10 +4,11 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { AddIcon, AddReminderIcon, CalendarIcon, CheckIcon, ChevronDownIcon, DeleteIcon, EditIcon, ExternalLinkIcon, MoreIcon, SplitIcon, WarningIcon } from "@/components/ui/icons";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FOCUS_PARAM, flashFocusTarget } from "@/components/layout/FocusHighlighter";
 import type { RecurringExpenseTemplateItem } from "@/app/(app)/financial/RecurringExpensesManager";
 import ReminderFormDialog from "@/components/reminders/ReminderFormDialog";
@@ -26,7 +27,6 @@ import type { Account } from "@/lib/accounts";
 import { hebrewFullDate } from "@/lib/hebrew-calendar";
 import { toHebrewError } from "@/lib/error-messages";
 import { replaceSearchParams } from "@/lib/ui/url-state";
-import { isInsideReminderWindow, reminderWorkDaysForItem, type OutflowSourceSettingsRecord } from "@/lib/outflow-source-settings";
 import type { PaymentCalendarItem } from "@/lib/payables";
 import MonthCalendar, {
   MonthNav,
@@ -103,16 +103,21 @@ function reminderNoteFor(item: PaymentCalendarItem): string {
   return `תשלום: ${item.label} — ${amt}`;
 }
 
-// A filter chip — the app's control for an on/off filter (see the calendar
-// page's chips): a pill that reads its state at a glance, `aria-pressed`.
+// A filter chip — the app's control for an on/off filter, `aria-pressed`. ON
+// fills solid sky and OFF is a plain outline: the board's contents depend on
+// these, so their state has to read at a glance, not from a tint.
+// Box = TOOLBAR_CONTROL, the shared size of every control in the toolbar row.
+const TOOLBAR_CONTROL = "h-[34px] rounded-lg border";
 function FilterChip({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`shrink-0 rounded-full border-2 px-3 py-1 text-xs font-medium transition-colors ${
-        active ? "border-secondary bg-secondary/10 text-secondary" : "border-border bg-background text-muted-foreground hover:bg-secondary/5"
+      className={`inline-flex shrink-0 items-center px-3 text-xs font-semibold transition-colors ${TOOLBAR_CONTROL} ${
+        active
+          ? "border-secondary bg-secondary text-secondary-foreground hover:bg-secondary/90"
+          : "border-input bg-background text-muted-foreground hover:bg-secondary/5 hover:text-foreground"
       }`}
     >
       {label}
@@ -160,8 +165,10 @@ type Props = {
   // The recurring rules behind forecast items — "edit" on a forecast (no row
   // yet) opens its template.
   templates: RecurringExpenseTemplateItem[];
-  // Per-source alert settings for salaries / loans / cards (the alerts bar).
-  sourceSettings: OutflowSourceSettingsRecord;
+  // Page-header element the alerts chip is portaled into (PaymentsHubClient),
+  // beside the tabs. Null until that header mounts — the chip waits for it
+  // rather than flashing above the calendar first.
+  alertsSlot?: HTMLElement | null;
 };
 
 // What a mutation wants shown afterwards: the item by calendar id, or the
@@ -192,7 +199,7 @@ function monthToParam(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-export default function PaymentsCalendar({ items: itemsProp, todayIso, projects, properties, orders, accounts, templates, sourceSettings }: Props) {
+export default function PaymentsCalendar({ items: itemsProp, todayIso, projects, properties, orders, accounts, templates, alertsSlot }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isRefreshing, startTransition] = useTransition();
@@ -346,21 +353,6 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
   const unpaidTotalOnDay = (day: Date) =>
     itemsOnDay(day).reduce((sum, i) => (i.stage === "posted" ? sum : sum + i.amount), 0);
 
-  const monthUnpaidTotal = (monthDate: Date) =>
-    visibleItems.reduce((sum, i) => {
-      const d = toDateOnly(i.date);
-      if (!d || d.getMonth() !== monthDate.getMonth() || d.getFullYear() !== monthDate.getFullYear()) return sum;
-      return i.stage === "posted" ? sum : sum + i.amount;
-    }, 0);
-
-  // Dark "total to pay this month" pill shown in the month-nav row (both views).
-  const totalPill = (m: Date) => (
-    <div className="inline-flex items-center gap-2 rounded-lg bg-foreground px-3 py-1.5 text-background">
-      <span className="text-sm font-bold tabular-nums">{fmtIls(monthUnpaidTotal(m))}</span>
-      <span className="text-[11px] opacity-70">סה״כ לתשלום החודש</span>
-    </div>
-  );
-
   function renderSelectedPanel({ day, holiday, isToday }: SelectedContext) {
     return (
       <PaymentsDayPanel
@@ -443,8 +435,11 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
     );
   }
 
+  // A key to the grid, not a control — so it sits right on the weekday header
+  // (MonthCalendar legendPlacement="above"), not among the toolbar's buttons,
+  // and not under six weeks of the dots it explains.
   const legend = (
-    <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground" aria-label="מקרא">
       <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-destructive" />באיחור</span>
       <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-warning" />ממתין</span>
       <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-muted-foreground/60" />צפוי</span>
@@ -472,7 +467,7 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
       <NativeSelect dense
         value={accountFilter}
         onChange={(e) => setAccountFilter(e.target.value)}
-        aria-label="סינון לפי חשבון" className="w-auto min-w-[10rem] text-foreground"
+        aria-label="סינון לפי חשבון" className={`w-auto border-input text-xs text-foreground shadow-none ${TOOLBAR_CONTROL}`}
       >
         <option value="">כל החשבונות</option>
         {accounts.map((a) => (
@@ -481,30 +476,41 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
       </NativeSelect>
     ) : null;
 
-  // Compact toolbar: month nav (right) · toggles (middle) · total pill (far left).
-  const toolbar = (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-3 py-2">
-      <MonthNav month={monthDate} todayDate={today} onChange={changeMonth} />
-      <div className="flex flex-wrap items-center gap-3">
+  // The alerts chip lives in the page header (portaled into `alertsSlot`, next
+  // to כמה צריך?), not over the grid — but it's built here, since it follows
+  // the calendar's account filter. No month-total pill anywhere: a "how much
+  // do I need" figure is the calculator's job, and two different totals on
+  // one screen read as a contradiction.
+  const alertsChip = alertsSlot
+    ? createPortal(
         <PaymentsAlertsChip
           items={accountScopedItems}
           todayIso={todayIso}
           onJump={jumpToDay}
-          templates={templates}
-          sourceSettings={sourceSettings}
-        />
-        {accountFilterControl}
-        {recurringOnlyToggle}
-        {showPaidToggle}
-      </div>
-      {totalPill(monthDate)}
-    </div>
+        />,
+        alertsSlot
+      )
+    : null;
+
+  // The month is the grid's title — centered in the calendar's own header
+  // strip, bold, between the filters and the legend.
+  const monthSwitcher = (
+    <MonthNav month={monthDate} todayDate={today} onChange={changeMonth} labelClassName="text-base font-bold" />
+  );
+
+  // The filters change what the grid shows, so they live inside its border,
+  // on the strip above the weekday header, opposite the legend.
+  const gridFilters = (
+    <>
+      {accountFilterControl}
+      {recurringOnlyToggle}
+      {showPaidToggle}
+    </>
   );
 
   return (
     <div className="space-y-3">
-      {/* Full-width toolbar — one row, spans the whole page. */}
-      {toolbar}
+      {alertsChip}
       <MonthCalendar
         todayIso={todayIso}
         month={monthDate}
@@ -517,6 +523,9 @@ export default function PaymentsCalendar({ items: itemsProp, todayIso, projects,
         renderDayContent={renderDayContent}
         renderDayHover={renderDayHover}
         legend={legend}
+        legendPlacement="above"
+        gridHeader={gridFilters}
+        gridHeaderCenter={monthSwitcher}
       />
     </div>
   );
@@ -643,125 +652,84 @@ export function CashNeedsDialog({
   );
 }
 
-// ── Alerts chip — every alert the board raises, behind ONE small chip in the
-//    control bar. Two groups inside: "לתשלום" = bills due now (overdue / today /
-//    next 3 days, the `payment_outflow_due` rule, so the count matches the nav
-//    badge) and "קרובים" = heads-ups inside their reminder window — a recurring
-//    bill's "N work days before", or the per-source setting of a salary / loan
-//    instalment / card charge. Each row jumps to its day. The same windows
-//    drive the push/inbox rules, so what's here is what was (or will be) pushed.
+// ── Late-payments chip — in the page header, beside כמה צריך?. It lists ONLY
+//    payments that are past their date and still unpaid: what's coming up is
+//    already on the calendar itself, so repeating it here just buried the late
+//    ones. Each row jumps to its day.
 //
-//    It is a chip, not a strip: a handful of overdue bills is this business's
+//    A chip, not a strip: a handful of overdue bills is this business's
 //    standing state, and a permanent red band across every visit stops being
-//    read within a week. The chip stays neutral, turns amber when something is
-//    due today or overdue, and red only once a bill is more than a week late.
-const DUE_HEADS_UP_DAYS = 3;
+//    read within a week. Amber while everything is under a week late, red once
+//    a bill is more than a week late; hidden when nothing is late.
 const OVERDUE_RED_AFTER_DAYS = 7;
-const CHIP_TONE: Record<"danger" | "warning" | "info", string> = {
+const CHIP_TONE: Record<"danger" | "warning", string> = {
   danger: "border-destructive/40 bg-destructive/[0.06] text-destructive",
   warning: "border-warning/50 bg-warning/[0.08] text-warning-strong",
-  info: "border-input bg-background text-foreground",
 };
 
 function PaymentsAlertsChip({
   items,
   todayIso,
   onJump,
-  templates,
-  sourceSettings,
 }: {
   items: PaymentCalendarItem[];
   todayIso: string;
   onJump: (dateIso: string) => void;
-  templates: RecurringExpenseTemplateItem[];
-  sourceSettings: OutflowSourceSettingsRecord;
 }) {
-  const templateReminderDays = useMemo(
-    () => new Map(templates.map((t) => [t.id, t.reminder_work_days_before] as const)),
-    [templates]
-  );
-
-  const { due, upcoming, severity } = useMemo(() => {
+  const { late, severity } = useMemo(() => {
     const t = toDateOnly(todayIso) ?? new Date();
     const todayStr = isoLocal(t);
-    const horizon = isoLocal(new Date(t.getFullYear(), t.getMonth(), t.getDate() + DUE_HEADS_UP_DAYS));
     const redLine = isoLocal(new Date(t.getFullYear(), t.getMonth(), t.getDate() - OVERDUE_RED_AFTER_DAYS));
-    const byDate = (a: PaymentCalendarItem, b: PaymentCalendarItem) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
-    const dueList = items
-      // Auto-paid (הוראת קבע) bills need no action, so they're not "to pay".
+    const lateList = items
+      // Auto-paid (הוראת קבע) bills need no action, so they're never "late".
       // Planned loan installments (origin "loan" + not_paid) ARE payments to make.
       .filter(
         (i) =>
           ((i.origin === "expense" && !i.autoPaid) ||
             (i.origin === "loan" && i.paymentStatus === "not_paid")) &&
           i.stage !== "posted" &&
-          i.date.slice(0, 10) <= horizon
+          i.date.slice(0, 10) < todayStr
       )
-      .sort(byDate);
-    const dueIds = new Set(dueList.map((i) => i.id));
-    const upcomingList = items
-      .filter((i) => {
-        if (i.stage === "posted" || dueIds.has(i.id)) return false;
-        const n = reminderWorkDaysForItem(i, (id) => templateReminderDays.get(id), sourceSettings);
-        return isInsideReminderWindow(i.date, todayStr, n);
-      })
-      .sort(byDate);
-    const hasVeryLate = dueList.some((i) => i.date.slice(0, 10) < redLine);
-    const hasDueNow = dueList.some((i) => i.date.slice(0, 10) <= todayStr);
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
     return {
-      due: dueList,
-      upcoming: upcomingList,
-      severity: (hasVeryLate ? "danger" : hasDueNow ? "warning" : "info") as "danger" | "warning" | "info",
+      late: lateList,
+      severity: (lateList.some((i) => i.date.slice(0, 10) < redLine) ? "danger" : "warning") as "danger" | "warning",
     };
-  }, [items, todayIso, templateReminderDays, sourceSettings]);
+  }, [items, todayIso]);
 
-  if (due.length === 0 && upcoming.length === 0) return null;
-  const label = [due.length ? `לתשלום ${due.length}` : null, upcoming.length ? `קרובים ${upcoming.length}` : null]
-    .filter(Boolean)
-    .join(" · ");
-
-  // One row = dot · name · date · amount. No status badge: inside a list that
-  // is entirely "due", the date and the amount already say it.
-  const row = (item: PaymentCalendarItem) => {
-    const day = toDateOnly(item.date) ?? new Date(item.date);
-    return (
-      <DropdownMenuItem key={item.id} onSelect={() => onJump(item.date.slice(0, 10))} className="gap-2">
-        <span className={`h-2 w-2 shrink-0 rounded-full ${STAGE_DOT[itemStageKey(item)]}`} />
-        <span className="min-w-0 flex-1 break-words text-sm">{item.label}</span>
-        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-          {day.getDate()}/{day.getMonth() + 1}
-        </span>
-        <span className="shrink-0 text-sm font-semibold tabular-nums">{amountLabel(item)}</span>
-      </DropdownMenuItem>
-    );
-  };
+  if (late.length === 0) return null;
+  const label = `באיחור ${late.length}`;
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${CHIP_TONE[severity]}`}
-          aria-label={`התראות תשלומים: ${label}`}
+          className={`inline-flex items-center gap-1.5 px-3 text-xs font-semibold transition-colors ${TOOLBAR_CONTROL} ${CHIP_TONE[severity]}`}
+          aria-label={`תשלומים באיחור: ${late.length}`}
         >
           <WarningIcon className="h-3.5 w-3.5 shrink-0" />
           <span>{label}</span>
           <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 opacity-70" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="max-h-80 w-[22rem] max-w-[calc(100vw-2rem)] overflow-y-auto">
-        {due.length ? (
-          <>
-            <DropdownMenuLabel className="text-[11px] text-muted-foreground">לתשלום — באיחור, היום או ב-3 הימים הקרובים</DropdownMenuLabel>
-            {due.map(row)}
-          </>
-        ) : null}
-        {upcoming.length ? (
-          <>
-            <DropdownMenuLabel className="text-[11px] text-muted-foreground">קרובים — בתוך חלון התזכורת שהוגדר</DropdownMenuLabel>
-            {upcoming.map(row)}
-          </>
-        ) : null}
+      {/* align="end": the chip sits at the page's left edge (RTL), so the menu
+          grows inward instead of past the screen. */}
+      <DropdownMenuContent align="end" className="max-h-80 w-[22rem] max-w-[calc(100vw-2rem)] overflow-y-auto">
+        {/* One row = dot · name · date · amount. */}
+        {late.map((item) => {
+          const day = toDateOnly(item.date) ?? new Date(item.date);
+          return (
+            <DropdownMenuItem key={item.id} onSelect={() => onJump(item.date.slice(0, 10))} className="gap-2">
+              <span className={`h-2 w-2 shrink-0 rounded-full ${STAGE_DOT[itemStageKey(item)]}`} />
+              <span className="min-w-0 flex-1 break-words text-sm">{item.label}</span>
+              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                {day.getDate()}/{day.getMonth() + 1}
+              </span>
+              <span className="shrink-0 text-sm font-semibold tabular-nums">{amountLabel(item)}</span>
+            </DropdownMenuItem>
+          );
+        })}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -1187,7 +1155,6 @@ function PaymentsDayPanel({
               <CalendarIcon className="h-6 w-6" />
             </div>
             <div className="text-sm font-medium">אין תשלומים ביום זה</div>
-            <div className="text-xs text-muted-foreground">לא נקבעו הוצאות קבועות לתאריך שנבחר.</div>
           </div>
         )}
       </div>
@@ -1198,12 +1165,6 @@ function PaymentsDayPanel({
           <AddIcon className="h-4 w-4" />
           הוסף תשלום ליום זה
         </Button>
-        {/* Only worth saying on an empty day — with payments listed it is just noise. */}
-        {items.length === 0 ? (
-          <div className="mt-2 text-center text-xs text-muted-foreground">
-            לחצו על יום כדי לראות את התשלומים, או הוסיפו תשלום חדש.
-          </div>
-        ) : null}
       </div>
 
       {/* Add expense/payment — the full shared expense dialog (one-time or

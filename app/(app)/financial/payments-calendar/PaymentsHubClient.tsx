@@ -14,7 +14,6 @@ import RecurringExpensesManager, {
   type RecurringExpenseTemplateItem,
 } from "@/app/(app)/financial/RecurringExpensesManager";
 import PaymentsCalendar, { CashNeedsDialog } from "./PaymentsCalendar";
-import type { OutflowSourceSettingsRecord } from "@/lib/outflow-source-settings";
 
 const ExpenseDialog = dynamic(
   () => import("@/components/expenses/ExpenseDialog").then((mod) => mod.ExpenseDialog),
@@ -31,9 +30,6 @@ type Props = {
   properties: Option[];
   orders: Option[];
   accounts: Account[];
-  // Per-source settings (alert days, account, active) for the salaries / loans /
-  // cards on the board — the alerts bar needs them; the tab loads its own rows.
-  sourceSettings: OutflowSourceSettingsRecord;
   expenseMissingSchema: boolean;
   // Set when this load's recurring-expense generator failed — the board may be
   // missing this month's bills, and the user must know that rather than trust it.
@@ -68,7 +64,6 @@ export default function PaymentsHubClient({
   properties,
   orders,
   accounts,
-  sourceSettings,
   expenseMissingSchema,
   generatorError = null,
 }: Props) {
@@ -82,6 +77,9 @@ export default function PaymentsHubClient({
   };
   const [newTemplateOpen, setNewTemplateOpen] = useState(false);
   const [cashOpen, setCashOpen] = useState(false);
+  // Header spot the calendar portals its alerts chip into — the chip needs the
+  // calendar's account filter, so it stays owned there but reads up here.
+  const [alertsSlot, setAlertsSlot] = useState<HTMLDivElement | null>(null);
   // "השלמת חיובים חסרים" for every template — lives up here beside "new", not
   // buried above the list.
   const backfill = useBackfillMissing();
@@ -108,6 +106,7 @@ export default function PaymentsHubClient({
           })}
         </TabsList>
         <div className="flex flex-wrap items-center gap-2">
+          {activeTab === "calendar" ? <div ref={setAlertsSlot} className="contents" /> : null}
           {/* The cash-needs calculator is useful from either tab. */}
           <Button type="button" size="sm" variant="secondary" onClick={() => setCashOpen(true)}>
             <CalculatorIcon className="h-4 w-4" />
@@ -150,7 +149,7 @@ export default function PaymentsHubClient({
           orders={orders}
           accounts={accounts}
           templates={templates}
-          sourceSettings={sourceSettings}
+          alertsSlot={alertsSlot}
         />
       </TabsContent>
       <TabsContent value="recurring">

@@ -5,7 +5,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ensureRecurringExpensesForDate } from "@/lib/recurring-expenses";
 import { loadPaymentCalendarItems, type PaymentCalendarItem } from "@/lib/payables";
 import { loadAccounts, type Account } from "@/lib/accounts";
-import type { OutflowSourceSettingsRecord } from "@/lib/outflow-source-settings";
 import { propertyDisplayName } from "@/lib/properties";
 import type { RecurringExpenseTemplateItem } from "@/app/(app)/financial/RecurringExpensesManager";
 import PaymentsHubClient from "./PaymentsHubClient";
@@ -56,14 +55,12 @@ export default async function PaymentsCalendarPage() {
       : null;
 
   let items: PaymentCalendarItem[] = [];
-  let sourceSettings: OutflowSourceSettingsRecord = {};
   let todayIso = new Date().toISOString().slice(0, 10);
   let error: string | null = null;
   try {
     const result = await loadPaymentCalendarItems(supabase);
     items = result.items;
     todayIso = result.todayIso;
-    sourceSettings = result.sourceSettings;
   } catch (err) {
     error = (err as { message?: string })?.message ?? "שגיאה בטעינת התשלומים";
   }
@@ -171,7 +168,6 @@ export default async function PaymentsCalendarPage() {
             properties={propertyOptions}
             orders={orderOptions}
             accounts={accounts}
-            sourceSettings={sourceSettings}
             expenseMissingSchema={expenseMissingSchema}
             generatorError={generatorError}
           />

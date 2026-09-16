@@ -33,10 +33,13 @@ export function MonthNav({
   month,
   todayDate,
   onChange,
+  labelClassName = "text-sm font-semibold",
 }: {
   month: Date;
   todayDate: Date;
   onChange: (next: Date) => void;
+  /** Size/weight of the month name (callers that make it the grid's title go bolder). */
+  labelClassName?: string;
 }) {
   const onCurrent = month.getFullYear() === todayDate.getFullYear() && month.getMonth() === todayDate.getMonth();
   const step = (delta: number) => onChange(new Date(month.getFullYear(), month.getMonth() + delta, 1));
@@ -46,16 +49,16 @@ export function MonthNav({
         type="button"
         onClick={() => step(-1)}
         aria-label="חודש קודם"
-        className="flex h-8 w-8 items-center justify-center rounded-lg border bg-background text-muted-foreground transition-colors hover:bg-secondary/10"
+        className="flex h-[34px] w-[34px] items-center justify-center rounded-lg border bg-background text-muted-foreground transition-colors hover:bg-secondary/10"
       >
         ‹
       </button>
-      <span className="min-w-[7rem] text-center text-sm font-semibold">{fmtMonthYear(month)}</span>
+      <span className={`min-w-[7rem] text-center ${labelClassName}`}>{fmtMonthYear(month)}</span>
       <button
         type="button"
         onClick={() => step(1)}
         aria-label="חודש הבא"
-        className="flex h-8 w-8 items-center justify-center rounded-lg border bg-background text-muted-foreground transition-colors hover:bg-secondary/10"
+        className="flex h-[34px] w-[34px] items-center justify-center rounded-lg border bg-background text-muted-foreground transition-colors hover:bg-secondary/10"
       >
         ›
       </button>
@@ -63,7 +66,7 @@ export function MonthNav({
         type="button"
         onClick={() => onChange(new Date(todayDate.getFullYear(), todayDate.getMonth(), 1))}
         disabled={onCurrent}
-        className="rounded-lg border bg-background px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary/10 disabled:opacity-40"
+        className="h-[34px] rounded-lg border bg-background px-3 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary/10 disabled:opacity-40"
       >
         היום
       </button>
@@ -117,8 +120,16 @@ type Props = {
   renderDayHover?: (ctx: DayContext) => ReactNode;
   /** Optional slot between the month-nav row and the grid (e.g. month total + toggles). */
   renderToolbar?: (monthDate: Date) => ReactNode;
-  /** Legend row under the grid. */
+  /** Legend row — a key to the grid's marks. */
   legend?: ReactNode;
+  /** "below" (default): under the grid. "above": in a header strip INSIDE the
+   *  calendar's border, on the weekday header — where the eye meets the marks. */
+  legendPlacement?: "above" | "below";
+  /** Controls that shape what the grid shows (e.g. filters), rendered at the
+   *  start of that same in-border header strip, opposite an "above" legend. */
+  gridHeader?: ReactNode;
+  /** Centered in that strip (e.g. the month switcher), between gridHeader and the legend. */
+  gridHeaderCenter?: ReactNode;
 };
 
 /**
@@ -142,6 +153,9 @@ export default function MonthCalendar({
   renderDayHover,
   renderToolbar,
   legend,
+  legendPlacement = "below",
+  gridHeader,
+  gridHeaderCenter,
 }: Props) {
   const today = useMemo(() => toDateOnly(todayIso) ?? new Date(), [todayIso]);
   // Month is controlled when `month`+`onMonthChange` are supplied, else internal.
@@ -274,8 +288,25 @@ export default function MonthCalendar({
             </div>
           ) : null}
 
-          {/* Whole calendar in one border: weekday headers + day cells */}
+          {/* Whole calendar in one border: [filters · legend strip] + weekday
+              headers + day cells. */}
+          <div>
           <div className="overflow-hidden rounded-xl border">
+            {gridHeaderCenter ? (
+              // Three columns (1fr · auto · 1fr) keep the center truly centered
+              // on the grid whatever the side groups' widths; narrow screens
+              // stack it, center first.
+              <div className="flex flex-col items-center gap-2 border-b bg-card px-3 py-2 xl:grid xl:grid-cols-[1fr_auto_1fr] xl:gap-4">
+                <div className="xl:order-2">{gridHeaderCenter}</div>
+                <div className="flex flex-wrap items-center justify-center gap-2 xl:order-1 xl:justify-self-start">{gridHeader}</div>
+                <div className="xl:order-3 xl:justify-self-end">{legend && legendPlacement === "above" ? legend : null}</div>
+              </div>
+            ) : gridHeader || (legend && legendPlacement === "above") ? (
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b bg-card px-3 py-2">
+                <div className="flex flex-wrap items-center gap-2">{gridHeader}</div>
+                {legendPlacement === "above" ? legend : null}
+              </div>
+            ) : null}
             <div className="grid grid-cols-7 border-b bg-muted/40 text-center text-xs font-medium text-muted-foreground">
               {WEEK_DAYS.map((d) => (
                 <div key={d} className="py-1.5">{d}</div>
@@ -353,8 +384,9 @@ export default function MonthCalendar({
               </div>
             </div>
           </div>
+          </div>
 
-          {legend ? <div className="mt-3">{legend}</div> : null}
+          {legend && legendPlacement === "below" ? <div className="mt-3">{legend}</div> : null}
         </div>
 
         {/* Selected-day panel — beside the grid on desktop (matches its height),
@@ -392,8 +424,11 @@ export default function MonthCalendar({
   );
 }
 
-// Floating detail panel anchored to a hovered day cell. Flips above the cell
-// when there isn't room below, and clamps horizontally to the viewport (RTL-safe).
+// Floating detail panel anchored to a hovered day cell. It opens BESIDE the
+// cell (toward the week's next day — left in RTL — flipping right when there's
+// no room), top-aligned with it and clamped to the viewport. Opening below the
+// cell sat it squarely on the next week's cells, whose own amounts then read
+// through as if they were part of the panel.
 function DayHoverPopover({
   rect,
   content,
@@ -408,17 +443,20 @@ function DayHoverPopover({
   if (!content || typeof document === "undefined") return null;
 
   const WIDTH = 260;
-  const GAP = 6;
+  const MAX_HEIGHT = 256; // 16rem — matches maxHeight below
+  const GAP = 8;
+  const MARGIN = 8;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
 
-  const below = rect.bottom < vh * 0.6;
-  const center = rect.left + rect.width / 2;
-  const left = Math.min(Math.max(center - WIDTH / 2, 8), vw - WIDTH - 8);
+  const fitsLeft = rect.left - GAP - WIDTH >= MARGIN;
+  const fitsRight = rect.right + GAP + WIDTH <= vw - MARGIN;
+  const left = fitsLeft || !fitsRight
+    ? Math.max(rect.left - GAP - WIDTH, MARGIN)
+    : rect.right + GAP;
+  const top = Math.max(MARGIN, Math.min(rect.top, vh - MAX_HEIGHT - MARGIN));
 
-  const style: React.CSSProperties = below
-    ? { top: rect.bottom + GAP, left, width: WIDTH }
-    : { bottom: vh - rect.top + GAP, left, width: WIDTH };
+  const style: React.CSSProperties = { top, left, width: WIDTH };
 
   // Portaled to <body> so `position: fixed` resolves against the viewport, not
   // an ancestor with a transform (which would offset it to random-looking spots).
@@ -431,7 +469,9 @@ function DayHoverPopover({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       style={{ position: "fixed", zIndex: 50, maxHeight: "16rem", ...style }}
-      className="pointer-events-auto overflow-y-auto overscroll-contain rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg animate-in fade-in-0 zoom-in-95 duration-100"
+      // Solid, no fade/zoom-in: the panel moves from cell to cell as the pointer
+      // sweeps the grid, and a translucent entrance let the cells show through.
+      className="pointer-events-auto overflow-y-auto overscroll-contain rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-xl ring-1 ring-foreground/5"
     >
       {content}
     </div>,

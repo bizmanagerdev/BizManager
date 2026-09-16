@@ -179,6 +179,9 @@ type UnifiedRow = FixedPaymentRow;
 
 /** The per-row inline state: the three fields every row edits in place. */
 type RowControls = { reminder: number; accountId: string; active: boolean; saving: boolean };
+type EditField = "account" | "reminder" | "active";
+/** Table-only hooks into an inline control: focus it on mount, and hear about a save. */
+type ControlHooks<T extends HTMLElement> = { ref?: (el: T | null) => void; onSaved?: () => void };
 
 export default function RecurringExpensesManager(props: Props) {
   const router = useRouter();
@@ -190,6 +193,8 @@ export default function RecurringExpensesManager(props: Props) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [remindTemplate, setRemindTemplate] = useState<RecurringExpenseTemplateItem | null>(null);
   const [accountFilter, setAccountFilter] = useState("");
+  // "" = all kinds; "template" = הוצאה קבועה; otherwise a source kind.
+  const [kindFilter, setKindFilter] = useState<"" | "template" | OutflowSourceRow["kind"]>("");
 
   // "השלמת חיובים חסרים" for a single row (the page header has the all-templates one).
   const backfill = useBackfillMissing();
@@ -271,15 +276,28 @@ export default function RecurringExpensesManager(props: Props) {
   // Bank-account scope for the list + summary — templates by their account,
   // sources by the account set for them (or their own).
   const sourceRows = useMemo(() => sources.rows ?? [], [sources.rows]);
+  // The type filter scopes the list AND the summary, same as the account filter.
   const filteredTemplates = useMemo(
-    () => (accountFilter ? effectiveTemplates.filter((t) => t.account_id === accountFilter) : effectiveTemplates),
-    [effectiveTemplates, accountFilter]
+    () =>
+      kindFilter && kindFilter !== "template"
+        ? []
+        : accountFilter
+          ? effectiveTemplates.filter((t) => t.account_id === accountFilter)
+          : effectiveTemplates,
+    [effectiveTemplates, accountFilter, kindFilter]
   );
   const filteredSources = useMemo(
-    () => (accountFilter ? sourceRows.filter((r) => (sources.stateOf(r).accountId || "") === accountFilter) : sourceRows),
+    () =>
+      kindFilter === "template"
+        ? []
+        : sourceRows.filter(
+            (r) =>
+              (!kindFilter || r.kind === kindFilter) &&
+              (!accountFilter || (sources.stateOf(r).accountId || "") === accountFilter)
+          ),
     // stateOf reads the per-row state map; its identity changes with every save.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sourceRows, accountFilter, sources.stateOf]
+    [sourceRows, accountFilter, kindFilter, sources.stateOf]
   );
 
   // One list, by the day of the month the money leaves (lib/fixed-payments).
@@ -328,6 +346,23 @@ export default function RecurringExpensesManager(props: Props) {
       <option value="">כל החשבונות</option>
       {props.accounts.map((a) => (
         <option key={a.id} value={a.id}>{a.name}</option>
+      ))}
+    </NativeSelect>
+  );
+
+  // The type filter IS the סוג column's header, like the account filter.
+  const kindFilterSelect = (className: string) => (
+    <NativeSelect
+      dense
+      value={kindFilter}
+      onChange={(e) => setKindFilter(e.target.value as typeof kindFilter)}
+      aria-label="סינון לפי סוג"
+      className={`text-foreground ${className}`}
+    >
+      <option value="">כל הסוגים</option>
+      <option value="template">הוצאה קבועה</option>
+      {(Object.keys(OUTFLOW_SOURCE_KIND_LABEL) as Array<OutflowSourceRow["kind"]>).map((k) => (
+        <option key={k} value={k}>{OUTFLOW_SOURCE_KIND_LABEL[k]}</option>
       ))}
     </NativeSelect>
   );
@@ -462,20 +497,25 @@ export default function RecurringExpensesManager(props: Props) {
           save: (patch: Partial<Pick<RowControls, "reminder" | "accountId" | "active">>) => void sources.save(row.source, patch),
         };
 
-  // In the table a select must size to its longest option, not to the
-  // column — otherwise an account name reads as "מזר…". In a card it spans.
-  const SELECT_WIDTH = "w-full @5xl:w-auto @5xl:min-w-[11rem]";
+  // A control fills its cell. In the table those columns have FIXED widths
+  // (see <th>) and the read-mode text wears the select's exact box, so a row
+  // swapping between text and controls never moves the table.
+  const SELECT_WIDTH = "w-full";
 
-  const accountCell = (row: UnifiedRow) => {
+  const accountCell = (row: UnifiedRow, hooks: ControlHooks<HTMLSelectElement> = {}) => {
     const { name, st, save } = controlsOf(row);
     return (
       <NativeSelect
         dense
+        ref={hooks.ref}
         className={SELECT_WIDTH}
         value={st.accountId}
         disabled={st.saving}
         aria-label={`חשבון — ${name}`}
-        onChange={(e) => save({ accountId: e.target.value })}
+        onChange={(e) => {
+          save({ accountId: e.target.value });
+          hooks.onSaved?.();
+        }}
       >
         <option value="">ללא חשבון</option>
         {props.accounts.map((a) => (
@@ -490,16 +530,20 @@ export default function RecurringExpensesManager(props: Props) {
       ? REMINDER_CHOICES
       : [...REMINDER_CHOICES, { value: current, label: `${current} ימי עבודה לפני` }].sort((a, b) => a.value - b.value);
 
-  const reminderCell = (row: UnifiedRow) => {
+  const reminderCell = (row: UnifiedRow, hooks: ControlHooks<HTMLSelectElement> = {}) => {
     const { name, st, save } = controlsOf(row);
     return (
       <NativeSelect
         dense
+        ref={hooks.ref}
         className={SELECT_WIDTH}
         value={String(st.reminder)}
         disabled={st.saving}
         aria-label={`תזכורת — ${name}`}
-        onChange={(e) => save({ reminder: Number(e.target.value) })}
+        onChange={(e) => {
+          save({ reminder: Number(e.target.value) });
+          hooks.onSaved?.();
+        }}
       >
         {reminderChoicesFor(st.reminder).map((c) => (
           <option key={c.value} value={String(c.value)}>{c.label}</option>
@@ -509,17 +553,21 @@ export default function RecurringExpensesManager(props: Props) {
   };
 
   // Same switch on every row (role=switch), so it reads as one family.
-  const activeCell = (row: UnifiedRow) => {
+  const activeCell = (row: UnifiedRow, hooks: ControlHooks<HTMLButtonElement> = {}) => {
     const { name, st, save } = controlsOf(row);
     return (
       <button
         type="button"
+        ref={hooks.ref}
         role="switch"
         aria-checked={st.active}
         aria-label={`פעיל — ${name}`}
         disabled={st.saving}
-        onClick={() => save({ active: !st.active })}
-        className="flex items-center gap-2 text-xs font-medium text-muted-foreground disabled:opacity-60"
+        onClick={() => {
+          save({ active: !st.active });
+          hooks.onSaved?.();
+        }}
+        className="flex h-9 items-center gap-2 text-xs font-medium text-muted-foreground disabled:opacity-60"
       >
         <span className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${st.active ? "bg-primary" : "bg-muted-foreground/30"}`}>
           <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${st.active ? "right-0.5" : "right-[18px]"}`} />
@@ -608,6 +656,82 @@ export default function RecurringExpensesManager(props: Props) {
     </DropdownMenu>
   );
 
+  // ── Desktop table: read by default, edit on demand ──────────────────────
+  // Thirty rows × two selects + a switch is a form, and a list you mostly READ
+  // shouldn't shout that every cell is editable. So the table shows the three
+  // values as plain text; clicking one (or tabbing onto it) swaps THAT ROW to
+  // its controls, focused on the value you picked. The row returns to text
+  // once a value is saved, on Escape, or when focus leaves it. The mobile cards
+  // keep their controls — one card at a time is not a wall of them.
+  const [editing, setEditing] = useState<{ rowId: string; field: EditField; open: boolean } | null>(null);
+
+  // Focus the picked control once when it mounts; a mouse click also opens a
+  // select's option list so the click that asked for it isn't wasted.
+  const focusOnMount = <T extends HTMLElement>(open: boolean) => (el: T | null) => {
+    if (!el || el.dataset.focused) return;
+    el.dataset.focused = "1";
+    el.focus();
+    if (open && el instanceof HTMLSelectElement) {
+      try {
+        (el as HTMLSelectElement & { showPicker?: () => void }).showPicker?.();
+      } catch {
+        // showPicker is best-effort (older browsers / no user activation).
+      }
+    }
+  };
+
+  const tableCell = (row: UnifiedRow, field: EditField) => {
+    const { name, st } = controlsOf(row);
+    if (editing?.rowId === row.id) {
+      const focus = editing.field === field ? focusOnMount(editing.open) : undefined;
+      const done = () => setEditing(null);
+      if (field === "account") return accountCell(row, { ref: focus, onSaved: done });
+      if (field === "reminder") return reminderCell(row, { ref: focus, onSaved: done });
+      return activeCell(row, { ref: focus, onSaved: done });
+    }
+    const text =
+      field === "account" ? (
+        st.accountId ? (
+          props.accounts.find((a) => a.id === st.accountId)?.name ?? "חשבון לא ידוע"
+        ) : (
+          <span className="text-muted-foreground">ללא חשבון</span>
+        )
+      ) : field === "reminder" ? (
+        st.reminder ? (
+          reminderChoicesFor(st.reminder).find((c) => c.value === st.reminder)?.label
+        ) : (
+          <span className="text-muted-foreground">ללא תזכורת</span>
+        )
+      ) : (
+        <span className="inline-flex items-center gap-1.5">
+          <span className={`h-2 w-2 rounded-full ${st.active ? "bg-success" : "bg-muted-foreground/40"}`} />
+          {st.active ? "פעיל" : "לא פעיל"}
+        </span>
+      );
+    const fieldLabel = field === "account" ? "חשבון" : field === "reminder" ? "תזכורת" : "פעיל";
+    return (
+      <button
+        type="button"
+        disabled={st.saving}
+        // Mouse: skip the focus hop and open the control straight away.
+        // Keyboard: focus alone swaps the row, without popping a picker.
+        onMouseDown={(e) => {
+          e.preventDefault();
+          setEditing({ rowId: row.id, field, open: true });
+        }}
+        onFocus={() => setEditing({ rowId: row.id, field, open: false })}
+        aria-label={`${fieldLabel} — ${name}: עריכה`}
+        // Same box as the dense select / the switch (h-9, border, px-3), with
+        // the border hidden until hover — so the swap changes nothing's size.
+        className={`flex h-9 w-full items-center rounded-lg border border-transparent text-right text-sm transition-colors hover:border-input hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 ${
+          field === "active" ? "" : "px-3"
+        }`}
+      >
+        <span className="truncate">{text}</span>
+      </button>
+    );
+  };
+
   const isOff = (row: UnifiedRow) => !controlsOf(row).st.active;
 
   const hasAnything = templates.length > 0 || sourceRows.length > 0;
@@ -619,12 +743,19 @@ export default function RecurringExpensesManager(props: Props) {
           exclusion is a fact about the number, not a footnote. */}
       {hasAnything ? (
         <div className="space-y-2">
-          <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2 rounded-2xl bg-foreground px-5 py-4 text-background">
-            <div>
+          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1.5 rounded-xl bg-foreground px-4 py-2.5 text-background">
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+              {/* Salaries / loans load client-side after the templates, so a total
+                  shown before they arrive is only part of the sum and then jumps.
+                  Hold a same-size placeholder until the whole number is known. */}
+              {sources.loading ? (
+                <div className="h-7 w-32 animate-pulse rounded-md bg-background/20" aria-label="טוען סכום" />
+              ) : (
+                <div className="text-xl font-bold tabular-nums">{formatCurrency(summary.monthlyTotal)}</div>
+              )}
               <div className="text-xs opacity-70">סה״כ התחייבות חודשית קבועה · רק מה שיוצא כל חודש</div>
-              <div className="mt-0.5 text-3xl font-bold tabular-nums">{formatCurrency(summary.monthlyTotal)}</div>
             </div>
-            <div className="text-sm opacity-90">
+            <div className="text-xs opacity-90">
               {sources.loading ? (
                 <span className="inline-flex items-center gap-2">
                   <SpinnerIcon className="h-3.5 w-3.5 animate-spin" />
@@ -690,8 +821,13 @@ export default function RecurringExpensesManager(props: Props) {
         </Card>
       ) : rows.length === 0 ? (
         <Card>
-          <CardContent className="p-4 text-sm text-muted-foreground">
-            אין תשלומים קבועים בחשבון שנבחר.
+          {/* The filters live in the table header, which isn't shown when nothing
+              matches — so the way back is offered right here. */}
+          <CardContent className="flex flex-wrap items-center justify-between gap-2 p-4 text-sm text-muted-foreground">
+            <span>אין תשלומים קבועים לפי הסינון שנבחר.</span>
+            <Button type="button" size="sm" variant="outline" onClick={() => { setAccountFilter(""); setKindFilter(""); }}>
+              ניקוי סינון
+            </Button>
           </CardContent>
         </Card>
       ) : (
@@ -712,7 +848,10 @@ export default function RecurringExpensesManager(props: Props) {
                 הסכום והמועד נקבעים שם. כאן, לכל שורה: אם היא פעילה בלוח, התזכורת (ימי עבודה לפני — שישי ושבת לא נספרים) והחשבון שממנו הכסף יוצא.
               </DropdownMenuContent>
             </DropdownMenu>
-            {props.accounts.length > 0 ? <div className="@5xl:hidden">{accountFilterSelect("w-auto min-w-[10rem]")}</div> : null}
+            <div className="flex flex-wrap items-center gap-2 @5xl:hidden">
+              {kindFilterSelect("w-auto min-w-[9rem]")}
+              {props.accounts.length > 0 ? accountFilterSelect("w-auto min-w-[10rem]") : null}
+            </div>
           </div>
 
           {/* Cards — until the container is wide enough for the table. The
@@ -769,29 +908,38 @@ export default function RecurringExpensesManager(props: Props) {
               <thead className="sticky top-0 z-10 border-b-2 bg-muted text-xs font-semibold text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 text-right font-medium">מועד תשלום</th>
-                  <th className="px-3 py-2 text-right font-medium">סוג</th>
+                  <th className="w-[10rem] min-w-[10rem] px-3 py-2 text-right font-medium">{kindFilterSelect("w-full")}</th>
                   <th className="px-3 py-2 text-right font-medium">שם ותיאור</th>
                   <th className="px-3 py-2 text-right font-medium">תחום · שיוך</th>
                   <th className="px-3 py-2 text-right font-medium">סכום</th>
-                  <th className="px-3 py-2 text-right font-medium">
-                    {props.accounts.length > 0 ? accountFilterSelect("w-auto min-w-[9rem]") : "חשבון"}
+                  <th className="w-[12rem] min-w-[12rem] px-3 py-2 text-right font-medium">
+                    {props.accounts.length > 0 ? accountFilterSelect("w-full") : "חשבון"}
                   </th>
-                  <th className="px-3 py-2 text-right font-medium">תזכורת</th>
-                  <th className="px-3 py-2 text-right font-medium">פעיל</th>
+                  <th className="w-[11rem] min-w-[11rem] px-3 py-2 text-right font-medium">תזכורת</th>
+                  <th className="w-[7rem] min-w-[7rem] px-3 py-2 text-right font-medium">פעיל</th>
                   <th className="px-3 py-2 text-right font-medium">פעולות</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {rows.map((row) => (
-                  <tr key={row.id} className={`align-top hover:bg-secondary/10 ${isOff(row) ? "opacity-60" : ""}`}>
+                  <tr
+                    key={row.id}
+                    className={`align-top hover:bg-secondary/10 ${isOff(row) ? "opacity-60" : ""} ${editing?.rowId === row.id ? "bg-secondary/5" : ""}`}
+                    onBlur={(e) => {
+                      if (editing?.rowId === row.id && !e.currentTarget.contains(e.relatedTarget as Node | null)) setEditing(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape" && editing?.rowId === row.id) setEditing(null);
+                    }}
+                  >
                     <td className="whitespace-nowrap px-3 py-2">{moedCell(row)}</td>
                     <td className="px-3 py-2">{kindBadge(row)}</td>
                     <td className="px-3 py-2">{nameCell(row)}</td>
                     <td className="px-3 py-2">{domainCell(row)}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-right">{amountCell(row)}</td>
-                    <td className="px-3 py-2">{accountCell(row)}</td>
-                    <td className="px-3 py-2">{reminderCell(row)}</td>
-                    <td className="px-3 py-2">{activeCell(row)}</td>
+                    <td className="px-3 py-2">{tableCell(row, "account")}</td>
+                    <td className="px-3 py-2">{tableCell(row, "reminder")}</td>
+                    <td className="px-3 py-2">{tableCell(row, "active")}</td>
                     <td className="w-10 px-1 py-2">{rowMenu(row)}</td>
                   </tr>
                 ))}
