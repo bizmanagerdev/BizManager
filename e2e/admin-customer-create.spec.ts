@@ -23,21 +23,25 @@ test.describe("admin — customer creation", () => {
     const customerName = `E2E new customer ${Date.now()}`;
     let customerId: string | null = null;
 
-    // TEMPORARY DIAGNOSTIC, round 8 — three confirmed-real, verified bugs
+    // TEMPORARY DIAGNOSTIC, round 9 — three confirmed-real, verified bugs
     // fixed in a row (Service Worker dev-host self-destruct, auto-recover
     // chunk-reload pair, @vercel/speed-insights redirecting to /login) with
     // ZERO effect on this test's "element was detached from the DOM"
-    // failure each time. Rounds 1-7's diagnostics never directly checked the
-    // single most basic question: is the page actually NAVIGATING at all
-    // when this happens? This round adds a real `framenavigated` listener
-    // (catches both full reloads and SPA route changes) plus a
-    // MutationObserver tagging the exact "לקוח" button node and reporting
-    // the precise moment/context it gets removed from the DOM — instead of
-    // continuing to infer the mechanism from correlated network/console
-    // noise.
+    // failure each time. Round 8 proved (via a real `framenavigated`
+    // listener) that NO browser navigation happens during the failure at
+    // all — ruling out every reload/navigate-based theory for good — but
+    // its MutationObserver technique itself broke: reading the log back via
+    // a SECOND page.evaluate() after the failure threw ("could not read
+    // mutation log"), meaning something invalidates the JS execution
+    // context WITHOUT a traditional frame navigation firing. This round
+    // replaces read-back-at-the-end with page.exposeFunction() so the
+    // browser pushes each event to Node.js the INSTANT it happens — immune
+    // to that failure mode — and also watches attribute changes and
+    // pagehide/beforeunload/visibilitychange directly.
     const diag: string[] = [];
     const t0 = Date.now();
     const ts = () => `+${Date.now() - t0}ms`;
+    await page.exposeFunction("__e2ePush", (line: string) => diag.push(`${ts()} ${line}`));
     page.on("framenavigated", (frame) => {
       if (frame === page.mainFrame()) diag.push(`${ts()} [NAVIGATION] ${frame.url()}`);
     });
@@ -53,45 +57,47 @@ test.describe("admin — customer creation", () => {
       await page.getByRole("button", { name: "הוספה מהירה" }).click();
 
       // Tag the exact node so a MutationObserver can report precisely when
-      // (and what ancestor) removes it, rather than inferring cause from
-      // correlated timing.
+      // (and what ancestor) removes it — pushed live via __e2ePush rather
+      // than accumulated for a later read-back, which round 8 showed can
+      // itself fail silently.
       await page.evaluate(() => {
+        const push = (window as unknown as { __e2ePush: (s: string) => void }).__e2ePush;
+        window.addEventListener("pagehide", () => push("[pagehide]"));
+        window.addEventListener("beforeunload", () => push("[beforeunload]"));
+        document.addEventListener("visibilitychange", () => push(`[visibilitychange] ${document.visibilityState}`));
+
         const btn = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("לקוח"));
-        const log: string[] = [];
-        (window as unknown as { __mutationLog: string[] }).__mutationLog = log;
         if (!btn) {
-          log.push("BUTTON NOT FOUND AT TAG TIME");
+          push("[TAG] button not found at tag time");
           return;
         }
         btn.setAttribute("data-e2e-watch", "1");
-        const start = performance.now();
+        push("[TAG] tagged OK");
         const obs = new MutationObserver((mutations) => {
           for (const m of mutations) {
             m.removedNodes.forEach((n) => {
               if (!(n instanceof HTMLElement)) return;
               const isTarget = n.getAttribute("data-e2e-watch") === "1" || n.querySelector('[data-e2e-watch="1"]');
-              if (isTarget) {
-                log.push(
-                  `+${(performance.now() - start).toFixed(0)}ms REMOVED <${n.tagName} class="${n.className.toString().slice(0, 80)}"> ` +
-                    `readyState=${document.readyState} title="${document.title}"`
-                );
-              }
+              if (isTarget) push(`[REMOVED] <${n.tagName} class="${n.className.toString().slice(0, 60)}">`);
             });
+            if (
+              m.type === "attributes" &&
+              m.target instanceof HTMLElement &&
+              m.target.getAttribute("data-e2e-watch") === "1"
+            ) {
+              push(`[ATTR CHANGE on target] ${m.attributeName}`);
+            }
           }
         });
-        obs.observe(document.body, { childList: true, subtree: true });
+        obs.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
       });
 
       try {
         await page.getByRole("button", { name: "לקוח" }).click();
       } catch (err) {
-        const mutationLog = await page
-          .evaluate(() => (window as unknown as { __mutationLog?: string[] }).__mutationLog ?? [])
-          .catch(() => ["<could not read mutation log — page likely navigated away>"]);
         throw new Error(
           `ORIGINAL ERROR: ${(err as Error).message.slice(0, 500)}\n\n` +
-            `MUTATIONS (${mutationLog.length}):\n${mutationLog.slice(0, 20).join("\n") || "none"}\n\n` +
-            `TIMELINE (${diag.length} events, last 25 shown):\n${diag.slice(-25).join("\n") || "none"}`
+            `TIMELINE (${diag.length} events, last 30 shown):\n${diag.slice(-30).join("\n") || "none"}`
         );
       }
 
