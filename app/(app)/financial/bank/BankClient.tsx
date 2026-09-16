@@ -149,24 +149,10 @@ function AccountSummaryCard({
           {formatMoneyRounded(Math.abs(account.currentBalance))}
         </span>
       </span>
-      {/* Only the selected card's own pending amounts — every card showing its
-          own צפוי line at once was noise (user, 2026-08-31). */}
-      {selected && (account.pendingIn > 0 || account.pendingOut > 0) && (
-        <span dir="ltr" className="flex flex-wrap justify-end gap-x-2 text-xs tabular-nums">
-          {account.pendingIn > 0 && (
-            <span>
-              <span className="text-sm text-success">+</span>
-              {formatMoneyRounded(account.pendingIn)} צפוי
-            </span>
-          )}
-          {account.pendingOut > 0 && (
-            <span>
-              <span className="text-sm text-destructive">-</span>
-              {formatMoneyRounded(account.pendingOut)} צפוי
-            </span>
-          )}
-        </span>
-      )}
+      {/* No expected amounts here any more. An account shows what actually
+          moved and where it stands now; money that is still expected lives on
+          צפי תזרים, where it can be seen by day and in both directions
+          (user, 2026-09-17). */}
     </button>
   );
 }
@@ -574,17 +560,24 @@ export default function BankClient({
   }
 
   const selected = accounts.find((a) => a.id === selectedId) ?? accounts[0];
+  // An account's register is what actually went in and out. Expected rows (a
+  // check not yet cleared, a bill not yet paid, a card settlement not yet
+  // deposited) belong to צפי תזרים now — showing them here too answered the
+  // same question in two places, with two different totals. Filtered here, once,
+  // so the rows, the month dropdown, the monthly totals and the empty state all
+  // agree. The balance was already posted-only, so it doesn't move.
+  const actualLedger = selected.ledger.filter((row) => row.posted);
 
   // Group the selected account's ledger (already newest-first) by month, and
   // total each month so a folded header still says what happened in it.
   const allGroups: Array<{
     month: string;
-    items: typeof selected.ledger;
+    items: typeof actualLedger;
     in: number;
     out: number;
     closing: number; // balance at the end of that month
   }> = [];
-  for (const row of selected.ledger) {
+  for (const row of actualLedger) {
     const month = row.date.slice(0, 7);
     const last = allGroups[allGroups.length - 1];
     const group =
@@ -594,15 +587,12 @@ export default function BankClient({
             allGroups.push({ month, items: [], in: 0, out: 0, closing: 0 }) - 1
           ] as (typeof allGroups)[number]);
     group.items.push(row);
-    if (row.posted) {
-      if (row.type === "in") group.in += row.amount;
-      else group.out += row.amount;
-    }
+    if (row.type === "in") group.in += row.amount;
+    else group.out += row.amount;
   }
-  // End-of-month balance: the running balance of that month's LAST posted row.
-  // Walk oldest→newest (the list is newest-first) carrying the last known figure
-  // forward, so a month with only pending rows closes where the month before it
-  // did rather than showing nothing.
+  // End-of-month balance: the running balance of that month's last row. Walk
+  // oldest→newest (the list is newest-first) carrying the last known figure
+  // forward.
   let carriedBalance = selected.openingBalance;
   for (let i = allGroups.length - 1; i >= 0; i -= 1) {
     const group = allGroups[i];
@@ -711,7 +701,7 @@ export default function BankClient({
               </div>
             </div>
 
-            {selected.ledger.length === 0 ? (
+            {actualLedger.length === 0 ? (
               <div className="py-10 text-center text-sm text-muted-foreground">
                 אין תנועות משויכות לחשבון זה עדיין. תנועות יופיעו כאן ברגע שתשייך תקבולים והוצאות
                 לחשבון.
@@ -807,11 +797,6 @@ export default function BankClient({
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{row.label}</span>
-                            {!row.posted && (
-                              <span className="shrink-0 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
-                                צפוי
-                              </span>
-                            )}
                             {hasBreakdown && (
                               <ChevronDownIcon
                                 className={cn(
@@ -1081,8 +1066,8 @@ export default function BankClient({
 
       <p className="text-xs text-muted-foreground">
         היתרה מחושבת מיתרת הפתיחה ועוד התקבולים, הלוואות שהתקבלו והחזרים שנגבו, פחות ההוצאות,
-        תשלומי השכר, הלוואות שניתנו והחזרי הלוואות ששויכו לחשבון. תנועות מסומנות כ״צפוי״ (צ׳קים
-        שטרם נפרעו, הוצאות שטרם שולמו) מוצגות אך אינן נכללות ביתרה. העברה בין חשבונות מופיעה
+        תשלומי השכר, הלוואות שניתנו והחזרי הלוואות ששויכו לחשבון. מוצגות רק תנועות שקרו בפועל —
+        צ׳קים שטרם נפרעו והוצאות שטרם שולמו נמצאים בצפי תזרים. העברה בין חשבונות מופיעה
         בשני החשבונות — יציאה מאחד וכניסה לשני — ואינה נרשמת כהכנסה או כהוצאה.
       </p>
 
