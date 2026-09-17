@@ -24,7 +24,12 @@ test.describe("worker role scoping — attendance clock", () => {
       await expect(page.getByText("שעון נוכחות")).toBeVisible();
       await page.getByRole("button", { name: "פתיחת משמרת" }).click();
       await expect(page.getByText("המשמרת נפתחה.")).toBeVisible();
-      await expect(page.getByText(/משמרת פתוחה מ/)).toBeVisible();
+      // The heading only shows "משמרת פתוחה מ..." once openShiftProp reflects
+      // the new shift — a real server round trip via router.refresh()
+      // (MyShiftCard.tsx), not an optimistic local update like the toast
+      // above. Same class of real-round-trip slowness this file already
+      // budgets extra time for below (expect.poll's 15s timeout).
+      await expect(page.getByText(/משמרת פתוחה מ/)).toBeVisible({ timeout: 15_000 });
 
       await page.getByRole("button", { name: "סיום משמרת" }).click();
       await page.getByRole("button", { name: "שליחה לאישור" }).click();
