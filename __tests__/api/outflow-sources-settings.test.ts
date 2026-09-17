@@ -70,6 +70,33 @@ describe("POST /api/outflow-sources/settings", () => {
     });
   });
 
+  it("saves the Grow row's account, only its account, and keeps arrived deposits arrived", async () => {
+    const cash = "11111111-1111-4111-8111-111111111111";
+    const bank = "0be92d74-cae2-48cf-8066-a1e69478d8ee";
+    const supabase = makeSupabase({
+      outflow_source_settings: {
+        read: { data: [], error: null },
+        write: { data: { source_kind: "settlement", source_key: "grow" }, error: null },
+      },
+      card_settlement_confirmations: { data: [{ account_id: cash, settlement_date: "2026-08-10" }], error: null },
+      payments: {
+        data: [
+          { account_id: cash, payment_date: "2026-07-05", due_date: null, amount_total: 100, payment_status: "cleared" },
+          { account_id: null, payment_date: "2099-09-05", due_date: null, amount_total: 100, payment_status: "cleared" },
+        ],
+        error: null,
+      },
+    });
+    grant(supabase);
+    const res = await post({ source_kind: "settlement", source_key: "grow", account_id: bank, reminder_work_days_before: 3, is_active: false });
+    expect(res.status).toBe(200);
+    const [row] = supabase.calls.upsert.outflow_source_settings as Array<Record<string, unknown>>;
+    expect(row).toMatchObject({ source_kind: "settlement", account_id: bank, reminder_work_days_before: null, is_active: true });
+    // August's deposit had been confirmed; filed under the bank it stays confirmed. The future one doesn't.
+    const [confirmations] = supabase.calls.upsert.card_settlement_confirmations as Array<Array<Record<string, unknown>>>;
+    expect(confirmations.map((c) => [c.account_id, c.settlement_date])).toEqual([[bank, "2026-08-10"]]);
+  });
+
   it("stores null (use the default) when no reminder is sent, and null account when cleared", async () => {
     const supabase = sb();
     grant(supabase);

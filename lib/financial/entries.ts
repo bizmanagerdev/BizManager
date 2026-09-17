@@ -2,6 +2,13 @@ import { getBusinessDomainLabel } from "@/lib/expenses";
 import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import type { ExpenseBusinessDomain } from "@/lib/expenses";
 import type { Loan } from "@/lib/loans";
+import {
+  NO_CONFIRMATIONS,
+  cardSettlementDate,
+  isSettlementArrived,
+  settlementAccountFor,
+  type SettlementConfirmations,
+} from "@/lib/card-settlements";
 import type {
   AttendanceSessionFinanceRow,
   ExpenseRow,
@@ -58,11 +65,41 @@ export function matchesCustomerFilter(args: {
 
 // ─── Flow meta builders ────────────────────────────────────────────────────────
 
-export function buildPaymentFlowMeta(row: PaymentRow, referenceDate: string) {
+export function buildPaymentFlowMeta(
+  row: PaymentRow,
+  referenceDate: string,
+  confirmations: SettlementConfirmations = NO_CONFIRMATIONS
+) {
   const paymentDate = normalizeDate(row.payment_date);
   const dueDate = normalizeDate(row.due_date);
   const method = normalizePaymentMethod(row.payment_method);
   const status = normalizePaymentStatus(row.payment_status);
+
+  // A card payment is money in the bank only when the clearing company deposits
+  // the month's total — the 10th of the next month — not the day the customer
+  // paid. It has arrived once that deposit is confirmed (or, with nothing to
+  // confirm against, once its day comes): the same rule the account uses, so
+  // תזרים and חשבונות agree on the day and on whether it is in.
+  const settlementDate = cardSettlementDate({
+    paymentMethod: method,
+    paymentDate,
+    dueDate,
+    amount: toNumber(row.amount_total),
+  });
+  if (settlementDate) {
+    const arrived = isSettlementArrived(
+      { accountId: settlementAccountFor(row.account_id, confirmations), settlementDate },
+      confirmations,
+      referenceDate
+    );
+    const cardStage: FinancialEntryStage = arrived
+      ? "posted"
+      : settlementDate > referenceDate
+        ? "scheduled"
+        : "pending";
+    return { flowDate: settlementDate, paymentDate, dueDate, stage: cardStage, method, status };
+  }
+
   const isCheck = method === "check";
   // Expected (not-yet-collected) money: a check awaiting clearance, OR any payment
   // explicitly marked pending (e.g. שוטף+30 bank transfer). It flows on its
@@ -366,11 +403,33 @@ export function includePersonalRow(
 }
 
 /**
+ * A card sale sits on two dates. The customer paid on `recordedDate` — the
+ * sale, which is what the accrual basis ("כולל פתוחים") counts, whether or not
+ * the money has reached the bank yet. The money reaches the bank on `flowDate`,
+ * the month's deposit on the 10th — which is what the cash basis counts, and
+ * only once the deposit has arrived. Null for anything that is not a card sale.
+ */
+function cardSaleInPeriod(
+  entry: FinancialEntry,
+  from: string | null,
+  to: string | null
+): { cash: boolean; accrual: boolean } | null {
+  if (entry.type !== "inflow" || entry.origin !== "payment") return null;
+  if ((entry.paymentMethod ?? "").trim().toLowerCase() !== "credit_card") return null;
+  const within = (d: string | null | undefined) => Boolean(d) && (!from || d! >= from) && (!to || d! <= to);
+  return {
+    cash: entry.stage === "posted" && within(entry.flowDate),
+    accrual: within(entry.recordedDate ?? entry.flowDate),
+  };
+}
+
+/**
  * Pure per-domain profit & loss aggregation over the entries whose `flowDate`
  * falls within [from, to]. Both bases are computed in one pass:
  *  - cash (בפועל):     posted income vs posted expenses/wages (+ paid portion of partial expenses).
  *  - accrual (כולל פתוחים): cash + open receivables (earned) and open liabilities (incurred).
  * Scheduled/future entries are excluded from both (forecast, not realized/earned).
+ * A card sale is the exception — see cardSaleInPeriod.
  * Returns every domain with activity, sorted by accrual net (revenue - expense) desc.
  */
 export function aggregateProfitLoss(
@@ -382,8 +441,13 @@ export function aggregateProfitLoss(
   const rows = new Map<string, ProfitLossDomainRow>();
 
   for (const entry of entries) {
-    if (from && entry.flowDate < from) continue;
-    if (to && entry.flowDate > to) continue;
+    const card = cardSaleInPeriod(entry, from, to);
+    if (card) {
+      if (!card.cash && !card.accrual) continue;
+    } else {
+      if (from && entry.flowDate < from) continue;
+      if (to && entry.flowDate > to) continue;
+    }
 
     const key = entry.businessDomain ?? "__unassigned__";
     let row = rows.get(key);
@@ -406,7 +470,10 @@ export function aggregateProfitLoss(
       entry.expensePaidAmount != null && entry.expensePaidAmount > 0 ? entry.expensePaidAmount : 0;
 
     if (type === "inflow") {
-      if (origin === "payment" && stage === "posted") {
+      if (card) {
+        if (card.cash) row.cashRevenue += amount;
+        if (card.accrual) row.accrualRevenue += amount;
+      } else if (origin === "payment" && stage === "posted") {
         row.cashRevenue += amount;
         row.accrualRevenue += amount;
       } else if (
@@ -481,8 +548,13 @@ export function aggregateProfitLossProof(
   };
 
   for (const entry of entries) {
-    if (from && entry.flowDate < from) continue;
-    if (to && entry.flowDate > to) continue;
+    const card = cardSaleInPeriod(entry, from, to);
+    if (card) {
+      if (!card.cash && !card.accrual) continue;
+    } else {
+      if (from && entry.flowDate < from) continue;
+      if (to && entry.flowDate > to) continue;
+    }
 
     const key = entry.businessDomain ?? "__unassigned__";
     const { type, stage, origin, amount } = entry;
@@ -492,7 +564,11 @@ export function aggregateProfitLossProof(
     const label = entry.description?.trim() || entry.sourceLabel?.trim() || entry.domainName;
 
     if (type === "inflow") {
-      if (origin === "payment" && stage === "posted") {
+      if (card) {
+        // Two dates, so two lines: the deposit (cash) and the sale (accrual).
+        if (card.cash) push(key, { date, label, kind: "income", cash: amount, accrual: 0 });
+        if (card.accrual) push(key, { date: entry.recordedDate ?? date, label, kind: "income", cash: 0, accrual: amount });
+      } else if (origin === "payment" && stage === "posted") {
         push(key, { date, label, kind: "income", cash: amount, accrual: amount });
       } else if ((origin === "project_receivable" || origin === "order_receivable") && stage === "pending") {
         push(key, { date, label, kind: "income", cash: 0, accrual: amount });
@@ -705,11 +781,14 @@ export function buildPaymentEntries(args: {
   customerId: string | null;
   customerProjectSet: Set<string>;
   referenceDate: string;
+  /** Which card deposits have been confirmed as landed. */
+  settlementConfirmations?: SettlementConfirmations;
 }): FinancialEntry[] {
   const { paymentRows, projectsById, ordersById, propertiesById, propertyCustomersById, recordedByNames, customerId, customerProjectSet, referenceDate } = args;
+  const confirmations = args.settlementConfirmations ?? NO_CONFIRMATIONS;
 
   return paymentRows.flatMap((row) => {
-    const flowMeta = buildPaymentFlowMeta(row, referenceDate);
+    const flowMeta = buildPaymentFlowMeta(row, referenceDate, confirmations);
     if (!row.id || !flowMeta) return [];
 
     const links = resolvePaymentLinks(row);

@@ -9,6 +9,7 @@ vi.mock("@/components/reminders/ReminderFormDialog", () => ({ default: () => nul
 
 import RecurringExpensesManager, { type RecurringExpenseTemplateItem } from "@/app/(app)/financial/RecurringExpensesManager";
 import type { OutflowSourceRow } from "@/lib/outflow-source-settings";
+import type { Account } from "@/lib/accounts";
 
 // The "תשלומים קבועים" tab: bills and the other fixed outflows rendered as ONE
 // list by day of the month, with a monthly pill that sums only what really
@@ -101,8 +102,8 @@ describe("RecurringExpensesManager (תשלומים קבועים)", () => {
     // 300 + 5,000 + 8,000 — the one-off loan and the card are listed, not summed.
     expect(screen.getByText(/13,300/)).toBeTruthy();
     expect(screen.getByText(/1 הלוואות בהחזר חד-פעמי/)).toBeTruthy();
-    // Worded to cover the clearing deposit as well as a card statement.
-    expect(screen.getByText(/1 סכומים שידועים/)).toBeTruthy();
+    // Named for what it is — a card deposit has its own, true reason.
+    expect(screen.getByText(/1 חיוב כרטיס \(הסכום ידוע רק כשהדף מעובד\)/)).toBeTruthy();
   });
 
   it("saves a changed reminder for a source through the settings API", async () => {
@@ -184,6 +185,27 @@ describe("RecurringExpensesManager — incoming sources", () => {
     expect(within(table).queryByLabelText(/תזכורת — שכר דירה/)).toBeNull();
   });
 
+  it("lets the Grow row choose its account, and only its account", async () => {
+    const grow = src({
+      kind: "settlement", key: "grow", name: "אשראי משולם (גרואו)", scheduleLabel: "10 לכל חודש",
+      nextDate: "2099-10-10", amount: 1500, monthly: false, href: "/financial/bank",
+      direction: "in", configurable: "account",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ rows: [grow], todayIso: "2026-09-15" }) }))
+    );
+    const accounts: Account[] = [
+      { id: "acc-1", name: "מזרחי עסקי", kind: "bank", openingBalance: 0, openingDate: "2026-07-01", isActive: true, sortOrder: 0, notes: null },
+    ];
+    render(<RecurringExpensesManager templates={[]} projects={[]} orders={[]} properties={[]} accounts={accounts} direction="in" />);
+    await screen.findAllByText("אשראי משולם (גרואו)");
+    const table = screen.getByRole("table");
+    expect(within(table).getByRole("button", { name: /^חשבון — אשראי משולם/ })).toBeTruthy();
+    expect(within(table).queryByRole("button", { name: /^תזכורת — אשראי משולם/ })).toBeNull();
+    expect(within(table).queryByRole("button", { name: /^פעיל — אשראי משולם/ })).toBeNull();
+  });
+
   it("keeps the outgoing list unchanged when no direction is given", async () => {
     vi.stubGlobal(
       "fetch",
@@ -193,5 +215,42 @@ describe("RecurringExpensesManager — incoming sources", () => {
     await screen.findAllByText("משכורת דוד");
     const body = within(screen.getByRole("table")).getAllByRole("row").slice(1).map((r) => r.textContent ?? "");
     expect(body.filter((t) => t.includes("שכר דירה"))).toHaveLength(0);
+  });
+});
+
+describe("RecurringExpensesManager — a lump figure opens to what it is made of", () => {
+  const settlement = src({
+    kind: "settlement", key: "grow", name: "אשראי משולם (גרואו)", scheduleLabel: "10 לכל חודש",
+    nextDate: "2099-10-10", amount: 1500, monthly: false, href: "/financial/bank",
+    direction: "in", configurable: false,
+    breakdown: [
+      { id: "a", date: "2099-09-05", amount: 1000, label: "דוד לוי" },
+      { id: "b", date: "2099-09-01", amount: 500, label: "מאפיית לחם" },
+    ],
+  });
+
+  it("shows its real total, and lists its payments only once opened", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ rows: [settlement], todayIso: "2026-09-15" }) }))
+    );
+    const { fireEvent } = await import("@testing-library/react");
+    render(<RecurringExpensesManager templates={[]} projects={[]} orders={[]} properties={[]} accounts={[]} direction="in" />);
+    await screen.findAllByText("אשראי משולם (גרואו)");
+    const table = screen.getByRole("table");
+    // A figure, not "משתנה".
+    expect(within(table).queryByText("משתנה")).toBeNull();
+    // Closed: the payments aren't listed yet.
+    expect(within(table).queryByText("דוד לוי")).toBeNull();
+    const toggle = within(table).getByRole("button", { name: /2 תקבולים/ });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    const list = within(table).getByRole("list", { name: /התקבולים/ });
+    expect(within(list).getByText("דוד לוי")).toBeTruthy();
+    expect(within(list).getByText("מאפיית לחם")).toBeTruthy();
+    // And closes again.
+    fireEvent.click(toggle);
+    expect(within(table).queryByText("דוד לוי")).toBeNull();
   });
 });

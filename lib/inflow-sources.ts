@@ -13,6 +13,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchLoans } from "@/lib/loans";
 import { propertyDisplayName } from "@/lib/properties";
 import type { InflowSourceKind, OutflowSourceRow } from "@/lib/outflow-source-settings";
+import { cardScanSince, cardSettlementDate, labelSettlementPayments, loadSettlementAccountId } from "@/lib/card-settlements";
 
 type Row = Record<string, unknown>;
 function str(row: Row, key: string): string | null {
@@ -173,38 +174,73 @@ function isMonthlyPlanDates(dates: string[]): boolean {
 }
 
 /**
- * The credit-card clearing deposit. Its amount is never known ahead (it is
- * whatever customers paid on the card), so it is a dated marker, like the
- * outgoing card charge.
+ * The next credit-card clearing deposit. Its amount is the sum of the card
+ * payments due to land in it — so it is not a guess: it is exactly what has
+ * been taken so far, and it grows as more card payments are recorded for that
+ * date. The row carries those payments, so the list can open and show them.
  */
 export async function loadSettlementSource(
   supabase: SupabaseClient,
   { todayIso }: { todayIso: string }
 ): Promise<OutflowSourceRow[]> {
+  const since = cardScanSince(todayIso);
+  const accountPromise = loadSettlementAccountId(supabase);
   const { data, error } = await supabase
     .from("payments")
-    .select("due_date,payment_date,payment_method,payment_status")
+    .select("id,due_date,payment_date,payment_method,payment_status,amount_total,order_id,project_id,notes")
     .eq("payment_method", "credit_card")
-    .not("due_date", "is", null)
-    .gte("due_date", todayIso)
-    .order("due_date", { ascending: true })
-    .limit(1);
+    .or(`payment_date.gte.${since},due_date.gte.${todayIso}`);
   if (error) return [];
-  const row = ((data ?? []) as Row[])[0];
-  const due = row ? str(row, "due_date") : null;
-  if (!due) return [];
-  const day = Number(due.slice(8, 10)) || 10;
+
+  // Every card payment, dated on the deposit it lands in; never bounced ones.
+  const upcoming = ((data ?? []) as Row[])
+    .filter((r) => (str(r, "payment_status") ?? "").trim().toLowerCase() !== "rejected")
+    .map((r) => ({
+      row: r,
+      settles: cardSettlementDate({
+        paymentMethod: "credit_card",
+        paymentDate: str(r, "payment_date"),
+        dueDate: str(r, "due_date"),
+        amount: num(r, "amount_total"),
+      }),
+    }))
+    .filter((p): p is { row: Row; settles: string } => Boolean(p.settles && p.settles >= todayIso));
+  if (upcoming.length === 0) return [];
+
+  // The NEXT deposit: every payment landing on the earliest upcoming date.
+  const nextDate = upcoming.reduce((min, p) => (p.settles < min ? p.settles : min), upcoming[0].settles);
+  const inNext = upcoming.filter((p) => p.settles === nextDate).map((p) => p.row);
+  const breakdown = await labelSettlementPayments(
+    supabase,
+    inNext.map((r) => ({
+      id: str(r, "id") ?? "",
+      paymentDate: (str(r, "payment_date") ?? "").slice(0, 10),
+      amount: num(r, "amount_total"),
+      orderId: str(r, "order_id"),
+      projectId: str(r, "project_id"),
+      notes: str(r, "notes"),
+    }))
+  ).catch(() => []);
+  const total = Math.round(inNext.reduce((sum, r) => sum + num(r, "amount_total"), 0) * 100) / 100;
+  const accountId = await accountPromise;
+  const day = Number(nextDate.slice(8, 10)) || 10;
+
   return [
     inflowRow({
       kind: "settlement",
       key: "grow",
       name: "אשראי משולם (גרואו)",
       scheduleLabel: `${day} לכל חודש · לפי הסליקה`,
-      nextDate: due.slice(0, 10),
-      // Unknown until the batch settles — same reasoning as a card charge.
-      amount: null,
+      nextDate,
+      amount: total,
       href: "/financial/bank",
+      // Still not a FIXED monthly amount — it changes every month — so it
+      // stays out of the monthly-income total even though it has a figure.
       monthly: false,
+      breakdown,
+      // The account the deposits land in — the one thing this row lets you set.
+      configurable: "account",
+      accountId,
     }),
   ];
 }

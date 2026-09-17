@@ -11,6 +11,7 @@ import { ExpenseDialog } from "./LazyExpenseDialog";
 import { SplitPaymentDialog } from "./SplitPaymentDialog";
 import MarkPaidDialog from "./MarkPaidDialog";
 import MarkCollectedDialog from "./MarkCollectedDialog";
+import ConfirmSettlementDialog from "./ConfirmSettlementDialog";
 import { PaymentEditDialog } from "@/components/financial/PaymentEditDialog";
 import { incomeReminderNoteFor, itemCapabilities, reminderNoteFor, type ItemActions, type MutateFn, type Option } from "./calendar.helpers";
 
@@ -60,17 +61,21 @@ export default function usePaymentItemActions({
   projects,
   properties,
   orders,
+  accountNameById,
 }: {
   onMutate: MutateFn;
   templates: RecurringExpenseTemplateItem[];
   projects: Option[];
   properties: Option[];
   orders: Option[];
+  /** For naming the account a deposit lands in. */
+  accountNameById?: Map<string, string>;
 }) {
   const [splitItem, setSplitItem] = useState<PaymentCalendarItem | null>(null);
   const [markItem, setMarkItem] = useState<PaymentCalendarItem | null>(null);
   const [collectItem, setCollectItem] = useState<PaymentCalendarItem | null>(null);
   const [editPaymentId, setEditPaymentId] = useState<string | null>(null);
+  const [settlementItem, setSettlementItem] = useState<PaymentCalendarItem | null>(null);
   const [remindItem, setRemindItem] = useState<PaymentCalendarItem | null>(null);
   const [deleteItem, setDeleteItem] = useState<PaymentCalendarItem | null>(null);
   const [editItem, setEditItem] = useState<PaymentCalendarItem | null>(null);
@@ -82,6 +87,17 @@ export default function usePaymentItemActions({
 
   const actionsFor = (item: PaymentCalendarItem): ItemActions => {
     const can = itemCapabilities(item, liveTemplateIds);
+    if (item.settlement) {
+      return {
+        // "אישור הפקדה" — and, from the ⋯ menu, the same dialog to see what the
+        // deposit is made of or undo a confirmation.
+        onMarkPaid: () => setSettlementItem(item),
+        onSplit: () => {},
+        onRemind: () => setRemindItem(item),
+        onEdit: () => setSettlementItem(item),
+        editLabel: "פרטי ההפקדה",
+      };
+    }
     if (item.direction === "in") {
       return {
         onMarkPaid: () => setCollectItem(item),
@@ -182,6 +198,16 @@ export default function usePaymentItemActions({
         onSaved={async ({ expenseId }) => {
           await onMutate({ expenseId });
           setMarkItem(null);
+        }}
+      />
+
+      <ConfirmSettlementDialog
+        item={settlementItem}
+        accountName={settlementItem?.settlement?.accountId ? accountNameById?.get(settlementItem.settlement.accountId) : undefined}
+        onClose={() => setSettlementItem(null)}
+        onSaved={async ({ id }) => {
+          await onMutate({ id });
+          setSettlementItem(null);
         }}
       />
 

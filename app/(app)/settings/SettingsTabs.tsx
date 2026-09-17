@@ -10,7 +10,6 @@ import ConnectedDevicesCard, { type ConnectedDevice } from "@/components/notific
 import MorningAutoIssueForm from "@/app/(app)/settings/integrations/morning/MorningAutoIssueForm";
 import BackupCard from "@/app/(app)/settings/BackupCard";
 import VatRateCard from "@/app/(app)/settings/VatRateCard";
-import CcFeeRateCard from "@/app/(app)/settings/CcFeeRateCard";
 import BooksStartDateCard from "@/app/(app)/settings/BooksStartDateCard";
 import AuditLoggingCard from "@/app/(app)/settings/AuditLoggingCard";
 import AccountsCard from "@/app/(app)/settings/AccountsCard";
@@ -27,7 +26,6 @@ type Props = {
   // Current VAT rate (fraction, e.g. 0.18) — admin only
   vatRate: number;
   // Credit-card processor (e.g. Grow) fee rate (fraction, e.g. 0.14) — admin only
-  ccFeeRate: number;
   // Books start date — reports count from this 1st-of-month on ("YYYY-MM-01" | null) — admin only
   booksStartDate: string | null;
   // Server date, for the start-date month list
@@ -122,7 +120,6 @@ export default function SettingsTabs(props: Props) {
           <BooksStartDateCard initialStartDate={props.booksStartDate} todayIso={props.todayIso} />
           <AccountsCard initialAccounts={props.accounts} />
           <VatRateCard initialRate={props.vatRate} />
-          <CcFeeRateCard initialRate={props.ccFeeRate} />
         </div>
       )}
 

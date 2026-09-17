@@ -1,10 +1,16 @@
 import * as Sentry from "@sentry/nextjs";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isCollectedPayment } from "@/lib/orders/paymentStatus";
+import {
+  cardScanSince,
+  cardSettlementDate,
+  isSettlementArrived,
+  loadSettlementConfirmations,
+  settlementAccountFor,
+} from "@/lib/card-settlements";
 import { fetchAllPagedResult } from "@/lib/supabase/paginate";
 import type { LoanRepayment } from "@/lib/loans";
 import { buildFocusHref } from "@/lib/audit";
-import { getCurrentCcFeeRate } from "@/lib/settings/ccFee";
 import { getBusinessDomainLabel } from "@/lib/expenses";
 import { propertyDisplayName } from "@/lib/properties";
 
@@ -214,12 +220,6 @@ function str(value: unknown) {
   return typeof value === "string" ? value : null;
 }
 
-function formatIls(amount: number) {
-  return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 }).format(
-    Math.round(amount)
-  );
-}
-
 function intOrNull(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
@@ -318,18 +318,19 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     return data;
   };
 
-  // Fired now, awaited later — runs alongside the table scans below rather
-  // than adding a serial round trip. Used only for Grow-style batches.
-  const ccFeeRatePromise = getCurrentCcFeeRate(supabase);
+  // Which card-settlement deposits have been confirmed as landed. Fired
+  // alongside the scans; falls back to the date rule until the migration runs.
+  const confirmationsPromise = loadSettlementConfirmations(supabase);
 
   const [
-    paymentRows,
+    accountPaymentRows,
     expenseRows,
     workerPaymentRows,
     loanRows,
     loanRepaymentRows,
     transferRows,
     cardChargeRows,
+    unassignedCardRows,
   ] = await Promise.all([
       scan("payments", (from, to) =>
         supabase
@@ -337,8 +338,11 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
           .select("id,account_id,payment_date,due_date,amount_total,payment_status,payment_method,notes,project_id,order_id,property_id,business_domain")
           .not("account_id", "is", null)
           // Either date may be the one inside the window: a check handed over
-          // in May and cashed in July is May-dated but July money.
-          .or(`payment_date.gte.${earliestOpening},due_date.gte.${earliestOpening}`)
+          // in May and cashed in July is May-dated but July money. And card
+          // payments from the month before land on the 10th of this one, so
+          // payment_date reaches back a month (each row still checks its own
+          // date against the opening date below).
+          .or(`payment_date.gte.${cardScanSince(earliestOpening)},due_date.gte.${earliestOpening}`)
           .range(from, to)
       ),
       // billed_to_customer/included_in_base_price are NOT columns on `expenses`
@@ -411,7 +415,20 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
           .gte("charge_date", earliestOpening)
           .range(from, to)
       ),
+      // Card payments recorded with no account: their deposit still lands in
+      // the account chosen on the Grow row in קבועות (when one is chosen).
+      scan("payments", (from, to) =>
+        supabase
+          .from("payments")
+          .select("id,account_id,payment_date,due_date,amount_total,payment_status,payment_method,notes,project_id,order_id,property_id,business_domain")
+          .is("account_id", null)
+          .eq("payment_method", "credit_card")
+          .or(`payment_date.gte.${cardScanSince(earliestOpening)},due_date.gte.${earliestOpening}`)
+          .range(from, to)
+      ),
     ]);
+  const paymentRows = [...accountPaymentRows, ...unassignedCardRows];
+  const confirmations = await confirmationsPromise;
 
   // ── Enrichment lookups: worker names + project names for the ledger labels ──
   // Worker-payment rows should say WHICH worker was paid, and any row tied to a
@@ -664,14 +681,14 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     { postedIn: number; postedOut: number; pendingIn: number; pendingOut: number; rows: RawLedgerEntry[] }
   >(accounts.map((a) => [a.id, { postedIn: 0, postedOut: 0, pendingIn: 0, pendingOut: 0, rows: [] }]));
 
-  // ── Credit-card payments settled via a clearing company (e.g. Grow): the
+  // ── Credit-card payments settle through the clearing company (Grow): the
   // customer paid (and their order is marked paid) on payment_date, but the
-  // real money lands in the account as ONE lump sum on a later, known date —
-  // tagged the same way a post-dated check is, by giving the payment a
-  // due_date that differs from payment_date. Every credit_card payment
-  // sharing an account + due_date is folded into ONE batch row below instead
-  // of appearing individually — see nextMonthTenth() in lib/payments.ts,
-  // which fills due_date from the order payment dialogs' quick-fill.
+  // real money lands in the account as ONE lump sum — every card payment of a
+  // month, on the 10th of the next month. That holds for every card payment,
+  // with or without a due_date filled in (see cardSettlementDate in
+  // lib/card-settlements.ts), so older payments are grouped the same way.
+  // Every card payment sharing an account + settlement date is folded into ONE
+  // batch row below instead of appearing individually.
   const growthBatches = new Map<
     string,
     {
@@ -686,8 +703,6 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
 
   // ── Payments: inflows, EXCEPT refunds (negative amount_total = money out) ────
   for (const row of paymentRows) {
-    const account = byId.get(str(row.account_id) ?? "");
-    if (!account) continue;
     const recordedDate = str(row.payment_date);
     const dueDate = str(row.due_date);
     const signed = num(row.amount_total);
@@ -696,18 +711,23 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     const status = str(row.payment_status)?.trim().toLowerCase() ?? "";
     if (status === "rejected") continue; // bounced — moved nothing
     const isRefund = signed < 0; // a refund leaves the account
-    const isDeferredCardBatch =
-      !isRefund &&
-      (str(row.payment_method)?.trim().toLowerCase() ?? "") === "credit_card" &&
-      Boolean(dueDate) &&
-      Boolean(recordedDate) &&
-      dueDate !== recordedDate;
-    if (isDeferredCardBatch) {
-      if (dueDate! >= account.openingDate) {
-        const key = `${account.id}|${dueDate}`;
+    const settlementDate = cardSettlementDate({
+      paymentMethod: str(row.payment_method),
+      paymentDate: recordedDate,
+      dueDate,
+      amount: signed,
+    });
+    // A card deposit lands in the account chosen on the Grow row, if one is.
+    const account = byId.get(
+      (settlementDate ? settlementAccountFor(str(row.account_id), confirmations) : str(row.account_id)) ?? ""
+    );
+    if (!account) continue;
+    if (settlementDate) {
+      if (settlementDate >= account.openingDate) {
+        const key = `${account.id}|${settlementDate}`;
         const g =
           growthBatches.get(key) ??
-          { accountId: account.id, dueDate: dueDate!, amount: 0, count: 0, minPaymentDate: recordedDate!, payments: [] };
+          { accountId: account.id, dueDate: settlementDate, amount: 0, count: 0, minPaymentDate: recordedDate!, payments: [] };
         g.amount += amount;
         g.count += 1;
         if (recordedDate! < g.minPaymentDate) g.minPaymentDate = recordedDate!;
@@ -778,33 +798,32 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
   }
 
   // ── Emit one ledger row per Grow-style batch collected above. Unlike
-  // every other row in this scan, posted/pending here is DATE-based (has the
-  // settlement date arrived yet?), not status-based — there is no manual
-  // "cleared" flip for a processor batch the way there is for a check; it
-  // simply lands on the calendar day it lands. The amount posted is NET of
-  // the clearing company's fee (business_settings.cc_fee_rate) — that is
-  // what actually lands in the bank, matching the real statement; the
-  // customer-facing order amounts stay at the full gross price. ───────────
-  const ccFeeRate = await ccFeeRatePromise;
+  // every other row in this scan, posted/pending here is not the payments'
+  // status (a card payment is always `cleared` — the customer paid): it is
+  // whether the deposit has been confirmed on צפי תזרים (see below).
+  //
+  // The amount is the GROSS the customers paid. There is deliberately no fee
+  // percentage taken off here any more (user, 2026-09-17): the clearing company
+  // sends a receipt for what it actually charged, and that is recorded as an
+  // ordinary expense. A guessed rate was never the real figure, and a single
+  // global rate also rewrote the amount of every PAST batch whenever it was
+  // edited. ───────────────────────────────────────────────
   const todayIso = new Date().toISOString().slice(0, 10);
   for (const g of growthBatches.values()) {
     const b = buckets.get(g.accountId)!;
-    const posted = g.dueDate <= todayIso;
-    const feeAmount = g.amount * ccFeeRate;
-    const netAmount = g.amount - feeAmount;
-    if (posted) b.postedIn += netAmount;
-    else b.pendingIn += netAmount;
-    const feePercentLabel = `${Math.round(ccFeeRate * 1000) / 10}%`;
+    // Arrived only once someone confirms the deposit on צפי תזרים — not merely
+    // because its date has come. (Date rule until the migration is run.)
+    const posted = isSettlementArrived({ accountId: g.accountId, settlementDate: g.dueDate }, confirmations, todayIso);
+    if (posted) b.postedIn += g.amount;
+    else b.pendingIn += g.amount;
     b.rows.push({
       id: `ccb:${g.accountId}:${g.dueDate}`,
       date: g.dueDate,
       label: "אשראי משולם (גרואו)",
-      sublabel:
-        `${g.count} תשלומים מ-${g.minPaymentDate.slice(5, 7)}/${g.minPaymentDate.slice(2, 4)}` +
-        (feeAmount > 0 ? ` · עמלת סליקה ${feePercentLabel} (${formatIls(feeAmount)})` : ""),
+      sublabel: `${g.count} תשלומים מ-${g.minPaymentDate.slice(5, 7)}/${g.minPaymentDate.slice(2, 4)}`,
       href: null,
       type: "in",
-      amount: netAmount,
+      amount: g.amount,
       posted,
       // Expand-in-place, right on this row — every payment that fed into it,
       // newest first (see LedgerBreakdownItem/BankClient's row expansion).

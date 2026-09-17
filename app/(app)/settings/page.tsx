@@ -5,7 +5,6 @@ import { requireProfile } from "@/lib/auth/requireProfile";
 import SettingsTabs from "@/app/(app)/settings/SettingsTabs";
 import { loadMorningSettings, type MorningSettings } from "@/lib/morning/settings";
 import { getCurrentVatRate } from "@/lib/settings/vat";
-import { getCurrentCcFeeRate } from "@/lib/settings/ccFee";
 import { getBooksStartDate } from "@/lib/settings/booksStartDate";
 import { loadAccounts, type Account } from "@/lib/accounts";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -80,7 +79,7 @@ export default async function SettingsPage() {
 
   // Eight independent reads (the shared user list + seven admin-only lookups)
   // run as ONE round trip instead of sequentially.
-  const [usersResult, morningSettings, vatRate, ccFeeRate, booksStartDate, accounts, auditCfgResult, devices] = await Promise.all([
+  const [usersResult, morningSettings, vatRate, booksStartDate, accounts, auditCfgResult, devices] = await Promise.all([
     // Only users who can actually log in and use the system are valid alert
     // recipients — match the access rule used in requireProfile / requireRouteAccess
     // (active AND system_access AND role != worker_no_access).
@@ -94,7 +93,6 @@ export default async function SettingsPage() {
       .range(0, 499),
     isAdmin ? loadMorningSettings(supabase) : Promise.resolve(null as MorningSettings | null),
     isAdmin ? getCurrentVatRate(supabase) : Promise.resolve(0.18),
-    isAdmin ? getCurrentCcFeeRate(supabase) : Promise.resolve(0.14),
     isAdmin ? getBooksStartDate(supabase) : Promise.resolve(null),
     isAdmin ? loadAccounts(supabase) : Promise.resolve([] as Account[]),
     isAdmin
@@ -126,7 +124,6 @@ export default async function SettingsPage() {
           devicesUnavailable={devicesUnavailable}
           morningSettings={morningSettings}
           vatRate={vatRate}
-          ccFeeRate={ccFeeRate}
           booksStartDate={booksStartDate}
           todayIso={new Date().toISOString().slice(0, 10)}
           auditLoggingEnabled={auditLoggingEnabled}

@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
+import { Fragment, useMemo, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { AddDateIcon, AddReminderIcon, DeleteIcon, EditIcon, ExternalLinkIcon, InfoIcon, MoreIcon, RecurringIcon, SpinnerIcon } from "@/components/ui/icons";
+import { AddDateIcon, AddReminderIcon, ChevronDownIcon, DeleteIcon, EditIcon, ExternalLinkIcon, InfoIcon, MoreIcon, RecurringIcon, SpinnerIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -292,6 +292,15 @@ export default function RecurringExpensesManager(props: Props) {
   // The same יוצא/נכנס/הכל switch that scopes the board scopes this list:
   // both answer "what money moves, and when".
   const direction = props.direction ?? "out";
+  // Rows opened to show what they are made of (the card settlement's payments).
+  const [openBreakdowns, setOpenBreakdowns] = useState<ReadonlySet<string>>(new Set());
+  const toggleBreakdown = (id: string) =>
+    setOpenBreakdowns((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const sourceRows = useMemo(() => {
     const all = sources.rows ?? [];
     const dir = props.direction ?? "out";
@@ -356,6 +365,7 @@ export default function RecurringExpensesManager(props: Props) {
     oneOff: outSummary.oneOffLoanCount + inSummary.oneOffLoanCount,
     hourly: outSummary.hourlyCount + inSummary.hourlyCount,
     card: outSummary.cardCount + inSummary.cardCount,
+    settlement: outSummary.settlementCount + inSummary.settlementCount,
   };
 
   function openEdit(template: RecurringExpenseTemplateItem) {
@@ -466,7 +476,34 @@ export default function RecurringExpensesManager(props: Props) {
           ) : null}
           {s.settled ? <Badge variant="success">שולם לחודש זה</Badge> : null}
         </div>
+        {s.breakdown && s.breakdown.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => toggleBreakdown(row.id)}
+            aria-expanded={openBreakdowns.has(row.id)}
+            className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-secondary hover:underline"
+          >
+            {s.breakdown.length} {s.breakdown.length === 1 ? "תקבול" : "תקבולים"}
+            <ChevronDownIcon className={`h-3.5 w-3.5 transition-transform ${openBreakdowns.has(row.id) ? "rotate-180" : ""}`} />
+          </button>
+        ) : null}
       </>
+    );
+  };
+
+  // What a lump figure is made of — one line per item, newest first.
+  const breakdownList = (row: UnifiedRow) => {
+    if (row.kind !== "source" || !row.source.breakdown?.length || !openBreakdowns.has(row.id)) return null;
+    return (
+      <ul className="divide-y rounded-lg border bg-background text-xs" aria-label={`התקבולים — ${row.source.name}`}>
+        {row.source.breakdown.map((p) => (
+          <li key={p.id} className="flex items-center gap-3 px-3 py-1.5">
+            <span className="w-12 shrink-0 tabular-nums text-muted-foreground">{fmtDay(p.date).slice(0, 5)}</span>
+            <span className="min-w-0 flex-1 break-words">{p.label}</span>
+            <span className="shrink-0 font-medium tabular-nums">{formatCurrency(p.amount)}</span>
+          </li>
+        ))}
+      </ul>
     );
   };
 
@@ -526,6 +563,12 @@ export default function RecurringExpensesManager(props: Props) {
           <Badge variant="warning">משתנה</Badge>
         )}
         {caption}
+        {/* A settlement's figure is what has been taken so far for that date.
+            The line wraps: the amount column doesn't, so it would push the
+            table into a side scroll. */}
+        {s.kind === "settlement" && s.amount ? (
+          <div className="whitespace-normal text-[11px] font-normal text-muted-foreground">מתעדכן לפי התקבולים</div>
+        ) : null}
       </div>
     );
   };
@@ -658,7 +701,12 @@ export default function RecurringExpensesManager(props: Props) {
   // תנועות table), so the row stays one line and the table never needs a side
   // scroll. The mobile cards have the room and keep the buttons inline.
   const rowMenu = (row: UnifiedRow) => (
-    <DropdownMenu>
+    // modal={false}: a modal menu locks page scroll, and Radix compensates by
+    // padding the body by the scrollbar's width — on top of the gutter
+    // globals.css already reserves (scrollbar-gutter: stable). The page shifts,
+    // this wide table's wrapping cells reflow, and every row jumps. A small
+    // action menu doesn't need to block the page behind it.
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
@@ -727,19 +775,24 @@ export default function RecurringExpensesManager(props: Props) {
     }
   };
 
-  // True when the row has nowhere to store what the controls would change.
-  const isReadOnlySource = (row: UnifiedRow) => row.kind === "source" && row.source.configurable === false;
+  // True when the row has nowhere to store what this control would change. The
+  // Grow row stores only its account.
+  const isReadOnlySource = (row: UnifiedRow, field: EditField) =>
+    row.kind === "source" &&
+    (row.source.configurable === false || (row.source.configurable === "account" && field !== "account"));
+
+  // What a read-only control shows instead.
+  const readOnlyText = (field: EditField) => (field === "active" ? "פעיל" : "—");
 
   const tableCell = (row: UnifiedRow, field: EditField) => {
     const { name, st } = controlsOf(row);
-    // An incoming source has nowhere to store an account, a reminder or an
-    // on/off flag (outflow_source_settings only knows the three outgoing
-    // kinds), so the cell states the fact instead of offering a control that
-    // would throw the change away.
-    if (isReadOnlySource(row)) {
+    // Rent and loans given have nowhere to store an account, a reminder or an
+    // on/off flag, and the Grow row only an account — so those cells state the
+    // fact instead of offering a control that would throw the change away.
+    if (isReadOnlySource(row, field)) {
       return (
         <span className="flex h-9 items-center px-3 text-sm text-muted-foreground">
-          {field === "active" ? "פעיל" : "—"}
+          {readOnlyText(field)}
         </span>
       );
     }
@@ -858,7 +911,7 @@ export default function RecurringExpensesManager(props: Props) {
               )}
             </div>
           </div>
-          {!sources.loading && (excluded.oneOff || excluded.hourly || excluded.card) ? (
+          {!sources.loading && (excluded.oneOff || excluded.hourly || excluded.card || excluded.settlement) ? (
             <p className="text-sm text-muted-foreground">
               <span className="font-medium text-foreground">לא נכלל בסכום: </span>
               <MetaRow
@@ -866,7 +919,10 @@ export default function RecurringExpensesManager(props: Props) {
                 items={[
                   excluded.oneOff ? `${excluded.oneOff} הלוואות בהחזר חד-פעמי` : null,
                   excluded.hourly ? `${excluded.hourly} עובדים לפי שעות` : null,
-                  excluded.card ? `${excluded.card} סכומים שידועים רק כשהדף מעובד` : null,
+                  excluded.card
+                    ? `${excluded.card} ${excluded.card === 1 ? "חיוב כרטיס" : "חיובי כרטיס"} (הסכום ידוע רק כשהדף מעובד)`
+                    : null,
+                  excluded.settlement ? "הפקדת האשראי (הסכום משתנה מחודש לחודש)" : null,
                 ]}
               />
             </p>
@@ -953,6 +1009,7 @@ export default function RecurringExpensesManager(props: Props) {
                     {kindBadge(row)}
                   </div>
                   <div className="space-y-1">{nameCell(row)}</div>
+                  {breakdownList(row)}
                   <div className="text-xs text-muted-foreground">{domainCell(row)}</div>
                   <div className="grid gap-1 text-xs text-muted-foreground">
                     <div>סכום: <span className="text-foreground">{amountCell(row)}</span></div>
@@ -969,16 +1026,16 @@ export default function RecurringExpensesManager(props: Props) {
                     <div className="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-2">
                       <label className="space-y-1">
                         <span className="text-xs text-muted-foreground">חשבון</span>
-                        {accountCell(row)}
+                        {isReadOnlySource(row, "account") ? readOnlyText("account") : accountCell(row)}
                       </label>
                       <label className="space-y-1">
                         <span className="text-xs text-muted-foreground">תזכורת</span>
-                        {reminderCell(row)}
+                        {isReadOnlySource(row, "reminder") ? readOnlyText("reminder") : reminderCell(row)}
                       </label>
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    {activeCell(row)}
+                    {isReadOnlySource(row, "active") ? <span className="text-xs text-muted-foreground">{readOnlyText("active")}</span> : activeCell(row)}
                     {actionsCell(row)}
                   </div>
                 </CardContent>
@@ -1008,8 +1065,8 @@ export default function RecurringExpensesManager(props: Props) {
               </thead>
               <tbody className="divide-y">
                 {rows.map((row) => (
+                  <Fragment key={row.id}>
                   <tr
-                    key={row.id}
                     className={`align-top hover:bg-secondary/10 ${isOff(row) ? "opacity-60" : ""} ${editing?.rowId === row.id ? "bg-secondary/5" : ""}`}
                     onBlur={(e) => {
                       if (editing?.rowId === row.id && !e.currentTarget.contains(e.relatedTarget as Node | null)) setEditing(null);
@@ -1028,6 +1085,12 @@ export default function RecurringExpensesManager(props: Props) {
                     <td className="px-3 py-2">{tableCell(row, "active")}</td>
                     <td className="w-10 px-1 py-2">{rowMenu(row)}</td>
                   </tr>
+                  {breakdownList(row) ? (
+                    <tr className="bg-muted/20">
+                      <td colSpan={9} className="px-3 pb-3 pt-1">{breakdownList(row)}</td>
+                    </tr>
+                  ) : null}
+                  </Fragment>
                 ))}
                 {sources.loading ? (
                   <tr>

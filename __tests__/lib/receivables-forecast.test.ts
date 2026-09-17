@@ -115,8 +115,10 @@ describe("groupSettlementBatches", () => {
     expect(batches).toHaveLength(2);
   });
 
-  it("ignores a card payment that isn't deferred — that is ordinary income on its own day", () => {
-    expect(groupSettlementBatches([row({ id: "a", dueDate: "2026-09-03" })])).toEqual([]);
+  it("groups by the deposit day it is given — the loader has already dated every card payment", () => {
+    // No "not deferred" exception any more: a same-day row is still a deposit.
+    expect(groupSettlementBatches([row({ id: "a", dueDate: "2026-09-03" })])).toHaveLength(1);
+    expect(groupSettlementBatches([row({ id: "a", dueDate: "" })])).toEqual([]);
   });
 });
 
@@ -126,11 +128,13 @@ describe("toSettlementItems", () => {
     { id: "b", accountId: "acc-1", paymentDate: "2026-09-04", dueDate: "2026-10-10", amount: 1000 },
   ]);
 
-  it("shows what actually reaches the bank: one row on the settlement day, net of the fee", () => {
-    const [row] = toSettlementItems(batches, 0.14, TODAY);
+  it("one row on the settlement day, for the gross the customers paid", () => {
+    // No fee estimated: the clearing company's charge is recorded as an expense
+    // from its receipt, so this is the same figure the account shows.
+    const [row] = toSettlementItems(batches, TODAY);
     expect(row.id).toBe("grow_batch:acc-1:2026-10-10");
     expect(row.date).toBe("2026-10-10");
-    expect(row.amount).toBe(1720); // 2,000 less 14%
+    expect(row.amount).toBe(2000);
     expect(row.sourceLabel).toContain("2");
     expect(row.accountId).toBe("acc-1");
     expect(row.stage).toBe("scheduled");
@@ -140,7 +144,7 @@ describe("toSettlementItems", () => {
     const past = groupSettlementBatches([
       { id: "a", accountId: "acc-1", paymentDate: "2026-07-03", dueDate: "2026-08-10", amount: 500 },
     ]);
-    expect(toSettlementItems(past, 0.14, TODAY)[0].stage).toBe("posted");
+    expect(toSettlementItems(past, TODAY)[0].stage).toBe("posted");
   });
 });
 

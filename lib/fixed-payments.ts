@@ -87,6 +87,11 @@ export type FixedPaymentsSummary = {
   hourlyCount: number;
   /** Active cards — the charge is only known when the statement is processed, never summed. */
   cardCount: number;
+  /**
+   * The card deposit (Grow) — its figure is real (what has been taken so far),
+   * but it changes every month, so it is listed, never summed.
+   */
+  settlementCount: number;
   /** ₪ per month: fixed templates normalized to a month + monthly sources. */
   monthlyTotal: number;
 };
@@ -121,9 +126,10 @@ export function summarizeFixedPayments(
     monthlySourceCount: activeSources.length - notMonthly.length,
     oneOffLoanCount: notMonthly.filter((s) => s.kind === "loan" || s.kind === "loan_in").length,
     hourlyCount: notMonthly.filter((s) => s.kind === "salary").length,
-    // A card charge and a clearing deposit are the same story: the figure is
-    // only known once the statement/batch is processed.
-    cardCount: notMonthly.filter((s) => s.kind === "card" || s.kind === "settlement").length,
+    cardCount: notMonthly.filter((s) => s.kind === "card").length,
+    // Not the card's reason: a deposit's amount IS known — it just differs
+    // every month.
+    settlementCount: notMonthly.filter((s) => s.kind === "settlement").length,
     monthlyTotal: templatesTotal + sourcesTotal,
   };
 }

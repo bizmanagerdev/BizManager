@@ -76,6 +76,17 @@ export type PaymentCalendarItem = {
   customerName?: string | null;
   /** Check number / transfer reference, shown on the card. */
   reference?: string | null;
+  /**
+   * A card-settlement deposit only. Present ⇒ the row is a Grow batch: the
+   * user confirms on the board that it landed, and sees what it is made of.
+   */
+  settlement?: {
+    accountId: string | null;
+    /** The settlement day — with the account, what identifies the deposit. */
+    date: string;
+    arrived: boolean;
+    payments: Array<{ id: string; date: string; amount: number; label: string }>;
+  };
 };
 
 /** Money leaving (תשלומים) or arriving (תקבולים). */

@@ -19,6 +19,8 @@ export type PaymentRow = {
   target_type: string | null;
   target_id: string | null;
   recorded_by: string | null;
+  /** Which account the money lands in — keys a card deposit's confirmation. */
+  account_id?: string | null;
 };
 
 export type ExpenseRow = {

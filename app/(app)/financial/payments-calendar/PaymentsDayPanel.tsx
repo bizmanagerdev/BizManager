@@ -46,7 +46,7 @@ export default function PaymentsDayPanel({
 }) {
   const [addOpen, setAddOpen] = useState(false);
   const [addIncomeOpen, setAddIncomeOpen] = useState(false);
-  const { actionsFor, dialogs } = usePaymentItemActions({ onMutate, templates, projects, properties, orders });
+  const { actionsFor, dialogs } = usePaymentItemActions({ onMutate, templates, projects, properties, orders, accountNameById });
 
   const dayIso = isoLocal(day);
   const totals = openTotals(items);

@@ -65,3 +65,22 @@ describe("itemCapabilities \u2014 money coming in", () => {
     });
   });
 });
+
+describe("itemCapabilities — a card-settlement deposit", () => {
+  // Confirmed on the board once the money lands; openable either way to see
+  // what it is made of and to undo a confirmation.
+  const deposit = (arrived: boolean) =>
+    item({
+      id: "grow_batch:acc-1:2026-09-10",
+      direction: "in",
+      settlement: { accountId: "acc-1", date: "2026-09-10", arrived, payments: [] },
+    });
+
+  it("can be confirmed while it hasn't arrived", () => {
+    expect(itemCapabilities(deposit(false), live)).toMatchObject({ canMark: true, canEdit: true, canSplit: false, canDelete: false });
+  });
+
+  it("once confirmed, can only be opened (to see it, or undo)", () => {
+    expect(itemCapabilities(deposit(true), live)).toMatchObject({ canMark: false, canEdit: true, canSplit: false, canDelete: false });
+  });
+});

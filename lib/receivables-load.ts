@@ -15,8 +15,15 @@ import {
   type PaymentPromise,
   type SettlementPaymentRow,
 } from "@/lib/receivables-forecast";
-import { getCurrentCcFeeRate } from "@/lib/settings/ccFee";
 import { propertyDisplayName } from "@/lib/properties";
+import {
+  cardScanSince,
+  cardSettlementDate,
+  labelSettlementPayments,
+  loadSettlementConfirmations,
+  NO_CONFIRMATIONS,
+  settlementAccountFor,
+} from "@/lib/card-settlements";
 import { rentDayOf } from "@/lib/inflow-sources";
 
 type Row = Record<string, unknown>;
@@ -119,32 +126,54 @@ export async function loadOpenPromises(
 }
 
 /**
- * Deferred card settlements: a credit_card payment whose due_date differs from
- * its payment_date is money the clearing company pays us later. Read straight
- * from `payments` rather than from the ledger entries, because the engine has
- * already flattened these onto the customer's pay date.
+ * Card payments, each dated on the deposit it lands in (the 10th of the next
+ * month — see cardSettlementDate). Read straight from `payments` so they can be
+ * grouped into deposits; the engine dates each one the same way, and the board
+ * swaps those single rows for the deposit.
+ *
+ * The window matches the engine's payment scan exactly (payment_date reaching
+ * back a month), so every card row on the board has its deposit.
  */
 export async function loadSettlementRows(
   supabase: SupabaseClient,
   { fromIso }: { fromIso: string }
 ): Promise<SettlementPaymentRow[]> {
+  const since = cardScanSince(fromIso);
   const { data, error } = await supabase
     .from("payments")
-    .select("id,account_id,payment_date,due_date,amount_total,payment_method,payment_status")
+    .select("id,account_id,payment_date,due_date,amount_total,payment_method,payment_status,order_id,project_id,notes")
     .eq("payment_method", "credit_card")
-    .not("due_date", "is", null)
-    .gte("due_date", fromIso);
+    .or(`payment_date.gte.${since},due_date.gte.${since}`);
   if (error) return [];
-  return ((data ?? []) as Row[])
+  const base = ((data ?? []) as Row[])
     .filter((r) => (str(r, "payment_status") ?? "").trim().toLowerCase() !== "rejected")
-    .map((r) => ({
-      id: str(r, "id") ?? "",
-      accountId: str(r, "account_id"),
-      paymentDate: (str(r, "payment_date") ?? "").slice(0, 10),
-      dueDate: (str(r, "due_date") ?? "").slice(0, 10),
-      amount: num(r, "amount_total"),
-    }))
-    .filter((r) => r.id && r.amount > 0);
+    .map((r) => {
+      const paymentDate = (str(r, "payment_date") ?? "").slice(0, 10);
+      const amount = num(r, "amount_total");
+      return {
+        id: str(r, "id") ?? "",
+        accountId: str(r, "account_id"),
+        paymentDate,
+        dueDate:
+          cardSettlementDate({ paymentMethod: "credit_card", paymentDate, dueDate: str(r, "due_date"), amount }) ?? "",
+        amount,
+        orderId: str(r, "order_id"),
+        projectId: str(r, "project_id"),
+        notes: str(r, "notes"),
+      };
+    })
+    .filter((r) => r.id && r.amount > 0 && r.dueDate);
+  // Who each payment was from, so a deposit can be checked before it is confirmed.
+  const labelled = await labelSettlementPayments(supabase, base).catch(() => []);
+  const labelById = new Map(labelled.map((p) => [p.id, p.label] as const));
+  return base.map((r) => ({
+    id: r.id,
+    accountId: r.accountId,
+    paymentDate: r.paymentDate,
+    dueDate: r.dueDate,
+    amount: r.amount,
+    label: labelById.get(r.id),
+  }));
 }
 
 /**
@@ -227,13 +256,13 @@ export async function loadIncomeCalendarItems(
 
   // Each forecast source is independent and best-effort: one unreadable table
   // costs its own rows, never the board.
-  const [terms, customerNames, promises, settlementRows, feeRate, rent] = await Promise.all([
+  const [terms, customerNames, promises, settlementRows, rent, confirmations] = await Promise.all([
     loadReceivableTerms(supabase, inflows).catch(() => new Map<string, ReceivableTerms>()),
     loadCustomerNames(supabase, inflows).catch(() => new Map<string, string>()),
     loadOpenPromises(supabase, { fromIso }).catch(() => [] as PaymentPromise[]),
     loadSettlementRows(supabase, { fromIso }).catch(() => [] as SettlementPaymentRow[]),
-    getCurrentCcFeeRate(supabase).catch(() => 0),
     loadLeasesAndBookedMonths(supabase, { fromIso }).catch(() => ({ leases: [] as LeaseRow[], bookedMonths: new Map<string, Set<string>>() })),
+    loadSettlementConfirmations(supabase).catch(() => NO_CONFIRMATIONS),
   ]);
 
   // Promise names come from the same lookup the ledger rows use, plus whoever
@@ -246,14 +275,17 @@ export async function loadIncomeCalendarItems(
   }
 
   const ledgerItems = toIncomeCalendarItems(inflows, referenceDate, { terms, customerNames });
-  const batches = groupSettlementBatches(settlementRows);
+  // Every deposit is filed under the account chosen on the Grow row, if any.
+  const batches = groupSettlementBatches(
+    settlementRows.map((r) => ({ ...r, accountId: settlementAccountFor(r.accountId, confirmations) }))
+  );
 
   return [
     // A promise reduces the debt it was made about, and a settled card payment
     // is replaced by the deposit that actually reaches the bank.
     ...dropSettledCardPayments(suppressPromisedReceivables(ledgerItems, promises), batches),
     ...toPromiseItems(promises, referenceDate, customerNames),
-    ...toSettlementItems(batches, feeRate, referenceDate),
+    ...toSettlementItems(batches, referenceDate, confirmations),
     ...projectRent(rent.leases, rent.bookedMonths, { fromIso, toIso, todayIso: referenceDate }),
   ];
 }

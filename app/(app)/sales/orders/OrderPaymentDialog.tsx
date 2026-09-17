@@ -148,7 +148,12 @@ export default function OrderPaymentDialog({
           payment_date: paymentDate,
           payment_method: paymentMethod,
           account_id: accountId || undefined,
-          due_date: dueDate.trim() || undefined,
+          // A card payment lands with the month's deposit — the 10th of the next
+          // month (lib/card-settlements.ts). A refund leaves on its own day.
+          due_date:
+            paymentMethod === "credit_card" && entryType !== "refund"
+              ? nextMonthTenth(paymentDate) || undefined
+              : dueDate.trim() || undefined,
           reference_number: referenceNumber.trim() || undefined,
           check_number: paymentMethod === "check" && checkNumber.trim() ? checkNumber.trim() : undefined,
           notes: notes.trim() || undefined,
@@ -291,9 +296,6 @@ export default function OrderPaymentDialog({
                   const m = e.target.value;
                   setPaymentMethod(m);
                   setAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
-                  // Credit-card payments here always clear through Grow — default the
-                  // settlement date so the ledger batches it without an extra click.
-                  if (m === "credit_card") setDueDate((prev) => prev || nextMonthTenth(paymentDate));
                 }}
               >
                 <option value="">{entryType === "refund" ? "בחר אמצעי החזר..." : "בחר אמצעי תשלום..."}</option>
@@ -315,7 +317,9 @@ export default function OrderPaymentDialog({
               }}
             />
 
-            {paymentMethod ? (
+            {paymentMethod === "credit_card" && entryType !== "refund" ? (
+              <p className="text-xs text-muted-foreground">נכנס לחשבון ב-10 לחודש הבא, יחד עם שאר תשלומי האשראי של החודש.</p>
+            ) : paymentMethod ? (
               <div className="space-y-1">
                 <label className="text-sm font-medium">
                   {paymentMethod === "check"
@@ -327,15 +331,6 @@ export default function OrderPaymentDialog({
                   <p className="text-[11px] text-muted-foreground">
                     לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
                   </p>
-                ) : null}
-                {paymentMethod === "credit_card" ? (
-                  <button
-                    type="button"
-                    onClick={() => setDueDate(nextMonthTenth(paymentDate) || dueDate)}
-                    className="rounded border border-input px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted"
-                  >
-                    מגיע דרך סליקה (גרואו) — 10 לחודש הבא
-                  </button>
                 ) : null}
               </div>
             ) : null}

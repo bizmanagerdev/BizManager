@@ -5,12 +5,13 @@
 // Three sources, each with a reason the ledger can't already answer it:
 //   • A payment promise is a dated commitment ("₪5,000 by the 12th") that lives
 //     in payment_promises and has never been part of the money engine at all.
-//   • A card settlement is money the customer already paid, which the bank pays
-//     US later as one lump, net of the clearing fee. The engine sees only the
-//     individual payments, on the day the customer paid.
+//   • A card settlement is money the customer already paid, which the clearing
+//     company deposits as one lump on the 10th of the next month. The engine
+//     dates each payment on that day, but only the batch is one deposit.
 //   • Rent beyond the generated schedule doesn't exist as rows: the office
 //     pre-creates N months from a lease, and the months past that are invisible.
 import type { PaymentCalendarItem } from "@/lib/payables";
+import { NO_CONFIRMATIONS, isSettlementArrived, type SettlementConfirmations, type SettlementPayment } from "@/lib/card-settlements";
 
 /** The fields every incoming item shares; callers fill what distinguishes theirs. */
 function incomeItem(
@@ -138,13 +139,15 @@ export function suppressPromisedReceivables(
 
 // ── 2. Credit-card settlement batches (Grow) ───────────────────────────────────
 
-/** A `payments` row that is a deferred card settlement (due_date ≠ payment_date). */
+/** A card `payments` row, with `dueDate` already set to its deposit day. */
 export type SettlementPaymentRow = {
   id: string;
   accountId: string | null;
   paymentDate: string;
   dueDate: string;
   amount: number;
+  /** Who it was from, when the loader could resolve it. */
+  label?: string;
 };
 
 export type SettlementBatch = {
@@ -153,6 +156,8 @@ export type SettlementBatch = {
   gross: number;
   count: number;
   paymentIds: string[];
+  /** The payments it is made of, newest first — what the user checks before confirming. */
+  payments: SettlementPayment[];
 };
 
 /**
@@ -164,40 +169,51 @@ export function groupSettlementBatches(rows: SettlementPaymentRow[]): Settlement
   const byKey = new Map<string, SettlementBatch>();
   for (const row of rows) {
     if (!(row.amount > 0) || !row.dueDate || !row.paymentDate) continue;
-    if (row.dueDate === row.paymentDate) continue; // not deferred — ordinary card income
     const key = `${row.accountId ?? ""}|${row.dueDate}`;
-    const batch = byKey.get(key) ?? { accountId: row.accountId, dueDate: row.dueDate, gross: 0, count: 0, paymentIds: [] };
+    const batch =
+      byKey.get(key) ?? { accountId: row.accountId, dueDate: row.dueDate, gross: 0, count: 0, paymentIds: [], payments: [] };
     batch.gross += row.amount;
     batch.count += 1;
     batch.paymentIds.push(row.id);
+    batch.payments.push({ id: row.id, date: row.paymentDate, amount: row.amount, label: row.label ?? "תקבול אשראי" });
     byKey.set(key, batch);
   }
   return [...byKey.values()].sort((a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0));
 }
 
 /**
- * One row per batch, on the day the bank credits it, NET of the clearing fee —
- * that is the figure that reaches the account, and the whole reason this is
- * worth showing instead of the individual payments.
+ * One row per batch, on the day the bank credits it, for the GROSS the
+ * customers paid — the same figure the account shows. The clearing company's
+ * fee is not estimated here; it is recorded as an expense from its receipt.
  */
 export function toSettlementItems(
   batches: SettlementBatch[],
-  feeRate: number,
-  todayIso: string
+  todayIso: string,
+  confirmations: SettlementConfirmations = NO_CONFIRMATIONS
 ): PaymentCalendarItem[] {
   return batches.map((b) => {
-    const net = Math.round(b.gross * (1 - feeRate) * 100) / 100;
+    const arrived = isSettlementArrived({ accountId: b.accountId, settlementDate: b.dueDate }, confirmations, todayIso);
     const future = b.dueDate > todayIso;
+    // Confirmed → it landed. Not confirmed and its day has passed → it is late,
+    // and shows red until someone confirms it. Otherwise it is still expected.
+    const stage = arrived ? ("posted" as const) : future ? ("scheduled" as const) : ("pending" as const);
     return incomeItem({
       id: `grow_batch:${b.accountId ?? "none"}:${b.dueDate}`,
       date: b.dueDate,
-      amount: net,
+      amount: Math.round(b.gross * 100) / 100,
       label: "אשראי משולם (גרואו)",
-      sourceLabel: `${b.count} תקבולי אשראי · לאחר עמלת סליקה`,
+      sourceLabel: `${b.count} תקבולי אשראי`,
       sourceHref: "/financial/bank",
-      // A settled batch is money that has arrived; a future one is expected.
-      stage: future ? "scheduled" : "posted",
-      paymentStatus: future ? "pending" : "cleared",
+      stage,
+      paymentStatus: arrived ? "cleared" : "pending",
+      overdue: stage === "pending",
+      // What the board needs to confirm it, and to list what it is made of.
+      settlement: {
+        accountId: b.accountId,
+        date: b.dueDate,
+        arrived,
+        payments: [...b.payments].sort((x, y) => (x.date < y.date ? 1 : x.date > y.date ? -1 : 0)),
+      },
       accountId: b.accountId,
       paymentMethod: "credit_card",
       domainName: "מכירות",

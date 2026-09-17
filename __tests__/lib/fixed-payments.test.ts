@@ -130,13 +130,17 @@ describe("summarizeFixedPayments — incoming sources", () => {
     expect(s.activeCount).toBe(0);
   });
 
-  it("leaves the clearing deposit out, like a card charge — the amount isn't known ahead", () => {
+  it("leaves the clearing deposit out of the sum — its real amount changes every month", () => {
+    // Counted on its own, not as a card: a deposit's figure IS known (what has
+    // been taken so far), so "known only when the statement is processed"
+    // would be false for it.
     const s = summarizeFixedPayments([], [
       inflow({ kind: "rent", key: "L1", amount: 4000 }),
-      inflow({ kind: "settlement", key: "grow", amount: null, monthly: false }),
+      inflow({ kind: "settlement", key: "grow", amount: 2500, monthly: false }),
     ]);
     expect(s.monthlyTotal).toBe(4000);
-    expect(s.cardCount).toBe(1);
+    expect(s.settlementCount).toBe(1);
+    expect(s.cardCount).toBe(0);
   });
 
   it("counts a one-off repayment on a loan given as not monthly", () => {

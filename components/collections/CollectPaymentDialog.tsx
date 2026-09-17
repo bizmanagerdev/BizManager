@@ -53,7 +53,6 @@ type CollectStepId =
   | "method"
   | "account"
   | "date"
-  | "settlement"
   | "check"
   | "reference"
   | "notes"
@@ -66,7 +65,6 @@ const STEP_LABEL: Record<CollectStepId, string> = {
   method: "תשלום",
   account: "חשבון",
   date: "תאריך",
-  settlement: "סליקה",
   check: "צ'ק",
   reference: "אסמכתא",
   notes: "הערות",
@@ -106,10 +104,9 @@ export function CollectPaymentDialog({
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(getTodayDate());
   const [method, setMethod] = useState("");
-  // Set only for a credit_card payment collected through a clearing company
-  // (e.g. Grow) — the customer paid, but the account only sees the money on
-  // this later date, batched with every other card payment settling the same
-  // day. See lib/accounts.ts's growthBatches / lib/payments.ts nextMonthTenth.
+  // A check's פירעון date. (A card payment's deposit day is not asked: every
+  // card payment lands on the 10th of the next month — see cardSettlementDate
+  // in lib/card-settlements.ts.)
   const [dueDate, setDueDate] = useState("");
   const [accountId, setAccountId] = useState("");
   const [accountsList, setAccountsList] = useState<Account[]>([]);
@@ -253,7 +250,6 @@ export function CollectPaymentDialog({
     ids.push("amount", "method");
     if (accountsList.length > 0) ids.push("account");
     ids.push("date");
-    if (method === "credit_card") ids.push("settlement");
     if (method === "check") ids.push("check");
     ids.push("reference", "notes", "summary");
     return ids;
@@ -281,7 +277,6 @@ export function CollectPaymentDialog({
         return Boolean(date);
       case "check":
         return Boolean(dueDate);
-      case "settlement":
       case "reference":
       case "notes":
       case "summary":
@@ -318,9 +313,9 @@ export function CollectPaymentDialog({
   function pickMethod(next: string) {
     setMethod(next);
     setAccountId((prev) => prev || defaultAccountForMethod(accountsList, next));
-    // A settlement/deposit date only ever applies to credit_card or check — drop
-    // any leftover choice from before so it can't leak into an unrelated method's payload.
-    if (next !== "credit_card" && next !== "check") setDueDate("");
+    // A deposit date only ever applies to a check — drop any leftover choice
+    // so it can't leak into an unrelated method's payload.
+    if (next !== "check") setDueDate("");
     advanceTo(accountsList.length > 0 ? "account" : "date");
   }
 
@@ -369,7 +364,8 @@ export function CollectPaymentDialog({
           property_id: null,
           amount_total: amountValue,
           payment_date: date,
-          due_date: method === "credit_card" || method === "check" ? dueDate || null : null,
+          // A card payment is stored with its deposit day, so every reader sees it.
+          due_date: method === "check" ? dueDate || null : method === "credit_card" ? nextMonthTenth(date) || null : null,
           requires_split: false,
           payment_method: method,
           account_id: accountId || null,
@@ -612,32 +608,6 @@ export function CollectPaymentDialog({
           />
           </div>
         </>
-      ) : stepId === "settlement" ? (
-        <>
-          <StepHeading
-            title="התשלום מגיע דרך סליקה (כמו גרואו)?"
-            sub="אם כן, הכסף ייכנס לחשבון בסכום מרוכז יחד עם עוד תשלומים — לא ביום התשלום עצמו"
-          />
-          <div className="grid gap-2">
-            <OptionRow
-              label="כן — סליקה (גרואו)"
-              sub={date ? `יופיע בחשבון ב-${nextMonthTenth(date)}` : undefined}
-              selected={Boolean(dueDate)}
-              onClick={() => {
-                setDueDate(nextMonthTenth(date));
-                advanceTo(stepIds[stepIndex("settlement") + 1]);
-              }}
-            />
-            <OptionRow
-              label="לא — הגיע ישירות לחשבון"
-              selected={!dueDate}
-              onClick={() => {
-                setDueDate("");
-                advanceTo(stepIds[stepIndex("settlement") + 1]);
-              }}
-            />
-          </div>
-        </>
       ) : stepId === "check" ? (
         <>
           <StepHeading title="פרטי הצ'ק" />
@@ -692,8 +662,8 @@ export function CollectPaymentDialog({
             <SummaryRow label="אמצעי תשלום" value={summaryMethodLabel} />
             <SummaryRow label="חשבון" value={summaryAccountName} />
             <SummaryRow label="תאריך" value={date} />
-            {method === "credit_card" && dueDate ? (
-              <SummaryRow label="סליקה" value={`יופיע בחשבון ב-${dueDate}`} />
+            {method === "credit_card" && date ? (
+              <SummaryRow label="נכנס לחשבון" value={`${nextMonthTenth(date)} · עם שאר תשלומי האשראי של החודש`} />
             ) : null}
             {method === "check" && dueDate ? <SummaryRow label="תאריך פירעון" value={dueDate} /> : null}
             {method === "check" && checkNumber.trim() ? <SummaryRow label="מספר צ'ק" value={checkNumber} /> : null}

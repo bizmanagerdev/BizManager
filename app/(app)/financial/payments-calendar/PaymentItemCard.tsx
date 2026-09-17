@@ -44,7 +44,10 @@ export default function PaymentItemCard({
   // generator stamps it paid when it creates it; until then there is nothing in
   // the ledger, nothing to reconcile against the bank, and no other way in.
   // Rows that already exist and are paid are filtered by the stage check below.
-  const canMarkPaid = incoming ? Boolean(item.paymentId) : Boolean(item.expenseId) || isForecast;
+  // A Grow deposit is confirmed as landed; any other incoming row needs a real
+  // payments row behind it to be collected.
+  const canMarkPaid = incoming ? Boolean(item.paymentId || item.settlement) : Boolean(item.expenseId) || isForecast;
+  const markLabel = item.settlement ? "אישור הפקדה" : words.markAction;
   const canSplit = Boolean(item.expenseId);
   const canDelete = Boolean(onDelete);
   // Drop the source label from the meta when a type badge (הוראת קבע / קבועה) already
@@ -94,12 +97,14 @@ export default function PaymentItemCard({
           {showMarkPaid ? (
             <Button type="button" size="sm" variant="secondary" onClick={onMarkPaid}>
               <CheckIcon className="h-3.5 w-3.5" />
-              {words.markAction}
+              {markLabel}
             </Button>
           ) : (
             <span />
           )}
-          <DropdownMenu>
+          {/* Non-modal for the same reason as the קבועות table: a modal menu's
+              scroll-lock shifts the page. */}
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <Button
                 type="button"
@@ -174,7 +179,7 @@ export default function PaymentItemCard({
         {canMarkPaid && item.stage !== "posted" ? (
           <Button type="button" size="sm" variant="secondary" onClick={onMarkPaid}>
             <CheckIcon className="h-3.5 w-3.5" />
-            {words.markAction}
+            {markLabel}
           </Button>
         ) : null}
         {canSplit && item.stage !== "posted" ? (

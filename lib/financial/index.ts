@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveUserDisplayNamesForValues } from "@/lib/audit";
 import { getBusinessDomainLabel, type ExpenseBusinessDomain } from "@/lib/expenses";
+import { cardScanSince, loadSettlementConfirmations } from "@/lib/card-settlements";
 import {
   fetchOrderFinancialsByIds,
   fetchOrdersByIds,
@@ -121,8 +122,10 @@ export async function loadFinancialEntries(
   // `await`ed after everything else had already resolved).
   const loansPromise = customerId ? Promise.resolve([] as Loan[]) : fetchLoans(supabase);
 
-  const [paymentRows, expenseRows, workerPaymentsResult, projectRows, orderRows, templateMetaById] = await Promise.all([
-    scanPaymentRows(supabase, scanSince),
+  const [paymentRows, expenseRows, workerPaymentsResult, projectRows, orderRows, templateMetaById, settlementConfirmations] = await Promise.all([
+    // Reaches back one more month: last month's card payments are money on the
+    // 10th of this one, so a window starting now still has to read them.
+    scanPaymentRows(supabase, cardScanSince(scanSince)),
     scanExpenseRows(supabase, scanSince),
     (async () => {
       try {
@@ -155,6 +158,7 @@ export async function loadFinancialEntries(
     scanProjectRows(supabase, scanSince),
     scanOrderRows(supabase, scanSince),
     fetchRecurringTemplateMeta(supabase),
+    loadSettlementConfirmations(supabase),
   ]);
 
   const paymentLinks = paymentRows.map(resolvePaymentLinks);
@@ -262,7 +266,7 @@ export async function loadFinancialEntries(
 
   const sharedArgs = { customerId, customerProjectSet, referenceDate, projectsById, propertiesById, propertyCustomersById, recordedByNames };
 
-  const payments = buildPaymentEntries({ paymentRows, ordersById, ...sharedArgs });
+  const payments = buildPaymentEntries({ paymentRows, ordersById, settlementConfirmations, ...sharedArgs });
   const expenses = buildExpenseEntries({ expenseRows, ordersById, projectExpenseLinksByExpenseId, templateMetaById, ...sharedArgs });
   const workerPaymentEntries = buildWorkerPaymentEntries({
     allocations: workerPaymentsResult.allocations,

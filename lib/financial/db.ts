@@ -61,6 +61,7 @@ export async function scanPaymentRows(supabase: SupabaseClient, since?: string |
   // that never touches them now goes first; the two dead variants stay at
   // the end purely as a harmless safety net.
   const selectVariants = [
+    "id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,project_id,order_id,property_id,recorded_by,account_id",
     "id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,project_id,order_id,property_id,recorded_by",
     "id,payment_date,due_date,amount_total,payment_method,payment_status,reference_number,business_domain,notes,recorded_by",
     "id,payment_date,amount_total,payment_method,reference_number,business_domain,notes,recorded_by",
@@ -84,6 +85,7 @@ export async function scanPaymentRows(supabase: SupabaseClient, since?: string |
         isMissingColumnError(error, "order_id") ||
         isMissingColumnError(error, "property_id") ||
         isMissingColumnError(error, "due_date") ||
+        isMissingColumnError(error, "account_id") ||
         isMissingColumnError(error, "payment_status")
       ) {
         continue;

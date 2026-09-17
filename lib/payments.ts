@@ -57,11 +57,10 @@ export const PAYMENT_METHOD_OPTIONS = [
  * company (e.g. Grow) typically deposits a month's batched card charges as
  * one lump sum, not the day the customer paid. Pure; "" on a bad input.
  *
- * A credit_card payment whose due_date is set to this (via the "מגיע דרך
- * סליקה" quick-fill in the order payment dialogs) is picked up by
- * lib/accounts.ts's scanAccountActivity and merged with every other
- * credit_card payment sharing the same account + due_date into ONE ledger
- * line, instead of showing every payment separately.
+ * Every incoming credit_card payment lands on this day, grouped with the rest
+ * of its month's card payments into ONE deposit — see cardSettlementDate in
+ * lib/card-settlements.ts, which the engine, the accounts and צפי תזרים all
+ * date card payments by. The payment forms store it as the due_date.
  */
 export function nextMonthTenth(dateIso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateIso);

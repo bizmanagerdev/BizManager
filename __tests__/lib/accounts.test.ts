@@ -62,12 +62,23 @@ type Tables = Record<string, Record<string, unknown>[]>;
  *  engine re-applies its own date/account filters in JS, so returning all rows
  *  for a table is faithful. */
 function makeSupabase(tables: Tables, errorTables: string[] = []) {
-  const builder = (rows: Record<string, unknown>[], failing: boolean) => {
+  const builder = (allRows: Record<string, unknown>[], failing: boolean) => {
+    let rows = allRows;
     const self: Record<string, unknown> = {};
-    for (const m of ["select", "eq", "not", "gte", "in", "or", "order", "range"]) {
+    for (const m of ["select", "eq", "gte", "in", "or", "order", "range", "limit"]) {
       self[m] = () => self;
     }
-    // Used by business_settings lookups (e.g. getCurrentCcFeeRate) — the
+    // The null filters are honoured, so the two payments reads (with an account
+    // / card payments without one) never hand back the same row twice.
+    self.is = (col: string, value: unknown) => {
+      if (value === null) rows = rows.filter((r) => r[col] == null);
+      return self;
+    };
+    self.not = (col: string, op: string, value: unknown) => {
+      if (op === "is" && value === null) rows = rows.filter((r) => r[col] != null);
+      return self;
+    };
+    // Used by business_settings lookups — the
     // first configured row, or null (caller falls back to its default).
     self.maybeSingle = () => Promise.resolve({ data: rows[0] ?? null, error: null });
     self.then = (onF: (v: { data: unknown; error: unknown }) => unknown, onR?: (e: unknown) => unknown) =>
@@ -363,7 +374,6 @@ describe("loadAccountBalances — credit-card processor batches (e.g. Growth)", 
     const [overview] = await loadAccountsOverview(
       makeSupabase({
         accounts: [account({ opening_date: "2024-01-01" })],
-        business_settings: [{ cc_fee_rate: 0 }], // isolate the batching behavior from the fee math (tested separately below)
         payments: [
           ccPayment({ id: "p1", payment_date: "2024-08-05", amount_total: 340 }),
           ccPayment({ id: "p2", payment_date: "2024-08-12", amount_total: 340 }),
@@ -378,29 +388,120 @@ describe("loadAccountBalances — credit-card processor batches (e.g. Growth)", 
     expect(overview.ledger[0].sublabel).toContain("3 תשלומים");
   });
 
-  it("posts the batch once its settlement date has passed", async () => {
+  it("posts the batch once the deposit is confirmed", async () => {
+    // A deposit arrives when someone confirms it landed on צפי תזרים — not merely
+    // because its date has come.
     const b = await balance({
       accounts: [account({ opening_date: "2020-01-01" })],
-      business_settings: [{ cc_fee_rate: 0 }],
       payments: [
         ccPayment({ id: "p1", payment_date: "2019-12-05", due_date: "2020-01-10", amount_total: 500 }),
       ],
+      card_settlement_confirmations: [{ account_id: "acc1", settlement_date: "2020-01-10" }],
     });
     expect(b.postedIn).toBe(500);
     expect(b.pendingIn).toBe(0);
     expect(b.currentBalance).toBe(1500);
   });
 
-  it("a credit_card payment with no due_date (or same-day) is NOT batched — behaves as before", async () => {
+  it("a past deposit nobody has confirmed stays expected, however old it is", async () => {
+    const b = await balance({
+      accounts: [account({ opening_date: "2020-01-01" })],
+      payments: [
+        ccPayment({ id: "p1", payment_date: "2019-12-05", due_date: "2020-01-10", amount_total: 500 }),
+      ],
+      card_settlement_confirmations: [],
+    });
+    expect(b.postedIn).toBe(0);
+    expect(b.pendingIn).toBe(500);
+    expect(b.currentBalance).toBe(1000);
+  });
+
+  it("a confirmation for a different day or account does not count", async () => {
+    const b = await balance({
+      accounts: [account({ opening_date: "2020-01-01" })],
+      payments: [
+        ccPayment({ id: "p1", payment_date: "2019-12-05", due_date: "2020-01-10", amount_total: 500 }),
+      ],
+      card_settlement_confirmations: [
+        { account_id: "acc1", settlement_date: "2020-02-10" },
+        { account_id: "other", settlement_date: "2020-01-10" },
+      ],
+    });
+    expect(b.postedIn).toBe(0);
+  });
+
+  it("falls back to the date rule when the confirmations can't be read", async () => {
+    // Before the migration is run (or on a failed read), a deposit must not
+    // vanish from its account — it counts as arrived on its date, as it did.
+    const [overview] = await loadAccountsOverview(
+      makeSupabase(
+        {
+          accounts: [account({ opening_date: "2020-01-01" })],
+          payments: [ccPayment({ id: "p1", payment_date: "2019-12-05", due_date: "2020-01-10", amount_total: 500 })],
+        },
+        ["card_settlement_confirmations"]
+      )
+    );
+    expect(overview.postedIn).toBe(500);
+  });
+
+  it("a card payment with no due_date (or a same-day one) still lands in its month's deposit on the 10th", async () => {
+    // Every card payment goes through the clearing company, so older rows that
+    // never had a due date are grouped the same way as new ones.
+    const [overview] = await loadAccountsOverview(
+      makeSupabase(
+        {
+          accounts: [account({ opening_date: "2024-01-01" })],
+          payments: [
+            ccPayment({ id: "p1", payment_date: "2024-08-05", due_date: null, amount_total: 300 }),
+            ccPayment({ id: "p2", payment_date: "2024-08-20", due_date: "2024-08-20", amount_total: 200 }),
+          ],
+        },
+        ["card_settlement_confirmations"]
+      )
+    );
+    expect(overview.ledger).toHaveLength(1);
+    expect(overview.ledger[0].id).toBe("ccb:acc1:2024-09-10");
+    expect(overview.ledger[0].amount).toBe(500);
+    // Long past, no confirmations table → the date rule: arrived.
+    expect(overview.ledger[0].posted).toBe(true);
+  });
+
+  it("files every card deposit under the account chosen on the Grow row", async () => {
+    const overviews = await loadAccountsOverview(
+      makeSupabase(
+        {
+          accounts: [account({ id: "acc1" }), account({ id: "acc2", name: "מזומן", kind: "cash" })],
+          outflow_source_settings: [{ account_id: "acc1" }],
+          payments: [
+            ccPayment({ id: "p1", account_id: "acc2", payment_date: "2024-08-05", due_date: null, amount_total: 300 }),
+            ccPayment({ id: "p2", account_id: null, payment_date: "2024-08-09", due_date: null, amount_total: 200 }),
+            // Not a card payment: stays where it was recorded.
+            { id: "p3", account_id: "acc2", payment_method: "cash", payment_status: "cleared", payment_date: "2024-08-06", amount_total: 50 },
+          ],
+        },
+        ["card_settlement_confirmations"]
+      )
+    );
+    const bank = overviews.find((o) => o.id === "acc1")!;
+    const cash = overviews.find((o) => o.id === "acc2")!;
+    expect(bank.ledger.map((r) => [r.id, r.amount])).toEqual([["ccb:acc1:2024-09-10", 500]]);
+    expect(cash.ledger.map((r) => r.id)).toEqual(["p:p3"]);
+  });
+
+  it("ignores a stale due_date earlier than the month's deposit, keeps a later one", async () => {
     const [overview] = await loadAccountsOverview(
       makeSupabase({
         accounts: [account({ opening_date: "2024-01-01" })],
-        payments: [ccPayment({ id: "p1", payment_date: "2024-08-05", due_date: null })],
+        payments: [
+          // Paid in October, but still carrying September's deposit date.
+          ccPayment({ id: "p1", payment_date: "2024-10-02", due_date: "2024-10-10", amount_total: 100 }),
+          // Deliberately later than the month's deposit.
+          ccPayment({ id: "p2", payment_date: "2024-10-03", due_date: "2024-12-10", amount_total: 50 }),
+        ],
       })
     );
-    expect(overview.ledger).toHaveLength(1);
-    expect(overview.ledger[0].id).toBe("p:p1");
-    expect(overview.ledger[0].posted).toBe(true); // status-based, cleared → posted immediately
+    expect(overview.ledger.map((r) => r.id).sort()).toEqual(["ccb:acc1:2024-11-10", "ccb:acc1:2024-12-10"]);
   });
 
   it("a card refund with a due_date is left on the normal per-row path, not batched", async () => {
@@ -422,8 +523,7 @@ describe("loadAccountBalances — credit-card processor batches (e.g. Growth)", 
           account({ id: "bank1", opening_date: "2024-01-01" }),
           account({ id: "bank2", opening_date: "2024-01-01" }),
         ],
-        business_settings: [{ cc_fee_rate: 0 }],
-        payments: [
+          payments: [
           ccPayment({ id: "p1", account_id: "bank1", amount_total: 300 }),
           ccPayment({ id: "p2", account_id: "bank2", amount_total: 700 }),
         ],
@@ -434,7 +534,11 @@ describe("loadAccountBalances — credit-card processor batches (e.g. Growth)", 
   });
 });
 
-describe("loadAccountBalances — credit-card batches net the clearing company's fee", () => {
+describe("loadAccountBalances — credit-card batches post the gross amount", () => {
+  // There is no fee percentage any more: the clearing company sends a receipt
+  // for what it actually charged, and that is recorded as an ordinary expense.
+  // A guessed rate was never the real figure, and one global rate rewrote the
+  // amount of every past batch whenever it was edited.
   function ccPayment(overrides: Record<string, unknown> = {}) {
     return {
       account_id: "acc1",
@@ -447,44 +551,35 @@ describe("loadAccountBalances — credit-card batches net the clearing company's
     };
   }
 
-  it("defaults to the 14% fee when no business setting is configured", async () => {
+  it("counts the full amount the customers paid", async () => {
     const b = await balance({
       accounts: [account({ opening_date: "2024-01-01" })],
-      payments: [ccPayment({ id: "p1" })],
-    });
-    // 1000 - 14% = 860
-    expect(b.pendingIn).toBe(860);
-  });
-
-  it("uses the configured business_settings.cc_fee_rate instead of the default", async () => {
-    const b = await balance({
-      accounts: [account({ opening_date: "2024-01-01" })],
-      business_settings: [{ cc_fee_rate: 0.1 }],
-      payments: [ccPayment({ id: "p1" })],
-    });
-    // 1000 - 10% = 900
-    expect(b.pendingIn).toBe(900);
-  });
-
-  it("a zero fee rate posts the full gross amount", async () => {
-    const b = await balance({
-      accounts: [account({ opening_date: "2024-01-01" })],
-      business_settings: [{ cc_fee_rate: 0 }],
       payments: [ccPayment({ id: "p1" })],
     });
     expect(b.pendingIn).toBe(1000);
   });
 
-  it("the ledger row's sublabel notes the fee amount", async () => {
+  it("ignores a leftover cc_fee_rate still sitting in business_settings", async () => {
+    // The column is left in the database (dropping it would be destructive and
+    // gains nothing); nothing reads it.
+    const b = await balance({
+      accounts: [account({ opening_date: "2024-01-01" })],
+      business_settings: [{ cc_fee_rate: 0.14 }],
+      payments: [ccPayment({ id: "p1" })],
+    });
+    expect(b.pendingIn).toBe(1000);
+  });
+
+  it("the ledger row carries the gross amount and no fee note", async () => {
     const [overview] = await loadAccountsOverview(
       makeSupabase({
         accounts: [account({ opening_date: "2024-01-01" })],
-        business_settings: [{ cc_fee_rate: 0.14 }],
         payments: [ccPayment({ id: "p1" })],
       })
     );
-    expect(overview.ledger[0].sublabel).toContain("14%");
-    expect(overview.ledger[0].amount).toBe(860);
+    expect(overview.ledger[0].amount).toBe(1000);
+    expect(overview.ledger[0].sublabel).not.toContain("עמלת");
+    expect(overview.ledger[0].sublabel).not.toContain("%");
   });
 });
 

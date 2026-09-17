@@ -5,6 +5,7 @@ import {
   buildWorkerPaymentFlowMeta,
   buildPaymentEntries,
   aggregateProfitLoss,
+  aggregateProfitLossProof,
   isClosedProjectStatus,
   isExcludedProjectStatus,
   isClosedOrderStatus,
@@ -68,6 +69,47 @@ describe("aggregateProfitLoss — refunds are contra-revenue", () => {
     expect(pl.cashRevenue).toBe(700); // 1000 − 300, NOT 1300
     expect(pl.accrualRevenue).toBe(700);
     expect(pl.cashExpense).toBe(0); // a refund is not an expense
+  });
+});
+
+describe("aggregateProfitLoss — a card sale sits on two dates", () => {
+  // Paid on the card on Sept 20; the clearing company deposits it on Oct 10.
+  // Cash = when it reached the bank; accrual (כולל פתוחים) = when the sale was.
+  const sale = (referenceDate: string, confirmations?: { available: boolean; confirmed: Set<string> }) =>
+    buildPaymentEntries({
+      ...paymentArgs([
+        makePayment({ id: "c1", payment_method: "credit_card", payment_date: "2024-09-20", amount_total: 700, account_id: "acc-1" }),
+      ]),
+      referenceDate,
+      settlementConfirmations: confirmations,
+    });
+  const sept = { from: "2024-09-01", to: "2024-09-30" };
+  const oct = { from: "2024-10-01", to: "2024-10-31" };
+
+  it("September: in accrual, not in cash", () => {
+    const [pl] = aggregateProfitLoss(sale("2024-11-01"), sept);
+    expect(pl.accrualRevenue).toBe(700);
+    expect(pl.cashRevenue).toBe(0);
+  });
+
+  it("October: in cash once the deposit is in, not counted again in accrual", () => {
+    const [pl] = aggregateProfitLoss(sale("2024-11-01"), oct);
+    expect(pl.cashRevenue).toBe(700);
+    expect(pl.accrualRevenue).toBe(0);
+  });
+
+  it("an unconfirmed deposit is not cash yet, but the sale still counts in accrual", () => {
+    const waiting = { available: true, confirmed: new Set<string>() };
+    expect(aggregateProfitLoss(sale("2024-11-01", waiting), oct)).toEqual([]);
+    const [pl] = aggregateProfitLoss(sale("2024-10-05"), sept);
+    expect(pl.accrualRevenue).toBe(700); // deposit still ahead, sale already made
+  });
+
+  it("the proof shows it on each basis's own date", () => {
+    const proof = aggregateProfitLossProof(sale("2024-11-01"), { from: "2024-09-01", to: "2024-10-31" });
+    const items = Object.values(proof).flat();
+    expect(items.find((i) => i.cash === 700)?.date).toBe("2024-10-10");
+    expect(items.find((i) => i.accrual === 700)?.date).toBe("2024-09-20");
   });
 });
 
@@ -145,6 +187,52 @@ describe("buildPaymentFlowMeta — regular (non-check) payments", () => {
       today
     );
     expect(result).toBeNull();
+  });
+});
+
+describe("buildPaymentFlowMeta — card payments land with the month's deposit", () => {
+  // תזרים is money through the account, and card money reaches the account on
+  // the 10th of the next month — the same day חשבונות shows it.
+  const today = "2024-06-15";
+  const card = (over: Partial<PaymentRow> = {}) =>
+    makePayment({ payment_method: "credit_card", payment_date: "2024-05-20", due_date: null, account_id: "acc-1", ...over });
+
+  it("dates it on the 10th of the next month, not the day the customer paid", () => {
+    const result = buildPaymentFlowMeta(card(), today);
+    expect(result?.flowDate).toBe("2024-06-10");
+    expect(result?.paymentDate).toBe("2024-05-20");
+  });
+
+  it("without the confirmations table, it is in once its day has come", () => {
+    expect(buildPaymentFlowMeta(card(), today)?.stage).toBe("posted");
+    expect(buildPaymentFlowMeta(card({ payment_date: "2024-06-02" }), today)?.stage).toBe("scheduled");
+  });
+
+  it("with the table, only a confirmed deposit is in — a passed, unconfirmed one is late", () => {
+    const none = { available: true, confirmed: new Set<string>() };
+    const confirmedJune = { available: true, confirmed: new Set(["acc-1|2024-06-10"]) };
+    expect(buildPaymentFlowMeta(card(), today, none)?.stage).toBe("pending");
+    expect(buildPaymentFlowMeta(card(), today, confirmedJune)?.stage).toBe("posted");
+    expect(buildPaymentFlowMeta(card({ payment_date: "2024-06-02" }), today, none)?.stage).toBe("scheduled");
+  });
+
+  it("looks the confirmation up under the account chosen on the Grow row", () => {
+    const onChosen = { available: true, confirmed: new Set(["acc-bank|2024-06-10"]), depositAccountId: "acc-bank" };
+    // Recorded to another account (or none): the deposit is still the bank's.
+    expect(buildPaymentFlowMeta(card({ account_id: "acc-cash" }), today, onChosen)?.stage).toBe("posted");
+    expect(buildPaymentFlowMeta(card({ account_id: null }), today, onChosen)?.stage).toBe("posted");
+  });
+
+  it("moves card income into the month it reached the bank in the cash P&L", () => {
+    const entries = buildPaymentEntries(paymentArgs([card({ id: "c1", amount_total: 700 })]));
+    expect(entries).toHaveLength(1);
+    expect(entries[0].flowDate).toBe("2024-06-10");
+    expect(entries[0].recordedDate).toBe("2024-05-20");
+  });
+
+  it("a card refund is left on its own day", () => {
+    const result = buildPaymentFlowMeta(card({ amount_total: -200 }), today);
+    expect(result?.flowDate).toBe("2024-05-20");
   });
 });
 

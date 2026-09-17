@@ -60,6 +60,11 @@ export function isOutflowSourceKind(value: unknown): value is OutflowSourceKind 
   return typeof value === "string" && (OUTFLOW_SOURCE_KINDS as readonly string[]).includes(value);
 }
 
+/** The kinds a setting can be saved for: the outgoing three, plus the Grow deposits' account. */
+export function isSettableSourceKind(value: unknown): value is OutflowSourceKind | "settlement" {
+  return isOutflowSourceKind(value) || value === "settlement";
+}
+
 /** Stored value wins; null (no row / never set) falls back to the kind's default. */
 export function effectiveReminderWorkDays(kind: SourceKind, setting?: OutflowSourceSetting | null): number {
   const stored = setting?.reminderWorkDaysBefore;
@@ -71,8 +76,16 @@ export type OutflowSourceRow = {
   kind: SourceKind;
   /** Which way this source moves money. Absent on older rows ⇒ outgoing. */
   direction?: "out" | "in";
-  /** False when there is nowhere to store settings for it (every incoming source). */
-  configurable?: boolean;
+  /**
+   * False when there is nowhere to store settings for it (rent, loans given).
+   * "account" when only its account can be set (the Grow deposits).
+   */
+  configurable?: boolean | "account";
+  /**
+   * The individual items behind a lump figure — today only the card
+   * settlement, whose amount is the sum of the card payments due to land in it.
+   */
+  breakdown?: Array<{ id: string; date: string; amount: number; label: string }>;
   key: string;
   name: string;
   /** "10 לכל חודש" — how the timing reads; NOT a concrete date. */

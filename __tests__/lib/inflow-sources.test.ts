@@ -99,3 +99,75 @@ describe("incoming source rows", () => {
 });
 
 vi.mock("@/lib/loans", () => ({ fetchLoans: async () => [] }));
+
+describe("loadSettlementSource — the next deposit's real total", () => {
+  // Not "משתנה": it is exactly what has been taken so far for that date, and it
+  // grows as more card payments are recorded for it.
+  function client(payments: unknown[]) {
+    return {
+      from: (table: string) => {
+        const b: Record<string, unknown> = {};
+        for (const m of ["select", "eq", "not", "gte", "or", "order", "limit"]) b[m] = () => b;
+        b.in = () => Promise.resolve({ data: [], error: null });
+        (b as { then: unknown }).then = (resolve: (v: unknown) => void) =>
+          resolve({ data: table === "payments" ? payments : [], error: null });
+        return b;
+      },
+    } as never;
+  }
+  const pay = (over: Record<string, unknown>) => ({
+    payment_method: "credit_card", payment_status: "cleared", order_id: null, project_id: null, notes: null, ...over,
+  });
+
+  it("sums the payments landing on the NEXT date and lists them", async () => {
+    const { loadSettlementSource } = await import("@/lib/inflow-sources");
+    const [row] = await loadSettlementSource(
+      client([
+        pay({ id: "a", payment_date: "2026-09-01", due_date: "2026-10-10", amount_total: 1000, notes: "חנות" }),
+        pay({ id: "b", payment_date: "2026-09-05", due_date: "2026-10-10", amount_total: 500 }),
+        // A later deposit — not part of the next one.
+        pay({ id: "c", payment_date: "2026-10-02", due_date: "2026-11-10", amount_total: 9000 }),
+      ]),
+      { todayIso: "2026-09-17" }
+    );
+    expect(row.nextDate).toBe("2026-10-10");
+    expect(row.amount).toBe(1500);
+    expect(row.breakdown?.map((p) => p.id).sort()).toEqual(["a", "b"]);
+    // Still not a FIXED monthly figure, so it stays out of the monthly total.
+    expect(row.monthly).toBe(false);
+    // Its account can be chosen; nothing else about it can.
+    expect(row.configurable).toBe("account");
+  });
+
+  it("ignores bounced payments", async () => {
+    const { loadSettlementSource } = await import("@/lib/inflow-sources");
+    const [row] = await loadSettlementSource(
+      client([
+        pay({ id: "a", payment_date: "2026-09-01", due_date: "2026-10-10", amount_total: 1000 }),
+        pay({ id: "bounced", payment_date: "2026-09-02", due_date: "2026-10-10", amount_total: 700, payment_status: "rejected" }),
+      ]),
+      { todayIso: "2026-09-17" }
+    );
+    expect(row.amount).toBe(1000);
+  });
+
+  it("counts card payments that never had a due date — they land on the 10th too", async () => {
+    const { loadSettlementSource } = await import("@/lib/inflow-sources");
+    const [row] = await loadSettlementSource(
+      client([
+        pay({ id: "old", payment_date: "2026-09-03", due_date: null, amount_total: 400 }),
+        pay({ id: "same-day", payment_date: "2026-09-08", due_date: "2026-09-08", amount_total: 100 }),
+        // August's payments landed on September 10 — already past.
+        pay({ id: "past", payment_date: "2026-08-20", due_date: null, amount_total: 999 }),
+      ]),
+      { todayIso: "2026-09-17" }
+    );
+    expect(row.nextDate).toBe("2026-10-10");
+    expect(row.amount).toBe(500);
+  });
+
+  it("no upcoming card payments means no row", async () => {
+    const { loadSettlementSource } = await import("@/lib/inflow-sources");
+    await expect(loadSettlementSource(client([]), { todayIso: "2026-09-17" })).resolves.toEqual([]);
+  });
+});

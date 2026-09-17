@@ -124,6 +124,17 @@ export function itemCapabilities(
   item: PaymentCalendarItem,
   liveTemplateIds: ReadonlySet<string>
 ): ItemCapabilities {
+  if (item.settlement) {
+    // A card-settlement deposit: confirmed as landed until it has been, and
+    // always openable to see what it is made of (and to undo a confirmation).
+    return {
+      canMark: !item.settlement.arrived,
+      canEdit: true,
+      canSplit: false,
+      canDelete: false,
+      editsTemplateId: null,
+    };
+  }
   if (item.direction === "in") {
     // A receipt is confirmed, not paid, and only a real payments row can be:
     // a customer balance is a number derived from an order, with nothing to

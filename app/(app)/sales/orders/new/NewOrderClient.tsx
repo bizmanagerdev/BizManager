@@ -846,7 +846,12 @@ export default function NewOrderClient({
             payment_date: payment.payment_date,
             payment_method: payment.payment_method,
             account_id: payment.account_id || null,
-            due_date: payment.due_date.trim() || null,
+            // A card payment lands with the month's deposit — the 10th of the
+            // next month (lib/card-settlements.ts).
+            due_date:
+              payment.payment_method === "credit_card"
+                ? nextMonthTenth(payment.payment_date) || null
+                : payment.due_date.trim() || null,
             reference_number: payment.reference_number.trim() || null,
             check_number:
               payment.payment_method === "check" && payment.check_number.trim()
@@ -1932,9 +1937,7 @@ export default function NewOrderClient({
                         updatePaymentDraft(index, {
                           payment_method: m,
                           account_id: payment.account_id || defaultAccountForMethod(paymentAccountsList, m),
-                          // Credit-card payments here always clear through Grow — default the
-                          // settlement date so the ledger batches it without an extra click.
-                          due_date: m === "credit_card" ? payment.due_date || nextMonthTenth(payment.payment_date) : payment.due_date,
+                          due_date: payment.due_date,
                         });
                       }}
                     >
@@ -1958,6 +1961,9 @@ export default function NewOrderClient({
                       }
                     }}
                   />
+                  {payment.payment_method === "credit_card" ? (
+                    <p className="self-end text-xs text-muted-foreground">נכנס לחשבון ב-10 לחודש הבא, יחד עם שאר תשלומי האשראי של החודש.</p>
+                  ) : (
                   <div className="space-y-1">
                     <label className="text-xs text-muted-foreground">
                       {payment.payment_method === "check" ? "תאריך פירעון *" : "תאריך פירעון צפוי (אופציונלי)"}
@@ -1972,19 +1978,8 @@ export default function NewOrderClient({
                         לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
                       </p>
                     ) : null}
-                    {payment.payment_method === "credit_card" ? (
-                      <button
-                        type="button"
-                        disabled={actionLocked}
-                        onClick={() =>
-                          updatePaymentDraft(index, { due_date: nextMonthTenth(payment.payment_date) || payment.due_date })
-                        }
-                        className="rounded border border-input px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted disabled:opacity-50"
-                      >
-                        מגיע דרך סליקה (גרואו) — 10 לחודש הבא
-                      </button>
-                    ) : null}
                   </div>
+                  )}
                 </div>
 
                 {payment.payment_method === "check" ? (
