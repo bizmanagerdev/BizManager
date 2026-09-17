@@ -25,7 +25,11 @@ test.describe("admin — settings", () => {
       );
       await expect(vatInput).toBeVisible();
       await vatInput.fill(String(nextPercent));
-      await page.getByRole("button", { name: "שמירה" }).click();
+      // The finance tab has several cards (VAT rate, books start date, CC fee
+      // rate...), each with its own "שמירה" submit button — scope to the
+      // <form> that actually contains the VAT input, not the whole tab.
+      const vatForm = page.locator("form", { has: vatInput });
+      await vatForm.getByRole("button", { name: "שמירה" }).click();
 
       await expect.poll(() => getVatRate(), { timeout: 15_000 }).toBeCloseTo(nextPercent / 100, 4);
     } finally {

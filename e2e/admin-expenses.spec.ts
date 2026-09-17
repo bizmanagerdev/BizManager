@@ -84,7 +84,11 @@ test.describe("admin — expense recording", () => {
       expenseId = await getExpenseIdByDescription(description);
 
       await page.goto("/financial");
-      const row = page.locator(`tr[data-focus-id="expense:${expenseId}"]`);
+      // /financial keeps both the "היסטוריה" and "יומן מלא" tab panels mounted
+      // (fast switching, no refetch), each rendering its own row for this
+      // entry with the SAME data-focus-id — so an unqualified match is
+      // ambiguous even though only one tab is actually visible right now.
+      const row = page.locator(`tr[data-focus-id="expense:${expenseId}"]:visible`);
       await expect(row).toBeVisible();
       await expect(row).toContainText("250");
     } finally {
