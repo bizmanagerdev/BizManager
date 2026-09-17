@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useMemo, useState, useTransition } from "react";
+import { Fragment, useEffect, useMemo, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { idFromParam, replaceSearchParams } from "@/lib/ui/url-state";
 import { AddDateIcon, AddReminderIcon, ChevronDownIcon, DeleteIcon, EditIcon, ExternalLinkIcon, InfoIcon, MoreIcon, RecurringIcon, SpinnerIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,18 @@ import type { Account } from "@/lib/accounts";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete } from "@/lib/undo-engine";
-import { OUTFLOW_SOURCE_KIND_LABEL, type OutflowSourceRow } from "@/lib/outflow-source-settings";
+import {
+  INFLOW_SOURCE_KINDS,
+  OUTFLOW_SOURCE_KIND_LABEL,
+  OUTFLOW_SOURCE_KINDS,
+  type OutflowSourceRow,
+} from "@/lib/outflow-source-settings";
+
+// The list's filters in the URL (see the state below). Named apart from the
+// board's own ?account=, since they are separate controls.
+const LIST_KIND_PARAM = "listKind";
+const LIST_ACCOUNT_PARAM = "listAccount";
+const SOURCE_KINDS = [...OUTFLOW_SOURCE_KINDS, ...INFLOW_SOURCE_KINDS];
 import { buildFixedPaymentRows, summarizeFixedPayments, type FixedPaymentRow } from "@/lib/fixed-payments";
 import { useOutflowSources } from "./useOutflowSources";
 import { useBackfillMissing } from "./useBackfillMissing";
@@ -206,9 +218,21 @@ export default function RecurringExpensesManager(props: Props) {
   const [editingTemplate, setEditingTemplate] = useState<RecurringExpenseTemplateItem | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [remindTemplate, setRemindTemplate] = useState<RecurringExpenseTemplateItem | null>(null);
-  const [accountFilter, setAccountFilter] = useState("");
+  // Both filters live in the URL too, so a refresh keeps them.
+  const searchParams = useSearchParams();
+  const [accountFilter, setAccountFilter] = useState(() =>
+    idFromParam(searchParams.get(LIST_ACCOUNT_PARAM), props.accounts)
+  );
   // "" = all kinds; "template" = הוצאה קבועה; otherwise a source kind.
-  const [kindFilter, setKindFilter] = useState<"" | "template" | OutflowSourceRow["kind"]>("");
+  const [kindFilter, setKindFilter] = useState<"" | "template" | OutflowSourceRow["kind"]>(() => {
+    const value = searchParams.get(LIST_KIND_PARAM);
+    return value === "template" || (value && (SOURCE_KINDS as readonly string[]).includes(value))
+      ? (value as "template" | OutflowSourceRow["kind"])
+      : "";
+  });
+  useEffect(() => {
+    replaceSearchParams({ [LIST_ACCOUNT_PARAM]: accountFilter || null, [LIST_KIND_PARAM]: kindFilter || null });
+  }, [accountFilter, kindFilter]);
 
   // "השלמת חיובים חסרים" for a single row (the page header has the all-templates one).
   const backfill = useBackfillMissing();

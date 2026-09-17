@@ -62,6 +62,11 @@ beforeEach(() => {
 });
 
 describe("PaymentsHubClient \u2014 the direction switch", () => {
+  it("names the board tab לוח תזרים", () => {
+    renderHub();
+    expect(screen.getByRole("tab", { name: /לוח תזרים/ })).toBeTruthy();
+  });
+
   it("offers the three directions and opens on outgoing", () => {
     renderHub();
     const group = screen.getByRole("group", { name: "\u05db\u05d9\u05d5\u05d5\u05df \u05d4\u05db\u05e1\u05e3" });

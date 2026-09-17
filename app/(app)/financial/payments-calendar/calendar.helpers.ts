@@ -243,6 +243,12 @@ export const STAGE_ORDER: StageKey[] = ["overdue", "pending", "scheduled", "post
 // the default and writes nothing) so a refresh, or Back from a source page,
 // lands on the same month.
 export const MONTH_PARAM = "month";
+
+// The board's filters, in the URL like the month so a refresh keeps them. Off
+// / "all" is the default and writes nothing.
+export const SHOW_PAID_PARAM = "paid";
+export const RECURRING_ONLY_PARAM = "onlyRecurring";
+export const ACCOUNT_PARAM = "account";
 export function monthFromParam(value: string | null): Date | null {
   const m = value ? /^(\d{4})-(\d{2})$/.exec(value) : null;
   if (!m) return null;

@@ -2,7 +2,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, within, fireEvent } from "@testing-library/react";
 
-vi.mock("next/navigation", () => import("@/__tests__/mocks/next-navigation"));
+// The URL a test starts from (a refresh restores the board's filters from it).
+const searchParams = { value: new URLSearchParams() };
+vi.mock("next/navigation", async () => {
+  const base = await import("@/__tests__/mocks/next-navigation");
+  return { ...base, useSearchParams: () => searchParams.value };
+});
 // The expense dialog is loaded lazily and is not under test here.
 vi.mock("next/dynamic", () => ({ default: () => () => null }));
 vi.mock("@/components/reminders/ReminderFormDialog", () => ({ default: () => null }));
@@ -104,6 +109,8 @@ let slot: HTMLDivElement;
 // so a test has to provide both landing spots.
 let filters: HTMLDivElement;
 beforeEach(() => {
+  searchParams.value = new URLSearchParams();
+  window.history.replaceState(null, "", "/");
   slot = document.createElement("div");
   filters = document.createElement("div");
   document.body.append(slot, filters);
@@ -207,6 +214,32 @@ describe("PaymentsCalendar (צפי תזרים · לוח) — the board as it sta
     expect(within(dayCell(20)).getByText(ils(1200))).toBeTruthy();
     expect(within(dayCell(25)).queryByText(ils(8000))).toBeNull();
     expect(within(dayCell(1)).queryByText(ils(500))).toBeNull();
+  });
+
+  it("keeps its filters across a refresh: they are written to the URL and read back from it", () => {
+    const first = renderBoard();
+    fireEvent.click(screen.getByRole("button", { name: "הצג ששולמו" }));
+    fireEvent.click(screen.getByRole("button", { name: "רק קבועות" }));
+    fireEvent.change(screen.getByLabelText("סינון לפי חשבון"), { target: { value: "acc-1" } });
+    const url = new URLSearchParams(window.location.search);
+    expect(url.get("paid")).toBe("1");
+    expect(url.get("onlyRecurring")).toBe("1");
+    expect(url.get("account")).toBe("acc-1");
+    first.unmount();
+
+    // "Refresh": a new board from that URL.
+    searchParams.value = url;
+    renderBoard();
+    expect(screen.getByRole("button", { name: "הצג ששולמו" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "רק קבועות" }).getAttribute("aria-pressed")).toBe("true");
+    expect((screen.getByLabelText("סינון לפי חשבון") as HTMLSelectElement).value).toBe("acc-1");
+  });
+
+  it("ignores an account in the URL that no longer exists", () => {
+    searchParams.value = new URLSearchParams("account=gone");
+    renderBoard();
+    expect((screen.getByLabelText("סינון לפי חשבון") as HTMLSelectElement).value).toBe("");
+    expect(new URLSearchParams(window.location.search).get("account")).toBeNull();
   });
 
   it("the account filter scopes the grid and the alerts chip alike", () => {

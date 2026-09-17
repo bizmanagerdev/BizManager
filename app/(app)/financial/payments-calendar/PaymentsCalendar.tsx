@@ -7,7 +7,7 @@ import { FOCUS_PARAM, flashFocusTarget } from "@/components/layout/FocusHighligh
 import { NativeSelect } from "@/components/ui/native-select";
 import { FilterChip, TOOLBAR_CONTROL } from "@/components/ui/filter-chip";
 import type { Account } from "@/lib/accounts";
-import { replaceSearchParams } from "@/lib/ui/url-state";
+import { idFromParam, replaceSearchParams } from "@/lib/ui/url-state";
 import type { PaymentCalendarItem } from "@/lib/payables";
 import type { RecurringExpenseTemplateItem } from "@/app/(app)/financial/RecurringExpensesManager";
 import MonthCalendar, {
@@ -25,6 +25,9 @@ import { useRefreshAndWait } from "./useRefreshAndWait";
 import {
   MONEY_SIGN,
   MONTH_PARAM,
+  SHOW_PAID_PARAM,
+  RECURRING_ONLY_PARAM,
+  ACCOUNT_PARAM,
   STAGE_DOT,
   STAGE_ORDER,
   amountLabel,
@@ -82,7 +85,8 @@ export default function PaymentsCalendar({ items: allItems, todayIso, projects, 
   const { refreshAndWait } = useRefreshAndWait();
   const itemsProp = useMemo(() => filterByDirection(allItems, direction), [allItems, direction]);
   const items = useUndoOverlay(itemsProp, (i) => i.id, "payment-calendar-item");
-  const [showPaid, setShowPaid] = useState(false);
+  // The filters are seeded from the URL and written back (below), so a refresh keeps them.
+  const [showPaid, setShowPaid] = useState(() => searchParams.get(SHOW_PAID_PARAM) === "1");
   // A `?focus=<item id>` deep link (an alert, the מקורות נוספים "next" link)
   // must land ON the item: its month, its day selected — the day panel is the
   // only place a card carrying data-focus-id renders, so without selecting the
@@ -103,8 +107,15 @@ export default function PaymentsCalendar({ items: allItems, todayIso, projects, 
   const [revealedIds, setRevealedIds] = useState<ReadonlySet<string>>(() =>
     focusedItem && focusedItem.stage === "posted" ? new Set([focusedItem.id]) : EMPTY_IDS
   );
-  const [recurringOnly, setRecurringOnly] = useState(false);
-  const [accountFilter, setAccountFilter] = useState("");
+  const [recurringOnly, setRecurringOnly] = useState(() => searchParams.get(RECURRING_ONLY_PARAM) === "1");
+  const [accountFilter, setAccountFilter] = useState(() => idFromParam(searchParams.get(ACCOUNT_PARAM), accounts));
+  useEffect(() => {
+    replaceSearchParams({
+      [SHOW_PAID_PARAM]: showPaid ? "1" : null,
+      [RECURRING_ONLY_PARAM]: recurringOnly ? "1" : null,
+      [ACCOUNT_PARAM]: accountFilter || null,
+    });
+  }, [showPaid, recurringOnly, accountFilter]);
   const accountNameById = useMemo(() => new Map(accounts.map((a) => [a.id, a.name] as const)), [accounts]);
   const today = useMemo(() => toDateOnly(todayIso) ?? new Date(), [todayIso]);
   // Month + selected day owned here so the calendar, the day panel and the
@@ -176,9 +187,11 @@ export default function PaymentsCalendar({ items: allItems, todayIso, projects, 
     let list = showPaid
       ? accountScopedItems
       : accountScopedItems.filter((i) => i.stage !== "posted" || revealedIds.has(i.id));
-    if (recurringOnly) list = list.filter((i) => i.recurringTemplateId);
+    // Not in נכנס, where the chip isn't shown: a kept "רק קבועות" would empty
+    // the incoming board with no visible reason.
+    if (recurringOnly && direction !== "in") list = list.filter((i) => i.recurringTemplateId);
     return list;
-  }, [accountScopedItems, showPaid, recurringOnly, revealedIds]);
+  }, [accountScopedItems, showPaid, recurringOnly, revealedIds, direction]);
 
   const itemsByDay = useMemo(() => groupByDay(visibleItems), [visibleItems]);
   const itemsOnDay = (day: Date) => itemsByDay.get(isoLocal(day)) ?? [];

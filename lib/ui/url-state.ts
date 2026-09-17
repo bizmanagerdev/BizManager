@@ -13,6 +13,11 @@
  * Untouched params are kept, so `?focus=` deep links and other pages' state
  * survive.
  */
+/** An id from the URL, only if it is still one of the options (e.g. an account since deleted → ""). */
+export function idFromParam(value: string | null, options: ReadonlyArray<{ id: string }>): string {
+  return value && options.some((o) => o.id === value) ? value : "";
+}
+
 export function replaceSearchParams(update: Record<string, string | null | undefined>) {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);

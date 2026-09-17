@@ -41,10 +41,9 @@ type Props = {
 };
 
 const TABS = [
-  // The board itself.
-  // Just "the board": it carries money going out AND coming in now, so naming
-  // it after one direction would be wrong.
-  { key: "calendar", label: "לוח", icon: CalendarIcon },
+  // The board itself. Named for the flow, not a direction: it carries money
+  // going out AND coming in.
+  { key: "calendar", label: "לוח תזרים", icon: CalendarIcon },
   // Everything that repeats, in whichever direction the switch shows: bills,
   // salaries, loans and cards going out; rent, loans given and the card
   // settlement coming in. Not a detail view of the calendar but its own thing,
@@ -64,7 +63,7 @@ function tabFromParam(value: string | null): TabKey {
   return value === "recurring" ? "recurring" : "calendar";
 }
 
-// The צפי תזרים hub: scheduled money in both directions, as a calendar (לוח)
+// The צפי תזרים hub: scheduled money in both directions, as a calendar (לוח תזרים)
 // and as the list of what repeats (קבועות).
 export default function PaymentsHubClient({
   items,

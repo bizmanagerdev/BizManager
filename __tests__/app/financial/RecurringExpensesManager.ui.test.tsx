@@ -1,8 +1,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, within, fireEvent } from "@testing-library/react";
 
-vi.mock("next/navigation", () => import("@/__tests__/mocks/next-navigation"));
+// The URL a test starts from (a refresh restores the list's filters from it).
+const searchParams = { value: new URLSearchParams() };
+vi.mock("next/navigation", async () => {
+  const base = await import("@/__tests__/mocks/next-navigation");
+  return { ...base, useSearchParams: () => searchParams.value };
+});
 // The shared expense dialog is loaded lazily and is not under test here.
 vi.mock("next/dynamic", () => ({ default: () => () => null }));
 vi.mock("@/components/reminders/ReminderFormDialog", () => ({ default: () => null }));
@@ -47,6 +52,8 @@ const sources = [
 ];
 
 beforeEach(() => {
+  searchParams.value = new URLSearchParams();
+  window.history.replaceState(null, "", "/");
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => ({ ok: true, json: async () => ({ rows: sources, todayIso: "2026-09-15" }) }))
@@ -57,6 +64,29 @@ afterEach(() => {
 });
 
 describe("RecurringExpensesManager (תשלומים קבועים)", () => {
+  it("keeps its type and account filters across a refresh", async () => {
+    const accounts = [{ id: "acc-1", name: "לאומי" } as never];
+    // The salary leaves from לאומי, so both filters together still show it.
+    const rows = sources.map((r) => (r.kind === "salary" ? { ...r, accountId: "acc-1" } : r));
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ rows, todayIso: "2026-09-15" }) })));
+    const first = render(<RecurringExpensesManager templates={templates} projects={[]} orders={[]} properties={[]} accounts={accounts} />);
+    await screen.findAllByText("משכורת דוד");
+    fireEvent.change(screen.getAllByLabelText("סינון לפי סוג")[0], { target: { value: "salary" } });
+    fireEvent.change(screen.getAllByLabelText("סינון לפי חשבון")[0], { target: { value: "acc-1" } });
+    const url = new URLSearchParams(window.location.search);
+    expect(url.get("listKind")).toBe("salary");
+    expect(url.get("listAccount")).toBe("acc-1");
+    first.unmount();
+
+    // "Refresh": a new list from that URL; a made-up kind would be ignored.
+    searchParams.value = url;
+    render(<RecurringExpensesManager templates={templates} projects={[]} orders={[]} properties={[]} accounts={accounts} />);
+    await screen.findAllByText("משכורת דוד");
+    expect(screen.queryAllByText("ארנונה")).toHaveLength(0);
+    expect((screen.getAllByLabelText("סינון לפי סוג")[0] as HTMLSelectElement).value).toBe("salary");
+    expect((screen.getAllByLabelText("סינון לפי חשבון")[0] as HTMLSelectElement).value).toBe("acc-1");
+  });
+
   it("lists bills and sources together, sorted by the day of the month", async () => {
     render(<RecurringExpensesManager templates={templates} projects={[]} orders={[]} properties={[]} accounts={[{ id: "acc-1", name: "לאומי" } as never]} />);
     await screen.findAllByText("החזר הלוואה — ברנדווין");
