@@ -63,8 +63,14 @@ test.describe("admin — properties", () => {
 
       await page.getByRole("button", { name: "המשך" }).click(); // date: default
       await page.getByRole("button", { name: "תשלום אחד" }).click();
-      await page.getByRole("button", { name: "שולם" }).click();
+      // status: paid in full — see admin-expenses.spec.ts's own comment for
+      // why this can't be a role/name match against "שולם" (OptionRow's
+      // label+sub+badge all contribute to the accessible name).
+      await page.locator("button[data-exp-option]", { hasText: "ההוצאה שולמה במלואה" }).click();
       await page.getByRole("button", { name: "מזומן" }).click();
+      // account: shown whenever paid/partial — see admin-expenses.spec.ts's
+      // own comment for why this extra "המשך" is needed.
+      await page.getByRole("button", { name: "המשך" }).click(); // account
       await page.getByRole("button", { name: "המשך" }).click(); // notes
       await page.getByRole("button", { name: "המשך" }).click(); // files
       await page.getByRole("button", { name: "שמור הוצאה" }).click();
