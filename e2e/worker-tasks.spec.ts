@@ -25,13 +25,15 @@ test.describe("worker role scoping — tasks", () => {
         data: { subject, assigned_user_id: adminId },
       });
       expect(response.ok()).toBe(true);
-      const body = (await response.json()) as { assigned_user_id?: string; id?: string };
-      taskId = body.id ?? null;
+      // The route returns the created row nested under "task", not at the
+      // top level (confirmed via the raw response body).
+      const body = (await response.json()) as { task?: { assigned_user_id?: string; id?: string } };
+      taskId = body.task?.id ?? null;
 
       // app/api/tasks/create/route.ts forces assigned_user_id to the
       // creator whenever role === "worker" — the request body's admin id
       // must never win.
-      expect(body.assigned_user_id).toBe(worker.id);
+      expect(body.task?.assigned_user_id).toBe(worker.id);
     } finally {
       if (taskId) await deleteTestTask(taskId);
       await deleteTestWorker(worker);
