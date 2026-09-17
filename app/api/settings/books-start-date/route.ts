@@ -50,7 +50,13 @@ export async function POST(req: Request) {
     await logAuditEvent({
       supabase,
       tableName: "business_settings",
-      recordId: "books_start_date",
+      // business_settings is a singleton row keyed by a boolean id (see
+      // lib/settings/booksStartDate.ts), so there's no real per-row uuid to log
+      // against — audit_logs.record_id is `uuid not null`, and the literal
+      // string "books_start_date" used here before failed every write with
+      // "invalid input syntax for type uuid". A fixed nil uuid stands in for
+      // "the singleton settings row." Confirmed live 2026-09-17.
+      recordId: "00000000-0000-0000-0000-000000000000",
       action: "update",
       changedBy: profile.id,
       userRole: profile.role,
