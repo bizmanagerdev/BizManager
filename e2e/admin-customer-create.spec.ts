@@ -23,125 +23,92 @@ test.describe("admin — customer creation", () => {
     const customerName = `E2E new customer ${Date.now()}`;
     let customerId: string | null = null;
 
-    // TEMPORARY DIAGNOSTIC, round 10 — the hover-panel pointerdown-cancel fix
-    // (components/ui/hover-panel.tsx) measurably helped (40 -> 30 e2e
-    // failures across the whole suite), but THIS test still fails, now with
-    // a subtly different signature: Playwright confirms the tile visible/
-    // stable/scrolled-into-view successfully, and ONLY THEN it detaches —
-    // later in the sequence than before. Hypothesis: Playwright waits out
-    // the panel's own entrance animation (stability check) BEFORE ever
-    // moving the mouse, so the 180ms hideSoon timer — started only once the
-    // mouse actually leaves the trigger — can still fully elapse before
-    // pointerdown is ever dispatched, meaning the cancel() fix never gets a
-    // chance to run before the removal already happened. This round
-    // confirms that directly: logs exactly when cancel() fires (if at all)
-    // relative to the removal.
+    // TEMPORARY DIAGNOSTIC, round 12 — four confirmed-real bugs fixed along
+    // the way (Service Worker dev-host self-destruct, auto-recover
+    // chunk-reload pair, @vercel/speed-insights redirecting to /login, the
+    // hover-panel pointerdown-cancel race) measurably helped (40 -> 30 e2e
+    // failures one run), but the suite still bounces 30-40 and THIS test
+    // still fails — its failure point keeps MOVING rather than
+    // disappearing (round 10: click "לקוח" itself; round 11: the very same
+    // click SUCCEEDED, but the test still hit the overall 60s timeout
+    // somewhere later, with no diagnostic — the prior instrumentation only
+    // wrapped that one click). This round wraps EVERY step with a labeled
+    // helper so whichever one is actually stuck next gets caught with full
+    // context, instead of guessing where to look next. Also broadens the
+    // DOM watch to any direct child of <body> (where Radix portals mount)
+    // rather than one specific tagged button, since the failure point has
+    // already moved once.
     const diag: string[] = [];
     const t0 = Date.now();
     const ts = () => `+${Date.now() - t0}ms`;
-    await page.exposeFunction("__e2ePush", (line: string) => diag.push(`${ts()} ${line}`));
+    let currentStep = "before any step";
+    await page.exposeFunction("__e2ePush", (line: string) => diag.push(`${ts()} [${currentStep}] ${line}`));
     page.on("framenavigated", (frame) => {
-      if (frame === page.mainFrame()) diag.push(`${ts()} [NAVIGATION] ${frame.url()}`);
+      if (frame === page.mainFrame()) diag.push(`${ts()} [${currentStep}] [NAVIGATION] ${frame.url()}`);
     });
-    page.on("pageerror", (err) => diag.push(`${ts()} [pageerror] ${err.message.slice(0, 200)}`));
+    page.on("pageerror", (err) => diag.push(`${ts()} [${currentStep}] [pageerror] ${err.message.slice(0, 200)}`));
+
+    await page.evaluate(() => {
+      const push = (window as unknown as { __e2ePush: (s: string) => void }).__e2ePush;
+      const obs = new MutationObserver((mutations) => {
+        for (const m of mutations) {
+          m.addedNodes.forEach((n) => {
+            if (n instanceof HTMLElement) push(`[BODY CHILD ADDED] <${n.tagName} class="${n.className.toString().slice(0, 60)}">`);
+          });
+          m.removedNodes.forEach((n) => {
+            if (n instanceof HTMLElement) push(`[BODY CHILD REMOVED] <${n.tagName} class="${n.className.toString().slice(0, 60)}">`);
+          });
+        }
+      });
+      // Direct children only (not subtree) — Radix portals mount as direct
+      // children of body, so this stays a clean, low-noise signal for
+      // "a portal appeared/disappeared" without every internal React
+      // re-render inside the app root also showing up.
+      obs.observe(document.body, { childList: true });
+    });
+
+    async function step<T>(label: string, fn: () => Promise<T>): Promise<T> {
+      currentStep = label;
+      diag.push(`${ts()} [STEP START] ${label}`);
+      try {
+        const result = await fn();
+        diag.push(`${ts()} [STEP OK] ${label}`);
+        return result;
+      } catch (err) {
+        throw new Error(
+          `FAILED AT STEP: "${label}"\nORIGINAL ERROR: ${(err as Error).message.slice(0, 400)}\n\n` +
+            `TIMELINE (${diag.length} events, last 40 shown):\n${diag.slice(-40).join("\n")}`
+        );
+      }
+    }
 
     try {
       await loginAs(page, "admin");
 
-      await page.getByRole("button", { name: "הוספה מהירה" }).click();
+      await step("open quick-create", () => page.getByRole("button", { name: "הוספה מהירה" }).click());
+      await step("click לקוח tile", () => page.getByRole("button", { name: "לקוח" }).click());
+      await step("fill name", () => page.getByRole("textbox").fill(customerName));
+      await step("name -> continue", () => page.getByRole("button", { name: "המשך" }).click());
+      await step("fill phone", () =>
+        page.locator('xpath=//label[contains(text(),"טלפון")]/following-sibling::input').fill("0501234567")
+      );
+      await step("contact -> continue", () => page.getByRole("button", { name: "המשך" }).click());
+      await step("email -> continue", () => page.getByRole("button", { name: "המשך" }).click());
+      await step("pick city תל אביב", () => page.getByRole("button", { name: "תל אביב", exact: true }).click());
+      await step("nameForInvoice -> continue", () => page.getByRole("button", { name: "המשך" }).click());
+      await step("regNumber -> continue", () => page.getByRole("button", { name: "המשך" }).click());
+      await step("address -> continue", () => page.getByRole("button", { name: "המשך" }).click());
+      await step("prepayment -> לא", () => page.getByRole("button", { name: "לא", exact: true }).click());
+      await step("notes -> continue", () => page.getByRole("button", { name: "המשך" }).click());
+      await step("contacts -> continue", () => page.getByRole("button", { name: "המשך" }).click());
+      await step("branches -> continue", () => page.getByRole("button", { name: "המשך" }).click());
 
-      await page.evaluate(() => {
-        const push = (window as unknown as { __e2ePush: (s: string) => void }).__e2ePush;
-
-        // Patch setTimeout/clearTimeout globally, just for the duration of
-        // this window, to see exactly when the hover panel's own hideSoon
-        // timer gets scheduled, cancelled, or fires — without needing to
-        // touch the component's source.
-        const origSetTimeout = window.setTimeout;
-        const origClearTimeout = window.clearTimeout;
-        const tracked = new Map<number, number>();
-        (window as unknown as { setTimeout: typeof setTimeout }).setTimeout = ((fn: TimerHandler, delay?: number, ...args: unknown[]) => {
-          const id = origSetTimeout(
-            (...cbArgs: unknown[]) => {
-              if (delay === 180) push(`[TIMER FIRED] id had delay=180`);
-              if (typeof fn === "function") (fn as (...a: unknown[]) => void)(...cbArgs);
-            },
-            delay,
-            ...args
-          );
-          if (delay === 180) {
-            tracked.set(id as unknown as number, delay);
-            push(`[TIMER SCHEDULED] delay=180 id=${id}`);
-          }
-          return id;
-        }) as typeof setTimeout;
-        (window as unknown as { clearTimeout: typeof clearTimeout }).clearTimeout = ((id?: number) => {
-          if (id !== undefined && tracked.has(id)) push(`[TIMER CLEARED] id=${id}`);
-          return origClearTimeout(id);
-        }) as typeof clearTimeout;
-
-        window.addEventListener("pointerdown", () => push("[pointerdown on window, capture]"), true);
-
-        const btn = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("לקוח"));
-        if (!btn) {
-          push("[TAG] button not found at tag time");
-          return;
-        }
-        btn.setAttribute("data-e2e-watch", "1");
-        push("[TAG] tagged OK");
-        const obs = new MutationObserver((mutations) => {
-          for (const m of mutations) {
-            m.removedNodes.forEach((n) => {
-              if (!(n instanceof HTMLElement)) return;
-              const isTarget = n.getAttribute("data-e2e-watch") === "1" || n.querySelector('[data-e2e-watch="1"]');
-              if (isTarget) push(`[REMOVED] <${n.tagName} class="${n.className.toString().slice(0, 60)}">`);
-            });
-          }
-        });
-        obs.observe(document.body, { childList: true, subtree: true });
-      });
-
-      try {
-        await page.getByRole("button", { name: "לקוח" }).click();
-      } catch (err) {
-        throw new Error(
-          `ORIGINAL ERROR: ${(err as Error).message.slice(0, 500)}\n\n` +
-            `TIMELINE (${diag.length} events, last 30 shown):\n${diag.slice(-30).join("\n") || "none"}`
-        );
-      }
-
-      // name
-      await page.getByRole("textbox").fill(customerName);
-      await page.getByRole("button", { name: "המשך" }).click();
-
-      // contact — phone is the required field on this step.
-      await page
-        .locator('xpath=//label[contains(text(),"טלפון")]/following-sibling::input')
-        .fill("0501234567");
-      await page.getByRole("button", { name: "המשך" }).click();
-
-      // email (optional) — skip.
-      await page.getByRole("button", { name: "המשך" }).click();
-
-      // city (required) — OptionRow auto-advances past cityOther straight to
-      // nameForInvoice.
-      await page.getByRole("button", { name: "תל אביב", exact: true }).click();
-
-      // Remaining optional steps (nameForInvoice/regNumber/address) then
-      // prepayment (auto-advances on click) then notes/contacts/branches —
-      // walk forward to the summary step's final submit button.
-      await page.getByRole("button", { name: "המשך" }).click(); // nameForInvoice
-      await page.getByRole("button", { name: "המשך" }).click(); // regNumber
-      await page.getByRole("button", { name: "המשך" }).click(); // address
-      await page.getByRole("button", { name: "לא", exact: true }).click(); // prepayment
-      await page.getByRole("button", { name: "המשך" }).click(); // notes
-      await page.getByRole("button", { name: "המשך" }).click(); // contacts
-      await page.getByRole("button", { name: "המשך" }).click(); // branches
-
-      const [response] = await Promise.all([
-        page.waitForResponse((r) => r.url().includes("/api/customers/create") && r.request().method() === "POST"),
-        page.getByRole("button", { name: "יצירת לקוח" }).click(),
-      ]);
+      const [response] = await step("submit יצירת לקוח", () =>
+        Promise.all([
+          page.waitForResponse((r) => r.url().includes("/api/customers/create") && r.request().method() === "POST"),
+          page.getByRole("button", { name: "יצירת לקוח" }).click(),
+        ])
+      );
       const body = (await response.json()) as { customer?: { id?: string } };
       customerId = body.customer?.id ?? null;
       expect(customerId).toBeTruthy();
