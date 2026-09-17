@@ -82,31 +82,40 @@ test.describe("admin — customer creation", () => {
       }
     }
 
+    // Short, explicit per-action timeout — round 11 showed a step can hang
+    // long enough to consume the WHOLE 60s test budget with no individual
+    // action ever throwing its own catchable error (Playwright's test-level
+    // timeout cancels the test function outright; it doesn't reject the
+    // in-flight action in a way this file's own try/catch can see). Forcing
+    // each action to fail fast means whichever step is actually stuck
+    // throws well within the 60s budget, landing in step()'s catch with a
+    // real diagnostic dump instead of a bare "Test timeout exceeded".
+    const T = 8_000;
     try {
       await loginAs(page, "admin");
 
-      await step("open quick-create", () => page.getByRole("button", { name: "הוספה מהירה" }).click());
-      await step("click לקוח tile", () => page.getByRole("button", { name: "לקוח" }).click());
-      await step("fill name", () => page.getByRole("textbox").fill(customerName));
-      await step("name -> continue", () => page.getByRole("button", { name: "המשך" }).click());
+      await step("open quick-create", () => page.getByRole("button", { name: "הוספה מהירה" }).click({ timeout: T }));
+      await step("click לקוח tile", () => page.getByRole("button", { name: "לקוח" }).click({ timeout: T }));
+      await step("fill name", () => page.getByRole("textbox").fill(customerName, { timeout: T }));
+      await step("name -> continue", () => page.getByRole("button", { name: "המשך" }).click({ timeout: T }));
       await step("fill phone", () =>
-        page.locator('xpath=//label[contains(text(),"טלפון")]/following-sibling::input').fill("0501234567")
+        page.locator('xpath=//label[contains(text(),"טלפון")]/following-sibling::input').fill("0501234567", { timeout: T })
       );
-      await step("contact -> continue", () => page.getByRole("button", { name: "המשך" }).click());
-      await step("email -> continue", () => page.getByRole("button", { name: "המשך" }).click());
-      await step("pick city תל אביב", () => page.getByRole("button", { name: "תל אביב", exact: true }).click());
-      await step("nameForInvoice -> continue", () => page.getByRole("button", { name: "המשך" }).click());
-      await step("regNumber -> continue", () => page.getByRole("button", { name: "המשך" }).click());
-      await step("address -> continue", () => page.getByRole("button", { name: "המשך" }).click());
-      await step("prepayment -> לא", () => page.getByRole("button", { name: "לא", exact: true }).click());
-      await step("notes -> continue", () => page.getByRole("button", { name: "המשך" }).click());
-      await step("contacts -> continue", () => page.getByRole("button", { name: "המשך" }).click());
-      await step("branches -> continue", () => page.getByRole("button", { name: "המשך" }).click());
+      await step("contact -> continue", () => page.getByRole("button", { name: "המשך" }).click({ timeout: T }));
+      await step("email -> continue", () => page.getByRole("button", { name: "המשך" }).click({ timeout: T }));
+      await step("pick city תל אביב", () => page.getByRole("button", { name: "תל אביב", exact: true }).click({ timeout: T }));
+      await step("nameForInvoice -> continue", () => page.getByRole("button", { name: "המשך" }).click({ timeout: T }));
+      await step("regNumber -> continue", () => page.getByRole("button", { name: "המשך" }).click({ timeout: T }));
+      await step("address -> continue", () => page.getByRole("button", { name: "המשך" }).click({ timeout: T }));
+      await step("prepayment -> לא", () => page.getByRole("button", { name: "לא", exact: true }).click({ timeout: T }));
+      await step("notes -> continue", () => page.getByRole("button", { name: "המשך" }).click({ timeout: T }));
+      await step("contacts -> continue", () => page.getByRole("button", { name: "המשך" }).click({ timeout: T }));
+      await step("branches -> continue", () => page.getByRole("button", { name: "המשך" }).click({ timeout: T }));
 
       const [response] = await step("submit יצירת לקוח", () =>
         Promise.all([
-          page.waitForResponse((r) => r.url().includes("/api/customers/create") && r.request().method() === "POST"),
-          page.getByRole("button", { name: "יצירת לקוח" }).click(),
+          page.waitForResponse((r) => r.url().includes("/api/customers/create") && r.request().method() === "POST", { timeout: T }),
+          page.getByRole("button", { name: "יצירת לקוח" }).click({ timeout: T }),
         ])
       );
       const body = (await response.json()) as { customer?: { id?: string } };
