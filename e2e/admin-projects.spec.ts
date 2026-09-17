@@ -119,6 +119,10 @@ test.describe("admin — project creation, status change, and expenses", () => {
       // account: shown whenever paid/partial — see admin-expenses.spec.ts's
       // own comment for why this extra "המשך" is needed.
       await page.getByRole("button", { name: "המשך" }).click(); // account
+      // billing: project-only (showBillingOptions = Boolean(effectiveProjectId)) —
+      // "כלול במחיר הבסיס" avoids the follow-up required "סכום לחיוב לקוח" amount
+      // field that "לחיוב לקוח" would need.
+      await page.getByRole("button", { name: "כלול במחיר הבסיס" }).click();
       await page.getByRole("button", { name: "המשך" }).click(); // notes
       await page.getByRole("button", { name: "המשך" }).click(); // files
       await page.getByRole("button", { name: "שמור הוצאה" }).click();
