@@ -62,8 +62,15 @@ test.describe("admin — expense recording", () => {
       // במלואה" is unique to this one option among the three status cards.
       await page.locator("button[data-exp-option]", { hasText: "ההוצאה שולמה במלואה" }).click();
 
-      // method: cash — no account step follows (no accounts seeded locally).
+      // method: cash.
       await page.getByRole("button", { name: "מזומן" }).click();
+
+      // account: shown whenever the expense is paid/partial (ExpenseDialog.tsx's
+      // step builder pushes "method","account" together) — with no accounts
+      // seeded locally it's just an "אפשר להמשיך בלי שיוך" notice and the
+      // shared footer's "המשך" (stepNavConfig has no "account" case, so it's
+      // never disabled) advances past it same as notes/files below.
+      await page.getByRole("button", { name: "המשך" }).click();
 
       // notes (optional) — advance past it.
       await page.getByRole("button", { name: "המשך" }).click();
