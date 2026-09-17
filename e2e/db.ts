@@ -645,14 +645,21 @@ export async function getLoanRepaymentTotal(loanId: string): Promise<number> {
 
 // business_settings is a singleton row (id=true) — vat_rate is shared, global
 // business state, not a row a test can scope to itself. A test that changes
-// it MUST restore the original value in a `finally`.
+// it MUST restore the original value in a `finally`. The row itself is never
+// seeded (no INSERT in any migration or supabase/seed.sql) — a fresh CI stack
+// genuinely has none until the first save creates it, same as a fresh real
+// deployment. lib/settings/vat.ts's getCurrentVatRate/setCurrentVatRate
+// tolerate that (maybeSingle + a DEFAULT_VAT_RATE fallback, upsert on save);
+// these helpers need to match, not assume the row already exists.
+const DEFAULT_VAT_RATE = 0.18;
+
 export async function getVatRate(): Promise<number> {
-  const { data, error } = await adminClient().from("business_settings").select("vat_rate").eq("id", true).single();
+  const { data, error } = await adminClient().from("business_settings").select("vat_rate").eq("id", true).maybeSingle();
   if (error) throw error;
-  return (data as { vat_rate: number }).vat_rate;
+  return (data as { vat_rate: number } | null)?.vat_rate ?? DEFAULT_VAT_RATE;
 }
 
 export async function setVatRate(rate: number): Promise<void> {
-  const { error } = await adminClient().from("business_settings").update({ vat_rate: rate }).eq("id", true);
+  const { error } = await adminClient().from("business_settings").upsert({ id: true, vat_rate: rate }, { onConflict: "id" });
   if (error) throw error;
 }
