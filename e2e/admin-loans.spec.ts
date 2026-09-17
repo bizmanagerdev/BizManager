@@ -27,13 +27,20 @@ test.describe("admin — loans", () => {
       await page.getByRole("button", { name: "הלוואה שלקחתי" }).click();
 
       await page.getByPlaceholder("חיפוש לקוח...").fill(lenderCustomer.name);
-      await page.getByRole("button", { name: lenderCustomer.name, exact: true }).click();
+      // Not exact: true — CustomerPicker's result button renders the phone
+      // in a sibling span inside the SAME button (createTestCustomer always
+      // sets one), so the real accessible name is "name\nphone", never
+      // exactly equal to the bare name alone.
+      await page.getByRole("button", { name: lenderCustomer.name }).click();
 
       await page
         .locator('xpath=//label[contains(text(),"תאריך הלוואה")]/following-sibling::input')
         .fill("2026-01-01");
+      // סכום ההלוואה is a CurrencyInput, which wraps its <input> in its own
+      // container div (for the ₪ marker span) — see the repayment amount
+      // field's identical fix below for the same reason.
       await page
-        .locator('xpath=//label[contains(text(),"סכום ההלוואה")]/following-sibling::input')
+        .locator('xpath=//label[contains(text(),"סכום ההלוואה")]/following-sibling::div//input')
         .fill("5000");
 
       await page.getByRole("button", { name: "הוספה" }).click();
@@ -58,8 +65,12 @@ test.describe("admin — loans", () => {
       await card.getByRole("button", { name: "החזרים" }).click();
 
       await page.getByRole("button", { name: "רישום החזר" }).click();
+      // CurrencyInput wraps its <input> in its own container div (for the ₪
+      // marker span) — it's a following-sibling's DESCENDANT, not a direct
+      // following-sibling of the <label>, so a bare "following-sibling::input"
+      // never matches anything here.
       await page
-        .locator('xpath=//label[contains(text(),"סכום")]/following-sibling::input')
+        .locator('xpath=//label[contains(text(),"סכום")]/following-sibling::div//input')
         .first()
         .fill("1000");
       await page.getByRole("button", { name: "הוסף החזר" }).click();
