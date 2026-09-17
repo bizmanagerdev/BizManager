@@ -108,9 +108,19 @@ export function buildWaMessage(group: CollectionCustomerGroup): string {
   return `שלום, נותרה יתרה לתשלום בסך ${formatCurrency(group.actionable_amount)}. נשמח להסדרת התשלום. תודה!`;
 }
 
-/** Does this debtor have an expected payment that's a check? (so: no cash to chase) */
+/**
+ * Is a check covering money we are still chasing from this debtor? (so: no
+ * cash to chase for that part).
+ *
+ * Only a check on a debt that is still in the chase list counts. A customer
+ * with two orders — one paid by a post-dated check, one with nothing on it —
+ * used to get the badge from the first, which read as "the late order has a
+ * check". That order's check belongs to תקבולים צפויים, where it is listed.
+ */
 export function groupHasPendingCheck(group: CollectionCustomerGroup): boolean {
-  return group.sources.some((s) => s.pending_payments.some((p) => p.payment_method === "check"));
+  return group.sources.some(
+    (s) => s.actionable_amount > 0.009 && s.pending_payments.some((p) => p.payment_method === "check")
+  );
 }
 
 /** Flatten every customer's future-dated / not-yet-due receivables into one

@@ -119,12 +119,27 @@ describe("buildWaMessage / groupHasPendingCheck", () => {
   it("embeds the outstanding amount in the message", () => {
     expect(buildWaMessage(makeGroup({ outstanding_amount: 1500 }))).toContain("1,500");
   });
-  it("detects a pending check among the sources", () => {
-    const withCheck = makeGroup({
-      sources: [makeSource({ pending_payments: [{ payment_method: "check" }] as unknown as Source["pending_payments"] })],
+  const checkOn = (over: Partial<Source>) =>
+    makeSource({
+      pending_payments: [{ payment_method: "check" }] as unknown as Source["pending_payments"],
+      ...over,
     });
-    expect(groupHasPendingCheck(withCheck)).toBe(true);
-    expect(groupHasPendingCheck(makeGroup({ sources: [makeSource()] }))).toBe(false);
+
+  it("detects a check covering a debt that is still being chased", () => {
+    expect(groupHasPendingCheck(makeGroup({ sources: [checkOn({ actionable_amount: 500 })] }))).toBe(true);
+    expect(groupHasPendingCheck(makeGroup({ sources: [makeSource({ actionable_amount: 500 })] }))).toBe(false);
+  });
+
+  it("does NOT badge the customer for a check on another order (the late one has none)", () => {
+    // One order covered by a post-dated check (nothing left to chase on it),
+    // another with nothing registered — that one is what the badge sat next to.
+    const group = makeGroup({
+      sources: [
+        checkOn({ source_id: "covered", actionable_amount: 0 }),
+        makeSource({ source_id: "late", actionable_amount: 720 }),
+      ],
+    });
+    expect(groupHasPendingCheck(group)).toBe(false);
   });
 });
 
