@@ -9,26 +9,22 @@ import { deleteTestTaskByTitle } from "./db";
 // end-to-end: type a title, submit, and confirm the card actually appears
 // — the real proof the fix didn't just avoid a crash but still works.
 //
-// KNOWN FLAKY (2026-09-10, first real run against a genuine local Supabase
-// stack in CI - see foundation-hardening memory): fails with a 30s timeout
-// waiting for the quick-add textarea after clicking .first() of 8 identical
-// "הוספת כרטיס" buttons (2 per column x 4 columns - the top button uses
-// aria-label, the bottom one uses the same string as visible text, so both
-// get the same accessible name and getByLabel matches all of them). The
-// failure snapshot at timeout shows every column back in its closed state,
-// not stuck open - so either the click never landed on TasksPageClient.tsx's
-// top button specifically, or something remounts/resets the column's local
-// `adding` state shortly after. Not yet root-caused with certainty; needs a
-// live trace/video, not just the failure snapshot, to pin down. Scope to the
-// FIRST column specifically (not .first() across all 8) as a next step.
+// ROOT-CAUSED 2026-09-17: `.first()` across all 8 "הוספת כרטיס" buttons (2
+// per column x 4 columns) assumed DOM order always puts the "todo" column
+// first — but column order is a per-user drag-reorder, persisted
+// (TasksPageClient.tsx's own comment: "each user can drag to reorder"), so
+// `.first()` could land on a DIFFERENT column's add button depending on
+// whatever order this test's admin fixture last left it in. Scoped to the
+// "todo" column's own `data-column` attribute instead of relying on
+// left-to-right position.
 test.describe("task board", () => {
   test("quick-adding a task from the board shows the new card", async ({ page }) => {
     const title = `E2E משימת בדיקה ${Date.now()}`;
     await loginAs(page, "admin");
     await page.goto("/tasks");
 
-    await page.getByLabel("הוספת כרטיס").first().click();
-    const input = page.getByPlaceholder("כותרת המשימה");
+    await page.locator('[data-column="todo"]').getByLabel("הוספת כרטיס").first().click();
+    const input = page.locator('[data-column="todo"]').getByPlaceholder("כותרת המשימה");
     await input.fill(title);
     await input.press("Enter");
 

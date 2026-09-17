@@ -262,10 +262,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run E2E tests
-        # TEMPORARY: scoped while auditing task-board specs — the annotation
-        # cap keeps dropping these when the full suite's ~29 failures compete
-        # for it. Revert to `npm run test:e2e` once read.
-        run: npm run test:e2e -- e2e/admin-tasks.spec.ts e2e/task-board.spec.ts
+        run: npm run test:e2e
 
       - name: Upload Playwright report on failure
         if: failure()

@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { loginAs } from "./fixtures";
-import { createTestTask, deleteTestTask, getTaskStatus, deleteTestTaskByTitle } from "./db";
+import { createTestTask, deleteTestTask, getTaskStatus, deleteTestTaskByTitle, getAdminUserId } from "./db";
 
 // /tasks itself has no create entry point (TasksPageClient.tsx's own
 // comment: "a full new task comes from the app's one quick-create +").
@@ -35,7 +35,15 @@ test.describe("admin — tasks board", () => {
   });
 
   test("admin can move a task to a different column via the context menu", async ({ page }) => {
-    const task = await createTestTask({ subject: `E2E move task ${Date.now()}`, status: "todo" });
+    // The board defaults to "mine" scope (assigned-to-me-or-member) for
+    // everyone (TasksPageClient.tsx: "'mine' is the default for everyone") —
+    // an unassigned task created directly via the DB helper would never show
+    // up for the admin viewer without this.
+    const task = await createTestTask({
+      subject: `E2E move task ${Date.now()}`,
+      status: "todo",
+      assignedUserId: await getAdminUserId(),
+    });
     try {
       await loginAs(page, "admin");
       await page.goto("/tasks");
@@ -56,7 +64,12 @@ test.describe("admin — tasks board", () => {
   });
 
   test("admin can add a comment to a task", async ({ page }) => {
-    const task = await createTestTask({ subject: `E2E comment task ${Date.now()}` });
+    // See the move-task test above — the board's default "mine" scope hides
+    // an unassigned task from the admin viewer.
+    const task = await createTestTask({
+      subject: `E2E comment task ${Date.now()}`,
+      assignedUserId: await getAdminUserId(),
+    });
     try {
       await loginAs(page, "admin");
       await page.goto("/tasks");
