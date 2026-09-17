@@ -262,20 +262,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run E2E tests
-        # TEMPORARY: scoped while diagnosing worker-vehicles.spec.ts's last 2
-        # failures. Revert to `npm run test:e2e` once read.
-        run: npm run test:e2e -- e2e/worker-vehicles.spec.ts
-
-      - name: Print vehicle diagnostic
-        # TEMPORARY — see e2e/worker-vehicles.spec.ts's own DIAG_FILE comment.
-        if: always()
-        run: |
-          if [ -f e2e/DIAG_OUTPUT.txt ]; then
-            ESCAPED=$(cat e2e/DIAG_OUTPUT.txt | sed 's/%/%25/g; s/\r/%0D/g' | awk '{printf "%s%%0A", $0}')
-            echo "::error::$ESCAPED"
-          else
-            echo "No e2e/DIAG_OUTPUT.txt produced."
-          fi
+        run: npm run test:e2e
 
       - name: Upload Playwright report on failure
         if: failure()
