@@ -138,7 +138,19 @@ test.describe("admin — order creation and payment collection", () => {
       await page
         .locator('xpath=//label[text()="אמצעי תשלום *"]/following-sibling::select')
         .selectOption({ label: "מזומן" });
-      await page.getByRole("button", { name: "שמירת תשלום" }).click();
+
+      // TEMPORARY DIAGNOSTIC — see the full-payment test above for why.
+      const [response] = await Promise.all([
+        page.waitForResponse((r) => r.url().includes("/api/orders/payments/create")),
+        page.getByRole("button", { name: "שמירת תשלום" }).click(),
+      ]);
+      if (!response.ok()) {
+        const reqBody = response.request().postData();
+        const resBody = await response.json().catch(() => null);
+        throw new Error(
+          `DIAG status=${response.status()} req=${reqBody} res=${JSON.stringify(resBody)} orderId=${order.id}`
+        );
+      }
 
       await expect.poll(async () => (await getOrderStatus(order.id)).payment_status).toBe("partial");
     } finally {
