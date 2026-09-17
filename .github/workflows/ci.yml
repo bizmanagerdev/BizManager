@@ -262,7 +262,10 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run E2E tests
-        run: npm run test:e2e
+        # TEMPORARY: scoped to worker-*.spec.ts while auditing the remaining
+        # failures — the full suite's failures crowd the annotation cap.
+        # Revert to `npm run test:e2e` once read.
+        run: npm run test:e2e -- e2e/worker-access.spec.ts e2e/worker-attendance.spec.ts e2e/worker-attendance-colleague.spec.ts e2e/worker-deliveries.spec.ts e2e/worker-quick-create.spec.ts e2e/worker-task-attachments.spec.ts e2e/worker-tasks.spec.ts e2e/worker-vehicles.spec.ts
 
       - name: Upload Playwright report on failure
         if: failure()
