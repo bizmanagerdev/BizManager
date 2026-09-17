@@ -476,7 +476,14 @@ export async function createTestExpense(overrides: { amount?: number; descriptio
 }
 
 export async function deleteTestExpense(id: string): Promise<void> {
-  const { error } = await adminClient().from("expenses").delete().eq("id", id);
+  const supabase = adminClient();
+  // project_expenses.expense_id is ON DELETE RESTRICT — deleting an expense
+  // still linked from a project blocks outright. The real app's own
+  // /api/expenses/delete route deletes the link row first for the same
+  // reason (app/api/expenses/delete/route.ts); this helper needs to match.
+  const { error: linkError } = await supabase.from("project_expenses").delete().eq("expense_id", id);
+  if (linkError) throw linkError;
+  const { error } = await supabase.from("expenses").delete().eq("id", id);
   if (error) throw error;
 }
 
