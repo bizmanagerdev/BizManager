@@ -1,6 +1,14 @@
 import { test, expect } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
 import { loginWithCredentials } from "./fixtures";
 import { createTestWorker, deleteTestWorker, createTestTask, deleteTestTask, getTaskStatus, getAdminUserId } from "./db";
+
+// TEMPORARY DIAGNOSTIC — see e2e/worker-deliveries.spec.ts's own comment.
+const DIAG_FILE = path.join(__dirname, "DIAG_OUTPUT.txt");
+function diagLog(line: string) {
+  fs.appendFileSync(DIAG_FILE, line + "\n---\n");
+}
 
 // Task-board permission scoping for the "worker" role. Goes through the
 // app's real API routes (via page.request, which shares the logged-in
@@ -24,8 +32,10 @@ test.describe("worker role scoping — tasks", () => {
       const response = await page.request.post("/api/tasks/create", {
         data: { subject, assigned_user_id: adminId },
       });
+      const responseText = await response.text();
+      diagLog(`[self-assign] status=${response.status()} body=${responseText}`);
       expect(response.ok()).toBe(true);
-      const body = (await response.json()) as { assigned_user_id?: string; id?: string };
+      const body = JSON.parse(responseText) as { assigned_user_id?: string; id?: string };
       taskId = body.id ?? null;
 
       // app/api/tasks/create/route.ts forces assigned_user_id to the

@@ -1,4 +1,6 @@
 import { test, expect } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
 import { loginWithCredentials } from "./fixtures";
 import {
   createTestWorker,
@@ -18,6 +20,15 @@ import {
 // third, client-side bug (the review step showing "שולם" for a check payment
 // that actually saves as pending) was fixed this session.
 //
+// TEMPORARY DIAGNOSTIC — see e2e/admin-orders.spec.ts's git history for the
+// technique: writes straight to a file, printed via a ::error:: CI step,
+// since these tests' actual failure (response.ok() false) has no visible
+// body/status in the normal Playwright annotations.
+const DIAG_FILE = path.join(__dirname, "DIAG_OUTPUT.txt");
+function diagLog(line: string) {
+  fs.appendFileSync(DIAG_FILE, line + "\n---\n");
+}
+
 // Split deliberately: the actual payment/status OUTCOME is tested at the API
 // level (page.request, sharing the logged-in worker's session) for
 // reliability — /api/orders/update accepts plain JSON as well as the
@@ -56,6 +67,7 @@ test.describe("worker role scoping — delivery confirmation & payment", () => {
           payments: [{ amount_total: 100, payment_date: new Date().toISOString().slice(0, 10), payment_method: "cash" }],
         },
       });
+      diagLog(`[full-cash] status=${response.status()} body=${await response.text()}`);
       expect(response.ok()).toBe(true);
 
       const final = await getOrderStatus(order.id);
@@ -102,6 +114,7 @@ test.describe("worker role scoping — delivery confirmation & payment", () => {
           payments: [{ amount_total: 50, payment_date: new Date().toISOString().slice(0, 10), payment_method: "cash" }],
         },
       });
+      diagLog(`[partial-cash] status=${response.status()} body=${await response.text()}`);
       expect(response.ok()).toBe(true);
 
       const final = await getOrderStatus(order.id);
@@ -144,6 +157,7 @@ test.describe("worker role scoping — delivery confirmation & payment", () => {
           payments: [{ amount_total: 100, payment_date: new Date().toISOString().slice(0, 10), payment_method: "check" }],
         },
       });
+      diagLog(`[full-check] status=${response.status()} body=${await response.text()}`);
       expect(response.ok()).toBe(true);
 
       // lib/payments.ts's defaultPaymentStatusForMethod always starts a check
@@ -259,6 +273,7 @@ test.describe("worker role scoping — delivery confirmation & payment", () => {
           payments: [],
         },
       });
+      diagLog(`[no-access] status=${response.status()} body=${await response.text()}`);
       expect(response.status()).toBe(403);
     } finally {
       await deleteTestOrder(order.id);

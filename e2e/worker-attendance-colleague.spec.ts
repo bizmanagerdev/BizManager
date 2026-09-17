@@ -1,4 +1,6 @@
 import { test, expect } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
 import { loginWithCredentials } from "./fixtures";
 import {
   createTestWorker,
@@ -7,6 +9,12 @@ import {
   getLatestAttendanceReportStatus,
   getAdminUserId,
 } from "./db";
+
+// TEMPORARY DIAGNOSTIC — see e2e/worker-deliveries.spec.ts's own comment.
+const DIAG_FILE = path.join(__dirname, "DIAG_OUTPUT.txt");
+function diagLog(line: string) {
+  fs.appendFileSync(DIAG_FILE, line + "\n---\n");
+}
 
 // "Sign in a colleague" (components/attendance/AttendanceLogDialog.tsx,
 // opened from the quick-create "דיווח נוכחות" tile) — tested via its real
@@ -48,6 +56,7 @@ test.describe("worker role scoping — signing in a colleague's attendance", () 
       const response = await page.request.post("/api/attendance/phone-reports/manual", {
         data: { user_id: colleague.id, clock_in: clockIn, clock_out: clockOut },
       });
+      diagLog(`[full-shift] status=${response.status()} body=${await response.text()}`);
       expect(response.ok()).toBe(true);
       await expect.poll(() => getLatestAttendanceReportStatus(colleague.id)).toBe("pending_review");
     } finally {
