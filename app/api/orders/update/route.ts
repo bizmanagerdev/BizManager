@@ -270,7 +270,7 @@ export async function POST(req: Request) {
         referenceNumber: payment.reference_number,
         checkNumber: payment.payment_method === "check" ? payment.check_number : null,
         notes: payment.notes,
-        recordedBy: user.id,
+        recordedBy: profile.id,
         accountId: payment.account_id,
       })
     );
@@ -285,7 +285,7 @@ export async function POST(req: Request) {
         referenceNumber: refund.reference_number,
         checkNumber: refund.payment_method === "check" ? refund.check_number : null,
         notes: refund.notes ? `Refund: ${refund.notes}` : "Refund",
-        recordedBy: user.id,
+        recordedBy: profile.id,
         accountId: refund.account_id,
       })
     );
@@ -335,7 +335,7 @@ export async function POST(req: Request) {
           title: entry.displayName,
           file_name: entry.displayName,
           storage_key: entry.storagePath,
-          uploaded_by: user.id,
+          uploaded_by: profile.id,
           uploaded_at: uploadedAt,
           notes: null,
         }))
@@ -394,7 +394,14 @@ export async function POST(req: Request) {
       p_discount_amount: discountAmount,
       p_total_amount: totalAmount,
       p_payment_status: paymentStatus,
-      p_updated_by: user.id,
+      // public.users.id, NOT the auth uid — the RPC re-stamps it onto
+      // payments.recorded_by / inventory_movements.performed_by, both FKs to
+      // public.users(id). A worker's own account deliberately has a public.
+      // users.id distinct from its auth_user_id (e2e/db.ts's own comment on
+      // createTestWorker), so auth.uid() there matches no row at all and
+      // violates the FK — the admin/office e2e fixtures happen to have
+      // id === auth_user_id, which is exactly why this never surfaced there.
+      p_updated_by: profile.id,
       p_notes: notes,
       p_items: normalizedItems,
       p_payment_terms: paymentTerms,

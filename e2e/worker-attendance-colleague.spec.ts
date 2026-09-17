@@ -1,6 +1,4 @@
 import { test, expect } from "@playwright/test";
-import fs from "node:fs";
-import path from "node:path";
 import { loginWithCredentials } from "./fixtures";
 import {
   createTestWorker,
@@ -10,12 +8,19 @@ import {
   getAdminUserId,
 } from "./db";
 
-// TEMPORARY DIAGNOSTIC — see e2e/worker-deliveries.spec.ts's own comment.
-const DIAG_FILE = path.join(__dirname, "DIAG_OUTPUT.txt");
-function diagLog(line: string) {
-  fs.appendFileSync(DIAG_FILE, line + "\n---\n");
-}
-
+// KNOWN FLAKY (2026-09-17): "a worker can log a colleague's full manual
+// shift" intermittently fails with "אין הרשאה לבצע את הפעולה" (RLS/
+// permission-denied) from /api/attendance/phone-reports/manual — but static
+// review of phone_attendance_worker_insert (supabase/migrations/
+// 20260811020000_attendance_reported_by.sql) and current_app_user_id()/
+// is_payroll_worker() found nothing wrong, and a raw postgres "permission
+// denied for table users" (auth.users, needs GRANT SELECT ... TO
+// service_role) shows up unpredictably across UNRELATED tests in the same
+// run too — most likely session_heartbeat's own background write to
+// public.users (components/layout/PresenceTracker.tsx) racing on the same
+// connection pool, not a bug in this route. Needs a live trace to pin down;
+// not yet reproduced deterministically enough to fix with confidence.
+//
 // "Sign in a colleague" (components/attendance/AttendanceLogDialog.tsx,
 // opened from the quick-create "דיווח נוכחות" tile) — tested via its real
 // API route (/api/attendance/phone-reports/manual) rather than the dialog's
@@ -56,7 +61,6 @@ test.describe("worker role scoping — signing in a colleague's attendance", () 
       const response = await page.request.post("/api/attendance/phone-reports/manual", {
         data: { user_id: colleague.id, clock_in: clockIn, clock_out: clockOut },
       });
-      diagLog(`[full-shift] status=${response.status()} body=${await response.text()}`);
       expect(response.ok()).toBe(true);
       await expect.poll(() => getLatestAttendanceReportStatus(colleague.id)).toBe("pending_review");
     } finally {

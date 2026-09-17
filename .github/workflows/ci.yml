@@ -262,23 +262,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run E2E tests
-        # TEMPORARY: scoped to worker-*.spec.ts while auditing the remaining
-        # failures — the full suite's failures crowd the annotation cap.
-        # Revert to `npm run test:e2e` once read.
-        run: npm run test:e2e -- e2e/worker-access.spec.ts e2e/worker-attendance.spec.ts e2e/worker-attendance-colleague.spec.ts e2e/worker-deliveries.spec.ts e2e/worker-quick-create.spec.ts e2e/worker-task-attachments.spec.ts e2e/worker-tasks.spec.ts e2e/worker-vehicles.spec.ts
-
-      - name: Print payment diagnostic
-        # TEMPORARY — see e2e/worker-deliveries.spec.ts's own DIAG_FILE
-        # comment. Emits it via a direct ::error:: workflow command,
-        # unaffected by Playwright's own reporter/annotation cap.
-        if: always()
-        run: |
-          if [ -f e2e/DIAG_OUTPUT.txt ]; then
-            ESCAPED=$(cat e2e/DIAG_OUTPUT.txt | sed 's/%/%25/g; s/\r/%0D/g' | awk '{printf "%s%%0A", $0}')
-            echo "::error::$ESCAPED"
-          else
-            echo "No e2e/DIAG_OUTPUT.txt produced."
-          fi
+        run: npm run test:e2e
 
       - name: Upload Playwright report on failure
         if: failure()
