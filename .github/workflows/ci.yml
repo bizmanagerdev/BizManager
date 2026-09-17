@@ -269,6 +269,23 @@ jobs:
         # `npm run test:e2e` once the diagnostic output has been read.
         run: npm run test:e2e -- e2e/admin-orders.spec.ts
 
+      - name: Print payment diagnostic
+        # TEMPORARY — admin-orders.spec.ts writes here directly (see its own
+        # DIAG_FILE comment) instead of relying on Playwright's `github`
+        # reporter, whose annotations for this file kept either getting
+        # dropped or showing an unrelated raw postgres error instead of the
+        # test's own captured request/response. A `::error::` workflow
+        # command is a plain GitHub Actions primitive, untouched by any of
+        # that reporter logic.
+        if: always()
+        run: |
+          if [ -f e2e/DIAG_OUTPUT.txt ]; then
+            ESCAPED=$(cat e2e/DIAG_OUTPUT.txt | sed 's/%/%25/g; s/\r/%0D/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error::$ESCAPED"
+          else
+            echo "No e2e/DIAG_OUTPUT.txt produced."
+          fi
+
       - name: Upload Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v4
