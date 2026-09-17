@@ -88,9 +88,6 @@ test.describe("worker role scoping — vehicles section", () => {
     const worker = await createTestWorker({ sectionAccess: { vehicles: true } });
     const vehicle = await createTestVehicle();
     try {
-      page.on("console", (msg) => diagLog(`[mileage console:${msg.type()}] ${msg.text()}`));
-      page.on("pageerror", (err) => diagLog(`[mileage pageerror] ${err.message}`));
-
       await loginWithCredentials(page, worker.email, worker.password);
       await page.waitForURL("**/dashboard");
       await page.goto(`/vehicles/${vehicle.tagId}`);
@@ -104,12 +101,7 @@ test.describe("worker role scoping — vehicles section", () => {
       // (addVehicleMileageReading) goes through lib/undo-engine.ts's
       // scheduleDeferredEdit with the default 10s undo window — same
       // pattern as the attendance close flow elsewhere in this suite.
-      try {
-        await expect(page.getByText("12,345")).toBeVisible();
-      } catch (e) {
-        diagLog(`[mileage] FAILED — bodyText=${await page.locator("body").innerText().catch((err) => `ERR:${err}`)}`);
-        throw e;
-      }
+      await expect(page.getByText("12,345")).toBeVisible();
       await expect.poll(() => getVehicleMileage(vehicle.tagId), { timeout: 15_000 }).toBe(12345);
     } finally {
       await deleteTestVehicle(vehicle);
@@ -135,8 +127,10 @@ test.describe("worker role scoping — vehicles section", () => {
       await expect(page.getByText("הוצאות (1)")).toBeVisible();
       // Exactly one expense exists on this freshly-tagged vehicle, so the
       // desktop RowActionsMenu trigger (aria-label="פעולות") is unambiguous
-      // without needing to scope to a specific row.
-      await page.getByRole("button", { name: "פעולות" }).click();
+      // without needing to scope to a specific row — but VehicleHeaderCard's
+      // OWN "פעולות נוספות" menu button also contains "פעולות" as a
+      // substring, so this still needs exact: true.
+      await page.getByRole("button", { name: "פעולות", exact: true }).click();
       await page.getByRole("menuitem", { name: "מחיקת הוצאה" }).click();
       const [response] = await Promise.all([
         page.waitForResponse((r) => r.url().includes("/api/expenses/delete")),

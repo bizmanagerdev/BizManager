@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { FormDialog } from "@/components/ui/form-dialog";
@@ -41,6 +41,23 @@ export default function VehicleHeaderCard({ vehicle, tasks }: { vehicle: Vehicle
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [display] = useUndoOverlay([vehicle], (v) => v.tagId, "vehicle");
+  // useUndoOverlay re-spreads a fresh { ...item, ...patch } object on every
+  // render for as long as ANY "vehicle" scope patch is active (mileage or
+  // the edit dialog below both use it) — display is never referentially
+  // stable during that ~10s undo window. headerMenu's useMemo depending on
+  // display directly defeated its own memoization then, and since
+  // useSetHeaderAction's effect re-fires on every reference change of its
+  // node argument (setHeaderAction(node) — same "must be referentially
+  // stable" contract useSetHeaderTrailingAction documents above), that
+  // re-registration triggered a context update, a re-render, a fresh
+  // unstable display, and around again — an infinite loop (React error
+  // #185, confirmed live: saving a mileage reading crashed the page).
+  // Read the latest value through a ref instead so the callback below
+  // still sees current data without headerMenu itself ever changing.
+  const displayRef = useRef(display);
+  useEffect(() => {
+    displayRef.current = display;
+  }, [display]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<VehicleInput>(EMPTY_VEHICLE_FORM);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -108,7 +125,7 @@ export default function VehicleHeaderCard({ vehicle, tasks }: { vehicle: Vehicle
         <DropdownMenuItem
           className="gap-2"
           onSelect={() => {
-            setForm(vehicleToForm(display));
+            setForm(vehicleToForm(displayRef.current));
             setOpen(true);
           }}
         >
@@ -124,7 +141,7 @@ export default function VehicleHeaderCard({ vehicle, tasks }: { vehicle: Vehicle
         </DropdownMenuItem>
       </HeaderActionsMenu>
     ),
-    [display]
+    []
   );
   useSetHeaderAction(headerMenu);
 
