@@ -52,8 +52,10 @@ test.describe("admin — expense recording", () => {
       // installments: single payment.
       await page.getByRole("button", { name: "תשלום אחד" }).click();
 
-      // status: paid in full.
-      await page.getByRole("button", { name: "שולם" }).click();
+      // status: paid in full. exact: true — "שולם חלקית" and "לא שולם" both
+      // contain "שולם" as a substring, so the default (non-exact) match
+      // resolves to all three status options ambiguously.
+      await page.getByRole("button", { name: "שולם", exact: true }).click();
 
       // method: cash — no account step follows (no accounts seeded locally).
       await page.getByRole("button", { name: "מזומן" }).click();
