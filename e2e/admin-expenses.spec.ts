@@ -52,10 +52,13 @@ test.describe("admin — expense recording", () => {
       // installments: single payment.
       await page.getByRole("button", { name: "תשלום אחד" }).click();
 
-      // status: paid in full. exact: true — "שולם חלקית" and "לא שולם" both
-      // contain "שולם" as a substring, so the default (non-exact) match
-      // resolves to all three status options ambiguously.
-      await page.getByRole("button", { name: "שולם", exact: true }).click();
+      // status: paid in full. Each option's button (ExpenseDialog.tsx's
+      // expCard) renders its title AND sub-text together, so the real
+      // accessible name is "שולם ההוצאה שולמה במלואה" — not just "שולם"
+      // (confirmed via the earlier strict-mode-violation error's own "aka"
+      // listing). "שולם חלקית"/"לא שולם" both also contain "שולם" as a
+      // substring, so exact: true with the full string is needed either way.
+      await page.getByRole("button", { name: "שולם ההוצאה שולמה במלואה", exact: true }).click();
 
       // method: cash — no account step follows (no accounts seeded locally).
       await page.getByRole("button", { name: "מזומן" }).click();
