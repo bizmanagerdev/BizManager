@@ -106,6 +106,9 @@ test.describe("admin — project creation, status change, and expenses", () => {
       await page.getByRole("textbox").fill(description);
       await page.getByRole("button", { name: "המשך" }).click();
 
+      // recurrence: one-time — canRecur (!isEditing && !isWorkerPayment) is
+      // true regardless of the project lock, so this step always appears.
+      await page.getByRole("button", { name: "חד-פעמי" }).click();
       await page.getByRole("button", { name: "המשך" }).click(); // date: default
       await page.getByRole("button", { name: "תשלום אחד" }).click();
       // status: paid in full — see admin-expenses.spec.ts's own comment for

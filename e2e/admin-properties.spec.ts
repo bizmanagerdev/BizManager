@@ -46,7 +46,9 @@ test.describe("admin — properties", () => {
       await loginAs(page, "admin");
       await page.goto(`/properties/${property.id}`);
 
-      await page.getByRole("button", { name: "הוצאה" }).click();
+      // Not exact: true previously, but the page now also has a "הוצאה קבועה"
+      // (recurring expense) button whose name contains this as a substring.
+      await page.getByRole("button", { name: "הוצאה", exact: true }).click();
 
       // ExpenseDialog is a StepWizard here with an explicit nextLabel="המשך"
       // for every non-final step (locked to this property, so no domain/
@@ -61,6 +63,9 @@ test.describe("admin — properties", () => {
       await page.getByRole("textbox").fill(description);
       await page.getByRole("button", { name: "המשך" }).click();
 
+      // recurrence: one-time — canRecur (!isEditing && !isWorkerPayment) is
+      // true regardless of the property lock, so this step always appears.
+      await page.getByRole("button", { name: "חד-פעמי" }).click();
       await page.getByRole("button", { name: "המשך" }).click(); // date: default
       await page.getByRole("button", { name: "תשלום אחד" }).click();
       // status: paid in full — see admin-expenses.spec.ts's own comment for
