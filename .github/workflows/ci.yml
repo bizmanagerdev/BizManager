@@ -262,29 +262,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run E2E tests
-        # TEMPORARY: scoped to admin-orders.spec.ts while diagnosing the
-        # payments_sales_requires_order_chk bug — annotations for it were
-        # getting crowded out by the ~27 other currently-failing specs
-        # against GitHub's ~12-annotation-per-run cap. Revert to
-        # `npm run test:e2e` once the diagnostic output has been read.
-        run: npm run test:e2e -- e2e/admin-orders.spec.ts
-
-      - name: Print payment diagnostic
-        # TEMPORARY — admin-orders.spec.ts writes here directly (see its own
-        # DIAG_FILE comment) instead of relying on Playwright's `github`
-        # reporter, whose annotations for this file kept either getting
-        # dropped or showing an unrelated raw postgres error instead of the
-        # test's own captured request/response. A `::error::` workflow
-        # command is a plain GitHub Actions primitive, untouched by any of
-        # that reporter logic.
-        if: always()
-        run: |
-          if [ -f e2e/DIAG_OUTPUT.txt ]; then
-            ESCAPED=$(cat e2e/DIAG_OUTPUT.txt | sed 's/%/%25/g; s/\r/%0D/g' | awk '{printf "%s%%0A", $0}')
-            echo "::error::$ESCAPED"
-          else
-            echo "No e2e/DIAG_OUTPUT.txt produced."
-          fi
+        run: npm run test:e2e
 
       - name: Upload Playwright report on failure
         if: failure()

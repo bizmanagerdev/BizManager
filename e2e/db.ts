@@ -100,7 +100,15 @@ export async function createTestOrder(customerId: string): Promise<TestOrder> {
 }
 
 export async function deleteTestOrder(id: string): Promise<void> {
-  const { error } = await adminClient().from("orders").delete().eq("id", id);
+  const supabase = adminClient();
+  // payments.order_id is ON DELETE SET NULL, but payments_sales_requires_order_chk
+  // forbids a NULL order_id on a 'sales'-domain row — deleting an order straight
+  // through FK cascade violates that CHECK on any payment still attached. The real
+  // app's own /api/orders/delete route deletes payments first for the same reason
+  // (app/api/orders/delete/route.ts); this helper needs to match that ordering.
+  const { error: paymentsError } = await supabase.from("payments").delete().eq("order_id", id);
+  if (paymentsError) throw paymentsError;
+  const { error } = await supabase.from("orders").delete().eq("id", id);
   if (error) throw error;
 }
 

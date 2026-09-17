@@ -1,6 +1,4 @@
 import { test, expect } from "@playwright/test";
-import fs from "node:fs";
-import path from "node:path";
 import { loginAs } from "./fixtures";
 import {
   createTestCustomer,
@@ -10,17 +8,6 @@ import {
   createTestOrderItem,
   getOrderStatus,
 } from "./db";
-
-// TEMPORARY DIAGNOSTIC — writes straight to a file instead of relying on
-// Playwright's `github` reporter, whose annotations kept either getting
-// crowded out by other failing specs or showing an unrelated raw postgres
-// error instead of this test's own thrown message. A CI step reads this
-// file directly and emits it as a `::error::` workflow command, which is
-// unaffected by any of that.
-const DIAG_FILE = path.join(__dirname, "DIAG_OUTPUT.txt");
-function diagLog(line: string) {
-  fs.appendFileSync(DIAG_FILE, line + "\n---\n");
-}
 
 // Real admin/office money flows through orders — the biggest gap in E2E
 // coverage before this file: every existing spec only confirms pages don't
@@ -113,20 +100,7 @@ test.describe("admin — order creation and payment collection", () => {
       await page
         .locator('xpath=//label[text()="אמצעי תשלום *"]/following-sibling::select')
         .selectOption({ label: "מזומן" });
-
-      // TEMPORARY DIAGNOSTIC — see DIAG_FILE comment above.
-      const [response] = await Promise.all([
-        page.waitForResponse((r) => r.url().includes("/api/orders/payments/create")),
-        page.getByRole("button", { name: "שמירת תשלום" }).click(),
-      ]);
-      const reqBody = response.request().postData();
-      const resBody = await response.json().catch(() => null);
-      diagLog(
-        `[full-payment] status=${response.status()} ok=${response.ok()} orderId=${order.id}\nREQUEST: ${reqBody}\nRESPONSE: ${JSON.stringify(resBody)}`
-      );
-      if (!response.ok()) {
-        throw new Error(`PAYMENT CREATE FAILED — status=${response.status()}, see DIAG_OUTPUT.txt`);
-      }
+      await page.getByRole("button", { name: "שמירת תשלום" }).click();
 
       await expect.poll(async () => (await getOrderStatus(order.id)).payment_status).toBe("paid");
     } finally {
@@ -148,20 +122,7 @@ test.describe("admin — order creation and payment collection", () => {
       await page
         .locator('xpath=//label[text()="אמצעי תשלום *"]/following-sibling::select')
         .selectOption({ label: "מזומן" });
-
-      // TEMPORARY DIAGNOSTIC — see DIAG_FILE comment above.
-      const [response] = await Promise.all([
-        page.waitForResponse((r) => r.url().includes("/api/orders/payments/create")),
-        page.getByRole("button", { name: "שמירת תשלום" }).click(),
-      ]);
-      const reqBody = response.request().postData();
-      const resBody = await response.json().catch(() => null);
-      diagLog(
-        `[partial-payment] status=${response.status()} ok=${response.ok()} orderId=${order.id}\nREQUEST: ${reqBody}\nRESPONSE: ${JSON.stringify(resBody)}`
-      );
-      if (!response.ok()) {
-        throw new Error(`PAYMENT CREATE FAILED — status=${response.status()}, see DIAG_OUTPUT.txt`);
-      }
+      await page.getByRole("button", { name: "שמירת תשלום" }).click();
 
       await expect.poll(async () => (await getOrderStatus(order.id)).payment_status).toBe("partial");
     } finally {
