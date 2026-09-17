@@ -52,13 +52,15 @@ test.describe("admin — expense recording", () => {
       // installments: single payment.
       await page.getByRole("button", { name: "תשלום אחד" }).click();
 
-      // status: paid in full. Each option's button (ExpenseDialog.tsx's
-      // expCard) renders its title AND sub-text together, so the real
-      // accessible name is "שולם ההוצאה שולמה במלואה" — not just "שולם"
-      // (confirmed via the earlier strict-mode-violation error's own "aka"
-      // listing). "שולם חלקית"/"לא שולם" both also contain "שולם" as a
-      // substring, so exact: true with the full string is needed either way.
-      await page.getByRole("button", { name: "שולם ההוצאה שולמה במלואה", exact: true }).click();
+      // status: paid in full. Not a role/name match — OptionRow (which
+      // ExpenseDialog.tsx's expCard delegates to) renders the option's
+      // label, sub-text, AND a numbered badge as separate spans inside the
+      // SAME button, so the real accessible name is a concatenation of all
+      // three (confirmed the hard way: two different exact-string guesses
+      // both missed the trailing badge number). Filtering by the sub-text
+      // alone sidesteps guessing the exact concatenation — "ההוצאה שולמה
+      // במלואה" is unique to this one option among the three status cards.
+      await page.locator("button[data-exp-option]", { hasText: "ההוצאה שולמה במלואה" }).click();
 
       // method: cash — no account step follows (no accounts seeded locally).
       await page.getByRole("button", { name: "מזומן" }).click();

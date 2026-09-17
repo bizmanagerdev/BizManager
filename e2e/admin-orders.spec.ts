@@ -36,7 +36,19 @@ test.describe("admin — order creation and payment collection", () => {
       // toggle, same row.
       await page.getByRole("button", { name: "שורה חופשית" }).click();
       await page.getByPlaceholder("שם השורה (למשל: משלוח)").fill("שורת בדיקה E2E");
-      await page.getByText("פרטים נוספים").click();
+      // A real DOM click, not Playwright's own hit-tested .click() — this
+      // <summary> sits inside a nested overflow-y-auto region whose height
+      // depends on an `absolute inset-0` sibling-height-matching trick
+      // (NewOrderClient.tsx's own comment: "fills its grid cell so its
+      // height matches the product picker"), which can still be settling
+      // right after adding a line — CI showed 27+ retries of "element ...
+      // intercepts pointer events" without ever resolving. <details>/
+      // <summary> is a native disclosure widget, so a direct element.click()
+      // triggers the exact same real toggle (and any attached React
+      // handler, since React's delegated listeners still catch a real DOM
+      // click) without depending on Playwright's own scroll+hit-test
+      // sequence succeeding in this specific nested-scroll layout.
+      await page.getByText("פרטים נוספים").evaluate((el) => (el as HTMLElement).click());
       await page.getByPlaceholder("מחיר").fill("500");
 
       const [response] = await Promise.all([
@@ -88,7 +100,23 @@ test.describe("admin — order creation and payment collection", () => {
       await page
         .locator('xpath=//label[text()="אמצעי תשלום *"]/following-sibling::select')
         .selectOption({ label: "מזומן" });
-      await page.getByRole("button", { name: "שמירת תשלום" }).click();
+
+      // TEMPORARY DIAGNOSTIC — CI has shown a "payments_sales_requires_order_chk"
+      // violation (order_id null) on this exact request, but both
+      // OrderPaymentDialog and /api/orders/payments/create read correctly on
+      // static inspection. Capture the real request body + response to see
+      // what actually gets sent instead of guessing further.
+      const [response] = await Promise.all([
+        page.waitForResponse((r) => r.url().includes("/api/orders/payments/create")),
+        page.getByRole("button", { name: "שמירת תשלום" }).click(),
+      ]);
+      const reqBody = response.request().postData();
+      const resBody = await response.json().catch(() => null);
+      if (!response.ok()) {
+        throw new Error(
+          `PAYMENT CREATE FAILED — status=${response.status()}\nREQUEST BODY: ${reqBody}\nRESPONSE: ${JSON.stringify(resBody)}\norder.id was: ${order.id}`
+        );
+      }
 
       await expect.poll(async () => (await getOrderStatus(order.id)).payment_status).toBe("paid");
     } finally {
