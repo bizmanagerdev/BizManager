@@ -1,6 +1,18 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { loginWithCredentials } from "./fixtures";
 import { createTestWorker, deleteTestWorker } from "./db";
+
+// Scoped to the sidebar's own <nav> landmark, with an exact name match —
+// an unscoped, substring getByRole("link", { name }) also matches dashboard
+// widget links (e.g. an "upcoming deliveries" card is itself <a role="link"
+// aria-label="משלוחים קרובים">, which contains "משלוחים" as a substring;
+// some dashboard cards link to /tasks or /calendar regardless of a worker's
+// section_access, since "what's due today" is about assignment, not section
+// browsing access — neither is a nav-link, so the nav landmark itself is the
+// correct scope for "hidden from nav").
+function navLink(page: Page, name: string) {
+  return page.getByRole("navigation").getByRole("link", { name, exact: true });
+}
 
 // Comprehensive route/nav access matrix for the "worker" role — see
 // lib/auth/sections.ts (the section_access map: dashboard/deliveries/tasks/
@@ -23,10 +35,10 @@ test.describe("worker role scoping — nav and route access", () => {
       await loginWithCredentials(page, worker.email, worker.password);
       await page.waitForURL("**/dashboard");
 
-      await expect(page.getByRole("link", { name: "משלוחים" })).toBeVisible();
-      await expect(page.getByRole("link", { name: "משימות" })).toBeVisible();
-      await expect(page.getByRole("link", { name: "יומן" })).toBeVisible();
-      await expect(page.getByRole("link", { name: "רכבים" })).toHaveCount(0);
+      await expect(navLink(page, "משלוחים")).toBeVisible();
+      await expect(navLink(page, "משימות")).toBeVisible();
+      await expect(navLink(page, "יומן")).toBeVisible();
+      await expect(navLink(page, "רכבים")).toHaveCount(0);
     } finally {
       await deleteTestWorker(worker);
     }
@@ -37,7 +49,7 @@ test.describe("worker role scoping — nav and route access", () => {
     try {
       await loginWithCredentials(page, worker.email, worker.password);
       await page.waitForURL("**/dashboard");
-      await expect(page.getByRole("link", { name: "רכבים" })).toHaveCount(0);
+      await expect(navLink(page, "רכבים")).toHaveCount(0);
 
       await page.goto("/vehicles");
       await page.waitForURL("**/no-access");
@@ -51,7 +63,7 @@ test.describe("worker role scoping — nav and route access", () => {
     try {
       await loginWithCredentials(page, worker.email, worker.password);
       await page.waitForURL("**/dashboard");
-      await expect(page.getByRole("link", { name: "רכבים" })).toBeVisible();
+      await expect(navLink(page, "רכבים")).toBeVisible();
 
       await page.goto("/vehicles");
       await expect(page).not.toHaveURL(/\/no-access/);
@@ -65,7 +77,7 @@ test.describe("worker role scoping — nav and route access", () => {
     try {
       await loginWithCredentials(page, worker.email, worker.password);
       await page.waitForURL("**/dashboard");
-      await expect(page.getByRole("link", { name: "משלוחים" })).toHaveCount(0);
+      await expect(navLink(page, "משלוחים")).toHaveCount(0);
 
       await page.goto("/deliveries");
       await page.waitForURL("**/no-access");
@@ -79,7 +91,7 @@ test.describe("worker role scoping — nav and route access", () => {
     try {
       await loginWithCredentials(page, worker.email, worker.password);
       await page.waitForURL("**/dashboard");
-      await expect(page.getByRole("link", { name: "משימות" })).toHaveCount(0);
+      await expect(navLink(page, "משימות")).toHaveCount(0);
 
       await page.goto("/tasks");
       await page.waitForURL("**/no-access");
@@ -93,7 +105,7 @@ test.describe("worker role scoping — nav and route access", () => {
     try {
       await loginWithCredentials(page, worker.email, worker.password);
       await page.waitForURL("**/dashboard");
-      await expect(page.getByRole("link", { name: "יומן" })).toHaveCount(0);
+      await expect(navLink(page, "יומן")).toHaveCount(0);
 
       await page.goto("/calendar");
       await page.waitForURL("**/no-access");
