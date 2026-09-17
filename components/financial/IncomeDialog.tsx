@@ -38,7 +38,8 @@ import { defaultAccountForMethod, getAccountKindLabel, type Account } from "@/li
 import { offlineFetch } from "@/lib/offline-queue";
 import { registerReversibleCreate } from "@/lib/undo-engine";
 import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel, type ExpenseBusinessDomain } from "@/lib/expenses";
-import { type FinancialAttachment } from "@/lib/payments";
+import { parseInstallments, splitCardInstallments, type FinancialAttachment } from "@/lib/payments";
+import { CardInstallmentsField } from "@/components/financial/CardInstallmentsField";
 import { HEBREW } from "@/app/(app)/dashboard/DashboardActions.constants";
 import {
   getString,
@@ -62,6 +63,7 @@ type IncomeStepId =
   | "method"
   | "account"
   | "date"
+  | "installments"
   | "dueDate"
   | "reference"
   | "check"
@@ -80,6 +82,7 @@ const STEP_LABEL: Record<IncomeStepId, string> = {
   method: "תשלום",
   account: "חשבון",
   date: "תאריך",
+  installments: "תשלומים",
   dueDate: "פירעון",
   reference: "אסמכתא",
   check: "צ'ק",
@@ -157,6 +160,9 @@ export function IncomeDialog({
   const [method, setMethod] = useState("");
   const [accountId, setAccountId] = useState("");
   const [dueDate, setDueDate] = useState("");
+  // Card only: saved as this many payments, a month apart (and it has no
+  // due-date question — card money lands on the 10th).
+  const [installments, setInstallments] = useState("1");
   const [requiresSplit, setRequiresSplit] = useState(false);
   const [reference, setReference] = useState("");
   const [checkNumber, setCheckNumber] = useState("");
@@ -221,7 +227,7 @@ export function IncomeDialog({
     if (accountsList.length > 0) ids.push("account");
     ids.push("date");
     if (method) {
-      ids.push("dueDate", "reference");
+      ids.push(method === "credit_card" ? "installments" : "dueDate", "reference");
       if (method === "check") ids.push("check");
     }
     ids.push("vat", "notes");
@@ -261,6 +267,8 @@ export function IncomeDialog({
         return Boolean(accountId);
       case "date":
         return Boolean(date);
+      case "installments":
+        return parseInstallments(installments) !== null;
       case "dueDate":
         return method !== "check" || Boolean(dueDate);
       case "order":
@@ -296,6 +304,7 @@ export function IncomeDialog({
     setMethod("");
     setAccountId("");
     setDueDate("");
+    setInstallments("1");
     setRequiresSplit(false);
     setReference("");
     setCheckNumber("");
@@ -360,42 +369,72 @@ export function IncomeDialog({
       return;
     }
     const amountValue = Number(amount);
+    const installmentCount = method === "credit_card" ? parseInstallments(installments) : 1;
+    if (installmentCount === null) {
+      setError("מספר התשלומים צריך להיות בין 1 ל-36.");
+      return;
+    }
+    // One payment — or, for a card payment in installments, one per installment,
+    // a month apart. Files go on the first; undo removes them all.
+    const parts =
+      method === "credit_card"
+        ? splitCardInstallments({ amount: amountValue, paymentDate: date, count: installmentCount, notes })
+        : [{ amount: amountValue, paymentDate: date, dueDate: dueDate, notes }];
 
     setSubmitting(true);
     try {
-      const result = await offlineFetch(
-        "/api/payments/create",
-        buildIncomePayload({
-          incomeBusinessDomain: effectiveDomain,
-          linkedProjectId,
-          linkedOrderId,
-          linkedPropertyId,
-          projectType: projectById.get(linkedProjectId)?.type ?? null,
-          amount: amountValue,
-          incomeDate: date,
-          incomeDueDate: dueDate,
-          incomeRequiresSplit: requiresSplit,
-          incomeMethod: method,
-          incomeAccountId: accountId,
-          incomeReference: reference,
-          incomeCheckNumber: checkNumber,
-          incomeNotes: notes,
-          incomeTagIds: tagIds,
-        }),
-        HEBREW.incomeNew,
-        { idempotent: true }
-      );
-      if (result.queued) {
+      const createdIds: string[] = [];
+      let json: { payment?: Row } | null = null;
+      for (const [i, part] of parts.entries()) {
+        const result = await offlineFetch(
+          "/api/payments/create",
+          buildIncomePayload({
+            incomeBusinessDomain: effectiveDomain,
+            linkedProjectId,
+            linkedOrderId,
+            linkedPropertyId,
+            projectType: projectById.get(linkedProjectId)?.type ?? null,
+            amount: part.amount,
+            incomeDate: part.paymentDate,
+            incomeDueDate: part.dueDate ?? "",
+            incomeRequiresSplit: requiresSplit,
+            incomeMethod: method,
+            incomeAccountId: accountId,
+            incomeReference: reference,
+            incomeCheckNumber: checkNumber,
+            incomeNotes: part.notes ?? "",
+            incomeTagIds: tagIds,
+          }),
+          HEBREW.incomeNew,
+          { idempotent: true }
+        );
+        if (result.queued) {
+          if (i === parts.length - 1) {
+            handleOpenChange(false);
+            return;
+          }
+          continue;
+        }
+        if (!result.ok) {
+          setError(
+            i > 0
+              ? `נרשמו ${i} מתוך ${parts.length} תשלומים. ${toHebrewError(result.error, HEBREW.incomeCreateFailed)}`
+              : toHebrewError(result.error, HEBREW.incomeCreateFailed)
+          );
+          if (i > 0) onSaved?.();
+          return;
+        }
+        const partJson = result.data as { payment?: Row };
+        if (!partJson.payment) {
+          setError(HEBREW.incomeCreateFailed);
+          return;
+        }
+        json = json ?? partJson;
+        const partId = getString(partJson.payment, "id");
+        if (partId) createdIds.push(partId);
+      }
+      if (!json?.payment) {
         handleOpenChange(false);
-        return;
-      }
-      if (!result.ok) {
-        setError(toHebrewError(result.error, HEBREW.incomeCreateFailed));
-        return;
-      }
-      const json = result.data as { payment?: Row };
-      if (!json.payment) {
-        setError(HEBREW.incomeCreateFailed);
         return;
       }
 
@@ -426,15 +465,17 @@ export function IncomeDialog({
           message: HEBREW.incomeSaved,
           view: { label: "צפייה", onClick: () => router.push(`/financial?focus=${encodeURIComponent(`payment:${paymentId}`)}`) },
           onUndo: async () => {
-            const res = await fetch(undoOrderId ? "/api/orders/payments/delete" : "/api/payments/delete", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify(
-                undoOrderId ? { id: paymentId, order_id: undoOrderId } : { id: paymentId, project_id: undoProjectId }
-              ),
-            });
-            const errJson = await res.json().catch(() => ({}));
-            if (!res.ok) return { ok: false, error: toHebrewError(errJson?.error, "ביטול נכשל.") };
+            for (const id of createdIds.length > 0 ? createdIds : [paymentId]) {
+              const res = await fetch(undoOrderId ? "/api/orders/payments/delete" : "/api/payments/delete", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(
+                  undoOrderId ? { id, order_id: undoOrderId } : { id, project_id: undoProjectId }
+                ),
+              });
+              const errJson = await res.json().catch(() => ({}));
+              if (!res.ok) return { ok: false, error: toHebrewError(errJson?.error, "ביטול נכשל.") };
+            }
             startTransition(() => { router.refresh(); });
             return { ok: true };
           },
@@ -658,6 +699,17 @@ export function IncomeDialog({
           />
           </div>
         </>
+      ) : stepId === "installments" ? (
+        <>
+          <StepHeading title="בכמה תשלומים?" />
+          <CardInstallmentsField
+            value={installments}
+            onChange={setInstallments}
+            amount={amountValid ? Number(amount) : 0}
+            paymentDate={date}
+            disabled={submitting}
+          />
+        </>
       ) : stepId === "dueDate" ? (
         <>
           <StepHeading
@@ -810,7 +862,10 @@ export function IncomeDialog({
             <SummaryRow label={HEBREW.paymentMethod} value={summaryMethodLabel ? HEBREW[summaryMethodLabel] : "—"} />
             <SummaryRow label="חשבון" value={summaryAccountName} />
             <SummaryRow label={HEBREW.date} value={normalizeDateOnly(date)} />
-            {dueDate ? <SummaryRow label={HEBREW.paymentDueDate} value={normalizeDateOnly(dueDate)} /> : null}
+            {method === "credit_card" && (parseInstallments(installments) ?? 1) > 1 ? (
+              <SummaryRow label="תשלומים" value={`${parseInstallments(installments)} תשלומים, אחד בכל חודש`} />
+            ) : null}
+            {dueDate && method !== "credit_card" ? <SummaryRow label={HEBREW.paymentDueDate} value={normalizeDateOnly(dueDate)} /> : null}
             {reference.trim() ? <SummaryRow label={HEBREW.reference} value={reference} /> : null}
             {method === "check" && checkNumber.trim() ? <SummaryRow label="מספר צ'ק" value={checkNumber} /> : null}
             <SummaryRow label={HEBREW.includesVat} value={requiresSplit ? "כן" : "לא"} />

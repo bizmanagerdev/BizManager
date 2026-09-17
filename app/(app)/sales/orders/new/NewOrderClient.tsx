@@ -20,7 +20,8 @@ import { Badge } from "@/components/ui/badge";
 import { DateInput } from "@/components/ui/date-input";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
-import { nextMonthTenth } from "@/lib/payments";
+import { nextMonthTenth, parseInstallments, splitCardInstallments } from "@/lib/payments";
+import { CardInstallmentsField } from "@/components/financial/CardInstallmentsField";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
@@ -119,6 +120,8 @@ type PaymentDraft = {
   check_number: string;
   check_photo_files: File[];
   notes: string;
+  /** Card only: saved as this many payments, a month apart. Absent on older saved drafts. */
+  installments?: string;
 };
 
 /** Serialisable in-progress form, persisted to localStorage so a create draft
@@ -789,6 +792,32 @@ export default function NewOrderClient({
       );
     });
 
+    const badInstallments = paymentsToSubmit.find(
+      (payment) => payment.payment_method === "credit_card" && parseInstallments(payment.installments ?? "1") === null
+    );
+    if (badInstallments) {
+      setSubmitError("מספר התשלומים צריך להיות בין 1 ל-36.");
+      return;
+    }
+    // A card payment in installments goes in as that many payments, a month
+    // apart — what used to be typed in by hand, one row each.
+    const expandedPayments = paymentsToSubmit.flatMap((payment) =>
+      payment.payment_method === "credit_card"
+        ? splitCardInstallments({
+            amount: Number(payment.amount_total || 0),
+            paymentDate: payment.payment_date,
+            count: parseInstallments(payment.installments ?? "1") ?? 1,
+            notes: payment.notes,
+          }).map((part) => ({
+            ...payment,
+            amount_total: String(part.amount),
+            payment_date: part.paymentDate,
+            due_date: part.dueDate,
+            notes: part.notes ?? "",
+          }))
+        : [payment]
+    );
+
     const checkWithoutDueDate = paymentsToSubmit.find(
       (payment) => payment.payment_method === "check" && !payment.due_date.trim()
     );
@@ -841,7 +870,7 @@ export default function NewOrderClient({
           discount_amount: Number.isFinite(orderDiscountNumber) ? orderDiscountNumber : 0,
           needs_invoice: needsInvoice,
           notes: notes.trim() || null,
-          payments: paymentsToSubmit.map((payment) => ({
+          payments: expandedPayments.map((payment) => ({
             amount_total: Number(payment.amount_total || 0),
             payment_date: payment.payment_date,
             payment_method: payment.payment_method,
@@ -890,8 +919,8 @@ export default function NewOrderClient({
       }
 
       const insertedPaymentIds = Array.isArray(json.payment_ids) ? json.payment_ids : [];
-      for (let i = 0; i < paymentsToSubmit.length; i++) {
-        const payment = paymentsToSubmit[i];
+      for (let i = 0; i < expandedPayments.length; i++) {
+        const payment = expandedPayments[i];
         const paymentId = insertedPaymentIds[i];
         if (
           !paymentId ||
@@ -1962,7 +1991,14 @@ export default function NewOrderClient({
                     }}
                   />
                   {payment.payment_method === "credit_card" ? (
-                    <p className="self-end text-xs text-muted-foreground">נכנס לחשבון ב-10 לחודש הבא, יחד עם שאר תשלומי האשראי של החודש.</p>
+                    <CardInstallmentsField
+                      value={payment.installments ?? "1"}
+                      onChange={(value) => updatePaymentDraft(index, { installments: value })}
+                      amount={Number(payment.amount_total) || 0}
+                      paymentDate={payment.payment_date}
+                      disabled={actionLocked}
+                      labelClassName="text-xs text-muted-foreground"
+                    />
                   ) : (
                   <div className="space-y-1">
                     <label className="text-xs text-muted-foreground">

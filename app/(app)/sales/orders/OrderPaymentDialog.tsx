@@ -17,7 +17,8 @@ import {
 } from "@/lib/orders/paymentStatus";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
-import { nextMonthTenth } from "@/lib/payments";
+import { nextMonthTenth, parseInstallments, splitCardInstallments } from "@/lib/payments";
+import { CardInstallmentsField } from "@/components/financial/CardInstallmentsField";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
 import { offlineFetch } from "@/lib/offline-queue";
@@ -80,6 +81,8 @@ export default function OrderPaymentDialog({
   const [checkNumber, setCheckNumber] = useState("");
   const [checkPhotoFiles, setCheckPhotoFiles] = useState<File[]>([]);
   const [notes, setNotes] = useState("");
+  // A card payment in installments is saved as that many payments, a month apart.
+  const [installments, setInstallments] = useState("1");
 
   const remainingBefore = Math.max(totalAmount - paidAmount, 0);
   const refundBefore = Math.max(paidAmount - totalAmount, 0);
@@ -122,6 +125,12 @@ export default function OrderPaymentDialog({
       setError("יש להזין תאריך פירעון לצ'ק.");
       return;
     }
+    const isCardIncome = paymentMethod === "credit_card" && entryType !== "refund";
+    const installmentCount = isCardIncome ? parseInstallments(installments) : 1;
+    if (installmentCount === null) {
+      setError("מספר התשלומים צריך להיות בין 1 ל-36.");
+      return;
+    }
 
     function resetForm() {
       setAmount("");
@@ -134,33 +143,50 @@ export default function OrderPaymentDialog({
       setCheckNumber("");
       setCheckPhotoFiles([]);
       setNotes("");
+      setInstallments("1");
       setOpen(false);
     }
 
+    // One payment — or, for a card payment in installments, one per installment,
+    // saved one after the other exactly as they used to be typed in.
+    const parts = isCardIncome
+      ? splitCardInstallments({ amount: amountNumber, paymentDate, count: installmentCount, notes })
+      : [{ amount: amountNumber, paymentDate, dueDate: "", notes: notes.trim() || null }];
+
     setSubmitting(true);
     try {
-      const result = await offlineFetch(
-        "/api/orders/payments/create",
-        {
-          order_id: orderId,
-          entry_type: entryType,
-          amount_total: amountNumber,
-          payment_date: paymentDate,
-          payment_method: paymentMethod,
-          account_id: accountId || undefined,
-          // A card payment lands with the month's deposit — the 10th of the next
-          // month (lib/card-settlements.ts). A refund leaves on its own day.
-          due_date:
-            paymentMethod === "credit_card" && entryType !== "refund"
-              ? nextMonthTenth(paymentDate) || undefined
-              : dueDate.trim() || undefined,
-          reference_number: referenceNumber.trim() || undefined,
-          check_number: paymentMethod === "check" && checkNumber.trim() ? checkNumber.trim() : undefined,
-          notes: notes.trim() || undefined,
-        },
-        entryType === "refund" ? "החזר להזמנה" : "תשלום להזמנה",
-        { idempotent: true }
-      );
+      let result: Awaited<ReturnType<typeof offlineFetch>> | null = null;
+      for (const [i, part] of parts.entries()) {
+        result = await offlineFetch(
+          "/api/orders/payments/create",
+          {
+            order_id: orderId,
+            entry_type: entryType,
+            amount_total: part.amount,
+            payment_date: part.paymentDate,
+            payment_method: paymentMethod,
+            account_id: accountId || undefined,
+            // A card payment lands with the month's deposit — the 10th of the next
+            // month (lib/card-settlements.ts). A refund leaves on its own day.
+            due_date: isCardIncome ? part.dueDate || nextMonthTenth(part.paymentDate) || undefined : dueDate.trim() || undefined,
+            reference_number: referenceNumber.trim() || undefined,
+            check_number: paymentMethod === "check" && checkNumber.trim() ? checkNumber.trim() : undefined,
+            notes: part.notes || undefined,
+          },
+          entryType === "refund" ? "החזר להזמנה" : "תשלום להזמנה",
+          { idempotent: true }
+        );
+        if (!result.queued && !result.ok) {
+          if (i > 0) {
+            // Some installments are saved; say which, so the rest aren't entered twice.
+            setError(`נרשמו ${i} מתוך ${parts.length} תשלומים. ${toHebrewError(result.error, "רישום שאר התשלומים נכשל.")}`);
+            startTransition(() => router.refresh());
+            return;
+          }
+          break;
+        }
+      }
+      if (!result) return;
 
       if (result.queued) {
         // Saved on the device; it will sync when the connection returns. Reflect
@@ -318,7 +344,13 @@ export default function OrderPaymentDialog({
             />
 
             {paymentMethod === "credit_card" && entryType !== "refund" ? (
-              <p className="text-xs text-muted-foreground">נכנס לחשבון ב-10 לחודש הבא, יחד עם שאר תשלומי האשראי של החודש.</p>
+              <CardInstallmentsField
+                value={installments}
+                onChange={setInstallments}
+                amount={Number.isFinite(amountNumber) ? amountNumber : 0}
+                paymentDate={paymentDate}
+                disabled={submitting}
+              />
             ) : paymentMethod ? (
               <div className="space-y-1">
                 <label className="text-sm font-medium">

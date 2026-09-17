@@ -29,7 +29,8 @@ import { DictateButton } from "@/components/ui/dictate-button";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { loadAccounts } from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, getAccountKindLabel, type Account } from "@/lib/accounts";
-import { PAYMENT_METHOD_OPTIONS, nextMonthTenth } from "@/lib/payments";
+import { PAYMENT_METHOD_OPTIONS, nextMonthTenth, parseInstallments, splitCardInstallments } from "@/lib/payments";
+import { CardInstallmentsField } from "@/components/financial/CardInstallmentsField";
 import { formatCurrency } from "@/lib/payroll";
 import type { CustomerReceivable } from "@/lib/collections";
 import { offlineFetch } from "@/lib/offline-queue";
@@ -53,6 +54,7 @@ type CollectStepId =
   | "method"
   | "account"
   | "date"
+  | "installments"
   | "check"
   | "reference"
   | "notes"
@@ -65,6 +67,7 @@ const STEP_LABEL: Record<CollectStepId, string> = {
   method: "תשלום",
   account: "חשבון",
   date: "תאריך",
+  installments: "תשלומים",
   check: "צ'ק",
   reference: "אסמכתא",
   notes: "הערות",
@@ -108,6 +111,8 @@ export function CollectPaymentDialog({
   // card payment lands on the 10th of the next month — see cardSettlementDate
   // in lib/card-settlements.ts.)
   const [dueDate, setDueDate] = useState("");
+  // Card only: saved as this many payments, a month apart.
+  const [installments, setInstallments] = useState("1");
   const [accountId, setAccountId] = useState("");
   const [accountsList, setAccountsList] = useState<Account[]>([]);
   const [reference, setReference] = useState("");
@@ -250,6 +255,7 @@ export function CollectPaymentDialog({
     ids.push("amount", "method");
     if (accountsList.length > 0) ids.push("account");
     ids.push("date");
+    if (method === "credit_card") ids.push("installments");
     if (method === "check") ids.push("check");
     ids.push("reference", "notes", "summary");
     return ids;
@@ -275,6 +281,8 @@ export function CollectPaymentDialog({
         return Boolean(accountId);
       case "date":
         return Boolean(date);
+      case "installments":
+        return parseInstallments(installments) !== null;
       case "check":
         return Boolean(dueDate);
       case "reference":
@@ -302,6 +310,7 @@ export function CollectPaymentDialog({
     setDate(getTodayDate());
     setMethod("");
     setDueDate("");
+    setInstallments("1");
     setAccountId("");
     setReference("");
     setCheckNumber("");
@@ -352,31 +361,54 @@ export function CollectPaymentDialog({
       setError("יש לבחור חשבון.");
       return;
     }
+    const installmentCount = method === "credit_card" ? parseInstallments(installments) : 1;
+    if (installmentCount === null) {
+      setError("מספר התשלומים צריך להיות בין 1 ל-36.");
+      return;
+    }
+    // One payment — or, for a card payment in installments, one per installment,
+    // a month apart, saved one after the other.
+    const parts =
+      method === "credit_card"
+        ? splitCardInstallments({ amount: amountValue, paymentDate: date, count: installmentCount, notes })
+        : [{ amount: amountValue, paymentDate: date, dueDate: "", notes: notes.trim() || null }];
 
     setSubmitting(true);
     try {
-      const result = await offlineFetch(
-        "/api/payments/create",
-        {
-          business_domain: selectedReceivable.business_domain,
-          project_id: selectedReceivable.source_type === "project" ? selectedReceivable.source_id : null,
-          order_id: selectedReceivable.source_type === "order" ? selectedReceivable.source_id : null,
-          property_id: null,
-          amount_total: amountValue,
-          payment_date: date,
-          // A card payment is stored with its deposit day, so every reader sees it.
-          due_date: method === "check" ? dueDate || null : method === "credit_card" ? nextMonthTenth(date) || null : null,
-          requires_split: false,
-          payment_method: method,
-          account_id: accountId || null,
-          reference_number: reference.trim() || null,
-          check_number: method === "check" && checkNumber.trim() ? checkNumber.trim() : null,
-          notes: notes.trim() || null,
-          tag_ids: [],
-        },
-        "קליטת תשלום",
-        { idempotent: true }
-      );
+      let result: Awaited<ReturnType<typeof offlineFetch>> | null = null;
+      for (const [i, part] of parts.entries()) {
+        result = await offlineFetch(
+          "/api/payments/create",
+          {
+            business_domain: selectedReceivable.business_domain,
+            project_id: selectedReceivable.source_type === "project" ? selectedReceivable.source_id : null,
+            order_id: selectedReceivable.source_type === "order" ? selectedReceivable.source_id : null,
+            property_id: null,
+            amount_total: part.amount,
+            payment_date: part.paymentDate,
+            // A card payment is stored with its deposit day, so every reader sees it.
+            due_date:
+              method === "check" ? dueDate || null : method === "credit_card" ? part.dueDate || nextMonthTenth(part.paymentDate) || null : null,
+            requires_split: false,
+            payment_method: method,
+            account_id: accountId || null,
+            reference_number: reference.trim() || null,
+            check_number: method === "check" && checkNumber.trim() ? checkNumber.trim() : null,
+            notes: part.notes,
+            tag_ids: [],
+          },
+          "קליטת תשלום",
+          { idempotent: true }
+        );
+        if (!result.queued && !result.ok && i > 0) {
+          // Some installments are saved; say which, so the rest aren't entered twice.
+          setError(`נרשמו ${i} מתוך ${parts.length} תשלומים. ${toHebrewError(result.error, "רישום שאר התשלומים נכשל.")}`);
+          onSaved?.();
+          return;
+        }
+        if (!result.queued && !result.ok) break;
+      }
+      if (!result) return;
       if (result.queued) {
         onOpenChange(false);
         reset();
@@ -608,6 +640,17 @@ export function CollectPaymentDialog({
           />
           </div>
         </>
+      ) : stepId === "installments" ? (
+        <>
+          <StepHeading title="בכמה תשלומים?" />
+          <CardInstallmentsField
+            value={installments}
+            onChange={setInstallments}
+            amount={amountValid ? Number(amount) : 0}
+            paymentDate={date}
+            disabled={submitting}
+          />
+        </>
       ) : stepId === "check" ? (
         <>
           <StepHeading title="פרטי הצ'ק" />
@@ -662,7 +705,9 @@ export function CollectPaymentDialog({
             <SummaryRow label="אמצעי תשלום" value={summaryMethodLabel} />
             <SummaryRow label="חשבון" value={summaryAccountName} />
             <SummaryRow label="תאריך" value={date} />
-            {method === "credit_card" && date ? (
+            {method === "credit_card" && date && (parseInstallments(installments) ?? 1) > 1 ? (
+              <SummaryRow label="תשלומים" value={`${parseInstallments(installments)} תשלומים, אחד בכל חודש`} />
+            ) : method === "credit_card" && date ? (
               <SummaryRow label="נכנס לחשבון" value={`${nextMonthTenth(date)} · עם שאר תשלומי האשראי של החודש`} />
             ) : null}
             {method === "check" && dueDate ? <SummaryRow label="תאריך פירעון" value={dueDate} /> : null}

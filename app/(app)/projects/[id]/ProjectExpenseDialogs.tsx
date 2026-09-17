@@ -23,7 +23,8 @@ import { toHebrewError } from "@/lib/error-messages";
 import { appendDictatedText } from "@/lib/dictation";
 import { mapProjectTypeToExpenseDomain } from "@/lib/expenses";
 import { registerReversibleCreate } from "@/lib/undo-engine";
-import { type FinancialAttachment, type PaymentRow } from "@/lib/payments";
+import { parseInstallments, splitCardInstallments, type FinancialAttachment, type PaymentRow } from "@/lib/payments";
+import { CardInstallmentsField } from "@/components/financial/CardInstallmentsField";
 import {
   getErrorMessage,
   isImageAttachment,
@@ -66,6 +67,8 @@ export function AddIncomeDialog({
   const [paymentAccountId, setPaymentAccountId] = useState("");
   const [paymentAccountsList, setPaymentAccountsList] = useState<Account[]>([]);
   const [dueDate, setDueDate] = useState("");
+  // Card only: saved as this many payments, a month apart.
+  const [installments, setInstallments] = useState("1");
   const [requiresSplit, setRequiresSplit] = useState(false);
   const [referenceNumber, setReferenceNumber] = useState("");
   const [checkNumber, setCheckNumber] = useState("");
@@ -126,6 +129,7 @@ export function AddIncomeDialog({
     setPaymentMethod(editingPayment?.payment_method ?? "");
     setPaymentAccountId(editingPayment?.account_id ?? "");
     setDueDate(editingPayment?.due_date ?? "");
+    setInstallments("1");
     setRequiresSplit(Boolean(editingPayment?.requires_split));
     setReferenceNumber(editingPayment?.reference_number ?? "");
     setCheckNumber(editingPayment?.check_number ?? "");
@@ -146,28 +150,40 @@ export function AddIncomeDialog({
       return;
     }
     if (paymentMethod === "check" && !dueDate) return;
+    const isCard = paymentMethod === "credit_card";
+    const installmentCount = isCard ? parseInstallments(installments) : 1;
+    if (installmentCount === null) {
+      toast.error("מספר התשלומים צריך להיות בין 1 ל-36.");
+      return;
+    }
+    // One payment — or, for a card payment in installments, one per installment,
+    // a month apart. The first is this payment (new or edited); the rest are added.
+    const [firstPart, ...moreParts] = isCard
+      ? splitCardInstallments({ amount: amountNumber, paymentDate, count: installmentCount, notes })
+      : [{ amount: amountNumber, paymentDate, dueDate: dueDate.trim() || null, notes: notes.trim() || null }];
+    const bodyFor = (part: typeof firstPart, id?: string) => ({
+      id,
+      business_domain: mapProjectTypeToExpenseDomain(projectType),
+      project_id: projectId,
+      amount_total: part.amount,
+      payment_date: part.paymentDate ? part.paymentDate : null,
+      due_date: part.dueDate || null,
+      // Price-includes-VAT projects always record payments in full.
+      requires_split: priceIncludesVat ? false : requiresSplit,
+      payment_method: paymentMethod.trim() ? paymentMethod : undefined,
+      account_id: paymentAccountId || undefined,
+      reference_number: referenceNumber.trim() ? referenceNumber : undefined,
+      check_number:
+        paymentMethod === "check" && checkNumber.trim() ? checkNumber.trim() : undefined,
+      notes: part.notes || undefined,
+    });
 
     setSubmitting(true);
     try {
       const res = await fetch(isEditing ? "/api/payments/update" : "/api/payments/create", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          id: editingPayment?.id ?? undefined,
-          business_domain: mapProjectTypeToExpenseDomain(projectType),
-          project_id: projectId,
-          amount_total: amountNumber,
-          payment_date: paymentDate ? paymentDate : null,
-          due_date: dueDate.trim() || null,
-          // Price-includes-VAT projects always record payments in full.
-          requires_split: priceIncludesVat ? false : requiresSplit,
-          payment_method: paymentMethod.trim() ? paymentMethod : undefined,
-          account_id: paymentAccountId || undefined,
-          reference_number: referenceNumber.trim() ? referenceNumber : undefined,
-          check_number:
-            paymentMethod === "check" && checkNumber.trim() ? checkNumber.trim() : undefined,
-          notes: notes.trim() ? notes : undefined,
-        }),
+        body: JSON.stringify(bodyFor(firstPart, editingPayment?.id ?? undefined)),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -183,6 +199,26 @@ export function AddIncomeDialog({
         });
         return;
       }
+
+      // The other installments, as new payments on the project.
+      const addedIds: string[] = [];
+      for (const [i, part] of moreParts.entries()) {
+        const added = await fetch("/api/payments/create", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(bodyFor(part)),
+        });
+        const addedJson = await added.json().catch(() => ({}));
+        if (!added.ok) {
+          toast.error(`נרשמו ${i + 1} מתוך ${moreParts.length + 1} תשלומים`, {
+            description: toHebrewError(addedJson?.error, "רישום שאר התשלומים נכשל."),
+          });
+          break;
+        }
+        const addedId = (addedJson?.payment as PaymentRow | undefined)?.id;
+        if (addedId) addedIds.push(addedId);
+      }
+      if (moreParts.length > 0) startTransition(() => { router.refresh(); });
 
       let paymentWithAttachment = savedPayment;
       const uploadedAttachments: FinancialAttachment[] = [];
@@ -209,13 +245,15 @@ export function AddIncomeDialog({
           id: paymentId,
           message: "ההכנסה נוספה",
           onUndo: async () => {
-            const res = await fetch("/api/payments/delete", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ id: paymentId }),
-            });
-            const json = await res.json().catch(() => ({}));
-            if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "ביטול נכשל.") };
+            for (const id of [paymentId, ...addedIds]) {
+              const res = await fetch("/api/payments/delete", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ id }),
+              });
+              const json = await res.json().catch(() => ({}));
+              if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "ביטול נכשל.") };
+            }
             startTransition(() => { router.refresh(); });
             return { ok: true };
           },
@@ -227,6 +265,7 @@ export function AddIncomeDialog({
       setPaymentDate(projectDateOrToday(projectStartDate));
       setPaymentMethod("");
       setDueDate("");
+      setInstallments("1");
       setRequiresSplit(false);
       setReferenceNumber("");
       setCheckNumber("");
@@ -350,6 +389,15 @@ export function AddIncomeDialog({
                 setPaymentAccountId((prev) => prev || defaultAccountForMethod(list, paymentMethod));
               }}
             />
+            {paymentMethod === "credit_card" ? (
+              <CardInstallmentsField
+                value={installments}
+                onChange={setInstallments}
+                amount={Number.isFinite(amountNumber) ? amountNumber : 0}
+                paymentDate={paymentDate}
+                disabled={submitting}
+              />
+            ) : (
             <div className="space-y-1">
               <div className="text-sm font-medium">
                 {requiresDueDate ? "תאריך פירעון *" : "תאריך פירעון צפוי (אופציונלי)"}
@@ -370,6 +418,7 @@ export function AddIncomeDialog({
                 </div>
               ) : null}
             </div>
+            )}
           </AdaptiveGrid>
 
           <AdaptiveGrid variant="formTwo">

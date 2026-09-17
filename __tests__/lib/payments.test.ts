@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildPaymentInsert, nextMonthTenth } from "@/lib/payments";
+import { addMonthsIso, buildPaymentInsert, nextMonthTenth, parseInstallments, splitCardInstallments } from "@/lib/payments";
 import { splitPaymentAmounts } from "@/lib/orders/paymentStatus";
 import { applyProjectVatToBase } from "@/lib/projects/vat";
 
@@ -188,6 +188,46 @@ describe("nextMonthTenth — credit-card processor settlement day", () => {
   it("returns '' for a malformed date", () => {
     expect(nextMonthTenth("not-a-date")).toBe("");
     expect(nextMonthTenth("")).toBe("");
+  });
+});
+
+describe("splitCardInstallments — a card payment in installments, as the payments it is entered as", () => {
+  it("₪1,000 in 3: shares that add up exactly, a month apart, each landing on the next month's 10th", () => {
+    const parts = splitCardInstallments({ amount: 1000, paymentDate: "2026-09-17", count: 3, notes: "הזמנה 12" });
+    expect(parts.map((p) => p.amount)).toEqual([333.34, 333.33, 333.33]);
+    expect(parts.reduce((sum, p) => sum + p.amount, 0)).toBeCloseTo(1000, 2);
+    expect(parts.map((p) => p.paymentDate)).toEqual(["2026-09-17", "2026-10-17", "2026-11-17"]);
+    expect(parts.map((p) => p.dueDate)).toEqual(["2026-10-10", "2026-11-10", "2026-12-10"]);
+    expect(parts.map((p) => p.notes)).toEqual(["הזמנה 12 · תשלום 1/3", "הזמנה 12 · תשלום 2/3", "הזמנה 12 · תשלום 3/3"]);
+  });
+
+  it("one installment is just the payment, with no label", () => {
+    const [only, ...rest] = splitCardInstallments({ amount: 500, paymentDate: "2026-09-17", count: 1, notes: "" });
+    expect(rest).toEqual([]);
+    expect(only).toMatchObject({ amount: 500, paymentDate: "2026-09-17", dueDate: "2026-10-10", notes: null });
+  });
+
+  it("keeps the day in short months and crosses the year", () => {
+    const parts = splitCardInstallments({ amount: 300, paymentDate: "2026-12-31", count: 3 });
+    expect(parts.map((p) => p.paymentDate)).toEqual(["2026-12-31", "2027-01-31", "2027-02-28"]);
+    expect(parts.map((p) => p.dueDate)).toEqual(["2027-01-10", "2027-02-10", "2027-03-10"]);
+  });
+});
+
+describe("parseInstallments / addMonthsIso", () => {
+  it("accepts whole numbers 1..36 only", () => {
+    expect(parseInstallments("3")).toBe(3);
+    expect(parseInstallments(" 12 ")).toBe(12);
+    expect(parseInstallments("0")).toBeNull();
+    expect(parseInstallments("37")).toBeNull();
+    expect(parseInstallments("2.5")).toBeNull();
+    expect(parseInstallments("")).toBeNull();
+  });
+
+  it("moves by whole months", () => {
+    expect(addMonthsIso("2026-01-31", 1)).toBe("2026-02-28");
+    expect(addMonthsIso("2026-11-15", 2)).toBe("2027-01-15");
+    expect(addMonthsIso("nope", 1)).toBe("");
   });
 });
 

@@ -69,7 +69,8 @@ import { useRevealOnScroll } from "@/hooks/useRevealOnScroll";
 import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
-import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
+import { PAYMENT_METHOD_OPTIONS, parseInstallments, splitCardInstallments } from "@/lib/payments";
+import { CardInstallmentsField } from "@/components/financial/CardInstallmentsField";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete, scheduleDeferredEdit, registerReversibleCreate } from "@/lib/undo-engine";
@@ -156,6 +157,8 @@ type IncomeCreateFormState = {
   notes: string;
   requiresSplit: boolean;
   tagIds: string[];
+  /** Card only: saved as this many payments, a month apart. Absent on older saved drafts. */
+  installments?: string;
 };
 
 const currencyFormatter = new Intl.NumberFormat("he-IL", {
@@ -816,29 +819,68 @@ export default function FinancialPageClient({
       return;
     }
     // due_date is optional for non-check methods (e.g., שוטף+30 bank transfer).
+    const isCard = incomeCreateForm.paymentMethod === "credit_card";
+    const installmentCount = isCard ? parseInstallments(incomeCreateForm.installments ?? "1") : 1;
+    if (installmentCount === null) {
+      toast.error("מספר התשלומים צריך להיות בין 1 ל-36.");
+      return;
+    }
+    // One payment — or, for a card payment in installments, one per installment,
+    // a month apart, saved one after the other. Check photos and undo follow the first.
+    const parts = isCard
+      ? splitCardInstallments({
+          amount: amountNumber,
+          paymentDate: incomeCreateForm.paymentDate,
+          count: installmentCount,
+          notes: incomeCreateForm.notes,
+        })
+      : [{
+          amount: amountNumber,
+          paymentDate: incomeCreateForm.paymentDate,
+          dueDate: incomeCreateForm.dueDate.trim() || null,
+          notes: incomeCreateForm.notes.trim() || null,
+        }];
 
     setIsCreatingIncome(true);
     try {
-      const result = await offlineFetch("/api/payments/create", {
-        business_domain: incomeCreateForm.businessDomain,
-        project_id: incomeCreateForm.businessDomain === "logistics_projects" ? incomeCreateForm.projectId : null,
-        order_id: incomeCreateForm.businessDomain === "sales" ? incomeCreateForm.orderId : null,
-        property_id:
-          incomeCreateForm.businessDomain === "property_management" ? incomeCreateForm.propertyId : null,
-        amount_total: amountNumber,
-        payment_date: incomeCreateForm.paymentDate,
-        due_date: incomeCreateForm.dueDate.trim() || null,
-        requires_split: incomeCreateForm.requiresSplit,
-        payment_method: incomeCreateForm.paymentMethod,
-        account_id: incomeCreateForm.accountId || null,
-        reference_number: incomeCreateForm.referenceNumber.trim() || null,
-        check_number:
-          incomeCreateForm.paymentMethod === "check" && incomeCreateForm.checkNumber.trim()
-            ? incomeCreateForm.checkNumber.trim()
-            : null,
-        notes: incomeCreateForm.notes.trim() || null,
-        tag_ids: incomeCreateForm.tagIds,
-      }, "הכנסה חדשה", { idempotent: true });
+      let result: Awaited<ReturnType<typeof offlineFetch>> | null = null;
+      const extraIds: string[] = [];
+      for (const [i, part] of parts.entries()) {
+        const partResult = await offlineFetch("/api/payments/create", {
+          business_domain: incomeCreateForm.businessDomain,
+          project_id: incomeCreateForm.businessDomain === "logistics_projects" ? incomeCreateForm.projectId : null,
+          order_id: incomeCreateForm.businessDomain === "sales" ? incomeCreateForm.orderId : null,
+          property_id:
+            incomeCreateForm.businessDomain === "property_management" ? incomeCreateForm.propertyId : null,
+          amount_total: part.amount,
+          payment_date: part.paymentDate,
+          due_date: part.dueDate || null,
+          requires_split: incomeCreateForm.requiresSplit,
+          payment_method: incomeCreateForm.paymentMethod,
+          account_id: incomeCreateForm.accountId || null,
+          reference_number: incomeCreateForm.referenceNumber.trim() || null,
+          check_number:
+            incomeCreateForm.paymentMethod === "check" && incomeCreateForm.checkNumber.trim()
+              ? incomeCreateForm.checkNumber.trim()
+              : null,
+          notes: part.notes,
+          tag_ids: incomeCreateForm.tagIds,
+        }, "הכנסה חדשה", { idempotent: true });
+        if (i === 0) {
+          result = partResult;
+          if (!partResult.queued && !partResult.ok) break;
+          continue;
+        }
+        if (!partResult.queued && !partResult.ok) {
+          toast.error(`נרשמו ${i} מתוך ${parts.length} תשלומים`, { description: partResult.error });
+          break;
+        }
+        if (!partResult.queued) {
+          const extraId = (partResult.data as { payment?: { id?: string } } | null)?.payment?.id;
+          if (extraId) extraIds.push(extraId);
+        }
+      }
+      if (!result) return;
 
       if (result.queued) {
         setIncomeCreateOpen(false);
@@ -883,17 +925,19 @@ export default function FinancialPageClient({
           id: createdPaymentId,
           message: "ההכנסה נוספה",
           onUndo: async () => {
-            const res = await fetch(undoOrderId ? "/api/orders/payments/delete" : "/api/payments/delete", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify(
-                undoOrderId
-                  ? { id: createdPaymentId, order_id: undoOrderId }
-                  : { id: createdPaymentId, project_id: undoProjectId || undefined }
-              ),
-            });
-            const errJson = await res.json().catch(() => ({}));
-            if (!res.ok) return { ok: false, error: toHebrewError(errJson?.error, "ביטול נכשל.") };
+            for (const id of [createdPaymentId, ...extraIds]) {
+              const res = await fetch(undoOrderId ? "/api/orders/payments/delete" : "/api/payments/delete", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(
+                  undoOrderId
+                    ? { id, order_id: undoOrderId }
+                    : { id, project_id: undoProjectId || undefined }
+                ),
+              });
+              const errJson = await res.json().catch(() => ({}));
+              if (!res.ok) return { ok: false, error: toHebrewError(errJson?.error, "ביטול נכשל.") };
+            }
             startRefreshTransition(() => { router.refresh(); });
             return { ok: true };
           },
@@ -2294,6 +2338,15 @@ export default function FinancialPageClient({
                   }));
                 }}
               />
+              {incomeCreateForm.paymentMethod === "credit_card" ? (
+                <CardInstallmentsField
+                  value={incomeCreateForm.installments ?? "1"}
+                  onChange={(value) => setIncomeCreateForm((current) => ({ ...current, installments: value }))}
+                  amount={Number(incomeCreateForm.amount) || 0}
+                  paymentDate={incomeCreateForm.paymentDate}
+                  disabled={isCreatingIncome}
+                />
+              ) : (
               <div className="space-y-1">
                 <div className="text-sm font-medium">
                   {incomeCreateForm.paymentMethod === "check"
@@ -2312,6 +2365,7 @@ export default function FinancialPageClient({
                   </p>
                 ) : null}
               </div>
+              )}
             </div>
 
             {incomeCreateForm.paymentMethod === "check" ? (

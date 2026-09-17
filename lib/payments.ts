@@ -74,6 +74,73 @@ export function nextMonthTenth(dateIso: string): string {
   return `${year}-${String(month).padStart(2, "0")}-10`;
 }
 
+/** The most installments a card payment can be split into. */
+export const MAX_CARD_INSTALLMENTS = 36;
+
+/** An installment count as typed: a whole number 1..36, else null (not valid). */
+export function parseInstallments(value: unknown): number | null {
+  const n = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value.trim()) : NaN;
+  return Number.isInteger(n) && n >= 1 && n <= MAX_CARD_INSTALLMENTS ? n : null;
+}
+
+/** Same day of the month, N months later — clamped to a short month's last day. Pure; "" on a bad input. */
+export function addMonthsIso(dateIso: string, months: number): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateIso);
+  if (!m) return "";
+  const monthIndex = Number(m[2]) - 1 + months;
+  const year = Number(m[1]) + Math.floor(monthIndex / 12);
+  const month = ((monthIndex % 12) + 12) % 12;
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  return `${year}-${String(month + 1).padStart(2, "0")}-${String(Math.min(Number(m[3]), lastDay)).padStart(2, "0")}`;
+}
+
+export type CardInstallment = {
+  /** 1-based. */
+  index: number;
+  count: number;
+  amount: number;
+  paymentDate: string;
+  /** When it reaches the bank: the 10th of the month after its date. */
+  dueDate: string;
+  notes: string | null;
+};
+
+/**
+ * A card payment in N installments, as the N payments it is entered as — what
+ * used to be typed in by hand. Each is the total ÷ N (the agorot left over go
+ * on the first, so they add up exactly), dated a month after the one before,
+ * so each lands in its own month's deposit on the 10th. Each note says which
+ * installment it is. One installment is just the payment itself.
+ */
+export function splitCardInstallments({
+  amount,
+  paymentDate,
+  count,
+  notes,
+}: {
+  amount: number;
+  paymentDate: string;
+  count: number;
+  notes?: string | null;
+}): CardInstallment[] {
+  const n = parseInstallments(count) ?? 1;
+  const totalAgorot = Math.round(amount * 100);
+  const partAgorot = Math.floor(totalAgorot / n);
+  const note = notes?.trim() || "";
+  return Array.from({ length: n }, (_, i) => {
+    const date = addMonthsIso(paymentDate, i) || paymentDate;
+    const label = n > 1 ? `תשלום ${i + 1}/${n}` : "";
+    return {
+      index: i + 1,
+      count: n,
+      amount: (i === 0 ? totalAgorot - partAgorot * (n - 1) : partAgorot) / 100,
+      paymentDate: date,
+      dueDate: nextMonthTenth(date),
+      notes: [note, label].filter(Boolean).join(" · ") || null,
+    };
+  });
+}
+
 type BuildPaymentInsertInput = {
   amountTotal: number;
   businessDomain: ExpenseBusinessDomain;

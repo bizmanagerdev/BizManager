@@ -28,6 +28,8 @@ import {
 } from "@/lib/orders/paymentStatus";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
+import { parseInstallments, splitCardInstallments } from "@/lib/payments";
+import { CardInstallmentsField } from "@/components/financial/CardInstallmentsField";
 import { formatRelativeDateLabel, formatShortDate } from "@/lib/date";
 import { appendOrderComment, formatOrderCommentTimestamp } from "@/lib/orders/comments";
 
@@ -177,6 +179,8 @@ export default function OrderConfirmDialog({
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(getTodayDate());
   const [paymentMethod, setPaymentMethod] = useState("");
+  // Card only: saved as this many payments, a month apart.
+  const [installments, setInstallments] = useState("1");
   const [paymentAccountId, setPaymentAccountId] = useState("");
   const [refundAccountId, setRefundAccountId] = useState("");
   const [accountsList, setAccountsList] = useState<Account[]>([]);
@@ -571,18 +575,26 @@ export default function OrderConfirmDialog({
           discount_amount: line.discount_amount,
           notes: line.notes,
         })),
+        // A card payment in installments goes in as that many payments, a month apart.
         payments:
           pendingPaymentAmount > 0
-            ? [
-                {
-                  amount_total: pendingPaymentAmount,
-                  payment_date: paymentDate,
-                  payment_method: paymentMethod,
-                  account_id: paymentAccountId || null,
-                  reference_number: referenceNumber.trim() || null,
-                  notes: paymentNotes.trim() || null,
-                },
-              ]
+            ? (paymentMethod === "credit_card"
+                ? splitCardInstallments({
+                    amount: pendingPaymentAmount,
+                    paymentDate,
+                    count: parseInstallments(installments) ?? 1,
+                    notes: paymentNotes,
+                  })
+                : [{ amount: pendingPaymentAmount, paymentDate, dueDate: null, notes: paymentNotes.trim() || null }]
+              ).map((part) => ({
+                amount_total: part.amount,
+                payment_date: part.paymentDate,
+                payment_method: paymentMethod,
+                account_id: paymentAccountId || null,
+                ...(part.dueDate ? { due_date: part.dueDate } : {}),
+                reference_number: referenceNumber.trim() || null,
+                notes: part.notes,
+              }))
             : [],
         refunds:
           refundDue > 0 && recordRefund
@@ -697,6 +709,9 @@ export default function OrderConfirmDialog({
         return null;
       case "paymentMethod":
         if (!paymentMethod) return "יש לבחור אמצעי תשלום.";
+        if (paymentMethod === "credit_card" && parseInstallments(installments) === null) {
+          return "מספר התשלומים צריך להיות בין 1 ל-36.";
+        }
         return null;
       case "paymentAccount":
         if (accountsList.length > 0 && !paymentAccountId) return "יש לבחור חשבון לתשלום.";
@@ -950,6 +965,16 @@ export default function OrderConfirmDialog({
                 </option>
               ))}
             </NativeSelect>
+            {paymentMethod === "credit_card" ? (
+              <div className="pt-2">
+                <CardInstallmentsField
+                  value={installments}
+                  onChange={setInstallments}
+                  amount={pendingPaymentAmount}
+                  paymentDate={paymentDate}
+                />
+              </div>
+            ) : null}
           </div>
         );
       case "paymentAccount":

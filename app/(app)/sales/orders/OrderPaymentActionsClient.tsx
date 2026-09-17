@@ -24,7 +24,8 @@ import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
 import { offlineFetch } from "@/lib/offline-queue";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
-import { nextMonthTenth } from "@/lib/payments";
+import { nextMonthTenth, parseInstallments, splitCardInstallments } from "@/lib/payments";
+import { CardInstallmentsField } from "@/components/financial/CardInstallmentsField";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 
@@ -108,6 +109,9 @@ export function EditPaymentDialog({
   const [checkNumber, setCheckNumber] = useState(payment.check_number ?? "");
   const [checkPhotoFiles, setCheckPhotoFiles] = useState<File[]>([]);
   const [notes, setNotes] = useState(payment.notes ?? "");
+  // Splitting this payment into installments: it becomes the first, and the
+  // rest are added a month apart.
+  const [installments, setInstallments] = useState("1");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -150,6 +154,15 @@ export function EditPaymentDialog({
       setError("יש להזין תאריך פירעון לצ'ק.");
       return;
     }
+    const isCardIncome = paymentMethod === "credit_card" && signedAmount > 0;
+    const installmentCount = isCardIncome ? parseInstallments(installments) : 1;
+    if (installmentCount === null) {
+      setError("מספר התשלומים צריך להיות בין 1 ל-36.");
+      return;
+    }
+    const [firstPart, ...moreParts] = isCardIncome
+      ? splitCardInstallments({ amount: signedAmount, paymentDate, count: installmentCount, notes })
+      : [{ amount: signedAmount, paymentDate, dueDate: "", notes: notes.trim() || null }];
 
     setSubmitting(true);
     try {
@@ -158,29 +171,50 @@ export function EditPaymentDialog({
         {
           id: payment.id,
           order_id: orderId,
-          amount_total: signedAmount,
-          payment_date: paymentDate,
+          amount_total: firstPart.amount,
+          payment_date: firstPart.paymentDate,
           payment_method: paymentMethod,
           account_id: accountId || undefined,
           // A card payment lands with the month's deposit — the 10th of the next
           // month (lib/card-settlements.ts). A refund leaves on its own day.
-          due_date:
-            paymentMethod === "credit_card" && signedAmount > 0
-              ? nextMonthTenth(paymentDate) || undefined
-              : dueDate.trim() || undefined,
+          due_date: isCardIncome ? nextMonthTenth(firstPart.paymentDate) || undefined : dueDate.trim() || undefined,
           reference_number: referenceNumber.trim() || undefined,
           check_number:
             paymentMethod === "check" && checkNumber.trim() ? checkNumber.trim() : undefined,
-          notes: notes.trim() || undefined,
+          notes: firstPart.notes || undefined,
         },
         "עדכון תשלום"
       );
-      if (result.queued) {
-        await onSaved();
+      if (!result.queued && !result.ok) {
+        setError(toHebrewError(result.error, "עדכון נכשל."));
         return;
       }
-      if (!result.ok) {
-        setError(toHebrewError(result.error, "עדכון נכשל."));
+      // The other installments, as new payments on the same order.
+      for (const [i, part] of moreParts.entries()) {
+        const added = await offlineFetch(
+          "/api/orders/payments/create",
+          {
+            order_id: orderId,
+            entry_type: "payment",
+            amount_total: part.amount,
+            payment_date: part.paymentDate,
+            payment_method: paymentMethod,
+            account_id: accountId || undefined,
+            due_date: part.dueDate || undefined,
+            reference_number: referenceNumber.trim() || undefined,
+            notes: part.notes || undefined,
+          },
+          "תשלום להזמנה",
+          { idempotent: true }
+        );
+        if (!added.queued && !added.ok) {
+          setError(`נרשמו ${i + 1} מתוך ${moreParts.length + 1} תשלומים. ${toHebrewError(added.error, "רישום שאר התשלומים נכשל.")}`);
+          await onSaved();
+          return;
+        }
+      }
+      if (result.queued) {
+        await onSaved();
         return;
       }
       if (paymentMethod === "check" && checkPhotoFiles.length > 0) {
@@ -266,7 +300,13 @@ export function EditPaymentDialog({
           />
 
           {paymentMethod === "credit_card" && signedAmount > 0 ? (
-            <p className="text-xs text-muted-foreground">נכנס לחשבון ב-10 לחודש הבא, יחד עם שאר תשלומי האשראי של החודש.</p>
+            <CardInstallmentsField
+              value={installments}
+              onChange={setInstallments}
+              amount={Number.isFinite(amountNumber) ? amountNumber : 0}
+              paymentDate={paymentDate}
+              disabled={submitting}
+            />
           ) : paymentMethod ? (
             <div className="space-y-1">
               <label className="text-sm font-medium">
