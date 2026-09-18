@@ -670,3 +670,15 @@ export async function setVatRate(rate: number): Promise<void> {
   const { error } = await adminClient().from("business_settings").upsert({ id: true, vat_rate: rate }, { onConflict: "id" });
   if (error) throw error;
 }
+
+// Account creation/edit (AccountsCard.tsx) goes through a direct browser ->
+// Supabase call (saveAccountDirect), not an API route — no response to
+// capture an id from the way admin-income/admin-expenses do. Cleanup by
+// name instead, same pattern as deleteTestTaskByTitle. No local e2e stack
+// has any accounts seeded (confirmed repeatedly this session — several
+// expense/income/order wizard steps are conditioned on accountsList.length
+// === 0), so a test creating one here MUST always delete it in a `finally`.
+export async function deleteTestAccountByName(name: string): Promise<void> {
+  const { error } = await adminClient().from("accounts").delete().eq("name", name);
+  if (error) throw error;
+}
