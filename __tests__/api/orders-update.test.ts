@@ -135,7 +135,10 @@ describe("POST /api/orders/update — money rows ride inside the RPC transaction
       payment_status: "cleared",
       order_id: "order-1",
       business_domain: "sales",
-      recorded_by: "auth-1",
+      // public.users.id (profile.id), not the auth uid — payments.recorded_by
+      // is an FK to public.users(id), which a worker's own auth uid never
+      // matches (see app/api/orders/update/route.ts's own comment).
+      recorded_by: "prof-1",
       account_id: "acc-1",
     });
     expect(rpcCalls[0].params.p_refunds).toEqual([]);

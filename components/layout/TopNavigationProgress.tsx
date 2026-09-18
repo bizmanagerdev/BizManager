@@ -53,8 +53,13 @@ export function TopNavigationProgress() {
   // Kept in a ref (not read from a dep array) so the listener-registration
   // effect below doesn't re-run — and tear down its live timers — on every
   // searchParams-only navigation (e.g. tab/filter clicks on the same page).
+  // Written from its own effect, not during render (react-hooks/refs) — a
+  // separate effect here doesn't touch that other effect's own dependency
+  // array, so this still doesn't retrigger it.
   const routeKeyRef = useRef(routeKey);
-  routeKeyRef.current = routeKey;
+  useEffect(() => {
+    routeKeyRef.current = routeKey;
+  }, [routeKey]);
 
   const clearAllTimers = useCallback(() => {
     if (progressTimerRef.current) {
