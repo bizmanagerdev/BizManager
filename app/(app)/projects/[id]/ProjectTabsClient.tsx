@@ -258,6 +258,8 @@ export default function ProjectTabsClient({
   workerBalance,
   salaryAgreements,
   monthlySalaryItems,
+  accountNameById,
+  wageAccountIdsBySource,
   customerCard,
   detailsCard,
   statusCard,
@@ -302,6 +304,11 @@ export default function ProjectTabsClient({
   workerBalance: ProjectWorkerBalance;
   salaryAgreements: ProjectSalaryAgreement[];
   monthlySalaryItems: ProjectMonthlySalaryItem[];
+  /** Account id → name, for the חשבון shown on each תנועות row. */
+  accountNameById: Record<string, string>;
+  /** `session:<id>` / `payslip:<id>` → the accounts of the worker payments
+   *  that settled that wage (a wage row has no account of its own). */
+  wageAccountIdsBySource: Record<string, string[]>;
   /** The customer card — the fourth card in the desktop KPI row. */
   customerCard?: ReactNode;
   /** The פרטים card — beside the customer at the top of the desktop layout. */
@@ -1308,6 +1315,11 @@ export default function ProjectTabsClient({
   // of the six scannable columns goes into `extras`, behind the row's chevron.
   const movements = useMemo<Movement[]>(() => {
     const rows: Movement[] = [];
+    const accountName = (ids: Array<string | null | undefined> | undefined) => {
+      const names = (ids ?? []).map((accountId) => (accountId ? accountNameById[accountId] : undefined));
+      const known = names.filter((name): name is string => Boolean(name));
+      return known.length > 0 ? known.join(", ") : null;
+    };
 
     for (const payment of paymentsUi) {
       const reference = payment.reference_number ?? "";
@@ -1345,6 +1357,7 @@ export default function ProjectTabsClient({
         billed: false,
         billedAmount: null,
         amount: toNumber(payment.amount_total),
+        account: accountName([payment.account_id]),
         hint: paymentHint,
         extras,
         attachments: Array.isArray(payment.attachments) ? payment.attachments : [],
@@ -1428,6 +1441,9 @@ export default function ProjectTabsClient({
         amount,
         employeeId: session ? session.user_id : null,
         employeeName: session ? sessionEmployeeName : null,
+        account: session
+          ? accountName(wageAccountIdsBySource[`session:${session.id}`])
+          : accountName([getString(item.expense, "account_id")]),
         hint: session
           ? session.notes?.trim() || null
           : getString(item.expense, "notes") ?? null,
@@ -1461,6 +1477,7 @@ export default function ProjectTabsClient({
         amount: row.earned,
         employeeId: row.userId,
         employeeName: row.workerName,
+        account: accountName(wageAccountIdsBySource[`payslip:${row.payslipId}`]),
         hint: null,
         extras: [
           { label: "חודש", value: row.periodMonth ?? "—" },
@@ -1484,6 +1501,8 @@ export default function ProjectTabsClient({
     expensesUi,
     monthlySalaryRows,
     usersById,
+    accountNameById,
+    wageAccountIdsBySource,
   ]);
 
   // תנועות group-by/sort-by — same debounced-save-to-a-jsonb-column shape as

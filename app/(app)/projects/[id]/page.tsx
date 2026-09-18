@@ -27,6 +27,7 @@ import type {
 } from "@/app/(app)/projects/[id]/ProjectTabsClient";
 import { formatMovingEndpoint } from "@/lib/projects/movingAddress";
 import { PAYMENT_SELECT } from "@/lib/payments";
+import { loadAccounts } from "@/lib/accounts";
 import { splitPaymentAmounts } from "@/lib/orders/paymentStatus";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import type { FinancialAttachment } from "@/lib/payments";
@@ -160,6 +161,34 @@ async function buildAttachmentsByEntity(
     byEntity.set(entityId, existing);
   }
   return byEntity;
+}
+
+/** A wage (session / payslip) has no account of its own — the money left
+ *  through whichever worker payment(s) settled it. Returns source id → the
+ *  distinct account ids of those payments. Silent on error (e.g. a role that
+ *  can't read payroll): the row just shows no account. */
+async function loadWageAccountIds(
+  supabase: SupabaseClient,
+  column: "attendance_session_id" | "payslip_id",
+  sourceIds: string[]
+): Promise<Map<string, string[]>> {
+  const bySource = new Map<string, string[]>();
+  if (sourceIds.length === 0) return bySource;
+  const { data, error } = await supabase
+    .from("worker_payment_allocations")
+    .select(`${column},worker_payments(account_id)`)
+    .in(column, sourceIds);
+  if (error) return bySource;
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    const sourceId = row[column];
+    const payment = Array.isArray(row.worker_payments) ? row.worker_payments[0] : row.worker_payments;
+    const accountId = (payment as { account_id?: unknown } | null)?.account_id;
+    if (typeof sourceId !== "string" || typeof accountId !== "string" || !accountId) continue;
+    const list = bySource.get(sourceId) ?? [];
+    if (!list.includes(accountId)) list.push(accountId);
+    bySource.set(sourceId, list);
+  }
+  return bySource;
 }
 
 function isMissingColumnError(error: unknown, columnName: string) {
@@ -365,7 +394,7 @@ export default async function ProjectPage({
   // another (as this page used to) turned ~20 sequential round trips into one
   // long queue; running them together turns it into the length of the
   // longest single chain.
-  const [expensesChain, sessionsChain, paymentsChain, projectDocsChain, customerBranchChain, activityChain] =
+  const [expensesChain, sessionsChain, paymentsChain, projectDocsChain, customerBranchChain, activityChain, accountNameById] =
     await Promise.all([
       (async () => {
         const { data: salaryAgreements } =
@@ -404,6 +433,12 @@ export default async function ProjectPage({
           is_billable_to_customer: (row.is_billable_to_customer as boolean | null) ?? null,
           bill_to_customer_amount: (row.bill_to_customer_amount as number | string | null) ?? null,
         }));
+        // Awaited at the end of this chain — runs alongside the expense queries.
+        const payslipAccountIdsPromise = loadWageAccountIds(
+          supabase,
+          "payslip_id",
+          monthlySalaryItems.map((item) => item.payslip_id).filter(Boolean)
+        );
 
         const expenseIds = Array.from(
           new Set(
@@ -562,6 +597,7 @@ export default async function ProjectPage({
         return {
           salaryAgreements,
           monthlySalaryItems,
+          payslipAccountIds: await payslipAccountIdsPromise,
           expenseList,
           expenseRecordedByNameByValue,
           recurringTemplateNames,
@@ -583,6 +619,12 @@ export default async function ProjectPage({
               .map((session) => (typeof session.id === "string" ? session.id : null))
               .filter((value): value is string => Boolean(value))
           )
+        );
+        // Awaited at the end of this chain — runs alongside the queries below.
+        const sessionAccountIdsPromise = loadWageAccountIds(
+          supabase,
+          "attendance_session_id",
+          attendanceSessionIds
         );
 
         // Effective per-session paid status comes from ONE source of truth — the
@@ -659,6 +701,7 @@ export default async function ProjectPage({
           attendanceSessionsError,
           sessionDebtById,
           sessionAttachmentByEntityId,
+          sessionAccountIds: await sessionAccountIdsPromise,
         };
       })(),
       (async () => {
@@ -958,19 +1001,31 @@ export default async function ProjectPage({
           ])
         ).items;
       })(),
+      // Account names for the תנועות rows — inactive ones too, since an old
+      // row can still point at an account that's since been closed.
+      (async () =>
+        Object.fromEntries((await loadAccounts(supabase)).map((account) => [account.id, account.name])) as Record<
+          string,
+          string
+        >)(),
     ]);
 
   const {
     salaryAgreements,
     monthlySalaryItems,
+    payslipAccountIds,
     expenseList,
     expenseRecordedByNameByValue,
     recurringTemplateNames,
     expenseAuditResult,
     expensesError,
   } = expensesChain;
-  const { attendanceSessions, attendanceSessionsError, sessionDebtById, sessionAttachmentByEntityId } =
+  const { attendanceSessions, attendanceSessionsError, sessionDebtById, sessionAttachmentByEntityId, sessionAccountIds } =
     sessionsChain;
+  const wageAccountIdsBySource: Record<string, string[]> = {
+    ...Object.fromEntries([...sessionAccountIds].map(([sessionId, ids]) => [`session:${sessionId}`, ids])),
+    ...Object.fromEntries([...payslipAccountIds].map(([payslipId, ids]) => [`payslip:${payslipId}`, ids])),
+  };
   const {
     payments,
     paymentsWithPhotos,
@@ -1423,6 +1478,8 @@ export default async function ProjectPage({
             workerBalance={workerBalance ?? null}
             salaryAgreements={(salaryAgreements ?? []) as ProjectSalaryAgreement[]}
             monthlySalaryItems={monthlySalaryItems}
+            accountNameById={accountNameById}
+            wageAccountIdsBySource={wageAccountIdsBySource}
             moneyError={
               projectExpensesError?.message ??
               expensesError?.message ??

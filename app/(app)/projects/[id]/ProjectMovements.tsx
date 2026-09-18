@@ -6,8 +6,8 @@
 // כספי is the summary; this footer is what PROVES the summary against the
 // actual rows (see the totals block at the bottom of this file).
 //
-// A row shows the things you scan for: date, category + name, status,
-// billed-to-customer, and how much — split into separate IN/OUT columns so
+// A row shows the things you scan for: date, category + name, status, the
+// account the money moved through, billed-to-customer, and how much — split into separate IN/OUT columns so
 // either can be scanned without reading a sign. Everything else — notes,
 // method, reference, session hours, who recorded it, attachments — waits
 // behind the row's chevron, so the common case stays one line.
@@ -25,6 +25,7 @@
 import { Fragment, useMemo, useState } from "react";
 import {
   AttachIcon,
+  BankIcon,
   CheckIcon,
   ChevronDownIcon,
   DeleteIcon,
@@ -41,6 +42,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
+import { MetaRow } from "@/components/ui/meta-row";
 import { SwipeActions } from "@/components/ui/swipe-actions";
 import { getStatusColor, getStatusLabel, type StatusColor } from "@/lib/ui/status-colors";
 import type { FinancialAttachment } from "@/lib/payments";
@@ -74,6 +76,10 @@ export type Movement = {
    *  (payments, non-worker expenses have no single employee). */
   employeeId?: string | null;
   employeeName?: string | null;
+  /** Name of the account (bank / cash box) the money moved through — a
+   *  wage's comes from the worker payment(s) that settled it, so it's null
+   *  until it's paid. Several names are comma-joined. */
+  account: string | null;
   /** One-line hint shown under the name (notes, method, period…). */
   hint: string | null;
   /** Label/value pairs shown when the row is opened. */
@@ -498,6 +504,9 @@ export default function ProjectMovements({
               <span className="text-muted-foreground">—</span>
             )}
           </td>
+          <td className={TD}>
+            {movement.account ?? <span className="text-muted-foreground/40">—</span>}
+          </td>
           <td className={TD + " whitespace-nowrap font-semibold tabular-nums"}>
             <BilledCell amount={movement.billedAmount} />
           </td>
@@ -514,7 +523,7 @@ export default function ProjectMovements({
         {open ? (
           <tr className="border-b border-border/70 bg-muted/10">
             <td />
-            <td className="ps-6 pb-3 pt-0" colSpan={7}>
+            <td className="ps-6 pb-3 pt-0" colSpan={8}>
               <Details movement={movement} />
             </td>
           </tr>
@@ -535,7 +544,7 @@ export default function ProjectMovements({
         <td className={TD}>
           <ChevronDownIcon className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")} />
         </td>
-        <td className={TD + " font-semibold"} colSpan={4}>
+        <td className={TD + " font-semibold"} colSpan={5}>
           {group.name}
           <span className="ms-1.5 text-xs font-normal text-muted-foreground">· {group.rows.length} תנועות</span>
         </td>
@@ -624,9 +633,22 @@ export default function ProjectMovements({
                   )}
                   {hasAttachment(movement) ? <AttachmentHint /> : null}
                 </span>
-                {movement.hint ? (
-                  <span className="block text-xs text-muted-foreground">{movement.hint}</span>
-                ) : null}
+                {/* The account gets a bank glyph — with no column header on
+                    the phone, a bare name after the method wouldn't say
+                    what it is. */}
+                <MetaRow
+                  as="span"
+                  className="text-xs text-muted-foreground"
+                  items={[
+                    movement.hint,
+                    movement.account ? (
+                      <span className="inline-flex items-center gap-1">
+                        <BankIcon className="h-3 w-3 shrink-0" />
+                        {movement.account}
+                      </span>
+                    ) : null,
+                  ]}
+                />
               </span>
               <span className="shrink-0 text-end">
                 <span className="block whitespace-nowrap font-semibold tabular-nums">
@@ -702,6 +724,7 @@ export default function ProjectMovements({
               <th className={TH}>תאריך</th>
               <th className={TH}>תיאור</th>
               <th className={TH}>סטטוס</th>
+              <th className={TH}>חשבון</th>
               <th className={TH}>לחיוב לקוח</th>
               <th className={TH}>הכנסה</th>
               <th className={TH}>הוצאה</th>
@@ -727,7 +750,7 @@ export default function ProjectMovements({
           <tfoot className="sticky bottom-0 z-10">
             <tr className="border-t-2 border-foreground/20 bg-muted font-semibold">
               <td />
-              <td className={TD} colSpan={3}>
+              <td className={TD} colSpan={4}>
                 סה״כ
               </td>
               <td className={TD + " whitespace-nowrap tabular-nums text-secondary"}>
