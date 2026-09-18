@@ -23,6 +23,8 @@ import { findDuplicate, norm, shiftIso, type ExistingExpense } from "@/lib/finan
 import { DeleteButton, EditButton, IconButton } from "@/components/ui/icon-button";
 import { CheckIcon, LinkIcon } from "@/components/ui/icons";
 import AccountSelect from "@/components/financial/AccountSelect";
+import { resolveSplit, type SplitPartDraft } from "@/lib/financial/statementSplit";
+import { StatementRowSplit, emptySplitPart } from "./StatementRowSplit";
 
 type Option = { id: string; name: string };
 
@@ -158,6 +160,8 @@ export default function StatementDetailClient({
   const [rows, setRows] = useState<StatementRowView[]>(initialRows);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<StatementRowView | null>(null);
+  // Set while the line is being split across domains (null = a single domain).
+  const [split, setSplit] = useState<SplitPartDraft[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -850,11 +854,13 @@ export default function StatementDetailClient({
     setError(null);
     setEditingId(row.id);
     setDraft({ ...row });
+    setSplit(null);
   }
 
   function cancelEdit() {
     setEditingId(null);
     setDraft(null);
+    setSplit(null);
     setError(null);
   }
 
@@ -866,6 +872,10 @@ export default function StatementDetailClient({
     if (!draft || saving) return;
     if (!draft.expenseDate) {
       setError("יש להזין תאריך.");
+      return;
+    }
+    if (split) {
+      await saveSplit(draft, split);
       return;
     }
     // A row that already created an expense must keep a valid domain (the expense needs one).
@@ -908,6 +918,99 @@ export default function StatementDetailClient({
       cancelEdit();
     } catch {
       setError("העדכון נכשל.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Save the line's other edits, then divide it: the line keeps the first
+  // part and each other part becomes a line (and, once created, an expense)
+  // right after it.
+  async function saveSplit(current: StatementRowView, drafts: SplitPartDraft[]) {
+    const { parts, error: splitError } = resolveSplit(current.amount, drafts);
+    if (splitError) {
+      setError(splitError);
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const first = parts[0];
+      const saved = await fetch("/api/expenses/statement-rows/update", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          row_id: current.id,
+          business_domain: first.domain,
+          project_id: first.projectId,
+          property_id: first.propertyId,
+          amount: current.amount,
+          category: current.category,
+          card_label: current.cardLabel,
+          description: current.description,
+          notes: current.notes,
+          expense_date: current.expenseDate,
+          transaction_date: current.transactionDate || null,
+          include: current.include,
+        }),
+      });
+      if (!saved.ok) {
+        const data = (await saved.json().catch(() => ({}))) as { error?: string };
+        setError(toHebrewError(data.error, "העדכון נכשל."));
+        return;
+      }
+      const res = await fetch("/api/expenses/statement-rows/split", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          row_id: current.id,
+          parts: parts.map((p) => ({
+            business_domain: p.domain,
+            amount: p.amount,
+            project_id: p.projectId,
+            property_id: p.propertyId,
+          })),
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        rows?: Array<{
+          id: string;
+          expense_id: string | null;
+          amount: number | string;
+          business_domain: string | null;
+          project_id: string | null;
+          property_id: string | null;
+        }>;
+      };
+      if (!res.ok) {
+        setError(toHebrewError(data.error, "פיצול השורה נכשל."));
+        return;
+      }
+      const original: StatementRowView = {
+        ...current,
+        amount: first.amount,
+        businessDomain: first.domain,
+        projectId: first.projectId ?? "",
+        propertyId: first.propertyId ?? "",
+      };
+      const added: StatementRowView[] = (data.rows ?? []).map((r) => ({
+        ...current,
+        id: r.id,
+        expenseId: r.expense_id,
+        expenseExists: Boolean(r.expense_id),
+        amount: Number(r.amount),
+        businessDomain: r.business_domain ?? "",
+        projectId: r.project_id ?? "",
+        propertyId: r.property_id ?? "",
+        incomePaymentId: null,
+        incomeExists: false,
+        incomeAmount: 0,
+      }));
+      setRows((prev) => prev.flatMap((r) => (r.id === current.id ? [original, ...added] : [r])));
+      cancelEdit();
+    } catch {
+      setError("פיצול השורה נכשל.");
     } finally {
       setSaving(false);
     }
@@ -1411,7 +1514,7 @@ export default function StatementDetailClient({
             : "השורה עדיין לא הומרה להוצאה — העדכון יישמר בפירוט."
         }
         onSubmit={() => void saveDialog()}
-        submitLabel="שמירה"
+        submitLabel={split ? "פיצול ושמירה" : "שמירה"}
         busyLabel="שומר..."
         busy={saving}
         error={error || undefined}
@@ -1462,14 +1565,30 @@ export default function StatementDetailClient({
                   className="h-9"
                 />
               </Field>
+              {split ? null : (
               <Field size="xs" label="תחום עסקי">
                 <DomainSelect
                   value={draft.businessDomain}
                   onChange={(value) => patchDraft({ businessDomain: value, projectId: "", propertyId: "" })}
                   placeholder="— בחר —"
                 />
+                {draft.amount > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSplit([
+                        { ...emptySplitPart(draft.businessDomain), projectId: draft.projectId, propertyId: draft.propertyId },
+                        emptySplitPart(),
+                      ])
+                    }
+                    className="mt-1 text-xs font-medium text-secondary hover:underline"
+                  >
+                    פיצול לכמה תחומים
+                  </button>
+                ) : null}
               </Field>
-              {draft.businessDomain === "logistics_projects" ? (
+              )}
+              {split ? null : draft.businessDomain === "logistics_projects" ? (
                 <Field size="xs" label="פרויקט">
                   <ProjectPicker
                     value={draft.projectId}
@@ -1497,6 +1616,16 @@ export default function StatementDetailClient({
                 <Input value={draft.notes} onChange={(e) => patchDraft({ notes: e.target.value })} className="h-9" />
               </Field>
             </div>
+            {split ? (
+              <StatementRowSplit
+                total={draft.amount}
+                parts={split}
+                onChange={setSplit}
+                onCancel={() => setSplit(null)}
+                projects={projects}
+                properties={properties}
+              />
+            ) : null}
             {draft.assignmentRaw ? (
               <p className="text-xs text-muted-foreground">שיוך מקורי בקובץ: {draft.assignmentRaw}</p>
             ) : null}

@@ -146,12 +146,21 @@ export async function POST(req: Request) {
     }
 
     // Remember each merchant's assignment so future statements pre-fill themselves.
+    // A merchant that went to more than one domain in this batch (a line split
+    // across domains) has no single answer to remember, so it is left alone.
     const mappingByKey = new Map<string, Record<string, unknown>>();
+    const ambiguous = new Set<string>();
     for (const e of eligible) {
       const description = typeof e.payload.description === "string" ? e.payload.description.trim() : "";
       const key = norm(description);
       const domain = typeof e.payload.business_domain === "string" ? e.payload.business_domain : "";
       if (!key || description === PLACEHOLDER || !domain) continue;
+      const seen = mappingByKey.get(key);
+      if (ambiguous.has(key) || (seen && seen.business_domain !== domain)) {
+        ambiguous.add(key);
+        mappingByKey.delete(key);
+        continue;
+      }
       mappingByKey.set(key, {
         merchant_key: key,
         business_domain: domain,
