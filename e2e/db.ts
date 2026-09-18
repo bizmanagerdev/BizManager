@@ -682,3 +682,44 @@ export async function deleteTestAccountByName(name: string): Promise<void> {
   const { error } = await adminClient().from("accounts").delete().eq("name", name);
   if (error) throw error;
 }
+
+export type TestAccount = { id: string; name: string };
+
+// For tests that need one seeded ahead of time (e.g. AccountTransferDialog
+// requires at least 2 active accounts before it'll even open a "from"/"to"
+// step). account_transfers.from_account_id/to_account_id are both ON DELETE
+// CASCADE, so deleting the account(s) afterward also removes any transfer
+// row that referenced them — no separate transfer cleanup needed.
+export async function createTestAccount(
+  overrides: { name?: string; kind?: "bank" | "cash" | "card"; openingBalance?: number } = {}
+): Promise<TestAccount> {
+  const { data, error } = await adminClient()
+    .from("accounts")
+    .insert({
+      name: overrides.name ?? `חשבון בדיקה ${Date.now()}`,
+      kind: overrides.kind ?? "bank",
+      opening_balance: overrides.openingBalance ?? 0,
+      opening_date: new Date().toISOString().slice(0, 10),
+      is_active: true,
+    })
+    .select("id,name")
+    .single();
+  if (error) throw error;
+  return data as TestAccount;
+}
+
+export async function deleteTestAccount(id: string): Promise<void> {
+  const { error } = await adminClient().from("accounts").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function getAccountTransferAmount(fromAccountId: string, toAccountId: string): Promise<number | null> {
+  const { data, error } = await adminClient()
+    .from("account_transfers")
+    .select("amount")
+    .eq("from_account_id", fromAccountId)
+    .eq("to_account_id", toAccountId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as { amount: number } | null)?.amount ?? null;
+}
