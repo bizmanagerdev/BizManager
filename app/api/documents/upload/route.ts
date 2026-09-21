@@ -12,6 +12,12 @@ import { STORAGE_BUCKET } from "@/lib/storage";
 const BUCKET = STORAGE_BUCKET;
 const MAX_BYTES = 200 * 1024 * 1024;
 
+// TEMPORARY DIAGNOSTIC — a fresh admin-documents.spec.ts upload fails with
+// toHebrewError's generic fallback ("אירעה שגיאה. נסו שוב."), which hides
+// which of the 3 write steps below actually failed and why. __raw exposes
+// the real underlying error message on every 400 this route returns;
+// revert once the cause is found.
+
 function safeExtensionFromFilename(name: string) {
   const base = name.split(/[/\\]/).pop() ?? "";
   const parts = base.split(".");
@@ -123,7 +129,7 @@ export async function POST(req: Request) {
       // (storage RLS denials among them) into a generic line, which is what
       // makes a failing upload impossible to tell apart from a validation slip.
       console.error("[documents/upload] storage upload failed", { storagePath, uploadError });
-      return NextResponse.json({ error: toHebrewError(uploadError.message) }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(uploadError.message), __raw: uploadError.message }, { status: 400 });
     }
 
     const { error: docError } = await supabase.from("documents").insert({
@@ -141,7 +147,7 @@ export async function POST(req: Request) {
     if (docError) {
       console.error("[documents/upload] documents insert failed", { documentId, docError });
       await supabase.storage.from(BUCKET).remove([storagePath]);
-      return NextResponse.json({ error: toHebrewError(docError.message) }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(docError.message), __raw: docError.message }, { status: 400 });
     }
 
     // Standalone documents (home/charity/general_business/sales/spaceit with no
@@ -162,7 +168,7 @@ export async function POST(req: Request) {
         });
         await supabase.from("documents").delete().eq("id", documentId);
         await supabase.storage.from(BUCKET).remove([storagePath]);
-        return NextResponse.json({ error: toHebrewError(linkError.message) }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(linkError.message), __raw: linkError.message }, { status: 400 });
       }
     }
 
