@@ -33,6 +33,26 @@ describe("sumOpenOwed", () => {
   });
 });
 
+describe("worker payment — a finished month's payslip before its pay day", () => {
+  const earlyAugust = debt({
+    source_type: "payslip",
+    source_id: "ps-aug",
+    payment_status: "not_due",
+    source_date: "2020-08-31",
+    earned_amount: 8000,
+    paid_amount: 0,
+    owed_amount: 0,
+  });
+
+  it("counts as open, is summed, and takes the payment", () => {
+    expect(sortOpenWorkerDebt([earlyAugust], "u1")).toHaveLength(1);
+    expect(sumOpenOwed([earlyAugust])).toBe(8000);
+    expect(buildWorkerPaymentAllocations(8000, [earlyAugust])).toEqual([
+      { source_type: "payslip", source_id: "ps-aug", amount: 8000 },
+    ]);
+  });
+});
+
 describe("sortOpenWorkerDebt", () => {
   it("keeps only this worker's open debts, oldest first", () => {
     const items = [

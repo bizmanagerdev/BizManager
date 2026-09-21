@@ -17,6 +17,7 @@ import {
 import {
   calculateSessionLaborCost,
   getActiveSalaryAgreementForDate,
+  israelDateKey,
   monthKeyFromDate,
   sessionWorkedMinutes,
   toNumber,
@@ -986,6 +987,120 @@ async function attachLooseItemsToPayslip(
 
   if (result.error) return [];
   return (result.data ?? []) as PayslipItemRow[];
+}
+
+function previousMonthKey(monthKey: string) {
+  const [year, month] = monthKey.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 2, 1)).toISOString().slice(0, 7);
+}
+
+export type EnsureRecentPayslipsResult = {
+  createdPeriods: string[];
+  createdPayslips: number;
+};
+
+/**
+ * Payslips make themselves (user, Sep 2026): every payslip-tracked worker gets a
+ * payslip for this month and last month without anyone pressing «יצירת תלוש».
+ *
+ * Everything else that builds a payslip — a session, a bonus, an agreement edit —
+ * only touches months that already have a payroll period, and a period only ever
+ * came from «יצירת תקופה». So a monthly worker who never clocks in had no payslip,
+ * and therefore no debt to pay against, until someone generated it by hand on pay
+ * day; and a month nobody opened a period for had no payslips at all.
+ *
+ * Only fills in what's missing — existing payslips are kept current by those same
+ * refresh paths. A worker needs an agreement covering part of the month, so nobody
+ * gets a payslip for a month before they started. Locked periods are left alone.
+ * Runs from the daily cron and, as a safety net, when the salary centre loads.
+ */
+export async function ensureRecentPayslips(
+  supabase: SupabaseLike,
+  referenceDate: Date = new Date()
+): Promise<EnsureRecentPayslipsResult> {
+  const result: EnsureRecentPayslipsResult = { createdPeriods: [], createdPayslips: 0 };
+  const currentMonthKey = israelDateKey(referenceDate).slice(0, 7);
+  const monthKeys = [previousMonthKey(currentMonthKey), currentMonthKey];
+
+  const usersResult = await query(supabase.from("users"))
+    .select("id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode")
+    .in("role", ["admin", "office", "worker", "worker_no_access"])
+    .range(0, 999);
+  if (usersResult.error) throw new Error(usersResult.error.message);
+
+  const workers = ((usersResult.data ?? []) as SalaryCenterUserRow[]).filter(
+    (user) => user.id && user.active !== false && isSalaryTrackedWorker(user)
+  );
+  if (workers.length === 0) return result;
+  const workerIds = workers.map((worker) => worker.id);
+
+  const readPeriods = () =>
+    query(supabase.from("payroll_periods"))
+      .select("id,period_month,start_date,end_date,status")
+      .in("period_month", monthKeys);
+
+  const [agreementsResult, initialPeriodsResult] = await Promise.all([
+    query(supabase.from("salary_agreements")).select("user_id,valid_from,valid_to").in("user_id", workerIds),
+    readPeriods(),
+  ]);
+  if (agreementsResult.error) throw new Error(agreementsResult.error.message);
+  if (initialPeriodsResult.error) throw new Error(initialPeriodsResult.error.message);
+
+  const agreements = (agreementsResult.data ?? []) as Array<Pick<SalaryAgreementRow, "user_id" | "valid_from" | "valid_to">>;
+  let periods = (initialPeriodsResult.data ?? []) as PayrollPeriodRow[];
+
+  const missingMonths = monthKeys.filter((monthKey) => !periods.some((period) => period.period_month === monthKey));
+  if (missingMonths.length > 0) {
+    for (const monthKey of missingMonths) {
+      const bounds = buildPeriodBounds(monthKey);
+      if (!bounds) continue;
+      // Two loads can race here; period_month is unique, so the loser's insert just
+      // fails and the re-read below picks up the winner's row.
+      const insertResult = await query(supabase.from("payroll_periods")).insert({
+        period_month: monthKey,
+        start_date: bounds.startDate,
+        end_date: bounds.endDate,
+        status: "open",
+      });
+      if (!insertResult.error) result.createdPeriods.push(monthKey);
+    }
+    const periodsResult = await readPeriods();
+    if (periodsResult.error) throw new Error(periodsResult.error.message);
+    periods = (periodsResult.data ?? []) as PayrollPeriodRow[];
+  }
+
+  const editablePeriods = periods.filter((period) => isPayrollPeriodEditable(period.status));
+  if (editablePeriods.length === 0) return result;
+
+  const payslipsResult = await query(supabase.from("payslips"))
+    .select("payroll_period_id,user_id")
+    .in("payroll_period_id", editablePeriods.map((period) => period.id))
+    .in("user_id", workerIds);
+  if (payslipsResult.error) throw new Error(payslipsResult.error.message);
+
+  const existingKeys = new Set(
+    ((payslipsResult.data ?? []) as Array<Pick<PayslipRow, "payroll_period_id" | "user_id">>).map(
+      (payslip) => `${payslip.payroll_period_id}:${payslip.user_id}`
+    )
+  );
+
+  for (const period of editablePeriods) {
+    const missingWorkers = workers.filter(
+      (worker) =>
+        !existingKeys.has(`${period.id}:${worker.id}`) &&
+        agreements.some(
+          (agreement) =>
+            agreement.user_id === worker.id &&
+            agreement.valid_from <= period.end_date &&
+            (!agreement.valid_to || agreement.valid_to >= period.start_date)
+        )
+    );
+    if (missingWorkers.length === 0) continue;
+    const generated = await generatePayslipsForPeriod(supabase, period, missingWorkers);
+    result.createdPayslips += generated.payslips.length;
+  }
+
+  return result;
 }
 
 export async function regenerateEditablePayslipsForUsers(

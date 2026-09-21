@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculateSessionLaborCost, computeSessionPaymentStatus } from "@/lib/payroll";
+import { calculateSessionLaborCost, computeSessionPaymentStatus, getPayableDebtAmount, israelDateKey } from "@/lib/payroll";
 import type { SalaryAgreementRow } from "@/lib/payroll";
 
 function makeHourlyAgreement(overrides: Partial<SalaryAgreementRow> = {}): SalaryAgreementRow {
@@ -136,5 +136,47 @@ describe("computeSessionPaymentStatus", () => {
 
   it("prefers 'paid' over 'overpaid' inside the rounding tolerance", () => {
     expect(computeSessionPaymentStatus(100, 100.009)).toBe("paid");
+  });
+});
+
+describe("israelDateKey", () => {
+  it("uses the Israeli calendar day, not UTC", () => {
+    // 22:30 UTC on Aug 31 is already Sep 1 in Israel (UTC+3 in summer).
+    expect(israelDateKey(new Date("2026-08-31T22:30:00Z"))).toBe("2026-09-01");
+    expect(israelDateKey(new Date("2026-08-31T12:00:00Z"))).toBe("2026-08-31");
+  });
+});
+
+describe("getPayableDebtAmount", () => {
+  const augustPayslip = {
+    source_type: "payslip",
+    payment_status: "not_due",
+    source_date: "2026-08-31",
+    earned_amount: 8000,
+    paid_amount: 0,
+    owed_amount: 0,
+  };
+
+  it("an owed item is payable up to what it owes", () => {
+    expect(getPayableDebtAmount({ ...augustPayslip, payment_status: "unpaid", owed_amount: 8000 }, "2026-09-12")).toBe(8000);
+    expect(getPayableDebtAmount({ ...augustPayslip, source_type: "session", payment_status: "partial", owed_amount: 250 }, "2026-09-12")).toBe(250);
+  });
+
+  it("a finished month's payslip is payable before its pay day (the 9th for a salary due on the 10th)", () => {
+    expect(getPayableDebtAmount(augustPayslip, "2026-09-09")).toBe(8000);
+    expect(getPayableDebtAmount(augustPayslip, "2026-09-01")).toBe(8000);
+  });
+
+  it("only the unpaid remainder of an early, partly paid payslip is payable", () => {
+    expect(getPayableDebtAmount({ ...augustPayslip, paid_amount: 3000 }, "2026-09-09")).toBe(5000);
+  });
+
+  it("the month still running is not payable yet — money given mid-month stays an advance", () => {
+    expect(getPayableDebtAmount({ ...augustPayslip, source_date: "2026-09-30" }, "2026-09-18")).toBe(0);
+    expect(getPayableDebtAmount({ ...augustPayslip, source_date: "2026-08-31" }, "2026-08-31")).toBe(0);
+  });
+
+  it("a paid payslip has nothing left to pay", () => {
+    expect(getPayableDebtAmount({ ...augustPayslip, payment_status: "paid", paid_amount: 8000 }, "2026-09-09")).toBe(0);
   });
 });

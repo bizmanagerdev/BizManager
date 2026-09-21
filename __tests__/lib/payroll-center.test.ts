@@ -3,6 +3,7 @@ import {
   buildPeriodBounds,
   calculateSessionLaborCostsByDay,
   collectLockedSessionIds,
+  ensureRecentPayslips,
   getCurrentPayrollPeriod,
   getLatestHourlyOverride,
   getPayslipItemsTotal,
@@ -262,5 +263,152 @@ describe("inferSessionBusinessDomain", () => {
     expect(inferSessionBusinessDomain("not-a-real-domain")).toBe("general_business");
     expect(inferSessionBusinessDomain(null)).toBe("general_business");
     expect(inferSessionBusinessDomain(undefined)).toBe("general_business");
+  });
+});
+
+// A tiny in-memory Supabase: enough of the query builder for ensureRecentPayslips
+// and the generatePayslipsForPeriod it calls (select/insert/update + eq/in/is/gte/lte).
+type FakeRow = Record<string, unknown>;
+function fakeDb(tables: Record<string, FakeRow[]>) {
+  let nextId = 1;
+  const from = (table: string) => {
+    const rows = (tables[table] ??= []);
+    let op: "select" | "insert" | "update" = "select";
+    let payload: FakeRow | FakeRow[] | null = null;
+    const filters: Array<(row: FakeRow) => boolean> = [];
+    const builder: Record<string, unknown> = {};
+    builder.select = () => builder;
+    builder.order = () => builder;
+    builder.range = () => builder;
+    builder.eq = (column: string, value: unknown) => (filters.push((row) => row[column] === value), builder);
+    builder.in = (column: string, values: unknown[]) => (filters.push((row) => values.includes(row[column])), builder);
+    builder.is = (column: string, value: unknown) => (filters.push((row) => (row[column] ?? null) === value), builder);
+    builder.gte = (column: string, value: string) => (filters.push((row) => String(row[column]) >= value), builder);
+    builder.lte = (column: string, value: string) => (filters.push((row) => String(row[column]) <= value), builder);
+    builder.insert = (values: FakeRow | FakeRow[]) => ((op = "insert"), (payload = values), builder);
+    builder.update = (values: FakeRow) => ((op = "update"), (payload = values), builder);
+    const run = () => {
+      if (op === "insert") {
+        const list = Array.isArray(payload) ? payload : [payload as FakeRow];
+        if (table === "payroll_periods" && list.some((value) => rows.some((row) => row.period_month === value.period_month))) {
+          return { data: null, error: { message: "duplicate key value violates unique constraint" } };
+        }
+        const inserted = list.map((value) => ({ id: `${table}-${nextId++}`, ...value }));
+        rows.push(...inserted);
+        return { data: inserted, error: null };
+      }
+      const matched = rows.filter((row) => filters.every((filter) => filter(row)));
+      if (op === "update") matched.forEach((row) => Object.assign(row, payload));
+      return { data: matched, error: null };
+    };
+    builder.maybeSingle = () => {
+      const result = run();
+      return Promise.resolve({ data: result.data?.[0] ?? null, error: result.error });
+    };
+    builder.then = (onFulfilled: (value: unknown) => unknown, onRejected?: (reason: unknown) => unknown) =>
+      Promise.resolve(run()).then(onFulfilled, onRejected);
+    return builder;
+  };
+  return { from, tables };
+}
+
+function monthlyWorker(id: string, overrides: FakeRow = {}): FakeRow {
+  return { id, full_name: id, role: "worker", active: true, payroll_worker_type: "monthly_payslip", pay_tracking_mode: "payslip", ...overrides };
+}
+
+function monthlyAgreement(userId: string, overrides: FakeRow = {}): FakeRow {
+  return {
+    id: `agr-${userId}`,
+    user_id: userId,
+    salary_type: "monthly",
+    monthly_salary: 8000,
+    hourly_rate: null,
+    valid_from: "2026-04-01",
+    valid_to: null,
+    ...overrides,
+  };
+}
+
+describe("ensureRecentPayslips", () => {
+  // The 9th of September, Israel time: August is the month about to be paid.
+  const ON_THE_9TH = new Date("2026-09-09T08:00:00Z");
+
+  it("opens last month's and this month's periods and gives a monthly worker who never clocks in a payslip in each", async () => {
+    const db = fakeDb({
+      users: [monthlyWorker("m1")],
+      salary_agreements: [monthlyAgreement("m1")],
+    });
+
+    const result = await ensureRecentPayslips(db, ON_THE_9TH);
+
+    expect(result.createdPeriods).toEqual(["2026-08", "2026-09"]);
+    expect(db.tables.payroll_periods.map((period) => period.period_month)).toEqual(["2026-08", "2026-09"]);
+    expect(db.tables.payroll_periods[0]).toMatchObject({ start_date: "2026-08-01", end_date: "2026-08-31", status: "open" });
+    expect(db.tables.payslips).toHaveLength(2);
+    expect(db.tables.payslips.every((payslip) => payslip.user_id === "m1" && payslip.gross_salary === 8000)).toBe(true);
+    expect(result.createdPayslips).toBe(2);
+  });
+
+  it("only fills in what's missing — an existing period and payslip are left as they are", async () => {
+    const db = fakeDb({
+      users: [monthlyWorker("m1")],
+      salary_agreements: [monthlyAgreement("m1")],
+      payroll_periods: [{ id: "aug", period_month: "2026-08", start_date: "2026-08-01", end_date: "2026-08-31", status: "open" }],
+      payslips: [{ id: "ps-aug", payroll_period_id: "aug", user_id: "m1", gross_salary: 7500, manual_adjustments: 0 }],
+    });
+
+    const result = await ensureRecentPayslips(db, ON_THE_9TH);
+
+    expect(result.createdPeriods).toEqual(["2026-09"]);
+    expect(db.tables.payroll_periods).toHaveLength(2);
+    expect(db.tables.payslips.filter((payslip) => payslip.payroll_period_id === "aug")).toEqual([
+      expect.objectContaining({ id: "ps-aug", gross_salary: 7500 }),
+    ]);
+    expect(result.createdPayslips).toBe(1);
+  });
+
+  it("running twice creates nothing the second time", async () => {
+    const db = fakeDb({
+      users: [monthlyWorker("m1")],
+      salary_agreements: [monthlyAgreement("m1")],
+    });
+
+    await ensureRecentPayslips(db, ON_THE_9TH);
+    const second = await ensureRecentPayslips(db, ON_THE_9TH);
+
+    expect(second).toEqual({ createdPeriods: [], createdPayslips: 0 });
+    expect(db.tables.payslips).toHaveLength(2);
+  });
+
+  it("skips a worker with no agreement covering the month, inactive and session-paid workers, and locked periods", async () => {
+    const db = fakeDb({
+      users: [
+        monthlyWorker("starts-in-october"),
+        monthlyWorker("left", { active: false }),
+        monthlyWorker("per-session", { payroll_worker_type: "session_only", pay_tracking_mode: "session" }),
+        monthlyWorker("m1"),
+      ],
+      salary_agreements: [
+        monthlyAgreement("starts-in-october", { valid_from: "2026-10-01" }),
+        monthlyAgreement("left"),
+        monthlyAgreement("per-session"),
+        monthlyAgreement("m1"),
+      ],
+      payroll_periods: [{ id: "aug", period_month: "2026-08", start_date: "2026-08-01", end_date: "2026-08-31", status: "locked" }],
+    });
+
+    await ensureRecentPayslips(db, ON_THE_9TH);
+
+    expect(db.tables.payslips.map((payslip) => payslip.user_id)).toEqual(["m1"]);
+    expect(db.tables.payslips[0].payroll_period_id).not.toBe("aug");
+  });
+
+  it("does nothing when there are no payslip-tracked workers", async () => {
+    const db = fakeDb({ users: [monthlyWorker("per-session", { payroll_worker_type: "session_only", pay_tracking_mode: "session" })] });
+
+    const result = await ensureRecentPayslips(db, ON_THE_9TH);
+
+    expect(result).toEqual({ createdPeriods: [], createdPayslips: 0 });
+    expect(db.tables.payroll_periods ?? []).toHaveLength(0);
   });
 });

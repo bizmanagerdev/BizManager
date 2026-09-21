@@ -2,6 +2,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { logAuditEvent } from "@/lib/audit";
+import { getPayableDebtAmount } from "@/lib/payroll";
 import {
   normalizePayrollWorkerType,
   payrollWorkerTypePaymentAllocationSource,
@@ -31,6 +32,10 @@ type DebtItemRow = {
   source_type: AllocationSourceType;
   source_id: string;
   user_id: string;
+  payment_status: string | null;
+  source_date: string | null;
+  earned_amount: number | string | null;
+  paid_amount: number | string | null;
   owed_amount: number | string | null;
 };
 
@@ -193,7 +198,7 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
   if (sourceIdsToValidate.length > 0) {
     const debtItemsResult = await supabase
       .from("worker_debt_items_view")
-      .select("source_type,source_id,user_id,owed_amount")
+      .select("source_type,source_id,user_id,payment_status,source_date,earned_amount,paid_amount,owed_amount")
       .eq("user_id", userId)
       .in("source_type", allowedSourceTypes)
       .in("source_id", sourceIdsToValidate);
@@ -212,10 +217,11 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
   for (const item of debtItems) {
     const key = debtKey(item.source_type, item.source_id);
     const requestedAmount = mergedByKey.get(key) ?? 0;
-    const currentOwedAmount = toAmount(item.owed_amount);
+    // Not just owed_amount: a finished month's payslip is payable before its pay day.
+    const currentPayableAmount = getPayableDebtAmount(item);
     const existingAmountOnThisPayment = existingAllocationByKey.get(key) ?? 0;
-    const availableAmount = currentOwedAmount + existingAmountOnThisPayment;
-    if (!Number.isFinite(currentOwedAmount) || requestedAmount - availableAmount > 0.01) {
+    const availableAmount = currentPayableAmount + existingAmountOnThisPayment;
+    if (requestedAmount - availableAmount > 0.01) {
       return NextResponse.json(
         { error: "Cannot allocate more than the remaining debt on an item." },
         { status: 400 }

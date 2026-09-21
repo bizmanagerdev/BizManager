@@ -194,6 +194,54 @@ describe("POST /api/payroll/worker-payments — allocation total & debt validati
     expect(res.status).toBe(200);
   });
 
+  it("allows paying a finished month's payslip before its pay day (the view reports it as owing 0)", async () => {
+    grant(
+      sb({
+        worker: PAYSLIP_WORKER,
+        debtItems: [
+          {
+            source_type: "payslip",
+            source_id: "ps-aug",
+            user_id: "u1",
+            payment_status: "not_due",
+            source_date: "2020-08-31",
+            earned_amount: 8000,
+            paid_amount: 0,
+            owed_amount: 0,
+          },
+        ],
+      })
+    );
+    const res = await POST(
+      req("http://test", "POST", { ...VALID_CREATE, amount: 8000, allocations: [{ source_type: "payslip", source_id: "ps-aug", amount: 8000 }] })
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("still 400s an allocation to the month that's still running", async () => {
+    grant(
+      sb({
+        worker: PAYSLIP_WORKER,
+        debtItems: [
+          {
+            source_type: "payslip",
+            source_id: "ps-now",
+            user_id: "u1",
+            payment_status: "not_due",
+            source_date: "2999-12-31",
+            earned_amount: 8000,
+            paid_amount: 0,
+            owed_amount: 0,
+          },
+        ],
+      })
+    );
+    const res = await POST(
+      req("http://test", "POST", { ...VALID_CREATE, amount: 500, allocations: [{ source_type: "payslip", source_id: "ps-now", amount: 500 }] })
+    );
+    expect(res.status).toBe(400);
+  });
+
   it("allows an unallocated payment (an advance) with no allocations at all", async () => {
     grant(sb({ worker: PAYSLIP_WORKER }));
     const res = await POST(req("http://test", "POST", VALID_CREATE));

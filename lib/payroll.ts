@@ -120,6 +120,39 @@ export function monthKeyFromDate(value: string | Date) {
   return `${year}-${month}`;
 }
 
+/** A date as YYYY-MM-DD on the Israeli calendar — the server itself runs in UTC. */
+export function israelDateKey(referenceDate: Date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem" }).format(referenceDate);
+}
+
+/**
+ * How much of a worker debt item a payment can still be put against.
+ *
+ * Normally that's its owed amount (negative when overpaid). The exception is a payslip before its pay day
+ * (status `not_due`): worker_debt_items_view reports it as owing 0 so balances and
+ * alerts don't count it early — but once its month is over the salary is known,
+ * and paying it early (on the 9th for a salary due on the 10th) is ordinary. So
+ * from the 1st of the next month its unpaid remainder is payable. The month still
+ * running isn't: money given mid-month stays an unallocated advance, as before.
+ */
+export function getPayableDebtAmount(
+  item: {
+    source_type: string;
+    payment_status: string | null;
+    /** For a payslip item, the last day of its month. */
+    source_date: string | null;
+    earned_amount: number | string | null;
+    paid_amount: number | string | null;
+    owed_amount: number | string | null;
+  },
+  today: string = israelDateKey()
+) {
+  const owed = toNumber(item.owed_amount);
+  if (item.source_type !== "payslip" || item.payment_status !== "not_due") return owed;
+  if (!item.source_date || item.source_date >= today) return 0;
+  return Math.max(0, Math.round((toNumber(item.earned_amount) - toNumber(item.paid_amount)) * 100) / 100);
+}
+
 export function monthLabelFromKey(key: string, locale: Locale = "he") {
   const [yearText, monthText] = key.split("-");
   const year = Number(yearText);

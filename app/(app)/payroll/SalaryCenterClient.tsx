@@ -49,6 +49,7 @@ import {
   formatDateTime,
   formatMinutes,
   getCurrentSalaryAgreement,
+  getPayableDebtAmount,
   getSalaryTypeLabel,
   monthKeyFromDate,
   monthLabelFromKey,
@@ -1543,7 +1544,7 @@ export default function SalaryCenterClient({
       source_type: item.source_type,
       source_id: item.source_id,
       amount: "",
-      max_amount: toNumber(item.owed_amount) ?? 0,
+      max_amount: getPayableDebtAmount(item),
       title: buildDebtItemTitle(item),
       subtitle: buildDebtItemSubtitle(item),
     }));
@@ -1571,7 +1572,7 @@ export default function SalaryCenterClient({
       return;
     }
     setSelectedWorkerId(payslip.user_id);
-    openWorkerPaymentDialogForItems(payslip.user_id, [debtItem], toNumber(debtItem.owed_amount));
+    openWorkerPaymentDialogForItems(payslip.user_id, [debtItem], getPayableDebtAmount(debtItem));
   }
 
   function openEditWorkerPaymentDialog(payment: WorkerPaymentRow) {
@@ -1609,7 +1610,7 @@ export default function SalaryCenterClient({
             typeof allocation.amount === "number" || typeof allocation.amount === "string"
               ? String(allocation.amount)
               : "",
-          max_amount: (toNumber(debtItem?.owed_amount) ?? 0) + (toNumber(allocation.amount) ?? 0),
+          max_amount: (debtItem ? getPayableDebtAmount(debtItem) : 0) + (toNumber(allocation.amount) ?? 0),
           title: debtItem ? buildDebtItemTitle(debtItem) : sourceId,
           subtitle: debtItem ? buildDebtItemSubtitle(debtItem) : "",
         };
@@ -2029,7 +2030,8 @@ export default function SalaryCenterClient({
     });
   }, [selectedWorker, workerDebtItemsByUserId]);
   const selectedWorkerOpenDebtItems = useMemo(
-    () => selectedWorkerDebtItems.filter((item) => toNumber(item.owed_amount) > 0.009),
+    // Payable, not just owed: a finished month's payslip can be paid before its pay day.
+    () => selectedWorkerDebtItems.filter((item) => getPayableDebtAmount(item) > 0.009),
     [selectedWorkerDebtItems]
   );
   const selectedWorkerPayments = useMemo(() => {
@@ -3697,8 +3699,7 @@ export default function SalaryCenterClient({
                 const period = periodsById.get(payslip.payroll_period_id) ?? null;
                 const isEditable = period ? isPayrollPeriodEditable(period.status) : false;
                 const payslipDebtItem = workerDebtItemsBySourceKey.get(`payslip:${payslip.id}`) ?? null;
-                const payslipOwedAmount = toNumber(payslipDebtItem?.owed_amount);
-                const canRecordPayslipPayment = Boolean(payslipDebtItem) && payslipOwedAmount > 0;
+                const canRecordPayslipPayment = payslipDebtItem ? getPayableDebtAmount(payslipDebtItem) > 0 : false;
                 return (
                   <Card key={payslip.id}>
                     <CardContent className="space-y-3 py-5">

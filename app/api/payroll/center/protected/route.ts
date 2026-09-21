@@ -2,6 +2,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import {
+  ensureRecentPayslips,
   fetchSalaryCenterProtectedPayload,
   isSalaryTrackedWorker,
   type SalaryCenterProtectedPayload,
@@ -37,6 +38,13 @@ function cacheNow() {
   return typeof performance !== "undefined" ? performance.now() : 0;
 }
 
+// Payslips make themselves (see ensureRecentPayslips). The daily cron does it; this
+// is the safety net for a load that beats the cron — the first morning of a month,
+// or a day the cron failed. Admin only (the role that could press «יצירת תלושים»),
+// at most every few minutes per warm instance, and never allowed to fail the page.
+const ENSURE_PAYSLIPS_INTERVAL_MS = 10 * 60_000;
+let lastEnsuredPayslipsAt: number | null = null;
+
 export async function GET(request: NextRequest) {
   try {
     const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
@@ -50,6 +58,18 @@ export async function GET(request: NextRequest) {
     if (!skipCache) {
       const cached = readCache(cacheKey);
       if (cached) return NextResponse.json(cached);
+    }
+
+    if (
+      profile.role === "admin" &&
+      (lastEnsuredPayslipsAt === null || cacheNow() - lastEnsuredPayslipsAt > ENSURE_PAYSLIPS_INTERVAL_MS)
+    ) {
+      lastEnsuredPayslipsAt = cacheNow();
+      try {
+        await ensureRecentPayslips(supabase);
+      } catch (error: unknown) {
+        console.error("[payroll] ensureRecentPayslips failed", error);
+      }
     }
 
     // Worker-detail mode scopes the whole payload to one worker. Filtering every table/view

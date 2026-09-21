@@ -3,30 +3,32 @@
 // createIncome / createExpense / saveWorkerPayment handlers so the money contracts
 // can be unit-tested and the component holds wiring, not rules. No React, no fetch.
 
-import { toNumber } from "@/lib/payroll";
+import { getPayableDebtAmount } from "@/lib/payroll";
 import { mapProjectTypeToExpenseDomain } from "@/lib/expenses";
 import type { WorkerDebtItemRow } from "@/lib/payroll-center";
 import { HEBREW } from "@/app/(app)/dashboard/DashboardActions.constants";
 
 // ─── Worker payment: open-debt math + allocation ─────────────────────────────
+// "Open" = payable (getPayableDebtAmount): owed items, plus a finished month's
+// payslip before its pay day.
 
 export type WorkerAllocation = { source_type: "session" | "payslip"; source_id: string; amount: number };
 
-/** Total still-owed across a worker's open debt items (negatives floored at 0). */
+/** Total still-payable across a worker's open debt items (negatives floored at 0). */
 export function sumOpenOwed(items: WorkerDebtItemRow[]): number {
-  return items.reduce((sum, item) => sum + Math.max(0, toNumber(item.owed_amount)), 0);
+  return items.reduce((sum, item) => sum + Math.max(0, getPayableDebtAmount(item)), 0);
 }
 
 /** This worker's still-open debt items, oldest first (so a partial payment clears
  *  the earliest debt first). */
 export function sortOpenWorkerDebt(items: WorkerDebtItemRow[], userId: string): WorkerDebtItemRow[] {
   return items
-    .filter((item) => item.user_id === userId && toNumber(item.owed_amount) > 0.009)
+    .filter((item) => item.user_id === userId && getPayableDebtAmount(item) > 0.009)
     .sort((a, b) => (a.due_date ?? a.source_date ?? "").localeCompare(b.due_date ?? b.source_date ?? ""));
 }
 
 /** Spread a payment across open debts oldest-first, never exceeding each item's
- *  owed amount. Any remainder stays unallocated (an advance). Amounts rounded to
+ *  payable amount. Any remainder stays unallocated (an advance). Amounts rounded to
  *  the agora; items receiving < 0.01 are dropped. */
 export function buildWorkerPaymentAllocations(
   amount: number,
@@ -35,7 +37,7 @@ export function buildWorkerPaymentAllocations(
   let remaining = amount;
   return debtItems
     .map((item) => {
-      const owed = Math.max(0, toNumber(item.owed_amount));
+      const owed = Math.max(0, getPayableDebtAmount(item));
       const applied = Math.min(owed, remaining);
       remaining -= applied;
       return applied > 0.009
