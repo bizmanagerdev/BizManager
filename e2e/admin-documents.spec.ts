@@ -50,7 +50,10 @@ test.describe("admin — documents archive", () => {
         page.waitForResponse((r) => r.url().includes("/api/documents/upload") && r.request().method() === "POST"),
         page.getByRole("button", { name: "העלאה" }).click(),
       ]);
-      expect(response.ok()).toBe(true);
+      if (!response.ok()) {
+        const errBody = await response.json().catch(() => null);
+        throw new Error(`UPLOAD FAILED status=${response.status()} body=${JSON.stringify(errBody)}`);
+      }
       const body = (await response.json()) as { document?: { id?: string; file_name?: string } };
       documentId = body.document?.id ?? null;
       expect(documentId).toBeTruthy();
