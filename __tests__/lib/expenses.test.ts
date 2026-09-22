@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  isGeneratedRecurringExpense,
   isExpenseBusinessDomain,
   isExpenseSourceType,
   mapProjectTypeToExpenseDomain,
@@ -58,3 +59,16 @@ describe("getBusinessDomainLabel", () => {
     expect(getBusinessDomainLabel(undefined)).toBe("שוטף");
   });
 });
+
+describe("isGeneratedRecurringExpense", () => {
+  it("is true only when the bill carries the template's own author", () => {
+    expect(isGeneratedRecurringExpense({ recurringTemplateId: "t1", recordedBy: "u1" }, "u1")).toBe(true);
+    // Someone else marked it paid — they really did enter it.
+    expect(isGeneratedRecurringExpense({ recurringTemplateId: "t1", recordedBy: "u2" }, "u1")).toBe(false);
+    // Not from a template at all.
+    expect(isGeneratedRecurringExpense({ recurringTemplateId: null, recordedBy: "u1" }, "u1")).toBe(false);
+    // Nothing to compare against.
+    expect(isGeneratedRecurringExpense({ recurringTemplateId: "t1", recordedBy: "u1" }, null)).toBe(false);
+  });
+});
+

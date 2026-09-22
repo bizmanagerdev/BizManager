@@ -79,3 +79,44 @@ describe("buildExpenseEntries — template name as the label", () => {
     expect(fixed.expenseVariableEstimate).toBe(false);
   });
 });
+
+// ─── Who entered it ──────────────────────────────────────────────────────────
+// The generator stamps the TEMPLATE's author on every bill it creates, so the
+// ledger used to say that person entered a payment they never touched.
+
+describe("buildExpenseEntries — a generated bill has no person behind it", () => {
+  const template = new Map([["tpl-2", { name: "ארנונה", variable: false, createdBy: "u-author" }]]);
+  const names = { "u-author": "מנהל המשרד", "u-other": "עובד" };
+
+  it("drops the name when the stamp is the template's author, and keeps it out of the search text", () => {
+    const [entry] = buildExpenseEntries({
+      ...base,
+      recordedByNames: names,
+      expenseRows: [row({ recurring_expense_template_id: "tpl-2", recorded_by: "u-author" })],
+      templateMetaById: template,
+    });
+    expect(entry.recordedByName).toBeNull();
+    expect(entry.searchText).not.toContain("מנהל המשרד");
+  });
+
+  it("keeps the person who marked an upcoming bill paid themselves", () => {
+    const [entry] = buildExpenseEntries({
+      ...base,
+      recordedByNames: names,
+      expenseRows: [row({ recurring_expense_template_id: "tpl-2", recorded_by: "u-other" })],
+      templateMetaById: template,
+    });
+    expect(entry.recordedByName).toBe("עובד");
+  });
+
+  it("leaves an ordinary expense alone", () => {
+    const [entry] = buildExpenseEntries({
+      ...base,
+      recordedByNames: names,
+      expenseRows: [row({ recorded_by: "u-author" })],
+      templateMetaById: template,
+    });
+    expect(entry.recordedByName).toBe("מנהל המשרד");
+  });
+});
+

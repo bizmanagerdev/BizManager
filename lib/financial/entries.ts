@@ -1,4 +1,4 @@
-import { getBusinessDomainLabel } from "@/lib/expenses";
+import { getBusinessDomainLabel, isGeneratedRecurringExpense } from "@/lib/expenses";
 import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import type { ExpenseBusinessDomain } from "@/lib/expenses";
 import type { Loan } from "@/lib/loans";
@@ -862,7 +862,7 @@ export function buildExpenseEntries(args: {
   referenceDate: string;
   // Template id → { name, variable }; a generated row is labelled by its
   // template's name, and flagged when its amount is only an estimate.
-  templateMetaById?: Map<string, { name: string; variable: boolean }>;
+  templateMetaById?: Map<string, { name: string; variable: boolean; createdBy?: string | null }>;
 }): FinancialEntry[] {
   const { expenseRows, projectsById, ordersById, propertiesById, propertyCustomersById, projectExpenseLinksByExpenseId, recordedByNames, customerId, customerProjectSet, referenceDate, templateMetaById } = args;
 
@@ -902,6 +902,19 @@ export function buildExpenseEntries(args: {
     const paymentStatusNormalized = normalizePaymentStatus(row.payment_status);
     const expenseVariableEstimate = templateMeta?.variable === true && paymentStatusNormalized !== "paid";
     const reference = row.category?.trim() || null;
+    // A bill the recurring rule generated was not entered by anyone: the
+    // generator stamps recorded_by with the TEMPLATE's author (see
+    // _ensure_recurring_occurrence), which read as "X entered this payment" for
+    // a payment X never touched. Recognised by that same stamp — a bill someone
+    // marked paid themselves carries THEM, and still says so.
+    const recordedByName = isGeneratedRecurringExpense(
+      { recurringTemplateId: row.recurring_expense_template_id, recordedBy: row.recorded_by },
+      templateMeta?.createdBy
+    )
+      ? null
+      : typeof row.recorded_by === "string"
+        ? recordedByNames[row.recorded_by] ?? null
+        : null;
 
     return [{
       id: `expense:${row.id}`,
@@ -924,11 +937,10 @@ export function buildExpenseEntries(args: {
       paymentMethod: null,
       paymentMethodLabel: null,
       paymentStatus: normalizePaymentStatus(row.payment_status),
-      recordedByName: typeof row.recorded_by === "string" ? recordedByNames[row.recorded_by] ?? null : null,
+      recordedByName,
       customerId: linkedOrder?.customer_id ?? linkedProject?.customer_id ?? null,
       searchText: [description, row.description ?? "", source.label, reference ?? "", row.notes ?? "",
-        row.category ?? "", getBusinessDomainLabel(businessDomain),
-        typeof row.recorded_by === "string" ? recordedByNames[row.recorded_by] ?? "" : ""]
+        row.category ?? "", getBusinessDomainLabel(businessDomain), recordedByName ?? ""]
         .join(" ").toLowerCase(),
       expenseId: row.id,
       expenseCategory: row.category?.trim() || null,

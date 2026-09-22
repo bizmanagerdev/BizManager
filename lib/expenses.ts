@@ -1,3 +1,20 @@
+/**
+ * Was this bill created by the recurring rule rather than by a person?
+ *
+ * The generator stamps `recorded_by` with the TEMPLATE's author, so a bill
+ * nobody touched otherwise looks like they entered it. Someone who materializes
+ * an upcoming bill themselves (סמן כשולם on the board) is stamped as themselves,
+ * and is still named.
+ */
+export function isGeneratedRecurringExpense(
+  expense: { recurringTemplateId?: string | null; recordedBy?: string | null },
+  templateCreatedBy: string | null | undefined
+): boolean {
+  return Boolean(
+    expense.recurringTemplateId && expense.recordedBy && templateCreatedBy && expense.recordedBy === templateCreatedBy
+  );
+}
+
 export const EXPENSE_BUSINESS_DOMAINS = [
   "home",
   "charity",

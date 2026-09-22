@@ -212,6 +212,13 @@ function createIncomeFormState(): IncomeCreateFormState {
   };
 }
 
+// Who put this row in: a person, or the recurring rule that generated it (a
+// generated bill carries no recordedByName — see buildExpenseEntries).
+function recordedByLabel(entry: FinancialEntry): string | null {
+  if (entry.recordedByName) return `הוזן ע"י ${entry.recordedByName}`;
+  return entry.expenseRecurringTemplateId ? "נוצר אוטומטית" : null;
+}
+
 function setOrDelete(params: URLSearchParams, key: string, value: string | number | null | undefined) {
   if (value === null || value === undefined || value === "") {
     params.delete(key);
@@ -1633,7 +1640,7 @@ export default function FinancialPageClient({
                               entry.recordedDate && entry.recordedDate !== entry.flowDate
                                 ? `נרשם: ${formatShortDate(entry.recordedDate)}`
                                 : null,
-                              entry.recordedByName ? `הוזן ע"י ${entry.recordedByName}` : null,
+                              recordedByLabel(entry),
                             ].filter(Boolean).join(" • ")}
                           </div>
                         </td>
@@ -1956,7 +1963,7 @@ export default function FinancialPageClient({
                       <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs text-muted-foreground">
                         {entry.paymentMethodLabel ? <span>{entry.paymentMethodLabel}</span> : null}
                         {entry.reference ? <span>{entry.reference}</span> : null}
-                        {entry.recordedByName ? <span>הוזן ע&quot;י {entry.recordedByName}</span> : null}
+                        {recordedByLabel(entry) ? <span>{recordedByLabel(entry)}</span> : null}
                         {entry.origin === "expense" ? (
                           <>
                             <span className={cn(
@@ -2085,7 +2092,7 @@ export default function FinancialPageClient({
                                 ? `נרשם: ${formatShortDate(entry.recordedDate)}`
                                 : null,
                               entry.dueDate ? `פירעון: ${formatShortDate(entry.dueDate)}` : null,
-                              entry.recordedByName ? `הוזן ע"י ${entry.recordedByName}` : null,
+                              recordedByLabel(entry),
                             ]
                               .filter(Boolean)
                               .join(" • ")}

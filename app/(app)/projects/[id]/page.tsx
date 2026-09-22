@@ -516,14 +516,23 @@ export default async function ProjectPage({
           )
         );
         const recurringTemplateNames: Record<string, string> = {};
+        // Who set each rule up — the generator stamps them on every bill it
+        // creates, which is how a generated bill is told from one a person
+        // entered (see isGeneratedRecurringExpense).
+        const recurringTemplateAuthors: Record<string, string> = {};
         if (recurringTemplateIds.length > 0) {
           const { data: templateRows } = await supabase
             .from("recurring_expense_templates")
-            .select("id,template_name")
+            .select("id,template_name,created_by")
             .in("id", recurringTemplateIds);
-          for (const row of (templateRows ?? []) as Array<{ id: string | null; template_name: string | null }>) {
+          for (const row of (templateRows ?? []) as Array<{
+            id: string | null;
+            template_name: string | null;
+            created_by: string | null;
+          }>) {
             const name = row.template_name?.trim();
             if (row.id && name) recurringTemplateNames[row.id] = name;
+            if (row.id && typeof row.created_by === "string") recurringTemplateAuthors[row.id] = row.created_by;
           }
         }
 
@@ -601,6 +610,7 @@ export default async function ProjectPage({
           expenseList,
           expenseRecordedByNameByValue,
           recurringTemplateNames,
+          recurringTemplateAuthors,
           expenseAuditResult,
           expensesError,
         };
@@ -1017,6 +1027,7 @@ export default async function ProjectPage({
     expenseList,
     expenseRecordedByNameByValue,
     recurringTemplateNames,
+    recurringTemplateAuthors,
     expenseAuditResult,
     expensesError,
   } = expensesChain;
@@ -1469,6 +1480,7 @@ export default async function ProjectPage({
             expenses={combinedExpenseList}
             expenseRecordedByNameByValue={expenseRecordedByNameByValue}
             recurringTemplateNames={recurringTemplateNames}
+            recurringTemplateAuthors={recurringTemplateAuthors}
             expenseAuditById={expenseAuditResult.byRecordId}
             payments={paymentsWithPhotos}
             morningDocuments={morningDocuments}

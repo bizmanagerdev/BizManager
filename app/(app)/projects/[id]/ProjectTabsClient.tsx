@@ -249,6 +249,7 @@ export default function ProjectTabsClient({
   expenses,
   expenseRecordedByNameByValue,
   recurringTemplateNames = {},
+  recurringTemplateAuthors = {},
   expenseAuditById,
   payments,
   morningDocuments,
@@ -295,6 +296,8 @@ export default function ProjectTabsClient({
   expenseRecordedByNameByValue: Record<string, string>;
   /** Recurring template id → name, so a generated row reads by its template. */
   recurringTemplateNames?: Record<string, string>;
+  /** Template id → who set the rule up (its generated bills carry that stamp). */
+  recurringTemplateAuthors?: Record<string, string>;
   expenseAuditById: Record<string, AuditRecordInfo>;
   payments: PaymentRow[];
   morningDocuments: MorningLocalDocument[];
@@ -1411,6 +1414,7 @@ export default function ProjectTabsClient({
         }
         const recordedBy = expenseRecordedByLabel(item, {
           expenseRecordedByNameByValue,
+          recurringTemplateAuthors,
           expenseAuditById,
         });
         if (recordedBy) extras.push({ label: "נרשם", value: recordedBy });

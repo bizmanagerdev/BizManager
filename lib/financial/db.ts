@@ -444,7 +444,12 @@ export async function resolveCustomerProjectIds(supabase: SupabaseClient, custom
     .filter((value): value is string => Boolean(value));
 }
 
-export type RecurringTemplateMeta = { name: string; variable: boolean };
+export type RecurringTemplateMeta = {
+  name: string;
+  variable: boolean;
+  /** Who set the rule up — the generator stamps it on every bill it creates. */
+  createdBy?: string | null;
+};
 
 /**
  * Recurring template id → { name, variable }, for the expense rows a template
@@ -456,12 +461,25 @@ export type RecurringTemplateMeta = { name: string; variable: boolean };
  */
 export async function fetchRecurringTemplateMeta(supabase: SupabaseClient): Promise<Map<string, RecurringTemplateMeta>> {
   try {
-    const { data, error } = await supabase.from("recurring_expense_templates").select("id,template_name,is_variable_amount");
+    const { data, error } = await supabase
+      .from("recurring_expense_templates")
+      .select("id,template_name,is_variable_amount,created_by");
     if (error) return new Map();
     const meta = new Map<string, RecurringTemplateMeta>();
-    for (const row of (data ?? []) as Array<{ id: string | null; template_name: string | null; is_variable_amount: boolean | null }>) {
+    for (const row of (data ?? []) as Array<{
+      id: string | null;
+      template_name: string | null;
+      is_variable_amount: boolean | null;
+      created_by: string | null;
+    }>) {
       const name = row.template_name?.trim();
-      if (row.id && name) meta.set(row.id, { name, variable: row.is_variable_amount === true });
+      if (row.id && name) {
+        meta.set(row.id, {
+          name,
+          variable: row.is_variable_amount === true,
+          createdBy: typeof row.created_by === "string" ? row.created_by : null,
+        });
+      }
     }
     return meta;
   } catch {
