@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculateSessionLaborCost, computeSessionPaymentStatus, getPayableDebtAmount, israelDateKey } from "@/lib/payroll";
+import { calculateSessionLaborCost, computeSessionPaymentStatus, getNextMonthDueText, getPayableDebtAmount, israelDateKey } from "@/lib/payroll";
 import type { SalaryAgreementRow } from "@/lib/payroll";
 
 function makeHourlyAgreement(overrides: Partial<SalaryAgreementRow> = {}): SalaryAgreementRow {
@@ -178,5 +178,35 @@ describe("getPayableDebtAmount", () => {
 
   it("a paid payslip has nothing left to pay", () => {
     expect(getPayableDebtAmount({ ...augustPayslip, payment_status: "paid", paid_amount: 8000 }, "2026-09-09")).toBe(0);
+  });
+});
+
+describe("getNextMonthDueText", () => {
+  it("salary for a month is due on the 10th of the next one", () => {
+    expect(getNextMonthDueText("2026-08-31")).toBe("10/09/26");
+  });
+
+  it("December rolls into January of the next year", () => {
+    expect(getNextMonthDueText("2026-12-31")).toBe("10/01/27");
+  });
+
+  it("reads the month off the DATE, not off a device's clock", () => {
+    // The period end used to be turned into an instant and then asked for its
+    // month locally — west of UTC, 1 January came back as the previous December
+    // and the salary showed as due a month early.
+    const originalTz = process.env.TZ;
+    process.env.TZ = "America/Los_Angeles";
+    try {
+      expect(getNextMonthDueText("2026-01-01")).toBe("10/02/26");
+      expect(getNextMonthDueText("2026-01-31")).toBe("10/02/26");
+    } finally {
+      process.env.TZ = originalTz;
+    }
+  });
+
+  it("falls back to '-' for missing or unparseable input", () => {
+    expect(getNextMonthDueText(null)).toBe("-");
+    expect(getNextMonthDueText("")).toBe("-");
+    expect(getNextMonthDueText("not a date")).toBe("-");
   });
 });

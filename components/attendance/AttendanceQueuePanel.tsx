@@ -21,6 +21,8 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect } from "@/components/ui/native-select";
 import { DateTimeInput } from "@/components/ui/date-input";
+import { IsraelTimeNote } from "@/components/ui/israel-time-note";
+import { israelLocalValueToDate, nowIsraelLocalValue, toIsraelLocalValue } from "@/lib/timezone";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
 import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
@@ -51,20 +53,7 @@ function withinLastHour(iso: string) {
   return Number.isFinite(t) && Date.now() - t < 60 * 60 * 1000;
 }
 
-/** Current local time as a datetime-local value ("YYYY-MM-DDTHH:mm") for DateTimeInput defaults. */
-function nowLocal() {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
-/** An ISO timestamp as a local datetime-local value, to prefill an editor with an existing time. */
-function isoToLocal(iso: string) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 /**
  * One number in the summary strip. Deliberately a compact inline chip, not a
@@ -309,18 +298,18 @@ function OpenRow({ report }: { report: OpenPhoneReport }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [closing, setClosing] = useState(false);
-  const [closeLocal, setCloseLocal] = useState(() => nowLocal());
+  const [closeLocal, setCloseLocal] = useState(() => nowIsraelLocalValue());
   /** "מה העובד עשה" — the same thing the worker writes when closing his own shift. */
   const [closeNote, setCloseNote] = useState("");
   const [editing, setEditing] = useState(false);
-  const [entryLocal, setEntryLocal] = useState(() => isoToLocal(report.clock_in));
+  const [entryLocal, setEntryLocal] = useState(() => toIsraelLocalValue(report.clock_in));
   const [error, setError] = useState("");
   const elapsed = minutesBetween(report.clock_in, new Date());
 
   function saveEntry() {
     setError("");
-    const clockIn = new Date(entryLocal);
-    if (!entryLocal || Number.isNaN(clockIn.getTime())) return setError("שעת כניסה אינה תקינה.");
+    const clockIn = israelLocalValueToDate(entryLocal);
+    if (!clockIn) return setError("שעת כניסה אינה תקינה.");
     if (clockIn.getTime() > Date.now() + 60_000) return setError("שעת הכניסה לא יכולה להיות בעתיד.");
 
     setEditing(false);
@@ -342,8 +331,8 @@ function OpenRow({ report }: { report: OpenPhoneReport }) {
 
   function closeShift() {
     setError("");
-    const clockOut = new Date(closeLocal);
-    if (!closeLocal || Number.isNaN(clockOut.getTime())) return setError("שעת יציאה אינה תקינה.");
+    const clockOut = israelLocalValueToDate(closeLocal);
+    if (!clockOut) return setError("שעת יציאה אינה תקינה.");
     if (clockOut <= new Date(report.clock_in)) return setError("שעת היציאה חייבת להיות אחרי הכניסה.");
 
     const noteSnapshot = closeNote.trim();
@@ -389,7 +378,7 @@ function OpenRow({ report }: { report: OpenPhoneReport }) {
             aria-label="עריכת שעת הכניסה"
             title="עריכת שעת הכניסה"
             onClick={() => {
-              setEntryLocal(isoToLocal(report.clock_in));
+              setEntryLocal(toIsraelLocalValue(report.clock_in));
               setError("");
               setEditing(true);
             }}
@@ -404,7 +393,7 @@ function OpenRow({ report }: { report: OpenPhoneReport }) {
             aria-label="סגירת המשמרת"
             title="סגירת המשמרת"
             onClick={() => {
-              setCloseLocal(nowLocal());
+              setCloseLocal(nowIsraelLocalValue());
               setError("");
               setClosing(true);
             }}
@@ -430,6 +419,7 @@ function OpenRow({ report }: { report: OpenPhoneReport }) {
             ביטול
           </Button>
           {error ? <span className="text-sm text-destructive">{error}</span> : null}
+          <IsraelTimeNote className="basis-full" />
         </div>
       ) : null}
 
@@ -441,6 +431,7 @@ function OpenRow({ report }: { report: OpenPhoneReport }) {
               <DateTimeInput value={closeLocal} onChange={(e) => setCloseLocal(e.target.value)} />
             </div>
           </div>
+          <IsraelTimeNote />
           {/* The same question the worker answers when closing his own shift
               ("מה עשית במשמרת?"), so a shift closed by the office isn't the one
               that reaches approval with nothing written on it. */}

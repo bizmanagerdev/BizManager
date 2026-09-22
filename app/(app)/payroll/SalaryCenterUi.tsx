@@ -6,6 +6,7 @@ import { getPaymentStatusLabel as getSharedPaymentStatusLabel } from "@/lib/ui/s
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { getPayrollWorkerTypeLabel, type PayrollWorkerType } from "@/lib/payroll-worker-type";
 import { formatDateTime, toNumber } from "@/lib/payroll";
+import { israelParts, toIsraelLocalValue } from "@/lib/timezone";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Presentational pieces + pure formatters extracted from SalaryCenterClient so
@@ -89,12 +90,17 @@ export function getBillingStatusLabel(value: string | null | undefined) {
   return value || "-";
 }
 
+// A shift is a fact about the business's day, so it reads the same wherever the
+// screen happens to be — the payroll table and the worker's own phone abroad have
+// to agree, or one of them is quietly wrong about what he worked.
 export function formatLocalDate(date: Date) {
-  return `${String(date.getDate()).padStart(2, "0")}.${String(date.getMonth() + 1).padStart(2, "0")}.${String(date.getFullYear()).slice(-2)}`;
+  const p = israelParts(date);
+  return `${String(p.day).padStart(2, "0")}.${String(p.month).padStart(2, "0")}.${String(p.year).slice(-2)}`;
 }
 
 export function formatLocalTime(date: Date) {
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  const p = israelParts(date);
+  return `${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
 }
 
 export function formatSessionRange(clockIn: string, clockOut: string | null) {
@@ -105,10 +111,10 @@ export function formatSessionRange(clockIn: string, clockOut: string | null) {
     return `${formatLocalDate(start)} • ${formatLocalTime(start)} - פתוח`;
   }
 
+  const startDay = israelParts(start);
+  const endDay = israelParts(end);
   const sameDay =
-    start.getFullYear() === end.getFullYear() &&
-    start.getMonth() === end.getMonth() &&
-    start.getDate() === end.getDate();
+    startDay.year === endDay.year && startDay.month === endDay.month && startDay.day === endDay.day;
 
   if (sameDay) {
     return `${formatLocalDate(start)} • ${formatLocalTime(start)}-${formatLocalTime(end)}`;
@@ -135,9 +141,9 @@ export function formatPrintPeriodLabel(year: string, month: string) {
   return formatMonthYearLabel(year, month);
 }
 
+/** An instant as the "YYYY-MM-DDTHH:mm" a DateTimeInput holds — on Israel's clock. */
 export function toDateTimeLocalValue(date: Date) {
-  const adjusted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return adjusted.toISOString().slice(0, 16);
+  return toIsraelLocalValue(date);
 }
 
 // ── Presentational components ───────────────────────────────────────────────

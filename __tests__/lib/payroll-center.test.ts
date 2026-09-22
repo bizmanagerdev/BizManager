@@ -196,6 +196,30 @@ describe("calculateSessionLaborCostsByDay", () => {
     expect(costs.get("s2")).toBe(250);
   });
 
+  it("groups by the ISRAELI day, so a shift starting after midnight stacks with the rest of that day", () => {
+    // 22:00Z on 1 May is already 01:00 on 2 May in Israel. Both shifts are the
+    // same Israeli day and together pass the 8-hour line, so the second one runs
+    // into overtime. Grouped by the reader's day instead they would be two
+    // separate days and the overtime would quietly vanish from the payslip.
+    const originalTz = process.env.TZ;
+    process.env.TZ = "America/New_York";
+    try {
+      const sessions = [
+        { id: "s1", worked_minutes: null, clock_in: "2026-05-01T22:00:00Z", clock_out: "2026-05-02T04:00:00Z" }, // 6h
+        { id: "s2", worked_minutes: null, clock_in: "2026-05-02T06:00:00Z", clock_out: "2026-05-02T10:00:00Z" }, // 4h
+      ];
+      const costs = calculateSessionLaborCostsByDay(
+        sessions,
+        [hourlyAgreement({ hourly_rate: 50, overtime_rate: 75 })],
+        null
+      );
+      expect(costs.get("s1")).toBe(300); // 6h regular
+      expect(costs.get("s2")).toBe(250); // 2h regular + 2h overtime
+    } finally {
+      process.env.TZ = originalTz;
+    }
+  });
+
   it("does NOT split when the override rate applies — it's a flat rate regardless of standard hours", () => {
     const sessions = [{ id: "s1", worked_minutes: null, clock_in: "2026-05-01T08:00:00", clock_out: "2026-05-01T18:00:00" }]; // 10h
     const override = { id: "o1", user_id: "u1", start_time: null, end_time: null, override_hourly_rate: 100, reason: null, notes: null, created_at: null, updated_at: null };

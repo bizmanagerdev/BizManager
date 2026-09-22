@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
 import { DateTimeInput } from "@/components/ui/date-input";
+import { IsraelTimeNote } from "@/components/ui/israel-time-note";
+import { israelLocalValueToDate, nowIsraelLocalValue, toIsraelLocalValue } from "@/lib/timezone";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
 import { formatMinutes, minutesBetween } from "@/lib/payroll";
@@ -27,20 +29,7 @@ export type AttendanceLogWorker = { id: string; label: string };
 
 type OpenState = { id: string; clock_in: string } | null;
 
-/** Current local time as a datetime-local value ("YYYY-MM-DDTHH:mm"). */
-function nowLocal() {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
-/** An ISO timestamp as a local datetime-local value, to prefill an editor with an existing time. */
-function isoToLocal(iso: string) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 /**
  * Quick "log attendance for a worker" dialog — the LOG-TO-QUEUE path (distinct from the admin
@@ -122,9 +111,9 @@ function AttendanceLogBody({
   const [manualMode, setManualMode] = useState(false);
   const [customOut, setCustomOut] = useState(false);
   const [editEntry, setEditEntry] = useState(false);
-  const [startLocal, setStartLocal] = useState(() => nowLocal());
+  const [startLocal, setStartLocal] = useState(() => nowIsraelLocalValue());
   const [endLocal, setEndLocal] = useState("");
-  const [outLocal, setOutLocal] = useState(() => nowLocal());
+  const [outLocal, setOutLocal] = useState(() => nowIsraelLocalValue());
   const [entryLocal, setEntryLocal] = useState("");
   /** "מה העובד עשה" — the same write-up the worker gives on his own clock-out. */
   const [note, setNote] = useState("");
@@ -220,8 +209,8 @@ function AttendanceLogBody({
   }
 
   function signOut(atLocal: string) {
-    const d = new Date(atLocal);
-    if (!atLocal || Number.isNaN(d.getTime())) return setError(t(profileDict, locale, "errInvalidClockOutTime"));
+    const d = israelLocalValueToDate(atLocal);
+    if (!d) return setError(t(profileDict, locale, "errInvalidClockOutTime"));
     if (!state?.id) return;
     setError("");
     const reportId = state.id;
@@ -248,8 +237,8 @@ function AttendanceLogBody({
   }
 
   function saveEntry() {
-    const d = new Date(entryLocal);
-    if (!entryLocal || Number.isNaN(d.getTime())) return setError(t(profileDict, locale, "errInvalidClockInTime"));
+    const d = israelLocalValueToDate(entryLocal);
+    if (!d) return setError(t(profileDict, locale, "errInvalidClockInTime"));
     if (d.getTime() > Date.now() + 60_000) return setError(t(profileDict, locale, "errClockInFuture"));
     if (!state?.id) return;
     setError("");
@@ -278,12 +267,12 @@ function AttendanceLogBody({
   }
 
   function submitManual() {
-    const cin = new Date(startLocal);
-    if (!startLocal || Number.isNaN(cin.getTime())) return setError(t(profileDict, locale, "errInvalidClockInTime"));
+    const cin = israelLocalValueToDate(startLocal);
+    if (!cin) return setError(t(profileDict, locale, "errInvalidClockInTime"));
     let coutIso: string | null = null;
     if (endLocal) {
-      const cout = new Date(endLocal);
-      if (Number.isNaN(cout.getTime())) return setError(t(profileDict, locale, "errInvalidClockOutTime"));
+      const cout = israelLocalValueToDate(endLocal);
+      if (!cout) return setError(t(profileDict, locale, "errInvalidClockOutTime"));
       if (cout <= cin) return setError(t(profileDict, locale, "errClockOutAfterClockIn"));
       coutIso = cout.toISOString();
     }
@@ -329,7 +318,7 @@ function AttendanceLogBody({
             </div>
           </label>
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" onClick={() => signOut(nowLocal())} disabled={isPending}>
+            <Button type="button" onClick={() => signOut(nowIsraelLocalValue())} disabled={isPending}>
               {isPending ? t(profileDict, locale, "loadingEllipsis") : t(profileDict, locale, "exitLabel")}
             </Button>
             <Button type="button" variant="secondary" onClick={() => setCustomOut((v) => !v)} disabled={isPending}>
@@ -340,7 +329,7 @@ function AttendanceLogBody({
               variant="secondary"
               onClick={() => {
                 setError("");
-                setEntryLocal(isoToLocal(state.clock_in));
+                setEntryLocal(toIsraelLocalValue(state.clock_in));
                 setEditEntry((v) => !v);
               }}
               disabled={isPending}
@@ -356,6 +345,7 @@ function AttendanceLogBody({
               <Button type="button" onClick={() => signOut(outLocal)} disabled={isPending}>
                 {t(profileDict, locale, "closeShort")}
               </Button>
+              <IsraelTimeNote locale={locale} className="basis-full" />
             </div>
           ) : null}
           {editEntry ? (
@@ -367,6 +357,7 @@ function AttendanceLogBody({
               <Button type="button" onClick={saveEntry} disabled={isPending}>
                 {t(profileDict, locale, "saveShortLabel")}
               </Button>
+              <IsraelTimeNote locale={locale} className="basis-full" />
             </div>
           ) : null}
         </div>
@@ -395,6 +386,7 @@ function AttendanceLogBody({
                   <DateTimeInput value={endLocal} onChange={(e) => setEndLocal(e.target.value)} />
                 </label>
               </div>
+              <IsraelTimeNote locale={locale} />
               <label className="block space-y-1">
                 <span className="block text-xs text-muted-foreground">{t(profileDict, locale, "whatDidWorkerDoLabel")}</span>
                 <div className="relative">

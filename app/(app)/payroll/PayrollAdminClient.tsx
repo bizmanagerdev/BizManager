@@ -15,6 +15,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
+import { IsraelTimeNote } from "@/components/ui/israel-time-note";
+import { israelDateKey, israelLocalValueToDate, israelLocalValueToIso } from "@/lib/timezone";
+import { toDateTimeLocalValue } from "./SalaryCenterUi";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import type { UserRole } from "@/lib/auth/requireProfile";
@@ -102,7 +105,7 @@ const DEFAULT_FORM: FormState = {
   salary_type: "monthly",
   hourly_rate: "",
   monthly_salary: "",
-  valid_from: new Date().toISOString().slice(0, 10),
+  valid_from: israelDateKey(),
   overtime_rate: "",
   standard_daily_hours: "0",
   notes: "",
@@ -230,8 +233,8 @@ export default function PayrollAdminClient({
   );
   const usersById = useMemo(() => new Map(users.map((user) => [user.id, user])), [users]);
   const createSessionWorkedMinutes = useMemo(() => {
-    const start = new Date(createSessionForm.clock_in).getTime();
-    const end = new Date(createSessionForm.clock_out).getTime();
+    const start = israelLocalValueToDate(createSessionForm.clock_in)?.getTime() ?? NaN;
+    const end = israelLocalValueToDate(createSessionForm.clock_out)?.getTime() ?? NaN;
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
     return Math.round((end - start) / 60000);
   }, [createSessionForm.clock_in, createSessionForm.clock_out]);
@@ -244,7 +247,7 @@ export default function PayrollAdminClient({
     if (!createSessionForm.user_id || !createSessionForm.clock_in) return null;
     return getActiveSalaryAgreementForDate(
       agreementsByUserId.get(createSessionForm.user_id) ?? [],
-      new Date(createSessionForm.clock_in)
+      israelLocalValueToDate(createSessionForm.clock_in) ?? new Date(NaN)
     );
   }, [agreementsByUserId, createSessionForm.clock_in, createSessionForm.user_id]);
   const createSessionSuggestedAmount = useMemo(() => {
@@ -408,8 +411,8 @@ export default function PayrollAdminClient({
     const projectId = createSessionForm.project_id.trim();
     const propertyId = createSessionForm.property_id.trim();
     const notes = createSessionForm.notes.trim();
-    const clockIn = createSessionForm.clock_in ? new Date(createSessionForm.clock_in).toISOString() : "";
-    const clockOut = createSessionForm.clock_out ? new Date(createSessionForm.clock_out).toISOString() : "";
+    const clockIn = israelLocalValueToIso(createSessionForm.clock_in);
+    const clockOut = israelLocalValueToIso(createSessionForm.clock_out);
     const laborCost = createSessionForm.labor_cost.trim();
 
     setCreateSessionError("");
@@ -496,7 +499,7 @@ export default function PayrollAdminClient({
       salary_type: agreement?.salary_type === "hourly" ? "hourly" : "monthly",
       hourly_rate: agreement?.hourly_rate ? String(agreement.hourly_rate) : "",
       monthly_salary: agreement?.monthly_salary ? String(agreement.monthly_salary) : "",
-      valid_from: new Date().toISOString().slice(0, 10),
+      valid_from: israelDateKey(),
       overtime_rate: agreement?.overtime_rate ? String(agreement.overtime_rate) : "",
       standard_daily_hours: agreement?.standard_daily_hours
         ? String(agreement.standard_daily_hours)
@@ -1392,7 +1395,7 @@ export default function PayrollAdminClient({
                       return;
                     }
                     const parsedHours = Number(nextValue);
-                    const start = new Date(createSessionForm.clock_in).getTime();
+                    const start = israelLocalValueToDate(createSessionForm.clock_in)?.getTime() ?? NaN;
                     if (!Number.isFinite(parsedHours) || parsedHours <= 0 || !Number.isFinite(start)) return;
                     const nextClockOut = new Date(start + parsedHours * 60 * 60 * 1000);
                     if (Number.isNaN(nextClockOut.getTime())) return;
@@ -1409,6 +1412,7 @@ export default function PayrollAdminClient({
                   }
                 />
               </Field>
+              <IsraelTimeNote className="md:col-span-3" />
             </div>
             {createSessionForm.business_domain === "logistics_projects" ? (
               <Field label="פרויקט">
@@ -1639,10 +1643,7 @@ function addMinutesToIso(startIso: string | null | undefined, minutes: number) {
   return new Date(start.getTime() + minutes * 60_000).toISOString();
 }
 
-function toDateTimeLocalValue(date: Date) {
-  const adjusted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return adjusted.toISOString().slice(0, 16);
-}
+
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

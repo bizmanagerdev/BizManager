@@ -25,6 +25,8 @@ import { OptionRow, StepHeading } from "@/components/ui/option-row";
 import { SummaryRow, SummarySection } from "@/components/ui/summary";
 import { Input } from "@/components/ui/input";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
+import { IsraelTimeNote } from "@/components/ui/israel-time-note";
+import { israelDateKey, israelLocalValueToDate, israelLocalValueToIso } from "@/lib/timezone";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
@@ -116,8 +118,8 @@ function createSessionSplitPart(
 
 // Boundary in the middle of two datetime-local values (used to seed default split points).
 function midpointDateTimeLocal(startLocal: string, endLocal: string): string {
-  const startMs = new Date(startLocal).getTime();
-  const endMs = new Date(endLocal).getTime();
+  const startMs = israelLocalValueToDate(startLocal)?.getTime() ?? NaN;
+  const endMs = israelLocalValueToDate(endLocal)?.getTime() ?? NaN;
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return "";
   return toDateTimeLocalValue(new Date(startMs + Math.floor((endMs - startMs) / 2)));
 }
@@ -271,8 +273,8 @@ export default function SessionEditorDialog({
     runAction(async () => {
       const path =
         sessionMode === "create" ? "/api/payroll/sessions/create" : "/api/payroll/sessions/update";
-      const clockInIso = new Date(sessionForm.clock_in).toISOString();
-      const clockOutIso = sessionForm.clock_out ? new Date(sessionForm.clock_out).toISOString() : null;
+      const clockInIso = israelLocalValueToIso(sessionForm.clock_in);
+      const clockOutIso = israelLocalValueToIso(sessionForm.clock_out) || null;
       const laborCostInput = sessionForm.labor_cost.trim();
       const originalLaborCost = sessionForm.original_labor_cost.trim();
       const sessionTimingChanged =
@@ -545,8 +547,8 @@ export default function SessionEditorDialog({
     [sessionDialogWorker]
   );
   const sessionDialogWorkedMinutes = useMemo(() => {
-    const start = new Date(sessionForm.clock_in).getTime();
-    const end = new Date(sessionForm.clock_out).getTime();
+    const start = israelLocalValueToDate(sessionForm.clock_in)?.getTime() ?? NaN;
+    const end = israelLocalValueToDate(sessionForm.clock_out)?.getTime() ?? NaN;
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
     return Math.round((end - start) / 60000);
   }, [sessionForm.clock_in, sessionForm.clock_out]);
@@ -559,7 +561,7 @@ export default function SessionEditorDialog({
     if (!sessionForm.user_id || !sessionForm.clock_in) return null;
     return getCurrentSalaryAgreement(
       agreementsByUserId.get(sessionForm.user_id) ?? [],
-      new Date(sessionForm.clock_in)
+      israelLocalValueToDate(sessionForm.clock_in) ?? new Date(NaN)
     );
   }, [agreementsByUserId, sessionForm.clock_in, sessionForm.user_id]);
   const sessionDialogSuggestedAmount = useMemo(() => {
@@ -605,8 +607,8 @@ export default function SessionEditorDialog({
       }
       return "";
     }
-    const shiftStartMs = new Date(sessionForm.clock_in).getTime();
-    const shiftEndMs = new Date(sessionForm.clock_out).getTime();
+    const shiftStartMs = israelLocalValueToDate(sessionForm.clock_in)?.getTime() ?? NaN;
+    const shiftEndMs = israelLocalValueToDate(sessionForm.clock_out)?.getTime() ?? NaN;
     if (!sessionForm.clock_out || !Number.isFinite(shiftEndMs) || shiftEndMs <= shiftStartMs) {
       return "צריך משמרת עם שעת התחלה וסיום כדי לפצל.";
     }
@@ -942,7 +944,7 @@ export default function SessionEditorDialog({
                       return;
                     }
                     const parsedHours = Number(nextValue);
-                    const start = new Date(sessionForm.clock_in).getTime();
+                    const start = israelLocalValueToDate(sessionForm.clock_in)?.getTime() ?? NaN;
                     if (!Number.isFinite(parsedHours) || parsedHours <= 0 || !Number.isFinite(start)) return;
                     const nextClockOut = new Date(start + parsedHours * 60 * 60 * 1000);
                     if (Number.isNaN(nextClockOut.getTime())) return;
@@ -957,13 +959,14 @@ export default function SessionEditorDialog({
                   onChange={(event) => setSessionForm((current) => ({ ...current, clock_out: event.target.value }))}
                 />
               </Field>
+              <IsraelTimeNote className="md:col-span-3" />
             </div>
           ) : (
             <Field label="תאריך">
               <DateInput
                 value={(() => {
                   const m = /^(\d{4}-\d{2}-\d{2})/.exec(sessionForm.clock_in);
-                  return m ? m[1] : new Date().toISOString().slice(0, 10);
+                  return m ? m[1] : israelDateKey();
                 })()}
                 onChange={(event) => {
                   const next = event.target.value;

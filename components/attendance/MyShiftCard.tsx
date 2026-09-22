@@ -21,13 +21,8 @@ import type { Locale } from "@/lib/i18n/types";
 import { commonDict } from "@/lib/i18n/dictionaries/common";
 import { profileDict } from "@/lib/i18n/dictionaries/profile";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
-
-/** Now as a datetime-local value ("YYYY-MM-DDTHH:mm"), the format DateTimeInput reads. */
-function nowLocal() {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
+import { IsraelTimeNote } from "@/components/ui/israel-time-note";
+import { israelLocalValueToIso, nowIsraelLocalValue } from "@/lib/timezone";
 
 /**
  * The worker's own clock: open a shift, and when the day is done submit it.
@@ -116,30 +111,31 @@ export default function MyShiftCard({
       void call("/api/attendance/my/start", t(profileDict, locale, "shiftOpenedToast"));
       return;
     }
-    // datetime-local carries no timezone; new Date() reads it as local, which is
-    // what the worker meant, and the server stores the resulting instant.
-    const parsed = startLocal ? new Date(startLocal) : null;
-    if (!parsed || Number.isNaN(parsed.getTime())) {
+    // The field carries no timezone, so SOMETHING has to decide what "08:30"
+    // means. It means 08:30 in Israel — never the phone's own clock, which for a
+    // worker abroad is a different hour and used to be stored as one.
+    const clockInIso = israelLocalValueToIso(startLocal);
+    if (!clockInIso) {
       toast.error(t(profileDict, locale, "errSelectStartTime"));
       return;
     }
     if (startMode === "custom") {
-      void call("/api/attendance/my/start", t(profileDict, locale, "shiftOpenedToast"), { clock_in: parsed.toISOString() });
+      void call("/api/attendance/my/start", t(profileDict, locale, "shiftOpenedToast"), { clock_in: clockInIso });
       return;
     }
     // A finished shift goes straight to the boss — there's nothing left to close.
-    const parsedEnd = fullEndLocal ? new Date(fullEndLocal) : null;
-    if (!parsedEnd || Number.isNaN(parsedEnd.getTime())) {
+    const clockOutIso = israelLocalValueToIso(fullEndLocal);
+    if (!clockOutIso) {
       toast.error(t(profileDict, locale, "errSelectEndTime"));
       return;
     }
-    if (parsedEnd <= parsed) {
+    if (new Date(clockOutIso).getTime() <= new Date(clockInIso).getTime()) {
       toast.error(t(profileDict, locale, "errEndAfterStart"));
       return;
     }
     void call("/api/attendance/my/log", t(profileDict, locale, "shiftSubmittedToast"), {
-      clock_in: parsed.toISOString(),
-      clock_out: parsedEnd.toISOString(),
+      clock_in: clockInIso,
+      clock_out: clockOutIso,
     });
   }
 
@@ -147,12 +143,12 @@ export default function MyShiftCard({
     if (!openShift) return;
     let clockOutIso: string | undefined;
     if (endMode !== "now") {
-      const parsed = endLocal ? new Date(endLocal) : null;
-      if (!parsed || Number.isNaN(parsed.getTime())) {
+      const parsed = israelLocalValueToIso(endLocal);
+      if (!parsed) {
         toast.error(t(profileDict, locale, "errSelectEndTime"));
         return;
       }
-      clockOutIso = parsed.toISOString();
+      clockOutIso = parsed;
     }
     const noteSnapshot = note.trim();
     setNote("");
@@ -231,7 +227,7 @@ export default function MyShiftCard({
                 onChange={(event) => {
                   const custom = event.target.value === "custom";
                   setEndMode(custom ? "custom" : "now");
-                  if (custom && !endLocal) setEndLocal(nowLocal());
+                  if (custom && !endLocal) setEndLocal(nowIsraelLocalValue());
                 }}
               >
                 <option value="now">{t(profileDict, locale, "finishedNowOption")}</option>
@@ -245,6 +241,7 @@ export default function MyShiftCard({
                   aria-label={t(profileDict, locale, "endTimeLabel")}
                 />
               ) : null}
+              {endMode === "custom" ? <IsraelTimeNote locale={locale} /> : null}
               <label className="block space-y-1">
                 <span className="block text-xs text-muted-foreground">{t(profileDict, locale, "whatDidYouDoLabel")}</span>
                 <div className="relative">
@@ -293,8 +290,8 @@ export default function MyShiftCard({
                 setStartMode(mode);
                 // Prefill with the current time so he edits the hour rather than
                 // typing a whole date on a phone.
-                if (mode !== "now" && !startLocal) setStartLocal(nowLocal());
-                if (mode === "full" && !fullEndLocal) setFullEndLocal(nowLocal());
+                if (mode !== "now" && !startLocal) setStartLocal(nowIsraelLocalValue());
+                if (mode === "full" && !fullEndLocal) setFullEndLocal(nowIsraelLocalValue());
               }}
             >
               <option value="now">{t(profileDict, locale, "startedNowOption")}</option>
@@ -312,6 +309,7 @@ export default function MyShiftCard({
                 />
               </label>
             ) : null}
+            {startMode !== "now" ? <IsraelTimeNote locale={locale} /> : null}
             {startMode === "full" ? (
               <>
                 <label className="block space-y-1">

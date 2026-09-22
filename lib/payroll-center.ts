@@ -378,10 +378,10 @@ export function calculateSessionLaborCostFromRules(
 function sessionDateKey(clockIn: string) {
   const date = new Date(clockIn);
   if (Number.isNaN(date.getTime())) return "";
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  // Which DAY a shift belongs to decides how its hours stack for daily overtime,
+  // so it has to be the Israeli day. Read on a device abroad, a shift starting at
+  // 01:00 would otherwise be filed under the day before and paid at a flat rate.
+  return israelDateKey(date);
 }
 
 export function calculateSessionLaborCostsByDay(

@@ -60,6 +60,14 @@ import { t } from "@/lib/i18n/t";
 import type { Locale } from "@/lib/i18n/types";
 import { commonDict } from "@/lib/i18n/dictionaries/common";
 import { profileDict } from "@/lib/i18n/dictionaries/profile";
+import { IsraelTimeNote } from "@/components/ui/israel-time-note";
+import {
+  israelDateKey,
+  israelLocalValueToDate,
+  israelLocalValueToIso,
+  nowIsraelLocalValue,
+  toIsraelLocalValue,
+} from "@/lib/timezone";
 
 type Props = {
   profile: UserProfile;
@@ -116,12 +124,14 @@ type SplitPartDraft = {
   propertyId: string;
 };
 
-// Midpoint between two datetime-local values (default split point).
+// Midpoint between two datetime-local values (default split point). Both ends are
+// Israel wall clocks, so both have to be read as such — parsing them on the
+// device's clock and writing the midpoint back on Israel's would skew the split.
 function midpointLocal(startLocal: string, endLocal: string): string {
-  const startMs = new Date(startLocal).getTime();
-  const endMs = new Date(endLocal).getTime();
-  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return "";
-  return toLocalDateTimeValue(new Date(startMs + Math.floor((endMs - startMs) / 2)));
+  const start = israelLocalValueToDate(startLocal);
+  const end = israelLocalValueToDate(endLocal);
+  if (!start || !end || end.getTime() <= start.getTime()) return "";
+  return toIsraelLocalValue(new Date(start.getTime() + Math.floor((end.getTime() - start.getTime()) / 2)));
 }
 // "YYYY-MM-DDTHH:MM" → "HH:MM" for read-only display of a split boundary.
 function splitTimeLabel(local: string): string {
@@ -140,28 +150,6 @@ const AVATAR_COLOR_PRESETS = [
   "#EC4899", "#F472B6", "#E11D48", "#F43F5E", "#475569", "#0F172A",
 ] as const;
 
-function toLocalValue(value: string | null | undefined) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-function nowLocal(offsetMinutes = 0) {
-  const value = new Date();
-  value.setSeconds(0, 0);
-  value.setMinutes(value.getMinutes() + offsetMinutes);
-  return toLocalValue(value.toISOString());
-}
-function toIso(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
-}
-
-function toLocalDateTimeValue(date: Date) {
-  const adjusted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return adjusted.toISOString().slice(0, 16);
-}
 
 type ProfileTab = "profile" | "notifications" | "sessions" | "salary";
 
@@ -415,7 +403,7 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
     payslips.length > 0;
   const sessionEditDateOnly = (() => {
     const match = /^(\d{4}-\d{2}-\d{2})/.exec(sessionEditClockIn);
-    return match ? match[1] : new Date().toISOString().slice(0, 10);
+    return match ? match[1] : israelDateKey();
   })();
   const periodsById = useMemo(() => new Map(periods.map((period) => [period.id, period])), [periods]);
   // No cross-month fallback: showing July's totals under a header that says
@@ -483,8 +471,8 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
   function formError(requireClockOut: boolean) {
     if (!sessionEditClockIn) return t(profileDict, locale, "errStartTimeRequired");
     if (requireClockOut && !sessionEditClockOut) return t(profileDict, locale, "errEndTimeRequired");
-    const clockInIso = toIso(sessionEditClockIn);
-    const clockOutIso = sessionEditClockOut ? toIso(sessionEditClockOut) : "";
+    const clockInIso = israelLocalValueToIso(sessionEditClockIn);
+    const clockOutIso = sessionEditClockOut ? israelLocalValueToIso(sessionEditClockOut) : "";
     if (!clockInIso) return t(profileDict, locale, "errStartTimeInvalid");
     if (sessionEditClockOut && !clockOutIso) return t(profileDict, locale, "errEndTimeInvalid");
     if (clockOutIso && new Date(clockOutIso) <= new Date(clockInIso)) return t(profileDict, locale, "errEndAfterStart");
@@ -500,8 +488,8 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
     return "";
   }
   function editedDuration() {
-    const start = toIso(sessionEditClockIn);
-    const end = sessionEditClockOut ? toIso(sessionEditClockOut) : "";
+    const start = israelLocalValueToIso(sessionEditClockIn);
+    const end = sessionEditClockOut ? israelLocalValueToIso(sessionEditClockOut) : "";
     if (!start || !end) return "";
     const minutes = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60000);
     return minutes > 0 ? formatMinutes(minutes) : "";
@@ -547,8 +535,8 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
     setSessionEditProjectId(session.project_id ?? "");
     setSessionEditPropertyId(session.property_id ?? "");
     setSessionEditNotes(session.notes ?? "");
-    setSessionEditClockIn(toLocalValue(session.clock_in));
-    setSessionEditClockOut(toLocalValue(session.clock_out));
+    setSessionEditClockIn(toIsraelLocalValue(session.clock_in));
+    setSessionEditClockOut(toIsraelLocalValue(session.clock_out));
     setSessionEditBilledToCustomer(session.is_billable_to_customer === true);
     setSessionEditBillToCustomerAmount(
       session.is_billable_to_customer && session.bill_to_customer_amount != null
@@ -567,8 +555,8 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
     setSessionEditProjectId("");
     setSessionEditPropertyId("");
     setSessionEditNotes("");
-    setSessionEditClockIn(nowLocal(-60));
-    setSessionEditClockOut(nowLocal());
+    setSessionEditClockIn(nowIsraelLocalValue(-60));
+    setSessionEditClockOut(nowIsraelLocalValue());
     setSessionEditBilledToCustomer(false);
     setSessionEditBillToCustomerAmount("");
     setSplitParts([]);
@@ -586,7 +574,7 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
     startTransition(async () => {
       try {
         const billToCustomer = sessionEditDomain === "logistics_projects" && sessionEditBilledToCustomer;
-        const response = await fetch("/api/profile/session/update", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session_id: sessionId, user_id: profile.id, business_domain: sessionEditDomain, project_id: sessionEditProjectId || null, property_id: sessionEditPropertyId || null, notes: sessionEditNotes.trim() || null, clock_in: toIso(sessionEditClockIn), clock_out: sessionEditClockOut ? toIso(sessionEditClockOut) : null, is_billable_to_customer: billToCustomer, bill_to_customer_amount: billToCustomer && sessionEditBillToCustomerAmount.trim() ? Number(sessionEditBillToCustomerAmount) : null, billing_status: billToCustomer ? "billable" : "not_billable" }) });
+        const response = await fetch("/api/profile/session/update", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session_id: sessionId, user_id: profile.id, business_domain: sessionEditDomain, project_id: sessionEditProjectId || null, property_id: sessionEditPropertyId || null, notes: sessionEditNotes.trim() || null, clock_in: israelLocalValueToIso(sessionEditClockIn), clock_out: sessionEditClockOut ? israelLocalValueToIso(sessionEditClockOut) : null, is_billable_to_customer: billToCustomer, bill_to_customer_amount: billToCustomer && sessionEditBillToCustomerAmount.trim() ? Number(sessionEditBillToCustomerAmount) : null, billing_status: billToCustomer ? "billable" : "not_billable" }) });
         const json = (await response.json().catch(() => ({}))) as { error?: string };
         if (!response.ok) return setActionError(toHebrewError(json.error, t(profileDict, locale, "updateSessionFailed")));
         closeEditor();
@@ -603,7 +591,7 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
     startTransition(async () => {
       try {
         const billToCustomer = sessionEditDomain === "logistics_projects" && sessionEditBilledToCustomer;
-        const response = await fetch("/api/profile/session/create", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ user_id: profile.id, business_domain: sessionEditDomain, project_id: sessionEditProjectId || null, property_id: sessionEditPropertyId || null, notes: sessionEditNotes.trim() || null, clock_in: toIso(sessionEditClockIn), clock_out: toIso(sessionEditClockOut), is_billable_to_customer: billToCustomer, bill_to_customer_amount: billToCustomer && sessionEditBillToCustomerAmount.trim() ? Number(sessionEditBillToCustomerAmount) : null, billing_status: billToCustomer ? "billable" : "not_billable" }) });
+        const response = await fetch("/api/profile/session/create", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ user_id: profile.id, business_domain: sessionEditDomain, project_id: sessionEditProjectId || null, property_id: sessionEditPropertyId || null, notes: sessionEditNotes.trim() || null, clock_in: israelLocalValueToIso(sessionEditClockIn), clock_out: israelLocalValueToIso(sessionEditClockOut), is_billable_to_customer: billToCustomer, bill_to_customer_amount: billToCustomer && sessionEditBillToCustomerAmount.trim() ? Number(sessionEditBillToCustomerAmount) : null, billing_status: billToCustomer ? "billable" : "not_billable" }) });
         const json = (await response.json().catch(() => ({}))) as { error?: string };
         if (!response.ok) return setActionError(toHebrewError(json.error, t(profileDict, locale, "createSessionFailed")));
         closeEditor();
@@ -630,7 +618,7 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
     const domain = EXPENSE_BUSINESS_DOMAINS.includes(session.business_domain as ExpenseBusinessDomain) ? (session.business_domain as ExpenseBusinessDomain) : "general_business";
     const shared = { projectId: session.project_id ?? "", propertyId: session.property_id ?? "" };
     return [
-      createSplitPart(domain, { ...shared, endTime: midpointLocal(toLocalValue(session.clock_in), toLocalValue(session.clock_out)) }),
+      createSplitPart(domain, { ...shared, endTime: midpointLocal(toIsraelLocalValue(session.clock_in), toIsraelLocalValue(session.clock_out)) }),
       createSplitPart(domain, shared),
     ];
   }
@@ -642,8 +630,8 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
     setSplitParts((current) => {
       if (current.length >= 5) return current;
       const domain = EXPENSE_BUSINESS_DOMAINS.includes(sessionEditDomain) ? sessionEditDomain : "general_business";
-      const startLocal = toLocalValue(session.clock_in);
-      const endLocal = toLocalValue(session.clock_out);
+      const startLocal = toIsraelLocalValue(session.clock_in);
+      const endLocal = toIsraelLocalValue(session.clock_out);
       const prevBoundary = current.length >= 2 ? current[current.length - 2].endTime : startLocal;
       const newPart = createSplitPart(domain, { endTime: midpointLocal(prevBoundary || startLocal, endLocal) });
       const next = [...current];
@@ -656,8 +644,8 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
   }
   // Each part's clock boundaries + minutes (time split), derived from the saved session span.
   function splitPreview(session: WorkSessionRow) {
-    const startLocal = toLocalValue(session.clock_in);
-    const endLocal = toLocalValue(session.clock_out);
+    const startLocal = toIsraelLocalValue(session.clock_in);
+    const endLocal = toIsraelLocalValue(session.clock_out);
     return splitParts.map((part, index) => {
       const isLast = index === splitParts.length - 1;
       const partStart = index === 0 ? startLocal : splitParts[index - 1].endTime;
@@ -667,16 +655,21 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
     });
   }
   function computeSplitMinutes(session: WorkSessionRow): number[] {
-    const startLocal = toLocalValue(session.clock_in);
-    const endLocal = toLocalValue(session.clock_out);
-    const boundaries = [startLocal, ...splitParts.slice(0, -1).map((part) => part.endTime), endLocal];
+    const startLocal = toIsraelLocalValue(session.clock_in);
+    const endLocal = toIsraelLocalValue(session.clock_out);
+    // Through ISO on the way: minutesBetween would otherwise read each boundary on
+    // the device's clock, which is a different number of minutes across a DST
+    // change — and the wrong one on a phone abroad.
+    const boundaries = [startLocal, ...splitParts.slice(0, -1).map((part) => part.endTime), endLocal].map(
+      israelLocalValueToIso
+    );
     return splitParts.map((_, index) => minutesBetween(boundaries[index], boundaries[index + 1]));
   }
   function splitError(session: WorkSessionRow) {
-    const startLocal = toLocalValue(session.clock_in);
-    const endLocal = toLocalValue(session.clock_out);
-    const shiftStartMs = new Date(startLocal).getTime();
-    const shiftEndMs = new Date(endLocal).getTime();
+    const startLocal = toIsraelLocalValue(session.clock_in);
+    const endLocal = toIsraelLocalValue(session.clock_out);
+    const shiftStartMs = israelLocalValueToDate(startLocal)?.getTime() ?? NaN;
+    const shiftEndMs = israelLocalValueToDate(endLocal)?.getTime() ?? NaN;
     if (!endLocal || !Number.isFinite(shiftEndMs) || shiftEndMs <= shiftStartMs) return t(profileDict, locale, "splitErrNeedShift");
     if (splitParts.length < 2) return t(profileDict, locale, "splitErrMin2");
     if (splitParts.length > 5) return t(profileDict, locale, "splitErrMax5");
@@ -685,7 +678,7 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
       const part = splitParts[index];
       const isLast = index === splitParts.length - 1;
       if (!isLast) {
-        const boundaryMs = new Date(part.endTime).getTime();
+        const boundaryMs = israelLocalValueToDate(part.endTime)?.getTime() ?? NaN;
         if (!part.endTime || !Number.isFinite(boundaryMs)) return t(profileDict, locale, "splitErrExitTimeRequiredTemplate").replace("{n}", String(index + 1));
         if (boundaryMs <= prevMs) return t(profileDict, locale, "splitErrExitAfterStartTemplate").replace("{n}", String(index + 1));
         if (boundaryMs >= shiftEndMs) return t(profileDict, locale, "splitErrExitBeforeEndTemplate").replace("{n}", String(index + 1));
@@ -732,8 +725,8 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
     const duration = editedDuration();
     const currentSplitError = session?.clock_out ? splitError(session) : "";
     const editedMinutes = (() => {
-      const start = toIso(sessionEditClockIn);
-      const end = sessionEditClockOut ? toIso(sessionEditClockOut) : "";
+      const start = israelLocalValueToIso(sessionEditClockIn);
+      const end = sessionEditClockOut ? israelLocalValueToIso(sessionEditClockOut) : "";
       if (!start || !end) return 0;
       const minutes = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60000);
       return minutes > 0 ? minutes : 0;
@@ -745,7 +738,7 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
         })()
       : "";
     const suggestedAmount = (() => {
-      const reference = toIso(sessionEditClockIn);
+      const reference = israelLocalValueToIso(sessionEditClockIn);
       if (!reference || editedMinutes <= 0) return null;
       const agreement = getCurrentSalaryAgreement(agreements, new Date(reference));
       return calculateSessionLaborCost(agreement, editedMinutes);
@@ -769,13 +762,14 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
                 return;
               }
               const parsedHours = Number(nextValue);
-              const start = toIso(sessionEditClockIn);
+              const start = israelLocalValueToIso(sessionEditClockIn);
               if (!start || !Number.isFinite(parsedHours) || parsedHours <= 0) return;
               const nextClockOut = new Date(new Date(start).getTime() + parsedHours * 60 * 60 * 1000);
               if (Number.isNaN(nextClockOut.getTime())) return;
-              setSessionEditClockOut(toLocalDateTimeValue(nextClockOut));
+              setSessionEditClockOut(toIsraelLocalValue(nextClockOut));
             }} placeholder={t(profileDict, locale, "hoursPlaceholderExample")} /></label>
             <label className="space-y-1"><span className="block text-xs text-muted-foreground">{t(profileDict, locale, "endTimeLabel")}</span><DateTimeInput value={sessionEditClockOut} onChange={(event) => setSessionEditClockOut(event.target.value)} /></label>
+            <IsraelTimeNote locale={locale} className="md:col-span-3" />
           </div>
         ) : (
           <label className="space-y-1 block"><span className="block text-xs text-muted-foreground">{t(profileDict, locale, "dateLabel")}</span><DateInput value={sessionEditDateOnly} onChange={(event) => {
@@ -837,7 +831,7 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
                   </div>
                   <div className="flex flex-row-reverse flex-wrap items-end justify-end gap-2">
                     <label className="space-y-1 text-right"><span className="block text-xs text-muted-foreground">{t(profileDict, locale, "entryLabel")}</span><div className="flex h-9 min-w-24 items-center justify-center rounded-md border border-dashed px-3 text-sm text-muted-foreground">{splitTimeLabel(part.startLocal)}</div></label>
-                    <label className="space-y-1 text-right"><span className="block text-xs text-muted-foreground">{t(profileDict, locale, "exitLabel")}</span>{!isLast ? <Input type="datetime-local" className="h-9 w-44 text-right" min={part.startLocal || undefined} max={toLocalValue(session.clock_out) || undefined} value={splitParts[index]?.endTime ?? ""} onChange={(event) => updateSplitEndTime(part.id, event.target.value)} /> : <div className="flex h-9 min-w-24 items-center justify-center rounded-md border border-dashed px-3 text-sm text-muted-foreground">{`${t(profileDict, locale, "untilShiftEndPrefix")}${splitTimeLabel(toLocalValue(session.clock_out))})`}</div>}</label>
+                    <label className="space-y-1 text-right"><span className="block text-xs text-muted-foreground">{t(profileDict, locale, "exitLabel")}</span>{!isLast ? <Input type="datetime-local" className="h-9 w-44 text-right" min={part.startLocal || undefined} max={toIsraelLocalValue(session.clock_out) || undefined} value={splitParts[index]?.endTime ?? ""} onChange={(event) => updateSplitEndTime(part.id, event.target.value)} /> : <div className="flex h-9 min-w-24 items-center justify-center rounded-md border border-dashed px-3 text-sm text-muted-foreground">{`${t(profileDict, locale, "untilShiftEndPrefix")}${splitTimeLabel(toIsraelLocalValue(session.clock_out))})`}</div>}</label>
                     <label className="space-y-1 text-right"><span className="block text-xs text-muted-foreground">{t(profileDict, locale, "domainLabel")}</span><DomainSelect domains={WORK_SESSION_BUSINESS_DOMAINS} value={splitParts[index]?.domain ?? "general_business"} onChange={(value) => updateSplitPart(part.id, { domain: value as ExpenseBusinessDomain })} className="w-40 text-right" /></label>
                     {splitParts[index]?.domain === "logistics_projects" ? linkField(t(profileDict, locale, "projectLabel"), splitParts[index]?.projectId ?? "", (value) => updateSplitPart(part.id, { projectId: value }), projectOptions, true) : null}
                     {splitParts[index]?.domain === "property_management" ? linkField(t(profileDict, locale, "propertyLabel"), splitParts[index]?.propertyId ?? "", (value) => updateSplitPart(part.id, { propertyId: value }), propertyOptions, true) : null}

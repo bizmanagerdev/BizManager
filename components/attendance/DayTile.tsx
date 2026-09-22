@@ -1,4 +1,5 @@
 import { formatShortDate } from "@/lib/date";
+import { israelParts } from "@/lib/timezone";
 
 /**
  * The day of a shift as a little calendar tile — the weekday initial over the
@@ -15,7 +16,9 @@ function weekdayNarrow(iso: string) {
 function dayOfMonth(iso: string | null | undefined) {
   if (!iso) return "";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : String(d.getDate());
+  // Israel, like the weekday initial above it — a tile reading "ש 22" over hours
+  // that say Sunday is worse than no tile at all.
+  return Number.isNaN(d.getTime()) ? "" : String(israelParts(d).day);
 }
 
 /** A shift that ran past midnight ends on a day the tile wouldn't otherwise show. */

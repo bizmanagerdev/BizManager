@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { SpinnerIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { DateTimeInput } from "@/components/ui/date-input";
+import { IsraelTimeNote } from "@/components/ui/israel-time-note";
+import { israelLocalValueToDate, toIsraelLocalValue } from "@/lib/timezone";
 import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
@@ -17,14 +19,6 @@ import { scheduleDeferredEdit } from "@/lib/undo-engine";
  *  has no `status`) be passed in alongside the worker's own MyShiftReport. */
 type EditableReport = Pick<MyShiftReport, "id" | "clock_in" | "clock_out" | "notes">;
 
-/** An ISO instant as a datetime-local value, to prefill the editor. */
-function isoToLocal(iso: string | null | undefined) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 /**
  * Editing a report still waiting in the queue — a plain update, since nothing
@@ -49,18 +43,18 @@ export function usePendingReportEdit(report: EditableReport, mode: "self" | "adm
   const [error, setError] = useState("");
 
   function openEditor() {
-    setStartLocal(isoToLocal(report.clock_in));
-    setEndLocal(isoToLocal(report.clock_out));
+    setStartLocal(toIsraelLocalValue(report.clock_in));
+    setEndLocal(toIsraelLocalValue(report.clock_out));
     setNote(report.notes ?? "");
     setError("");
     setEditing(true);
   }
 
   function save() {
-    const start = startLocal ? new Date(startLocal) : null;
-    const end = endLocal ? new Date(endLocal) : null;
-    if (!start || Number.isNaN(start.getTime())) return setError("שעת התחלה אינה תקינה.");
-    if (!end || Number.isNaN(end.getTime())) return setError("שעת סיום אינה תקינה.");
+    const start = israelLocalValueToDate(startLocal);
+    const end = israelLocalValueToDate(endLocal);
+    if (!start) return setError("שעת התחלה אינה תקינה.");
+    if (!end) return setError("שעת סיום אינה תקינה.");
     if (end <= start) return setError("שעת הסיום חייבת להיות אחרי שעת ההתחלה.");
 
     setError("");
@@ -143,6 +137,7 @@ export function PendingReportEditFields({ state }: { state: PendingReportEditSta
           />
         </label>
       </div>
+      <IsraelTimeNote />
       <label className="block space-y-1">
         <span className="block text-xs text-muted-foreground">הערה</span>
         <div className="relative">

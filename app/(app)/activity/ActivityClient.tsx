@@ -27,6 +27,7 @@ import {
 } from "@/lib/audit";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import OnlineUsersCard from "./OnlineUsersCard";
+import { ISRAEL_TIME_ZONE, israelParts } from "@/lib/timezone";
 
 // The row stamp — always the whole date: day, month, year and the hour, on every
 // row including today's. Abbreviating (clock-only for today, no year for this
@@ -35,13 +36,17 @@ import OnlineUsersCard from "./OnlineUsersCard";
 // the user wants the actual hour. Zero-padded so the column lines up under
 // tabular-nums, and rendered inside dir="ltr" by every caller so RTL bidi doesn't
 // reorder the date and the clock into "21:54 09.08.26".
+// (Israel time, like every other hour in the app — the feed is a record of when
+// the OFFICE did something, and reading it on a laptop abroad must not restate
+// those hours in another zone.)
 function formatActivityTime(isoString: string | null) {
   if (!isoString) return "";
   const date = new Date(isoString);
   if (Number.isNaN(date.getTime())) return "";
+  const p = israelParts(date);
   const pad = (n: number) => String(n).padStart(2, "0");
-  const day = `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${String(date.getFullYear()).slice(-2)}`;
-  return `${day} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  const day = `${pad(p.day)}.${pad(p.month)}.${String(p.year).slice(-2)}`;
+  return `${day} ${pad(p.hour)}:${pad(p.minute)}`;
 }
 
 function formatFullDate(isoString: string | null) {
@@ -49,6 +54,7 @@ function formatFullDate(isoString: string | null) {
   const date = new Date(isoString);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleString("he-IL", {
+    timeZone: ISRAEL_TIME_ZONE,
     day: "numeric", month: "short", year: "numeric",
     hour: "2-digit", minute: "2-digit",
   });

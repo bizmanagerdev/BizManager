@@ -128,6 +128,7 @@ import {
   toDateTimeLocalValue,
 } from "./SalaryCenterUi";
 import { buildWorkerSummaryPrintDocument, openWorkerSummaryPrintWindow } from "@/lib/payroll/workerSummaryPrint";
+import { israelDateKey, israelParts } from "@/lib/timezone";
 
 const DEFAULT_SESSION_FORM: SessionFormState = {
   session_id: "",
@@ -159,7 +160,7 @@ const DEFAULT_AGREEMENT_FORM: AgreementFormState = {
   overtime_rate: "",
   standard_daily_hours: "0",
   due_day_of_next_month: "10",
-  valid_from: new Date().toISOString().slice(0, 10),
+  valid_from: israelDateKey(),
   notes: "",
   business_domain: "general_business",
   project_id: "",
@@ -170,7 +171,7 @@ const DEFAULT_AGREEMENT_FORM: AgreementFormState = {
 
 const DEFAULT_OVERRIDE_FORM: OverrideFormState = {
   override_hourly_rate: "",
-  start_time: new Date().toISOString().slice(0, 10),
+  start_time: israelDateKey(),
   end_time: "",
   reason: "",
   notes: "",
@@ -198,7 +199,7 @@ const DEFAULT_CREATE_USER_FORM: CreateUserFormState = {
 const DEFAULT_WORKER_PAYMENT_FORM: WorkerPaymentFormState = {
   payment_id: "",
   user_id: "",
-  payment_date: new Date().toISOString().slice(0, 10),
+  payment_date: israelDateKey(),
   amount: "",
   payment_method: "",
   account_id: "",
@@ -208,7 +209,7 @@ const DEFAULT_WORKER_PAYMENT_FORM: WorkerPaymentFormState = {
 };
 
 function todayIsoDate() {
-  return new Date().toISOString().slice(0, 10);
+  return israelDateKey();
 }
 
 const DEFAULT_BONUS_FORM: BonusFormState = {
@@ -1230,7 +1231,7 @@ export default function SalaryCenterClient({
       overtime_rate: currentAgreement?.overtime_rate ? String(currentAgreement.overtime_rate) : "",
       standard_daily_hours: currentAgreement?.standard_daily_hours ? String(currentAgreement.standard_daily_hours) : "0",
       due_day_of_next_month: currentAgreement?.due_day_of_next_month ? String(currentAgreement.due_day_of_next_month) : "10",
-      valid_from: new Date().toISOString().slice(0, 10),
+      valid_from: israelDateKey(),
       notes: currentAgreement?.notes ?? "",
       business_domain: currentAgreement?.business_domain ?? "general_business",
       project_id: currentAgreement?.project_id ?? "",
@@ -1621,7 +1622,7 @@ export default function SalaryCenterClient({
     setWorkerPaymentForm({
       payment_id: payment.id,
       user_id: payment.user_id,
-      payment_date: payment.payment_date ?? new Date().toISOString().slice(0, 10),
+      payment_date: payment.payment_date ?? israelDateKey(),
       amount:
         typeof payment.amount === "number" || typeof payment.amount === "string" ? String(payment.amount) : "",
       payment_method: payment.payment_method ?? "",
@@ -2071,10 +2072,10 @@ export default function SalaryCenterClient({
     selectedWorkerSessionsSorted.forEach((session) => {
       const date = new Date(session.clock_in);
       if (!Number.isNaN(date.getTime())) {
-        years.add(String(date.getFullYear()));
+        years.add(String(israelParts(date).year));
       }
     });
-    years.add(String(new Date().getFullYear()));
+    years.add(israelDateKey().slice(0, 4));
     return [...years].sort((a, b) => Number(b) - Number(a));
   }, [selectedWorkerSessionsSorted]);
   // Sessions filtered by outer month/year AND the sessions tab's own project filter.
@@ -2086,8 +2087,11 @@ export default function SalaryCenterClient({
         if (!workerPrintFilters.month && !workerPrintFilters.year) return true;
         const sessionDate = new Date(session.clock_in);
         if (Number.isNaN(sessionDate.getTime())) return false;
-        const sessionMonth = String(sessionDate.getMonth() + 1).padStart(2, "0");
-        const sessionYear = String(sessionDate.getFullYear());
+        // Israel's month, not the reader's: a shift starting 01:00 on the 1st is
+        // still the previous month on a screen in New York.
+        const sessionParts = israelParts(sessionDate);
+        const sessionMonth = String(sessionParts.month).padStart(2, "0");
+        const sessionYear = String(sessionParts.year);
         if (workerPrintFilters.month && sessionMonth !== workerPrintFilters.month) return false;
         if (workerPrintFilters.year && sessionYear !== workerPrintFilters.year) return false;
         return true;
@@ -2133,8 +2137,11 @@ export default function SalaryCenterClient({
         if (!workerPrintFilters.month && !workerPrintFilters.year) return true;
         const sessionDate = new Date(session.clock_in);
         if (Number.isNaN(sessionDate.getTime())) return false;
-        const sessionMonth = String(sessionDate.getMonth() + 1).padStart(2, "0");
-        const sessionYear = String(sessionDate.getFullYear());
+        // Israel's month, not the reader's: a shift starting 01:00 on the 1st is
+        // still the previous month on a screen in New York.
+        const sessionParts = israelParts(sessionDate);
+        const sessionMonth = String(sessionParts.month).padStart(2, "0");
+        const sessionYear = String(sessionParts.year);
         if (workerPrintFilters.month && sessionMonth !== workerPrintFilters.month) return false;
         if (workerPrintFilters.year && sessionYear !== workerPrintFilters.year) return false;
         return true;

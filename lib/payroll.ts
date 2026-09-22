@@ -1,4 +1,5 @@
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
+import { israelDateKey } from "@/lib/timezone";
 import { formatMoney } from "@/lib/money";
 import type { FinancialAttachment } from "@/lib/payments";
 import type { Locale } from "@/lib/i18n/types";
@@ -120,10 +121,11 @@ export function monthKeyFromDate(value: string | Date) {
   return `${year}-${month}`;
 }
 
-/** A date as YYYY-MM-DD on the Israeli calendar — the server itself runs in UTC. */
-export function israelDateKey(referenceDate: Date = new Date()) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem" }).format(referenceDate);
-}
+// "Today" on the Israeli calendar — the server itself runs UTC, and a worker's
+// phone runs wherever he is. Defined in lib/timezone with the rest of the
+// Israel-clock conversions; re-exported here because payroll is where most
+// callers already look for it.
+export { israelDateKey };
 
 /**
  * How much of a worker debt item a payment can still be put against.
@@ -302,10 +304,15 @@ export function getPayrollStatusLabel(value: string | null | undefined) {
 
 export function getNextMonthDueText(periodEndDate: string | null | undefined) {
   if (!periodEndDate) return "-";
-  const end = new Date(periodEndDate);
-  if (Number.isNaN(end.getTime())) return "-";
-  const due = new Date(end.getFullYear(), end.getMonth() + 1, 10);
-  return formatShortDate(
-    `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, "0")}-${String(due.getDate()).padStart(2, "0")}`
-  );
+  // The period end is a calendar DATE ("2026-08-31"), so its month is read off
+  // the string. `new Date()` made it an instant and then asked the device for the
+  // month — west of UTC that turned 1 January into the previous December, and the
+  // salary came out due a month early.
+  const match = /^(\d{4})-(\d{2})/.exec(periodEndDate.trim());
+  if (!match) return "-";
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const dueYear = month === 12 ? year + 1 : year;
+  const dueMonth = month === 12 ? 1 : month + 1;
+  return formatShortDate(`${dueYear}-${String(dueMonth).padStart(2, "0")}-10`);
 }

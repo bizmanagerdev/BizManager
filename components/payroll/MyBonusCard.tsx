@@ -20,6 +20,7 @@ import { commonDict } from "@/lib/i18n/dictionaries/common";
 import { profileDict } from "@/lib/i18n/dictionaries/profile";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete, registerReversibleCreate } from "@/lib/undo-engine";
+import { israelDateKey } from "@/lib/timezone";
 
 /**
  * "בונוסים" — the worker's own.
@@ -39,7 +40,7 @@ export default function MyBonusCard({ bonuses: bonusesProp, locale = "he" }: { b
   // Behind a press: most visits here are to look at hours, and an always-open
   // form would push the list down.
   const [open, setOpen] = useState(false);
-  const [bonusDate, setBonusDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [bonusDate, setBonusDate] = useState(() => israelDateKey());
   const [amount, setAmount] = useState("");
   const [notes, setNotes] = useState("");
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -88,7 +89,7 @@ export default function MyBonusCard({ bonuses: bonusesProp, locale = "he" }: { b
       }
       setAmount("");
       setNotes("");
-      setBonusDate(new Date().toISOString().slice(0, 10));
+      setBonusDate(israelDateKey());
       setOpen(false);
       startSaving(() => router.refresh());
       const newId = json.item?.id;

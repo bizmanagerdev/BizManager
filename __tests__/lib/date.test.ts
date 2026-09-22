@@ -116,3 +116,51 @@ describe("formatRelativeDateLabel", () => {
     expect(formatRelativeDateLabel("garbage", "-", TODAY)).toBe("-");
   });
 });
+
+/**
+ * Read from abroad, a shift has to show the hour the OFFICE keeps. A worker's
+ * phone in New York used to render his 08:30 shift as 01:30 in the card header
+ * while the row beneath it (already pinned to Israel) said 08:30 — the same
+ * shift, two hours, on one screen.
+ */
+describe("rendering from a device outside Israel", () => {
+  const ORIGINAL_TZ = process.env.TZ;
+  const away = <T,>(timeZone: string, run: () => T): T => {
+    process.env.TZ = timeZone;
+    try {
+      return run();
+    } finally {
+      process.env.TZ = ORIGINAL_TZ;
+    }
+  };
+
+  it("a stored instant keeps its Israeli hour on any device", () => {
+    for (const timeZone of ["America/New_York", "Asia/Tokyo", "UTC"]) {
+      expect(away(timeZone, () => formatShortDateTime("2026-09-22T05:30:00.000Z"))).toBe("22/09/26 08:30");
+      expect(away(timeZone, () => formatTimeOnly("2026-09-22T05:30:00.000Z"))).toBe("08:30");
+    }
+  });
+
+  it("an instant that is already tomorrow in Israel says tomorrow, wherever it is read", () => {
+    expect(away("America/Los_Angeles", () => formatShortDateTime("2026-08-31T21:30:00.000Z"))).toBe(
+      "01/09/26 00:30"
+    );
+  });
+
+  it("a date-only value never moves — it has no hour to convert", () => {
+    for (const timeZone of ["America/New_York", "Asia/Tokyo", "UTC"]) {
+      expect(away(timeZone, () => formatShortDate("2026-01-01"))).toBe("01/01/26");
+    }
+  });
+
+  it("an offset-less timestamp is read as the Israeli wall clock it was typed as", () => {
+    expect(away("America/New_York", () => formatShortDateTime("2026-01-05T14:30:00"))).toBe("05/01/26 14:30");
+  });
+
+  it("due-date urgency counts from Israel's today, not the device's", () => {
+    expect(away("Asia/Tokyo", () => getDueUrgency("2026-06-15", { refDate: "2026-06-15" }))).toBe("due-soon");
+    expect(away("America/Los_Angeles", () => getDueUrgency("2026-06-14", { refDate: "2026-06-15" }))).toBe(
+      "overdue"
+    );
+  });
+});

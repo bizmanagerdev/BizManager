@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { SpinnerIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { DateTimeInput } from "@/components/ui/date-input";
+import { IsraelTimeNote } from "@/components/ui/israel-time-note";
+import { israelLocalValueToDate, toIsraelLocalValue } from "@/lib/timezone";
 import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
@@ -12,14 +14,6 @@ import { toHebrewError } from "@/lib/error-messages";
 import type { WorkSessionRow } from "@/lib/payroll";
 import { scheduleDeferredDelete } from "@/lib/undo-engine";
 
-/** An ISO instant as a datetime-local value, to prefill the editor. */
-function isoToLocal(iso: string | null | undefined) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 /**
  * Correcting an approved shift — the behaviour, shared by the phone card and the
@@ -40,18 +34,18 @@ export function useSessionEdit(session: WorkSessionRow) {
   const [error, setError] = useState("");
 
   function openEditor() {
-    setStartLocal(isoToLocal(session.clock_in));
-    setEndLocal(isoToLocal(session.clock_out));
+    setStartLocal(toIsraelLocalValue(session.clock_in));
+    setEndLocal(toIsraelLocalValue(session.clock_out));
     setNote("");
     setError("");
     setEditing(true);
   }
 
   function save() {
-    const start = startLocal ? new Date(startLocal) : null;
-    const end = endLocal ? new Date(endLocal) : null;
-    if (!start || Number.isNaN(start.getTime())) return setError("שעת התחלה אינה תקינה.");
-    if (!end || Number.isNaN(end.getTime())) return setError("שעת סיום אינה תקינה.");
+    const start = israelLocalValueToDate(startLocal);
+    const end = israelLocalValueToDate(endLocal);
+    if (!start) return setError("שעת התחלה אינה תקינה.");
+    if (!end) return setError("שעת סיום אינה תקינה.");
     if (end <= start) return setError("שעת הסיום חייבת להיות אחרי שעת ההתחלה.");
 
     setError("");
@@ -129,6 +123,7 @@ export function SessionEditFields({ state }: { state: SessionEditState }) {
           />
         </label>
       </div>
+      <IsraelTimeNote />
       <label className="block space-y-1">
         <span className="block text-xs text-muted-foreground">למה השינוי?</span>
         <div className="relative">

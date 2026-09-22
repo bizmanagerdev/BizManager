@@ -8,7 +8,8 @@
  * only when the date lands clearly in the future (a late-December shift reported in early January).
  */
 
-const TZ = "Asia/Jerusalem";
+import { israelWallClockToUtc } from "@/lib/timezone";
+
 const MAX_SHIFT_MINUTES = 24 * 60; // a single shift can't exceed a day
 const MAX_PAST_DAYS = 62; // guard against fat-fingered dates far in the past
 const FUTURE_TOLERANCE_MS = 5 * 60 * 1000; // allow small clock skew
@@ -55,42 +56,10 @@ export function parseTimeField(value: string | null | undefined): ParsedTime | n
   return { hour, minute };
 }
 
-/** Minutes that Israel local time is ahead of UTC at the given instant (120 winter / 180 summer). */
-function israelOffsetMinutes(date: Date): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  })
-    .formatToParts(date)
-    .reduce((acc, part) => {
-      acc[part.type] = part.value;
-      return acc;
-    }, {} as Record<string, string>);
-  const asUtc = Date.UTC(
-    Number(parts.year),
-    Number(parts.month) - 1,
-    Number(parts.day),
-    Number(parts.hour),
-    Number(parts.minute),
-    Number(parts.second)
-  );
-  return (asUtc - date.getTime()) / 60000;
-}
-
-/** Convert an Israel wall-clock (y, month 1-12, d, h, mi) to the correct UTC instant. */
-export function israelWallClockToUtc(year: number, month: number, day: number, hour: number, minute: number): Date {
-  const guess = Date.UTC(year, month - 1, day, hour, minute);
-  // Two passes settle the offset even across a DST boundary.
-  let utc = guess - israelOffsetMinutes(new Date(guess)) * 60000;
-  utc = guess - israelOffsetMinutes(new Date(utc)) * 60000;
-  return new Date(utc);
-}
+// The Israel wall-clock ↔ UTC conversion lives in lib/timezone now: the app's own
+// date/time fields needed exactly the same thing, and two copies of a DST rule is
+// one too many. Re-exported so this module stays the one import for phone parsing.
+export { israelWallClockToUtc };
 
 function daysInMonth(year: number, month: number) {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
