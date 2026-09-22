@@ -15,6 +15,13 @@ test.describe("admin — dashboard domain chart card", () => {
     test.setTimeout(60_000);
     await loginAs(page, "admin");
 
+    // Diagnostic checkpoint: DomainChartCard renders its header/title
+    // unconditionally (no empty-state early return, unlike most other
+    // widgets) — if even the title is missing, the whole card never made it
+    // onto the board (a resolveWidgets/streaming issue); if the title shows
+    // but the select still doesn't, the bug is inside the card itself.
+    await expect(page.getByText("הכנסות והוצאות")).toBeVisible({ timeout: 15_000 });
+
     const select = page.getByRole("combobox", { name: "בחירת חודש" });
     await expect(select).toBeVisible({ timeout: 15_000 });
 

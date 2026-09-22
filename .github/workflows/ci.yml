@@ -264,21 +264,6 @@ jobs:
       - name: Run E2E tests
         run: npm run test:e2e
 
-      - name: Print diagnostic output (temporary)
-        # Bypasses the Playwright "github" reporter's own annotation cap
-        # (GitHub Actions caps ::error:: annotations at ~10 per run — with a
-        # large unrelated failure cluster competing for those slots, a
-        # targeted diagnostic test's own error message doesn't reliably make
-        # it through). Remove this step once no e2e/DIAG_OUTPUT.txt-writing
-        # diagnostic test remains.
-        if: always()
-        run: |
-          if [ -f e2e/DIAG_OUTPUT.txt ]; then
-            while IFS= read -r line; do
-              echo "::error::$line"
-            done < e2e/DIAG_OUTPUT.txt
-          fi
-
       - name: Upload Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v4
