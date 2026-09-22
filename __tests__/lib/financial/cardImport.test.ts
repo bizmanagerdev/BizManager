@@ -123,6 +123,29 @@ describe("findDuplicate", () => {
     expect(dup).toBeNull();
   });
 
+  it("does NOT match a later instalment of the same purchase (same purchase date and amount)", () => {
+    // Real case: ₪270.33 bought 21/04 in instalments — billed in May, then again in
+    // June and August. Every charge repeats the purchase date, so comparing any date
+    // to any date made September's instalment a "duplicate" of May's.
+    const may = existing({ expense_date: "2026-05-02", transaction_date: "2026-04-21", amount: 270.33, description: "אנקור רכב חובה" });
+    const august = findDuplicate(
+      { amount: 270.33, billingDate: "2026-08-02", txnDate: "2026-04-21", description: "אנקור רכב חובה" },
+      [may],
+      3
+    );
+    expect(august).toBeNull();
+  });
+
+  it("still matches the same charge when both sides are fully dated", () => {
+    const prior = existing({ expense_date: "2026-08-02", transaction_date: "2026-04-21", amount: 270.33, description: "אנקור רכב חובה" });
+    const again = findDuplicate(
+      { amount: 270.33, billingDate: "2026-08-03", txnDate: "2026-04-21", description: "אנקור רכב חובה" },
+      [prior],
+      3
+    );
+    expect(again).toBe(prior);
+  });
+
   it("prefers the candidate whose merchant name overlaps", () => {
     const wrongName = existing({ expense_date: "2026-06-01", transaction_date: "2026-06-01", amount: 250, description: "חניון" });
     const rightName = existing({ expense_date: "2026-06-02", transaction_date: "2026-06-02", amount: 250, description: "סופר שלי" });

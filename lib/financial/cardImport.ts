@@ -178,11 +178,19 @@ function minPairDistance(a: number[], b: number[]): number | null {
   return best;
 }
 
-// Find an existing expense that looks like the same charge: same amount, and ANY of the
-// row's dates (transaction or billing) lands within ±windowDays of ANY of the existing
-// expense's dates (transaction or billing). This is the fix for the old asymmetry where
-// imports save the billing date but dedup only compared the transaction date — re-imports
-// and near-date matches were missed. Merchant-name overlap breaks ties.
+// Find an existing expense that looks like the same charge: same amount, and dates
+// close enough to be the same charge rather than a later one.
+//
+// When BOTH sides carry a purchase date and a billing date, only the billing dates
+// are compared. A purchase paid in installments is charged again every month under
+// the SAME purchase date and amount — comparing any date to any date made September's
+// instalment look like a duplicate of May's (real: ₪270.33 "אנקור רכב חובה", bought
+// 21/04, billed May/June/August). The billing dates are what separate them.
+//
+// When one side has only one date — an expense typed by hand, or an older import with
+// no transaction_date — any of the row's dates may match any of the existing ones.
+// That is what catches a re-import saved under the billing date, and an expense the
+// office typed on the day of purchase. Merchant-name overlap breaks ties.
 export function findDuplicate(
   row: DuplicateInput,
   existing: ExistingExpense[],
@@ -199,13 +207,22 @@ export function findDuplicate(
   type Scored = { exp: ExistingExpense; dist: number; nameHit: number };
   const scored: Scored[] = [];
 
+  const rowBilling = isoTime(row.billingDate);
+  const rowTxn = isoTime(row.txnDate);
+
   for (const e of existing) {
     if (Math.abs((e.amount ?? 0) - row.amount) >= 0.01) continue;
     const existingDates = [e.expense_date, e.transaction_date]
       .map(isoTime)
       .filter((t): t is number => t !== null);
     if (existingDates.length === 0) continue;
-    const dist = minPairDistance(rowDates, existingDates);
+    const existingBilling = isoTime(e.expense_date);
+    const existingTxn = isoTime(e.transaction_date);
+    // Both fully dated → the billing dates decide (see above). Otherwise any pair.
+    const dist =
+      rowBilling !== null && rowTxn !== null && existingBilling !== null && existingTxn !== null
+        ? Math.abs(rowBilling - existingBilling)
+        : minPairDistance(rowDates, existingDates);
     if (dist === null || dist > windowMs) continue;
     const n = norm(e.description);
     const nameHit =
