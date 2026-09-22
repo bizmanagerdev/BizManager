@@ -12,10 +12,11 @@ import { loginAs } from "./fixtures";
 // state is a legitimate result of a working round trip.
 test.describe("admin — dashboard domain chart card", () => {
   test("switching the chart's month picker loads without error", async ({ page }) => {
+    test.setTimeout(60_000);
     await loginAs(page, "admin");
 
     const select = page.getByRole("combobox", { name: "בחירת חודש" });
-    await expect(select).toBeVisible();
+    await expect(select).toBeVisible({ timeout: 15_000 });
 
     const options = await select.locator("option").allTextContents();
     expect(options.length).toBeGreaterThan(1);

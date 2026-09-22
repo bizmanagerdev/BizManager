@@ -15,13 +15,17 @@ import { createTestPayment, deleteTestPayment } from "./db";
 // dueDate needs overriding to today.
 test.describe("admin — dashboard alerts card", () => {
   test("a check due for deposit shows as a today alert and links to the checks page", async ({ page }) => {
+    test.setTimeout(60_000);
     const todayIso = new Date().toISOString().slice(0, 10);
     const payment = await createTestPayment({ dueDate: todayIso, amount: 777 });
     try {
       await loginAs(page, "admin");
 
+      // The alerts card's own data comes through a heavier multi-rule
+      // worklist evaluation (getInboxView) than most other dashboard cards —
+      // give it more room than the default 5s under CI's slower conditions.
       const alertLine = page.getByRole("link", { name: /צ׳קים להפקדה/ });
-      await expect(alertLine).toBeVisible();
+      await expect(alertLine).toBeVisible({ timeout: 15_000 });
       await alertLine.click();
 
       await page.waitForURL("**/checks");

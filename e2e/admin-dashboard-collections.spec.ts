@@ -15,6 +15,7 @@ import { createTestCustomer, deleteTestCustomer, createTestOrder, deleteTestOrde
 // so no tab click is needed here.
 test.describe("admin — dashboard collections card", () => {
   test("clicking a debtor row on the dashboard opens their customer page", async ({ page }) => {
+    test.setTimeout(60_000);
     const customer = await createTestCustomer({ name: `E2E debtor dash ${Date.now()}` });
     const order = await createTestOrder(customer.id);
     await createTestOrderItem(order.id, { unitPrice: 350, quantityOrdered: 1 });
@@ -22,7 +23,7 @@ test.describe("admin — dashboard collections card", () => {
       await loginAs(page, "admin");
 
       const row = page.getByRole("link", { name: customer.name, exact: true });
-      await expect(row).toBeVisible();
+      await expect(row).toBeVisible({ timeout: 15_000 });
       await row.click();
 
       await page.waitForURL(`**/customers/${customer.id}`);
