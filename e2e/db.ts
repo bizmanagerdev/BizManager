@@ -223,6 +223,24 @@ export async function deleteTestVehicle(vehicle: TestVehicle): Promise<void> {
   if (tagError) throw tagError;
 }
 
+// For a vehicle created through the UI (no id available from the dialog's
+// own response) — createVehicle names the tag from the form (deriveName),
+// so the tag row is findable by that name once the write lands.
+export async function getVehicleByTagName(name: string): Promise<TestVehicle | null> {
+  const { data: tag, error: tagError } = await adminClient().from("tags").select("id").eq("name", name).maybeSingle();
+  if (tagError) throw tagError;
+  if (!tag) return null;
+  const tagId = (tag as { id: string }).id;
+  const { data: vehicle, error: vehicleError } = await adminClient()
+    .from("vehicles")
+    .select("id")
+    .eq("tag_id", tagId)
+    .maybeSingle();
+  if (vehicleError) throw vehicleError;
+  if (!vehicle) return null;
+  return { id: (vehicle as { id: string }).id, tagId };
+}
+
 // For tests that create a task through the board's UI (no id available from
 // the response) rather than via a direct insert — cleans up by exact title.
 export async function deleteTestTaskByTitle(subject: string): Promise<void> {
