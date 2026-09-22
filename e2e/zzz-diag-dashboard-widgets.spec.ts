@@ -6,6 +6,7 @@ import { getCollectionsSummary } from "@/lib/collections";
 import { getInboxView } from "@/lib/reminders/worklist";
 import { loadDomainCashBreakdown } from "@/lib/financial";
 import { monthWindow } from "@/lib/dashboard/domain-chart";
+import { resolveWidgets } from "@/lib/dashboard/widgets";
 import {
   getAdminUserId,
   createTestCustomer,
@@ -54,6 +55,16 @@ test("diag: getCollectionsSummary as signed-in admin", async () => {
   try {
     const supabase = await signedInAdminClient();
     const todayIso = new Date().toISOString().slice(0, 10);
+
+    // Raw view query first, bypassing getCollectionsSummary's own grouping —
+    // isolates whether collections_view itself returns the row (an RLS/view
+    // issue) or whether the wrapper's bucketing logic drops it.
+    const raw = await supabase
+      .from("collections_view")
+      .select("source_id,customer_id,customer_name,overdue_amount,pending_amount,outstanding_amount")
+      .eq("customer_id", customer.id);
+    diagLog(`collections_view raw for customer ${customer.id}: ${JSON.stringify(raw.data)} error=${raw.error?.message ?? "none"}`);
+
     const summary = await getCollectionsSummary(supabase, todayIso);
     diagLog(`getCollectionsSummary OK: ${JSON.stringify(summary)}`);
   } catch (err: unknown) {
@@ -62,6 +73,11 @@ test("diag: getCollectionsSummary as signed-in admin", async () => {
     await deleteTestOrder(order.id);
     await deleteTestCustomer(customer.id);
   }
+});
+
+test("diag: resolveWidgets for admin (pure, no network)", () => {
+  const widgets = resolveWidgets("admin", null);
+  diagLog(`resolveWidgets(admin, null): ${widgets.map((w) => w.id).join(",")}`);
 });
 
 test("diag: getInboxView as signed-in admin", async () => {
