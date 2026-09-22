@@ -495,6 +495,12 @@ export async function deleteTestExpense(id: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function getExpensePaymentStatus(id: string): Promise<string | null> {
+  const { data, error } = await adminClient().from("expenses").select("payment_status").eq("id", id).single();
+  if (error) throw error;
+  return (data as { payment_status: string | null }).payment_status;
+}
+
 export type TestDocument = { id: string };
 
 export async function createTestDocument(overrides: { title?: string } = {}): Promise<TestDocument> {
