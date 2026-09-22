@@ -254,6 +254,12 @@ export async function getReminderAssignee(id: string): Promise<string | null> {
   return (data as { assigned_to: string | null }).assigned_to;
 }
 
+export async function getReminderStatus(id: string): Promise<string> {
+  const { data, error } = await adminClient().from("reminders").select("status").eq("id", id).single();
+  if (error) throw error;
+  return (data as { status: string }).status;
+}
+
 export async function deleteTestReminder(id: string): Promise<void> {
   const { error } = await adminClient().from("reminders").delete().eq("id", id);
   if (error) throw error;
@@ -457,7 +463,9 @@ export async function tagEntityAsVehicle(
 
 export type TestExpense = { id: string };
 
-export async function createTestExpense(overrides: { amount?: number; description?: string } = {}): Promise<TestExpense> {
+export async function createTestExpense(
+  overrides: { amount?: number; description?: string; paymentStatus?: "paid" | "not_paid" | "partial" } = {}
+): Promise<TestExpense> {
   const recordedBy = await getAdminUserId();
   const { data, error } = await adminClient()
     .from("expenses")
@@ -466,7 +474,7 @@ export async function createTestExpense(overrides: { amount?: number; descriptio
       category: "אחר",
       description: overrides.description ?? `הוצאת בדיקה ${Date.now()}`,
       recorded_by: recordedBy,
-      payment_status: "paid",
+      payment_status: overrides.paymentStatus ?? "paid",
       business_domain: "general_business",
     })
     .select("id")
@@ -738,4 +746,19 @@ export async function getAccountTransferAmount(fromAccountId: string, toAccountI
     .maybeSingle();
   if (error) throw error;
   return (data as { amount: number } | null)?.amount ?? null;
+}
+
+// getDigestAnchor (lib/audit.ts) reads users.digest_seen_at first and only
+// falls back to login history when it's null — pinning it directly makes the
+// "missed activity" dashboard card's window deterministic regardless of how
+// many other parallel specs have logged this same shared fixture in and out.
+export async function setUserDigestSeenAt(userId: string, iso: string | null): Promise<void> {
+  const { error } = await adminClient().from("users").update({ digest_seen_at: iso }).eq("id", userId);
+  if (error) throw error;
+}
+
+export async function getUserDigestSeenAt(userId: string): Promise<string | null> {
+  const { data, error } = await adminClient().from("users").select("digest_seen_at").eq("id", userId).single();
+  if (error) throw error;
+  return (data as { digest_seen_at: string | null }).digest_seen_at;
 }
