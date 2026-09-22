@@ -543,6 +543,22 @@ export async function getCustomerNotes(id: string): Promise<string | null> {
   return (data as { notes: string | null }).notes;
 }
 
+// customer_branches has ON DELETE CASCADE on customer_id — deleteTestCustomer
+// alone cleans these up, no separate delete helper needed.
+export async function getCustomerBranchByName(
+  customerId: string,
+  name: string
+): Promise<{ id: string; address: string | null; active: boolean } | null> {
+  const { data, error } = await adminClient()
+    .from("customer_branches")
+    .select("id,address,active")
+    .eq("customer_id", customerId)
+    .eq("name", name)
+    .maybeSingle();
+  if (error) throw error;
+  return data as { id: string; address: string | null; active: boolean } | null;
+}
+
 export type TestPayment = { id: string };
 
 // The payments table has 4 check constraints tying business_domain to
