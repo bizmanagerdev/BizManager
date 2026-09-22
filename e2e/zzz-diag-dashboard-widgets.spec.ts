@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { test } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import { getCollectionsSummary } from "@/lib/collections";
@@ -15,14 +17,20 @@ import {
   deleteTestPayment,
 } from "./db";
 
-// TEMPORARY DIAGNOSTIC, round 2 — round 1 called these functions with a
-// SERVICE-ROLE client and every call succeeded with no thrown error. But RLS
-// doesn't throw on a restricted SELECT, it just silently returns fewer/zero
-// rows — so a service-role call proves nothing about what the REAL app (an
-// RLS-scoped client, authenticated as the admin user via cookies) actually
-// sees. This round signs in as the real e2e-admin user first, seeds the
-// exact same data the failing widget tests seed, and throws the actual
-// result so it's visible in the report either way.
+// TEMPORARY DIAGNOSTIC, round 3 — rounds 1/2 (service-role, then a signed-in
+// RLS-scoped client) both surfaced nothing via Playwright's own "github"
+// reporter: the current CI run's large unrelated worker-* failure cluster
+// exhausts GitHub Actions' own ~10-annotation-per-run cap before this test's
+// own message gets a slot. Writing straight to a file instead, printed by a
+// dedicated ci.yml step (bypassing the reporter's cap entirely) — the same
+// technique already proven earlier this session for the documents-upload
+// investigation. Delete this file AND the matching ci.yml step once the
+// cause is found.
+const DIAG_FILE = path.join(__dirname, "DIAG_OUTPUT.txt");
+function diagLog(line: string) {
+  fs.appendFileSync(DIAG_FILE, `${line}\n`);
+}
+
 function anonClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -47,7 +55,9 @@ test("diag: getCollectionsSummary as signed-in admin", async () => {
     const supabase = await signedInAdminClient();
     const todayIso = new Date().toISOString().slice(0, 10);
     const summary = await getCollectionsSummary(supabase, todayIso);
-    throw new Error(`RESULT: ${JSON.stringify(summary)}`);
+    diagLog(`getCollectionsSummary OK: ${JSON.stringify(summary)}`);
+  } catch (err: unknown) {
+    diagLog(`getCollectionsSummary THREW: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
   } finally {
     await deleteTestOrder(order.id);
     await deleteTestCustomer(customer.id);
@@ -61,17 +71,23 @@ test("diag: getInboxView as signed-in admin", async () => {
     const adminId = await getAdminUserId();
     const supabase = await signedInAdminClient();
     const inbox = await getInboxView(supabase, { userId: adminId, role: "admin" });
-    throw new Error(`RESULT: ${JSON.stringify(inbox)}`);
+    diagLog(`getInboxView OK: ${JSON.stringify(inbox)}`);
+  } catch (err: unknown) {
+    diagLog(`getInboxView THREW: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
   } finally {
     await deleteTestPayment(payment.id);
   }
 });
 
 test("diag: loadDomainCashBreakdown as signed-in admin", async () => {
-  const supabase = await signedInAdminClient();
-  const todayIso = new Date().toISOString().slice(0, 10);
-  const month = todayIso.slice(0, 7);
-  const window = monthWindow(month, todayIso);
-  const bars = await loadDomainCashBreakdown(supabase, window);
-  throw new Error(`RESULT: ${JSON.stringify(bars)}`);
+  try {
+    const supabase = await signedInAdminClient();
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const month = todayIso.slice(0, 7);
+    const window = monthWindow(month, todayIso);
+    const bars = await loadDomainCashBreakdown(supabase, window);
+    diagLog(`loadDomainCashBreakdown OK: ${JSON.stringify(bars)}`);
+  } catch (err: unknown) {
+    diagLog(`loadDomainCashBreakdown THREW: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
+  }
 });
