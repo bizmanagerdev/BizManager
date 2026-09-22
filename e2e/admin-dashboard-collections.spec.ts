@@ -19,14 +19,22 @@ import { createTestCustomer, deleteTestCustomer, createTestOrder, deleteTestOrde
 // (lib/collections.ts) only ever looks at late (overdue_amount) and upcoming
 // (pending_amount) — a bare unpaid order never reaches either bucket. A
 // pending payment row tied to the order is what actually gets it there.
+//
+// due_date is YESTERDAY, not today: getPaymentsDueToday (lib/collections.ts)
+// exact-matches due_date = today for the card's separate "TODAY" collect
+// list (its own "נגבה" row, unrelated to this test) — a due_date of today
+// made the debtor's aria-label show up TWICE (once there, once in the late/
+// upcoming list below), a strict-mode violation. order_financials_view's
+// overdue_pending_amount only needs due_date <= today, so yesterday still
+// lands the row in "late" while staying out of the today list.
 test.describe("admin — dashboard collections card", () => {
   test("clicking a debtor row on the dashboard opens their customer page", async ({ page }) => {
     test.setTimeout(60_000);
     const customer = await createTestCustomer({ name: `E2E debtor dash ${Date.now()}` });
     const order = await createTestOrder(customer.id);
     await createTestOrderItem(order.id, { unitPrice: 350, quantityOrdered: 1 });
-    const todayIso = new Date().toISOString().slice(0, 10);
-    await createTestPayment({ orderId: order.id, paymentStatus: "pending", dueDate: todayIso, amount: 350 });
+    const yesterdayIso = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    await createTestPayment({ orderId: order.id, paymentStatus: "pending", dueDate: yesterdayIso, amount: 350 });
     try {
       await loginAs(page, "admin");
 
