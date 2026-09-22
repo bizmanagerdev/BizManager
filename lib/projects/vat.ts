@@ -30,3 +30,29 @@ export function projectVatPortionOfBase(base: number, mode: ProjectVatMode): num
   const gross = applyProjectVatToBase(base, mode);
   return gross - base;
 }
+
+/**
+ * What the price typed into a project form means, when the project is priced
+ * "base + VAT". The stored `agreed_base_price` is always the BASE; a price
+ * typed as the full amount the customer pays is divided back here, so nobody
+ * has to work it out on a calculator.
+ */
+export type ProjectPriceEntry = "base" | "gross";
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** The base price to store for an amount typed as base, or as the full sum. */
+export function baseFromPriceEntry(amount: number, entry: ProjectPriceEntry, rate: number): number {
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  const safeRate = Number.isFinite(rate) && rate >= 0 ? rate : DEFAULT_VAT_RATE;
+  return entry === "gross" ? round2(amount / (1 + safeRate)) : round2(amount);
+}
+
+/** Base, VAT and the full sum, for showing the user what their number becomes. */
+export function projectPriceSplit(base: number, rate: number): { base: number; vat: number; gross: number } {
+  const safeBase = Number.isFinite(base) && base > 0 ? round2(base) : 0;
+  const safeRate = Number.isFinite(rate) && rate >= 0 ? rate : DEFAULT_VAT_RATE;
+  const gross = round2(safeBase * (1 + safeRate));
+  return { base: safeBase, vat: round2(gross - safeBase), gross };
+}
+

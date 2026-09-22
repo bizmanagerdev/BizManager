@@ -32,6 +32,8 @@ import { PAYMENT_TERMS_OPTIONS, computeDueDate } from "@/lib/paymentTerms";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import { omitUnknownPlace } from "@/lib/ui/cities";
 import { appendDictatedText } from "@/lib/dictation";
+import { PriceVatEntry, useVatRate } from "@/components/projects/PriceVatEntry";
+import { baseFromPriceEntry, projectPriceSplit, type ProjectPriceEntry } from "@/lib/projects/vat";
 
 type Row = Record<string, unknown>;
 type Step =
@@ -81,6 +83,8 @@ type ProjectDraft = {
   status: string;
   agreedBasePrice: string;
   priceIncludesVat: boolean;
+  /** Whether the typed price is the base or the full sum. Absent on older drafts. */
+  priceEntry?: ProjectPriceEntry;
   noCharge: boolean;
   expensesSeparately: boolean;
   projectManagerId: string;
@@ -121,6 +125,8 @@ export type InitialProject = {
   status: string;
   agreed_base_price: number;
   price_includes_vat: boolean;
+  /** Frozen rate of a price-includes-VAT project; absent ⇒ the current one. */
+  vat_rate?: number | string | null;
   no_charge?: boolean | null;
   expenses_billed_separately: boolean;
   project_manager_id: string | null;
@@ -394,6 +400,13 @@ export default function NewProjectClient({
   const [priceIncludesVat, setPriceIncludesVat] = useState(
     initialProject?.price_includes_vat ?? restoredDraft?.priceIncludesVat ?? false
   );
+  // What the number in the price field means. A saved project stores the BASE,
+  // so editing one starts there.
+  const [priceEntry, setPriceEntry] = useState<ProjectPriceEntry>(
+    initialProject ? "base" : restoredDraft?.priceEntry ?? "base"
+  );
+  const frozenVatRate = Number(initialProject?.vat_rate);
+  const vatRate = useVatRate(Number.isFinite(frozenVatRate) && frozenVatRate >= 0 ? frozenVatRate : null);
   const [noCharge, setNoCharge] = useState(
     initialProject?.no_charge ?? restoredDraft?.noCharge ?? false
   );
@@ -457,6 +470,7 @@ export default function NewProjectClient({
       status,
       agreedBasePrice,
       priceIncludesVat,
+      priceEntry,
       noCharge,
       expensesSeparately,
       projectManagerId,
@@ -480,6 +494,7 @@ export default function NewProjectClient({
     status,
     agreedBasePrice,
     priceIncludesVat,
+    priceEntry,
     noCharge,
     expensesSeparately,
     projectManagerId,
@@ -612,11 +627,13 @@ export default function NewProjectClient({
       setStep("customer");
       return;
     }
-    const agreed = agreedBasePrice.trim() ? Number(agreedBasePrice) : 0;
-    if (!Number.isFinite(agreed) || agreed < 0) {
+    const typedPrice = agreedBasePrice.trim() ? Number(agreedBasePrice) : 0;
+    if (!Number.isFinite(typedPrice) || typedPrice < 0) {
       setError("מחיר בסיס אינו תקין.");
       return;
     }
+    // Stored is always the BASE: a price typed as the full sum is divided back.
+    const agreed = priceIncludesVat ? baseFromPriceEntry(typedPrice, priceEntry, vatRate) : typedPrice;
 
     setSubmitting(true);
     try {
@@ -1207,6 +1224,14 @@ export default function NewProjectClient({
               />
               <span>הוסף מע״מ מעל מחיר הבסיס (הלקוח משלם בסיס + מע״מ)</span>
             </label>
+            {priceIncludesVat && !noCharge ? (
+              <PriceVatEntry
+                amount={agreedBasePrice}
+                entry={priceEntry}
+                onEntryChange={setPriceEntry}
+                rate={vatRate}
+              />
+            ) : null}
             <label className="flex items-start gap-2.5 pt-1 text-sm font-normal">
               <input
                 type="checkbox"
@@ -1302,6 +1327,18 @@ export default function NewProjectClient({
               value={noCharge ? "ללא חיוב" : agreedBasePrice ? `₪${agreedBasePrice}` : ""}
             />
             <SummaryRow label="המחיר כולל מע״מ" value={priceIncludesVat ? "כן" : "לא"} />
+            {priceIncludesVat && !noCharge && Number(agreedBasePrice) > 0 ? (
+              <SummaryRow
+                label="בסיס + מע״מ"
+                value={(() => {
+                  const split = projectPriceSplit(
+                    baseFromPriceEntry(Number(agreedBasePrice), priceEntry, vatRate),
+                    vatRate
+                  );
+                  return `₪${split.base} + ₪${split.vat} = ₪${split.gross}`;
+                })()}
+              />
+            ) : null}
             <SummaryRow label="תנאי תשלום" value={termsLabelFor(paymentTerms)} />
             <SummaryRow label="תאריך פירעון" value={dueDate} />
             <SummaryRow label="חיוב הוצאות בנפרד" value={expensesSeparately ? "כן" : "לא"} />

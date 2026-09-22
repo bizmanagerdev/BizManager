@@ -99,6 +99,8 @@ function toInitialProject(row: ProjectRow): InitialProject {
     status: getString(row, "status") ?? defaultStatusOptions[0],
     agreed_base_price: getNumber(row, "agreed_base_price") ?? 0,
     price_includes_vat: row["price_includes_vat"] === true,
+    // Its frozen rate, so editing shows the split this project was priced by.
+    vat_rate: getNumber(row, "vat_rate"),
     no_charge: row["no_charge"] === true,
     expenses_billed_separately: row["expenses_billed_separately"] === true,
     project_manager_id: getString(row, "project_manager_id"),

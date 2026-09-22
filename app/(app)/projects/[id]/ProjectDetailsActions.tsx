@@ -32,6 +32,8 @@ import { CustomerPicker } from "@/components/customers/CustomerPicker";
 import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
+import { PriceVatEntry, useVatRate } from "@/components/projects/PriceVatEntry";
+import { baseFromPriceEntry, type ProjectPriceEntry } from "@/lib/projects/vat";
 import {
   MovingEndpointFields,
   elevatorToBool,
@@ -63,6 +65,8 @@ type ProjectDetails = {
   agreed_base_price: number | string | null;
   actual_price: number | string | null;
   price_includes_vat: boolean | null;
+  /** Frozen rate of a price-includes-VAT project; absent ⇒ the current one. */
+  vat_rate?: number | string | null;
   no_charge: boolean | null;
   expenses_billed_separately: boolean | null;
   project_manager_id: string | null;
@@ -214,6 +218,11 @@ export default function ProjectDetailsActions({
   const [editStatus, setEditStatus] = useState(project.status);
   const [editAgreedBasePrice, setEditAgreedBasePrice] = useState(String(toNumber(project.agreed_base_price) ?? 0));
   const [editPriceIncludesVat, setEditPriceIncludesVat] = useState(project.price_includes_vat === true);
+  // What the number in the price field means. The stored price is the BASE, so
+  // editing starts there; switching to "כולל מע״מ" divides the typed sum back.
+  const [editPriceEntry, setEditPriceEntry] = useState<ProjectPriceEntry>("base");
+  const frozenVatRate = Number(project.vat_rate);
+  const editVatRate = useVatRate(Number.isFinite(frozenVatRate) && frozenVatRate >= 0 ? frozenVatRate : null);
   const [editNoCharge, setEditNoCharge] = useState(project.no_charge === true);
   const [editExpensesSeparately, setEditExpensesSeparately] = useState(project.expenses_billed_separately === true);
   const [editProjectManagerId, setEditProjectManagerId] = useState(project.project_manager_id ?? "");
@@ -286,11 +295,13 @@ export default function ProjectDetailsActions({
       return;
     }
 
-    const agreed = editAgreedBasePrice.trim() ? Number(editAgreedBasePrice) : 0;
-    if (!Number.isFinite(agreed) || agreed < 0) {
+    const typedPrice = editAgreedBasePrice.trim() ? Number(editAgreedBasePrice) : 0;
+    if (!Number.isFinite(typedPrice) || typedPrice < 0) {
       setEditError("מחיר בסיס אינו תקין.");
       return;
     }
+    // Stored is always the BASE: a price typed as the full sum is divided back.
+    const agreed = editPriceIncludesVat ? baseFromPriceEntry(typedPrice, editPriceEntry, editVatRate) : typedPrice;
 
     setEditSubmitting(true);
     try {
@@ -579,6 +590,14 @@ export default function ProjectDetailsActions({
                 />
                 <span>הוסף מע״מ מעל מחיר הבסיס (הלקוח משלם בסיס + מע״מ)</span>
               </label>
+              {editPriceIncludesVat && !editNoCharge ? (
+                <PriceVatEntry
+                  amount={editAgreedBasePrice}
+                  entry={editPriceEntry}
+                  onEntryChange={setEditPriceEntry}
+                  rate={editVatRate}
+                />
+              ) : null}
               <label className="flex items-center gap-2 pt-1 text-sm">
                 <input
                   type="checkbox"

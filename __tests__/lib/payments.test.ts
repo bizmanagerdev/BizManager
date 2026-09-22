@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { addMonthsIso, buildPaymentInsert, nextMonthTenth, parseInstallments, splitCardInstallments } from "@/lib/payments";
 import { splitPaymentAmounts } from "@/lib/orders/paymentStatus";
-import { applyProjectVatToBase } from "@/lib/projects/vat";
+import { applyProjectVatToBase, baseFromPriceEntry, projectPriceSplit } from "@/lib/projects/vat";
 
 const BASE_INPUT = {
   paymentDate: "2024-06-01",
@@ -244,3 +244,26 @@ describe("applyProjectVatToBase — Phase 2 gross target", () => {
     expect(applyProjectVatToBase(1000, { priceIncludesVat: true, vatRate: 0.17 })).toBe(1170);
   });
 });
+
+describe("baseFromPriceEntry / projectPriceSplit — typing the price with or without VAT", () => {
+  it("keeps a price typed as the base, and divides one typed as the full sum", () => {
+    expect(baseFromPriceEntry(30000, "base", 0.18)).toBe(30000);
+    // ₪35,400 the customer pays → ₪30,000 base.
+    expect(baseFromPriceEntry(35400, "gross", 0.18)).toBe(30000);
+    // Not a round number: kept to the agora.
+    expect(baseFromPriceEntry(1000, "gross", 0.18)).toBe(847.46);
+  });
+
+  it("uses the project's own rate, and is safe on an empty price", () => {
+    expect(baseFromPriceEntry(1170, "gross", 0.17)).toBe(1000);
+    expect(baseFromPriceEntry(0, "gross", 0.18)).toBe(0);
+    expect(baseFromPriceEntry(Number.NaN, "gross", 0.18)).toBe(0);
+  });
+
+  it("shows base + VAT = the full sum", () => {
+    expect(projectPriceSplit(30000, 0.18)).toEqual({ base: 30000, vat: 5400, gross: 35400 });
+    // The agora a division leaves over stays inside the VAT part.
+    expect(projectPriceSplit(847.46, 0.18)).toEqual({ base: 847.46, vat: 152.54, gross: 1000 });
+  });
+});
+
