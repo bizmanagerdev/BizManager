@@ -537,6 +537,8 @@ export default function ProjectsClient({
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editDirty, setEditDirty] = useState(false);
   const [editProject, setEditProject] = useState<ProjectRow | null>(null);
+  // The row is being read before the wizard opens (see openEditProject).
+  const [editLoadingId, setEditLoadingId] = useState<string | null>(null);
   const editDiscardGuard = useDiscardGuard({
     open: editOpen,
     onOpenChange: setEditOpen,
@@ -716,9 +718,28 @@ export default function ProjectsClient({
     prefillHandled.current = true;
   }, [activeTab, openCreateDialog, searchParams]);
 
-  function openEditProject(row: ProjectRow) {
-    setEditProject(row);
-    setEditOpen(true);
+  // The list row comes from project_dashboard_view, which carries only what the
+  // list draws. The wizard submits every field it holds, so it must start from
+  // the REAL row — otherwise saving an edit from here blanks the branch, VAT
+  // mode, payment terms, notes, items and addresses.
+  async function openEditProject(row: ProjectRow) {
+    const id = getString(row, "id") ?? "";
+    if (!id) return;
+    setEditLoadingId(id);
+    try {
+      const res = await fetch(`/api/projects/edit-context?id=${encodeURIComponent(id)}`);
+      const data = (await res.json().catch(() => ({}))) as { project?: ProjectRow; error?: string };
+      if (!res.ok || !data.project) {
+        toast.error(toHebrewError(data.error, "טעינת הפרויקט נכשלה."));
+        return;
+      }
+      setEditProject({ ...row, ...data.project });
+      setEditOpen(true);
+    } catch (err: unknown) {
+      toast.error(toHebrewError(err, "טעינת הפרויקט נכשלה."));
+    } finally {
+      setEditLoadingId(null);
+    }
   }
 
   function openApproveQuote(row: ProjectRow) {
@@ -1164,7 +1185,11 @@ export default function ProjectsClient({
                           className="h-9 w-9 rounded-xl p-0"
                           iconOnly
                         />
-                        <EditButton onClick={() => openEditProject(row)} label={currentStatus === "quote" ? "עריכת הצעת מחיר" : "עריכת פרויקט"} />
+                        <EditButton
+                          onClick={() => void openEditProject(row)}
+                          disabled={editLoadingId === getString(row, "id")}
+                          label={currentStatus === "quote" ? "עריכת הצעת מחיר" : "עריכת פרויקט"}
+                        />
                         <DeleteProjectButton
                           projectId={id}
                           projectName={projectDisplayName(row)}
@@ -1228,7 +1253,7 @@ export default function ProjectsClient({
                     label: "עריכה",
                     icon: <EditIcon className="h-5 w-5" />,
                     className: "bg-secondary-2",
-                    onSelect: () => openEditProject(row),
+                    onSelect: () => void openEditProject(row),
                   },
                 ];
 
