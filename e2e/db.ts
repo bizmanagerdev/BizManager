@@ -172,6 +172,25 @@ export async function getPropertyIdByName(name: string): Promise<string | null> 
   return (data as { id: string } | null)?.id ?? null;
 }
 
+export async function getLeaseAgreementByProperty(
+  propertyId: string
+): Promise<{ id: string; customer_id: string; monthly_rent_amount: number } | null> {
+  const { data, error } = await adminClient()
+    .from("lease_agreements")
+    .select("id,customer_id,monthly_rent_amount")
+    .eq("property_id", propertyId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as { id: string; customer_id: string; monthly_rent_amount: number } | null;
+}
+
+// Both property_id and customer_id are ON DELETE RESTRICT — must be deleted
+// before either parent (deleteTestProperty/deleteTestCustomer).
+export async function deleteTestLeaseAgreement(id: string): Promise<void> {
+  const { error } = await adminClient().from("lease_agreements").delete().eq("id", id);
+  if (error) throw error;
+}
+
 export type TestVehicle = { id: string; tagId: string };
 
 // Vehicle detail pages are keyed by their TAG id, not the vehicles.id row
