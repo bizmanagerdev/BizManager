@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { DateInput } from "@/components/ui/date-input";
 import { FormDialog } from "@/components/ui/form-dialog";
+import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EditButton, DeleteButton } from "@/components/ui/icon-button";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
@@ -83,6 +84,9 @@ export default function ChecksClient({ checks: checksProp }: Props) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editingCheck, setEditingCheck] = useState<CheckRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CheckRow | null>(null);
+  // The check being deposited: the account is chosen when it is registered, and
+  // confirmed (or changed) here, at the moment it actually goes into the bank.
+  const [depositTarget, setDepositTarget] = useState<CheckRow | null>(null);
   const [focusDismissed, setFocusDismissed] = useState(false);
 
   // `?focus=<payment_id>` (from the activity feed / the check-deposit alert)
@@ -164,18 +168,34 @@ export default function ChecksClient({ checks: checksProp }: Props) {
     return sorted;
   }, [checks, filter, sort, search, today, weekEnd]);
 
-  async function setCleared(paymentId: string, cleared: boolean) {
+  async function setCleared(paymentId: string, cleared: boolean, accountId?: string | null) {
     setBusyId(paymentId);
     try {
       const res = await fetch("/api/payments/mark-collected", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: paymentId, collected: cleared }),
+        body: JSON.stringify({ id: paymentId, collected: cleared, account_id: accountId ?? undefined }),
       });
-      if (res.ok) startTransition(() => { router.refresh(); });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        toast.error(toHebrewError(json.error, "סימון הצ׳ק נכשל."));
+        return false;
+      }
+      startTransition(() => { router.refresh(); });
+      return true;
     } finally {
       setBusyId(null);
     }
+  }
+
+  // Marking a check deposited asks which account it went into; undoing doesn't ask.
+  function requestSetCleared(paymentId: string, cleared: boolean) {
+    if (!cleared) {
+      void setCleared(paymentId, false);
+      return;
+    }
+    const check = checks.find((c) => c.payment_id === paymentId);
+    if (check) setDepositTarget(check);
   }
 
   function deleteCheck(c: CheckRow) {
@@ -281,7 +301,7 @@ export default function ChecksClient({ checks: checksProp }: Props) {
                     c={c}
                     today={today}
                     busy={busyId === c.payment_id}
-                    onSetCleared={setCleared}
+                    onSetCleared={requestSetCleared}
                     onEdit={setEditingCheck}
                     onDeleteRequest={setDeleteTarget}
                   />
@@ -307,7 +327,7 @@ export default function ChecksClient({ checks: checksProp }: Props) {
                 c={c}
                 today={today}
                 busy={busyId === c.payment_id}
-                onSetCleared={setCleared}
+                onSetCleared={requestSetCleared}
                 onEdit={setEditingCheck}
                 onDeleteRequest={setDeleteTarget}
               />
@@ -315,6 +335,18 @@ export default function ChecksClient({ checks: checksProp }: Props) {
           </div>
         </>
       )}
+
+      {depositTarget ? (
+        <DepositCheckDialog
+          check={depositTarget}
+          busy={busyId === depositTarget.payment_id}
+          onClose={() => setDepositTarget(null)}
+          onConfirm={async (accountId) => {
+            const ok = await setCleared(depositTarget.payment_id, true, accountId);
+            if (ok) setDepositTarget(null);
+          }}
+        />
+      ) : null}
 
       {activeEditingCheck ? (
         <EditCheckDialog
@@ -516,6 +548,66 @@ function CheckCard({
         <ActionCell c={c} busy={busy} onSetCleared={onSetCleared} onEdit={onEdit} onDeleteRequest={onDeleteRequest} />
       </div>
     </div>
+  );
+}
+
+// "סמן כנפרע" — the check reached the bank. The account it was recorded with
+// is offered as the answer; changing it here is how a check deposited somewhere
+// else gets filed correctly, without editing the check itself.
+function DepositCheckDialog({
+  check,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  check: CheckRow;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: (accountId: string | null) => void | Promise<void>;
+}) {
+  const [accountId, setAccountId] = useState(check.account_id ?? "");
+  const [accountsList, setAccountsList] = useState<Account[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <FormDialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+      title="הפקדת צ׳ק"
+      description={`${check.customer_name}${check.check_number ? ` · צ׳ק ${check.check_number}` : ""} · ${formatCurrency(check.amount)}`}
+      size="formMd"
+      onSubmit={() => {
+        if (accountsList.length > 0 && !accountId) {
+          setError("יש לבחור את החשבון שאליו הופקד הצ׳ק.");
+          return;
+        }
+        setError(null);
+        void onConfirm(accountId || null);
+      }}
+      submitLabel="סמן כנפרע"
+      busyLabel="שומר..."
+      busy={busy}
+      error={error || undefined}
+    >
+      <div className="mt-4 space-y-3">
+        <AccountSelect
+          required
+          value={accountId}
+          onChange={setAccountId}
+          onLoaded={(list) => {
+            setAccountsList(list);
+            setAccountId((prev) => prev || check.account_id || "");
+          }}
+        />
+        <p className="text-xs text-muted-foreground">
+          {check.account_id
+            ? "זה החשבון שנבחר כשהצ׳ק נרשם — אפשר לשנות אם הופקד לחשבון אחר."
+            : "לצ׳ק לא נבחר חשבון עדיין — בחר/י לאן הופקד."}
+        </p>
+      </div>
+    </FormDialog>
   );
 }
 

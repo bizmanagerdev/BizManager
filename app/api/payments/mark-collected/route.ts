@@ -8,13 +8,22 @@ import { derivePaymentStatus, splitPaymentAmounts } from "@/lib/orders/paymentSt
 // actually arrives — or back to 'pending' to undo. Keeps the stored
 // orders.payment_status in sync (collected-based) so the order no longer shows
 // as שולם purely on the strength of an expected payment.
+//
+// `account_id` is optional and only for the moment of collection: a check is
+// recorded with the account it is MEANT to be deposited into, and the deposit
+// itself is where that can still change. Sent only when it differs, and never
+// on an undo.
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as { id?: string; collected?: boolean };
+    const body = (await req.json()) as { id?: string; collected?: boolean; account_id?: string | null };
     const paymentId = typeof body.id === "string" ? body.id.trim() : "";
     const markCollected = body.collected !== false; // default true
     if (!paymentId) {
       return NextResponse.json({ error: "Missing id" }, { status: 400 });
+    }
+    const accountId = typeof body.account_id === "string" && body.account_id.trim() ? body.account_id.trim() : null;
+    if (accountId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(accountId)) {
+      return NextResponse.json({ error: "מזהה החשבון אינו תקין." }, { status: 400 });
     }
 
     const access = await requireRouteAccess();
@@ -23,7 +32,7 @@ export async function POST(req: Request) {
 
     const { data: existing, error: existingError } = await supabase
       .from("payments")
-      .select("id,order_id,project_id,payment_status")
+      .select("id,order_id,project_id,payment_status,account_id")
       .eq("id", paymentId)
       .maybeSingle();
 
@@ -31,9 +40,11 @@ export async function POST(req: Request) {
     if (!existing?.id) return NextResponse.json({ error: "Payment not found" }, { status: 404 });
 
     const nextStatus = markCollected ? "cleared" : "pending";
+    // The account only ever moves WITH a collection, never on an undo.
+    const movesAccount = markCollected && accountId !== null && accountId !== existing.account_id;
     const { error: updateError } = await supabase
       .from("payments")
-      .update({ payment_status: nextStatus })
+      .update(movesAccount ? { payment_status: nextStatus, account_id: accountId } : { payment_status: nextStatus })
       .eq("id", paymentId);
 
     if (updateError) return NextResponse.json({ error: toHebrewError(updateError.message) }, { status: 400 });
@@ -45,8 +56,10 @@ export async function POST(req: Request) {
       action: "update",
       changedBy: profile.id,
       userRole: profile.role,
-      oldData: { payment_status: existing.payment_status },
-      newData: { payment_status: nextStatus },
+      oldData: movesAccount
+        ? { payment_status: existing.payment_status, account_id: existing.account_id }
+        : { payment_status: existing.payment_status },
+      newData: movesAccount ? { payment_status: nextStatus, account_id: accountId } : { payment_status: nextStatus },
     });
 
     // Keep the stored order status consistent with collected money.
