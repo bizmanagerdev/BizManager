@@ -38,9 +38,18 @@ test.describe("admin — dashboard collections card", () => {
     try {
       await loginAs(page, "admin");
 
-      const row = page.getByRole("link", { name: customer.name, exact: true });
-      await expect(row).toBeVisible({ timeout: 15_000 });
-      await row.click();
+      // DebtorRow's own <a aria-label=customerName> is an EMPTY absolute-
+      // positioned overlay (a sibling of the visible content, not a wrapper
+      // around it) — searching for text inside that locator finds nothing.
+      // Locate the <li> instead (which does contain the visible name) and
+      // click the name text there: it's plain, non-positioned flow content,
+      // so the (positioned, z-index:auto) overlay still paints above it and
+      // catches the click — unlike the row's phone/amount block, which is
+      // ALSO explicitly `relative` and, coming later in DOM order, paints
+      // above the overlay right where a default center-click would land.
+      const debtorRow = page.getByRole("listitem").filter({ hasText: customer.name });
+      await expect(debtorRow).toBeVisible({ timeout: 15_000 });
+      await debtorRow.getByText(customer.name, { exact: true }).click();
 
       await page.waitForURL(`**/customers/${customer.id}`);
       await expect(page.getByRole("heading", { name: customer.name })).toBeVisible();
