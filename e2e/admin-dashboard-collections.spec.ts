@@ -40,16 +40,21 @@ test.describe("admin — dashboard collections card", () => {
 
       // DebtorRow's own <a aria-label=customerName> is an EMPTY absolute-
       // positioned overlay (a sibling of the visible content, not a wrapper
-      // around it) — searching for text inside that locator finds nothing.
-      // Locate the <li> instead (which does contain the visible name) and
-      // click the name text there: it's plain, non-positioned flow content,
-      // so the (positioned, z-index:auto) overlay still paints above it and
-      // catches the click — unlike the row's phone/amount block, which is
-      // ALSO explicitly `relative` and, coming later in DOM order, paints
-      // above the overlay right where a default center-click would land.
+      // around it) — searching for text inside that locator finds nothing,
+      // so the name text is located via the <li> instead. Playwright's own
+      // actionability check then refuses a plain .click() there: at the name
+      // text's position the (positioned) overlay is confirmed to paint above
+      // the (non-positioned) text — exactly the intended target — but
+      // Playwright treats "a different element than the one I resolved would
+      // receive this" as un-actionable regardless of which one is wanted.
+      // force:true skips that pre-check and dispatches a real click at that
+      // position, which the browser's own hit-test still resolves to the
+      // overlay, landing on the actual link — unlike the row's phone/amount
+      // block (ALSO positioned, later in DOM order), which wins the row's
+      // horizontal center and would swallow a forced click there instead.
       const debtorRow = page.getByRole("listitem").filter({ hasText: customer.name });
       await expect(debtorRow).toBeVisible({ timeout: 15_000 });
-      await debtorRow.getByText(customer.name, { exact: true }).click();
+      await debtorRow.getByText(customer.name, { exact: true }).click({ force: true });
 
       await page.waitForURL(`**/customers/${customer.id}`);
       await expect(page.getByRole("heading", { name: customer.name })).toBeVisible();
