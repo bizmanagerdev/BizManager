@@ -279,6 +279,12 @@ export async function getReminderStatus(id: string): Promise<string> {
   return (data as { status: string }).status;
 }
 
+export async function getReminderSnoozedUntil(id: string): Promise<string | null> {
+  const { data, error } = await adminClient().from("reminders").select("snoozed_until").eq("id", id).single();
+  if (error) throw error;
+  return (data as { snoozed_until: string | null }).snoozed_until;
+}
+
 export async function deleteTestReminder(id: string): Promise<void> {
   const { error } = await adminClient().from("reminders").delete().eq("id", id);
   if (error) throw error;
