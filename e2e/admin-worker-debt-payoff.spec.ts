@@ -6,7 +6,7 @@ import {
   createTestAttendanceSession,
   deleteTestAttendanceSession,
   getSessionDebtStatus,
-  deleteTestWorkerPayment,
+  deleteTestWorkerPaymentsForUser,
   type TestWorker,
 } from "./db";
 
@@ -30,7 +30,6 @@ test.describe("admin — worker debt payoff", () => {
     const laborCost = 180;
     const worker: TestWorker = await createTestWorker();
     const session = await createTestAttendanceSession(worker.id, { laborCost });
-    let paymentId: string | null = null;
     try {
       await loginAs(page, "admin");
       await page.goto(`/payroll/workers/${worker.id}`);
@@ -66,15 +65,20 @@ test.describe("admin — worker debt payoff", () => {
       ]);
       expect(response.ok()).toBe(true);
       const body = (await response.json()) as { payment?: { id?: string } };
-      paymentId = body.payment?.id ?? null;
-      expect(paymentId).toBeTruthy();
+      expect(body.payment?.id).toBeTruthy();
 
       await expect.poll(async () => (await getSessionDebtStatus(session.id))?.payment_status).toBe("paid");
       const status = await getSessionDebtStatus(session.id);
       expect(status?.owed_amount).toBe(0);
       expect(status?.paid_amount).toBe(laborCost);
     } finally {
-      if (paymentId) await deleteTestWorkerPayment(paymentId);
+      // By worker.id, not a captured payment id: a save that genuinely
+      // succeeds server-side but whose response a later assertion fails to
+      // parse/verify (this test's own actual CI failure, once) would
+      // otherwise leave a REAL worker_payments row behind with nothing in
+      // this test having learned its id, blocking deleteTestWorker below on
+      // worker_payments_user_id_fkey (no ON DELETE action, RESTRICT).
+      await deleteTestWorkerPaymentsForUser(worker.id);
       await deleteTestAttendanceSession(session.id);
       await deleteTestWorker(worker);
     }

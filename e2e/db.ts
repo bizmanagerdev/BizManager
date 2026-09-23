@@ -470,6 +470,17 @@ export async function deleteTestWorkerPayment(paymentId: string): Promise<void> 
   if (error) throw error;
 }
 
+// By relationship, not a specific captured id: worker_payments_user_id_fkey
+// has no ON DELETE action either, and a test's own local paymentId variable
+// is only as reliable as everything that ran before it was read — a save
+// that genuinely succeeded server-side but whose response body a later step
+// failed to parse/assert on leaves a REAL row behind with the test never
+// having learned its id. Cleaning up by user_id catches that regardless.
+export async function deleteTestWorkerPaymentsForUser(userId: string): Promise<void> {
+  const { error } = await adminClient().from("worker_payments").delete().eq("user_id", userId);
+  if (error) throw error;
+}
+
 export type WorkerSectionAccess = Partial<{
   dashboard: boolean;
   deliveries: boolean;
