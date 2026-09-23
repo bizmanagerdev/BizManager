@@ -99,12 +99,21 @@ test.describe("admin — recurring expenses", () => {
       const requestsBefore = allRequests.length;
       await reviewButton.click();
       await page.waitForTimeout(5000);
-      const bodyHtml = await page.locator("body").innerHTML().catch((e) => `<innerHTML failed: ${e}>`);
+      const errorBannerText = await page
+        .locator("p.text-destructive")
+        .allTextContents()
+        .catch((e) => [`<query failed: ${e}>`]);
+      const dialogText = await page
+        .getByRole("dialog")
+        .first()
+        .innerText()
+        .catch((e) => `<innerText failed: ${e}>`);
       throw new Error(
-        `DIAG dump — requestsSinceClick=${JSON.stringify(allRequests.slice(requestsBefore))} ` +
+        `DIAG2 dump — requestsSinceClick=${JSON.stringify(allRequests.slice(requestsBefore))} ` +
           `consoleErrors=${JSON.stringify(consoleErrors)} pageErrors=${JSON.stringify(pageErrors)} ` +
+          `errorBannerText=${JSON.stringify(errorBannerText)} ` +
           `urlAfterClick=${page.url()} ` +
-          `bodySnippet=${bodyHtml.slice(0, 1500)}`,
+          `dialogText=${dialogText.slice(0, 1500)}`,
       );
     } finally {
       if (templateId) await deleteTestRecurringExpenseTemplate(templateId);
