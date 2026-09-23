@@ -25,7 +25,7 @@ import {
 // a race/cold-load, same as admin-recurring-expense.spec.ts's own saga).
 // Force a wide viewport so the table layout is what actually renders.
 test.describe("admin — recurring expenses (edit)", () => {
-  test.use({ viewport: { width: 1600, height: 900 } });
+  test.use({ viewport: { width: 1920, height: 1080 } });
 
   test("admin can edit an existing recurring expense template's name", async ({ page }) => {
     test.setTimeout(60_000);
@@ -35,12 +35,14 @@ test.describe("admin — recurring expenses (edit)", () => {
       await loginAs(page, "admin");
       await page.goto("/financial/payments-calendar?tab=recurring");
 
-      // The row list loads client-side after mount (unlike the create test's
-      // static "הוצאה קבועה חדשה" header button) — same generous timeout as
-      // admin-payments-calendar.spec.ts's own first data-dependent element,
-      // for the same reason.
+      // Split "did the row render at all" (layout-agnostic — same generous
+      // timeout as admin-payments-calendar.spec.ts's own first data-dependent
+      // element, for the same server round-trip reason) from "is it the
+      // table layout" (viewport-dependent), so a failure here points at the
+      // right cause instead of another guess.
+      await expect(page.getByText(seed.template_name).first()).toBeVisible({ timeout: 15_000 });
       const menuTrigger = page.getByRole("button", { name: `פעולות — ${seed.template_name}` });
-      await expect(menuTrigger).toBeVisible({ timeout: 15_000 });
+      await expect(menuTrigger).toBeVisible({ timeout: 5_000 });
       await menuTrigger.click();
       const editItem = page.getByRole("menuitem", { name: "עריכה" });
       await expect(editItem).toBeVisible();
