@@ -22,7 +22,7 @@ import { getRecurringExpenseTemplate, deleteTestRecurringExpenseTemplate } from 
 // returns the new template's id directly, so no DB polling is needed.
 test.describe("admin — recurring expenses", () => {
   test("admin can create a new recurring expense template", async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(90_000);
     const templateName = `E2E recurring ${Date.now()}`;
     let templateId: string | null = null;
     try {
@@ -74,19 +74,20 @@ test.describe("admin — recurring expenses", () => {
       // notes: optional — skip
       await page.getByRole("button", { name: "המשך" }).click();
 
-      // review — final submit. The save route inserts the template AND
-      // generates its first occurrence(s) in the same request — every prior
-      // step in this same wizard reaches here reliably (proving the step
-      // sequence itself is right), but this specific wait has now timed out
-      // twice in CI runs that also hit an unusually severe, unrelated
-      // failure cluster (30+ failures, including previously-solid tests) —
-      // consistent with the whole stack being under real load rather than
-      // this request never firing. Giving it substantially more room.
+      // review — final submit. Three consecutive runs have timed out
+      // waiting for the response, including one otherwise-healthy run (93
+      // passed) — ruling out general CI load as the cause. Splitting the
+      // button check from the network wait to see exactly where this
+      // actually breaks: not found/not enabled (a real wizard-state bug)
+      // vs. found-and-clicked-but-no-request (something else entirely).
+      const reviewButton = page.getByRole("button", { name: "שמור הוצאה קבועה" });
+      await expect(reviewButton, "review step's submit button never appeared").toBeVisible({ timeout: 20_000 });
+      await expect(reviewButton, "review step's submit button stayed disabled").toBeEnabled({ timeout: 20_000 });
       const [response] = await Promise.all([
         page.waitForResponse((r) => r.url().includes("/api/recurring-expenses/save") && r.request().method() === "POST", {
-          timeout: 100_000,
+          timeout: 30_000,
         }),
-        page.getByRole("button", { name: "שמור הוצאה קבועה" }).click(),
+        reviewButton.click(),
       ]);
       expect(response.ok()).toBe(true);
       const body = (await response.json()) as { id?: string };
