@@ -14,15 +14,21 @@ import { getRecurringExpenseTemplate, deleteTestRecurringExpenseTemplate } from 
 // defaults false here (PaymentsHubClient never passes it), so there's no
 // "files" step, and showBillingOptions/needsSourcePicker are both false for
 // a plain general_business template (no project/order/property), so
-// "billing"/"source" never appear either. Where the exact choice doesn't
-// matter (category/frequency/reminder/variable/pay-method), this clicks
-// whichever data-exp-option renders FIRST rather than hardcoding a label —
-// RECURRENCE_CHOICES' own first entry is "כל חודש" (monthly), which is also
-// what's asserted below. The real save (POST /api/recurring-expenses/save)
-// returns the new template's id directly, so no DB polling is needed.
+// "billing"/"source" never appear either. The real save (POST
+// /api/recurring-expenses/save) returns the new template's id directly, so
+// no DB polling is needed.
+//
+// category is picked via .nth(1), NOT .first(): categoryOptions puts
+// WORKER_WAGE_CATEGORY first whenever workerSupport is true (admin/office
+// always can), and picking it flips isWorkerPayment true, which sends
+// handleSubmit down submitWorkerSession() instead of submitRecurring() —
+// the actual cause of this test failing 4 straight times waiting on a save
+// response that, with that category picked, was never going to arrive at
+// this URL at all. Every OTHER data-exp-option step below genuinely doesn't
+// care which choice wins, so .first() stays fine there.
 test.describe("admin — recurring expenses", () => {
   test("admin can create a new recurring expense template", async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(60_000);
     const templateName = `E2E recurring ${Date.now()}`;
     let templateId: string | null = null;
     try {
@@ -40,8 +46,8 @@ test.describe("admin — recurring expenses", () => {
       // domain: שוטף (general_business) — auto-advances
       await page.getByRole("button", { name: "שוטף" }).click();
 
-      // category: any — auto-advances
-      await page.locator("button[data-exp-option]").first().click();
+      // category: .nth(1) — see the file header for why NOT .first().
+      await page.locator("button[data-exp-option]").nth(1).click();
 
       // description: optional free text — skip
       await page.getByRole("button", { name: "המשך" }).click();
@@ -74,19 +80,11 @@ test.describe("admin — recurring expenses", () => {
       // notes: optional — skip
       await page.getByRole("button", { name: "המשך" }).click();
 
-      // review — final submit. Three consecutive runs have timed out
-      // waiting for the response, including one otherwise-healthy run (93
-      // passed) — ruling out general CI load as the cause. Splitting the
-      // button check from the network wait to see exactly where this
-      // actually breaks: not found/not enabled (a real wizard-state bug)
-      // vs. found-and-clicked-but-no-request (something else entirely).
+      // review — final submit.
       const reviewButton = page.getByRole("button", { name: "שמור הוצאה קבועה" });
-      await expect(reviewButton, "review step's submit button never appeared").toBeVisible({ timeout: 20_000 });
-      await expect(reviewButton, "review step's submit button stayed disabled").toBeEnabled({ timeout: 20_000 });
+      await expect(reviewButton).toBeVisible();
       const [response] = await Promise.all([
-        page.waitForResponse((r) => r.url().includes("/api/recurring-expenses/save") && r.request().method() === "POST", {
-          timeout: 30_000,
-        }),
+        page.waitForResponse((r) => r.url().includes("/api/recurring-expenses/save") && r.request().method() === "POST"),
         reviewButton.click(),
       ]);
       expect(response.ok()).toBe(true);
