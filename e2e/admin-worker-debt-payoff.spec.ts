@@ -40,7 +40,15 @@ test.describe("admin — worker debt payoff", () => {
       await addPaymentButton.click();
 
       await expect(page.getByText("הוספת תשלום לעובד")).toBeVisible();
-      await page.getByLabel("סכום", { exact: true }).fill(String(laborCost));
+      // Field (SalaryCenterUi.tsx) wraps a label div + its control in one
+      // <label>, which should make an implicit label association — but
+      // getByLabel("סכום") never resolved in CI. XPath on the label div's
+      // own exact text, same fallback already proven for this shape in
+      // admin-property-lease.spec.ts's CurrencyInput field, sidesteps
+      // whatever breaks the accessible-name-based lookup.
+      await page
+        .locator('xpath=//div[text()="סכום"]/parent::label//input')
+        .fill(String(laborCost));
       await page.getByRole("button", { name: "פיזור אוטומטי" }).click();
 
       const [response] = await Promise.all([
