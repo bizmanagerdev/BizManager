@@ -24,6 +24,16 @@ import {
 // long you wait for it (root-caused after two rounds that mistook this for
 // a race/cold-load, same as admin-recurring-expense.spec.ts's own saga).
 // Force a wide viewport so the table layout is what actually renders.
+//
+// Both layouts render in the DOM AT ONCE — @5xl:hidden is a CSS class, not
+// conditional JSX — so a plain text/role locator with no layout-specific
+// element can match twice (once per layout, one of them CSS-hidden). A
+// row's name renders via the same nameCell() either way, so getByText(name)
+// matches both; .last() reliably picks the table's copy, since cards render
+// first in RecurringExpensesManager.tsx's JSX and the table second. The
+// kebab trigger itself needs no such care — rowMenu()'s aria-label only
+// exists in the table layout at all, card mode's actionsCell() has a plain
+// unlabeled "עריכה" EditButton instead.
 test.describe("admin — recurring expenses (edit)", () => {
   test.use({ viewport: { width: 1920, height: 1080 } });
 
@@ -35,14 +45,8 @@ test.describe("admin — recurring expenses (edit)", () => {
       await loginAs(page, "admin");
       await page.goto("/financial/payments-calendar?tab=recurring");
 
-      // Split "did the row render at all" (layout-agnostic — same generous
-      // timeout as admin-payments-calendar.spec.ts's own first data-dependent
-      // element, for the same server round-trip reason) from "is it the
-      // table layout" (viewport-dependent), so a failure here points at the
-      // right cause instead of another guess.
-      await expect(page.getByText(seed.template_name).first()).toBeVisible({ timeout: 15_000 });
       const menuTrigger = page.getByRole("button", { name: `פעולות — ${seed.template_name}` });
-      await expect(menuTrigger).toBeVisible({ timeout: 5_000 });
+      await expect(menuTrigger).toBeVisible({ timeout: 15_000 });
       await menuTrigger.click();
       const editItem = page.getByRole("menuitem", { name: "עריכה" });
       await expect(editItem).toBeVisible();
@@ -63,7 +67,7 @@ test.describe("admin — recurring expenses (edit)", () => {
       const updated = await getRecurringExpenseTemplate(seed.id);
       expect(updated?.template_name).toBe(newName);
 
-      await expect(page.getByText(newName)).toBeVisible();
+      await expect(page.getByText(newName).last()).toBeVisible();
     } finally {
       await deleteTestRecurringExpenseTemplate(seed.id);
     }
