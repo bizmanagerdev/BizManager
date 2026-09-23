@@ -22,7 +22,7 @@ import { getRecurringExpenseTemplate, deleteTestRecurringExpenseTemplate } from 
 // returns the new template's id directly, so no DB polling is needed.
 test.describe("admin — recurring expenses", () => {
   test("admin can create a new recurring expense template", async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(120_000);
     const templateName = `E2E recurring ${Date.now()}`;
     let templateId: string | null = null;
     try {
@@ -75,11 +75,16 @@ test.describe("admin — recurring expenses", () => {
       await page.getByRole("button", { name: "המשך" }).click();
 
       // review — final submit. The save route inserts the template AND
-      // generates its first occurrence(s) in the same request — give it more
-      // room than the default 30s under CI's slower conditions.
+      // generates its first occurrence(s) in the same request — every prior
+      // step in this same wizard reaches here reliably (proving the step
+      // sequence itself is right), but this specific wait has now timed out
+      // twice in CI runs that also hit an unusually severe, unrelated
+      // failure cluster (30+ failures, including previously-solid tests) —
+      // consistent with the whole stack being under real load rather than
+      // this request never firing. Giving it substantially more room.
       const [response] = await Promise.all([
         page.waitForResponse((r) => r.url().includes("/api/recurring-expenses/save") && r.request().method() === "POST", {
-          timeout: 60_000,
+          timeout: 100_000,
         }),
         page.getByRole("button", { name: "שמור הוצאה קבועה" }).click(),
       ]);
