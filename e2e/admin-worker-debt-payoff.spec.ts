@@ -52,16 +52,22 @@ test.describe("admin — worker debt payoff", () => {
       const amountInput = page.locator('xpath=//div[text()="סכום"]/parent::label//input');
       await expect(amountInput).toBeVisible({ timeout: 10_000 });
       await amountInput.fill(String(laborCost));
+
+      // "פיזור אוטומטי" (FormDialog's allocations section, SalaryCenterClient.
+      // tsx) has no explicit type="button" — Button (components/ui/button.tsx)
+      // never defaults one, so the native <button> default of type="submit"
+      // applies. FormDialog wraps its whole body, allocations section
+      // included, in one <form onSubmit={(e) => { e.preventDefault();
+      // onSubmit(); }}>: preventDefault only stops the browser's own
+      // navigation, not the React handler, so clicking this button ALSO
+      // fires saveWorkerPayment() immediately — confirmed in CI: the dialog
+      // was already gone by the time the next line looked for "שמירת תשלום".
+      // The auto-distribute click IS the submit here.
       const autoDistribute = page.getByRole("button", { name: "פיזור אוטומטי" });
       await expect(autoDistribute).toBeVisible();
-      await autoDistribute.click();
-
-      const saveButton = page.getByRole("button", { name: "שמירת תשלום" });
-      await expect(saveButton).toBeVisible();
-      await expect(saveButton).toBeEnabled();
       const [response] = await Promise.all([
         page.waitForResponse((r) => r.url().includes("/api/payroll/worker-payments") && r.request().method() === "POST"),
-        saveButton.click(),
+        autoDistribute.click(),
       ]);
       expect(response.ok()).toBe(true);
       const body = (await response.json()) as { payment?: { id?: string } };
