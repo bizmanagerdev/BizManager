@@ -26,7 +26,17 @@ test.describe("admin — vehicles", () => {
 
       const dialog = page.getByRole("dialog");
       await expect(dialog).toBeVisible();
-      await dialog.getByLabel("שם הרכב").fill(name);
+      const nameField = dialog.getByLabel("שם הרכב");
+      try {
+        await nameField.fill(name, { timeout: 10_000 });
+      } catch (err) {
+        // DIAGNOSTIC: the dialog IS visible but this label never resolves —
+        // dump what's actually inside it so the real cause (wrong dialog?
+        // fields not mounted? a different label text?) is visible in the
+        // failure message instead of a bare timeout.
+        const html = await dialog.innerHTML().catch(() => "<could not read innerHTML>");
+        throw new Error(`"שם הרכב" field not found in dialog. Dialog HTML:\n${html}\n\nOriginal error: ${err}`);
+      }
       await dialog.getByRole("button", { name: "הוספה" }).click();
 
       await expect.poll(() => getVehicleByTagName(name)).not.toBeNull();
