@@ -42,18 +42,27 @@ test.describe("admin — worker debt payoff", () => {
       await expect(page.getByText("הוספת תשלום לעובד")).toBeVisible();
       // Field (SalaryCenterUi.tsx) wraps a label div + its control in one
       // <label>, which should make an implicit label association — but
-      // getByLabel("סכום") never resolved in CI. XPath on the label div's
-      // own exact text, same fallback already proven for this shape in
-      // admin-property-lease.spec.ts's CurrencyInput field, sidesteps
-      // whatever breaks the accessible-name-based lookup.
-      await page
-        .locator('xpath=//div[text()="סכום"]/parent::label//input')
-        .fill(String(laborCost));
-      await page.getByRole("button", { name: "פיזור אוטומטי" }).click();
+      // getByLabel("סכום") never resolved in CI (round 1), and the XPath
+      // fallback below (round 2, same pattern already proven for this shape
+      // in admin-property-lease.spec.ts) hit only an uninformative bare
+      // test-timeout with no pinpointed line — likely GitHub's own
+      // annotation cap (this session's runs regularly hit 30+ failures) ate
+      // the detailed one. Split visible+enabled out explicitly so a real
+      // failure lands on a specific line even if the detailed annotation
+      // gets dropped again.
+      const amountInput = page.locator('xpath=//div[text()="סכום"]/parent::label//input');
+      await expect(amountInput).toBeVisible({ timeout: 10_000 });
+      await amountInput.fill(String(laborCost));
+      const autoDistribute = page.getByRole("button", { name: "פיזור אוטומטי" });
+      await expect(autoDistribute).toBeVisible();
+      await autoDistribute.click();
 
+      const saveButton = page.getByRole("button", { name: "שמירת תשלום" });
+      await expect(saveButton).toBeVisible();
+      await expect(saveButton).toBeEnabled();
       const [response] = await Promise.all([
         page.waitForResponse((r) => r.url().includes("/api/payroll/worker-payments") && r.request().method() === "POST"),
-        page.getByRole("button", { name: "שמירת תשלום" }).click(),
+        saveButton.click(),
       ]);
       expect(response.ok()).toBe(true);
       const body = (await response.json()) as { payment?: { id?: string } };
