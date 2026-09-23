@@ -544,6 +544,36 @@ export async function getExpensePaymentStatus(id: string): Promise<string | null
   return (data as { payment_status: string | null }).payment_status;
 }
 
+export async function getRecurringExpenseTemplate(
+  id: string
+): Promise<{ id: string; template_name: string; frequency: string; is_active: boolean } | null> {
+  const { data, error } = await adminClient()
+    .from("recurring_expense_templates")
+    .select("id,template_name,frequency,is_active")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return data as { id: string; template_name: string; frequency: string; is_active: boolean } | null;
+}
+
+// Saving a new template also generates its first occurrence(s) as real
+// `expenses` rows (expenses.recurring_expense_template_id is ON DELETE SET
+// NULL, so deleting the template alone wouldn't clean those up) — delete
+// generated expenses first so no orphaned test expense is left behind.
+export async function deleteTestRecurringExpenseTemplate(id: string): Promise<void> {
+  const supabase = adminClient();
+  const { data: generated, error: findError } = await supabase
+    .from("expenses")
+    .select("id")
+    .eq("recurring_expense_template_id", id);
+  if (findError) throw findError;
+  for (const row of (generated ?? []) as { id: string }[]) {
+    await deleteTestExpense(row.id);
+  }
+  const { error } = await supabase.from("recurring_expense_templates").delete().eq("id", id);
+  if (error) throw error;
+}
+
 export type TestDocument = { id: string };
 
 export async function createTestDocument(overrides: { title?: string } = {}): Promise<TestDocument> {
