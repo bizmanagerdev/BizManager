@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { loginAs } from "./fixtures";
-import { getRecurringExpenseTemplate, deleteTestRecurringExpenseTemplate } from "./db";
+import { deleteTestRecurringExpenseTemplate } from "./db";
 
 // The payments calendar's "קבועות" tab (RecurringExpensesManager) had no
 // coverage at all — creating a new recurring bill via "הוצאה קבועה חדשה"
@@ -31,6 +31,18 @@ test.describe("admin — recurring expenses", () => {
     test.setTimeout(60_000);
     const templateName = `E2E recurring ${Date.now()}`;
     let templateId: string | null = null;
+    const allRequests: string[] = [];
+    const consoleErrors: string[] = [];
+    const pageErrors: string[] = [];
+    page.on("request", (req) => {
+      if (req.url().includes("/api/")) allRequests.push(`${req.method()} ${req.url()}`);
+    });
+    page.on("console", (msg) => {
+      if (msg.type() === "error") consoleErrors.push(msg.text());
+    });
+    page.on("pageerror", (err) => {
+      pageErrors.push(err.message);
+    });
     try {
       await loginAs(page, "admin");
       await page.goto("/financial/payments-calendar?tab=recurring");
@@ -83,21 +95,17 @@ test.describe("admin — recurring expenses", () => {
       // review — final submit.
       const reviewButton = page.getByRole("button", { name: "שמור הוצאה קבועה" });
       await expect(reviewButton).toBeVisible();
-      const [response] = await Promise.all([
-        page.waitForResponse((r) => r.url().includes("/api/recurring-expenses/save") && r.request().method() === "POST"),
-        reviewButton.click(),
-      ]);
-      expect(response.ok()).toBe(true);
-      const body = (await response.json()) as { id?: string };
-      templateId = body.id ?? null;
-      expect(templateId).toBeTruthy();
-
-      const template = await getRecurringExpenseTemplate(templateId!);
-      expect(template?.template_name).toBe(templateName);
-      expect(template?.frequency).toBe("monthly");
-      expect(template?.is_active).toBe(true);
-
-      await expect(page.getByText(templateName)).toBeVisible();
+      await expect(reviewButton).toBeEnabled();
+      const requestsBefore = allRequests.length;
+      await reviewButton.click();
+      await page.waitForTimeout(5000);
+      const bodyHtml = await page.locator("body").innerHTML().catch((e) => `<innerHTML failed: ${e}>`);
+      throw new Error(
+        `DIAG dump — requestsSinceClick=${JSON.stringify(allRequests.slice(requestsBefore))} ` +
+          `consoleErrors=${JSON.stringify(consoleErrors)} pageErrors=${JSON.stringify(pageErrors)} ` +
+          `urlAfterClick=${page.url()} ` +
+          `bodySnippet=${bodyHtml.slice(0, 1500)}`,
+      );
     } finally {
       if (templateId) await deleteTestRecurringExpenseTemplate(templateId);
     }
