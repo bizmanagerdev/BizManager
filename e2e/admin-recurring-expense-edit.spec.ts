@@ -23,8 +23,12 @@ test.describe("admin — recurring expenses (edit)", () => {
       await loginAs(page, "admin");
       await page.goto("/financial/payments-calendar?tab=recurring");
 
+      // The row list loads client-side after mount (unlike the create test's
+      // static "הוצאה קבועה חדשה" header button) — same generous timeout as
+      // admin-payments-calendar.spec.ts's own first data-dependent element,
+      // for the same reason.
       const menuTrigger = page.getByRole("button", { name: `פעולות — ${seed.template_name}` });
-      await expect(menuTrigger).toBeVisible();
+      await expect(menuTrigger).toBeVisible({ timeout: 15_000 });
       await menuTrigger.click();
       const editItem = page.getByRole("menuitem", { name: "עריכה" });
       await expect(editItem).toBeVisible();
