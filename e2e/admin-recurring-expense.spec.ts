@@ -54,12 +54,15 @@ test.describe("admin — recurring expenses", () => {
       // domain: שוטף (general_business) — auto-advances
       await page.getByRole("button", { name: "שוטף" }).click();
 
-      // category: wait for the step to actually render, then pick by exact
-      // label (DEFAULT_EXPENSE_CATEGORY = "רכישה", an ordinary category with
-      // no special submit branch) instead of a position index — see the file
-      // header for why.
+      // category: wait for the step to actually render, then pick by label
+      // (DEFAULT_EXPENSE_CATEGORY = "רכישה", an ordinary category with no
+      // special submit branch) instead of a position index — see the file
+      // header for why. Not exact: OptionRow bakes its numbered badge into
+      // the same button as a sibling text node, so the accessible name is
+      // "רכישה 2", not "רכישה" alone — no other category label contains
+      // "רכישה" as a substring, so a plain substring match stays unique.
       await expect(page.getByText("איזו קטגוריה?")).toBeVisible();
-      await page.getByRole("button", { name: "רכישה", exact: true }).click();
+      await page.getByRole("button", { name: "רכישה" }).click();
 
       // description: optional free text — skip
       await page.getByRole("button", { name: "המשך" }).click();
