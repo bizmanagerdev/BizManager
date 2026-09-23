@@ -23,11 +23,16 @@ test.describe("admin — recurring expenses (edit)", () => {
       await loginAs(page, "admin");
       await page.goto("/financial/payments-calendar?tab=recurring");
 
-      await page.getByRole("button", { name: `פעולות — ${seed.template_name}` }).click();
-      await page.getByRole("menuitem", { name: "עריכה" }).click();
+      const menuTrigger = page.getByRole("button", { name: `פעולות — ${seed.template_name}` });
+      await expect(menuTrigger).toBeVisible();
+      await menuTrigger.click();
+      const editItem = page.getByRole("menuitem", { name: "עריכה" });
+      await expect(editItem).toBeVisible();
+      await editItem.click();
 
       await expect(page.getByText("עריכת הוצאה קבועה")).toBeVisible();
       const nameInput = page.getByPlaceholder("למשל: שכירות משרד");
+      await expect(nameInput).toBeVisible();
       await expect(nameInput).toHaveValue(seed.template_name);
       await nameInput.fill(newName);
 
