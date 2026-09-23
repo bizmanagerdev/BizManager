@@ -1,5 +1,7 @@
+import { notFound } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
+import { canSeeMeetings } from "@/lib/auth/meetingsPreview";
 import { israelDateKey } from "@/lib/timezone";
 import {
   loadAssignableUsers,
@@ -19,6 +21,10 @@ export const revalidate = 0;
 
 export default async function MeetingsPage() {
   const { profile, supabase } = await requireStaffPage();
+  // TEMPORARY trial gate — see lib/auth/meetingsPreview.ts. notFound() rather
+  // than /no-access: while the page is one person's, it should look like it
+  // isn't there at all, not like a door someone is being kept out of.
+  if (!canSeeMeetings(profile.email)) notFound();
 
   const [meetings, users] = await Promise.all([loadMeetings(supabase, 60), loadAssignableUsers(supabase)]);
 

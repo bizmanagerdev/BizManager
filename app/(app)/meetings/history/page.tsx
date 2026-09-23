@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -6,6 +7,7 @@ import { MetaRow } from "@/components/ui/meta-row";
 import { SectionCard } from "@/components/ui/section-card";
 import { ArrowRightIcon, ChecklistIcon, HistoryIcon } from "@/components/ui/icons";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
+import { canSeeMeetings } from "@/lib/auth/meetingsPreview";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { loadMeetings } from "@/lib/meetings/load";
 import { cn } from "@/lib/utils";
@@ -28,6 +30,10 @@ function formatDate(iso: string): string {
 
 export default async function MeetingsHistoryPage() {
   const { profile, supabase } = await requireStaffPage();
+  // TEMPORARY trial gate — see lib/auth/meetingsPreview.ts. notFound() rather
+  // than /no-access: while the page is one person's, it should look like it
+  // isn't there at all, not like a door someone is being kept out of.
+  if (!canSeeMeetings(profile.email)) notFound();
   const meetings = await loadMeetings(supabase, 60);
 
   // One round trip for every meeting's tally, aggregated here — PostgREST has

@@ -4,6 +4,7 @@ import AppShell from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { ArrowRightIcon } from "@/components/ui/icons";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
+import { canSeeMeetings } from "@/lib/auth/meetingsPreview";
 import {
   loadAssignableUsers,
   loadMeetingById,
@@ -23,6 +24,10 @@ export const revalidate = 0;
 export default async function MeetingRecordPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { profile, supabase } = await requireStaffPage();
+  // TEMPORARY trial gate — see lib/auth/meetingsPreview.ts. notFound() rather
+  // than /no-access: while the page is one person's, it should look like it
+  // isn't there at all, not like a door someone is being kept out of.
+  if (!canSeeMeetings(profile.email)) notFound();
 
   const meeting = await loadMeetingById(supabase, id);
   if (!meeting) notFound();

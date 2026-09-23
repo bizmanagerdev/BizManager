@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { DEFAULT_SECTION_ACCESS, WORKER_SECTIONS, type SectionAccess } from "@/lib/auth/sections";
+import { canSeeMeetings } from "@/lib/auth/meetingsPreview";
 
 // useLayoutEffect is client-only (fires before paint, never on the server).
 // Falling back to useEffect on the server means the initial SSR state stays null
@@ -97,13 +98,19 @@ const SIDEBAR_ITEMS: SidebarNavItem[] = [
   { title: "הגדרות ניהול", url: "/settings", icon: SettingsIcon },
 ];
 
-// Three tabs + עוד, with the centre "+" taking the middle slot — so the bar
-// reads דשבורד · פרויקטים · [+] · מכירות · עוד. Five thumb targets, no more:
-// everything else lives behind עוד.
+// Four tabs + עוד, with the centre "+" between them — so the bar reads
+// דשבורד · פרויקטים · מכירות · [+] · ישיבה · עוד. The three originals keep
+// their order; the meeting is appended, so it lands on the far side of the FAB
+// (user, 2026-09-23: wanted it reachable from the bar, not behind עוד).
+//
+// "ישיבה", not "ישיבה שבועית": a tab here is a fifth of the bar's width, and
+// the full name cannot fit without truncating — which this app doesn't do. The
+// sidebar and עוד still carry the full name, where there is room for it.
 const BOTTOM_NAV_ITEMS: SidebarNavItem[] = [
   { title: "דשבורד", url: "/dashboard", icon: DashboardIcon },
   { title: "פרויקטים", url: "/projects", icon: ProjectIcon },
   { title: "מכירות", url: "/sales", icon: OrderIcon },
+  { title: "ישיבה", url: "/meetings", icon: ChecklistIcon },
 ];
 
 // עוד IS the sidebar minus the bar's own tabs — same order, same groups, same
@@ -144,12 +151,20 @@ const WORKER_NAV_ITEMS_AR: SidebarNavItem[] = [
   { title: "السيارات", url: "/vehicles", icon: VehicleIcon },
 ];
 
-function filterByRole(items: SidebarNavItem[], isAdmin: boolean, isOffice: boolean): SidebarNavItem[] {
+function filterByRole(
+  items: SidebarNavItem[],
+  isAdmin: boolean,
+  isOffice: boolean,
+  email: string | null | undefined
+): SidebarNavItem[] {
   return items.flatMap((item) => {
     if (item.children) {
-      const children = filterByRole(item.children, isAdmin, isOffice);
+      const children = filterByRole(item.children, isAdmin, isOffice, email);
       return children.length > 0 ? [{ ...item, children }] : [];
     }
+    // TEMPORARY: /meetings is one person's trial — see lib/auth/meetingsPreview.ts.
+    // Hiding the tab is cosmetic; the pages and the API route enforce it too.
+    if (item.url === "/meetings" && !canSeeMeetings(email)) return [];
     if (ADMIN_ONLY_URLS.has(item.url)) return isAdmin ? [item] : [];
     if (ADMIN_OR_OFFICE_URLS.has(item.url)) return isAdmin || isOffice ? [item] : [];
     return [item];
@@ -159,7 +174,9 @@ function filterByRole(items: SidebarNavItem[], isAdmin: boolean, isOffice: boole
 export function useNavItems(
   initialRole?: string | null,
   initialLocale?: string | null,
-  initialSectionAccess: SectionAccess = DEFAULT_SECTION_ACCESS
+  initialSectionAccess: SectionAccess = DEFAULT_SECTION_ACCESS,
+  /** Viewer's email — only used by the TEMPORARY /meetings trial gate below. */
+  initialEmail?: string | null
 ) {
   // No caching/fetch needed like role: AppShell mounts once per session (see its
   // "persist across navigations" comment) and the locale toggle in /profile
@@ -235,18 +252,23 @@ export function useNavItems(
   const isWorker = viewerRole === "worker";
 
   const sidebarItems = useMemo(
-    () => (isWorker ? workerNavItems : filterByRole(SIDEBAR_ITEMS, isAdmin, isOffice)),
-    [isAdmin, isOffice, isWorker, workerNavItems]
+    () => (isWorker ? workerNavItems : filterByRole(SIDEBAR_ITEMS, isAdmin, isOffice, initialEmail)),
+    [isAdmin, isOffice, isWorker, workerNavItems, initialEmail]
   );
-  // Three thumb targets + the centre "+", same as everyone else; the fourth
-  // destination ("השעות שלי") sits behind עוד so the bar keeps its shape.
+  // Three thumb targets + the centre "+" for a worker; the fourth destination
+  // ("השעות שלי") sits behind עוד so his bar keeps its shape.
+  //
+  // Staff get the bar filtered by role, the same way עוד already is: ישיבה is
+  // admin/office only, and this list is no longer safe to hand out whole —
+  // `isWorker` is the 'worker' role alone, so a worker_no_access account (or a
+  // viewer whose role hasn't resolved yet) reaches this branch too.
   const bottomNavItems = useMemo(
-    () => (isWorker ? workerNavItems.slice(0, 3) : BOTTOM_NAV_ITEMS),
-    [isWorker, workerNavItems]
+    () => (isWorker ? workerNavItems.slice(0, 3) : filterByRole(BOTTOM_NAV_ITEMS, isAdmin, isOffice, initialEmail)),
+    [isAdmin, isOffice, isWorker, workerNavItems, initialEmail]
   );
   const bottomNavMoreItems = useMemo(
-    () => (isWorker ? workerNavItems.slice(3) : filterByRole(BOTTOM_NAV_MORE_ITEMS, isAdmin, isOffice)),
-    [isAdmin, isOffice, isWorker, workerNavItems]
+    () => (isWorker ? workerNavItems.slice(3) : filterByRole(BOTTOM_NAV_MORE_ITEMS, isAdmin, isOffice, initialEmail)),
+    [isAdmin, isOffice, isWorker, workerNavItems, initialEmail]
   );
 
   return { sidebarItems, bottomNavItems, bottomNavMoreItems };

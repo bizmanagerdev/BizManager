@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { canSeeMeetings } from "@/lib/auth/meetingsPreview";
 import { toHebrewError } from "@/lib/error-messages";
 import { loadMeetingItems, loadPreviousMeeting, loadTemplates } from "@/lib/meetings/load";
 import { loadWeekStats } from "@/lib/meetings/stats";
@@ -17,6 +18,13 @@ export async function POST(req: Request) {
     const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
     const { supabase, profile } = access.value;
+
+    // TEMPORARY trial gate — see lib/auth/meetingsPreview.ts. The page is only
+    // one person's for now, and hiding the page without closing the route it
+    // posts to would leave the door unlocked behind it.
+    if (!canSeeMeetings(profile.email)) {
+      return NextResponse.json({ error: "לא נמצא" }, { status: 404 });
+    }
 
     const body = (await req.json().catch(() => ({}))) as {
       meeting_date?: string;

@@ -66,7 +66,9 @@ export default function AppShell({
   bottomNavMoreItems,
 }: Props) {
   const isNested = useContext(NestedAppShellContext);
-  const defaults = useNavItems(viewerRole, viewerLocale, viewerSectionAccess);
+  // initialMe.email feeds the TEMPORARY /meetings trial gate in filterByRole
+  // (see lib/auth/meetingsPreview.ts); app/(app)/layout.tsx always supplies it.
+  const defaults = useNavItems(viewerRole, viewerLocale, viewerSectionAccess, initialMe?.email);
 
   // Nested (a page rendered under the (app) layout): render content only.
   if (isNested) return <>{children}</>;
