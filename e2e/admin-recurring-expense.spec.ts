@@ -22,7 +22,7 @@ import { getRecurringExpenseTemplate, deleteTestRecurringExpenseTemplate } from 
 // returns the new template's id directly, so no DB polling is needed.
 test.describe("admin — recurring expenses", () => {
   test("admin can create a new recurring expense template", async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(90_000);
     const templateName = `E2E recurring ${Date.now()}`;
     let templateId: string | null = null;
     try {
@@ -74,9 +74,13 @@ test.describe("admin — recurring expenses", () => {
       // notes: optional — skip
       await page.getByRole("button", { name: "המשך" }).click();
 
-      // review — final submit
+      // review — final submit. The save route inserts the template AND
+      // generates its first occurrence(s) in the same request — give it more
+      // room than the default 30s under CI's slower conditions.
       const [response] = await Promise.all([
-        page.waitForResponse((r) => r.url().includes("/api/recurring-expenses/save") && r.request().method() === "POST"),
+        page.waitForResponse((r) => r.url().includes("/api/recurring-expenses/save") && r.request().method() === "POST", {
+          timeout: 60_000,
+        }),
         page.getByRole("button", { name: "שמור הוצאה קבועה" }).click(),
       ]);
       expect(response.ok()).toBe(true);
