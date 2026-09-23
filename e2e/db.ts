@@ -412,6 +412,64 @@ export async function deleteTestAttendanceSession(id: string): Promise<void> {
   if (error) throw error;
 }
 
+// A real, already-closed session with a labor_cost — worker_debt_items_view's
+// session_items CTE picks up any attendance_sessions row for a
+// pay_tracking_mode='session' worker (createTestWorker's own DB default,
+// unset by createTestWorker unless payrollWorkerType overrides it) with
+// labor_cost > 0, with no approval/status gate of its own (unlike
+// phone_attendance_reports, which is only a staging table for the phone
+// clock-in flow) — so this is the direct, minimal way to seed a worker debt
+// payoff scenario without going through attendance UI or payroll periods at
+// all. getPayableDebtAmount() has no date gate for session-type items either
+// (only payslips do), so it's payable the moment it exists.
+export async function createTestAttendanceSession(
+  userId: string,
+  overrides: { laborCost?: number; clockIn?: Date; clockOut?: Date } = {}
+): Promise<{ id: string }> {
+  const clockIn = overrides.clockIn ?? new Date(Date.now() - 4 * 60 * 60_000);
+  const clockOut = overrides.clockOut ?? new Date(Date.now() - 60 * 60_000);
+  const workedMinutes = Math.round((clockOut.getTime() - clockIn.getTime()) / 60_000);
+  const { data, error } = await adminClient()
+    .from("attendance_sessions")
+    .insert({
+      user_id: userId,
+      clock_in: clockIn.toISOString(),
+      clock_out: clockOut.toISOString(),
+      worked_minutes: workedMinutes,
+      labor_cost: overrides.laborCost ?? 180,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data as { id: string };
+}
+
+// Mirrors exactly what worker_debt_items_view (and so the payment dialog's
+// "יתרה להקצאה" figure) reports for one session — the real source of truth
+// for "did the payoff actually clear the debt", not just "did a payment row
+// get inserted somewhere."
+export async function getSessionDebtStatus(
+  sessionId: string
+): Promise<{ payment_status: string; owed_amount: number; paid_amount: number } | null> {
+  const { data, error } = await adminClient()
+    .from("worker_debt_items_view")
+    .select("payment_status,owed_amount,paid_amount")
+    .eq("source_type", "session")
+    .eq("source_id", sessionId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as { payment_status: string; owed_amount: number; paid_amount: number } | null;
+}
+
+// worker_payment_allocations.worker_payment_id cascades, but
+// .attendance_session_id has no ON DELETE action (RESTRICT) — delete the
+// payment (and so its allocations) before deleting the session it was
+// allocated against, same ordering deleteTestWorker's own caller must use.
+export async function deleteTestWorkerPayment(paymentId: string): Promise<void> {
+  const { error } = await adminClient().from("worker_payments").delete().eq("id", paymentId);
+  if (error) throw error;
+}
+
 export type WorkerSectionAccess = Partial<{
   dashboard: boolean;
   deliveries: boolean;
