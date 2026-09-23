@@ -556,6 +556,25 @@ export async function getRecurringExpenseTemplate(
   return data as { id: string; template_name: string; frequency: string; is_active: boolean } | null;
 }
 
+export async function createTestRecurringExpenseTemplate(
+  overrides: { templateName?: string; category?: string; amount?: number } = {}
+): Promise<{ id: string; template_name: string }> {
+  const { data, error } = await adminClient()
+    .from("recurring_expense_templates")
+    .insert({
+      template_name: overrides.templateName ?? `E2E recurring seed ${Date.now()}`,
+      category: overrides.category ?? "רכישה",
+      amount: overrides.amount ?? 250,
+      business_domain: "general_business",
+      frequency: "monthly",
+      is_active: true,
+    })
+    .select("id,template_name")
+    .single();
+  if (error) throw error;
+  return data as { id: string; template_name: string };
+}
+
 // Saving a new template also generates its first occurrence(s) as real
 // `expenses` rows (expenses.recurring_expense_template_id is ON DELETE SET
 // NULL, so deleting the template alone wouldn't clean those up) — delete
