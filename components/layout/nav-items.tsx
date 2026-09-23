@@ -31,7 +31,7 @@ function writeCachedRole(role: string) {
     // storage full or private mode
   }
 }
-import { ActivityIcon, BankIcon, BuildingIcon, CalendarIcon, CardIcon, CashIcon, ChatIcon, ClockIcon, CoinsIcon, DashboardIcon, DeliveryIcon, FolderIcon, HomeIcon, OrderIcon, PaymentIcon, ProjectIcon, ReceiptIcon, ReportIcon, ScheduleIcon, SettingsIcon, TaskIcon, TransferIcon, UsersIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
+import { ActivityIcon, BankIcon, BuildingIcon, CalendarIcon, CardIcon, CashIcon, ChatIcon, ChecklistIcon, ClockIcon, CoinsIcon, DashboardIcon, DeliveryIcon, FolderIcon, HomeIcon, OrderIcon, PaymentIcon, ProjectIcon, ReceiptIcon, ReportIcon, ScheduleIcon, SettingsIcon, TaskIcon, TransferIcon, UsersIcon, VehicleIcon, WalletIcon } from "@/components/ui/icons";
 import { fetchMyProfile } from "@/lib/profile/fetchMyProfile";
 
 export type SidebarNavItem = {
@@ -46,6 +46,9 @@ const SIDEBAR_ITEMS: SidebarNavItem[] = [
   { title: "יומן", url: "/calendar", icon: CalendarIcon },
   { title: "פרויקטים", url: "/projects", icon: ProjectIcon },
   { title: "משימות", url: "/tasks", icon: TaskIcon },
+  // The weekly office meeting is run FROM the app, so it needs a door of its
+  // own — it sits next to משימות because that is what it produces.
+  { title: "ישיבה שבועית", url: "/meetings", icon: ChecklistIcon },
   { title: "מכירות", url: "/sales", icon: OrderIcon },
   { title: "לקוחות", url: "/customers", icon: UsersIcon },
   { title: "תיעוד פניות", url: "/communications", icon: ChatIcon },
@@ -115,7 +118,7 @@ const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = SIDEBAR_ITEMS.filter((item) => !
 export const EXACT_MATCH_CHILDREN = new Set(["/financial", "/payroll"]);
 
 const ADMIN_ONLY_URLS = new Set(["/activity", "/financial", "/settings", "/financial/loans", "/financial/reports", "/financial/bank"]);
-const ADMIN_OR_OFFICE_URLS = new Set<string>(["/payroll", "/payroll/attendance", "/collections", "/communications", "/checks", "/financial/statements", "/financial/taxes", "/financial/payments-calendar", "/vehicles"]);
+const ADMIN_OR_OFFICE_URLS = new Set<string>(["/meetings", "/payroll", "/payroll/attendance", "/collections", "/communications", "/checks", "/financial/statements", "/financial/taxes", "/financial/payments-calendar", "/vehicles"]);
 
 // A worker's whole world — the sections an admin has granted him (see
 // WORKER_SECTIONS in lib/auth/sections.ts; every entry here has a matching
