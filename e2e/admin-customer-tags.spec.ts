@@ -40,8 +40,11 @@ test.describe("admin — customer tags", () => {
 
       // createTagDirect() is async (insert + re-render) — the removable chip
       // appearing is the real confirmation, not just the click having fired.
+      // (Not also asserting on the tag's name text: once created+selected it
+      // renders twice — the chip AND its own now-checked row in the still-
+      // open available-tags list below — a plain getByText(tagName) is a
+      // strict-mode violation between the two.)
       await expect(page.getByRole("button", { name: "הסרה" })).toBeVisible();
-      await expect(page.getByText(tagName)).toBeVisible();
 
       const [response] = await Promise.all([
         page.waitForResponse((r) => r.url().includes("/api/customers/update") && r.request().method() === "POST"),
