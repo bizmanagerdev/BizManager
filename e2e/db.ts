@@ -573,6 +573,28 @@ export async function tagEntityAsVehicle(
   if (error) throw error;
 }
 
+// Same entity_tags backbone tagEntityAsVehicle uses, entity_type="customer"
+// (TagPicker's own createTagDirect() creates the tags row client-side; this
+// is only for reading back / cleaning up what the UI wrote).
+export async function getCustomerTagNames(customerId: string): Promise<string[]> {
+  const { data, error } = await adminClient()
+    .from("entity_tags")
+    .select("tags(name)")
+    .eq("entity_type", "customer")
+    .eq("entity_id", customerId);
+  if (error) throw error;
+  return ((data ?? []) as unknown as { tags: { name: string } | null }[])
+    .map((r) => r.tags?.name)
+    .filter((name): name is string => Boolean(name));
+}
+
+// tags.id is entity_tags.tag_id's ON DELETE CASCADE target — deleting the
+// tag alone cleans up any entity_tags row pointing at it too.
+export async function deleteTestTagByName(name: string): Promise<void> {
+  const { error } = await adminClient().from("tags").delete().eq("name", name);
+  if (error) throw error;
+}
+
 export type TestExpense = { id: string };
 
 export async function createTestExpense(
