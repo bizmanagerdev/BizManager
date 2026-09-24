@@ -607,6 +607,67 @@ export async function deleteTestExpense(id: string): Promise<void> {
   if (error) throw error;
 }
 
+// A card statement + one draft row, seeded directly rather than through the
+// XLSX/PDF upload+parse wizard (unit-tested thoroughly already in
+// __tests__/lib/financial/cardImport.test.ts) — this is for exercising the
+// statement DETAIL page's own review/confirm step
+// (POST /api/expenses/statement-rows/create-expenses), which nothing else
+// covers. include defaults to true at the DB level (baseline.sql), and a
+// business_domain set here already satisfies eligibleRows' filter
+// (StatementDetailClient.tsx: !expenseExists && !expenseId && include &&
+// isExpenseBusinessDomain(businessDomain) && amount > 0) — a fresh row is
+// eligible for "צור הוצאות" with no further UI interaction needed.
+export async function createTestCardStatement(
+  overrides: { fileName?: string } = {}
+): Promise<{ id: string }> {
+  const { data, error } = await adminClient()
+    .from("card_statements")
+    .insert({ file_name: overrides.fileName ?? `e2e-statement-${Date.now()}.csv`, source: "excel", total_rows: 1 })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data as { id: string };
+}
+
+export async function createTestCardStatementRow(
+  statementId: string,
+  overrides: { amount?: number; description?: string; businessDomain?: string; expenseDate?: string } = {}
+): Promise<{ id: string }> {
+  const { data, error } = await adminClient()
+    .from("card_statement_rows")
+    .insert({
+      statement_id: statementId,
+      expense_date: overrides.expenseDate ?? new Date().toISOString().slice(0, 10),
+      amount: overrides.amount ?? 220,
+      description: overrides.description ?? `E2E merchant ${Date.now()}`,
+      category: "כרטיס אשראי",
+      business_domain: overrides.businessDomain ?? "general_business",
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data as { id: string };
+}
+
+export async function getCardStatementRowExpenseId(rowId: string): Promise<string | null> {
+  const { data, error } = await adminClient()
+    .from("card_statement_rows")
+    .select("expense_id")
+    .eq("id", rowId)
+    .single();
+  if (error) throw error;
+  return (data as { expense_id: string | null }).expense_id;
+}
+
+// card_statement_rows.statement_id is ON DELETE CASCADE — deleting the
+// statement alone is enough, but the CREATED expense isn't touched by that
+// (expense_id is ON DELETE SET NULL, the other direction) and needs its own
+// cleanup first, same as any other test-created expense.
+export async function deleteTestCardStatement(id: string): Promise<void> {
+  const { error } = await adminClient().from("card_statements").delete().eq("id", id);
+  if (error) throw error;
+}
+
 export async function getExpensePaymentStatus(id: string): Promise<string | null> {
   const { data, error } = await adminClient().from("expenses").select("payment_status").eq("id", id).single();
   if (error) throw error;
