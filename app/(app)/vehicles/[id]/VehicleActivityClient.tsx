@@ -37,6 +37,7 @@ import { FormDialog } from "@/components/ui/form-dialog";
 import type { EditingExpenseData } from "@/components/expenses/ExpenseDialog";
 import type { UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { DOCUMENT_CATEGORIES, inferDefaultDocumentCategory } from "@/lib/documents";
+import MissingDocumentsChecklist from "@/components/documents/MissingDocumentsChecklist";
 import { formatCurrency } from "@/lib/payroll";
 import {
   isVehicleTaskOpen,
@@ -465,6 +466,7 @@ export default function VehicleActivityClient({
   const [docFiles, setDocFiles] = useState<File[]>([]);
   const [docYear, setDocYear] = useState("");
   const [docCategory, setDocCategory] = useState("");
+  const [checklistKey, setChecklistKey] = useState(0);
   const [docBusy, setDocBusy] = useState(false);
   // delete
   const [del, setDel] = useState<{ kind: string; id: string; label: string } | null>(null);
@@ -490,10 +492,10 @@ export default function VehicleActivityClient({
     setEditTaskId(id);
     setTaskOpen(true);
   }
-  function openAddDoc() {
+  function openAddDoc(presetCategory = "") {
     setDocFiles([]);
     setDocYear("");
-    setDocCategory("");
+    setDocCategory(presetCategory);
     setDocOpen(true);
   }
 
@@ -535,6 +537,7 @@ export default function VehicleActivityClient({
       }
       if (done === docFiles.length) {
         setDocOpen(false);
+        setChecklistKey((k) => k + 1);
         refresh();
       }
     } finally {
@@ -732,12 +735,18 @@ export default function VehicleActivityClient({
               <DocumentIcon className="h-4 w-4" />
               מסמכים ({documents.length})
             </CardTitle>
-            <Button size="sm" variant="outline" onClick={openAddDoc}>
+            <Button size="sm" variant="outline" onClick={() => openAddDoc()}>
               <AddIcon className="h-4 w-4" />
               מסמך
             </Button>
           </CardHeader>
           <CardContent className="space-y-2 px-1">
+            <MissingDocumentsChecklist
+              entityType="vehicle"
+              entityId={tagId}
+              refreshKey={checklistKey}
+              onUpload={(code) => openAddDoc(code)}
+            />
             {documents.length === 0 ? (
               <p className="text-sm text-muted-foreground">אין מסמכים מתויגים לרכב זה.</p>
             ) : (

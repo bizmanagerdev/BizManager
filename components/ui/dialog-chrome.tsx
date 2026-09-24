@@ -224,7 +224,7 @@ export function DialogChromeHeader({
             onClick={onClose}
             disabled={closeDisabled}
             aria-label={closeLabel}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
           >
             <CloseIcon className="h-5 w-5" />
           </button>

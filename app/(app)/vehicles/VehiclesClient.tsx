@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { DocumentIcon, EditIcon, DeleteIcon, ExpenseIcon, MoreIcon, NotificationIcon, TaskIcon } from "@/components/ui/icons";
+import { ChevronDownIcon, DocumentIcon, EditIcon, DeleteIcon, ExpenseIcon, MoreIcon, NotificationIcon, TaskIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
 import { MetaRow } from "@/components/ui/meta-row";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
 } from "@/components/ui/dropdown-menu";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -37,7 +39,30 @@ import { scheduleDeferredDelete, scheduleDeferredEdit, registerReversibleCreate 
 
 export default function VehiclesClient({ vehicles: vehiclesProp }: { vehicles: VehicleWithRollup[] }) {
   const router = useRouter();
-  const vehicles = useUndoOverlay(vehiclesProp, (v) => v.tagId, "vehicle");
+  const ordered = useUndoOverlay(vehiclesProp, (v) => v.tagId, "vehicle");
+  const [sortBy, setSortBy] = useState<"name" | "expiry">("name");
+
+  // The soonest of a car's three dates is what decides its place in the list —
+  // a car is "due" as soon as any one of its papers is.
+  const nearestExpiry = (vehicle: VehicleWithRollup) => {
+    const dates = [vehicle.testDueDate, vehicle.insuranceDueDate, vehicle.licenseDueDate].filter(
+      (date): date is string => Boolean(date)
+    );
+    return dates.length > 0 ? dates.sort()[0]! : null;
+  };
+
+  const vehicles = useMemo(() => {
+    if (sortBy !== "expiry") return ordered;
+    // A car with no dates at all sinks: it has nothing to be due.
+    return [...ordered].sort((a, b) => {
+      const av = nearestExpiry(a);
+      const bv = nearestExpiry(b);
+      if (!av && !bv) return 0;
+      if (!av) return 1;
+      if (!bv) return -1;
+      return av.localeCompare(bv);
+    });
+  }, [ordered, sortBy]);
   const [pending, startTransition] = useTransition();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTagId, setEditTagId] = useState<string | null>(null);
@@ -158,6 +183,27 @@ export default function VehiclesClient({ vehicles: vehiclesProp }: { vehicles: V
 
   return (
     <PageStack>
+      {vehicles.length > 1 ? (
+        <div className="flex items-center justify-end">
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" size="sm" variant="outline" className="gap-2 font-medium">
+                <span>מיון: {sortBy === "expiry" ? "תוקף קרוב" : "שם"}</span>
+                <ChevronDownIcon className="h-4 w-4 shrink-0" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuRadioGroup
+                value={sortBy}
+                onValueChange={(value: string) => setSortBy(value === "expiry" ? "expiry" : "name")}
+              >
+                <DropdownMenuRadioItem value="name">שם</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="expiry">תוקף קרוב</DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      ) : null}
       {vehicles.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-muted-foreground">

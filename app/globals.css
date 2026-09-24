@@ -154,6 +154,9 @@
     --secondary-8: 125 211 252;  /* #7DD3FC (sky-300) */
     --secondary-9: 186 230 253;  /* #BAE6FD (sky-200) */
     --secondary-10: 224 242 254; /* #E0F2FE (sky-100) */
+    --secondary-11: 240 248 254; /* #F0F8FE — half a step past sky-100, for a
+                                    surface that has to read as a container
+                                    while staying quieter than --muted */
 
     /* === FUNCTIONAL COLOR ANCHORS (one shade per family) ===
        Each color has exactly ONE "anchor" (-4) — the color you see as the
@@ -277,6 +280,10 @@
 
     --muted: var(--secondary-10);
     --muted-foreground: var(--primary-5);
+
+    /* A tray: the tint a group of cards sits ON, so the grouping reads without
+       a border. Lighter than --muted, which is a control's own fill. */
+    --tray: var(--secondary-11);
 
     --accent: var(--secondary-10);
     --accent-foreground: var(--secondary-3);

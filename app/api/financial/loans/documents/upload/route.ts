@@ -4,6 +4,7 @@ import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { STORAGE_BUCKET } from "@/lib/storage";
+import { insertDocumentRow } from "@/lib/documents/insert";
 
 const BUCKET = STORAGE_BUCKET;
 const MAX_BYTES = 200 * 1024 * 1024;
@@ -53,9 +54,10 @@ export async function POST(req: Request) {
     });
     if (uploadError) return NextResponse.json({ error: toHebrewError(uploadError.message) }, { status: 400 });
 
-    const { error: docError } = await supabase.from("documents").insert({
+    const { error: docError } = await insertDocumentRow(supabase, {
       id: documentId,
-      document_type: category || "loan_document",
+      document_type: category || "",
+      source: "loan_document",
       title: displayName,
       file_name: displayName,
       storage_key: storagePath,
@@ -90,7 +92,7 @@ export async function POST(req: Request) {
       document: {
         id: documentId,
         file_name: displayName,
-        document_type: category || "loan_document",
+        document_type: category || "",
         uploaded_at: uploadedAt,
       },
     });

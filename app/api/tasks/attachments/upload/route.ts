@@ -3,6 +3,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { STORAGE_BUCKET } from "@/lib/storage";
+import { insertDocumentRow } from "@/lib/documents/insert";
 
 const BUCKET = STORAGE_BUCKET;
 const MAX_BYTES = 200 * 1024 * 1024;
@@ -53,9 +54,10 @@ export async function POST(req: Request) {
 
     const uploadedAt = new Date().toISOString();
 
-    const { error: docError } = await supabase.from("documents").insert({
+    const { error: docError } = await insertDocumentRow(supabase, {
       id: documentId,
-      document_type: "task_attachment",
+      document_type: "",
+      source: "task_attachment",
       title: displayName,
       file_name: displayName,
       storage_key: storagePath,

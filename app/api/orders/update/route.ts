@@ -18,6 +18,7 @@ import {
 } from "@/lib/morning/service";
 import { computeDueDate, normalizePaymentTerms } from "@/lib/paymentTerms";
 import { STORAGE_BUCKET } from "@/lib/storage";
+import { insertDocumentRow } from "@/lib/documents/insert";
 
 const BUCKET = STORAGE_BUCKET;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -327,10 +328,12 @@ export async function POST(req: Request) {
       }
 
       const uploadedAt = new Date().toISOString();
-      const { error: docError } = await supabase.from("documents").insert(
+      const { error: docError } = await insertDocumentRow(
+        supabase,
         prepared.map((entry) => ({
           id: entry.documentId,
           document_type: "order_delivery_image",
+          source: "order_delivery_image",
           business_domain: "sales", // order documents always belong to the מכירות domain
           title: entry.displayName,
           file_name: entry.displayName,

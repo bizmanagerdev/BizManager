@@ -37,6 +37,8 @@ import EntityActivityTimeline from "@/app/(app)/activity/EntityActivityTimeline"
 import { notFound } from "next/navigation";
 import AddContactButton from "./AddContactButton";
 import AddCustomerDocumentButton from "./AddCustomerDocumentButton";
+import MissingDocumentsChecklist from "@/components/documents/MissingDocumentsChecklist";
+import { getDocumentCategoryLabel } from "@/lib/documents";
 import CustomerCollectionSection from "./CustomerCollectionSection";
 import CustomerTasksSection, { type CustomerTaskItem } from "./CustomerTasksSection";
 import PaymentPromises from "@/components/collections/PaymentPromises";
@@ -1484,6 +1486,7 @@ export default async function CustomerDetailsPage({
                   </div>
                 }
               >
+                <MissingDocumentsChecklist entityType="customer" entityId={id} />
                 <div className="divide-y divide-border/60">
                   {customerDocuments.map((doc) => {
                     const inner = (
@@ -1492,7 +1495,9 @@ export default async function CustomerDetailsPage({
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="font-medium">{doc.name}</span>
                             {doc.type ? (
-                              <Badge className={getStatusColorClasses("neutral")}>{doc.type}</Badge>
+                              <Badge className={getStatusColorClasses("neutral")}>
+                                {getDocumentCategoryLabel(doc.type)}
+                              </Badge>
                             ) : null}
                           </div>
                           <div className="mt-0.5 text-xs text-muted-foreground">

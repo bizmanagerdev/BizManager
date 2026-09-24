@@ -616,6 +616,8 @@ const RULE_NAV_URL: Record<string, string> = {
   // ops
   low_stock: "/sales",
   vehicle_expiry: "/vehicles",
+  document_expiry: "/documents",
+  document_unlinked_money: "/documents?money=unlinked",
 };
 
 export type NavCountSeverity = "danger" | "warning" | "info";

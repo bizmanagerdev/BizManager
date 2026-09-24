@@ -68,6 +68,7 @@ import {
 } from "@/lib/payroll";
 import { shouldShowSessionHours, shouldShowSessionPrice, type PayrollWorkerType } from "@/lib/payroll-worker-type";
 import type { UserRole } from "@/lib/auth/requireProfile";
+import { isImageDocument } from "@/lib/documents";
 
 type PaymentStatus = "paid" | "partial" | "not_paid";
 type PaymentChoice = "none" | "paid" | "partial";
@@ -336,8 +337,7 @@ function accountKindIcon(kind: string | null | undefined) {
 }
 
 function isImageAttachment(attachment: Pick<FinancialAttachment, "file_name" | "document_type">) {
-  const name = attachment.file_name?.toLowerCase() ?? "";
-  return /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif|avif)$/i.test(name) || attachment.document_type?.includes("photo");
+  return isImageDocument(attachment);
 }
 
 async function uploadAttachment(

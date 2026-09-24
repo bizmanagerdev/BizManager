@@ -4,6 +4,7 @@ import { hasDeliveriesAccess } from "@/lib/auth/roleAccess";
 import { toHebrewError } from "@/lib/error-messages";
 import { withIdempotency } from "@/lib/idempotency";
 import { STORAGE_BUCKET } from "@/lib/storage";
+import { insertDocumentRow } from "@/lib/documents/insert";
 
 const BUCKET = STORAGE_BUCKET;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -62,9 +63,12 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
     if (uploadError) return NextResponse.json({ error: toHebrewError(uploadError.message) }, { status: 400 });
 
     const uploadedAt = new Date().toISOString();
-    const { error: docError } = await supabase.from("documents").insert({
+    const { error: docError } = await insertDocumentRow(supabase, {
       id: documentId,
+      // Group C: this literal is matched downstream (orders page + edit-data
+      // route). source is added alongside it, never instead of it.
       document_type: "order_delivery_image",
+      source: "order_delivery_image",
       business_domain: "sales", // order documents always belong to the מכירות domain
       title: displayName,
       file_name: displayName,

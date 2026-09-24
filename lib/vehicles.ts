@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { expiryBadgeTone, expiryLabel, getExpiryStatus } from "@/lib/documents/expiry";
 import { fetchAllPaged } from "@/lib/supabase/paginate";
 import { STORAGE_BUCKET } from "@/lib/storage";
 
@@ -612,17 +613,31 @@ export async function fetchVehicleActivity(
 export type ExpiryTone = "destructive" | "warning" | "success";
 export type ExpiryStatus = { tone: ExpiryTone; label: string; days: number } | null;
 
-/** Days until a due date; <0 expired (red), <=30 expiring (amber), else valid (green). */
+/** A car's papers warn a month out, matching the seeded document categories. */
+export const VEHICLE_EXPIRY_LEAD_DAYS = 30;
+
+/**
+ * A vehicle's date, judged by the same rules a document's is — one definition of
+ * "expired", one of "soon", one Hebrew plural. The wording used to be its own
+ * ("בעוד 5 ימים", "פג לפני 3 ימים") and the day boundary was the BROWSER's, so a
+ * phone abroad could call a test overdue a day early.
+ *
+ * The shape stays as it was for the rows that render it, including the
+ * "בתוקף" state a document does not bother showing: on a car, all three dates
+ * are always on screen, and a blank beside "טסט" reads as unknown rather than
+ * as fine.
+ */
 export function expiryStatus(dueDate: string | null): ExpiryStatus {
   if (!dueDate) return null;
-  const due = new Date(`${dueDate}T00:00:00`);
-  if (Number.isNaN(due.getTime())) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const days = Math.round((due.getTime() - today.getTime()) / 86_400_000);
-  if (days < 0) return { tone: "destructive", label: `פג לפני ${Math.abs(days)} ימים`, days };
-  if (days <= 30) return { tone: "warning", label: days === 0 ? "פג היום" : `בעוד ${days} ימים`, days };
-  return { tone: "success", label: "בתוקף", days };
+  const result = getExpiryStatus(dueDate, VEHICLE_EXPIRY_LEAD_DAYS);
+  if (result.status === "missing") return null;
+  if (result.status === "valid") return { tone: "success", label: "בתוקף", days: result.daysLeft ?? 0 };
+  const tone = expiryBadgeTone(result.status);
+  return {
+    tone: tone ?? "success",
+    label: expiryLabel(result) ?? "בתוקף",
+    days: result.daysLeft ?? 0,
+  };
 }
 
 /** "123456" → `123,456 ק"מ`, or null when unset (so callers can drop it from a joined subtitle line). */

@@ -146,6 +146,41 @@ export async function updateVehicle(tagId: string, input: VehicleInput): Promise
  * themselves via the log table's trigger — this never writes to `vehicles`
  * directly.
  */
+/**
+ * Sets ONE of a vehicle's expiry dates.
+ *
+ * Deliberately narrow, and not a variant of updateVehicle: the caller is the
+ * documents archive, which holds a document and a tag id but no vehicle.
+ * Rebuilding a VehicleInput from that would write blanks over every field it
+ * never loaded — the plate, the model, the owner.
+ */
+export async function setVehicleExpiryDate(
+  tagId: string,
+  kind: "test" | "insurance" | "license",
+  date: string
+): Promise<ActionResult> {
+  try {
+    const ctx = await getVehiclesContext();
+    if (!ctx.ok) return { ok: false, error: ctx.error };
+    if (!tagId) return { ok: false, error: "חסר מזהה רכב." };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: "תאריך לא תקין." };
+
+    const column =
+      kind === "test" ? "test_due_date" : kind === "insurance" ? "insurance_due_date" : "license_due_date";
+
+    const { error } = await ctx.supabase
+      .from("vehicles")
+      .update({ [column]: date, updated_at: new Date().toISOString() })
+      .eq("tag_id", tagId);
+    if (error) return { ok: false, error: toHebrewError(error.message, "שגיאה בעדכון הרכב.") };
+
+    revalidateVehicles(tagId);
+    return { ok: true, tagId };
+  } catch (error) {
+    return { ok: false, error: toHebrewError(error, "שגיאה בעדכון הרכב.") };
+  }
+}
+
 export async function addVehicleMileageReading(tagId: string, reading: number): Promise<ActionResult> {
   try {
     const ctx = await getVehiclesContext();

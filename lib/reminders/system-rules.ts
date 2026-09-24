@@ -12,6 +12,9 @@ import { addWorkingDays, subtractWorkingDays, toDateOnly } from "@/lib/dashboard
 import { getRuleSettings, getDunningStages } from "@/lib/notifications/alert-config";
 import { loadProjectedRecurringExpenses } from "@/lib/payables";
 import { loadOutflowSources } from "@/lib/outflow-sources";
+import { fetchDocumentCategories } from "@/lib/documents/categories";
+import { supersededDocumentIds } from "@/lib/documents/expiry";
+import { UNLINKED_MONEY_GRACE_DAYS } from "@/lib/documents/moneyLink";
 import type { OutflowSourceKind } from "@/lib/outflow-source-settings";
 
 // ---------------------------------------------------------------------------
@@ -405,6 +408,191 @@ const leaseExpiryRule: SystemRule = {
       });
     }
     return items;
+  },
+};
+
+
+const documentExpiryRule: SystemRule = {
+  key: "document_expiry",
+  label: "מסמכים — תוקף פג או מתקרב",
+  async evaluate(supabase, ctx) {
+    // Which categories expire is a registry decision, not a hardcoded list —
+    // an admin turns "מעקב תוקף" on for a category and it starts alerting.
+    const categories = await fetchDocumentCategories(supabase);
+    const tracking = categories.filter((c) => c.active && c.tracks_expiry);
+    if (tracking.length === 0) return [];
+
+    const leadByCode = new Map(tracking.map((c) => [c.code, c.expiry_lead_days]));
+    const labelByCode = new Map(tracking.map((c) => [c.code, c.label]));
+
+    const { data, error } = await supabase
+      .from("documents")
+      .select("id,title,file_name,document_type,valid_until")
+      .in("document_type", Array.from(leadByCode.keys()))
+      .not("valid_until", "is", null)
+      .range(0, 499);
+    if (error) {
+      // Pre-migration the column does not exist yet — stay quiet rather than
+      // breaking the whole sync, the same way vehicleExpiryRule tolerates a
+      // missing vehicles table.
+      if (error.code === "42703" || (error.message ?? "").includes("valid_until")) return [];
+      throwIf(error, "documents(expiry)");
+    }
+
+    const rows = (data ?? []) as Row[];
+    if (rows.length === 0) return [];
+
+    // Links make the inbox item actionable — jump to the vehicle or property the
+    // paper belongs to, not just to the file. Both lookups are best-effort.
+    const ids = rows.map((r) => getString(r, "id")).filter((v): v is string => Boolean(v));
+    const linksByDoc = new Map<string, NonNullable<SystemReminderItem["links"]>>();
+    const { data: linkRows } = await supabase
+      .from("document_links")
+      .select("document_id,entity_type,entity_id")
+      .in("document_id", ids);
+    const LINK_KEY: Record<string, keyof NonNullable<SystemReminderItem["links"]>> = {
+      customer: "customer_id",
+      order: "order_id",
+      project: "project_id",
+      property: "property_id",
+      payment: "payment_id",
+      task: "task_id",
+      expense: "expense_id",
+    };
+    for (const row of (linkRows ?? []) as Row[]) {
+      const docId = getString(row, "document_id");
+      const key = LINK_KEY[getString(row, "entity_type") ?? ""];
+      const entityId = getString(row, "entity_id");
+      if (!docId || !key || !entityId) continue;
+      const existing = linksByDoc.get(docId) ?? {};
+      existing[key] = entityId;
+      linksByDoc.set(docId, existing);
+    }
+
+    // A vehicle's documents hang off entity_tags, not document_links — and a
+    // vehicle insurance certificate is the single most likely thing to expire.
+    const { data: tagRows } = await supabase
+      .from("entity_tags")
+      .select("entity_id,tag_id,tags!inner(kind)")
+      .eq("entity_type", "document")
+      .in("entity_id", ids);
+    for (const row of (tagRows ?? []) as Row[]) {
+      const tagRow = (Array.isArray(row.tags) ? row.tags[0] : row.tags) as Row | undefined;
+      if (getString(tagRow, "kind") !== "vehicle") continue;
+      const docId = getString(row, "entity_id");
+      const tagId = getString(row, "tag_id");
+      if (!docId || !tagId) continue;
+      const existing = linksByDoc.get(docId) ?? {};
+      existing.vehicle_id = tagId;
+      linksByDoc.set(docId, existing);
+    }
+
+    // Last year's insurance is not a job to do — this year's replaced it. The
+    // vehicle wins as the identity when there is one, because that is how a car
+    // holds its papers; otherwise the first link of any kind.
+    const entityKeyOf = (docId: string) => {
+      const links = linksByDoc.get(docId);
+      if (!links) return "";
+      if (links.vehicle_id) return `vehicle:${links.vehicle_id}`;
+      const first = Object.entries(links).find(([, value]) => Boolean(value));
+      return first ? `${first[0]}:${first[1]}` : "";
+    };
+    const superseded = supersededDocumentIds(
+      rows.map((row) => ({
+        id: getString(row, "id") ?? "",
+        category: getString(row, "document_type") ?? "",
+        validUntil: getString(row, "valid_until") ?? null,
+        entityKey: entityKeyOf(getString(row, "id") ?? ""),
+      }))
+    );
+
+    const items: SystemReminderItem[] = [];
+    for (const row of rows) {
+      const id = getString(row, "id");
+      const validUntil = getString(row, "valid_until");
+      const code = getString(row, "document_type") ?? "";
+      if (!id || !validUntil) continue;
+      if (superseded.has(id)) continue;
+
+      // Every dated document in these categories was fetched, so that a newer
+      // one could retire an older one; only those inside their own category's
+      // window become items.
+      const lead = leadByCode.get(code) ?? 30;
+      const cutoff = new Date(ctx.today);
+      cutoff.setDate(cutoff.getDate() + lead);
+      if (validUntil > cutoff.toISOString().slice(0, 10)) continue;
+
+      const name = getString(row, "title") || getString(row, "file_name") || "מסמך";
+      const kind = labelByCode.get(code) ?? code;
+      const overdue = validUntil < ctx.todayIso;
+      items.push({
+        key: id,
+        title: `${kind} — ${name}`,
+        content: overdue
+          ? `התוקף פג בתאריך ${validUntil}.`
+          : `התוקף יפוג בתאריך ${validUntil}.`,
+        url: `/documents?focus=${id}`,
+        severity: (overdue ? "danger" : "warning") as Severity,
+        behavior: "ping_once" as Behavior,
+        audienceRole: "office" as AudienceRole,
+        links: linksByDoc.get(id),
+      });
+    }
+    return items;
+  },
+};
+
+
+const unlinkedMoneyDocumentsRule: SystemRule = {
+  key: "document_unlinked_money",
+  label: "מסמכים כספיים שלא שויכו לתנועה",
+  async evaluate(supabase, ctx) {
+    // A מסמך כספי (חשבונית, קבלה, צק, קנס…) that is not tied to an expense or a
+    // payment is money that happened on paper but not in the books. Only chase
+    // it once it has had a few days to settle — a receipt uploaded this morning
+    // is not yet a problem.
+    const categories = await fetchDocumentCategories(supabase);
+    const moneyCodes = categories.filter((c) => c.is_money_doc).map((c) => c.code);
+    if (moneyCodes.length === 0) return [];
+
+    const cutoff = new Date(ctx.today);
+    cutoff.setDate(cutoff.getDate() - UNLINKED_MONEY_GRACE_DAYS);
+    const cutoffIso = cutoff.toISOString();
+
+    const { data, error } = await supabase
+      .from("documents")
+      .select("id")
+      .in("document_type", moneyCodes)
+      .lt("uploaded_at", cutoffIso)
+      .range(0, 999);
+    if (error) return [];
+    const ids = ((data ?? []) as Row[]).map((r) => getString(r, "id")).filter((v): v is string => Boolean(v));
+    if (ids.length === 0) return [];
+
+    const { data: links, error: linkError } = await supabase
+      .from("document_links")
+      .select("document_id,entity_type")
+      .in("document_id", ids)
+      .in("entity_type", ["expense", "payment"]);
+    if (linkError) return [];
+
+    const linked = new Set(
+      ((links ?? []) as Row[]).map((r) => getString(r, "document_id")).filter(Boolean)
+    );
+    const count = ids.filter((id) => !linked.has(id)).length;
+    if (count <= 0) return [];
+
+    return [
+      {
+        key: "summary",
+        title: `${count} מסמכים כספיים ללא שיוך לתנועה`,
+        content: "חשבוניות, קבלות וצ׳קים שעדיין לא חוברו להוצאה או לתשלום בספרים.",
+        url: "/documents?money=unlinked",
+        severity: "warning" as Severity,
+        behavior: "silent" as Behavior,
+        audienceRole: "office" as AudienceRole,
+      },
+    ];
   },
 };
 
@@ -1076,6 +1264,8 @@ export const SYSTEM_RULES: SystemRule[] = [
   wageOverdueRule,
   vehicleExpiryRule,
   leaseExpiryRule,
+  documentExpiryRule,
+  unlinkedMoneyDocumentsRule,
   // New coverage (Phase 5): payments & checks
   checkDepositDueRule,
   paymentDueTodayRule,

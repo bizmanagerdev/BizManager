@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 import { STORAGE_BUCKET } from "@/lib/storage";
+import { insertDocumentRow } from "@/lib/documents/insert";
 
 const BUCKET = STORAGE_BUCKET;
 const MAX_BYTES = 20 * 1024 * 1024;
@@ -51,14 +52,15 @@ export async function POST(req: Request) {
     if (uploadError) return NextResponse.json({ error: toHebrewError(uploadError.message) }, { status: 400 });
 
     const requestedType = form.get("type");
-    const documentType =
-      typeof requestedType === "string" && requestedType.trim() === "bank_statement"
-        ? "bank_statement"
-        : "card_statement";
+    const isBankStatement =
+      typeof requestedType === "string" && requestedType.trim() === "bank_statement";
+    const documentType = isBankStatement ? "דף עובר ושב" : "דף חיוב אשראי";
+    const documentSource = isBankStatement ? "bank_statement" : "card_statement";
 
-    const { error: docError } = await supabase.from("documents").insert({
+    const { error: docError } = await insertDocumentRow(supabase, {
       id: documentId,
       document_type: documentType,
+      source: documentSource,
       title: displayName,
       file_name: displayName,
       storage_key: storagePath,

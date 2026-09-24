@@ -5,6 +5,7 @@ import { isGeneratedRecurringExpense } from "@/lib/expenses";
 import { paymentStatusClasses, paymentStatusLabel } from "@/lib/orders/paymentStatus";
 import type { WorkSessionRow } from "@/lib/payroll";
 import type { FinancialAttachment, PaymentRow } from "@/lib/payments";
+import { isImageDocument } from "@/lib/documents";
 import type { AssignableUser, ExpenseListItem } from "./ProjectTabsClient";
 
 // Pure formatting/getter/status helpers + the LtrInline span, lifted out of
@@ -220,6 +221,5 @@ export function expenseItemTitle(
 }
 
 export function isImageAttachment(attachment: Pick<FinancialAttachment, "file_name" | "document_type">) {
-  const name = attachment.file_name?.toLowerCase() ?? "";
-  return /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif|avif)$/i.test(name) || attachment.document_type?.includes("photo");
+  return isImageDocument(attachment);
 }

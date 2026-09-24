@@ -1,5 +1,6 @@
 import type { FinancialAttachment } from "@/lib/payments";
 import { offlineUpload } from "@/lib/offline-upload";
+import { isImageDocument } from "@/lib/documents";
 
 // Pure date / number / formatting helpers + the attachment upload util, lifted
 // out of DashboardActions so the component file holds UI + state, not utilities.
@@ -61,8 +62,7 @@ export function formatIls(value: number | null) {
 }
 
 export function isImageAttachment(attachment: Pick<FinancialAttachment, "file_name" | "document_type">) {
-  const name = attachment.file_name?.toLowerCase() ?? "";
-  return /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif|avif)$/i.test(name) || attachment.document_type?.includes("photo");
+  return isImageDocument(attachment);
 }
 
 export async function uploadFinancialAttachment(

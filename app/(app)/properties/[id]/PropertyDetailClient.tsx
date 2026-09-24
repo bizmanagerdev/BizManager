@@ -59,6 +59,8 @@ import { toHebrewError } from "@/lib/error-messages";
 import { offlineUpload } from "@/lib/offline-upload";
 import { createLease, updateLease, deleteLease, setLeaseDocument, type LeaseInput } from "../actions";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import MissingDocumentsChecklist from "@/components/documents/MissingDocumentsChecklist";
+import { isImageDocument } from "@/lib/documents";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete } from "@/lib/undo-engine";
 import RentScheduleSection from "./RentScheduleSection";
@@ -588,6 +590,7 @@ export default function PropertyDetailClient({
   const [docOpen, setDocOpen] = useState(false);
   const [docFiles, setDocFiles] = useState<File[]>([]);
   const [docCategory, setDocCategory] = useState("");
+  const [checklistKey, setChecklistKey] = useState(0);
   const [docBusy, setDocBusy] = useState(false);
   // delete
   const [del, setDel] = useState<{ kind: "expense" | "payment" | "document" | "lease" | "task" | "template" | "session"; id: string; label: string } | null>(null);
@@ -597,9 +600,17 @@ export default function PropertyDetailClient({
   const checkPayments = activityPayments.filter((p) => p.method === "check");
   const otherPayments = activityPayments.filter((p) => p.method !== "check");
   const purchaseDocuments = activityDocuments.filter((d) => PURCHASE_DOCUMENT_CATEGORIES.has(d.documentType ?? ""));
-  const photos = activityDocuments.filter((d) => d.documentType === "צילום");
+  // A picture of the property is an image with nothing more specific said about
+  // it. Matching the file kind as well as the "צילום" category picks up images
+  // that arrived from elsewhere uncategorised — but a document that IS filed as
+  // something (a photographed חשבונית) stays in the documents list rather than
+  // landing in the gallery.
+  const isPropertyPhoto = (d: (typeof activityDocuments)[number]) =>
+    d.documentType === "צילום" ||
+    (!d.documentType && isImageDocument({ file_name: d.fileName, document_type: d.documentType }));
+  const photos = activityDocuments.filter(isPropertyPhoto);
   const otherDocuments = activityDocuments.filter(
-    (d) => !PURCHASE_DOCUMENT_CATEGORIES.has(d.documentType ?? "") && d.documentType !== "צילום"
+    (d) => !PURCHASE_DOCUMENT_CATEGORIES.has(d.documentType ?? "") && !isPropertyPhoto(d)
   );
   const userNameById = new Map(users.map((u) => [u.id, u.label]));
   const expenseRows: Array<{ kind: "expense"; date: string | null; data: PropertyExpense } | { kind: "session"; date: string | null; data: PropertySession }> = [
@@ -653,6 +664,11 @@ export default function PropertyDetailClient({
   function openAddDoc() {
     setDocFiles([]);
     setDocCategory("");
+    setDocOpen(true);
+  }
+  function openAddDocWithCategory(categoryCode: string) {
+    setDocFiles([]);
+    setDocCategory(categoryCode);
     setDocOpen(true);
   }
   function openAddPurchaseDoc() {
@@ -823,6 +839,7 @@ export default function PropertyDetailClient({
       }
       if (done === docFiles.length) {
         setDocOpen(false);
+        setChecklistKey((k) => k + 1);
         refresh();
       } else {
         setDocFiles(remaining);
@@ -1191,6 +1208,13 @@ export default function PropertyDetailClient({
             )}
           </CardContent>
         </Card>
+
+        <MissingDocumentsChecklist
+          entityType="property"
+          entityId={propertyId}
+          refreshKey={checklistKey}
+          onUpload={openAddDocWithCategory}
+        />
 
         <PropertyPurchaseCard
           propertyId={propertyId}

@@ -5,6 +5,7 @@ import { withIdempotency } from "@/lib/idempotency";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 
 import { STORAGE_BUCKET } from "@/lib/storage";
+import { insertDocumentRow } from "@/lib/documents/insert";
 
 const BUCKET = STORAGE_BUCKET;
 const MAX_BYTES = 20 * 1024 * 1024;
@@ -87,6 +88,8 @@ export async function POST(req: Request) {
     const projectId =
       typeof entityRow.project_id === "string" && entityRow.project_id ? entityRow.project_id : null;
     const orderId = typeof entityRow.order_id === "string" && entityRow.order_id ? entityRow.order_id : null;
+    const propertyId =
+      typeof entityRow.property_id === "string" && entityRow.property_id ? entityRow.property_id : null;
     const sessionUserId =
       entityType === "session" && typeof entityRow.user_id === "string" && entityRow.user_id
         ? entityRow.user_id
@@ -107,11 +110,14 @@ export async function POST(req: Request) {
       customerId = typeof project?.customer_id === "string" ? project.customer_id : null;
     }
 
-    // A check payment's photo is filed as a "צק" category; otherwise the generic
-    // <entity>_attachment.
+    // WHERE the file came from is the source; WHAT it is stays the category.
+    // A check photo is genuinely a "צק", so that one keeps a real category —
+    // everything else arrives uncategorised rather than being mislabelled with
+    // its own upload path.
     const isCheckPayment =
       entityType === "payment" && String(entityRow.payment_method ?? "").trim() === "check";
-    const documentType = isCheckPayment ? "צק" : `${entityType}_attachment`;
+    const documentType = isCheckPayment ? "צק" : "";
+    const documentSource = `${entityType}_attachment`;
 
     // Domain: the payment/expense/session each carry their own authoritative
     // business_domain — store it explicitly so the file lands in that תחום
@@ -142,9 +148,10 @@ export async function POST(req: Request) {
     });
     if (uploadError) return NextResponse.json({ error: toHebrewError(uploadError.message) }, { status: 400 });
 
-    const { error: docError } = await supabase.from("documents").insert({
+    const { error: docError } = await insertDocumentRow(supabase, {
       id: documentId,
       document_type: documentType,
+      source: documentSource,
       business_domain: docBusinessDomain,
       title: displayName,
       file_name: displayName,
@@ -175,6 +182,9 @@ export async function POST(req: Request) {
     }
     if (orderId) {
       linkRows.push({ document_id: documentId, entity_type: "order", entity_id: orderId });
+    }
+    if (propertyId) {
+      linkRows.push({ document_id: documentId, entity_type: "property", entity_id: propertyId });
     }
     if (customerId) {
       linkRows.push({ document_id: documentId, entity_type: "customer", entity_id: customerId });

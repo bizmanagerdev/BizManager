@@ -12,10 +12,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { ViewDialog } from "@/components/ui/view-dialog";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
-import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { StatActionCard, collectionStatusTextClass } from "@/components/ui/stat-action-card";
-import { AdaptiveGrid } from "@/components/layout/page-layout";
 import {
   AddIcon,
   ArrowDownIcon,
@@ -80,8 +78,10 @@ import {
 } from "@/lib/projectLedgerPrefs";
 import { cn } from "@/lib/utils";
 import type { MorningLocalDocument } from "@/lib/morning/types";
+import { DOCUMENT_CATEGORIES, getDocumentCategoryLabel, isDocumentCategory } from "@/lib/documents";
 import dynamic from "next/dynamic";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import MissingDocumentsChecklist from "@/components/documents/MissingDocumentsChecklist";
 import {
   customerPaymentStatusLabel,
   deriveCustomerPaymentStatus,
@@ -391,10 +391,7 @@ export default function ProjectTabsClient({
   }, [projectTasks]);
   const [uploadDocsOpen, setUploadDocsOpen] = useState(false);
   const [uploadDocsCategory, setUploadDocsCategory] = useState<string>("");
-  const [uploadDocsCategoryMode, setUploadDocsCategoryMode] = useState<
-    "existing" | "new"
-  >("existing");
-  const [uploadDocsNewCategory, setUploadDocsNewCategory] = useState<string>("");
+  const [docsChecklistKey, setDocsChecklistKey] = useState(0);
   const [uploadDocsFiles, setUploadDocsFiles] = useState<File[]>([]);
   const [pendingDocUploads, setPendingDocUploads] = useState<
     Array<{
@@ -423,6 +420,14 @@ export default function ProjectTabsClient({
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b, "he"));
   }, [projectDocuments]);
+
+  // Values already filed on this project that predate the controlled list.
+  // They stay pickable so an old filing scheme is not orphaned mid-migration,
+  // but nothing new can be invented here any more.
+  const legacyProjectCategories = useMemo(
+    () => existingCategories.filter((c) => !isDocumentCategory(c)),
+    [existingCategories]
+  );
 
   const filteredProjectDocuments = useMemo(() => {
     if (!docsFilterCategory) return projectDocuments;
@@ -618,20 +623,16 @@ export default function ProjectTabsClient({
     if (docsUploading) return;
     if (uploadDocsFiles.length === 0) return;
 
-    const category =
-      uploadDocsCategoryMode === "new"
-        ? uploadDocsNewCategory.trim()
-        : uploadDocsCategory.trim();
+    const category = uploadDocsCategory.trim();
 
     const files = uploadDocsFiles;
 
     setUploadDocsOpen(false);
     setUploadDocsFiles([]);
     setUploadDocsCategory("");
-    setUploadDocsNewCategory("");
-    setUploadDocsCategoryMode("existing");
 
     await uploadProjectDocuments(files, category);
+    setDocsChecklistKey((k) => k + 1);
   }
 
   function openEditTag(documentId: string) {
@@ -1900,8 +1901,6 @@ export default function ProjectTabsClient({
           if (!open) {
             setUploadDocsFiles([]);
             setUploadDocsCategory("");
-            setUploadDocsNewCategory("");
-            setUploadDocsCategoryMode("existing");
           }
         }}
         title="העלאת מסמכים"
@@ -1911,57 +1910,31 @@ export default function ProjectTabsClient({
         submitLabel="העלאה"
         busyLabel="מעלה..."
         busy={docsUploading}
-        submitDisabled={
-          uploadDocsFiles.length === 0 ||
-          (uploadDocsCategoryMode === "new" && !uploadDocsNewCategory.trim())
-        }
+        submitDisabled={uploadDocsFiles.length === 0}
       >
           <div className="space-y-4">
             <div className="space-y-1">
               <div className="text-sm font-medium">קטגוריה (אופציונלי)</div>
-              <AdaptiveGrid variant="formTwo" className="gap-2">
-                <NativeSelect
-                  value={uploadDocsCategoryMode === "new" ? "__new__" : uploadDocsCategory}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v === "__new__") {
-                      setUploadDocsCategoryMode("new");
-                      setUploadDocsCategory("");
-                    } else {
-                      setUploadDocsCategoryMode("existing");
-                      setUploadDocsCategory(v);
-                      setUploadDocsNewCategory("");
-                    }
-                  }}
-                >
-                  <option value="">ללא קטגוריה</option>
-                  {existingCategories.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                  <option value="__new__">קטגוריה חדשה...</option>
-                </NativeSelect>
-
-                {uploadDocsCategoryMode === "new" ? (
-                  <Input
-                    value={uploadDocsNewCategory}
-                    onChange={(e) => setUploadDocsNewCategory(e.target.value)}
-                    placeholder="שם קטגוריה חדשה"
-                    aria-invalid={!uploadDocsNewCategory.trim()}
-                    className={
-                      !uploadDocsNewCategory.trim()
-                        ? "border-destructive focus-visible:ring-destructive"
-                        : ""
-                    }
-                  />
+              <NativeSelect
+                value={uploadDocsCategory}
+                onChange={(e) => setUploadDocsCategory(e.target.value)}
+              >
+                <option value="">ללא קטגוריה</option>
+                {DOCUMENT_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+                {legacyProjectCategories.length > 0 ? (
+                  <optgroup label="קטגוריות קיימות בפרויקט">
+                    {legacyProjectCategories.map((c) => (
+                      <option key={c} value={c}>
+                        {getDocumentCategoryLabel(c)}
+                      </option>
+                    ))}
+                  </optgroup>
                 ) : null}
-                {uploadDocsCategoryMode === "new" && !uploadDocsNewCategory.trim() ? (
-                  <div className="text-xs text-destructive">
-                    שדה חובה
-                  </div>
-                ) : null}
-            </AdaptiveGrid>
+              </NativeSelect>
           </div>
 
             <div className="space-y-1">
@@ -2008,15 +1981,26 @@ export default function ProjectTabsClient({
         size="formMd"
         onSubmit={saveEditTag}
         submitLabel="שמירה"
-        submitDisabled={!editTagValue.trim()}
+
       >
           <div className="space-y-2">
             <div className="text-sm font-medium">קטגוריה</div>
-            <Input
+            <NativeSelect
               value={editTagValue}
               onChange={(e) => setEditTagValue(e.target.value)}
-              placeholder="למשל: חוזה / חשבונית / תמונות"
-            />
+            >
+              <option value="">ללא קטגוריה</option>
+              {DOCUMENT_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+              {editTagValue.trim() && !isDocumentCategory(editTagValue.trim()) ? (
+                <option value={editTagValue}>
+                  {getDocumentCategoryLabel(editTagValue)} (נוכחי)
+                </option>
+              ) : null}
+            </NativeSelect>
           </div>
 
       </FormDialog>
@@ -2287,6 +2271,16 @@ export default function ProjectTabsClient({
               })}
             </div>
           )}
+
+          <MissingDocumentsChecklist
+            entityType="project"
+            entityId={overview.id}
+            refreshKey={docsChecklistKey}
+            onUpload={(code) => {
+              setUploadDocsCategory(code);
+              setUploadDocsOpen(true);
+            }}
+          />
 
           <Button
             type="button"

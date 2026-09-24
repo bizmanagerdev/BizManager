@@ -14,6 +14,7 @@ import {
 } from "@/lib/morning/client";
 import { findMorningClientCandidatesForCustomerRecord } from "@/lib/morning/matching";
 import { isOrderCompletionStatus, loadMorningSettings } from "@/lib/morning/settings";
+import { insertDocumentRow } from "@/lib/documents/insert";
 import {
   MorningDocumentType,
   mapBizPaymentMethodToMorning,
@@ -483,9 +484,12 @@ async function createExternalDocumentLink(
 
   const documentId = crypto.randomUUID();
   const uploadedAt = new Date().toISOString();
-  const { error: docError } = await supabase.from("documents").insert({
+  const { error: docError } = await insertDocumentRow(supabase, {
     id: documentId,
+    // Group C: morning_<id> is minted by the external integration and must
+    // keep round-tripping; source is additive.
     document_type: documentType,
+    source: "morning",
     title,
     file_name: `${title}.pdf`,
     storage_key: null,

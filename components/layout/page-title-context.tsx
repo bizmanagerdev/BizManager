@@ -36,6 +36,12 @@ export type PageTitle = {
    * heading is a greeting rather than a page name and nothing else says it.
    */
   showOnDesktop?: boolean;
+  /**
+   * Drop the bar's search glyph while this page is open. For a page that runs
+   * its own search field over its own data — two magnifiers a thumb apart, one
+   * of which searches something else, is a trap rather than a convenience.
+   */
+  hideSearch?: boolean;
 } | null;
 
 type Store = {
@@ -165,11 +171,12 @@ export function useSetPageTitle(
   subtitle?: string,
   action?: ReactNode,
   /** A plain boolean, not an options object — it has to be a stable dep. */
-  showOnDesktop?: boolean
+  showOnDesktop?: boolean,
+  hideSearch?: boolean
 ) {
   const { setPageTitle } = useContext(PageTitleContext);
   useEffect(() => {
-    setPageTitle({ title, subtitle, action, showOnDesktop });
+    setPageTitle({ title, subtitle, action, showOnDesktop, hideSearch });
     return () => setPageTitle(null);
-  }, [setPageTitle, title, subtitle, action, showOnDesktop]);
+  }, [setPageTitle, title, subtitle, action, showOnDesktop, hideSearch]);
 }

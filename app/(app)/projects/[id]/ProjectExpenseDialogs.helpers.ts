@@ -6,6 +6,7 @@ import {
   EXPENSE_WORKER_WAGE_CATEGORY,
 } from "@/lib/expenses";
 import type { FinancialAttachment } from "@/lib/payments";
+import { isImageDocument } from "@/lib/documents";
 
 // Pure formatting/getter/date helpers + the upload call, lifted out of
 // ProjectExpenseDialogs so the dialog file holds form state + JSX only. Kept
@@ -36,8 +37,7 @@ export function getString(row: Record<string, unknown> | null, key: string) {
 }
 
 export function isImageAttachment(attachment: Pick<FinancialAttachment, "file_name" | "document_type">) {
-  const name = attachment.file_name?.toLowerCase() ?? "";
-  return /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif|avif)$/i.test(name) || attachment.document_type?.includes("photo");
+  return isImageDocument(attachment);
 }
 
 export async function uploadFinancialAttachment(entityType: "expense" | "payment" | "session", entityId: string, file: File) {

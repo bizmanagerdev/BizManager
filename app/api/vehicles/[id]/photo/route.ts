@@ -5,6 +5,7 @@ import { hasSectionAccess, isStaffRole } from "@/lib/auth/roleAccess";
 import { toHebrewError } from "@/lib/error-messages";
 import { withIdempotency } from "@/lib/idempotency";
 import { STORAGE_BUCKET } from "@/lib/storage";
+import { insertDocumentRow } from "@/lib/documents/insert";
 
 const BUCKET = STORAGE_BUCKET;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -66,9 +67,13 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
     if (uploadError) return NextResponse.json({ error: toHebrewError(uploadError.message) }, { status: 400 });
 
     const uploadedAt = new Date().toISOString();
-    const { error: docError } = await supabase.from("documents").insert({
+    const { error: docError } = await insertDocumentRow(supabase, {
       id: documentId,
+      // 🔴 Group C: "vehicle_photo" is an RLS PREDICATE — the worker
+      // select/delete policies match this literal. Never rename it; source is
+      // additive only.
       document_type: "vehicle_photo",
+      source: "vehicle_photo",
       business_domain: "general_business",
       title: displayName,
       file_name: displayName,

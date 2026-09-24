@@ -275,3 +275,132 @@ describe("recurring_payment_reminder — a period already paid stops nagging", (
     expect(items).toEqual([]);
   });
 });
+
+describe("document_expiry", () => {
+  // The fake returns [] for document_categories, so the rule falls back to the
+  // seeded registry — ביטוח / תעודה-רישיון / חוזה-הסכם, 30-day lead.
+  const docs = (rows: Record<string, unknown>[]) =>
+    makeSupabase({ documents: { data: rows, error: null } });
+
+  it("flags an already-expired document as danger and focuses it", async () => {
+    const items = await rule("document_expiry").evaluate(
+      docs([
+        {
+          id: "doc-1",
+          title: "פוליסת ביטוח רכב",
+          document_type: "ביטוח",
+          valid_until: "2026-08-01",
+        },
+      ]),
+      ctx("2026-09-07")
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      key: "doc-1",
+      severity: "danger",
+      url: "/documents?focus=doc-1",
+      audienceRole: "office",
+    });
+    expect(items[0]?.title).toContain("פוליסת ביטוח רכב");
+    expect(items[0]?.content).toContain("פג");
+  });
+
+  it("stays quiet about a policy a newer one has replaced", async () => {
+    // Uploading this year's insurance should not leave last year's shouting
+    // from the inbox forever. Both hang off the same vehicle tag, so the later
+    // date makes the earlier one history rather than a job.
+    const supabase = makeSupabase({
+      documents: {
+        data: [
+          { id: "old", title: "ביטוח 2025", document_type: "ביטוח", valid_until: "2026-08-01" },
+          { id: "new", title: "ביטוח 2026", document_type: "ביטוח", valid_until: "2027-08-01" },
+        ],
+        error: null,
+      },
+      entity_tags: {
+        data: [
+          { entity_id: "old", tag_id: "veh-1", tags: { kind: "vehicle" } },
+          { entity_id: "new", tag_id: "veh-1", tags: { kind: "vehicle" } },
+        ],
+        error: null,
+      },
+    });
+    const items = await rule("document_expiry").evaluate(supabase, ctx("2026-09-07"));
+    expect(items).toEqual([]);
+  });
+
+  it("still flags an expired document when the newer one belongs to another vehicle", async () => {
+    const supabase = makeSupabase({
+      documents: {
+        data: [
+          { id: "old", title: "ביטוח רכב א", document_type: "ביטוח", valid_until: "2026-08-01" },
+          { id: "new", title: "ביטוח רכב ב", document_type: "ביטוח", valid_until: "2027-08-01" },
+        ],
+        error: null,
+      },
+      entity_tags: {
+        data: [
+          { entity_id: "old", tag_id: "veh-1", tags: { kind: "vehicle" } },
+          { entity_id: "new", tag_id: "veh-2", tags: { kind: "vehicle" } },
+        ],
+        error: null,
+      },
+    });
+    const items = await rule("document_expiry").evaluate(supabase, ctx("2026-09-07"));
+    expect(items).toHaveLength(1);
+    expect(items[0]?.key).toBe("old");
+  });
+
+  it("warns while the document is still valid but inside the lead window", async () => {
+    const items = await rule("document_expiry").evaluate(
+      docs([
+        { id: "doc-2", title: "רישיון עסק", document_type: "תעודה/רישיון", valid_until: "2026-09-20" },
+      ]),
+      ctx("2026-09-07")
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.severity).toBe("warning");
+    expect(items[0]?.content).toContain("יפוג");
+  });
+
+  it("stays quiet about a document whose expiry is beyond its lead window", async () => {
+    // 2026-12-01 is ~85 days out; the seeded lead is 30.
+    const items = await rule("document_expiry").evaluate(
+      docs([{ id: "doc-3", document_type: "ביטוח", valid_until: "2026-12-01" }]),
+      ctx("2026-09-07")
+    );
+    expect(items).toEqual([]);
+  });
+
+  it("falls back to the file name when the document has no title", async () => {
+    const items = await rule("document_expiry").evaluate(
+      docs([
+        { id: "doc-4", title: null, file_name: "bituach.pdf", document_type: "ביטוח", valid_until: "2026-09-01" },
+      ]),
+      ctx("2026-09-07")
+    );
+    expect(items[0]?.title).toContain("bituach.pdf");
+  });
+
+  it("returns nothing instead of throwing when valid_until does not exist yet", async () => {
+    // Pre-migration: the whole sync must keep working, the same way
+    // vehicle_expiry tolerates a missing vehicles table.
+    const items = await rule("document_expiry").evaluate(
+      makeSupabase({
+        documents: { data: null, error: { message: 'column documents.valid_until does not exist' } },
+      }),
+      ctx("2026-09-07")
+    );
+    expect(items).toEqual([]);
+  });
+
+  it("ignores a document with no expiry date at all", async () => {
+    const items = await rule("document_expiry").evaluate(
+      docs([{ id: "doc-5", document_type: "ביטוח", valid_until: null }]),
+      ctx("2026-09-07")
+    );
+    expect(items).toEqual([]);
+  });
+});

@@ -2,22 +2,25 @@ import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
 import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
-import { resolveUserDisplayNamesForValues } from "@/lib/audit";
+import { resolveUserColorsForValues, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import { isExpenseBusinessDomain, mapProjectTypeToExpenseDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
 import { propertyDisplayName } from "@/lib/properties";
 import type {
   ArchiveTargetOption,
   DocumentArchiveFilters,
   DocumentArchiveItem,
-} from "@/app/(app)/documents/DocumentsArchiveClient";
+} from "@/lib/documents/archive";
 
 import { STORAGE_BUCKET } from "@/lib/storage";
+import { buildDocumentDisplayName, inferFileKind } from "@/lib/documents";
 
 // ~1,000 lines. Lazy-loaded so a visitor doesn't download it before actually
 // landing on this route — same pattern as SalaryCenterClient/ProfileClient.
 const DocumentsArchiveClient = dynamic(() => import("@/app/(app)/documents/DocumentsArchiveClient"), {
   loading: () => <DetailPageSkeleton />,
 });
+
+type Row = Record<string, unknown>;
 
 const DOCUMENTS_BUCKET = STORAGE_BUCKET;
 const MAX_DOCUMENTS = 1000;
@@ -26,6 +29,7 @@ type DocumentsSearchParams = {
   customer_id?: string;
   customer_name?: string;
   customer_page?: string;
+  money?: string;
   project_id?: string;
   property_id?: string;
   business_domain?: string;
@@ -46,6 +50,9 @@ type DocumentRow = {
   uploaded_at: string | null;
   notes: string | null;
   uploaded_by?: string | null;
+  source?: string | null;
+  valid_until?: string | null;
+  no_link_needed?: boolean | null;
 };
 
 type DocumentLinkRow = {
@@ -119,20 +126,6 @@ function uniqueById<T extends { id: string }>(items: T[]) {
   return Array.from(map.values());
 }
 
-function inferFileKind(name: string | null) {
-  const value = normalizeString(name).toLowerCase();
-  const ext = value.includes(".") ? value.split(".").pop() ?? "" : "";
-
-  if (["pdf"].includes(ext)) return "pdf";
-  if (["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "heic"].includes(ext)) return "image";
-  if (["doc", "docx", "txt", "rtf", "odt"].includes(ext)) return "document";
-  if (["xls", "xlsx", "csv", "ods"].includes(ext)) return "spreadsheet";
-  if (["ppt", "pptx", "key"].includes(ext)) return "presentation";
-  if (["mp4", "mov", "webm", "mkv", "avi", "m4v"].includes(ext)) return "video";
-  if (["zip", "rar", "7z", "tar", "gz"].includes(ext)) return "archive";
-  return "other";
-}
-
 function buildDocumentName(doc: DocumentRow) {
   return normalizeString(doc.title) || normalizeString(doc.file_name) || "מסמך";
 }
@@ -154,6 +147,15 @@ function entityHref(entityType: string, entityId: string) {
   }
 }
 
+// Links that represent a money/work record rather than a navigable entity.
+// They have no page of their own, but a document tied to one is NOT unfiled.
+const LEDGER_LINK_LABELS: Record<string, string> = {
+  expense: "הוצאה",
+  payment: "תשלום",
+  session: "דיווח שעות",
+  loan: "הלוואה",
+};
+
 function compareByLabel(a: { label: string }, b: { label: string }) {
   return a.label.localeCompare(b.label, "he");
 }
@@ -166,15 +168,26 @@ export default async function DocumentsPage({
   const params = (await searchParams) ?? {};
   const { profile, supabase } = await requireStaffPage();
 
-  const { data: documentsRaw, error: documentsError, count } = await supabase
-    .from("documents")
-    .select("id,document_type,business_domain,title,file_name,storage_key,uploaded_at,notes,uploaded_by", {
-      count: "estimated",
-    })
-    .order("uploaded_at", { ascending: false, nullsFirst: false })
-    .range(0, MAX_DOCUMENTS - 1);
+  // `source` arrives with 20260922183535. Selecting a column the database does
+  // not have yet 42703s the WHOLE query and blanks the archive, so fall back to
+  // the pre-migration column list instead of failing the page.
+  const DOC_COLUMNS_BASE =
+    "id,document_type,business_domain,title,file_name,storage_key,uploaded_at,notes,uploaded_by";
+  const runDocumentsQuery = (columns: string) =>
+    supabase
+      .from("documents")
+      .select(columns, { count: "estimated" })
+      .order("uploaded_at", { ascending: false, nullsFirst: false })
+      .range(0, MAX_DOCUMENTS - 1);
 
-  const documents = (documentsRaw ?? []) as DocumentRow[];
+  let { data: documentsRaw, error: documentsError, count } = await runDocumentsQuery(
+    `${DOC_COLUMNS_BASE},source,valid_until,no_link_needed`
+  );
+  if (documentsError?.code === "42703") {
+    ({ data: documentsRaw, error: documentsError, count } = await runDocumentsQuery(DOC_COLUMNS_BASE));
+  }
+
+  const documents = (documentsRaw ?? []) as unknown as DocumentRow[];
   const documentIds = documents.map((doc) => doc.id);
   const documentUploadedByValues = Array.from(
     new Set(
@@ -183,11 +196,83 @@ export default async function DocumentsPage({
         .filter((value): value is string => Boolean(value))
     )
   );
-  const documentUploaderNames = await resolveUserDisplayNamesForValues(supabase, documentUploadedByValues);
+  const [documentUploaderNames, documentUploaderColors] = await Promise.all([
+    resolveUserDisplayNamesForValues(supabase, documentUploadedByValues),
+    resolveUserColorsForValues(supabase, documentUploadedByValues),
+  ]);
 
   // The tags lookup (entity_tags → tags, its own internal 2-step chain) and the
   // document_links fetch both only depend on documentIds, not on each other —
   // run them as one round trip instead of sequentially.
+  const [fkOwnersResult] = await Promise.all([
+    (async () => {
+      const vehicleByDocument = new Map<string, { id: string; label: string }>();
+      const statementDocumentIds = new Set<string>();
+      const leaseByDocument = new Map<string, { id: string; label: string }>();
+      if (documentIds.length === 0) {
+        return { vehicleByDocument, statementDocumentIds, leaseByDocument };
+      }
+      const [vehiclesRes, statementsRes, leasesRes, bankRes] = await Promise.all([
+        supabase
+          .from("vehicles")
+          .select("tag_id,license_plate,make_model,photo_document_id,tag:tags(name)")
+          .in("photo_document_id", documentIds)
+          .then((r) => r, () => ({ data: [] as Row[] })),
+        supabase
+          .from("card_statements")
+          .select("id,document_id")
+          .in("document_id", documentIds)
+          .then((r) => r, () => ({ data: [] as Row[] })),
+        supabase
+          .from("lease_agreements")
+          .select("id,document_id,property_id,property:properties(name,address)")
+          .in("document_id", documentIds)
+          .then((r) => r, () => ({ data: [] as Row[] })),
+        // A separate table from card_statements, and the one that was still
+        // orphaning "דף עובר ושב" files — see lib/documents/owners.ts.
+        supabase
+          .from("bank_statements")
+          .select("id,document_id")
+          .in("document_id", documentIds)
+          .then((r) => r, () => ({ data: [] as Row[] })),
+      ]);
+      for (const row of ((vehiclesRes as { data?: Row[] }).data ?? [])) {
+        const documentId = normalizeString(row.photo_document_id);
+        const tagId = normalizeString(row.tag_id);
+        if (!documentId || !tagId) continue;
+        const tagRow = (Array.isArray(row.tag) ? row.tag[0] : row.tag) as Row | undefined;
+        vehicleByDocument.set(documentId, {
+          id: tagId,
+          label:
+            normalizeString(tagRow?.name) ||
+            normalizeString(row.license_plate) ||
+            normalizeString(row.make_model) ||
+            "רכב",
+        });
+      }
+      for (const row of ((statementsRes as { data?: Row[] }).data ?? [])) {
+        const documentId = normalizeString(row.document_id);
+        if (documentId) statementDocumentIds.add(documentId);
+      }
+      for (const row of ((bankRes as { data?: Row[] }).data ?? [])) {
+        const documentId = normalizeString(row.document_id);
+        if (documentId) statementDocumentIds.add(documentId);
+      }
+      for (const row of ((leasesRes as { data?: Row[] }).data ?? [])) {
+        const documentId = normalizeString(row.document_id);
+        const propertyId = normalizeString(row.property_id);
+        if (!documentId || !propertyId) continue;
+        const propertyRow = (Array.isArray(row.property) ? row.property[0] : row.property) as Row | undefined;
+        leaseByDocument.set(documentId, {
+          id: propertyId,
+          label: normalizeString(propertyRow?.name) || normalizeString(propertyRow?.address) || "נכס",
+        });
+      }
+      return { vehicleByDocument, statementDocumentIds, leaseByDocument };
+    })(),
+  ]);
+  const { vehicleByDocument, statementDocumentIds, leaseByDocument } = fkOwnersResult;
+
   const [linksResult, tagsResult] = await Promise.all([
     documentIds.length > 0
       ? supabase
@@ -257,6 +342,13 @@ export default async function DocumentsPage({
 
   const { data: linksRaw, error: linksError } = linksResult;
   const { tagsByDocument, refYearByDocument, vehicleTagOptions } = tagsResult;
+
+  for (const [documentId, vehicle] of vehicleByDocument) {
+    const existing = tagsByDocument.get(documentId) ?? [];
+    if (existing.some((tag) => tag.id === vehicle.id)) continue;
+    existing.push({ id: vehicle.id, label: vehicle.label, href: `/vehicles/${vehicle.id}` });
+    tagsByDocument.set(documentId, existing);
+  }
   const links = (linksRaw ?? []) as DocumentLinkRow[];
   const linksByDocumentId = new Map<string, DocumentLinkRow[]>();
 
@@ -519,11 +611,23 @@ export default async function DocumentsPage({
         if (entityType === "order") {
           const order = ordersById.get(entityId);
           relatedBusinessDomains.add("sales");
-          relatedOrders.set(entityId, { id: entityId, label: `הזמנה ${entityId.slice(0, 8)}` });
+          // Orders have no human-readable number, so a UUID slice was the label —
+          // "הזמנה bca3eb83" identifies nothing. Name it by who it is for, which
+          // is what someone hunting for the paperwork actually remembers.
+          const orderCustomerName =
+            normalizeString(order?.customer_name) ||
+            normalizeString(customersById.get(normalizeString(order?.customer_id))?.customer_name);
+          const orderDate = normalizeString(order?.order_date).slice(0, 10);
+          const orderLabel = orderCustomerName
+            ? `הזמנה · ${orderCustomerName}`
+            : orderDate
+              ? `הזמנה · ${orderDate}`
+              : `הזמנה ${entityId.slice(0, 8)}`;
+          relatedOrders.set(entityId, { id: entityId, label: orderLabel });
           linkedEntities.set(`${entityType}:${entityId}`, {
             type: entityType,
             id: entityId,
-            label: `הזמנה ${entityId.slice(0, 8)}`,
+            label: orderLabel,
             href: entityHref(entityType, entityId),
           });
 
@@ -548,23 +652,92 @@ export default async function DocumentsPage({
             href: entityHref(entityType, entityId),
           });
         }
+
+        // Owners that attach by a plain FK on the other table, not by a
+        // document_links row: a vehicle's cover photo and an imported
+        // statement. Without these they reported "ללא שיוך" forever.
+        // (placed before the ledger-label block so the loop order is unchanged)
+        // expense / payment / session / loan links were silently dropped here —
+        // only the six types above ever became a linkedEntity. A property
+        // expense receipt therefore reported "ללא שיוך" while its
+        // document_links row existed the whole time. They get no href (there is
+        // no page for a single expense), but they must still count as linked.
+        if (LEDGER_LINK_LABELS[entityType]) {
+          linkedEntities.set(`${entityType}:${entityId}`, {
+            type: entityType,
+            id: entityId,
+            label: LEDGER_LINK_LABELS[entityType]!,
+            href: null,
+          });
+        }
+      }
+
+      const ownerVehicle = vehicleByDocument.get(doc.id);
+      if (ownerVehicle) {
+        linkedEntities.set(`vehicle:${ownerVehicle.id}`, {
+          type: "vehicle",
+          id: ownerVehicle.id,
+          label: ownerVehicle.label,
+          href: `/vehicles/${ownerVehicle.id}`,
+        });
+      }
+      const ownerLease = leaseByDocument.get(doc.id);
+      if (ownerLease) {
+        relatedProperties.set(ownerLease.id, { id: ownerLease.id, label: ownerLease.label });
+        linkedEntities.set(`property:${ownerLease.id}`, {
+          type: "property",
+          id: ownerLease.id,
+          label: ownerLease.label,
+          href: entityHref("property", ownerLease.id),
+        });
+      }
+      if (statementDocumentIds.has(doc.id)) {
+        linkedEntities.set("statement:self", {
+          type: "statement",
+          id: doc.id,
+          label: "דף חיוב מיובא",
+          href: "/financial/statements",
+        });
       }
 
       const storageKey = normalizeString(doc.storage_key) || null;
       const latestLinkCreatedAt =
         docLinks.find((link) => normalizeString(link.created_at))?.created_at ?? null;
-      const signedUrl = storageKey ? signedUrlByStorageKey.get(storageKey) ?? null : null;
+      // A Morning/GreenInvoice document has no file in our bucket — it lives on
+      // their side, and lib/morning/service.ts stores that address in `notes`
+      // with storage_key null. Without this fallback every Morning invoice had
+      // no url at all: no preview, and the "open it in a new tab" empty state
+      // with nothing to open.
+      const externalUrl = /^https?:\/\//i.test(normalizeString(doc.notes))
+        ? normalizeString(doc.notes)
+        : null;
+      const signedUrl = storageKey
+        ? signedUrlByStorageKey.get(storageKey) ?? null
+        : externalUrl;
 
       const title = buildDocumentName(doc);
       const documentType = normalizeString(doc.document_type);
       const linkedEntityList = Array.from(linkedEntities.values()).sort((a, b) =>
         a.label.localeCompare(b.label, "he")
       );
-      const customerList = uniqueById(Array.from(relatedCustomers.values())).sort(compareByLabel);
-      const projectList = uniqueById(Array.from(relatedProjects.values())).sort(compareByLabel);
-      const propertyList = uniqueById(Array.from(relatedProperties.values())).sort(compareByLabel);
-      const taskList = uniqueById(Array.from(relatedTasks.values())).sort(compareByLabel);
-      const orderList = uniqueById(Array.from(relatedOrders.values())).sort(compareByLabel);
+      const withHref =
+        (entityType: string) =>
+        (item: { id: string; label: string }) => ({ ...item, href: entityHref(entityType, item.id) });
+      const customerList = uniqueById(Array.from(relatedCustomers.values()))
+        .sort(compareByLabel)
+        .map(withHref("customer"));
+      const projectList = uniqueById(Array.from(relatedProjects.values()))
+        .sort(compareByLabel)
+        .map(withHref("project"));
+      const propertyList = uniqueById(Array.from(relatedProperties.values()))
+        .sort(compareByLabel)
+        .map(withHref("property"));
+      const taskList = uniqueById(Array.from(relatedTasks.values()))
+        .sort(compareByLabel)
+        .map(withHref("task"));
+      const orderList = uniqueById(Array.from(relatedOrders.values()))
+        .sort(compareByLabel)
+        .map(withHref("order"));
       // An explicit business_domain (override chosen on upload or via the UI)
       // wins. Otherwise infer from the linked entity (project → פרויקטים, order →
       // מכירות …), falling back to שוטף when there is no link.
@@ -575,17 +748,34 @@ export default async function DocumentsPage({
           ? Array.from(relatedBusinessDomains.values())
           : (["general_business"] as ExpenseBusinessDomain[]);
 
+      // A row titled "jpg.1001262226" tells you nothing. Prefer the real title,
+      // and when there is not one, say what the document is and who it is for:
+      // "צילום משלוח · בית הכנסת מאורות משה".
+      const primaryEntityLabel =
+        customerList[0]?.label ??
+        orderList[0]?.label ??
+        projectList[0]?.label ??
+        propertyList[0]?.label ??
+        linkedEntityList[0]?.label ??
+        null;
+      const displayTitle = buildDocumentDisplayName(title, documentType, primaryEntityLabel);
+
       return {
         id: doc.id,
-        title,
+        title: displayTitle,
         file_name: normalizeString(doc.file_name) || null,
         document_type: documentType || null,
+        source: normalizeString(doc.source) || null,
+        valid_until: normalizeString(doc.valid_until) || null,
+        no_link_needed: doc.no_link_needed === true,
         file_kind: inferFileKind(doc.file_name),
         storage_key: storageKey,
         uploaded_at: normalizeString(doc.uploaded_at) || normalizeString(latestLinkCreatedAt) || null,
         created_at: normalizeString(latestLinkCreatedAt) || null,
         uploaded_by_name:
           typeof doc.uploaded_by === "string" ? documentUploaderNames[doc.uploaded_by] ?? null : null,
+        uploaded_by_color:
+          typeof doc.uploaded_by === "string" ? documentUploaderColors[doc.uploaded_by] ?? null : null,
         url: signedUrl,
         entity_types: Array.from(
           new Set(linkedEntityList.map((item) => item.type).filter(Boolean))
@@ -619,6 +809,46 @@ export default async function DocumentsPage({
       };
     });
 
+  const { data: allCustomerRows } = await supabase
+    .from("customer_overview_view")
+    .select("customer_id,customer_name")
+    .order("customer_name", { ascending: true })
+    .range(0, 999);
+  const customerAssignOptions: ArchiveTargetOption[] = (allCustomerRows ?? [])
+    .map((row) => ({
+      id: normalizeString((row as Row).customer_id),
+      label: normalizeString((row as Row).customer_name),
+    }))
+    .filter((option) => option.id && option.label);
+
+  const [{ data: allOrderRows }, { data: allTaskRows }] = await Promise.all([
+    supabase
+      .from("order_overview_view")
+      .select("order_id,customer_id,customer_name,order_date")
+      .order("order_date", { ascending: false })
+      .range(0, 499),
+    supabase
+      .from("tasks")
+      .select("id,subject,created_at")
+      .order("created_at", { ascending: false })
+      .range(0, 499),
+  ]);
+  const orderAssignOptions: ArchiveTargetOption[] = (allOrderRows ?? [])
+    .map((row) => {
+      const id = normalizeString((row as Row).order_id);
+      const who = normalizeString((row as Row).customer_name);
+      const when = normalizeString((row as Row).order_date).slice(0, 10);
+      const label = [who || "הזמנה", when].filter(Boolean).join(" · ");
+      return { id, label, customerId: normalizeString((row as Row).customer_id) || null, date: when || null };
+    })
+    .filter((option) => option.id);
+  const taskAssignOptions: ArchiveTargetOption[] = (allTaskRows ?? [])
+    .map((row) => ({
+      id: normalizeString((row as Row).id),
+      label: normalizeString((row as Row).subject),
+    }))
+    .filter((option) => option.id && option.label);
+
   const filterCustomerId = normalizeString(params.customer_id) || "";
   let filterCustomerPhone = "";
   if (filterCustomerId) {
@@ -635,6 +865,8 @@ export default async function DocumentsPage({
     customer_name: normalizeString(params.customer_name) || "",
     customer_phone: filterCustomerPhone,
     customer_page: normalizeString(params.customer_page) || "",
+    // ?money=unlinked — where the document_unlinked_money inbox line lands.
+    money: normalizeString(params.money) || "",
     project_id: normalizeString(params.project_id) || "",
     property_id: normalizeString(params.property_id) || "",
     business_domain:
@@ -673,7 +905,12 @@ export default async function DocumentsPage({
         vehicleTagOptions={vehicleTagOptions}
         totalDocuments={typeof count === "number" ? count : archiveItems.length}
         isTruncated={typeof count === "number" ? count > archiveItems.length : false}
+        canManageCategories={profile.role === "admin"}
+        customerOptions={customerAssignOptions}
+        orderOptions={orderAssignOptions}
+        taskOptions={taskAssignOptions}
       />
+
     </AppShell>
   );
 }

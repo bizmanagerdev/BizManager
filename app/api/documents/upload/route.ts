@@ -8,6 +8,8 @@ import { DEFAULT_DOCUMENT_CATEGORY } from "@/lib/documents";
 import { parseTagIds, syncEntityTags } from "@/lib/tags";
 
 import { STORAGE_BUCKET } from "@/lib/storage";
+import { insertDocumentRow } from "@/lib/documents/insert";
+import { parseDateToIso } from "@/lib/financial/cardImport";
 
 const BUCKET = STORAGE_BUCKET;
 const MAX_BYTES = 200 * 1024 * 1024;
@@ -49,6 +51,13 @@ export async function POST(req: Request) {
     }
     const refYearRaw = Number(form.get("ref_year"));
     const refYear = Number.isInteger(refYearRaw) && refYearRaw > 0 ? refYearRaw : null;
+    // Only meaningful for categories whose registry row has tracks_expiry; the
+    // wizard only asks for it there. Reuses the card-importer parser so a
+    // dd/mm/yy from DateInput and a raw ISO both land correctly.
+    const validUntil = parseDateToIso(form.get("valid_until"));
+    // A name a person chose. The raw filename stays in file_name either way, so
+    // nothing is lost — it just stops being the thing you read in a list.
+    const providedTitle = String(form.get("title") ?? "").trim();
 
     // Resolve the link target. A customer_id (customer-page upload) links to that
     // customer; logistics_projects links to a project; property_management links
@@ -123,11 +132,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: toHebrewError(uploadError.message) }, { status: 400 });
     }
 
-    const { error: docError } = await supabase.from("documents").insert({
+    const { error: docError } = await insertDocumentRow(supabase, {
       id: documentId,
       document_type: category || DEFAULT_DOCUMENT_CATEGORY,
+      source: "manual_upload",
+      valid_until: validUntil,
       business_domain: storedBusinessDomain,
-      title: displayName,
+      title: providedTitle || displayName,
       file_name: displayName,
       storage_key: storagePath,
       uploaded_by: user.id,

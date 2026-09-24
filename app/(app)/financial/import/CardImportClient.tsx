@@ -456,9 +456,9 @@ export default function CardImportClient({
       return;
     }
     setSaving(true);
+    let documentId: string | null = null;
     try {
       // Save the original file as an attachment (best-effort — the save proceeds regardless).
-      let documentId: string | null = null;
       let storageKey: string | null = null;
       if (sourceFile) {
         try {
@@ -508,6 +508,7 @@ export default function CardImportClient({
       });
       const data = (await res.json().catch(() => ({}))) as { statement_id?: string; error?: string };
       if (!res.ok || !data.statement_id) {
+        await discardUploadedStatementFile(documentId);
         setSaveError(toHebrewError(data.error, "שמירת הדף נכשלה."));
         setSaving(false);
         return;
@@ -515,8 +516,25 @@ export default function CardImportClient({
       // Off to the statement page to assign domains and create the expenses.
       router.push(`/financial/statements/${data.statement_id}`);
     } catch {
+      await discardUploadedStatementFile(documentId);
       setSaveError("שמירת הדף נכשלה.");
       setSaving(false);
+    }
+  }
+
+  /** Best-effort cleanup of the statement file when the import that was meant
+   *  to claim it never completed. Failing here is not worth surfacing — the
+   *  user already has a save error, and the worst case is one stray document. */
+  async function discardUploadedStatementFile(documentId: string | null) {
+    if (!documentId) return;
+    try {
+      await fetch("/api/documents/delete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ document_id: documentId }),
+      });
+    } catch {
+      /* leave it; the archive's unlinked view is the backstop */
     }
   }
 

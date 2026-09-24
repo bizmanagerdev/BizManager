@@ -99,10 +99,12 @@ export function TopBar({
   showSearch = true,
 }: Props) {
   const { collapsed } = useSidebarCollapse();
-  // Global search spans customers, projects, orders and money — all staff-only
-  // for a worker, so the box would only ever return doors he can't open.
-  const showGlobalSearch = showSearch && viewerRole !== "worker";
   const pageTitle = usePageTitle();
+  // Global search spans customers, projects, orders and money — all staff-only
+  // for a worker, so the box would only ever return doors he can't open. A page
+  // running its own search over its own data can also ask it to stand down,
+  // rather than put two magnifiers a thumb apart that search different things.
+  const showGlobalSearch = showSearch && viewerRole !== "worker" && !pageTitle?.hideSearch;
   const pathname = usePathname();
   // The page's own heading wins (it's the one that can carry a live subtitle);
   // otherwise fall back to the route's name so no screen is ever nameless.

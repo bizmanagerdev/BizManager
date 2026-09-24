@@ -5,7 +5,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
+import { DOCUMENT_CATEGORIES } from "@/lib/documents";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { offlineUpload } from "@/lib/offline-upload";
 import { FormDialog } from "@/components/ui/form-dialog";
@@ -144,12 +145,16 @@ export default function AddCustomerDocumentButton({
             />
             <div className="space-y-1">
               <label className="text-sm font-medium">קטגוריה (אופציונלי)</label>
-              <Input
+              <NativeSelect
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                placeholder="למשל: חוזה, תעודת משלוח..."
                 disabled={busy}
-              />
+              >
+                <option value="">ללא קטגוריה</option>
+                {DOCUMENT_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </NativeSelect>
             </div>
           </div>
       </FormDialog>
