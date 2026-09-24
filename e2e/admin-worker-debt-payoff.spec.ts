@@ -34,8 +34,21 @@ test.describe("admin — worker debt payoff", () => {
       await loginAs(page, "admin");
       await page.goto(`/payroll/workers/${worker.id}`);
 
+      // The debt items the dialog will offer to allocate against come from
+      // a SEPARATE, slower fetch than the page itself — /api/payroll/center/
+      // protected (SalaryCenterClient.tsx's loadProtectedData, "balances,
+      // payments, session costs"), gated by its own protectedLoading flag.
+      // "הוספת תשלום" is clickable before that resolves, and
+      // openWorkerPaymentDialog() snapshots selectedWorkerOpenDebtItems at
+      // CLICK TIME — opening early gets a dialog with zero allocations no
+      // matter how long you wait once it's open (confirmed in CI: the
+      // allocation field genuinely never existed). Wait for the payment
+      // HISTORY section (fed by the same fetch) to show its loaded state —
+      // a fresh worker has none yet — as a proxy for the fetch being done.
+      await expect(page.getByText("אין תשלומים בתקופה שנבחרה")).toBeVisible({ timeout: 15_000 });
+
       const addPaymentButton = page.getByRole("button", { name: "הוספת תשלום" });
-      await expect(addPaymentButton).toBeVisible({ timeout: 15_000 });
+      await expect(addPaymentButton).toBeVisible();
       await addPaymentButton.click();
 
       await expect(page.getByText("הוספת תשלום לעובד")).toBeVisible();
