@@ -595,6 +595,23 @@ export async function deleteTestTagByName(name: string): Promise<void> {
   if (error) throw error;
 }
 
+// Direct-insert counterpart to TagPicker's own createTagDirect() — for tests
+// that need an existing tag+link in place before the page ever loads,
+// rather than driving the picker's create UI (already covered by
+// admin-customer-tags.spec.ts).
+export async function createTestTag(name: string, kind: string = "general"): Promise<{ id: string; name: string }> {
+  const { data, error } = await adminClient().from("tags").insert({ name, kind }).select("id,name").single();
+  if (error) throw error;
+  return data as { id: string; name: string };
+}
+
+export async function linkCustomerTag(customerId: string, tagId: string): Promise<void> {
+  const { error } = await adminClient()
+    .from("entity_tags")
+    .insert({ entity_type: "customer", entity_id: customerId, tag_id: tagId });
+  if (error) throw error;
+}
+
 export type TestExpense = { id: string };
 
 export async function createTestExpense(
