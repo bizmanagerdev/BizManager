@@ -23,7 +23,13 @@ test.describe("admin — customer tags", () => {
       await loginAs(page, "admin");
       await page.goto(`/customers/${customer.id}`);
 
-      await page.getByRole("button", { name: "עריכת לקוח" }).click();
+      // page.tsx renders <EditCustomerButton> three times — the main "פרטי
+      // לקוח" card header, plus twice more (conditionally) in the branches
+      // section. A customer with zero branches shows both the main one and
+      // the empty-branches shortcut simultaneously; both open the identical
+      // dialog for the same customer, so .first() (the main card's, first
+      // in DOM order) is a safe, correct pick regardless.
+      await page.getByRole("button", { name: "עריכת לקוח" }).first().click();
       await expect(page.getByText("עריכת לקוח").last()).toBeVisible();
 
       await page.getByText("הוספת תגית").click();
