@@ -53,21 +53,28 @@ test.describe("admin — worker debt payoff", () => {
       await expect(amountInput).toBeVisible({ timeout: 10_000 });
       await amountInput.fill(String(laborCost));
 
-      // "פיזור אוטומטי" (FormDialog's allocations section, SalaryCenterClient.
-      // tsx) has no explicit type="button" — Button (components/ui/button.tsx)
-      // never defaults one, so the native <button> default of type="submit"
-      // applies. FormDialog wraps its whole body, allocations section
-      // included, in one <form onSubmit={(e) => { e.preventDefault();
-      // onSubmit(); }}>: preventDefault only stops the browser's own
-      // navigation, not the React handler, so clicking this button ALSO
-      // fires saveWorkerPayment() immediately — confirmed in CI: the dialog
-      // was already gone by the time the next line looked for "שמירת תשלום".
-      // The auto-distribute click IS the submit here.
-      const autoDistribute = page.getByRole("button", { name: "פיזור אוטומטי" });
-      await expect(autoDistribute).toBeVisible();
+      // Deliberately NOT "פיזור אוטומטי": that button has no type="button"
+      // (Button, components/ui/button.tsx, never defaults one), so it's a
+      // native type="submit" sitting inside FormDialog's one <form> around
+      // the whole body, allocations section included. Its own onClick
+      // (setWorkerPaymentForm distributing the amount) and the form's
+      // onSubmit (saveWorkerPayment, only preventDefault()ing the browser's
+      // own navigation) both fire off the SAME click — confirmed in CI: the
+      // save request goes out with the allocation still at its PRE-click
+      // empty state, creating a real but wholly UNALLOCATED payment
+      // (payment_status stayed "unpaid"). Filling the one open debt item's
+      // own "סכום להקצאה" field directly, then using the real submit button,
+      // sidesteps that race entirely.
+      const allocationInput = page.locator('xpath=//div[text()="סכום להקצאה"]/parent::label//input');
+      await expect(allocationInput).toBeVisible();
+      await allocationInput.fill(String(laborCost));
+
+      const saveButton = page.getByRole("button", { name: "שמירת תשלום" });
+      await expect(saveButton).toBeVisible();
+      await expect(saveButton).toBeEnabled();
       const [response] = await Promise.all([
         page.waitForResponse((r) => r.url().includes("/api/payroll/worker-payments") && r.request().method() === "POST"),
-        autoDistribute.click(),
+        saveButton.click(),
       ]);
       expect(response.ok()).toBe(true);
       const body = (await response.json()) as { payment?: { id?: string } };
