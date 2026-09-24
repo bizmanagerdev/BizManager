@@ -14,12 +14,20 @@ import {
 // SalaryCenterClient.tsx's <Tabs defaultValue={canManageSalary ? "finances"
 // : ...}>) → "הוספת תשלום" opens a FormDialog that both records a
 // worker_payments row AND allocates it against open debt items
-// (worker_debt_items_view). A worker created via createTestWorker() with no
-// payrollWorkerType override gets pay_tracking_mode='session' (the users
-// table's own DB default, left untouched by that helper) — so a directly
-// seeded attendance_sessions row with labor_cost > 0 shows up as a payable
-// debt item immediately, no payroll period/payslip machinery or date gating
-// involved (getPayableDebtAmount only special-cases payslip items). No
+// (worker_debt_items_view). worker_debt_items_view's session_items CTE
+// keys off users.pay_tracking_mode (a DB-defaulted 'session', separate
+// column createTestWorker() never sets) — so a directly seeded
+// attendance_sessions row with labor_cost > 0 shows up as a payable debt
+// item immediately regardless of payrollWorkerType, no payroll period/
+// payslip machinery or date gating involved (getPayableDebtAmount only
+// special-cases payslip items). But the SAVE route (app/api/payroll/
+// worker-payments/route.ts) checks a DIFFERENT column for what allocation
+// type it'll accept: normalizePayrollWorkerType() trusts users.
+// payroll_worker_type directly whenever it's already a valid value, so a
+// worker left at createTestWorker()'s own default ("monthly_payslip") gets
+// rejected for a "session" allocation with a 400 ("must be allocated by
+// payslip") even though the debt item itself is genuinely session-sourced —
+// payrollWorkerType: "session_only" keeps both columns consistent. No
 // account is seeded on purpose: AccountSelect renders nothing at all with
 // zero accounts, and account_id is only required client-side when the list
 // is non-empty (workerPaymentAccountsList.length > 0) — same sidestep
@@ -28,7 +36,7 @@ test.describe("admin — worker debt payoff", () => {
   test("admin can pay off a worker's open session debt", async ({ page }) => {
     test.setTimeout(60_000);
     const laborCost = 180;
-    const worker: TestWorker = await createTestWorker();
+    const worker: TestWorker = await createTestWorker({ payrollWorkerType: "session_only" });
     const session = await createTestAttendanceSession(worker.id, { laborCost });
     try {
       await loginAs(page, "admin");
