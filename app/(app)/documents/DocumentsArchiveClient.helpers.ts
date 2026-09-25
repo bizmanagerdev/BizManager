@@ -378,6 +378,23 @@ export function groupLabel(groupBy: string, doc: DocumentArchiveItem) {
  * Titles read "<category> · <entity>"; under a heading naming the entity, the
  * card only needs to say which kind of paper it is.
  */
+/**
+ * A chip's halves: what kind of thing it is, then which one. The server writes
+ * some labels with the kind already in them ("הזמנה · בית גדליה"), so it is
+ * stripped before being added back — otherwise the chip stutters.
+ */
+export function entityChipParts(type: string, label: string): string[] {
+  const kind = entityTypeLabel(type);
+  const name = label.trim();
+  if (!kind) return [name];
+  if (name === kind) return [kind];
+  if (name.startsWith(kind)) {
+    const rest = name.slice(kind.length).replace(/^[\s·:\-–]+/, "").trim();
+    return rest ? [kind, rest] : [kind];
+  }
+  return [kind, name];
+}
+
 export function cardTitle(doc: DocumentArchiveItem, groupHeading: string): string {
   const full = doc.title;
   if (!groupHeading) return full;

@@ -77,7 +77,7 @@ import {
   collapseSets,
   compareGroups,
   documentYear,
-  entityTypeLabel,
+  entityChipParts,
   facetTriggerLabel,
   fileKindLabel,
   formatDate,
@@ -100,23 +100,6 @@ import {
 } from "@/app/(app)/documents/DocumentsArchiveClient.prefs";
 
 const FIELD_LABEL = "text-xs text-[rgb(var(--primary-6))]";
-
-/**
- * A chip's halves: what kind of thing it is, then which one. The server writes
- * some labels with the kind already in them ("הזמנה · בית גדליה"), so it is
- * stripped before being added back — otherwise the chip stutters.
- */
-function entityChipParts(type: string, label: string): string[] {
-  const kind = entityTypeLabel(type);
-  const name = label.trim();
-  if (!kind) return [name];
-  if (name === kind) return [kind];
-  if (name.startsWith(kind)) {
-    const rest = name.slice(kind.length).replace(/^[\s·:\-–]+/, "").trim();
-    return rest ? [kind, rest] : [kind];
-  }
-  return [kind, name];
-}
 
 /**
   * An arrow floating over the preview. Hidden until pointed at — and always
@@ -930,20 +913,6 @@ export default function DocumentsArchiveClient({
       });
   }, [filteredDocuments, groupBy, normalizedQuery, sortBy]);
 
-  // The one category every document on screen shares, or null when they differ.
-  // A filter down to one type, or a group that only ever holds one type, makes
-  // that word true of every card — and a word that is true of every card is not
-  // worth the line it takes.
-  const uniformCategoryLabel = useMemo(() => {
-    if (filteredDocuments.length === 0) return null;
-    const first = getDocumentCategoryLabel(filteredDocuments[0]!.document_type).trim();
-    if (!first) return null;
-    for (const doc of filteredDocuments) {
-      if (getDocumentCategoryLabel(doc.document_type).trim() !== first) return null;
-    }
-    return first;
-  }, [filteredDocuments]);
-
   const GROUP_PREVIEW_SIZE = 8;
   // One row in the grid; the list can afford more before it needs a cap.
   const [gridColumns, setGridColumns] = useState(4);
@@ -1042,6 +1011,17 @@ export default function DocumentsArchiveClient({
       selectionMode,
     ]
   );
+
+  /** The one category a tray's documents all share, or null when they differ. */
+  const groupUniformCategory = useCallback((items: DocumentArchiveItem[]): string | null => {
+    if (items.length === 0) return null;
+    const first = getDocumentCategoryLabel(items[0]!.document_type).trim();
+    if (!first) return null;
+    for (const doc of items) {
+      if (getDocumentCategoryLabel(doc.document_type).trim() !== first) return null;
+    }
+    return first;
+  }, []);
 
   const renderGroup = (group: (typeof groupedDocuments)[number], compact: boolean) => (
           <section
@@ -1147,7 +1127,7 @@ export default function DocumentsArchiveClient({
                       doc={doc}
                       members={members}
                       groupLabel={group.label}
-                      uniformCategoryLabel={uniformCategoryLabel}
+                      uniformCategoryLabel={groupUniformCategory(group.items)}
                       KindIcon={fileKindIcon(doc.file_kind)}
                       {...rowContext}
                     />
@@ -1163,6 +1143,7 @@ export default function DocumentsArchiveClient({
                 <DocumentListRow
                   key={doc.id}
                   doc={doc}
+                  groupLabel={group.label}
                   KindIcon={fileKindIcon(doc.file_kind)}
                   {...rowContext}
                 />
@@ -1706,7 +1687,7 @@ export default function DocumentsArchiveClient({
                 <button
                   key={`scope-${key}`}
                   type="button"
-                  className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-secondary/40 px-2 text-xs text-secondary hover:bg-secondary/10"
+                  className="hidden h-6 shrink-0 items-center gap-1 rounded-full border border-secondary/40 px-2 text-xs text-secondary hover:bg-secondary/10 @[40em]:inline-flex"
                   onClick={() => toggleAttachedTo(key)}
                 >
                   {ENTITY_FACETS.find((facet) => facet.key === key)?.label ?? key}
@@ -1720,7 +1701,7 @@ export default function DocumentsArchiveClient({
                 <button
                   key={`expiry-${key}`}
                   type="button"
-                  className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-secondary/40 px-2 text-xs text-secondary hover:bg-secondary/10"
+                  className="hidden h-6 shrink-0 items-center gap-1 rounded-full border border-secondary/40 px-2 text-xs text-secondary hover:bg-secondary/10 @[40em]:inline-flex"
                   onClick={() => toggleExpiryChip(key)}
                 >
                   {EXPIRY_FACETS.find((facet) => facet.key === key)?.label ?? key}
@@ -1734,7 +1715,7 @@ export default function DocumentsArchiveClient({
                 <button
                   key={`type-${code}`}
                   type="button"
-                  className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-secondary/40 px-2 text-xs text-secondary hover:bg-secondary/10"
+                  className="hidden h-6 shrink-0 items-center gap-1 rounded-full border border-secondary/40 px-2 text-xs text-secondary hover:bg-secondary/10 @[40em]:inline-flex"
                   onClick={() => toggleTypeChip(code)}
                 >
                   {categoryLabel(categoryRows, code)}
@@ -1746,7 +1727,7 @@ export default function DocumentsArchiveClient({
               {showPills && normalizedQuery ? (
                 <button
                   type="button"
-                  className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-secondary/40 px-2 text-xs text-secondary hover:bg-secondary/10"
+                  className="hidden h-6 shrink-0 items-center gap-1 rounded-full border border-secondary/40 px-2 text-xs text-secondary hover:bg-secondary/10 @[40em]:inline-flex"
                   onClick={() => setQuery("")}
                 >
                   {query.trim()}

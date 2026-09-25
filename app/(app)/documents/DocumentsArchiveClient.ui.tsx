@@ -39,7 +39,7 @@ import { expiryBadgeTone, expiryLabel, type ExpiryResult } from "@/lib/documents
 import type { DocumentArchiveItem } from "@/lib/documents/archive";
 import {
   cardTitle,
-  entityTypeLabel,
+  entityChipParts,
   fileKindLabel,
   formatDate,
   groupHref,
@@ -317,8 +317,6 @@ export function DocumentTile({
                         </div>
                         <div className="flex flex-1 flex-col gap-0.5 p-2">
                           {(() => {
-                            const hasPicture = doc.file_kind === "image" && doc.url;
-                            if (hasPicture) return null;
                             const shown = cardTitle(doc, groupLabel);
                             if (uniformCategoryLabel && shown.trim() === uniformCategoryLabel) {
                               return null;
@@ -385,10 +383,12 @@ export function DocumentTile({
 
 export function DocumentListRow({
   doc,
+  groupLabel,
   KindIcon,
   ...ctx
 }: DocumentRowContext & {
   doc: DocumentArchiveItem;
+  groupLabel: string;
   KindIcon: (props: { className?: string }) => React.ReactNode;
 }) {
   const { groupBy, moneyCodes, expiryOf, typeChips } = ctx;
@@ -407,7 +407,7 @@ export function DocumentListRow({
                         ctx.onPreview(doc);
                       }
                     }}
-                    className="flex cursor-pointer items-center gap-x-3 border-b border-border/50 px-2 py-1.5 transition-colors last:border-b-0 hover:bg-secondary/10"
+                    className="flex min-h-14 cursor-pointer items-center gap-x-3 border-b border-border/50 px-2 py-2 transition-colors last:border-b-0 hover:bg-secondary/10 @[40em]:min-h-0 @[40em]:py-1.5"
                   >
                     {doc.file_kind === "image" && doc.url ? (
                       <a
@@ -434,26 +434,33 @@ export function DocumentListRow({
                     )}
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="font-medium">{doc.title}</span>
-                        {doc.file_kind === "image" ? null : (
-                          <Badge variant="outline">{fileKindLabel(doc.file_kind)}</Badge>
-                        )}
-                        {groupBy === "domain"
-                          ? null
-                          : doc.business_domains.map((domain) => (
-                              <Badge key={`${doc.id}-${domain}`} variant="outline">
-                                {getBusinessDomainLabel(domain)}
-                              </Badge>
-                            ))}
-                        {groupBy === "type" ||
-                        (typeChips.size === 1 && typeChips.has(doc.document_type ?? "")) ? null : doc
-                            .document_type ? (
-                          <Badge variant="outline">{getDocumentCategoryLabel(doc.document_type)}</Badge>
-                        ) : getDocumentSourceLabel(doc.source) ? (
-                          <Badge variant="outline">{getDocumentSourceLabel(doc.source)}</Badge>
-                        ) : (
-                          <Badge variant="outline">ללא קטגוריה</Badge>
-                        )}
+                        <span className="font-medium">{cardTitle(doc, groupLabel)}</span>
+                        {/* What KIND of paper it is — the tray heading and the
+                            filters carry this already, so it is the first thing
+                            a narrow row can do without. */}
+                        <span className="hidden flex-wrap items-center gap-1.5 @[40em]:flex">
+                          {doc.file_kind === "image" ? null : (
+                            <Badge variant="outline">{fileKindLabel(doc.file_kind)}</Badge>
+                          )}
+                          {groupBy === "domain"
+                            ? null
+                            : doc.business_domains.map((domain) => (
+                                <Badge key={`${doc.id}-${domain}`} variant="outline">
+                                  {getBusinessDomainLabel(domain)}
+                                </Badge>
+                              ))}
+                          {groupBy === "type" ||
+                          (typeChips.size === 1 && typeChips.has(doc.document_type ?? "")) ? null : doc
+                              .document_type ? (
+                            <Badge variant="outline">{getDocumentCategoryLabel(doc.document_type)}</Badge>
+                          ) : getDocumentSourceLabel(doc.source) ? (
+                            <Badge variant="outline">{getDocumentSourceLabel(doc.source)}</Badge>
+                          ) : (
+                            <Badge variant="outline">ללא קטגוריה</Badge>
+                          )}
+                        </span>
+                        {/* What is WRONG with it stays at every width — it is
+                            the only thing here that asks for an action. */}
                         {isUnlinkedMoneyDocument(doc.document_type, doc.entity_types, moneyCodes) ? (
                           <Badge variant="outline" className="border-warning text-warning">
                             לא משויך לתנועה
@@ -468,30 +475,39 @@ export function DocumentListRow({
                       </div>
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground [&>*+*]:before:me-2 [&>*+*]:before:text-border [&>*+*]:before:content-['·']">
                         <span>{formatDate(doc.uploaded_at)}</span>
-                        {doc.uploaded_by_name ? <span>{doc.uploaded_by_name}</span> : null}
+                        {doc.uploaded_by_name ? (
+                          <span className="hidden @[40em]:inline">{doc.uploaded_by_name}</span>
+                        ) : null}
                         {doc.linked_entities.length > 0 ? (
-                          doc.linked_entities.map((entity) =>
+                          doc.linked_entities.map((entity, index) =>
                             entity.href ? (
                               <Link
                                 key={`${entity.type}:${entity.id}`}
                                 href={entity.href}
                                 onClick={(event) => event.stopPropagation()}
-                                className="text-foreground hover:underline"
+                                className={`text-foreground hover:underline ${
+                                  index === 0 ? "" : "hidden @[40em]:inline"
+                                }`}
                               >
-                                · {entityTypeLabel(entity.type)}: {entity.label}
+                                {entityChipParts(entity.type, entity.label).join(": ")}
                               </Link>
                             ) : (
-                              <span key={`${entity.type}:${entity.id}`}>
-                                · {entityTypeLabel(entity.type)}: {entity.label}
+                              <span
+                                key={`${entity.type}:${entity.id}`}
+                                className={index === 0 ? "" : "hidden @[40em]:inline"}
+                              >
+                                {entityChipParts(entity.type, entity.label).join(": ")}
                               </span>
                             )
                           )
                         ) : (
-                          <span>· ללא שיוך</span>
+                          <span>ללא שיוך</span>
                         )}
                         {doc.customers.length > 0 &&
                         !doc.linked_entities.some((entity) => entity.type === "customer") ? (
-                          <span>· לקוח: {doc.customers.map((item) => item.label).join(", ")}</span>
+                          <span className="hidden @[40em]:inline">
+                            לקוח: {doc.customers.map((item) => item.label).join(", ")}
+                          </span>
                         ) : null}
                       </div>
                     </div>
@@ -502,7 +518,14 @@ export function DocumentListRow({
                       onClick={(event) => event.stopPropagation()}
                     >
                       {doc.url ? (
-                        <Button asChild variant="outline" size="icon" aria-label="פתיחה" title="פתיחה">
+                        <Button
+                          asChild
+                          variant="outline"
+                          size="icon"
+                          aria-label="פתיחה"
+                          title="פתיחה"
+                          className="hidden @[40em]:inline-flex"
+                        >
                           <a href={doc.url} target="_blank" rel="noreferrer">
                             <ExternalLinkIcon className="h-4 w-4" />
                           </a>
