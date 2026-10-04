@@ -53,14 +53,19 @@ export default function PaymentsAlertsChip({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
+        {/* Phone: just the warning glyph and the count, at the end of the
+            header's second row (`max-md:order-6`, see PaymentsHubClient) — the
+            full "באיחור 16 לתשלום · 3 לגבייה" label didn't fit beside the
+            direction switch. The aria-label still says what it counts. */}
         <button
           type="button"
-          className={`inline-flex items-center gap-1.5 px-3 text-xs font-semibold transition-colors ${TOOLBAR_CONTROL} ${CHIP_TONE[severity]}`}
+          className={`inline-flex items-center gap-1.5 px-3 text-xs font-semibold transition-colors max-md:order-6 max-md:gap-1 max-md:px-2.5 ${TOOLBAR_CONTROL} ${CHIP_TONE[severity]}`}
           aria-label={`${what}: ${late.length}`}
         >
           <WarningIcon className="h-3.5 w-3.5 shrink-0" />
-          <span>{label}</span>
-          <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 opacity-70" />
+          <span className="max-md:hidden">{label}</span>
+          <span className="tabular-nums md:hidden">{late.length}</span>
+          <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 opacity-70 max-md:hidden" />
         </button>
       </DropdownMenuTrigger>
       {/* align="end": the chip sits at the page's left edge (RTL), so the menu

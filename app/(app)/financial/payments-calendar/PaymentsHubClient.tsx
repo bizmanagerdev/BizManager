@@ -124,7 +124,15 @@ export default function PaymentsHubClient({
           <span>ההוצאות הקבועות של החודש לא נוצרו בטעינה זו — הלוח עלול להיות חסר. {generatorError}</span>
         </div>
       ) : null}
-      {/* Header — tab bar + the actions for the active tab, on one baseline */}
+      {/* Header — tab bar + the actions for the active tab, on one baseline.
+          PHONE (below md): the two clusters dissolve (max-md:contents) and their
+          pieces are laid out on two rows by `order` — tabs with the calculator
+          (icon only) on the first, the direction switch with the calendar's
+          סינון button and late chip on the second. Stacked as-is they took five
+          rows — half the screen — before the calendar. The calendar's pieces
+          arrive through a portal after the page's JS runs; they land at the END
+          of the second row, which already exists, so nothing above or beside
+          them moves. Desktop is untouched. */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         {/* The tabs and the direction switch are one fixed cluster. Both frame
             everything below them and apply to both tabs, and — the reason
@@ -133,8 +141,8 @@ export default function PaymentsHubClient({
             click that showed or hid a filter (רק קבועות is meaningless in
             נכנס) or relabelled the overdue chip shoved it sideways, right
             under the pointer of someone clicking through the three options. */}
-        <div className="flex flex-wrap items-center gap-3">
-          <TabsList variant="underline" className="w-auto">
+        <div className="flex flex-wrap items-center gap-3 max-md:contents">
+          <TabsList variant="underline" className="w-auto max-md:order-1">
             {TABS.map((tab) => {
               const Icon = tab.icon;
               return (
@@ -147,7 +155,7 @@ export default function PaymentsHubClient({
           </TabsList>
           {/* Out / in / both. A segmented control, not three chips: these are
               mutually exclusive views of the same board. */}
-          <div role="group" aria-label="כיוון הכסף" className="inline-flex h-[34px] overflow-hidden rounded-lg border border-input">
+          <div role="group" aria-label="כיוון הכסף" className="inline-flex h-[34px] overflow-hidden rounded-lg border border-input max-md:order-4">
             {DIRECTION_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
@@ -168,14 +176,25 @@ export default function PaymentsHubClient({
         {/* Everything whose width depends on the direction or the tab lives
             here, on the far side, where growing and shrinking moves nothing
             the user is aiming at. */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 max-md:contents">
           {activeTab === "calendar" ? <div ref={setFiltersSlot} className="contents" /> : null}
           {activeTab === "calendar" ? <div ref={setAlertsSlot} className="contents" /> : null}
-          {/* The cash-needs calculator is useful from either tab. */}
-          <Button type="button" size="sm" variant="secondary" onClick={() => setCashOpen(true)}>
+          {/* The cash-needs calculator is useful from either tab. On a phone it's
+              just its calculator glyph, beside the tabs. */}
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => setCashOpen(true)}
+            aria-label="כמה צריך?"
+            title="כמה צריך?"
+            className="max-md:order-2 max-md:h-[34px] max-md:w-[34px] max-md:px-0"
+          >
             <CalculatorIcon className="h-4 w-4" />
-            כמה צריך?
+            <span className="max-md:hidden">כמה צריך?</span>
           </Button>
+          {/* Phone: ends the first row, so the direction switch starts the second. */}
+          <div aria-hidden className="hidden h-0 basis-full max-md:order-3 max-md:block" />
           {/* The calendar tab has no generic "הוסף תשלום" — a one-off payment is
               "הוצאה" in the app's one quick-create +. The calendar's own per-day
               add stays: it carries the day you clicked. */}
@@ -185,7 +204,13 @@ export default function PaymentsHubClient({
                   page load (memoized for a minute) and walks every period from
                   each bill's start date. "השלמת חיובים חסרים" on the list is the
                   explicit action, with a preview. */}
-              <Button type="button" size="sm" onClick={() => setNewTemplateOpen(true)} disabled={expenseMissingSchema}>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setNewTemplateOpen(true)}
+                disabled={expenseMissingSchema}
+                className="max-md:order-5"
+              >
                 <AddIcon className="h-4 w-4" />
                 הוצאה קבועה חדשה
               </Button>
@@ -195,6 +220,7 @@ export default function PaymentsHubClient({
                 variant="outline"
                 onClick={() => void backfill.open({ id: null, label: "כל ההוצאות הקבועות" })}
                 disabled={expenseMissingSchema}
+                className="max-md:order-6"
               >
                 <AddDateIcon className="h-4 w-4" />
                 השלמת חיובים חסרים

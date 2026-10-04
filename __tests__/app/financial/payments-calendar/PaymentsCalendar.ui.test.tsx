@@ -140,12 +140,15 @@ function renderBoard(over: Partial<React.ComponentProps<typeof PaymentsCalendar>
 }
 
 // The grid cell for a day of the month in view: the button whose date header
-// shows that number and that isn't an adjacent-month filler cell.
+// shows that number and that isn't an adjacent-month filler cell. The header
+// slots are skipped — the phone's סינון badge and late-count chip are numbers
+// in buttons too.
 function dayCell(dayOfMonth: number): HTMLElement {
   const cells = screen
     .getAllByText(String(dayOfMonth), { selector: "span" })
     .map((el) => el.closest("button"))
-    .filter((b): b is HTMLButtonElement => Boolean(b) && !b!.className.includes("text-muted-foreground/45"));
+    .filter((b): b is HTMLButtonElement => Boolean(b) && !b!.className.includes("text-muted-foreground/45"))
+    .filter((b) => !slot.contains(b) && !filters.contains(b));
   if (cells.length !== 1) throw new Error(`expected one in-month cell for day ${dayOfMonth}, found ${cells.length}`);
   return cells[0];
 }
@@ -233,6 +236,24 @@ describe("PaymentsCalendar (צפי תזרים · לוח) — the board as it sta
     expect(screen.getByRole("button", { name: "הצג ששולמו" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("button", { name: "רק קבועות" }).getAttribute("aria-pressed")).toBe("true");
     expect((screen.getByLabelText("סינון לפי חשבון") as HTMLSelectElement).value).toBe("acc-1");
+  });
+
+  it("on a phone, the סינון sheet holds the same filters and the button counts the ones on", () => {
+    renderBoard();
+    const filterButton = within(filters).getByRole("button", { name: "סינון" });
+    fireEvent.click(filterButton);
+    const sheet = screen.getByRole("dialog", { name: "סינון" });
+    fireEvent.click(within(sheet).getByRole("button", { name: "הצג ששולמו" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "לאומי" }));
+
+    const url = new URLSearchParams(window.location.search);
+    expect(url.get("paid")).toBe("1");
+    expect(url.get("account")).toBe("acc-1");
+    expect(filterButton.textContent).toContain("2");
+
+    fireEvent.click(within(sheet).getByRole("button", { name: "נקה הכל" }));
+    expect(new URLSearchParams(window.location.search).get("paid")).toBeNull();
+    expect(new URLSearchParams(window.location.search).get("account")).toBeNull();
   });
 
   it("ignores an account in the URL that no longer exists", () => {

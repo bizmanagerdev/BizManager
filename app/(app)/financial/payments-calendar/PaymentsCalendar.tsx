@@ -6,6 +6,8 @@ import { useSearchParams } from "next/navigation";
 import { FOCUS_PARAM, flashFocusTarget } from "@/components/layout/FocusHighlighter";
 import { NativeSelect } from "@/components/ui/native-select";
 import { FilterChip, TOOLBAR_CONTROL } from "@/components/ui/filter-chip";
+import { Button } from "@/components/ui/button";
+import { FilterIcon } from "@/components/ui/icons";
 import type { Account } from "@/lib/accounts";
 import { idFromParam, replaceSearchParams } from "@/lib/ui/url-state";
 import type { PaymentCalendarItem } from "@/lib/payables";
@@ -20,6 +22,7 @@ import MonthCalendar, {
 } from "@/components/ui/month-calendar";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import PaymentsAlertsChip from "./PaymentsAlertsChip";
+import PaymentsFilterSheet from "./PaymentsFilterSheet";
 import PaymentsDayPanel from "./PaymentsDayPanel";
 import { useRefreshAndWait } from "./useRefreshAndWait";
 import {
@@ -109,6 +112,8 @@ export default function PaymentsCalendar({ items: allItems, todayIso, projects, 
   );
   const [recurringOnly, setRecurringOnly] = useState(() => searchParams.get(RECURRING_ONLY_PARAM) === "1");
   const [accountFilter, setAccountFilter] = useState(() => idFromParam(searchParams.get(ACCOUNT_PARAM), accounts));
+  // Phone: the three filters live on a sheet behind one "סינון" button.
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   useEffect(() => {
     replaceSearchParams({
       [SHOW_PAID_PARAM]: showPaid ? "1" : null,
@@ -331,16 +336,11 @@ export default function PaymentsCalendar({ items: allItems, todayIso, projects, 
 
   // The two filters are CHIPS (aria-pressed), the same control the rest of the
   // app uses for a filter — a switch reads as a setting and is slower to scan.
-  const showPaidToggle = (
-    <FilterChip
-      active={showPaid}
-      label="הצג ששולמו"
-      onClick={() => {
-        setShowPaid((v) => !v);
-        setRevealedIds(EMPTY_IDS);
-      }}
-    />
-  );
+  const toggleShowPaid = () => {
+    setShowPaid((v) => !v);
+    setRevealedIds(EMPTY_IDS);
+  };
+  const showPaidToggle = <FilterChip active={showPaid} label="הצג ששולמו" onClick={toggleShowPaid} />;
   // Recurring bills only exist on the outgoing side (there is no recurring
   // income rule yet), so the chip would filter every incoming row away.
   const recurringOnlyToggle =
@@ -390,21 +390,67 @@ export default function PaymentsCalendar({ items: allItems, todayIso, projects, 
   // switcher: all four change WHAT DATA is on the page, so they belong
   // together. What stays on the grid's own toolbar is only what is about the
   // grid — month navigation and the legend.
+  //
+  // On a phone they're one "סינון" button (with how many are on) opening a
+  // sheet — inline, they took two whole rows of the header. `max-md:order-5`
+  // puts it after the direction switch on the header's second row (see the
+  // header in PaymentsHubClient).
+  const activeFilterCount =
+    (accountFilter ? 1 : 0) + (recurringOnly && direction !== "in" ? 1 : 0) + (showPaid ? 1 : 0);
   const filterControls = filtersSlot
     ? createPortal(
         <>
-          {accountFilterControl}
-          {recurringOnlyToggle}
-          {showPaidToggle}
+          <div className="hidden md:contents">
+            {accountFilterControl}
+            {recurringOnlyToggle}
+            {showPaidToggle}
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setFilterSheetOpen(true)}
+            className={`gap-1.5 px-3 text-xs md:hidden max-md:order-5 ${TOOLBAR_CONTROL} ${
+              activeFilterCount > 0 ? "border-secondary text-secondary" : ""
+            }`}
+          >
+            <FilterIcon className="h-4 w-4" />
+            סינון
+            {activeFilterCount > 0 ? (
+              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-secondary px-1 text-xs text-secondary-foreground">
+                {activeFilterCount}
+              </span>
+            ) : null}
+          </Button>
         </>,
         filtersSlot
       )
     : null;
+  const filterSheet = (
+    <PaymentsFilterSheet
+      open={filterSheetOpen}
+      onOpenChange={setFilterSheetOpen}
+      accounts={accounts}
+      accountFilter={accountFilter}
+      onAccountFilter={setAccountFilter}
+      showRecurringOnly={direction !== "in"}
+      recurringOnly={recurringOnly}
+      onToggleRecurringOnly={() => setRecurringOnly((v) => !v)}
+      showPaid={showPaid}
+      onToggleShowPaid={toggleShowPaid}
+      onClear={() => {
+        setAccountFilter("");
+        setRecurringOnly(false);
+        setShowPaid(false);
+        setRevealedIds(EMPTY_IDS);
+      }}
+    />
+  );
 
   return (
     <div className="space-y-3">
       {alertsChip}
       {filterControls}
+      {filterSheet}
       <MonthCalendar
         todayIso={todayIso}
         month={monthDate}
