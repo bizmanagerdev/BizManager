@@ -140,14 +140,14 @@ export function useSetHeaderTrailingAction(node: ReactNode) {
 }
 
 /**
- * Take over the ENTIRE title slot on a phone with a page's own search/filter
- * row, instead of a page name — for a page whose board wants the vertical
- * space a separate toolbar strip would otherwise cost it (see
- * TasksPageClient.tsx: "move the search and buttons to the top bar so the
- * cards can take the full height"). Unlike `useSetPageTitle`, the node is
- * rendered raw (no whitespace-nowrap/clamp text styling — those assume a
- * heading, not a row of controls). Mobile-only, same as `PageHeaderToolbar`
- * used to be for this content — the desktop layout has its own room for it.
+ * Take over the top bar's title slot with a page's own search/filter row, from
+ * `md` up — for a page whose board wants the vertical space a separate toolbar
+ * row would otherwise cost it (see TasksPageClient.tsx: "move the search and
+ * buttons to the top bar so the cards can take the full height"). On a phone
+ * the bar keeps its title (the bar's icons leave no room for a search field)
+ * and the page uses `PageHeaderToolbar` for its controls, like every other
+ * page. Unlike `useSetPageTitle`, the node is rendered raw (no whitespace-
+ * nowrap/clamp text styling — those assume a heading, not a row of controls).
  * `node` must be referentially stable (wrap it in useMemo).
  */
 export function useSetHeaderToolbar(node: ReactNode) {

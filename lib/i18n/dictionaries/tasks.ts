@@ -114,7 +114,11 @@ export type TasksKey =
   | "loadingTaskData"
   | "nextButton"
   | "savingEllipsis"
-  | "saveChangesButton"
+  | "autosaveSaved"
+  | "autosaveFailed"
+  | "unsavedTitle"
+  | "unsavedDescription"
+  | "showsFromToastPrefix"
   | "createButton"
   | "splitAskTitleSuffix"
   | "splitAskDescription"
@@ -290,7 +294,11 @@ export const tasksDict: Dictionary<TasksKey> = {
     loadingTaskData: "טוען נתוני משימה...",
     nextButton: "הבא ›",
     savingEllipsis: "שומר...",
-    saveChangesButton: "שמירת שינויים",
+    autosaveSaved: "נשמר",
+    showsFromToastPrefix: "המשימה נשמרה ותופיע ברשימה מ־",
+    autosaveFailed: "לא נשמר",
+    unsavedTitle: "השינויים לא נשמרו",
+    unsavedDescription: "למשימה חסר שם, או פרויקט/נכס שהתחום שבחרת מחייב — לכן השינויים האחרונים לא נשמרו. לצאת בלי לשמור אותם?",
     createButton: "יצירה",
     splitAskTitleSuffix: "שורות בשם המשימה",
     splitAskDescription: "ליצור משימה נפרדת לכל שורה, או משימה אחת?",
@@ -468,7 +476,11 @@ export const tasksDict: Dictionary<TasksKey> = {
     loadingTaskData: "جارٍ تحميل بيانات المهمة...",
     nextButton: "التالي ›",
     savingEllipsis: "جارٍ الحفظ...",
-    saveChangesButton: "حفظ التغييرات",
+    autosaveSaved: "تم الحفظ",
+    showsFromToastPrefix: "تم حفظ المهمة وستظهر في القائمة من",
+    autosaveFailed: "لم يُحفظ",
+    unsavedTitle: "لم تُحفظ التغييرات",
+    unsavedDescription: "اسم المهمة فارغ، أو ينقصها المشروع/العقار الذي يتطلبه المجال المختار — لذلك لم تُحفظ التغييرات الأخيرة. هل تريد الخروج دون حفظها؟",
     createButton: "إنشاء",
     splitAskTitleSuffix: "أسطر في اسم المهمة",
     splitAskDescription: "هل تريد إنشاء مهمة منفصلة لكل سطر، أم مهمة واحدة؟",

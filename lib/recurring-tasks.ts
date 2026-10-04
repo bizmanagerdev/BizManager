@@ -1,6 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getBusinessDomainLabel, isExpenseBusinessDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
+import { computeInsertSortOrder } from "@/lib/tasks/sortOrder";
 
 type TemplateRow = {
   id: string;
@@ -163,6 +164,27 @@ async function runEnsureRecurringTasksForDate(
 
   let createdCount = 0;
 
+  // A generated task goes to the TOP of its column, like any new task (see
+  // lib/tasks/sortOrder.ts). Without a sort_order it used to sort to the bottom.
+  // The current top is looked up once per column, only when something is
+  // actually created, then each insert climbs above the previous one.
+  const topByStatus = new Map<string, number | null>();
+  async function nextTopSortOrder(status: string): Promise<number> {
+    if (!topByStatus.has(status)) {
+      let minQuery = supabase
+        .from("tasks")
+        .select("sort_order")
+        .order("sort_order", { ascending: true, nullsFirst: false })
+        .limit(1);
+      minQuery = status === "todo" ? minQuery.or("status.eq.todo,status.is.null") : minQuery.eq("status", status);
+      const { data } = await minQuery.maybeSingle();
+      topByStatus.set(status, typeof data?.sort_order === "number" ? data.sort_order : null);
+    }
+    const next = computeInsertSortOrder(null, topByStatus.get(status));
+    topByStatus.set(status, next);
+    return next;
+  }
+
   for (const template of templates) {
     if (!template.id || !template.subject_template || !isExpenseBusinessDomain(template.business_domain)) continue;
     if (template.frequency !== "monthly") continue;
@@ -191,6 +213,7 @@ async function runEnsureRecurringTasksForDate(
     const description = applyTemplateTokens(template.description_template, { monthKey, monthLabel, dueDate });
     if (!subject?.trim()) continue;
 
+    const status = template.default_status ?? "todo";
     for (const assignedUserId of assigneeIds) {
       const { error } = await supabase.from("tasks").insert({
         recurring_task_template_id: template.id,
@@ -203,7 +226,8 @@ async function runEnsureRecurringTasksForDate(
         description: description?.trim() ? description.trim() : null,
         due_date: dueDate,
         priority: template.default_priority ?? "medium",
-        status: template.default_status ?? "todo",
+        status,
+        sort_order: await nextTopSortOrder(status),
       });
 
       if (error) {

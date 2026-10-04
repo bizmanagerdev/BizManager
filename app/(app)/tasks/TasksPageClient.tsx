@@ -24,6 +24,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { computeInsertSortOrder } from "@/lib/tasks/sortOrder";
+import { isTaskWaitingForLater } from "@/lib/tasks/visibility";
 import { AddIcon, AttachIcon, BuildingIcon, CheckboxCheckedIcon, CheckboxUncheckedIcon, ClockIcon, CloseIcon, CommentIcon, DragIcon, FilterIcon, LockIcon, NotificationIcon, ProjectIcon, RecurringIcon, SearchIcon, UserIcon, WazeIcon, ZoomInIcon, ZoomOutIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { offlineFetch } from "@/lib/offline-queue";
@@ -47,6 +48,7 @@ import type { TaskOption, UserOption } from "@/components/tasks/TaskUpsertDialog
 import { emitNavigationStart, emitProgressActivityEnd, emitProgressActivityStart } from "@/components/layout/TopNavigationProgress";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { useSetHeaderToolbar } from "@/components/layout/page-title-context";
+import { PAGE_HEADER_TOOLBAR_ID, PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 import { getTaskPriorityLabel, getTaskStatusLabel } from "@/lib/ui/status-colors";
 import type { Locale } from "@/lib/i18n/types";
 import { t } from "@/lib/i18n/t";
@@ -105,6 +107,11 @@ const MIN_OVERVIEW_ZOOM = 0.35;
 // on a phone, past the bottom of the window on desktop). The parent clips it —
 // keep the clip margin there bigger than this.
 const BOARD_BLEED = 48;
+// The board's search field on the dark bar / phone strip: the app's ordinary
+// search box (rounded-xl, light-blue border), pinned white — the bar's dark
+// tokens would otherwise turn bg-background / border-input navy.
+const BAR_SEARCH_CLASS =
+  "rounded-xl border-[rgb(var(--secondary-9))] bg-white ps-9 text-[rgb(var(--primary-3))] placeholder:text-[rgb(var(--primary-5))]";
 // The only priorities a card shows. "בינונית" on every card is a chip that says
 // nothing — the badge is worth its space only when the task deviates from normal.
 const SHOWN_PRIORITIES = new Set(["high", "urgent"]);
@@ -671,6 +678,10 @@ export default function TasksPageClient(props: Props) {
   // task. Search + filters now live in the dark header; the filters drop down
   // over the board when asked for.
   const [filtersOpen, setFiltersOpen] = useState(false);
+  // Where the phone filter panel hangs: the bottom of the toolbar strip
+  // (60px bar + 3.25rem strip, unless an alert bar sits above it). Measured
+  // when the panel is opened.
+  const [phoneFiltersTop, setPhoneFiltersTop] = useState(115);
   useEffect(() => {
     if (!filtersOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -1219,24 +1230,36 @@ export default function TasksPageClient(props: Props) {
   }
 
   // One definition of the filter controls, used by both the desktop toolbar and
-  // the phone drop-down, so the two can't drift apart.
+  // the phone drop-down, so the two can't drift apart. Same field look as the
+  // other pages' filters (customers, projects): a text-sm label over a
+  // full-height control, so every field in the grid lines up.
+  const scopeButtonClass = (active: boolean) =>
+    `flex-1 px-3 font-medium transition-colors ${
+      active
+        ? "bg-secondary text-secondary-foreground"
+        : "bg-background text-muted-foreground hover:bg-secondary/5 hover:text-foreground"
+    }`;
   const filterFields = (
     <>
       {canSeeAll ? (
         <div className="w-full space-y-1">
-          <div className="text-[11px] text-muted-foreground">{t(tasksDict, props.locale, "scopeLabel")}</div>
-          <div className="flex rounded-xl border bg-secondary/10 p-0.5 text-sm">
+          <div className="text-sm text-muted-foreground">{t(tasksDict, props.locale, "scopeLabel")}</div>
+          {/* A segmented control (two mutually exclusive views), drawn like the
+              payments calendar's — at the selects' height so the row lines up. */}
+          <div role="group" className="flex h-11 overflow-hidden rounded-xl border border-input text-sm shadow-sm">
             <button
               type="button"
+              aria-pressed={urlScope === "mine"}
               onClick={() => pushFilters({ q: urlQ, priority: urlPriority, domain: urlDomain, linkedId: urlLinkedId, scope: "mine" })}
-              className={`flex-1 rounded-lg px-3 py-1.5 transition-colors ${urlScope === "mine" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+              className={scopeButtonClass(urlScope === "mine")}
             >
               {t(tasksDict, props.locale, "scopeMine")}
             </button>
             <button
               type="button"
+              aria-pressed={urlScope === "all"}
               onClick={() => pushFilters({ q: urlQ, priority: urlPriority, domain: urlDomain, linkedId: urlLinkedId, scope: "all" })}
-              className={`flex-1 rounded-lg px-3 py-1.5 transition-colors ${urlScope === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+              className={scopeButtonClass(urlScope === "all")}
             >
               {t(tasksDict, props.locale, "allWord")}
             </button>
@@ -1244,8 +1267,8 @@ export default function TasksPageClient(props: Props) {
         </div>
       ) : null}
       <div className="w-full space-y-1">
-        <div className="text-[11px] text-muted-foreground">{t(tasksDict, props.locale, "priorityLabel")}</div>
-        <NativeSelect dense
+        <div className="text-sm text-muted-foreground">{t(tasksDict, props.locale, "priorityLabel")}</div>
+        <NativeSelect
           value={urlPriority}
           onChange={(e) => pushFilters({ q: urlQ, priority: e.target.value, domain: urlDomain, linkedId: urlLinkedId, scope: urlScope })}
         >
@@ -1258,7 +1281,7 @@ export default function TasksPageClient(props: Props) {
         </NativeSelect>
       </div>
       <div className="w-full space-y-1">
-        <div className="text-[11px] text-muted-foreground">{t(tasksDict, props.locale, "domainLabel")}</div>
+        <div className="text-sm text-muted-foreground">{t(tasksDict, props.locale, "domainLabel")}</div>
         <DomainSelect
           value={urlDomain}
           emptyLabel={t(tasksDict, props.locale, "allWord")}
@@ -1267,14 +1290,13 @@ export default function TasksPageClient(props: Props) {
       </div>
       {linkedTarget ? (
         <div className="col-span-2 w-full space-y-1">
-          <div className="text-[11px] text-muted-foreground">
+          <div className="text-sm text-muted-foreground">
             {linkedTarget === "project"
               ? t(tasksDict, props.locale, "linkedProjectLabel")
               : t(tasksDict, props.locale, "linkedPropertyLabel")}
           </div>
           {linkedTarget === "project" ? (
             <ProjectPicker
-              className="h-9"
               value={urlLinkedId}
               onChange={(linkedId) => pushFilters({ q: urlQ, priority: urlPriority, domain: urlDomain, linkedId, scope: urlScope })}
               emptyLabel={t(tasksDict, props.locale, "allProjectsLabel")}
@@ -1283,7 +1305,6 @@ export default function TasksPageClient(props: Props) {
             />
           ) : (
             <SearchableSelect
-              className="h-9"
               value={urlLinkedId}
               onChange={(linkedId) => pushFilters({ q: urlQ, priority: urlPriority, domain: urlDomain, linkedId, scope: urlScope })}
               ariaLabel={t(tasksDict, props.locale, "filterByPropertyAria")}
@@ -1302,35 +1323,106 @@ export default function TasksPageClient(props: Props) {
   const activeFilterCount =
     (urlPriority ? 1 : 0) + (urlDomain ? 1 : 0) + (urlLinkedId ? 1 : 0) + (urlScope === "all" ? 1 : 0);
 
-  // The board's search/filters/recurring controls live IN THE TOP BAR ITSELF
-  // (via useSetHeaderToolbar) rather than a separate strip below it — moved
-  // there (user, 2026-08-27: "move the search and the buttons to the top bar
-  // so the cards can take the full height") so the board gets that strip's
-  // height back at every width. Two responsive blocks in one node (phone:
-  // full-width search + icon-only buttons; tablet/desktop: centered search +
-  // labelled filter button) rather than two separate places rendering it, so
-  // they can't drift apart. Explicitly white regardless of the bar's own dark
-  // tokens (see .dark-topbar-page in globals.css) — user, 2026-08-27: "make
-  // the search white not this grey."
+  // Tablet/desktop: the board's search/filters/recurring controls live IN THE
+  // TOP BAR ITSELF (via useSetHeaderToolbar) rather than a row below it (user,
+  // 2026-08-27: "move the search and the buttons to the top bar so the cards
+  // can take the full height"). On a phone the bar keeps its title and these
+  // controls sit in the toolbar strip under it (see PageHeaderToolbar below).
+  // The search field and buttons are the app's ordinary ones — the same search
+  // box as projects/orders, the same filled buttons — just sitting on the dark
+  // bar (user, 2026-10-04). The search is explicitly white with the normal
+  // light-blue border: the bar swaps the page's colour tokens for dark ones
+  // (see .dark-topbar-page in globals.css), so the stock token classes would
+  // paint it navy-grey — user, 2026-08-27: "make the search white not this
+  // grey."
   const headerToolbarNode = useMemo(
     () => (
-      <>
-        <div className="mx-auto flex w-full max-w-md items-center justify-center gap-1.5 md:hidden">
+      <div className="flex w-full items-center gap-2">
+        <div className="flex-1" />
+        <div className="relative w-80 min-w-0 shrink">
+          <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[rgb(var(--primary-5))]" />
+          <Input
+            value={qInput}
+            onChange={(e) => handleQChange(e.target.value)}
+            placeholder={t(tasksDict, props.locale, "searchPlaceholder")}
+            className={`h-11 ${BAR_SEARCH_CLASS}`}
+          />
+        </div>
+        <div className="flex flex-1 items-center justify-end gap-2">
+          <Button
+            type="button"
+            className="shrink-0 gap-1.5"
+            aria-expanded={filtersOpen}
+            onClick={() => setFiltersOpen((x) => !x)}
+          >
+            <FilterIcon className="h-4 w-4" />
+            {t(tasksDict, props.locale, "filtersLabel")}
+            {activeFilterCount > 0 ? (
+              <span className="rounded-full bg-white/25 px-1.5 text-[11px] leading-5">{activeFilterCount}</span>
+            ) : null}
+          </Button>
+          {/* Recurring tasks is a button here, with its name on it (user,
+              2026-10-04: an icon alone didn't say what it was) — it was a
+              whole tab bar for a link used once a month, and the board wants
+              the room. (The recurring page keeps its tabs, so there's a way
+              back.) */}
+          {canSeeAll ? (
+            <Button asChild className="shrink-0 gap-1.5">
+              <Link href="/tasks/recurring" onClick={() => emitNavigationStart()}>
+                <RecurringIcon className="h-4 w-4" />
+                {t(tasksDict, props.locale, "recurringTasksLabel")}
+              </Link>
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    ),
+    [qInput, handleQChange, filtersOpen, canSeeAll, activeFilterCount, props.locale]
+  );
+  useSetHeaderToolbar(headerToolbarNode);
+
+  return (
+    // Cancel the shell's padding around the board at every size: the board is a
+    // full-bleed surface that runs from under the tabs to the bottom of the
+    // screen (a phone stops at the nav), and the page itself doesn't scroll.
+    // No space-y here — the few things above the board carry their own margin,
+    // so the board can sit flush under them.
+    // overflow-clip + a clip margin: the board's colour bleeds past its box (see
+    // BOARD_BLEED) and this contains the overspill without turning it into
+    // scrollable page. The margin has to clear the board's own -mx bleed too,
+    // which is why it's 3rem and not 0.
+    // flow-root: without it the board's -BOARD_BLEED bottom margin collapsed
+    // into this div's own -mb-24, so the bleed was never cancelled and a phone
+    // page scrolled ~47px under the header.
+    <div className="dark-topbar-page flow-root -mb-24 -mt-4 overflow-clip [overflow-clip-margin:4rem] md:-mb-6 md:-mt-6 lg:-mb-8 lg:-mt-8">
+      {/* Phone: search / filters / recurring in the toolbar strip under the bar
+          (dark like the bar — .dark-topbar-page covers the strip too). They used
+          to be crammed into the bar itself beside its own icons, which left the
+          search field a 57px stub. */}
+      <PageHeaderToolbar>
+        <div className="mx-auto flex w-full max-w-md items-center justify-center gap-2">
           <div className="relative w-full min-w-0">
             <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[rgb(var(--primary-5))]" />
             <Input
               value={qInput}
               onChange={(e) => handleQChange(e.target.value)}
               placeholder={t(tasksDict, props.locale, "searchPlaceholder")}
-              className="h-10 w-full rounded-xl border-transparent bg-white ps-9 text-[rgb(var(--primary-3))] placeholder:text-[rgb(var(--primary-5))]"
+              className={`h-10 w-full ${BAR_SEARCH_CLASS}`}
             />
           </div>
           <Button
             type="button"
             size="icon"
             aria-label={t(tasksDict, props.locale, filtersOpen ? "hideFiltersAria" : "showFiltersAria")}
+            aria-expanded={filtersOpen}
             className="h-10 w-10 shrink-0 rounded-xl"
-            onClick={() => setFiltersOpen((x) => !x)}
+            onClick={() => {
+              // The panel hangs from the strip's bottom edge, wherever an alert
+              // bar above it has pushed that today.
+              const strip = document.getElementById(PAGE_HEADER_TOOLBAR_ID);
+              if (strip) setPhoneFiltersTop(strip.getBoundingClientRect().bottom);
+              setFiltersOpen((x) => !x);
+            }}
           >
             <FilterIcon className="h-4 w-4" />
           </Button>
@@ -1351,80 +1443,24 @@ export default function TasksPageClient(props: Props) {
             </Button>
           ) : null}
         </div>
+      </PageHeaderToolbar>
 
-        <div className="hidden w-full items-center gap-2 md:flex">
-          <div className="flex-1" />
-          <div className="relative w-64">
-            <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[rgb(var(--primary-5))]" />
-            <Input
-              value={qInput}
-              onChange={(e) => handleQChange(e.target.value)}
-              placeholder={t(tasksDict, props.locale, "searchPlaceholder")}
-              className="h-8 rounded-lg border-transparent bg-white ps-9 text-[rgb(var(--primary-3))] placeholder:text-[rgb(var(--primary-5))]"
-            />
-          </div>
-          <div className="flex flex-1 items-center justify-end gap-2">
-            <Button
-              type="button"
-              size="sm"
-              className="h-8 gap-1.5 rounded-lg px-2.5"
-              aria-expanded={filtersOpen}
-              onClick={() => setFiltersOpen((x) => !x)}
-            >
-              <FilterIcon className="h-4 w-4" />
-              {t(tasksDict, props.locale, "filtersLabel")}
-              {activeFilterCount > 0 ? (
-                <span className="rounded-full bg-white/25 px-1.5 text-[11px] leading-5">{activeFilterCount}</span>
-              ) : null}
-            </Button>
-            {/* Recurring tasks is a button here too, like the phone header — it
-                was a whole tab bar for a link used once a month, and the board
-                wants the room. (The recurring page keeps its tabs, so there's
-                a way back.) */}
-            {canSeeAll ? (
-              <Button
-                asChild
-                size="icon"
-                className="h-8 w-8 shrink-0 rounded-lg"
-                aria-label={t(tasksDict, props.locale, "recurringTasksLabel")}
-                title={t(tasksDict, props.locale, "recurringTasksLabel")}
-              >
-                <Link href="/tasks/recurring" onClick={() => emitNavigationStart()}>
-                  <RecurringIcon className="h-4 w-4" />
-                </Link>
-              </Button>
-            ) : null}
-          </div>
-        </div>
-      </>
-    ),
-    [qInput, handleQChange, filtersOpen, canSeeAll, activeFilterCount, props.locale]
-  );
-  useSetHeaderToolbar(headerToolbarNode);
-
-  return (
-    // Cancel the shell's padding around the board at every size: the board is a
-    // full-bleed surface that runs from under the tabs to the bottom of the
-    // screen (a phone stops at the nav), and the page itself doesn't scroll.
-    // No space-y here — the few things above the board carry their own margin,
-    // so the board can sit flush under them.
-    // overflow-clip + a clip margin: the board's colour bleeds past its box (see
-    // BOARD_BLEED) and this contains the overspill without turning it into
-    // scrollable page. The margin has to clear the board's own -mx bleed too,
-    // which is why it's 3rem and not 0.
-    <div className="dark-topbar-page -mb-24 -mt-4 overflow-clip [overflow-clip-margin:4rem] md:-mb-6 md:-mt-6 lg:-mb-8 lg:-mt-8">
-      {/* Phone: the filters drop DOWN OVER the board, pinned under the sticky
-          header (60px top bar only now — the toolbar strip moved INTO it, see
-          headerToolbarNode above). */}
+      {/* Phone: the filters drop DOWN OVER the board from under the strip. Not
+          inside the strip itself: its dark tokens would turn the panel's
+          fields navy. */}
       {filtersOpen ? (
         <>
           <button
             type="button"
             aria-label={t(tasksDict, props.locale, "closeFiltersAria")}
-            className="fixed inset-0 top-[60px] z-20 bg-black/30 md:hidden"
+            className="fixed inset-x-0 bottom-0 z-20 bg-black/30 md:hidden"
+            style={{ top: phoneFiltersTop }}
             onClick={() => setFiltersOpen(false)}
           />
-          <div className="fixed inset-x-0 top-[60px] z-20 border-b border-border bg-card p-3 shadow-lg md:hidden">
+          <div
+            className="fixed inset-x-0 z-20 border-b border-border bg-card p-3 shadow-lg md:hidden"
+            style={{ top: phoneFiltersTop }}
+          >
             <div className="mb-2 flex items-center justify-between">
               <span className="text-sm font-medium">{t(tasksDict, props.locale, "filtersLabel")}</span>
               <button
@@ -1442,10 +1478,8 @@ export default function TasksPageClient(props: Props) {
       ) : null}
 
       {/* Desktop filters: a card floating OVER the board, hung under the מסננים
-          button (fixed, so the board's overflow-clip can't cut it off). Inline
-          it pushed the board down every time it opened. Anchored under the top
-          bar directly now (60px) — the separate navy row this used to hang
-          under moved INTO the bar itself (see headerToolbarNode above). */}
+          button in the top bar (fixed, so the board's overflow-clip can't cut
+          it off). Inline it pushed the board down every time it opened. */}
       {filtersOpen ? (
         <div className="hidden md:block">
           <button
@@ -1505,13 +1539,13 @@ export default function TasksPageClient(props: Props) {
           }}
           // The h-[…] classes are the board's height from the server HTML on,
           // until the loop above finds something to correct: the screen minus
-          // the 60px top bar (and, on a phone, the 59px bottom nav and its
-          // safe-area inset), plus the 48px BOARD_BLEED. The loop still has the
-          // last word — this just means it starts within a few px of the answer,
-          // instead of the board loading at its content height and the lists'
-          // bottom rows jumping down once the page's JS ran (Speed Insights:
-          // layout shift on /tasks).
-          className="relative -mx-3 flex h-[calc(100dvh-119px-env(safe-area-inset-bottom)+48px)] min-h-[20rem] flex-col overflow-hidden bg-primary md:-mx-6 md:h-[calc(100dvh-60px+48px)] lg:-mx-8"
+          // the 60px top bar (and, on a phone, the 3.25rem toolbar strip, the
+          // 59px bottom nav and its safe-area inset), plus the 48px
+          // BOARD_BLEED. The loop still has the last word — this just means it
+          // starts within a few px of the answer, instead of the board loading
+          // at its content height and the lists' bottom rows jumping down once
+          // the page's JS ran (Speed Insights: layout shift on /tasks).
+          className="relative -mx-3 flex h-[calc(100dvh-119px-3.25rem-env(safe-area-inset-bottom)+48px)] min-h-[20rem] flex-col overflow-hidden bg-primary md:-mx-6 md:h-[calc(100dvh-60px+48px)] lg:-mx-8"
         >
           <SortableContext items={columnOrder.map(columnSortableId)} strategy={horizontalListSortingStrategy}>
             {/* snap-mandatory + snap-center on each list: one swipe steps to the
@@ -1710,7 +1744,19 @@ export default function TasksPageClient(props: Props) {
           // A just-created task appears the instant the request resolves —
           // router.refresh() below silently reconciles it with the full,
           // joined server row a moment later (no toast either way).
-          if (created && typeof created.id === "string") {
+          // …unless it's a far-off to-do that waits off the board until nearer
+          // its date (lib/tasks/visibility.ts) — the dialog has already said
+          // when it'll show; flashing it in only for the refresh to remove it
+          // would look like a bug.
+          const waiting =
+            created !== null &&
+            created !== undefined &&
+            isTaskWaitingForLater({
+              status: typeof created.status === "string" ? created.status : "todo",
+              dueDate: typeof created.due_date === "string" ? created.due_date : null,
+              nextReminderAt: null,
+            });
+          if (created && typeof created.id === "string" && !waiting) {
             const id = created.id;
             setTasks((prev) => {
               if (prev.some((task) => task.id === id)) return prev;

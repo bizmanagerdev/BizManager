@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { translateToArabic } from "@/lib/i18n/translateToHebrew";
 import type { Locale } from "@/lib/i18n/types";
+import { earliestReminderByTask, isTaskWaitingForLater } from "@/lib/tasks/visibility";
 
 type Row = Record<string, unknown>;
 
@@ -99,16 +100,43 @@ export async function getMyTasks(
       rows.map((r) => getString(r, "project_id")).filter((v): v is string => Boolean(v))
     ),
   ];
-  const projectsRes = projectIds.length
-    ? await supabase.from("projects").select("id,name").in("id", projectIds)
-    : { data: [] as Row[] };
+  const taskIds = rows.map((r) => getString(r, "id")).filter((v): v is string => Boolean(v));
+  // Pending reminders decide when a far-future to-do comes back on — fetched
+  // alongside the project names, not after them.
+  const [projectsRes, remindersRes] = await Promise.all([
+    projectIds.length
+      ? supabase.from("projects").select("id,name").in("id", projectIds)
+      : Promise.resolve({ data: [] as Row[] }),
+    taskIds.length
+      ? supabase
+          .from("reminders")
+          .select("task_id,remind_at")
+          .in("task_id", taskIds)
+          .eq("status", "pending")
+          .range(0, 9999)
+      : Promise.resolve({ data: [] as Row[] }),
+  ]);
   const projectNameById = new Map(
     ((projectsRes.data ?? []) as Row[])
       .map((r) => [getString(r, "id"), getString(r, "name")] as const)
       .filter((e): e is readonly [string, string | null] => Boolean(e[0]))
   );
+  const nextReminderByTask = earliestReminderByTask((remindersRes.data ?? []) as Row[]);
+  const now = new Date();
 
-  return rows.map((t) => {
+  // Same rule as the board: a far-future to-do waits until its reminder, or
+  // until 30 days before it's due (lib/tasks/visibility.ts).
+  const visibleRows = rows.filter(
+    (t) =>
+      !isTaskWaitingForLater({
+        status: getString(t, "status"),
+        dueDate: getString(t, "due_date"),
+        nextReminderAt: nextReminderByTask.get(getString(t, "id") ?? ""),
+        now,
+      })
+  );
+
+  return visibleRows.map((t) => {
     const due = getString(t, "due_date");
     const projectId = getString(t, "project_id");
     return {

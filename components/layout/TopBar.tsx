@@ -280,16 +280,16 @@ export function TopBar({
           made the slot narrower and the spill longer. Titles are chosen to fit;
           this only stops a stray long one from painting over the icons. */}
       {headerToolbar ? (
-        // Takes over the whole slot with the page's own controls (search,
-        // filters, refresh) instead of a page name, AT EVERY WIDTH — unlike a
-        // plain title, this doesn't hide past `lg` (the caller's own content
-        // handles its own phone/desktop variants internally, e.g. via
-        // md:hidden pairs). The point is the row this used to occupy below the
-        // bar collapses entirely and the page gets that height back everywhere,
-        // not just on phone. Rendered raw (no whitespace-nowrap/clamp text
-        // styling — that's for a heading, not a row of buttons and an input).
-        <div className="flex min-w-0 flex-1 items-center">{headerToolbar}</div>
-      ) : headerTitle ? (
+        // Takes over the slot with the page's own controls (search, filters)
+        // instead of a page name — from `md` up only. On a phone the bar's
+        // own icons leave no room for a search field beside them (it was
+        // squeezed to a 57px stub), so there the bar keeps its title like
+        // every other page and the page puts its controls in the toolbar strip
+        // under the bar (PageHeaderToolbar). Rendered raw (no whitespace-nowrap/
+        // clamp text styling — that's for a heading, not a row of buttons).
+        <div className="hidden min-w-0 flex-1 items-center md:flex">{headerToolbar}</div>
+      ) : null}
+      {headerTitle ? (
         <div
           className={cn(
             "flex min-w-0 flex-1 flex-col justify-center overflow-hidden px-[12px] leading-tight",
@@ -298,9 +298,12 @@ export function TopBar({
             // past `lg` the sidebar says it, and repeating it in a bar that is
             // now just a strip of the page is noise. The dashboard opts in — its
             // heading is a GREETING, not a page name, and nothing else carries it.
-            pageTitle?.showOnDesktop
-              ? "items-center text-center lg:items-start lg:text-start"
-              : "items-center text-center lg:hidden"
+            // A page toolbar takes the slot from `md`, so the title stops there.
+            headerToolbar
+              ? "items-center text-center md:hidden"
+              : pageTitle?.showOnDesktop
+                ? "items-center text-center lg:items-start lg:text-start"
+                : "items-center text-center lg:hidden"
           )}
         >
           {/* One line, always: the title SHRINKS to fit the middle slot rather than

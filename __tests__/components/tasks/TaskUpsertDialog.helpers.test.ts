@@ -10,10 +10,9 @@ import {
   normalizeTaskStatus,
   normalizeTaskPriority,
   buildTaskPayload,
-  buildTaskFormSnapshot,
+  diffTaskPayload,
   WIZARD_STEPS,
   type TaskPayloadInput,
-  type TaskSnapshotInput,
 } from "@/components/tasks/TaskUpsertDialog.helpers";
 
 // Characterization tests for the logic extracted out of TaskUpsertDialog — these
@@ -206,37 +205,51 @@ describe("buildTaskPayload", () => {
   });
 });
 
-describe("buildTaskFormSnapshot", () => {
-  function snap(overrides: Partial<TaskSnapshotInput> = {}): TaskSnapshotInput {
-    return {
-      effectiveDomain: "sales",
-      projectId: "",
-      propertyId: "",
-      subject: "  task  ",
-      description: "  desc ",
-      dueDate: "",
-      dueTime: "",
-      city: " ",
-      address: "",
-      assignedUserId: "u1",
-      memberIds: ["b", "a"],
-      priority: "high",
-      status: "todo",
-      isPrivate: false,
-      ...overrides,
-    };
-  }
+describe("diffTaskPayload — what an edit-mode autosave sends", () => {
+  const saved = buildTaskPayload(payloadInput({ subject: "task", memberIds: ["b", "a"], tagIds: ["t1"] }));
 
-  it("trims text fields and sorts memberIds so it is order-independent", () => {
-    const a = buildTaskFormSnapshot(snap({ memberIds: ["a", "b"] }));
-    const b = buildTaskFormSnapshot(snap({ memberIds: ["b", "a"] }));
-    expect(a).toBe(b);
-    const parsed = JSON.parse(a);
-    expect(parsed.subject).toBe("task");
-    expect(parsed.memberIds).toEqual(["a", "b"]);
+  it("is null when nothing changed", () => {
+    expect(diffTaskPayload(saved, buildTaskPayload(payloadInput({ subject: "task", memberIds: ["b", "a"], tagIds: ["t1"] })))).toBeNull();
   });
 
-  it("changes when a meaningful field changes", () => {
-    expect(buildTaskFormSnapshot(snap())).not.toBe(buildTaskFormSnapshot(snap({ status: "done" })));
+  it("ignores a members/tags reorder", () => {
+    const next = buildTaskPayload(payloadInput({ subject: "task", memberIds: ["a", "b"], tagIds: ["t1"] }));
+    expect(diffTaskPayload(saved, next)).toBeNull();
+  });
+
+  it("sends only the field that changed", () => {
+    const next = buildTaskPayload(payloadInput({ subject: "task", memberIds: ["b", "a"], tagIds: ["t1"], dueDate: "2026-11-01" }));
+    expect(diffTaskPayload(saved, next)).toEqual({ due_date: "2026-11-01" });
+  });
+
+  it("never sends privacy or staged reminders (they save on their own)", () => {
+    const next = buildTaskPayload(
+      payloadInput({
+        subject: "task",
+        memberIds: ["b", "a"],
+        tagIds: ["t1"],
+        isPrivate: true,
+        pendingReminders: [{ remind_at: "2024-05-01T09:00:00Z", content: "" }],
+      })
+    );
+    expect(diffTaskPayload(saved, next)).toBeNull();
+  });
+
+  it("sends the domain and its project/property link together", () => {
+    const next = buildTaskPayload(
+      payloadInput({
+        subject: "task",
+        memberIds: ["b", "a"],
+        tagIds: ["t1"],
+        effectiveDomain: "logistics_projects",
+        derivedTargetType: "project",
+        projectId: "proj-1",
+      })
+    );
+    expect(diffTaskPayload(saved, next)).toEqual({
+      business_domain: "logistics_projects",
+      project_id: "proj-1",
+      property_id: null,
+    });
   });
 });

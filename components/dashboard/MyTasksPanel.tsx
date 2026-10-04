@@ -192,10 +192,8 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
 
       {/* Built to match "משלוחים קרובים" (user, 2026-08-18: "I love this card, I
           want to make this similar"): a divided list rather than spaced pills,
-          one line of name over one line of meta, and the action as a filled
-          button at the far end of the row. The name TRUNCATES for the same reason
-          it does there — a wrapped title made its row taller than its neighbours,
-          and in a height-capped card uneven rows read as broken. */}
+          the name over one line of meta. The name is never cut — it wraps (see
+          the row below). */}
       <CardContent className="pointer-events-auto min-h-0 flex-1 overflow-y-auto p-0">
         {visible.length > 0 ? (
           <ul className="board-list divide-y">
@@ -216,14 +214,12 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
                     className="absolute inset-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   />
 
-                  {/* ONE line per row, whatever the task carries. The detail used
-                      to sit under the title, so a task with a due date or a
-                      priority was a two-line row next to a one-line neighbour and
-                      the list came out ragged. It rides beside the title now:
-                      the title takes what's left and truncates, the detail keeps
-                      its size (shrink-0) because it's the part that's already
-                      short. */}
-                  <div className="flex items-center gap-2">
+                  {/* The name always shows IN FULL (user, 2026-10-04): it used to
+                      share one line with the priority and date and truncate, so
+                      on a phone the row showed "דחופה · 01/06" and an ellipsis
+                      where the task's name should be. The name wraps on its own
+                      line now, and the detail sits under it. */}
+                  <div className="flex items-start gap-2">
                     {/* Same corner, same shape and the same past tense as the
                         delivery card's "סופק". `relative` lifts it over the row
                         link so its own click still lands. */}
@@ -232,33 +228,33 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
                       onClick={() => markDone(task.id)}
                       title={t(dashboardDict, locale, "markTaskDoneTitle")}
                       aria-label={t(dashboardDict, locale, "markTaskDoneTitle")}
-                      className="relative shrink-0 text-muted-foreground transition hover:text-success"
+                      className="relative mt-0.5 shrink-0 text-muted-foreground transition hover:text-success"
                     >
                       <CheckboxUncheckedIcon className="h-4 w-4" />
                     </button>
-                    <div className="flex min-w-0 flex-1 items-center gap-1.5">
-                      <span className="truncate text-sm font-medium" title={subject}>
-                        {subject}
-                      </span>
-                      {priority ? (
-                        <Badge variant={priority.variant} className="shrink-0 text-[10px]">
-                          {priority.label}
-                        </Badge>
-                      ) : null}
-                      {dueLabel(task) ? (
-                        <span
-                          className={cn(
-                            "shrink-0 text-xs",
-                            task.overdue ? "font-medium text-destructive" : "text-muted-foreground"
-                          )}
-                        >
-                          {dueLabel(task)}
-                        </span>
-                      ) : null}
-                      {task.project_name ? (
-                        <span className="max-w-[7rem] truncate text-xs text-muted-foreground">
-                          · {task.project_name}
-                        </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium leading-snug">{subject}</div>
+                      {priority || dueLabel(task) || task.project_name ? (
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                          {priority ? (
+                            <Badge variant={priority.variant} className="shrink-0 text-[10px]">
+                              {priority.label}
+                            </Badge>
+                          ) : null}
+                          {dueLabel(task) ? (
+                            <span
+                              className={cn(
+                                "text-xs",
+                                task.overdue ? "font-medium text-destructive" : "text-muted-foreground"
+                              )}
+                            >
+                              {dueLabel(task)}
+                            </span>
+                          ) : null}
+                          {task.project_name ? (
+                            <span className="text-xs text-muted-foreground">· {task.project_name}</span>
+                          ) : null}
+                        </div>
                       ) : null}
                     </div>
                   </div>

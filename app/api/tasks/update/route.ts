@@ -69,18 +69,14 @@ export async function POST(req: Request) {
     if (!access.ok) return access.response;
     const { supabase, profile } = access.value;
 
-    // Capture the current assignee up-front so we can tell if a reassignment
-    // hands the task to a NEW person (only then do they get an alert).
-    let previousAssignee: string | null = null;
-    if ("assigned_user_id" in body) {
-      const { data: cur } = await supabase
-        .from("tasks")
-        .select("assigned_user_id")
-        .eq("id", id)
-        .maybeSingle<Record<string, unknown>>();
-      previousAssignee = typeof cur?.assigned_user_id === "string" ? cur.assigned_user_id : null;
-    }
-
+    // Speed (user, 2026-10-04: "many times in tasks I get that the connection
+    // is slow saving the change"): a save used to run ~11 database round trips
+    // one after another — three separate reads of the same task row, then
+    // wiping and re-inserting every member, then the tags — and for an Arabic
+    // writer two translation calls on top, all in series. The client's "slow
+    // connection" notice fires at 4s. Now: the plain validation first, then
+    // ONE read of the current row in parallel with the translations and the
+    // member list, then the write, then members + tags together.
     const update: Record<string, unknown> = {};
 
     if ("business_domain" in body) {
@@ -91,23 +87,19 @@ export async function POST(req: Request) {
       update.business_domain = domain;
     }
 
+    let subjectText: string | null = null;
     if ("subject" in body) {
-      const subject = typeof body.subject === "string" ? body.subject.trim() : "";
-      if (!subject) return NextResponse.json({ error: "Missing subject" }, { status: 400 });
-      update.subject = subject;
-      // Office/admin never see Arabic, so a locale=ar worker's own edit is
-      // auto-translated to Hebrew here. Skipped entirely for Hebrew writers.
-      update.subject_he = profile.locale === "ar" ? await translateToHebrew(subject) : null;
+      subjectText = typeof body.subject === "string" ? body.subject.trim() : "";
+      if (!subjectText) return NextResponse.json({ error: "Missing subject" }, { status: 400 });
+      update.subject = subjectText;
     }
 
+    let descriptionText: string | null = null;
     if ("description" in body) {
       const description =
         typeof body.description === "string" ? body.description.trim() : body.description ?? null;
-      update.description = description && description.trim() ? description : null;
-      update.description_he =
-        profile.locale === "ar" && update.description
-          ? await translateToHebrew(update.description as string)
-          : null;
+      descriptionText = description && description.trim() ? description : null;
+      update.description = descriptionText;
     }
 
     if ("due_date" in body) {
@@ -152,20 +144,54 @@ export async function POST(req: Request) {
       update.status = status;
     }
 
+    const projectProvided = "project_id" in body;
+    const propertyProvided = "property_id" in body;
+    const domainProvided = "business_domain" in body;
+    const linkProvided = projectProvided || propertyProvided || domainProvided;
+    const membersProvided = "member_ids" in body && Array.isArray(body.member_ids);
+    const tagsProvided = "tag_ids" in body;
+
+    if (Object.keys(update).length === 0 && !("is_private" in body) && !linkProvided && !membersProvided && !tagsProvided) {
+      return NextResponse.json({ error: "No fields to update" }, { status: 400 });
+    }
+
+    // Everything this save needs to know about the task as it stands, read ONCE
+    // (it used to be three separate reads of the same row) — and alongside it,
+    // the translations and the current member list, none of which wait on the
+    // others. Office/admin never see Arabic, so a locale=ar worker's own words
+    // are auto-translated to Hebrew; skipped entirely for Hebrew writers.
+    const needsCurrent = "assigned_user_id" in body || "is_private" in body || linkProvided || membersProvided;
+    const translating = profile.locale === "ar";
+    const [currentRes, subjectHe, descriptionHe, existingMembersRes] = await Promise.all([
+      needsCurrent
+        ? supabase
+            .from("tasks")
+            .select("assigned_user_id,is_private,private_owner_id,business_domain,project_id,property_id,subject")
+            .eq("id", id)
+            .maybeSingle<Record<string, unknown>>()
+        : Promise.resolve({ data: null, error: null }),
+      translating && subjectText ? translateToHebrew(subjectText) : Promise.resolve(null),
+      translating && descriptionText ? translateToHebrew(descriptionText) : Promise.resolve(null),
+      membersProvided
+        ? supabase.from("task_members").select("user_id").eq("task_id", id)
+        : Promise.resolve({ data: null }),
+    ]);
+    const current = (currentRes.data ?? null) as Record<string, unknown> | null;
+    if ("subject" in body) update.subject_he = translating ? subjectHe : null;
+    if ("description" in body) update.description_he = translating && descriptionText ? descriptionHe : null;
+
+    // So we can tell if a reassignment hands the task to a NEW person (only
+    // then do they get an alert).
+    const previousAssignee = typeof current?.assigned_user_id === "string" ? current.assigned_user_id : null;
+
     if ("is_private" in body) {
       // Only the creator/owner may change privacy. private_owner_id is the creator
       // (set at creation), so gate on it and never clear it — privacy on/off only
-      // flips is_private. The dialog always sends is_private, so we only
-      // enforce/apply when the value actually changes (others can still edit
-      // everything else on the task).
+      // flips is_private. Only enforced/applied when the value actually changes
+      // (others can still edit everything else on the task).
       const desired = body.is_private === true;
-      const { data: cur } = await supabase
-        .from("tasks")
-        .select("is_private,private_owner_id")
-        .eq("id", id)
-        .maybeSingle<Record<string, unknown>>();
-      const currentPrivate = (cur as Record<string, unknown> | null)?.is_private === true;
-      const owner = typeof cur?.private_owner_id === "string" ? cur.private_owner_id : null;
+      const currentPrivate = current?.is_private === true;
+      const owner = typeof current?.private_owner_id === "string" ? current.private_owner_id : null;
       if (desired !== currentPrivate) {
         if (owner && owner !== profile.id) {
           return NextResponse.json(
@@ -179,32 +205,21 @@ export async function POST(req: Request) {
       }
     }
 
-    const projectProvided = "project_id" in body;
-    const propertyProvided = "property_id" in body;
-    const domainProvided = "business_domain" in body;
-    if (projectProvided || propertyProvided || domainProvided) {
-      const { data: current, error: currentError } = await supabase
-        .from("tasks")
-        .select("id,business_domain,project_id,property_id")
-        .eq("id", id)
-        .maybeSingle<Record<string, unknown>>();
-
-      if (currentError) {
-        return NextResponse.json({ error: toHebrewError(currentError.message) }, { status: 400 });
+    if (linkProvided) {
+      if (currentRes.error) {
+        return NextResponse.json({ error: toHebrewError(currentRes.error.message) }, { status: 400 });
       }
       if (!current) {
         return NextResponse.json({ error: "Task not found" }, { status: 404 });
       }
 
       const currentBusinessDomain = isExpenseBusinessDomain(
-        typeof (current as Record<string, unknown>).business_domain === "string"
-          ? ((current as Record<string, unknown>).business_domain as string)
-          : null
+        typeof current.business_domain === "string" ? current.business_domain : null
       )
-        ? ((current as Record<string, unknown>).business_domain as string)
+        ? (current.business_domain as string)
         : null;
-      const currentProjectId = normalizeId((current as Record<string, unknown>).project_id);
-      const currentPropertyId = normalizeId((current as Record<string, unknown>).property_id);
+      const currentProjectId = normalizeId(current.project_id);
+      const currentPropertyId = normalizeId(current.property_id);
 
       const nextBusinessDomain = domainProvided
         ? (update.business_domain as string | null)
@@ -225,13 +240,6 @@ export async function POST(req: Request) {
       update.property_id = nextPropertyId;
     }
 
-    const membersProvided = "member_ids" in body && Array.isArray(body.member_ids);
-    const tagsProvided = "tag_ids" in body;
-
-    if (Object.keys(update).length === 0 && !membersProvided && !tagsProvided) {
-      return NextResponse.json({ error: "No fields to update" }, { status: 400 });
-    }
-
     let data: Record<string, unknown> | null = null;
     if (Object.keys(update).length > 0) {
       const result = await supabase
@@ -248,53 +256,59 @@ export async function POST(req: Request) {
       data = result.data as Record<string, unknown> | null;
     }
 
-    // Sync members (delete-all / re-insert), excluding the primary assignee so it's
-    // never duplicated as a collaborator row.
-    if (membersProvided) {
-      const { data: taskRow } = data
-        ? { data }
-        : await supabase.from("tasks").select("assigned_user_id,subject").eq("id", id).maybeSingle<Record<string, unknown>>();
-      const assignedUserId =
-        typeof taskRow?.assigned_user_id === "string" ? taskRow.assigned_user_id : null;
-      const memberIds = [
-        ...new Set(
-          (body.member_ids ?? []).filter(
-            (memberId): memberId is string => typeof memberId === "string" && Boolean(memberId.trim())
-          )
-        ),
-      ].filter((memberId) => memberId !== assignedUserId);
+    // Members and tags don't depend on each other — written together. Members
+    // are diffed against what's there: only the removed rows are deleted and
+    // only the new ones inserted, and an unchanged list costs nothing (it used
+    // to delete and re-insert every member on every save). The primary assignee
+    // is never stored as a duplicate collaborator row.
+    const taskRow = data ?? current;
+    const [membersError] = await Promise.all([
+      (async (): Promise<string | null> => {
+        if (!membersProvided) return null;
+        const assignedUserId =
+          typeof taskRow?.assigned_user_id === "string" ? taskRow.assigned_user_id : null;
+        const memberIds = [
+          ...new Set(
+            (body.member_ids ?? []).filter(
+              (memberId): memberId is string => typeof memberId === "string" && Boolean(memberId.trim())
+            )
+          ),
+        ].filter((memberId) => memberId !== assignedUserId);
+        const existingIds = new Set(
+          ((existingMembersRes.data ?? []) as Array<{ user_id?: string | null }>)
+            .map((m) => m.user_id)
+            .filter((v): v is string => Boolean(v))
+        );
+        const removed = [...existingIds].filter((m) => !memberIds.includes(m));
+        const added = memberIds.filter((m) => !existingIds.has(m));
+        const [deleteRes, insertRes] = await Promise.all([
+          removed.length > 0
+            ? supabase.from("task_members").delete().eq("task_id", id).in("user_id", removed)
+            : null,
+          added.length > 0
+            ? supabase.from("task_members").insert(added.map((userId) => ({ task_id: id, user_id: userId })))
+            : null,
+        ]);
+        const error = deleteRes?.error ?? insertRes?.error;
+        if (error) return toHebrewError(error.message);
 
-      // Who was already a member? (so we alert only the NEWLY added ones)
-      const { data: existingMembers } = await supabase.from("task_members").select("user_id").eq("task_id", id);
-      const existingIds = new Set(
-        ((existingMembers ?? []) as Array<{ user_id?: string | null }>)
-          .map((m) => m.user_id)
-          .filter((v): v is string => Boolean(v))
-      );
-
-      await supabase.from("task_members").delete().eq("task_id", id);
-      if (memberIds.length > 0) {
-        const { error: membersError } = await supabase
-          .from("task_members")
-          .insert(memberIds.map((userId) => ({ task_id: id, user_id: userId })));
-        if (membersError) {
-          return NextResponse.json({ error: toHebrewError(membersError.message) }, { status: 400 });
+        // Alert members just added to the task (not already on it, not the editor).
+        const addedMembers = added.filter((m) => m !== profile.id);
+        if (addedMembers.length > 0) {
+          const subject = typeof taskRow?.subject === "string" ? taskRow.subject : "משימה";
+          runAfterResponse("tasks/update notify members", () => notifyTaskAssignees(id, subject, addedMembers));
         }
-      }
-
-      // Alert members just added to the task (not already on it, not the editor).
-      const addedMembers = memberIds.filter((m) => !existingIds.has(m) && m !== profile.id);
-      if (addedMembers.length > 0) {
-        const subject = typeof taskRow?.subject === "string" ? taskRow.subject : "משימה";
-        runAfterResponse("tasks/update notify members", () => notifyTaskAssignees(id, subject, addedMembers));
-      }
-    }
-
-    if (tagsProvided) {
-      await syncEntityTags(supabase, "task", id, parseTagIds(body.tag_ids), {
-        replace: true,
-        createdBy: profile.id,
-      });
+        return null;
+      })(),
+      tagsProvided
+        ? syncEntityTags(supabase, "task", id, parseTagIds(body.tag_ids), {
+            replace: true,
+            createdBy: profile.id,
+          })
+        : null,
+    ]);
+    if (membersError) {
+      return NextResponse.json({ error: membersError }, { status: 400 });
     }
 
     if (id) {
@@ -309,7 +323,11 @@ export async function POST(req: Request) {
     }
 
     // Reassigned to a NEW person (not the one who made the change) → alert them.
-    const newAssignee = typeof data?.assigned_user_id === "string" ? data.assigned_user_id : null;
+    // Only when this save actually set the assignee: an autosave of some other
+    // field doesn't carry it, and the row's unchanged assignee must not be
+    // re-alerted for every edit.
+    const newAssignee =
+      "assigned_user_id" in body && typeof data?.assigned_user_id === "string" ? data.assigned_user_id : null;
     if (newAssignee && newAssignee !== previousAssignee && newAssignee !== profile.id) {
       const subject = typeof data?.subject === "string" ? data.subject : "משימה";
       runAfterResponse("tasks/update notify assignee", () => notifyTaskAssignees(id, subject, [newAssignee]));

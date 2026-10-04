@@ -172,42 +172,53 @@ export function buildTaskPayload(input: TaskPayloadInput) {
   };
 }
 
-export type TaskSnapshotInput = {
-  effectiveDomain: ExpenseBusinessDomain | "";
-  projectId: string;
-  propertyId: string;
-  customerId?: string;
-  subject: string;
-  description: string;
-  dueDate: string;
-  dueTime: string;
-  city: string;
-  address: string;
-  assignedUserId: string;
-  memberIds: string[];
-  priority: TaskPriority;
-  status: TaskStatus;
-  isPrivate: boolean;
-};
+export type TaskPayload = ReturnType<typeof buildTaskPayload>;
 
-/** Stable serialization of the editable fields, used to detect unsaved edits.
- *  memberIds are sorted so reordering alone never counts as a change. */
-export function buildTaskFormSnapshot(fields: TaskSnapshotInput): string {
-  return JSON.stringify({
-    businessDomain: fields.effectiveDomain,
-    projectId: fields.projectId,
-    propertyId: fields.propertyId,
-    customerId: fields.customerId ?? "",
-    subject: fields.subject.trim(),
-    description: fields.description.trim(),
-    dueDate: fields.dueDate,
-    dueTime: fields.dueTime,
-    city: fields.city.trim(),
-    address: fields.address.trim(),
-    assignedUserId: fields.assignedUserId,
-    memberIds: [...fields.memberIds].sort(),
-    priority: fields.priority,
-    status: fields.status,
-    isPrivate: fields.isPrivate,
-  });
+// What an edit-mode autosave may send. Not `is_private` (the lock button saves
+// itself the moment it's pressed) and not `reminders` (staged on create only —
+// on a saved task each reminder is written as it's added).
+const AUTOSAVE_KEYS = [
+  "business_domain",
+  "project_id",
+  "property_id",
+  "customer_id",
+  "subject",
+  "description",
+  "due_date",
+  "due_time",
+  "city",
+  "address",
+  "assigned_user_id",
+  "member_ids",
+  "tag_ids",
+  "priority",
+  "status",
+] as const satisfies readonly (keyof TaskPayload)[];
+
+// The domain and its project/property link are validated together on the
+// server — a change to any one of them goes up with the other two.
+const LINK_KEYS = new Set<string>(["business_domain", "project_id", "property_id"]);
+
+function comparable(key: string, value: unknown): string {
+  // Order-only differences in a list are not a change.
+  if ((key === "member_ids" || key === "tag_ids") && Array.isArray(value)) {
+    return JSON.stringify([...value].sort());
+  }
+  return JSON.stringify(value ?? null);
+}
+
+/**
+ * The fields that differ between what was last saved and what the form holds
+ * now — the body of an autosave, so a save sends ONLY what changed (no member
+ * or tag rewrite when neither was touched; no re-sending a name that wasn't
+ * edited). Null when nothing changed.
+ */
+export function diffTaskPayload(saved: TaskPayload, next: TaskPayload): Partial<TaskPayload> | null {
+  const changed = AUTOSAVE_KEYS.filter((key) => comparable(key, saved[key]) !== comparable(key, next[key]));
+  if (changed.length === 0) return null;
+  const keys = new Set<string>(changed);
+  if (changed.some((key) => LINK_KEYS.has(key))) LINK_KEYS.forEach((key) => keys.add(key));
+  const diff: Record<string, unknown> = {};
+  for (const key of AUTOSAVE_KEYS) if (keys.has(key)) diff[key] = next[key];
+  return diff as Partial<TaskPayload>;
 }

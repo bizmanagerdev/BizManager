@@ -8,7 +8,7 @@ import { parseTagIds, syncEntityTags } from "@/lib/tags";
 import { notifyTaskAssignees } from "@/lib/notifications/task-assignment";
 import { runAfterResponse } from "@/lib/after-response";
 import { translateToHebrew } from "@/lib/i18n/translateToHebrew";
-import { computeDefaultSortOrder } from "@/lib/tasks/sortOrder";
+import { computeInsertSortOrder } from "@/lib/tasks/sortOrder";
 
 function validateTaskLinkArgs(args: {
   businessDomain: string | null;
@@ -107,23 +107,26 @@ export async function POST(req: Request) {
       );
     }
 
-    // Office/admin never see Arabic, so a locale=ar worker's own words are
-    // auto-translated to Hebrew here. Skipped entirely for Hebrew writers.
-    const subjectHe = profile.locale === "ar" ? await translateToHebrew(subject) : null;
-    const descriptionHe = profile.locale === "ar" && description ? await translateToHebrew(description) : null;
-    const now = new Date();
-    // "Order added" = newest at the very top of its column — need to know
-    // what's currently topmost there to land above it (null status is legacy
-    // for "todo", same convention loadTasksBoard uses).
+    // A new task goes to the very top of its column, due date or not — there is
+    // no date ordering; users arrange their lists by dragging. Need what's
+    // currently topmost there to land above it (null status is legacy for
+    // "todo", same convention loadTasksBoard uses).
     let minQuery = supabase
       .from("tasks")
       .select("sort_order")
       .order("sort_order", { ascending: true, nullsFirst: false })
       .limit(1);
     minQuery = status === "todo" ? minQuery.or("status.eq.todo,status.is.null") : minQuery.eq("status", status);
-    const { data: minRow } = await minQuery.maybeSingle();
+    // Office/admin never see Arabic, so a locale=ar worker's own words are
+    // auto-translated to Hebrew here. Skipped entirely for Hebrew writers.
+    // All three are independent — run them together, not one after another.
+    const [subjectHe, descriptionHe, { data: minRow }] = await Promise.all([
+      profile.locale === "ar" ? translateToHebrew(subject) : Promise.resolve(null),
+      profile.locale === "ar" && description ? translateToHebrew(description) : Promise.resolve(null),
+      minQuery.maybeSingle(),
+    ]);
     const currentMinInColumn = typeof minRow?.sort_order === "number" ? minRow.sort_order : null;
-    const sortOrder = computeDefaultSortOrder({ status, dueDate, currentMinInColumn, now });
+    const sortOrder = computeInsertSortOrder(null, currentMinInColumn);
 
     const { data, error } = await supabase
       .from("tasks")
@@ -161,11 +164,6 @@ export async function POST(req: Request) {
       // Members are extra collaborators on top of the primary assignee. Never store
       // the primary assignee as a duplicate member row.
       const extraMembers = memberIds.filter((memberId) => memberId !== assignedUserId);
-      if (extraMembers.length > 0) {
-        await supabase
-          .from("task_members")
-          .insert(extraMembers.map((userId) => ({ task_id: data.id, user_id: userId })));
-      }
       logAuditEventAfterResponse({
         supabase,
         tableName: "tasks",
@@ -173,9 +171,6 @@ export async function POST(req: Request) {
         action: "create",
         changedBy: profile.id,
         userRole: profile.role,
-      });
-      await syncEntityTags(supabase, "task", data.id, parseTagIds(body.tag_ids), {
-        createdBy: profile.id,
       });
 
       // Reminders staged in the create dialog — insert now that the task id exists.
@@ -189,20 +184,33 @@ export async function POST(req: Request) {
             }))
             .filter((r) => r.remind_at)
         : [];
-      if (reminders.length > 0) {
-        await supabase.from("reminders").insert(
-          reminders.map((r) => ({
-            task_id: data.id,
-            remind_at: r.remind_at,
-            content: r.content || "",
-            action_type: "other",
-            category: "task",
-            assigned_to: assignedUserId,
-            created_by: profile.id,
-            updated_by: profile.id,
-          }))
-        );
-      }
+
+      // Members, tags and reminders all hang off the new id and not off each
+      // other — written together rather than one round trip after another.
+      await Promise.all([
+        extraMembers.length > 0
+          ? supabase
+              .from("task_members")
+              .insert(extraMembers.map((userId) => ({ task_id: data.id, user_id: userId })))
+          : null,
+        syncEntityTags(supabase, "task", data.id, parseTagIds(body.tag_ids), {
+          createdBy: profile.id,
+        }),
+        reminders.length > 0
+          ? supabase.from("reminders").insert(
+              reminders.map((r) => ({
+                task_id: data.id,
+                remind_at: r.remind_at,
+                content: r.content || "",
+                action_type: "other",
+                category: "task",
+                assigned_to: assignedUserId,
+                created_by: profile.id,
+                updated_by: profile.id,
+              }))
+            )
+          : null,
+      ]);
 
       // Alert the people this task landed for (owner + members), not the creator.
       // After the response: the push goes to them, not to whoever pressed Save.

@@ -35,7 +35,8 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { buildColorIndexMap } from "@/components/dashboard/InitialsAvatar";
-import { formatShortDateTime } from "@/lib/date";
+import { formatShortDate, formatShortDateTime } from "@/lib/date";
+import { taskShowsFromDate } from "@/lib/tasks/visibility";
 import { fetchExistingTagIds } from "@/components/tags/TagPicker";
 import {
   isExpenseBusinessDomain,
@@ -54,8 +55,9 @@ import {
   normalizeTaskStatus,
   normalizeTaskPriority,
   buildTaskPayload,
-  buildTaskFormSnapshot,
+  diffTaskPayload,
   type LegacyNote,
+  type TaskPayload,
   type TaskStatus,
   type TaskPriority,
   type TaskTargetType,
@@ -86,6 +88,11 @@ export type { TaskStatus, TaskPriority, TaskTargetType };
 export type { TaskOption, UserOption };
 
 type Mode = "create" | "edit";
+
+// An open task saves itself (user, 2026-10-04: "when making changes in a task it
+// should save automatically — I don't want to have to hit save changes"). This
+// long after the last change, so typing a name is one save, not one per letter.
+const AUTOSAVE_DELAY_MS = 700;
 
 // Bidirectional: subject_he/description_he are only ever set when the
 // AUTHOR's own locale was 'ar' (see app/api/tasks/create), so their presence
@@ -303,6 +310,30 @@ export function TaskUpsertDialog(rawProps: Props) {
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
+  // Edit mode: closing with changes that CAN'T be saved (no name, or a domain
+  // missing its project/property) asks before dropping them.
+  const [confirmUnsavedOpen, setConfirmUnsavedOpen] = useState(false);
+  const [autosaveState, setAutosaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  // ── Autosave bookkeeping (edit mode) ──
+  // What the server holds, as far as this dialog knows: set from the loaded
+  // card, then advanced field by field as each save succeeds. A save sends the
+  // difference between this and the form (diffTaskPayload).
+  const savedPayloadRef = useRef<TaskPayload | null>(null);
+  // The form as of the latest render — read by a save that was queued behind
+  // another one, so it sends what's on screen NOW, not when it was scheduled.
+  const latestPayloadRef = useRef<TaskPayload | null>(null);
+  const canSubmitRef = useRef(false);
+  // Set by loadCard when the card's values have been applied; the next render's
+  // form becomes the baseline. (Taking a baseline any earlier would compare the
+  // full card against the board's prefill and "save" the difference.)
+  const baselinePendingRef = useRef(false);
+  // Saves run one at a time, in order.
+  const saveChainRef = useRef<Promise<void>>(Promise.resolve());
+  // Anything saved while open → the board refreshes once, when it closes.
+  const savedSomethingRef = useRef(false);
+  // The card as it was when opened — to tell, on close, whether this session's
+  // edits pushed it out of the list until later (see announceIfWaiting).
+  const openedPayloadRef = useRef<TaskPayload | null>(null);
   const [attachmentToDelete, setAttachmentToDelete] = useState<{ id: string; name: string | null } | null>(null);
   const [deletingAttachment, setDeletingAttachment] = useState(false);
 
@@ -422,13 +453,18 @@ export function TaskUpsertDialog(rawProps: Props) {
         const task = (json?.task ?? null) as Record<string, unknown> | null;
         if (!task) throw new Error(t(tasksDict, props.locale, "taskNotFoundError"));
 
+        // The tags were requested alongside the card, so this rarely waits —
+        // and they have to land in the SAME render as the rest of the card:
+        // that render is the autosave baseline (see baselinePendingRef), and
+        // tags arriving after it would read as an edit and save themselves.
+        const loadedTagIds = await tagIdsPromise;
+
         applyTaskFields(task);
         setViewerIsCreator(json?.viewer_is_creator === true);
 
         const membersRaw = Array.isArray(json?.members) ? (json.members as Array<{ id?: unknown }>) : [];
         setMemberIds(membersRaw.map((m) => (typeof m.id === "string" ? m.id : "")).filter(Boolean));
-        setTagIds([]);
-        void tagIdsPromise.then(setTagIds);
+        setTagIds(loadedTagIds);
         setComments(Array.isArray(json?.comments) ? (json.comments as CommentItem[]) : []);
         setLegacyNotes(parseLegacyNotes(typeof task.notes === "string" ? task.notes : null));
         setReminders(Array.isArray(json?.reminders) ? (json.reminders as ReminderItem[]) : []);
@@ -438,6 +474,7 @@ export function TaskUpsertDialog(rawProps: Props) {
 
         // Nothing forced open — the user opens whichever section they want.
         setOpenSection(null);
+        baselinePendingRef.current = true;
       } catch (error: unknown) {
         toast.error(toHebrewError(error, t(tasksDict, props.locale, "loadTaskErrorFallback")));
         props.onOpenChange(false);
@@ -509,6 +546,10 @@ export function TaskUpsertDialog(rawProps: Props) {
   useEffect(() => {
     if (!props.open) return;
     if (props.mode === "edit" && props.taskId) {
+      savedPayloadRef.current = null;
+      baselinePendingRef.current = false;
+      savedSomethingRef.current = false;
+      setAutosaveState("idle");
       setActiveTaskId(props.taskId);
       const prefill = props.prefill?.id === props.taskId ? props.prefill : null;
       setPrefilled(Boolean(prefill));
@@ -643,7 +684,13 @@ export function TaskUpsertDialog(rawProps: Props) {
   // name, or a list. Ask instead of guessing. (On edit it's just a name.)
   async function submit() {
     if (!canSubmit || loading) return;
-    if (!isEditing && subjectLines.length > 1) {
+    // An open task has no Save — Enter in a field just saves now rather than
+    // waiting out the autosave pause.
+    if (isEditing) {
+      await runAutosave();
+      return;
+    }
+    if (subjectLines.length > 1) {
       setSplitAsk(true);
       return;
     }
@@ -698,70 +745,108 @@ export function TaskUpsertDialog(rawProps: Props) {
   // `override` exists because setSubject() hasn't landed yet when the split
   // prompt collapses a list into one name — buildPayload() would read the stale
   // multi-line value.
+  // A far-off to-do waits off the board until its time (lib/tasks/visibility.ts),
+  // so a task saved with such a date would appear and then vanish from the list.
+  // Say when it'll show instead of leaving that to look like a bug.
+  function announceIfWaiting(status: string | null, dueDate: string | null, reminderDates: string[]): boolean {
+    const nextReminderAt =
+      [...reminderDates].filter(Boolean).sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0] ?? null;
+    const showsFrom = taskShowsFromDate({ status, dueDate, nextReminderAt });
+    if (!showsFrom) return false;
+    toast.info(`${t(tasksDict, props.locale, "showsFromToastPrefix")} ${formatShortDate(showsFrom)}`);
+    return true;
+  }
+
+  // Create only — an open task saves itself (see runAutosave).
   async function reallySubmit(override?: { subject?: string }) {
     setSaving(true);
     emitProgressActivityStart();
     try {
-      if (!isEditing) {
-        const payload = { ...buildPayload(), ...(override?.subject ? { subject: override.subject } : {}) };
-        const result = await offlineFetch(
-          "/api/tasks/create",
-          payload,
-          t(tasksDict, props.locale, "newTaskLabel"),
-          { idempotent: true }
-        );
-        if (result.queued) {
-          // Queued offline → no task id yet, so staged files can't be attached.
-          // Say so rather than dropping them silently.
-          if (pendingFiles.length > 0) toast.warning(t(tasksDict, props.locale, "filesNotAttachedOffline"));
-          clearDraft("task-create");
-          props.onSaved?.();
-          props.onOpenChange(false);
-          return;
-        }
-        if (!result.ok) {
-          toast.error(t(tasksDict, props.locale, "toastErrorCreateTask"), { description: result.error });
-          return;
-        }
-        clearDraft("task-create");
-        // No toast — the board shows the new card the instant onSaved fires
-        // (see TasksPageClient), so a "created" toast would just be announcing
-        // something already visible.
-        await uploadPendingFiles(newTaskIdFrom(result.data));
-        const createdTask =
-          result.data && typeof result.data === "object" && "task" in result.data
-            ? ((result.data as { task?: Record<string, unknown> | null }).task ?? null)
-            : null;
-        props.onSaved?.(createdTask);
-        // Close so the new task shows in the list (no lingering edit dialog).
-        props.onOpenChange(false);
-        startTransition(() => { router.refresh(); });
-        return;
-      }
-
-      const targetId = activeTaskId ?? props.taskId;
+      const payload = { ...buildPayload(), ...(override?.subject ? { subject: override.subject } : {}) };
       const result = await offlineFetch(
-        "/api/tasks/update",
-        { id: targetId, ...buildPayload() },
-        t(tasksDict, props.locale, "updateTaskOfflineLabel")
+        "/api/tasks/create",
+        payload,
+        t(tasksDict, props.locale, "newTaskLabel"),
+        { idempotent: true }
       );
-      if (!result.queued && !result.ok) {
-        toast.error(t(tasksDict, props.locale, "toastErrorUpdateTask"), { description: toHebrewError(result.error, "") });
+      if (result.queued) {
+        // Queued offline → no task id yet, so staged files can't be attached.
+        // Say so rather than dropping them silently.
+        if (pendingFiles.length > 0) toast.warning(t(tasksDict, props.locale, "filesNotAttachedOffline"));
+        clearDraft("task-create");
+        announceIfWaiting(payload.status, payload.due_date, payload.reminders.map((r) => r.remind_at));
+        props.onSaved?.();
+        props.onOpenChange(false);
         return;
       }
-      // No success toast — the dialog closing and the card reflecting the edit
-      // is the confirmation.
-      props.onSaved?.();
+      if (!result.ok) {
+        toast.error(t(tasksDict, props.locale, "toastErrorCreateTask"), { description: result.error });
+        return;
+      }
+      clearDraft("task-create");
+      announceIfWaiting(payload.status, payload.due_date, payload.reminders.map((r) => r.remind_at));
+      // No toast — the board shows the new card the instant onSaved fires
+      // (see TasksPageClient), so a "created" toast would just be announcing
+      // something already visible.
+      await uploadPendingFiles(newTaskIdFrom(result.data));
+      const createdTask =
+        result.data && typeof result.data === "object" && "task" in result.data
+          ? ((result.data as { task?: Record<string, unknown> | null }).task ?? null)
+          : null;
+      props.onSaved?.(createdTask);
+      // Close so the new task shows in the list (no lingering edit dialog).
       props.onOpenChange(false);
       startTransition(() => { router.refresh(); });
     } catch (error: unknown) {
-      toast.error(t(tasksDict, props.locale, isEditing ? "toastErrorUpdateTask" : "toastErrorCreateTask"), {
+      toast.error(t(tasksDict, props.locale, "toastErrorCreateTask"), {
         description: getErrorMessage(error),
       });
     } finally {
       emitProgressActivityEnd();
       setSaving(false);
     }
+  }
+
+  // ── Autosave (edit mode) ────────────────────────────────────────────────────
+  // One save: whatever differs between the last-saved values and the form as it
+  // stands NOW. Queued behind any save still in flight (runAutosave), so two
+  // never race and a quick second edit isn't lost or sent twice.
+  async function saveChangesOnce() {
+    const targetId = activeTaskId ?? props.taskId;
+    const base = savedPayloadRef.current;
+    const next = latestPayloadRef.current;
+    if (!targetId || !base || !next) return;
+    const diff = diffTaskPayload(base, next);
+    // Nothing new, or nothing that CAN be saved yet (no name, or a domain still
+    // missing its project/property) — the close guard covers the latter.
+    if (!diff || !canSubmitRef.current) return;
+    setAutosaveState("saving");
+    try {
+      const result = await offlineFetch(
+        "/api/tasks/update",
+        { id: targetId, ...diff },
+        t(tasksDict, props.locale, "updateTaskOfflineLabel")
+      );
+      if (!result.queued && !result.ok) {
+        toast.error(t(tasksDict, props.locale, "toastErrorUpdateTask"), { description: toHebrewError(result.error, "") });
+        setAutosaveState("error");
+        return;
+      }
+      // Advance the baseline by exactly what was sent — a field edited while
+      // this was in flight still differs and goes up in the next save.
+      savedPayloadRef.current = { ...base, ...diff };
+      savedSomethingRef.current = true;
+      setAutosaveState("saved");
+    } catch (error: unknown) {
+      toast.error(t(tasksDict, props.locale, "toastErrorUpdateTask"), { description: getErrorMessage(error) });
+      setAutosaveState("error");
+    }
+  }
+
+  function runAutosave(): Promise<void> {
+    const run = saveChainRef.current.then(saveChangesOnce);
+    saveChainRef.current = run.catch(() => {});
+    return run;
   }
 
   async function addComment() {
@@ -1027,6 +1112,10 @@ export function TaskUpsertDialog(rawProps: Props) {
   async function deleteTask() {
     const targetId = activeTaskId ?? props.taskId;
     if (!targetId) return;
+    // No more autosaves for a task that's going away (restored if the delete
+    // fails, so the card keeps saving).
+    const savedBeforeDelete = savedPayloadRef.current;
+    savedPayloadRef.current = null;
     setSaving(true);
     emitProgressActivityStart();
     try {
@@ -1036,6 +1125,7 @@ export function TaskUpsertDialog(rawProps: Props) {
         t(tasksDict, props.locale, "deleteTaskLabel")
       );
       if (!result.queued && !result.ok) {
+        savedPayloadRef.current = savedBeforeDelete;
         toast.error(t(tasksDict, props.locale, "toastErrorDeleteTask"), { description: toHebrewError(result.error, "") });
         return;
       }
@@ -1045,6 +1135,7 @@ export function TaskUpsertDialog(rawProps: Props) {
       props.onOpenChange(false);
       startTransition(() => { router.refresh(); });
     } catch (error: unknown) {
+      savedPayloadRef.current = savedBeforeDelete;
       toast.error(t(tasksDict, props.locale, "toastErrorDeleteTask"), { description: getErrorMessage(error) });
     } finally {
       emitProgressActivityEnd();
@@ -1128,43 +1219,78 @@ export function TaskUpsertDialog(rawProps: Props) {
     onPrevious: () => setOpenSection(sections[Math.max(0, activeIndex - 1)].key),
   });
 
-  // Track unsaved edits so (in edit mode) Save only appears once something changed.
-  const formSnapshot = buildTaskFormSnapshot({
-    effectiveDomain,
-    projectId,
-    propertyId,
-    customerId,
-    subject,
-    description,
-    dueDate,
-    dueTime,
-    city,
-    address,
-    assignedUserId,
-    memberIds,
-    priority,
-    status,
-    isPrivate,
-  });
-  const baselineRef = useRef<string | null>(null);
+  // ── Autosave wiring ──
+  // The form as of this render, and whether it differs from what's saved.
+  const editPayload = isEditing ? buildPayload() : null;
+  const pendingDiff =
+    editPayload && savedPayloadRef.current ? diffTaskPayload(savedPayloadRef.current, editPayload) : null;
+  const pendingKey = pendingDiff ? JSON.stringify(pendingDiff) : "";
+  // Hand the latest form/validity/save function to code that runs later (a
+  // queued save, the debounce timer) — refs, so they never act on a stale copy.
+  const runAutosaveRef = useRef(runAutosave);
   useEffect(() => {
-    if (!props.open) {
-      baselineRef.current = null;
-      return;
+    latestPayloadRef.current = editPayload;
+    canSubmitRef.current = canSubmit;
+    runAutosaveRef.current = runAutosave;
+    // The loaded card's render: its form IS what the server holds.
+    if (baselinePendingRef.current && editPayload && !loading) {
+      baselinePendingRef.current = false;
+      savedPayloadRef.current = editPayload;
+      openedPayloadRef.current = editPayload;
     }
-    if (loading) return;
-    if (baselineRef.current === null) baselineRef.current = formSnapshot;
-  }, [props.open, loading, formSnapshot]);
-  const dirty = baselineRef.current !== null && formSnapshot !== baselineRef.current;
+  });
+  // Save a moment after the last change. Every further change re-arms the
+  // timer (pendingKey changes), so a burst of edits is one save.
+  useEffect(() => {
+    if (!props.open || !pendingKey || !canSubmit || loading) return;
+    const timer = setTimeout(() => void runAutosaveRef.current(), AUTOSAVE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [props.open, pendingKey, canSubmit, loading]);
 
   function doClose() {
     if (props.mode === "create" && !activeTaskId) clearDraft("task-create");
     props.onOpenChange(false);
   }
 
-  // Guard: don't lose an unsaved new task without confirming (styled dialog).
+  // Close an open task: shut the dialog straight away and let the last change
+  // (if any) finish saving behind it — then refresh whatever list it came from,
+  // once, if anything was saved while it was open.
+  function closeEditing() {
+    props.onOpenChange(false);
+    const settled = pendingDiff ? runAutosave() : saveChainRef.current;
+    const pendingReminderDates = reminders
+      .filter((r) => r.status === "pending")
+      .map((r) => r.remind_at)
+      .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    void settled.then(() => {
+      if (!savedSomethingRef.current) return;
+      savedSomethingRef.current = false;
+      // Only when THIS session's edits moved it out of the list — a task that
+      // was already waiting (opened from a search) needs no announcement.
+      const opened = openedPayloadRef.current;
+      const saved = savedPayloadRef.current;
+      const wasWaiting =
+        opened !== null && taskShowsFromDate({ status: opened.status, dueDate: opened.due_date, nextReminderAt: pendingReminderDates[0] ?? null }) !== null;
+      if (saved && !wasWaiting) announceIfWaiting(saved.status, saved.due_date, pendingReminderDates);
+      props.onSaved?.();
+      startTransition(() => { router.refresh(); });
+    });
+  }
+
+  // Guard: don't lose an unsaved new task — or an open task's changes that
+  // can't be saved — without confirming (styled dialog).
   function attemptClose() {
-    if (saving || loading) return;
+    if (saving) return;
+    if (isEditing) {
+      if (loading) return;
+      if (pendingDiff && !canSubmit) {
+        setConfirmUnsavedOpen(true);
+        return;
+      }
+      closeEditing();
+      return;
+    }
+    if (loading) return;
     const unsavedCreate = props.mode === "create" && !activeTaskId;
     if (unsavedCreate && (subject.trim() || description.trim())) {
       setConfirmDiscardOpen(true);
@@ -1301,13 +1427,8 @@ export function TaskUpsertDialog(rawProps: Props) {
                 <LockIcon className="h-4 w-4" />
               </span>
             ) : null}
-            {isEditing && targetTaskId ? (
-              <DeleteButton
-                label={t(tasksDict, props.locale, "deleteTheTaskButtonLabel")}
-                disabled={saving || loading}
-                onClick={() => setConfirmDeleteOpen(true)}
-              />
-            ) : null}
+            {/* No delete button up here any more — it sits at the bottom, under
+                all the sections (user, 2026-10-04), so the name gets the row. */}
           </div>
           <DialogDescription className="sr-only">{t(tasksDict, props.locale, "dialogDescriptionSr")}</DialogDescription>
           {/* When it was created / last touched — always visible, no click needed. */}
@@ -1577,31 +1698,55 @@ export function TaskUpsertDialog(rawProps: Props) {
           </div>
 
           {/* Action bar — a real footer of the dialog, outside the scrolling
-              area, so "הבא" and Save are on screen wherever you are in the form.
-              They used to sit at the end of the scroll, below the fold. */}
-          <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border/70 bg-background px-4 py-3 sm:px-6">
-            {wizard && activeIndex < sections.length - 1 ? (
-              <Button
-                type="button"
-                variant="secondary"
-                className="me-auto"
-                onClick={() => setOpenSection(sections[activeIndex + 1].key)}
+              area, so it's on screen wherever you are in the form.
+              Creating: "הבא" and Create. An open task: no Save (it saves
+              itself) — just whether that's happened, and the delete button,
+              down here under all the sections rather than in the header. */}
+          {isEditing ? (
+            <div className="flex shrink-0 items-center gap-2 border-t border-border/70 bg-background px-4 py-3 sm:px-6">
+              <span
+                aria-live="polite"
+                className={cn(
+                  "me-auto text-sm",
+                  autosaveState === "error" ? "font-medium text-destructive" : "text-muted-foreground"
+                )}
               >
-                {t(tasksDict, props.locale, "nextButton")}
-              </Button>
-            ) : (
-              <div className="me-auto" />
-            )}
-            {!isEditing || dirty ? (
-              <Button type="submit" disabled={!canSubmit || saving || loading}>
-                {saving
+                {autosaveState === "saving" || (pendingKey && canSubmit)
                   ? t(tasksDict, props.locale, "savingEllipsis")
-                  : isEditing
-                    ? t(tasksDict, props.locale, "saveChangesButton")
-                    : t(tasksDict, props.locale, "createButton")}
+                  : autosaveState === "error"
+                    ? t(tasksDict, props.locale, "autosaveFailed")
+                    : autosaveState === "saved"
+                      ? t(tasksDict, props.locale, "autosaveSaved")
+                      : ""}
+              </span>
+              {targetTaskId ? (
+                <DeleteButton
+                  label={t(tasksDict, props.locale, "deleteTheTaskButtonLabel")}
+                  size="default"
+                  disabled={saving || loading}
+                  onClick={() => setConfirmDeleteOpen(true)}
+                />
+              ) : null}
+            </div>
+          ) : (
+            <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border/70 bg-background px-4 py-3 sm:px-6">
+              {wizard && activeIndex < sections.length - 1 ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="me-auto"
+                  onClick={() => setOpenSection(sections[activeIndex + 1].key)}
+                >
+                  {t(tasksDict, props.locale, "nextButton")}
+                </Button>
+              ) : (
+                <div className="me-auto" />
+              )}
+              <Button type="submit" disabled={!canSubmit || saving || loading}>
+                {saving ? t(tasksDict, props.locale, "savingEllipsis") : t(tasksDict, props.locale, "createButton")}
               </Button>
-            ) : null}
-          </div>
+            </div>
+          )}
         </form>
         )}
       </AdaptivePageDialog>
@@ -1705,6 +1850,21 @@ export function TaskUpsertDialog(rawProps: Props) {
       onConfirm={() => {
         setConfirmDiscardOpen(false);
         doClose();
+      }}
+    />
+
+    <ConfirmDialog
+      open={confirmUnsavedOpen}
+      onOpenChange={setConfirmUnsavedOpen}
+      title={t(tasksDict, props.locale, "unsavedTitle")}
+      description={t(tasksDict, props.locale, "unsavedDescription")}
+      confirmLabel={t(tasksDict, props.locale, "discardConfirmLabel")}
+      cancelLabel={t(tasksDict, props.locale, "discardCancelLabel")}
+      destructive
+      onConfirm={() => {
+        setConfirmUnsavedOpen(false);
+        // Whatever DID save before this still refreshes the list.
+        closeEditing();
       }}
     />
     </>

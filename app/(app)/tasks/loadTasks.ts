@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { translateToArabic } from "@/lib/i18n/translateToHebrew";
 import type { Locale } from "@/lib/i18n/types";
+import { earliestReminderByTask, isTaskWaitingForLater } from "@/lib/tasks/visibility";
 
 type Row = Record<string, unknown>;
 
@@ -162,7 +163,8 @@ export async function loadTasksBoard(
   // Selection order stays as before (recency) — it only decides WHICH rows make
   // the cut (the done column is capped to the most recently touched). Display
   // order within each column comes from sort_order (see the re-sort below), so a
-  // manual drag-reorder (or the created/due-date default) is what the board shows.
+  // manual drag-reorder (or "newest on top" for a card nobody has moved) is what
+  // the board shows.
   const openQuery = openFilter
     .order("created_at", { ascending: false, nullsFirst: false })
     .range(0, OPEN_LIMIT - 1);
@@ -224,7 +226,7 @@ export async function loadTasksBoard(
     supabase.from("task_comments").select("task_id").in("task_id", taskIds).range(0, 9999),
     supabase
       .from("reminders")
-      .select("task_id")
+      .select("task_id,remind_at")
       .in("task_id", taskIds)
       .eq("status", "pending")
       .range(0, 9999),
@@ -287,9 +289,7 @@ export async function loadTasksBoard(
     commentCountByTask.set(taskId, (commentCountByTask.get(taskId) ?? 0) + 1);
   }
 
-  const reminderTaskIds = new Set(
-    ((remindersRes.data ?? []) as Row[]).map((r) => getString(r, "task_id")).filter(Boolean) as string[]
-  );
+  const nextReminderByTask = earliestReminderByTask((remindersRes.data ?? []) as Row[]);
 
   const attachmentCountByTask = new Map<string, number>();
   for (const row of (attachmentsRes.data ?? []) as Row[]) {
@@ -300,7 +300,22 @@ export async function loadTasksBoard(
 
   const todayIso = new Date().toISOString().slice(0, 10);
 
-  const items: TaskBoardItem[] = taskRows.map((row) => {
+  const now = new Date();
+  const items: TaskBoardItem[] = taskRows
+    // A far-future to-do waits off the board until its reminder, or until 30
+    // days before it's due (lib/tasks/visibility.ts). A search still finds it —
+    // looking for a task by name means you want it, whenever it's due.
+    .filter(
+      (row) =>
+        Boolean(q) ||
+        !isTaskWaitingForLater({
+          status: row.status,
+          dueDate: row.due_date,
+          nextReminderAt: nextReminderByTask.get(row.id),
+          now,
+        })
+    )
+    .map((row) => {
     const assigneeId = row.assigned_user_id;
     const assigneeName = assigneeId ? userNameById.get(assigneeId) ?? null : null;
     const extraMembers = membersByTask.get(row.id) ?? [];
@@ -336,7 +351,7 @@ export async function loadTasksBoard(
       members,
       comment_count: commentCountByTask.get(row.id) ?? 0,
       attachment_count: attachmentCountByTask.get(row.id) ?? 0,
-      has_open_reminder: reminderTaskIds.has(row.id),
+      has_open_reminder: nextReminderByTask.has(row.id),
       is_overdue: isOpen && row.due_date !== null && row.due_date.slice(0, 10) < todayIso,
       is_private: Boolean(row.is_private),
       sort_order: row.sort_order,

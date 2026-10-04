@@ -24,22 +24,26 @@ export async function POST(req: Request) {
     if (!access.ok) return access.response;
     const { supabase, profile } = access.value;
 
-    const { data: current } = await supabase.from("tasks").select("status").eq("id", id).maybeSingle();
+    // Snapshot the pending-reminder count BEFORE the write: the
+    // trg_close_task_reminders_on_status_close trigger (see migration
+    // 20260901130130) closes these atomically as part of the tasks UPDATE
+    // below, so counting after would always read back 0. Read alongside the
+    // current status rather than after it — they don't depend on each other
+    // (a count taken for a status that turns out unchanged is just ignored).
+    const closing = CLOSED_TASK_STATUSES.has(status);
+    const [{ data: current }, reminderCount] = await Promise.all([
+      supabase.from("tasks").select("status").eq("id", id).maybeSingle(),
+      closing
+        ? supabase
+            .from("reminders")
+            .select("id", { count: "exact", head: true })
+            .eq("task_id", id)
+            .eq("status", "pending")
+        : Promise.resolve({ count: 0 }),
+    ]);
     const priorStatus = typeof current?.status === "string" ? current.status : null;
     const statusChanged = priorStatus !== null && priorStatus !== status;
-
-    // Snapshot BEFORE the write: the trg_close_task_reminders_on_status_close
-    // trigger (see migration 20260901130130) closes these atomically as part of
-    // the tasks UPDATE below, so counting after would always read back 0.
-    let pendingReminderCount = 0;
-    if (statusChanged && CLOSED_TASK_STATUSES.has(status)) {
-      const { count } = await supabase
-        .from("reminders")
-        .select("id", { count: "exact", head: true })
-        .eq("task_id", id)
-        .eq("status", "pending");
-      pendingReminderCount = count ?? 0;
-    }
+    const pendingReminderCount = statusChanged && closing ? reminderCount.count ?? 0 : 0;
 
     let data: Record<string, unknown> | null = null;
     let writeError: { message: string } | null = null;
@@ -48,17 +52,11 @@ export async function POST(req: Request) {
       // Pure reorder within the same column — routed through a helper that opts
       // this write out of the audit log (see migration
       // add_tasks_sort_order.sql), so dragging a card doesn't spam its history
-      // with content-free "עודכן" rows.
+      // with content-free "עודכן" rows. No re-read afterwards: the row now holds
+      // exactly what was just written.
       const rpc = await supabase.rpc("set_task_sort_order", { p_task_id: id, p_sort_order: sortOrder });
       writeError = rpc.error;
-      if (!writeError) {
-        const reselect = await supabase
-          .from("tasks")
-          .select("id,status,sort_order,updated_at")
-          .eq("id", id)
-          .maybeSingle();
-        data = reselect.data as Record<string, unknown> | null;
-      }
+      if (!writeError) data = { id, status, sort_order: sortOrder };
     } else {
       const update: Record<string, unknown> = { status };
       if (sortOrder !== null) update.sort_order = sortOrder;

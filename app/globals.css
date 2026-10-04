@@ -714,6 +714,15 @@ body:has(.board-backdrop) header {
    PageHeaderToolbar itself has to change. Unlayered, to beat the same-named
    :root tokens. Portaled content (dropdown menus, the search dialog) lives
    OUTSIDE this DOM subtree and deliberately keeps its normal light styling. */
+/* …and the page area under the bar takes the board's navy too. The shell's
+   content column is capped at 1600px, so on a wide screen the board stopped
+   there and plain white ran down both sides of it (user, 2026-10-04: "the
+   whole page background no matter what size the screen is has to be the dark
+   color"). */
+body:has(.dark-topbar-page) main {
+  background-color: rgb(var(--primary));
+}
+
 body:has(.dark-topbar-page) header,
 body:has(.dark-topbar-page) #page-header-toolbar {
   --background: var(--sidebar-background);
