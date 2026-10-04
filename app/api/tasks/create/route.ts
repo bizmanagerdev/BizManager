@@ -1,6 +1,6 @@
 import { toHebrewError } from "@/lib/error-messages";
 ﻿import { NextResponse } from "next/server";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
@@ -165,7 +165,7 @@ export async function POST(req: Request) {
           .from("task_members")
           .insert(extraMembers.map((userId) => ({ task_id: data.id, user_id: userId })));
       }
-      await logAuditEvent({
+      logAuditEventAfterResponse({
         supabase,
         tableName: "tasks",
         recordId: data.id,

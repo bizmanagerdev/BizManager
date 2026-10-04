@@ -69,6 +69,7 @@ import {
 import { shouldShowSessionHours, shouldShowSessionPrice, type PayrollWorkerType } from "@/lib/payroll-worker-type";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import { isImageDocument } from "@/lib/documents";
+import { uploadTogether } from "@/lib/upload-together";
 
 type PaymentStatus = "paid" | "partial" | "not_paid";
 type PaymentChoice = "none" | "paid" | "partial";
@@ -1019,10 +1020,9 @@ export function ExpenseDialog({
       }
 
       const uploaded: FinancialAttachment[] = [];
-      for (const file of attachmentFiles) {
-        if (!sessionId) break;
-        const att = await uploadAttachment("session", sessionId, file);
-        if (att) uploaded.push(att);
+      if (sessionId) {
+        const atts = await uploadTogether(attachmentFiles, (file) => uploadAttachment("session", sessionId, file));
+        for (const att of atts) if (att) uploaded.push(att);
       }
 
       toast.success(
@@ -1343,10 +1343,8 @@ export function ExpenseDialog({
 
       const uploadedAttachments: FinancialAttachment[] = [];
       if (showAttachments && expenseId) {
-        for (const file of attachmentFiles) {
-          const att = await uploadAttachment("expense", expenseId, file);
-          if (att) uploadedAttachments.push(att);
-        }
+        const atts = await uploadTogether(attachmentFiles, (file) => uploadAttachment("expense", expenseId, file));
+        for (const att of atts) if (att) uploadedAttachments.push(att);
       }
 
       const savedResult = onSaved({

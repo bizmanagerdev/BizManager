@@ -1,6 +1,6 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { tryAutoIssueReceiptForPayment } from "@/lib/morning/service";
@@ -163,7 +163,7 @@ export async function POST(req: Request) {
       morning_document_id: string | null;
     } | null = null;
     if (data?.id) {
-      await logAuditEvent({
+      logAuditEventAfterResponse({
         supabase,
         tableName: "payments",
         recordId: data.id,

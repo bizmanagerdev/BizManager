@@ -1,6 +1,6 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { isExpenseBusinessDomain, mapProjectTypeToExpenseDomain } from "@/lib/expenses";
@@ -202,7 +202,7 @@ export async function POST(req: Request) {
       projectExpense = (link as Record<string, unknown> | null) ?? null;
     }
 
-    await logAuditEvent({
+    logAuditEventAfterResponse({
       supabase,
       tableName: "expenses",
       recordId: createdExpenseId,

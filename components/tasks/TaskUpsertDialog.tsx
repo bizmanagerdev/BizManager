@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type 
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
 import { offlineUpload } from "@/lib/offline-upload";
+import { uploadTogether } from "@/lib/upload-together";
 import { toHebrewError } from "@/lib/error-messages";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -918,14 +919,16 @@ export function TaskUpsertDialog(rawProps: Props) {
     try {
       // A queued upload was saved on the device and replays on reconnect
       // (ConnectionToasts announces it) — nothing more to do here for those.
-      for (const file of files) {
-        const result = await offlineUpload("/api/tasks/attachments/upload", {
+      // All files go up together (lib/upload-together.ts), not one by one.
+      const results = await uploadTogether(files, (file) =>
+        offlineUpload("/api/tasks/attachments/upload", {
           fields: { task_id: targetId },
           file,
           label: file.name,
-        });
-        if (result.queued) continue;
-        if (!result.ok) {
+        })
+      );
+      for (const result of results) {
+        if (!result.queued && !result.ok) {
           toast.error(t(tasksDict, props.locale, "toastErrorUploadFile"), { description: result.error });
           return;
         }

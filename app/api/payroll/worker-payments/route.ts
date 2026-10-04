@@ -1,7 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { getPayableDebtAmount } from "@/lib/payroll";
 import {
   normalizePayrollWorkerType,
@@ -321,7 +321,7 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
     return NextResponse.json({ error: toHebrewError(paymentResult.error.message) }, { status: 400 });
   }
 
-  await logAuditEvent({
+  logAuditEventAfterResponse({
     supabase,
     tableName: "worker_payments",
     recordId: existingPaymentId,
@@ -441,7 +441,7 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ error: toHebrewError(deleteResult.error.message) }, { status: 400 });
     }
 
-    await logAuditEvent({
+    logAuditEventAfterResponse({
       supabase,
       tableName: "worker_payments",
       recordId: paymentId,

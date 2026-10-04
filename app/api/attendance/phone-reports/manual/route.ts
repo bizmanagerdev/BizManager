@@ -1,7 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions } from "@/lib/payroll-worker-type";
 import { minutesBetween } from "@/lib/payroll";
 import { PHONE_ATTENDANCE_TABLE } from "@/lib/attendance/phone-reports";
@@ -103,7 +103,7 @@ export async function POST(req: Request) {
     }
 
     if (inserted?.id) {
-      await logAuditEvent({
+      logAuditEventAfterResponse({
         supabase,
         tableName: PHONE_ATTENDANCE_TABLE,
         recordId: inserted.id,

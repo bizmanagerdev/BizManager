@@ -48,6 +48,7 @@ import {
   normalizeDateOnly,
   uploadFinancialAttachment,
 } from "@/app/(app)/dashboard/DashboardActions.helpers";
+import { uploadTogether } from "@/lib/upload-together";
 import { buildIncomePayload, validateIncomeForm } from "@/app/(app)/dashboard/DashboardActions.forms";
 import { SummaryRow, SummarySection } from "@/components/ui/summary";
 import { formatCurrency } from "@/lib/payroll";
@@ -439,14 +440,10 @@ export function IncomeDialog({
       }
 
       const paymentId = getString(json.payment, "id");
-      for (const file of attachmentFiles) {
-        if (!paymentId) break;
-        await uploadFinancialAttachment("payment", paymentId, file);
-      }
-      if (method === "check" && paymentId && checkPhotoFiles.length > 0) {
-        for (const file of checkPhotoFiles) {
-          await uploadFinancialAttachment("payment", paymentId, file);
-        }
+      if (paymentId) {
+        // Attachments and check photos go up together (lib/upload-together.ts).
+        const files = method === "check" ? [...attachmentFiles, ...checkPhotoFiles] : attachmentFiles;
+        await uploadTogether(files, (file) => uploadFinancialAttachment("payment", paymentId, file));
       }
 
       handleOpenChange(false);
