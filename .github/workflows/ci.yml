@@ -261,6 +261,9 @@ jobs:
       - name: Install Playwright's chromium
         run: npx playwright install --with-deps chromium
 
+      - name: Grant service_role read on auth.users (CI-only local stack)
+        run: psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -c "GRANT SELECT ON auth.users TO service_role;"
+
       - name: Run E2E tests
         run: npm run test:e2e
 
