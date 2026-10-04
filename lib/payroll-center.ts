@@ -1105,7 +1105,17 @@ export async function ensureRecentPayslips(
 
 export async function regenerateEditablePayslipsForUsers(
   supabase: SupabaseLike,
-  userIds: string[]
+  userIds: string[],
+  options?: {
+    /**
+     * Only the months ending on or after this date (YYYY-MM-DD). A payslip is
+     * built from its own month's sessions alone (generatePayslipsForPeriod), so
+     * a change dated D can't move an earlier month's numbers — e.g. a new shift
+     * on D touches D's month, plus later months only through costs recalculated
+     * from D on. Omitted → every editable month, as before.
+     */
+    fromDate?: string | null;
+  }
 ) {
   const safeUserIds = [...new Set(userIds.filter(Boolean))];
   if (safeUserIds.length === 0) return;
@@ -1124,8 +1134,10 @@ export async function regenerateEditablePayslipsForUsers(
   if (periodsResult.error) throw new Error(periodsResult.error.message);
   if (usersResult.error) throw new Error(usersResult.error.message);
 
-  const periods = ((periodsResult.data ?? []) as PayrollPeriodRow[]).filter((period) =>
-    isPayrollPeriodEditable(period.status)
+  const fromDate = options?.fromDate?.trim() || null;
+  const periods = ((periodsResult.data ?? []) as PayrollPeriodRow[]).filter(
+    (period) =>
+      isPayrollPeriodEditable(period.status) && (!fromDate || !period.end_date || period.end_date >= fromDate)
   );
   const users = (usersResult.data ?? []) as SalaryCenterUserRow[];
 
@@ -1142,6 +1154,10 @@ export async function recalculateUserSessionCostsFromRules(
   options?: {
     fromDate?: string | null;
     regeneratePayslips?: boolean;
+    /** Regenerate only the payslip months ending on or after `fromDate` (see
+     *  regenerateEditablePayslipsForUsers). For a change that can't reach
+     *  back before that date — a brand-new shift. */
+    payslipsFromDateOnly?: boolean;
   }
 ) {
   const safeUserId = userId.trim();
@@ -1212,6 +1228,8 @@ export async function recalculateUserSessionCostsFromRules(
   }
 
   if (options?.regeneratePayslips !== false) {
-    await regenerateEditablePayslipsForUsers(supabase, [safeUserId]);
+    await regenerateEditablePayslipsForUsers(supabase, [safeUserId], {
+      fromDate: options?.payslipsFromDateOnly ? options.fromDate : null,
+    });
   }
 }

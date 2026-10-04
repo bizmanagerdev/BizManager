@@ -216,9 +216,12 @@ export async function POST(req: Request) {
     );
 
     if (requestedLaborCost === null && activeAgreement) {
+      // A new shift can't change a month before its own, so only its month and
+      // later ones are regenerated — not every open month, one after another.
       await recalculateUserSessionCostsFromRules(supabase, selectedUserId, {
         fromDate: clockIn.slice(0, 10),
         regeneratePayslips: payrollWorkerTypeGeneratesPayslips(workerType),
+        payslipsFromDateOnly: true,
       });
       const refreshed = await supabase
         .from(WORK_SESSIONS_TABLE)
@@ -244,7 +247,7 @@ export async function POST(req: Request) {
     }
 
     if (payrollWorkerTypeGeneratesPayslips(workerType)) {
-      await regenerateEditablePayslipsForUsers(supabase, [selectedUserId]);
+      await regenerateEditablePayslipsForUsers(supabase, [selectedUserId], { fromDate: clockIn.slice(0, 10) });
     }
 
     if (data?.id) {

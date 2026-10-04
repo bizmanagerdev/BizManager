@@ -20,7 +20,7 @@ import { ORDER_PAYMENT_METHOD_OPTIONS } from "@/lib/orders/paymentStatus";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { toHebrewError } from "@/lib/error-messages";
-import { uploadTogether } from "@/lib/upload-together";
+import { runTogether, uploadTogether } from "@/lib/upload-together";
 import { appendDictatedText } from "@/lib/dictation";
 import { mapProjectTypeToExpenseDomain } from "@/lib/expenses";
 import { registerReversibleCreate } from "@/lib/undo-engine";
@@ -201,23 +201,31 @@ export function AddIncomeDialog({
         return;
       }
 
-      // The other installments, as new payments on the project.
-      const addedIds: string[] = [];
-      for (const [i, part] of moreParts.entries()) {
-        const added = await fetch("/api/payments/create", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(bodyFor(part)),
-        });
-        const addedJson = await added.json().catch(() => ({}));
-        if (!added.ok) {
-          toast.error(`נרשמו ${i + 1} מתוך ${moreParts.length + 1} תשלומים`, {
-            description: toHebrewError(addedJson?.error, "רישום שאר התשלומים נכשל."),
+      // The other installments, as new payments on the project — sent together
+      // (a few at a time), since none depends on another.
+      const added = await runTogether(
+        moreParts,
+        async (part) => {
+          const res = await fetch("/api/payments/create", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(bodyFor(part)),
           });
-          break;
-        }
-        const addedId = (addedJson?.payment as PaymentRow | undefined)?.id;
-        if (addedId) addedIds.push(addedId);
+          const json = await res.json().catch(() => ({}));
+          return { ok: res.ok, json };
+        },
+        4
+      );
+      const addedIds = added
+        .map(({ ok, json }) => (ok ? (json?.payment as PaymentRow | undefined)?.id : undefined))
+        .filter((id): id is string => Boolean(id));
+      const failedAdd = added.find(({ ok }) => !ok);
+      if (failedAdd) {
+        // The first payment is saved plus whichever of the rest went in — say
+        // how many, so the others aren't entered twice.
+        toast.error(`נרשמו ${1 + added.filter(({ ok }) => ok).length} מתוך ${moreParts.length + 1} תשלומים`, {
+          description: toHebrewError(failedAdd.json?.error, "רישום שאר התשלומים נכשל."),
+        });
       }
       if (moreParts.length > 0) startTransition(() => { router.refresh(); });
 

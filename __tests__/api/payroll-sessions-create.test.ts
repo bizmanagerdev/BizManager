@@ -199,12 +199,16 @@ describe("POST /api/payroll/sessions/create — persistence", () => {
     });
   });
 
-  it("regenerates payslips for a payslip-generating worker type, then audits", async () => {
+  it("regenerates payslips for a payslip-generating worker type — only from the shift's own month on — then audits", async () => {
     const database = sb();
     grant(database);
     const res = await post({ ...VALID, labor_cost: 400 });
     expect(res.status).toBe(200);
-    expect(regenerateEditablePayslipsForUsers).toHaveBeenCalledWith(expect.anything(), ["u1"]);
+    // A new shift can't change an earlier month's payslip, so the months before
+    // the shift's date are left alone.
+    expect(regenerateEditablePayslipsForUsers).toHaveBeenCalledWith(expect.anything(), ["u1"], {
+      fromDate: "2026-05-15",
+    });
     expect(logAuditEvent).toHaveBeenCalledWith(
       expect.objectContaining({ tableName: "attendance_sessions", action: "create", recordId: "sess-1", changedBy: "prof-1" })
     );

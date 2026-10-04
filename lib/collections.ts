@@ -612,7 +612,22 @@ async function buildRentSourceRows(supabase: SupabaseClient, today: string): Pro
   return out;
 }
 
-export async function getCollectionsData(supabase: SupabaseClient): Promise<CollectionsData> {
+export async function getCollectionsData(
+  supabase: SupabaseClient,
+  {
+    amountsOnly = false,
+  }: {
+    /**
+     * Just who owes what: skip what each debt is FOR (titles / ordered items),
+     * the pending payments attached for inline "mark collected", and the
+     * last-contact / next-reminder lookup — none of which change any amount or
+     * status. For the "קליטת תשלום" debtor picker (/api/collections/debtors),
+     * which only lists customers with their open and late totals; it drops a
+     * whole round of queries.
+     */
+    amountsOnly?: boolean;
+  } = {}
+): Promise<CollectionsData> {
   let rawRows: Row[];
   try {
     rawRows = await fetchAllPaged<Row>((lo, hi) =>
@@ -707,8 +722,8 @@ export async function getCollectionsData(supabase: SupabaseClient): Promise<Coll
   // gave out and pending/overdue rent, pushed only after the enrichment calls
   // above have finished reading `rows` so their titles aren't overwritten.
   const [, , loanRows, rentRows] = await Promise.all([
-    enrichCollectionTitles(supabase, rows),
-    attachPendingPayments(supabase, rows),
+    amountsOnly ? undefined : enrichCollectionTitles(supabase, rows),
+    amountsOnly ? undefined : attachPendingPayments(supabase, rows),
     buildLoanSourceRows(supabase, today).catch(() => [] as CollectionSourceRow[]),
     buildRentSourceRows(supabase, today).catch(() => [] as CollectionSourceRow[]),
   ]);
@@ -766,21 +781,23 @@ export async function getCollectionsData(supabase: SupabaseClient): Promise<Coll
 
   // Enrich with last-contact / next-reminder (best-effort — ignore if the
   // communication_center tables don't exist yet).
-  try {
-    const customerIds = customers
-      .map((c) => c.customer_id)
-      .filter((id): id is string => Boolean(id));
-    const activity = await getCollectionActivityByCustomer(supabase, customerIds);
-    for (const group of customers) {
-      if (!group.customer_id) continue;
-      const a = activity.get(group.customer_id);
-      if (a) {
-        group.last_contact_at = a.lastContactAt;
-        group.next_reminder_at = a.nextReminderAt;
+  if (!amountsOnly) {
+    try {
+      const customerIds = customers
+        .map((c) => c.customer_id)
+        .filter((id): id is string => Boolean(id));
+      const activity = await getCollectionActivityByCustomer(supabase, customerIds);
+      for (const group of customers) {
+        if (!group.customer_id) continue;
+        const a = activity.get(group.customer_id);
+        if (a) {
+          group.last_contact_at = a.lastContactAt;
+          group.next_reminder_at = a.nextReminderAt;
+        }
       }
+    } catch {
+      // tables not migrated yet — leave enrichment null
     }
-  } catch {
-    // tables not migrated yet — leave enrichment null
   }
 
   const totals = customers.reduce(

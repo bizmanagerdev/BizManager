@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { getEntityAuditTrail, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import { translateToArabic } from "@/lib/i18n/translateToHebrew";
+import { runAfterResponse } from "@/lib/after-response";
 
 type Row = Record<string, unknown>;
 
@@ -21,6 +22,27 @@ export async function POST(req: Request) {
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
     const { supabase, profile } = access.value;
+
+    // "What changed and who changed it" — reuses the same audit_logs trail the
+    // /activity page reads. Best-effort: audit_logs is admin/office-only by RLS,
+    // so a worker would only ever get an empty list — skip the lookup for them.
+    // It keys off the id alone, so it runs with the first round below instead of
+    // after everything else.
+    const isWorker = profile.role === "worker" || profile.role === "worker_no_access";
+    const historyPromise = isWorker
+      ? Promise.resolve([] as Array<{ id: string; actor_name: string | null; created_at: string | null; action_label: string; details: string }>)
+      : getEntityAuditTrail(supabase, [{ tableName: "tasks", recordId: id }], 30)
+          .then((trail) =>
+            trail.items.map((item) => ({
+              id: item.id,
+              actor_name: item.actorName,
+              created_at: item.createdAt,
+              action_label: item.actionLabel,
+              details: item.details,
+            }))
+          )
+          // Non-fatal — the rest of the card works without a history list.
+          .catch(() => []);
 
     // Fetch the task alongside its members/comments/reminders in one round-trip —
     // none of the sub-queries depend on the task row (they all key off the id).
@@ -55,24 +77,29 @@ export async function POST(req: Request) {
     // (subject_he unset — see app/api/tasks/create) gets subject/description
     // translated here and cached back onto the row, mirroring loadTasksBoard's
     // board-level version of the same lazy-translate-and-cache pattern.
+    // Both translations run at once, and caching them onto the row happens after
+    // the response — the viewer is waiting on the text, not on that write.
     if (profile.locale === "ar") {
+      const needsSubject = !str(task, "subject_he") && !str(task, "subject_ar") && Boolean(str(task, "subject"));
+      const needsDescription =
+        !str(task, "description_he") && !str(task, "description_ar") && Boolean(str(task, "description"));
+      const [subjectAr, descriptionAr] = await Promise.all([
+        needsSubject ? translateToArabic(str(task, "subject") ?? "") : Promise.resolve(null),
+        needsDescription ? translateToArabic(str(task, "description") ?? "") : Promise.resolve(null),
+      ]);
       const updates: Record<string, string> = {};
-      if (!str(task, "subject_he") && !str(task, "subject_ar") && str(task, "subject")) {
-        const translated = await translateToArabic(str(task, "subject") ?? "");
-        if (translated) {
-          task.subject_ar = translated;
-          updates.subject_ar = translated;
-        }
+      if (subjectAr) {
+        task.subject_ar = subjectAr;
+        updates.subject_ar = subjectAr;
       }
-      if (!str(task, "description_he") && !str(task, "description_ar") && str(task, "description")) {
-        const translated = await translateToArabic(str(task, "description") ?? "");
-        if (translated) {
-          task.description_ar = translated;
-          updates.description_ar = translated;
-        }
+      if (descriptionAr) {
+        task.description_ar = descriptionAr;
+        updates.description_ar = descriptionAr;
       }
       if (Object.keys(updates).length > 0) {
-        await supabase.from("tasks").update(updates).eq("id", id);
+        runAfterResponse("tasks/get Arabic translation cache", async () => {
+          await supabase.from("tasks").update(updates).eq("id", id);
+        });
       }
     }
 
@@ -112,23 +139,7 @@ export async function POST(req: Request) {
     const owner = str(task as Row, "private_owner_id");
     const viewerIsCreator = Boolean(owner) && owner === profile.id;
 
-    // "What changed and who changed it" — reuses the same audit_logs trail the
-    // /activity page reads. Best-effort: audit_logs is admin/office-only by RLS,
-    // so a worker just gets an empty list here (not an error), same as every
-    // other admin-only surface built on getEntityAuditTrail.
-    let history: Array<{ id: string; actor_name: string | null; created_at: string | null; action_label: string; details: string }> = [];
-    try {
-      const trail = await getEntityAuditTrail(supabase, [{ tableName: "tasks", recordId: id }], 30);
-      history = trail.items.map((item) => ({
-        id: item.id,
-        actor_name: item.actorName,
-        created_at: item.createdAt,
-        action_label: item.actionLabel,
-        details: item.details,
-      }));
-    } catch {
-      // Non-fatal — the rest of the card works without a history list.
-    }
+    const history = await historyPromise;
 
     return NextResponse.json({ task, members, comments, reminders, history, viewer_is_creator: viewerIsCreator });
   } catch (err: unknown) {

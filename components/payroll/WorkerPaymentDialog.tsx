@@ -16,7 +16,7 @@
 // advance) instead of a single-page FormDialog — part of converging every
 // quick-action dialog onto one shared shape.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toHebrewError } from "@/lib/error-messages";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -143,25 +143,34 @@ export function WorkerPaymentDialog({
     setNotes("");
     setDebtItems([]);
     setDebtLoading(false);
+    debtForUserRef.current = "";
   }
 
+  // The worker the latest debt request was for — a reply for anyone else (the
+  // user picked again while it was loading) is dropped.
+  const debtForUserRef = useRef("");
+
   // Load the chosen worker's OPEN debt items (so the payment can be allocated and
-  // the open balance shown). Scoped server-side to this one worker.
+  // the open balance shown) — just this worker's rows, from
+  // /api/payroll/worker-debt, not the whole salary-centre payload.
   async function loadDebt(nextUserId: string) {
+    debtForUserRef.current = nextUserId;
     if (!nextUserId) {
       setDebtItems([]);
       return;
     }
+    const isCurrent = () => debtForUserRef.current === nextUserId;
     setDebtLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/payroll/center/protected?userId=${encodeURIComponent(nextUserId)}&fresh=1`, {
+      const res = await fetch(`/api/payroll/worker-debt?userId=${encodeURIComponent(nextUserId)}`, {
         cache: "no-store",
       });
       const json = (await res.json().catch(() => ({}))) as {
         error?: string;
         workerDebtItems?: WorkerDebtItemRow[];
       };
+      if (!isCurrent()) return;
       if (!res.ok) {
         setError(toHebrewError(json.error, "טעינת יתרת העובד נכשלה."));
         setDebtItems([]);
@@ -170,13 +179,15 @@ export function WorkerPaymentDialog({
       const openItems = sortOpenWorkerDebt(json.workerDebtItems ?? [], nextUserId);
       setDebtItems(openItems);
       const owed = sumOpenOwed(openItems);
-      // Default to the full open balance — the common "pay them what they're owed" case.
-      if (owed > 0) setAmount(String(Math.round(owed * 100) / 100));
+      // Default to the full open balance — the common "pay them what they're
+      // owed" case — unless an amount was already typed while this loaded.
+      if (owed > 0) setAmount((current) => (current.trim() ? current : String(Math.round(owed * 100) / 100)));
     } catch (err: unknown) {
+      if (!isCurrent()) return;
       setError(toHebrewError(err, "טעינת יתרת העובד נכשלה."));
       setDebtItems([]);
     } finally {
-      setDebtLoading(false);
+      if (isCurrent()) setDebtLoading(false);
     }
   }
 

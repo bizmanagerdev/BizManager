@@ -34,6 +34,7 @@ import { CardInstallmentsField } from "@/components/financial/CardInstallmentsFi
 import { formatCurrency } from "@/lib/payroll";
 import type { CustomerReceivable } from "@/lib/collections";
 import { offlineFetch } from "@/lib/offline-queue";
+import { runTogether } from "@/lib/upload-together";
 import { toHebrewError } from "@/lib/error-messages";
 import { appendDictatedText } from "@/lib/dictation";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
@@ -46,6 +47,10 @@ type Debtor = {
   outstanding_amount: number;
   overdue_amount: number;
 };
+
+/** The debtors list from the last open — shown at once on the next open while a
+ *  fresh one loads. Per page load. */
+let lastDebtors: Debtor[] | null = null;
 
 type CollectStepId =
   | "customer"
@@ -122,11 +127,14 @@ export function CollectPaymentDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Who owes money — loaded once per open (amounts move, so don't cache it).
+  // Who owes money — reloaded on every open (amounts move), but the list from
+  // the last open is shown meanwhile instead of a spinner; the fresh one
+  // replaces it as soon as it lands. The amounts actually paid against come
+  // from the per-customer receivables loaded once a customer is picked.
   useEffect(() => {
     if (!open) return;
     let active = true;
-    setDebtors(null);
+    setDebtors(lastDebtors);
     setDebtorsError(null);
     void fetch("/api/collections/debtors", { cache: "no-store" })
       .then(async (response) => {
@@ -137,7 +145,8 @@ export function CollectPaymentDialog({
           setDebtors([]);
           return;
         }
-        setDebtors(json.debtors ?? []);
+        lastDebtors = json.debtors ?? [];
+        setDebtors(lastDebtors);
       })
       .catch(() => {
         if (active) {
@@ -367,7 +376,7 @@ export function CollectPaymentDialog({
       return;
     }
     // One payment — or, for a card payment in installments, one per installment,
-    // a month apart, saved one after the other.
+    // a month apart.
     const parts =
       method === "credit_card"
         ? splitCardInstallments({ amount: amountValue, paymentDate: date, count: installmentCount, notes })
@@ -375,47 +384,53 @@ export function CollectPaymentDialog({
 
     setSubmitting(true);
     try {
-      let result: Awaited<ReturnType<typeof offlineFetch>> | null = null;
-      for (const [i, part] of parts.entries()) {
-        result = await offlineFetch(
-          "/api/payments/create",
-          {
-            business_domain: selectedReceivable.business_domain,
-            project_id: selectedReceivable.source_type === "project" ? selectedReceivable.source_id : null,
-            order_id: selectedReceivable.source_type === "order" ? selectedReceivable.source_id : null,
-            property_id: null,
-            amount_total: part.amount,
-            payment_date: part.paymentDate,
-            // A card payment is stored with its deposit day, so every reader sees it.
-            due_date:
-              method === "check" ? dueDate || null : method === "credit_card" ? part.dueDate || nextMonthTenth(part.paymentDate) || null : null,
-            requires_split: false,
-            payment_method: method,
-            account_id: accountId || null,
-            reference_number: reference.trim() || null,
-            check_number: method === "check" && checkNumber.trim() ? checkNumber.trim() : null,
-            notes: part.notes,
-            tag_ids: [],
-          },
-          "קליטת תשלום",
-          { idempotent: true }
-        );
-        if (!result.queued && !result.ok && i > 0) {
-          // Some installments are saved; say which, so the rest aren't entered twice.
-          setError(`נרשמו ${i} מתוך ${parts.length} תשלומים. ${toHebrewError(result.error, "רישום שאר התשלומים נכשל.")}`);
+      // Each installment is its own payment and none depends on another, so
+      // they're sent together (a few at a time) instead of one after another;
+      // every request carries its own idempotency key.
+      const results = await runTogether(
+        parts as ReadonlyArray<(typeof parts)[number]>,
+        (part) =>
+          offlineFetch(
+            "/api/payments/create",
+            {
+              business_domain: selectedReceivable.business_domain,
+              project_id: selectedReceivable.source_type === "project" ? selectedReceivable.source_id : null,
+              order_id: selectedReceivable.source_type === "order" ? selectedReceivable.source_id : null,
+              property_id: null,
+              amount_total: part.amount,
+              payment_date: part.paymentDate,
+              // A card payment is stored with its deposit day, so every reader sees it.
+              due_date:
+                method === "check" ? dueDate || null : method === "credit_card" ? part.dueDate || nextMonthTenth(part.paymentDate) || null : null,
+              requires_split: false,
+              payment_method: method,
+              account_id: accountId || null,
+              reference_number: reference.trim() || null,
+              check_number: method === "check" && checkNumber.trim() ? checkNumber.trim() : null,
+              notes: part.notes,
+              tag_ids: [],
+            },
+            "קליטת תשלום",
+            { idempotent: true }
+          ),
+        4
+      );
+      // Saved = sent, or kept on the device to sync when the connection returns.
+      const savedCount = results.filter((result) => result.queued || result.ok).length;
+      const failure = results.find((result) => !result.queued && !result.ok);
+      if (failure && !failure.queued && !failure.ok) {
+        if (savedCount > 0) {
+          // Some installments are saved; say how many, so the rest aren't entered twice.
+          setError(`נרשמו ${savedCount} מתוך ${parts.length} תשלומים. ${toHebrewError(failure.error, "רישום שאר התשלומים נכשל.")}`);
           onSaved?.();
-          return;
+        } else {
+          setError(toHebrewError(failure.error, "רישום התשלום נכשל."));
         }
-        if (!result.queued && !result.ok) break;
-      }
-      if (!result) return;
-      if (result.queued) {
-        onOpenChange(false);
-        reset();
         return;
       }
-      if (!result.ok) {
-        setError(toHebrewError(result.error, "רישום התשלום נכשל."));
+      if (results.every((result) => result.queued)) {
+        onOpenChange(false);
+        reset();
         return;
       }
       onOpenChange(false);

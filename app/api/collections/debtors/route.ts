@@ -12,7 +12,9 @@ export async function GET() {
     const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
 
-    const data = await getCollectionsData(access.value.supabase);
+    // amountsOnly: this list needs each customer's totals, not what every debt
+    // is for or when they were last contacted.
+    const data = await getCollectionsData(access.value.supabase, { amountsOnly: true });
     const debtors = data.customers
       .filter((group) => group.customer_id && group.outstanding_amount > 0)
       .map((group) => ({

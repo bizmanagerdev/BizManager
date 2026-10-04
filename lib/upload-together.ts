@@ -14,6 +14,10 @@
 //
 // Usually a list of Files; any item works (e.g. { paymentId, file } pairs when
 // the files belong to several records saved at once).
+/** The same pool for any independent requests — e.g. a card payment's
+ *  installments, each its own payment. */
+export const runTogether = uploadTogether;
+
 export async function uploadTogether<I, T>(
   files: readonly I[],
   upload: (file: I) => Promise<T>,

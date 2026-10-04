@@ -12,6 +12,7 @@ import {
   isPayrollPeriodLocked,
   isSessionInPeriod,
   normalizePayrollStatus,
+  regenerateEditablePayslipsForUsers,
   resolveSessionLaborCost,
 } from "@/lib/payroll-center";
 import type { SalaryAgreementRow } from "@/lib/payroll";
@@ -434,5 +435,36 @@ describe("ensureRecentPayslips", () => {
 
     expect(result).toEqual({ createdPeriods: [], createdPayslips: 0 });
     expect(db.tables.payroll_periods ?? []).toHaveLength(0);
+  });
+});
+
+describe("regenerateEditablePayslipsForUsers", () => {
+  function twoOpenMonths() {
+    return fakeDb({
+      users: [monthlyWorker("m1")],
+      salary_agreements: [monthlyAgreement("m1")],
+      payroll_periods: [
+        { id: "aug", period_month: "2026-08", start_date: "2026-08-01", end_date: "2026-08-31", status: "open" },
+        { id: "sep", period_month: "2026-09", start_date: "2026-09-01", end_date: "2026-09-30", status: "open" },
+      ],
+      payslips: [
+        { id: "ps-aug", payroll_period_id: "aug", user_id: "m1", gross_salary: 7500, manual_adjustments: 0 },
+        { id: "ps-sep", payroll_period_id: "sep", user_id: "m1", gross_salary: 7500, manual_adjustments: 0 },
+      ],
+    });
+  }
+  const gross = (db: ReturnType<typeof fakeDb>, id: string) =>
+    db.tables.payslips.find((payslip) => payslip.id === id)?.gross_salary;
+
+  it("regenerates every open month by default", async () => {
+    const db = twoOpenMonths();
+    await regenerateEditablePayslipsForUsers(db, ["m1"]);
+    expect([gross(db, "ps-aug"), gross(db, "ps-sep")]).toEqual([8000, 8000]);
+  });
+
+  it("with fromDate, leaves the months that ended before it alone", async () => {
+    const db = twoOpenMonths();
+    await regenerateEditablePayslipsForUsers(db, ["m1"], { fromDate: "2026-09-05" });
+    expect([gross(db, "ps-aug"), gross(db, "ps-sep")]).toEqual([7500, 8000]);
   });
 });

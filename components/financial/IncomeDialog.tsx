@@ -48,7 +48,7 @@ import {
   normalizeDateOnly,
   uploadFinancialAttachment,
 } from "@/app/(app)/dashboard/DashboardActions.helpers";
-import { uploadTogether } from "@/lib/upload-together";
+import { runTogether, uploadTogether } from "@/lib/upload-together";
 import { buildIncomePayload, validateIncomeForm } from "@/app/(app)/dashboard/DashboardActions.forms";
 import { SummaryRow, SummarySection } from "@/components/ui/summary";
 import { formatCurrency } from "@/lib/payroll";
@@ -384,47 +384,53 @@ export function IncomeDialog({
 
     setSubmitting(true);
     try {
+      // Each installment is its own payment and none depends on another, so
+      // they're sent together (a few at a time) instead of one after another;
+      // every request carries its own idempotency key.
+      const results = await runTogether(
+        parts as ReadonlyArray<(typeof parts)[number]>,
+        (part) =>
+          offlineFetch(
+            "/api/payments/create",
+            buildIncomePayload({
+              incomeBusinessDomain: effectiveDomain,
+              linkedProjectId,
+              linkedOrderId,
+              linkedPropertyId,
+              projectType: projectById.get(linkedProjectId)?.type ?? null,
+              amount: part.amount,
+              incomeDate: part.paymentDate,
+              incomeDueDate: part.dueDate ?? "",
+              incomeRequiresSplit: requiresSplit,
+              incomeMethod: method,
+              incomeAccountId: accountId,
+              incomeReference: reference,
+              incomeCheckNumber: checkNumber,
+              incomeNotes: part.notes ?? "",
+              incomeTagIds: tagIds,
+            }),
+            HEBREW.incomeNew,
+            { idempotent: true }
+          ),
+        4
+      );
+      // Saved = sent, or kept on the device to sync when the connection returns.
+      const savedCount = results.filter((result) => result.queued || result.ok).length;
+      const failure = results.find((result) => !result.queued && !result.ok);
+      if (failure && !failure.queued && !failure.ok) {
+        // Say how many went in, so the rest aren't entered twice.
+        setError(
+          savedCount > 0
+            ? `נרשמו ${savedCount} מתוך ${parts.length} תשלומים. ${toHebrewError(failure.error, HEBREW.incomeCreateFailed)}`
+            : toHebrewError(failure.error, HEBREW.incomeCreateFailed)
+        );
+        if (savedCount > 0) onSaved?.();
+        return;
+      }
       const createdIds: string[] = [];
       let json: { payment?: Row } | null = null;
-      for (const [i, part] of parts.entries()) {
-        const result = await offlineFetch(
-          "/api/payments/create",
-          buildIncomePayload({
-            incomeBusinessDomain: effectiveDomain,
-            linkedProjectId,
-            linkedOrderId,
-            linkedPropertyId,
-            projectType: projectById.get(linkedProjectId)?.type ?? null,
-            amount: part.amount,
-            incomeDate: part.paymentDate,
-            incomeDueDate: part.dueDate ?? "",
-            incomeRequiresSplit: requiresSplit,
-            incomeMethod: method,
-            incomeAccountId: accountId,
-            incomeReference: reference,
-            incomeCheckNumber: checkNumber,
-            incomeNotes: part.notes ?? "",
-            incomeTagIds: tagIds,
-          }),
-          HEBREW.incomeNew,
-          { idempotent: true }
-        );
-        if (result.queued) {
-          if (i === parts.length - 1) {
-            handleOpenChange(false);
-            return;
-          }
-          continue;
-        }
-        if (!result.ok) {
-          setError(
-            i > 0
-              ? `נרשמו ${i} מתוך ${parts.length} תשלומים. ${toHebrewError(result.error, HEBREW.incomeCreateFailed)}`
-              : toHebrewError(result.error, HEBREW.incomeCreateFailed)
-          );
-          if (i > 0) onSaved?.();
-          return;
-        }
+      for (const result of results) {
+        if (result.queued || !result.ok) continue;
         const partJson = result.data as { payment?: Row };
         if (!partJson.payment) {
           setError(HEBREW.incomeCreateFailed);

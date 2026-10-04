@@ -1697,6 +1697,8 @@ export default function TasksPageClient(props: Props) {
         }}
         mode="edit"
         taskId={editId}
+        // The card's own row fills the form instantly; the full card loads over it.
+        prefill={editId ? (tasks.find((task) => task.id === editId) ?? null) : null}
         locale={props.locale}
         viewerRole={canSeeAll ? undefined : "worker"}
         users={props.users}

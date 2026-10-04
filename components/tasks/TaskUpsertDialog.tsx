@@ -140,6 +140,33 @@ type Props = {
   // lets the board insert it into its local list instantly instead of waiting
   // on router.refresh(). Absent on update/delete/privacy saves.
   onSaved?: (created?: Record<string, unknown> | null) => void;
+  // EDIT only: the row the caller already has for this task (the board's card).
+  // Its fields fill the form the moment the dialog opens, instead of a spinner
+  // until /api/tasks/get answers; the form stays non-interactive (inert, so it
+  // doesn't grey out) until the full card — description, members, comments… —
+  // has loaded over it, so nothing typed can be overwritten and Save can't send
+  // a half-loaded task.
+  prefill?: TaskPrefill | null;
+};
+
+/** The task fields a caller can hand the edit dialog up front (see `prefill`). */
+export type TaskPrefill = {
+  id: string;
+  subject: string | null;
+  subject_he?: string | null;
+  subject_ar?: string | null;
+  status: string | null;
+  priority: string | null;
+  due_date: string | null;
+  due_time: string | null;
+  city: string | null;
+  business_domain: string | null;
+  project_id: string | null;
+  property_id: string | null;
+  customer_id: string | null;
+  assigned_user_id: string | null;
+  is_private: boolean | null;
+  members?: Array<{ id: string }>;
 };
 
 function getErrorMessage(err: unknown) {
@@ -205,6 +232,8 @@ export function TaskUpsertDialog(rawProps: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [loading, setLoading] = useState(false);
+  // EDIT opened with `prefill`: the form is already showing while `loading`.
+  const [prefilled, setPrefilled] = useState(false);
   const [saving, setSaving] = useState(false);
   // At most one section open at a time (accordion) — none forced open by
   // default; the user picks what to look at.
@@ -335,9 +364,53 @@ export function TaskUpsertDialog(rawProps: Props) {
     }
   }, []);
 
+  /** Fill the form's task fields from a task row (the full card, or a prefill). */
+  const applyTaskFields = useCallback(
+    (task: Record<string, unknown>) => {
+      const domainRaw = typeof task.business_domain === "string" ? task.business_domain : null;
+      const nextDomain = isExpenseBusinessDomain(domainRaw) ? domainRaw : defaultDomain;
+      setBusinessDomain(
+        allowedDomains.includes(nextDomain) ? nextDomain : (allowedDomains[0] ?? defaultDomain)
+      );
+
+      const nextProjectId = typeof task.project_id === "string" ? task.project_id : "";
+      const nextPropertyId = typeof task.property_id === "string" ? task.property_id : "";
+      setProjectId(nextProjectId);
+      setPropertyId(nextProjectId ? "" : nextPropertyId);
+      setCustomerId(typeof task.customer_id === "string" ? task.customer_id : "");
+
+      const rawSubject = typeof task.subject === "string" ? task.subject : "";
+      const rawSubjectHe = typeof task.subject_he === "string" ? task.subject_he : null;
+      const rawSubjectAr = typeof task.subject_ar === "string" ? task.subject_ar : null;
+      setSubject(preferHe(rawSubject, rawSubjectHe, props.locale, rawSubjectAr));
+      const rawDescription = typeof task.description === "string" ? task.description : "";
+      const rawDescriptionHe = typeof task.description_he === "string" ? task.description_he : null;
+      const rawDescriptionAr = typeof task.description_ar === "string" ? task.description_ar : null;
+      setDescription(preferHe(rawDescription, rawDescriptionHe, props.locale, rawDescriptionAr));
+      // due_date may come back as a full timestamp — keep only the date part.
+      setDueDate(typeof task.due_date === "string" ? task.due_date.slice(0, 10) : "");
+      setDueTime(typeof task.due_time === "string" ? task.due_time : "");
+      const taskCity = typeof task.city === "string" ? task.city : "";
+      setCity(taskCity);
+      setCityOther(Boolean(taskCity) && !(CITY_OPTIONS as readonly string[]).includes(taskCity));
+      setAddress(typeof task.address === "string" ? task.address : "");
+      setAssignedUserId(typeof task.assigned_user_id === "string" ? task.assigned_user_id : "");
+
+      setPriority(normalizeTaskPriority(typeof task.priority === "string" ? task.priority : null));
+      setStatus(normalizeTaskStatus(typeof task.status === "string" ? task.status : null));
+      setIsPrivate(task.is_private === true);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allowedDomains, defaultDomain]
+  );
+
   const loadCard = useCallback(
     async (taskId: string) => {
       setLoading(true);
+      // Tags and attachments key off the id alone — start them now, alongside
+      // the card, rather than after it.
+      const tagIdsPromise = fetchExistingTagIds("task", taskId);
+      void fetchAttachments(taskId);
       try {
         const res = await fetch("/api/tasks/get", {
           method: "POST",
@@ -349,51 +422,19 @@ export function TaskUpsertDialog(rawProps: Props) {
         const task = (json?.task ?? null) as Record<string, unknown> | null;
         if (!task) throw new Error(t(tasksDict, props.locale, "taskNotFoundError"));
 
-        const domainRaw = typeof task.business_domain === "string" ? task.business_domain : null;
-        const nextDomain = isExpenseBusinessDomain(domainRaw) ? domainRaw : defaultDomain;
-        setBusinessDomain(
-          allowedDomains.includes(nextDomain) ? nextDomain : (allowedDomains[0] ?? defaultDomain)
-        );
-
-        const nextProjectId = typeof task.project_id === "string" ? task.project_id : "";
-        const nextPropertyId = typeof task.property_id === "string" ? task.property_id : "";
-        setProjectId(nextProjectId);
-        setPropertyId(nextProjectId ? "" : nextPropertyId);
-        setCustomerId(typeof task.customer_id === "string" ? task.customer_id : "");
-
-        const rawSubject = typeof task.subject === "string" ? task.subject : "";
-        const rawSubjectHe = typeof task.subject_he === "string" ? task.subject_he : null;
-        const rawSubjectAr = typeof task.subject_ar === "string" ? task.subject_ar : null;
-        setSubject(preferHe(rawSubject, rawSubjectHe, props.locale, rawSubjectAr));
-        const rawDescription = typeof task.description === "string" ? task.description : "";
-        const rawDescriptionHe = typeof task.description_he === "string" ? task.description_he : null;
-        const rawDescriptionAr = typeof task.description_ar === "string" ? task.description_ar : null;
-        setDescription(preferHe(rawDescription, rawDescriptionHe, props.locale, rawDescriptionAr));
-        // due_date may come back as a full timestamp — keep only the date part.
-        setDueDate(typeof task.due_date === "string" ? task.due_date.slice(0, 10) : "");
-        setDueTime(typeof task.due_time === "string" ? task.due_time : "");
-        const taskCity = typeof task.city === "string" ? task.city : "";
-        setCity(taskCity);
-        setCityOther(Boolean(taskCity) && !(CITY_OPTIONS as readonly string[]).includes(taskCity));
-        setAddress(typeof task.address === "string" ? task.address : "");
-        setAssignedUserId(typeof task.assigned_user_id === "string" ? task.assigned_user_id : "");
-
-        setPriority(normalizeTaskPriority(typeof task.priority === "string" ? task.priority : null));
-        setStatus(normalizeTaskStatus(typeof task.status === "string" ? task.status : null));
-        setIsPrivate(task.is_private === true);
+        applyTaskFields(task);
         setViewerIsCreator(json?.viewer_is_creator === true);
 
         const membersRaw = Array.isArray(json?.members) ? (json.members as Array<{ id?: unknown }>) : [];
         setMemberIds(membersRaw.map((m) => (typeof m.id === "string" ? m.id : "")).filter(Boolean));
         setTagIds([]);
-        void fetchExistingTagIds("task", taskId).then(setTagIds);
+        void tagIdsPromise.then(setTagIds);
         setComments(Array.isArray(json?.comments) ? (json.comments as CommentItem[]) : []);
         setLegacyNotes(parseLegacyNotes(typeof task.notes === "string" ? task.notes : null));
         setReminders(Array.isArray(json?.reminders) ? (json.reminders as ReminderItem[]) : []);
         setHistory(Array.isArray(json?.history) ? (json.history as HistoryItem[]) : []);
         setCreatedAt(typeof task.created_at === "string" ? task.created_at : null);
         setUpdatedAt(typeof task.updated_at === "string" ? task.updated_at : null);
-        void fetchAttachments(taskId);
 
         // Nothing forced open — the user opens whichever section they want.
         setOpenSection(null);
@@ -405,7 +446,7 @@ export function TaskUpsertDialog(rawProps: Props) {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [allowedDomains, defaultDomain]
+    [applyTaskFields]
   );
 
   function resetForCreate() {
@@ -469,6 +510,15 @@ export function TaskUpsertDialog(rawProps: Props) {
     if (!props.open) return;
     if (props.mode === "edit" && props.taskId) {
       setActiveTaskId(props.taskId);
+      const prefill = props.prefill?.id === props.taskId ? props.prefill : null;
+      setPrefilled(Boolean(prefill));
+      if (prefill) {
+        // No description/address/notes on a board card — they arrive with the
+        // full card a moment later (their sections start closed anyway).
+        applyTaskFields({ ...prefill, description: null, address: null });
+        setMemberIds((prefill.members ?? []).map((m) => m.id).filter(Boolean));
+        setOpenSection(null);
+      }
       void loadCard(props.taskId);
       return;
     }
@@ -592,7 +642,7 @@ export function TaskUpsertDialog(rawProps: Props) {
   // A multi-line name on CREATE is ambiguous — it's either one task with a long
   // name, or a list. Ask instead of guessing. (On edit it's just a name.)
   async function submit() {
-    if (!canSubmit) return;
+    if (!canSubmit || loading) return;
     if (!isEditing && subjectLines.length > 1) {
       setSplitAsk(true);
       return;
@@ -1271,7 +1321,7 @@ export function TaskUpsertDialog(rawProps: Props) {
           ) : null}
         </DialogHeader>
 
-        {loading ? (
+        {loading && !prefilled ? (
           <div className="flex items-center justify-center gap-2 px-6 py-12 text-sm text-muted-foreground">
             <SpinnerIcon className="h-5 w-5 animate-spin" />
             {t(tasksDict, props.locale, "loadingTaskData")}
@@ -1282,6 +1332,10 @@ export function TaskUpsertDialog(rawProps: Props) {
         // stay in the footer.
         <form
           className="flex min-h-0 flex-1 flex-col"
+          // A prefilled card is on screen before the full one has loaded: it
+          // reads normally but takes no input until then (see `prefill`).
+          inert={loading}
+          aria-busy={loading}
           onSubmit={(e) => {
             e.preventDefault();
             void submit();

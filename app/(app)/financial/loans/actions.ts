@@ -156,7 +156,8 @@ export async function createLoan(
         ctx.supabase,
         loanId,
         installments,
-        ctx.profile.id
+        ctx.profile.id,
+        { newLoan: true }
       );
       // The loan itself is saved — report the plan failure without losing it.
       if (planError) {
@@ -298,15 +299,19 @@ async function replacePlannedInstallments(
   supabase: Awaited<ReturnType<typeof requireProfile>>["supabase"],
   loanId: string,
   installments: InstallmentInput[],
-  userId: string
+  userId: string,
+  /** A loan created a moment ago has no planned rows to clear — skip the delete. */
+  { newLoan = false }: { newLoan?: boolean } = {}
 ): Promise<string | null> {
-  const { error: delError } = await supabase
-    .from("loan_repayments")
-    .delete()
-    .eq("loan_id", loanId)
-    .eq("status", "planned");
-  if (delError) {
-    return installmentSchemaError(delError.message) ?? toHebrewError(delError.message);
+  if (!newLoan) {
+    const { error: delError } = await supabase
+      .from("loan_repayments")
+      .delete()
+      .eq("loan_id", loanId)
+      .eq("status", "planned");
+    if (delError) {
+      return installmentSchemaError(delError.message) ?? toHebrewError(delError.message);
+    }
   }
   if (installments.length === 0) return null;
 

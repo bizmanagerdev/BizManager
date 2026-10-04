@@ -121,6 +121,25 @@ function contactRowToDraft(row: Row): EditContactDraft {
   };
 }
 
+/** What save() writes for a contact — also how an edit is compared to the
+ *  loaded original, so a contact nobody touched isn't written again. */
+function contactPayload(contact: EditContactDraft) {
+  return {
+    full_name: contact.full_name.trim(),
+    role: contact.role.trim() || null,
+    phone: contact.phone.trim() || null,
+    email: contact.email.trim() || null,
+    whatsapp: contact.whatsapp.trim() || null,
+    notes: contact.notes.trim() || null,
+    is_primary: contact.active ? contact.is_primary : false,
+    active: contact.active,
+  };
+}
+
+function samePayload(a: Record<string, unknown>, b: Record<string, unknown>) {
+  return Object.keys(a).every((key) => a[key] === b[key]);
+}
+
 function emptyContactDraft(makePrimary: boolean): EditContactDraft {
   return {
     key: nextContactKey(),
@@ -381,6 +400,10 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
         : finalCity
       : trimmedStreet || null;
 
+    const loadedTagIds = originalCustomerRef.current?.tag_ids ?? [];
+    const tagsChanged =
+      tagIds.length !== loadedTagIds.length || tagIds.some((tagId) => !loadedTagIds.includes(tagId));
+
     setLoading(true);
     try {
       const res = await fetch("/api/customers/update", {
@@ -399,7 +422,9 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
           active,
           requires_prepayment: requiresPrepayment,
           ...(linkLoaded ? { linked_user_id: linkedUserId || null } : {}),
-          tag_ids: tagIds,
+          // Only when they changed: the route clears and re-inserts a customer's
+          // tags whenever tag_ids is sent.
+          ...(tagsChanged ? { tag_ids: tagIds } : {}),
         }),
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string; customer?: Row };
@@ -433,6 +458,9 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
       )[] = [];
 
       const savedContacts: Row[] = [];
+      // Only contacts/branches that actually changed are written — one request
+      // each, so rewriting every one of a chain's rows on every save cost
+      // seconds. An untouched contact still goes back to the caller as it was.
       for (const contact of contacts) {
         if (contact._deleted) {
           if (!contact.id) continue;
@@ -465,16 +493,13 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
           continue;
         }
 
-        const payload = {
-          full_name: contact.full_name.trim(),
-          role: contact.role.trim() || null,
-          phone: contact.phone.trim() || null,
-          email: contact.email.trim() || null,
-          whatsapp: contact.whatsapp.trim() || null,
-          notes: contact.notes.trim() || null,
-          is_primary: contact.active ? contact.is_primary : false,
-          active: contact.active,
-        };
+        const payload = contactPayload(contact);
+
+        const loadedContact = contact.id ? originalContactsRef.current.find((c) => c.id === contact.id) : undefined;
+        if (contact.id && loadedContact && samePayload(payload, contactPayload(loadedContact))) {
+          savedContacts.push({ id: contact.id, customer_id: customer.id, ...payload });
+          continue;
+        }
 
         if (contact.id) {
           const upRes = await fetch("/api/customer-contacts/update", {
@@ -551,6 +576,20 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
           phone: branch.phone.trim() || null,
           active: branch.active,
         };
+
+        const loadedBranch = branch.id ? originalBranchesRef.current.find((b) => b.id === branch.id) : undefined;
+        if (
+          branch.id &&
+          loadedBranch &&
+          samePayload(branchPayload, {
+            name: loadedBranch.name.trim(),
+            address: loadedBranch.address.trim() || null,
+            phone: loadedBranch.phone.trim() || null,
+            active: loadedBranch.active,
+          })
+        ) {
+          continue;
+        }
 
         if (branch.id) {
           const upResult = await updateCustomerBranchDirect(branch.id, branchPayload);
