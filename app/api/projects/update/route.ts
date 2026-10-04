@@ -1,6 +1,6 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { computeDueDate, normalizePaymentTerms } from "@/lib/paymentTerms";
 import { getCurrentVatRate } from "@/lib/settings/vat";
@@ -178,7 +178,7 @@ export async function POST(req: Request) {
       .eq("id", updated.id)
       .maybeSingle();
 
-    await logAuditEvent({
+    logAuditEventAfterResponse({
       supabase,
       tableName: "projects",
       recordId: updated.id,

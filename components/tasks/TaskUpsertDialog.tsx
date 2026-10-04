@@ -891,19 +891,21 @@ export function TaskUpsertDialog(rawProps: Props) {
       toast.error(t(tasksDict, props.locale, "filesNotAttachedCard"));
       return;
     }
-    const failed: string[] = [];
-    for (const file of pendingFiles) {
+    // All files go up together (lib/upload-together.ts), not one by one. Each
+    // upload reports its own failure, so one bad file doesn't hide the others.
+    const outcomes = await uploadTogether(pendingFiles, async (file) => {
       try {
         const result = await offlineUpload("/api/tasks/attachments/upload", {
           fields: { task_id: taskId },
           file,
           label: file.name,
         });
-        if (!result.queued && !result.ok) failed.push(file.name);
+        return !result.queued && !result.ok ? file.name : null;
       } catch {
-        failed.push(file.name);
+        return file.name;
       }
-    }
+    });
+    const failed = outcomes.filter((name): name is string => name !== null);
     // No success toast — the file(s) show up in the attachments list. The task
     // itself was created either way, so a failed attachment still gets a toast
     // (there'd otherwise be nothing on screen to explain why it's missing).

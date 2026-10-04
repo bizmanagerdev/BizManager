@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { toHebrewError } from "@/lib/error-messages";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { PHONE_ATTENDANCE_TABLE } from "@/lib/attendance/phone-reports";
 import { parseSelfReportedTime } from "@/lib/attendance/my-shift";
 import { translateToHebrew } from "@/lib/i18n/translateToHebrew";
@@ -83,7 +83,7 @@ export async function POST(req: Request) {
 
     const reportId = typeof data === "string" ? data : null;
     if (reportId) {
-      await logAuditEvent({
+      logAuditEventAfterResponse({
         supabase,
         tableName: PHONE_ATTENDANCE_TABLE,
         recordId: reportId,

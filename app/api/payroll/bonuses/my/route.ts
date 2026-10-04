@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { toHebrewError } from "@/lib/error-messages";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { resolveBonusPayslip } from "@/lib/payroll-center";
 import {
   BONUS_ITEM_TYPE,
@@ -82,7 +82,7 @@ export async function POST(req: Request) {
     }
 
     if (insertResult.data?.id) {
-      await logAuditEvent({
+      logAuditEventAfterResponse({
         supabase,
         tableName: PAYSLIP_ITEMS_TABLE,
         recordId: insertResult.data.id as string,
@@ -128,7 +128,7 @@ export async function DELETE(req: Request) {
       );
     }
 
-    await logAuditEvent({
+    logAuditEventAfterResponse({
       supabase,
       tableName: PAYSLIP_ITEMS_TABLE,
       recordId: itemId,

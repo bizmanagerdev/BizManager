@@ -6,6 +6,7 @@ import { withIdempotency } from "@/lib/idempotency";
 import { computeDueDate, normalizePaymentTerms } from "@/lib/paymentTerms";
 import { getCurrentVatRate } from "@/lib/settings/vat";
 import { notifyNewEntity } from "@/lib/notifications/new-entity";
+import { runAfterResponse } from "@/lib/after-response";
 
 type CreateProjectPayload = {
   customer_id?: string;
@@ -179,8 +180,12 @@ export async function POST(req: Request) {
       userRole: profile.role,
     });
 
-    // Alert back-office (admin + office) that a new project came in.
-    await notifyNewEntity({ kind: "project", entityId: created.id, creatorUserId: profile.id, name });
+    // Alert back-office (admin + office) that a new project came in — after the
+    // response, so the dialog doesn't wait on their push notifications.
+    const projectId = created.id;
+    runAfterResponse("projects/create notify", () =>
+      notifyNewEntity({ kind: "project", entityId: projectId, creatorUserId: profile.id, name })
+    );
 
     return NextResponse.json({ project: dashboardRow ?? created });
     });

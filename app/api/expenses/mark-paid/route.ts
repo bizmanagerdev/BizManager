@@ -1,6 +1,6 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 // Lightweight confirmation that an expense was actually paid. Unlike
@@ -94,7 +94,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "ההוצאה לא נמצאה." }, { status: 404 });
     }
 
-    await logAuditEvent({
+    logAuditEventAfterResponse({
       supabase,
       tableName: "expenses",
       recordId: expense.id as string,

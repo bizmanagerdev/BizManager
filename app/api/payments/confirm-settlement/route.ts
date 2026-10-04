@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { toHebrewError } from "@/lib/error-messages";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 
 // Confirm (or un-confirm) that a credit-card clearing deposit landed.
 //
@@ -66,7 +66,7 @@ export async function POST(req: Request) {
       if (error) return NextResponse.json({ error: toHebrewError(error.message, "ביטול האישור נכשל.") }, { status: 400 });
     }
 
-    await logAuditEvent({
+    logAuditEventAfterResponse({
       supabase,
       tableName: "card_settlement_confirmations",
       recordId: `${accountId}|${settlementDate}`,
@@ -74,7 +74,7 @@ export async function POST(req: Request) {
       changedBy: profile.id,
       userRole: profile.role,
       newData: confirmed ? { account_id: accountId, settlement_date: settlementDate } : undefined,
-    }).catch(() => {});
+    });
 
     return NextResponse.json({ ok: true, confirmed });
   } catch (error) {

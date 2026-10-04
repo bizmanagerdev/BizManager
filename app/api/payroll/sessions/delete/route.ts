@@ -1,7 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { collectLockedSessionIds, recalculateUserSessionCostsFromRules } from "@/lib/payroll-center";
 import {
   normalizePayrollWorkerType,
@@ -71,7 +71,7 @@ export async function POST(req: Request) {
       regeneratePayslips: payrollWorkerTypeGeneratesPayslips(workerType),
     });
 
-    await logAuditEvent({
+    logAuditEventAfterResponse({
       supabase,
       tableName: WORK_SESSIONS_TABLE,
       recordId: sessionId,

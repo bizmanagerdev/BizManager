@@ -1,6 +1,6 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 import { STORAGE_BUCKET } from "@/lib/storage";
@@ -192,7 +192,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: toHebrewError(projectDeleteError.message) }, { status: 400 });
     }
 
-    await logAuditEvent({
+    logAuditEventAfterResponse({
       supabase,
       tableName: "projects",
       recordId: id,

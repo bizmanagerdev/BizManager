@@ -33,6 +33,7 @@ import {
 import { DateInput } from "@/components/ui/date-input";
 import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel } from "@/lib/expenses";
 import { offlineUpload } from "@/lib/offline-upload";
+import { uploadTogether } from "@/lib/upload-together";
 import { toHebrewError } from "@/lib/error-messages";
 
 export type UploadTargetOption = { id: string; label: string };
@@ -306,30 +307,39 @@ export function UploadDocumentDialog({
     try {
       // uploaded = genuinely sent this session; queued = saved on the device for
       // replay when the connection returns (ConnectionToasts announces it).
-      let uploaded = 0;
-      for (let i = 0; i < files.length; i += 1) {
-        const file = files[i]!;
-        const fields: Record<string, string> = { business_domain: businessDomain };
-        if (needsProject) fields.project_id = projectId.trim();
-        if (needsProperty) fields.property_id = propertyId.trim();
-        if (offersCustomer && customerId.trim()) fields.customer_id = customerId.trim();
-        if (category.trim()) fields.category = category.trim();
-        if (tagIds.length > 0) fields.tag_ids = JSON.stringify(tagIds);
-        if (refYear.trim()) fields.ref_year = refYear.trim();
-        if (validUntil.trim()) fields.valid_until = validUntil.trim();
-        if (files.length === 1 && title.trim()) fields.title = title.trim();
+      const fields: Record<string, string> = { business_domain: businessDomain };
+      if (needsProject) fields.project_id = projectId.trim();
+      if (needsProperty) fields.property_id = propertyId.trim();
+      if (offersCustomer && customerId.trim()) fields.customer_id = customerId.trim();
+      if (category.trim()) fields.category = category.trim();
+      if (tagIds.length > 0) fields.tag_ids = JSON.stringify(tagIds);
+      if (refYear.trim()) fields.ref_year = refYear.trim();
+      if (validUntil.trim()) fields.valid_until = validUntil.trim();
+      if (files.length === 1 && title.trim()) fields.title = title.trim();
 
-        toast.loading(`מעלה קבצים... (${i + 1}/${files.length})`, { id: toastId });
-
+      // All files go up together (lib/upload-together.ts), not one by one; the
+      // counter shows how many have finished.
+      let finished = 0;
+      const results = await uploadTogether(files, async (file) => {
         const result = await offlineUpload("/api/documents/upload", { fields, file, label: file.name });
-        if (result.queued) {
-          // Saved on device — treat as done, don't count as an upload.
-        } else if (result.ok) {
-          uploaded += 1;
-        } else {
-          toast.error("שגיאה בהעלאת קובץ", { id: toastId, description: result.error });
-          return;
-        }
+        finished += 1;
+        if (files.length > 1) toast.loading(`מעלה קבצים... (${finished}/${files.length})`, { id: toastId });
+        return result;
+      });
+      // A queued file is saved on the device — treat it as done, but don't count
+      // it as an upload.
+      const failedFile = (i: number) => {
+        const result = results[i]!;
+        return !result.queued && !result.ok;
+      };
+      const uploaded = results.filter((result) => !result.queued && result.ok).length;
+      const firstFailure = results.find((result) => !result.queued && !result.ok);
+      if (firstFailure && !firstFailure.queued && !firstFailure.ok) {
+        // Keep only the files that failed selected, so trying again doesn't
+        // upload the ones that already went up a second time.
+        setFiles(files.filter((_, i) => failedFile(i)));
+        toast.error("שגיאה בהעלאת קובץ", { id: toastId, description: firstFailure.error });
+        return;
       }
 
       if (uploaded > 0) {

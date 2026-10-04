@@ -6,6 +6,7 @@ import { withIdempotency } from "@/lib/idempotency";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { parseTagIds, syncEntityTags } from "@/lib/tags";
 import { notifyTaskAssignees } from "@/lib/notifications/task-assignment";
+import { runAfterResponse } from "@/lib/after-response";
 import { translateToHebrew } from "@/lib/i18n/translateToHebrew";
 import { computeDefaultSortOrder } from "@/lib/tasks/sortOrder";
 
@@ -204,7 +205,10 @@ export async function POST(req: Request) {
       }
 
       // Alert the people this task landed for (owner + members), not the creator.
-      await notifyTaskAssignees(data.id, subject, [assignedUserId, ...memberIds].filter((uid) => uid && uid !== profile.id));
+      // After the response: the push goes to them, not to whoever pressed Save.
+      const taskId = data.id;
+      const recipients = [assignedUserId, ...memberIds].filter((uid) => uid && uid !== profile.id);
+      runAfterResponse("tasks/create notify", () => notifyTaskAssignees(taskId, subject, recipients));
     }
 
     return NextResponse.json({ task: data });

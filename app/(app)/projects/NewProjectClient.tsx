@@ -8,6 +8,7 @@ import { OptionRow, StepHeading } from "@/components/ui/option-row";
 import { SummaryRow, SummarySection } from "@/components/ui/summary";
 import { cn } from "@/lib/utils";
 import { offlineFetch, saveDraft, loadDraft, clearDraft } from "@/lib/offline-queue";
+import { uploadTogether } from "@/lib/upload-together";
 import { toHebrewError } from "@/lib/error-messages";
 import { resyncAlerts } from "@/lib/ui/alerts-refresh";
 import { AddressLink } from "@/components/ui/address-link";
@@ -688,9 +689,9 @@ export default function NewProjectClient({
 
       const savedId = typeof json.project.id === "string" ? json.project.id : "";
       if (savedId && attachmentFiles.length > 0) {
-        for (const file of attachmentFiles) {
-          await uploadProjectDocument(savedId, file);
-        }
+        // All files go up together (lib/upload-together.ts), not one by one;
+        // the first failure still surfaces as the dialog's error.
+        await uploadTogether(attachmentFiles, (file) => uploadProjectDocument(savedId, file));
       }
 
       if (canDraft) clearDraft(draftKey!);

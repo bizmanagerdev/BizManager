@@ -1,7 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
@@ -157,7 +157,7 @@ export async function POST(req: Request) {
       }
 
       for (const expenseId of createdIds) {
-        await logAuditEvent({
+        logAuditEventAfterResponse({
           supabase,
           tableName: "expenses",
           recordId: expenseId,

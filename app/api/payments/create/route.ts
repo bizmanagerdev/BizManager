@@ -4,6 +4,7 @@ import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { tryAutoIssueReceiptForPayment } from "@/lib/morning/service";
+import { runAfterResponse } from "@/lib/after-response";
 import { buildPaymentInsert, PAYMENT_SELECT } from "@/lib/payments";
 import { getCurrentVatRate } from "@/lib/settings/vat";
 import { parseTagIds, syncEntityTags } from "@/lib/tags";
@@ -157,11 +158,6 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
-    let morningAutoReceipt: {
-      skipped: boolean;
-      reason: string | null;
-      morning_document_id: string | null;
-    } | null = null;
     if (data?.id) {
       logAuditEventAfterResponse({
         supabase,
@@ -172,22 +168,21 @@ export async function POST(req: Request) {
         userRole: profile.role,
       });
 
-      const outcome = await tryAutoIssueReceiptForPayment(supabase, {
-        paymentId: data.id,
-        actor: { profileId: profile.id, authUserId: user.id, role: profile.role },
-      });
-      morningAutoReceipt = {
-        skipped: outcome.skipped,
-        reason: outcome.ok ? outcome.reason : outcome.reason,
-        morning_document_id: outcome.morningDocumentId,
-      };
+      // Best-effort Morning auto-receipt, after the response: with auto-receipt
+      // on it's an external API call (seconds) the person saving doesn't need to
+      // wait for. A failure is still recorded (morning_auto_receipt_failed audit).
+      const paymentId = data.id;
+      const actor = { profileId: profile.id, authUserId: user.id, role: profile.role };
+      runAfterResponse("payments/create Morning receipt", () =>
+        tryAutoIssueReceiptForPayment(supabase, { paymentId, actor })
+      );
 
       await syncEntityTags(supabase, "payment", data.id, parseTagIds(body.tag_ids), {
         createdBy: profile.id,
       });
     }
 
-    return NextResponse.json({ payment: data, morning_auto_receipt: morningAutoReceipt });
+    return NextResponse.json({ payment: data });
     });
   } catch (err: unknown) {
     const message = toHebrewError(err, "Unknown error");

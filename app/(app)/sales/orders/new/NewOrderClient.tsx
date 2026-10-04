@@ -40,7 +40,7 @@ import { PREPAYMENT_WIZARD_WARNING } from "@/lib/orders/prepayment";
 import { searchProducts } from "@/lib/orders/searchProducts";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
-import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
+import { uploadCheckPhotosForPayments } from "@/lib/payments/uploadCheckPhotos";
 import { PAYMENT_TERMS_OPTIONS, computeDueDate } from "@/lib/paymentTerms";
 import { SummaryRow, SummarySection } from "@/components/ui/summary";
 import { StepWizard, WizardTitle, useStepFlow } from "@/components/ui/step-wizard";
@@ -919,18 +919,15 @@ export default function NewOrderClient({
       }
 
       const insertedPaymentIds = Array.isArray(json.payment_ids) ? json.payment_ids : [];
-      for (let i = 0; i < expandedPayments.length; i++) {
-        const payment = expandedPayments[i];
-        const paymentId = insertedPaymentIds[i];
-        if (
-          !paymentId ||
-          payment.payment_method !== "check" ||
-          payment.check_photo_files.length === 0
-        ) {
-          continue;
-        }
-        await uploadCheckPhotos(paymentId, payment.check_photo_files);
-      }
+      // Every check's photos go up in one shared pool, not check after check.
+      await uploadCheckPhotosForPayments(
+        expandedPayments.flatMap((payment, i) => {
+          const paymentId = insertedPaymentIds[i];
+          return paymentId && payment.payment_method === "check" && payment.check_photo_files.length > 0
+            ? [{ paymentId, files: payment.check_photo_files }]
+            : [];
+        })
+      );
 
       if (canDraft) clearDraft(draftKey!);
       // Backorders are allowed by design (no hard block here) — just a heads-up

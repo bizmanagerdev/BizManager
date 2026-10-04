@@ -9,6 +9,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { DOCUMENT_CATEGORIES } from "@/lib/documents";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { offlineUpload } from "@/lib/offline-upload";
+import { uploadTogether } from "@/lib/upload-together";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { registerReversibleAction } from "@/lib/undo-engine";
 
@@ -44,32 +45,31 @@ export default function AddCustomerDocumentButton({
     setBusy(true);
     setError("");
     try {
-      let uploaded = 0;
       // uploaded + queued files are both "done" (removed on close/retry); a
       // queued upload was saved to the device and will replay when the
       // connection returns (ConnectionToasts announces it), so it must not be
-      // re-sent.
-      let done = 0;
+      // re-sent. All files go up together (lib/upload-together.ts).
+      const fields: Record<string, string> = { customer_id: customerId };
+      if (category.trim()) fields.category = category.trim();
+      const results = await uploadTogether(files, (file) =>
+        offlineUpload("/api/documents/upload", { fields, file, label: file.name })
+      );
+      let uploaded = 0;
       const uploadedIds: string[] = [];
-      for (const file of files) {
-        const fields: Record<string, string> = { customer_id: customerId };
-        if (category.trim()) fields.category = category.trim();
-        const result = await offlineUpload("/api/documents/upload", {
-          fields,
-          file,
-          label: file.name,
-        });
-        if (result.queued) {
-          done += 1;
-        } else if (result.ok) {
+      const remaining: File[] = [];
+      results.forEach((result, i) => {
+        if (result.queued) return;
+        if (result.ok) {
           uploaded += 1;
-          done += 1;
           const data = result.data as { document?: { id?: string } } | null;
           if (data?.document?.id) uploadedIds.push(data.document.id);
         } else {
-          setError(result.error || `העלאת ${file.name} נכשלה.`);
-          break;
+          remaining.push(files[i]!);
         }
+      });
+      const firstFailure = results.find((result) => !result.queued && !result.ok);
+      if (firstFailure && !firstFailure.queued && !firstFailure.ok) {
+        setError(firstFailure.error || `העלאת ${remaining[0]!.name} נכשלה.`);
       }
       if (uploaded > 0) {
         startTransition(() => { router.refresh(); });
@@ -102,11 +102,11 @@ export default function AddCustomerDocumentButton({
           toast.success(message);
         }
       }
-      if (done === files.length) {
+      if (remaining.length === 0) {
         setOpen(false);
       } else {
         // Keep only the files that didn't make it, so retry won't duplicate.
-        setFiles(files.slice(done));
+        setFiles(remaining);
       }
     } finally {
       setBusy(false);

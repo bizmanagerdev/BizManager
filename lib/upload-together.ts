@@ -11,9 +11,12 @@
 //
 // Safe offline: offlineUpload() queues each file as its own IndexedDB record
 // (random id), so parallel enqueues can't overwrite each other.
-export async function uploadTogether<T>(
-  files: File[],
-  upload: (file: File) => Promise<T>,
+//
+// Usually a list of Files; any item works (e.g. { paymentId, file } pairs when
+// the files belong to several records saved at once).
+export async function uploadTogether<I, T>(
+  files: readonly I[],
+  upload: (file: I) => Promise<T>,
   limit = 3
 ): Promise<T[]> {
   const results: PromiseSettledResult<T>[] = new Array(files.length);

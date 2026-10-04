@@ -19,6 +19,7 @@ import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { CustomerPicker, type PickedCustomer } from "@/components/customers/CustomerPicker";
 import { toHebrewError } from "@/lib/error-messages";
 import { offlineUpload } from "@/lib/offline-upload";
+import { uploadTogether } from "@/lib/upload-together";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { ViewDialog } from "@/components/ui/view-dialog";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
@@ -838,32 +839,31 @@ export function LoanDocumentsDialog({
     setBusy(true);
     setError("");
     try {
-      let uploaded = 0;
-      // uploaded + queued files are both "done" (removed from the pending list); a
-      // queued upload was saved on the device and replays on reconnect
-      // (ConnectionToasts announces it).
-      let done = 0;
-      for (const file of files) {
-        const result = await offlineUpload("/api/financial/loans/documents/upload", {
+      // All files go up together (lib/upload-together.ts), not one by one.
+      // Uploaded + queued files are both "done" (removed from the pending list);
+      // a queued upload was saved on the device and replays on reconnect
+      // (ConnectionToasts announces it). Only the files that failed stay listed.
+      const results = await uploadTogether(files, (file) =>
+        offlineUpload("/api/financial/loans/documents/upload", {
           fields: { loan_id: loanId },
           file,
           label: file.name,
-        });
-        if (result.queued) {
-          done += 1;
-        } else if (result.ok) {
-          uploaded += 1;
-          done += 1;
-        } else {
-          setError(result.error || `העלאת ${file.name} נכשלה.`);
-          break;
-        }
+        })
+      );
+      const uploaded = results.filter((result) => !result.queued && result.ok).length;
+      const failed = files.filter((_, i) => {
+        const result = results[i]!;
+        return !result.queued && !result.ok;
+      });
+      const firstFailure = results.find((result) => !result.queued && !result.ok);
+      if (firstFailure && !firstFailure.queued && !firstFailure.ok) {
+        setError(firstFailure.error || `העלאת ${failed[0]!.name} נכשלה.`);
       }
       if (uploaded > 0) {
         toast.success(uploaded === 1 ? "המסמך הועלה." : `${uploaded} מסמכים הועלו.`);
         await loadDocs(loanId);
       }
-      setFiles(files.slice(done));
+      setFiles(failed);
     } finally {
       setBusy(false);
     }

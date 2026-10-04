@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { toHebrewError } from "@/lib/error-messages";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions } from "@/lib/payroll-worker-type";
 import { PHONE_ATTENDANCE_TABLE } from "@/lib/attendance/phone-reports";
 import { APP_ATTENDANCE_SOURCE, parseSelfReportedTime } from "@/lib/attendance/my-shift";
@@ -83,7 +83,7 @@ export async function POST(req: Request) {
     }
 
     if (inserted?.id) {
-      await logAuditEvent({
+      logAuditEventAfterResponse({
         supabase,
         tableName: PHONE_ATTENDANCE_TABLE,
         recordId: inserted.id,

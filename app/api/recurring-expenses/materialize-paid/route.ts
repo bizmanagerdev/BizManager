@@ -1,6 +1,6 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 // Mark an UPCOMING recurring occurrence (a calendar forecast that has no expense
@@ -132,7 +132,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "יצירת ההוצאה נכשלה." }, { status: 500 });
     }
 
-    await logAuditEvent({
+    logAuditEventAfterResponse({
       supabase,
       tableName: "expenses",
       recordId: expenseId,

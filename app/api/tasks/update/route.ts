@@ -1,10 +1,11 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { parseTagIds, syncEntityTags } from "@/lib/tags";
 import { notifyTaskAssignees } from "@/lib/notifications/task-assignment";
+import { runAfterResponse } from "@/lib/after-response";
 import { translateToHebrew } from "@/lib/i18n/translateToHebrew";
 
 function normalizeId(value: unknown) {
@@ -285,7 +286,7 @@ export async function POST(req: Request) {
       const addedMembers = memberIds.filter((m) => !existingIds.has(m) && m !== profile.id);
       if (addedMembers.length > 0) {
         const subject = typeof taskRow?.subject === "string" ? taskRow.subject : "משימה";
-        await notifyTaskAssignees(id, subject, addedMembers);
+        runAfterResponse("tasks/update notify members", () => notifyTaskAssignees(id, subject, addedMembers));
       }
     }
 
@@ -297,7 +298,7 @@ export async function POST(req: Request) {
     }
 
     if (id) {
-      await logAuditEvent({
+      logAuditEventAfterResponse({
         supabase,
         tableName: "tasks",
         recordId: id,
@@ -311,7 +312,7 @@ export async function POST(req: Request) {
     const newAssignee = typeof data?.assigned_user_id === "string" ? data.assigned_user_id : null;
     if (newAssignee && newAssignee !== previousAssignee && newAssignee !== profile.id) {
       const subject = typeof data?.subject === "string" ? data.subject : "משימה";
-      await notifyTaskAssignees(id, subject, [newAssignee]);
+      runAfterResponse("tasks/update notify assignee", () => notifyTaskAssignees(id, subject, [newAssignee]));
     }
 
     return NextResponse.json({ task: data });

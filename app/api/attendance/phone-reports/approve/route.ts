@@ -1,7 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { recalculateUserSessionCostsFromRules, regenerateEditablePayslipsForUsers } from "@/lib/payroll-center";
 import {
@@ -214,7 +214,7 @@ export async function POST(req: Request) {
       await regenerateEditablePayslipsForUsers(supabase, [report.user_id]);
     }
 
-    await logAuditEvent({
+    logAuditEventAfterResponse({
       supabase,
       tableName: PHONE_ATTENDANCE_TABLE,
       recordId: reportId,

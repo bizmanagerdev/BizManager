@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { tryAutoIssueReceiptForPayment } from "@/lib/morning/service";
+import { runAfterResponse } from "@/lib/after-response";
 import { buildPaymentInsert, PAYMENT_SELECT } from "@/lib/payments";
 import {
   derivePaymentStatus,
@@ -122,23 +123,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: toHebrewError(updateError.message) }, { status: 400 });
     }
 
-    // Best-effort Morning auto-receipt. Refunds (negative amounts) skip themselves
-    // inside tryAutoIssueReceiptForPayment via the non_positive_amount short-circuit.
-    let morningAutoReceipt: {
-      skipped: boolean;
-      reason: string | null;
-      morning_document_id: string | null;
-    } | null = null;
+    // Best-effort Morning auto-receipt, after the response (an external API call
+    // when auto-receipt is on). Refunds (negative amounts) skip themselves inside
+    // tryAutoIssueReceiptForPayment via the non_positive_amount short-circuit; a
+    // failure is still recorded (morning_auto_receipt_failed audit).
     if (createdPayment?.id) {
-      const outcome = await tryAutoIssueReceiptForPayment(supabase, {
-        paymentId: createdPayment.id,
-        actor: { profileId: profile.id, authUserId: user.id, role: profile.role },
-      });
-      morningAutoReceipt = {
-        skipped: outcome.skipped,
-        reason: outcome.ok ? outcome.reason : outcome.reason,
-        morning_document_id: outcome.morningDocumentId,
-      };
+      const paymentId = createdPayment.id;
+      const actor = { profileId: profile.id, authUserId: user.id, role: profile.role };
+      runAfterResponse("orders/payments/create Morning receipt", () =>
+        tryAutoIssueReceiptForPayment(supabase, { paymentId, actor })
+      );
     }
 
     return NextResponse.json({
@@ -146,7 +140,6 @@ export async function POST(req: Request) {
       payment_status: paymentStatus,
       total_paid: totalPaid,
       remaining_balance: Math.max(totalAmount - totalPaid, 0),
-      morning_auto_receipt: morningAutoReceipt,
     });
     });
   } catch (err: unknown) {

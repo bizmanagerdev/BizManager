@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { hasSectionAccess, isStaffRole } from "@/lib/auth/roleAccess";
 import { toHebrewError } from "@/lib/error-messages";
@@ -97,7 +97,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
       return NextResponse.json({ error: toHebrewError(vehError.message) }, { status: 400 });
     }
 
-    await logAuditEvent({
+    logAuditEventAfterResponse({
       supabase,
       tableName: "documents",
       recordId: documentId,
@@ -117,7 +117,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
       await supabase.from("documents").delete().eq("id", oldDocumentId);
       const oldKey = (oldDoc as { storage_key?: string | null } | null)?.storage_key;
       if (oldKey) await supabase.storage.from(BUCKET).remove([oldKey]);
-      await logAuditEvent({
+      logAuditEventAfterResponse({
         supabase,
         tableName: "documents",
         recordId: oldDocumentId,
@@ -169,7 +169,7 @@ export async function DELETE(_req: Request, context: { params: Promise<{ id: str
   const storageKey = (doc as { storage_key?: string | null } | null)?.storage_key;
   if (storageKey) await supabase.storage.from(BUCKET).remove([storageKey]);
 
-  await logAuditEvent({
+  logAuditEventAfterResponse({
     supabase,
     tableName: "documents",
     recordId: documentId,

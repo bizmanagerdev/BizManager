@@ -36,6 +36,7 @@ import {
 } from "@/components/layout/TopNavigationProgress";
 import { offlineFetch } from "@/lib/offline-queue";
 import { offlineUpload } from "@/lib/offline-upload";
+import { uploadTogether } from "@/lib/upload-together";
 import { scheduleDeferredAction, registerReversibleCreate } from "@/lib/undo-engine";
 import { toHebrewError } from "@/lib/error-messages";
 import { formatShortDate } from "@/lib/date";
@@ -263,20 +264,19 @@ export function ProjectTasksTab({
             : null;
 
       if (createdTaskId && createFiles.length > 0) {
-        for (const file of createFiles) {
-          const uploadResult = await offlineUpload("/api/tasks/attachments/upload", {
+        // All files go up together (lib/upload-together.ts), not one by one. A
+        // queued upload was saved on the device and replays on reconnect
+        // (ConnectionToasts announces it) — only a real server error is shown.
+        const uploadResults = await uploadTogether(createFiles, (file) =>
+          offlineUpload("/api/tasks/attachments/upload", {
             fields: { task_id: createdTaskId },
             file,
             label: file.name,
-          });
-          // A queued upload was saved on the device and replays on reconnect
-          // (ConnectionToasts announces it) — only a real server error stops us.
-          if (!uploadResult.queued && !uploadResult.ok) {
-            toast.error("שגיאה בהעלאת קובץ", {
-              description: uploadResult.error,
-            });
-            break;
-          }
+          })
+        );
+        const firstFailure = uploadResults.find((result) => !result.queued && !result.ok);
+        if (firstFailure && !firstFailure.queued && !firstFailure.ok) {
+          toast.error("שגיאה בהעלאת קובץ", { description: firstFailure.error });
         }
       }
 

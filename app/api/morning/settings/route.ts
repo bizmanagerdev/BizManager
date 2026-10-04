@@ -1,7 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { loadMorningSettings, saveMorningSettings } from "@/lib/morning/settings";
 import { MorningDocumentType } from "@/lib/morning/types";
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     const { supabase, profile } = access.value;
     await saveMorningSettings(supabase, parsed.data, profile.id);
     const settings = await loadMorningSettings(supabase);
-    await logAuditEvent({
+    logAuditEventAfterResponse({
       supabase,
       tableName: "morning_settings",
       recordId: "singleton",

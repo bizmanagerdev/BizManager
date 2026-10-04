@@ -1,7 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { validateSplitParts, type SplitPart } from "@/lib/financial/statementSplit";
 
@@ -185,7 +185,7 @@ export async function POST(req: Request) {
       if (typeof count === "number") {
         await supabase.from("card_statements").update({ created_count: count }).eq("id", row.statement_id as string);
       }
-      await logAuditEvent({
+      logAuditEventAfterResponse({
         supabase,
         tableName: "expenses",
         recordId: expenseId,
@@ -193,7 +193,7 @@ export async function POST(req: Request) {
         changedBy: profile.id,
         userRole: profile.role,
         newData: { split_into: parts.map((p) => ({ business_domain: p.domain, amount: p.amount })) },
-      }).catch(() => {});
+      });
     }
 
     return NextResponse.json({ ok: true, rows: newRows ?? [] });

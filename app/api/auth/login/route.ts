@@ -1,6 +1,6 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { createSupabaseRouteClient } from "@/lib/supabase/route";
 
 export async function POST(req: Request) {
@@ -48,7 +48,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (profile?.id) {
-        await logAuditEvent({
+        logAuditEventAfterResponse({
           supabase,
           tableName: "auth",
           recordId: profile.id,

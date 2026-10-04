@@ -8,6 +8,7 @@ import {
 } from "@/lib/morning/service";
 import { buildPaymentInsert } from "@/lib/payments";
 import { notifyNewEntity } from "@/lib/notifications/new-entity";
+import { runAfterResponse } from "@/lib/after-response";
 import {
   derivePaymentStatus,
   hasInvalidPaymentEntry,
@@ -252,41 +253,30 @@ export async function POST(req: Request) {
     }
 
     // Best-effort Morning auto-issue on new order: invoice for the order, plus a
-    // receipt for each upfront payment line. Failures never abort the create. The
-    // inserted ids come straight from the insert above (no re-query, which could
-    // pick the wrong rows under concurrency).
+    // receipt for each upfront payment line — after the response, like
+    // orders/update, so the save never waits on the external Morning API.
+    // Failures never abort the create (they're recorded as
+    // morning_auto_*_failed audits). The inserted ids come straight from the
+    // insert above (no re-query, which could pick the wrong rows under
+    // concurrency).
     const actor = { profileId: profile.id, authUserId: user.id, role: profile.role };
-    const invoiceOutcome = await tryAutoIssueInvoiceForOrder(supabase, {
-      orderId,
-      newStatus: status,
-      trigger: "create",
-      actor,
+    runAfterResponse("orders/create Morning auto-issue", async () => {
+      await tryAutoIssueInvoiceForOrder(supabase, { orderId, newStatus: status, trigger: "create", actor });
+      for (const paymentId of insertedPaymentIds) {
+        await tryAutoIssueReceiptForPayment(supabase, { paymentId, actor });
+      }
     });
 
-    const receiptOutcomes: Array<{ skipped: boolean; reason: string | null; morningDocumentId: string | null }> = [];
-    for (const newPaymentId of insertedPaymentIds) {
-      const outcome = await tryAutoIssueReceiptForPayment(supabase, { paymentId: newPaymentId, actor });
-      receiptOutcomes.push({
-        skipped: outcome.skipped,
-        reason: outcome.ok ? outcome.reason : outcome.reason,
-        morningDocumentId: outcome.morningDocumentId,
-      });
-    }
-
     // Alert back-office (admin + office) that a new order came in.
-    await notifyNewEntity({ kind: "order", entityId: orderId, creatorUserId: profile.id, customerId });
+    runAfterResponse("orders/create notify", () =>
+      notifyNewEntity({ kind: "order", entityId: orderId, creatorUserId: profile.id, customerId })
+    );
 
     return NextResponse.json({
       order_id: orderId,
       payment_status: derivedPaymentStatus,
       total_paid: totalPaid,
       payment_ids: insertedPaymentIds,
-      morning_auto_invoice: {
-        skipped: invoiceOutcome.skipped,
-        reason: invoiceOutcome.ok ? invoiceOutcome.reason : invoiceOutcome.reason,
-        morning_document_id: invoiceOutcome.morningDocumentId,
-      },
-      morning_auto_receipts: receiptOutcomes,
     });
     });
   } catch (err: unknown) {

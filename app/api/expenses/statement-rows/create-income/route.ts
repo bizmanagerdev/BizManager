@@ -1,6 +1,6 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { buildPaymentInsert } from "@/lib/payments";
 import { isExpenseBusinessDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
@@ -111,7 +111,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `ההכנסה נוצרה אך הקישור לשורות נכשל: ${linkError.message}`, payment_id: paymentId }, { status: 400 });
     }
 
-    await logAuditEvent({
+    logAuditEventAfterResponse({
       supabase,
       tableName: "payments",
       recordId: paymentId,

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 type DeleteCustomerPayload = {
@@ -160,7 +160,7 @@ export async function POST(req: Request) {
       );
     }
 
-    await logAuditEvent({
+    logAuditEventAfterResponse({
       supabase,
       tableName: "customers",
       recordId: id,

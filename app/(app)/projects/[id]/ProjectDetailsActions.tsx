@@ -1,6 +1,7 @@
 ﻿"use client";
 import { toHebrewError } from "@/lib/error-messages";
 import { resyncAlerts } from "@/lib/ui/alerts-refresh";
+import { uploadTogether } from "@/lib/upload-together";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
@@ -340,9 +341,8 @@ export default function ProjectDetailsActions({
           return;
         }
         // Uploads need a live connection; only attempt them when actually online.
-        for (const file of attachmentFiles) {
-          await uploadProjectDocument(project.id, file);
-        }
+        // All files go up together (lib/upload-together.ts), not one by one.
+        await uploadTogether(attachmentFiles, (file) => uploadProjectDocument(project.id, file));
       }
 
       setEditOpen(false);

@@ -24,6 +24,7 @@ import { SectionCard } from "@/components/ui/section-card";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { registerReversibleAction, scheduleDeferredDelete } from "@/lib/undo-engine";
 import { offlineUpload } from "@/lib/offline-upload";
+import { uploadTogether } from "@/lib/upload-together";
 import { toHebrewError } from "@/lib/error-messages";
 import { formatShortDate } from "@/lib/date";
 import { getOrderStatusLabel } from "@/lib/ui/status-colors";
@@ -95,25 +96,28 @@ export default function DeliveryImagesCard({
     setAddBusy(true);
     setAddError("");
     try {
+      // All photos go up together (lib/upload-together.ts), not one by one. A
+      // queued photo is saved on the device and replays on reconnect, so it
+      // counts as done; only the ones that failed stay selected for a retry.
+      const results = await uploadTogether(addFiles, (file) =>
+        offlineUpload(`/api/orders/${orderId}/delivery-images`, { file, label: "תמונת אספקה" })
+      );
       let uploaded = 0;
-      let done = 0;
       const uploadedIds: string[] = [];
-      for (const file of addFiles) {
-        const result = await offlineUpload(`/api/orders/${orderId}/delivery-images`, {
-          file,
-          label: "תמונת אספקה",
-        });
-        if (result.queued) {
-          done += 1;
-        } else if (result.ok) {
+      const remaining: File[] = [];
+      results.forEach((result, i) => {
+        if (result.queued) return;
+        if (result.ok) {
           uploaded += 1;
-          done += 1;
           const data = result.data as { image?: { id?: string } } | null;
           if (data?.image?.id) uploadedIds.push(data.image.id);
         } else {
-          setAddError(result.error || `העלאת ${file.name} נכשלה.`);
-          break;
+          remaining.push(addFiles[i]!);
         }
+      });
+      const firstFailure = results.find((result) => !result.queued && !result.ok);
+      if (firstFailure && !firstFailure.queued && !firstFailure.ok) {
+        setAddError(firstFailure.error || `העלאת ${remaining[0]!.name} נכשלה.`);
       }
       if (uploaded > 0) {
         startTransition(() => {
@@ -139,10 +143,10 @@ export default function DeliveryImagesCard({
           toast.success(message);
         }
       }
-      if (done === addFiles.length) {
+      if (remaining.length === 0) {
         setAddOpen(false);
       } else {
-        setAddFiles(addFiles.slice(done));
+        setAddFiles(remaining);
       }
     } finally {
       setAddBusy(false);

@@ -155,15 +155,17 @@ describe("POST /api/orders/payments/create — order status recompute", () => {
 });
 
 describe("POST /api/orders/payments/create — Morning auto-receipt", () => {
-  it("calls tryAutoIssueReceiptForPayment with the new payment id and actor, and surfaces its outcome", async () => {
+  it("hands tryAutoIssueReceiptForPayment the new payment id and actor, without putting its outcome in the response", async () => {
     tryAutoIssueReceiptForPayment.mockResolvedValueOnce({ ok: true, skipped: false, reason: null, morningDocumentId: "doc-1" });
     const database = sb({ insertResp: { data: { id: "pay-9" }, error: null } });
     grant(database);
     const res = await post(VALID);
+    // Runs after the response in a real request (lib/after-response.ts); outside
+    // one, after() throws and the work starts right away, so it's visible here.
     expect(tryAutoIssueReceiptForPayment).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ paymentId: "pay-9", actor: expect.objectContaining({ profileId: "prof-1" }) })
     );
-    expect((await res.json()).morning_auto_receipt).toMatchObject({ skipped: false, morning_document_id: "doc-1" });
+    expect(await res.json()).not.toHaveProperty("morning_auto_receipt");
   });
 });

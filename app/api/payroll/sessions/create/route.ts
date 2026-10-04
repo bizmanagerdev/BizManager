@@ -2,7 +2,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { recalculateUserSessionCostsFromRules, regenerateEditablePayslipsForUsers } from "@/lib/payroll-center";
 import {
@@ -231,7 +231,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: toHebrewError(refreshed.error.message) }, { status: 400 });
       }
       if (refreshed.data?.id) {
-        await logAuditEvent({
+        logAuditEventAfterResponse({
           supabase,
           tableName: WORK_SESSIONS_TABLE,
           recordId: refreshed.data.id,
@@ -248,7 +248,7 @@ export async function POST(req: Request) {
     }
 
     if (data?.id) {
-      await logAuditEvent({
+      logAuditEventAfterResponse({
         supabase,
         tableName: WORK_SESSIONS_TABLE,
         recordId: data.id,

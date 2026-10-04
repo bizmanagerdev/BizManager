@@ -1,7 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 import { STORAGE_BUCKET } from "@/lib/storage";
@@ -180,7 +180,7 @@ async function deleteOrderDirectly(
     return { ok: false as const, error: toHebrewError(orderDeleteError.message) };
   }
 
-  await logAuditEvent({
+  logAuditEventAfterResponse({
     supabase,
     tableName: "orders",
     recordId: orderId,

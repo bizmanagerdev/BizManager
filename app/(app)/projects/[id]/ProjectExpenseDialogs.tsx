@@ -20,6 +20,7 @@ import { ORDER_PAYMENT_METHOD_OPTIONS } from "@/lib/orders/paymentStatus";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { toHebrewError } from "@/lib/error-messages";
+import { uploadTogether } from "@/lib/upload-together";
 import { appendDictatedText } from "@/lib/dictation";
 import { mapProjectTypeToExpenseDomain } from "@/lib/expenses";
 import { registerReversibleCreate } from "@/lib/undo-engine";
@@ -221,11 +222,10 @@ export function AddIncomeDialog({
       if (moreParts.length > 0) startTransition(() => { router.refresh(); });
 
       let paymentWithAttachment = savedPayment;
-      const uploadedAttachments: FinancialAttachment[] = [];
-      for (const file of attachmentFiles) {
-        const attachment = await uploadFinancialAttachment("payment", savedPayment.id, file);
-        if (attachment?.document_id) uploadedAttachments.push(attachment);
-      }
+      // All files go up together (lib/upload-together.ts), not one by one.
+      const uploadedAttachments: FinancialAttachment[] = (
+        await uploadTogether(attachmentFiles, (file) => uploadFinancialAttachment("payment", savedPayment.id, file))
+      ).filter((attachment): attachment is FinancialAttachment => Boolean(attachment?.document_id));
       paymentWithAttachment = {
         ...savedPayment,
         attachments: [...existingAttachments, ...uploadedAttachments],

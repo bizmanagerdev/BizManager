@@ -1,6 +1,6 @@
 import { toHebrewError } from "@/lib/error-messages";
 ﻿import { NextResponse } from "next/server";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 /** Statuses that end a task — and with it, any reminder still pointing at it. */
@@ -84,7 +84,7 @@ export async function POST(req: Request) {
     const closedReminders = data?.id ? pendingReminderCount : 0;
 
     if (data?.id && statusChanged) {
-      await logAuditEvent({
+      logAuditEventAfterResponse({
         supabase,
         tableName: "tasks",
         recordId: id,

@@ -1,6 +1,6 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { getBooksStartDate, normalizeBooksStartDate, setBooksStartDate } from "@/lib/settings/booksStartDate";
 
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
 
     await setBooksStartDate(supabase, booksStartDate, user.id);
 
-    await logAuditEvent({
+    logAuditEventAfterResponse({
       supabase,
       tableName: "business_settings",
       // business_settings is a singleton row keyed by a boolean id (see

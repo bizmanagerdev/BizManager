@@ -1,6 +1,6 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { derivePaymentStatus, splitPaymentAmounts } from "@/lib/orders/paymentStatus";
 
@@ -39,7 +39,7 @@ export async function POST(req: Request) {
 
     if (deleteError) return NextResponse.json({ error: toHebrewError(deleteError.message) }, { status: 400 });
 
-    await logAuditEvent({
+    logAuditEventAfterResponse({
       supabase,
       tableName: "payments",
       recordId: paymentId,

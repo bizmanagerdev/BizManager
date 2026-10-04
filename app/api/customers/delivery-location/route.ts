@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { toHebrewError } from "@/lib/error-messages";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { hasDeliveriesAccess } from "@/lib/auth/roleAccess";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 
 // Save "how to actually reach this customer" — the arrival instructions and the
 // drop-off pin. Deliberately its own endpoint rather than part of the customer
@@ -99,7 +99,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: toHebrewError(error.message, "שמירת המיקום נכשלה.") }, { status: 400 });
     }
 
-    await logAuditEvent({
+    logAuditEventAfterResponse({
       supabase,
       tableName: "customers",
       recordId: customerId,
@@ -107,8 +107,6 @@ export async function POST(req: Request) {
       changedBy: profile.id,
       userRole: profile.role,
       newData: patch,
-    }).catch(() => {
-      // Audit is best-effort — never fail the save because the log didn't write.
     });
 
     return NextResponse.json({ ok: true, ...patch });
