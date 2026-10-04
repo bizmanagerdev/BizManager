@@ -35,6 +35,7 @@ import { formatCurrency } from "@/lib/payroll";
 import type { CustomerReceivable } from "@/lib/collections";
 import { offlineFetch } from "@/lib/offline-queue";
 import { runTogether } from "@/lib/upload-together";
+import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
 import { toHebrewError } from "@/lib/error-messages";
 import { appendDictatedText } from "@/lib/dictation";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
@@ -432,6 +433,19 @@ export function CollectPaymentDialog({
         onOpenChange(false);
         reset();
         return;
+      }
+      // The check's photos go on the payment just recorded (a check is never
+      // split into installments). They were picked on the "פרטי הצ'ק" step but
+      // used to be dropped here — the payment was saved without them. Same
+      // upload the order-payment dialog uses (offline-safe, idempotent).
+      if (method === "check" && checkPhotoFiles.length > 0) {
+        const created = results.find((result) => !result.queued && result.ok);
+        const createdPayment =
+          created && !created.queued && created.ok ? (created.data as { payment?: { id?: unknown } } | null)?.payment : null;
+        if (typeof createdPayment?.id === "string" && createdPayment.id) {
+          const photos = await uploadCheckPhotos(createdPayment.id, checkPhotoFiles);
+          if (photos.failed > 0) toast.warning("התשלום נקלט, אך העלאת תמונת הצ׳ק נכשלה.");
+        }
       }
       onOpenChange(false);
       reset();
