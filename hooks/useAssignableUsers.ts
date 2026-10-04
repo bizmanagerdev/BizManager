@@ -25,8 +25,12 @@ async function loadUsers() {
   inFlight = (async () => {
     try {
       const supabase = createSupabaseBrowserClient();
-      const authRes = await supabase.auth.getUser();
-      const authUid = authRes.data.user?.id ?? null;
+      // getSession(), not getUser(): only our own id is needed, to find our
+      // users row, and the session already in this browser has it. getUser()
+      // is a round trip to the Auth server every time the + menu mounts the
+      // reminder dialog. RLS still checks both queries below.
+      const sessionRes = await supabase.auth.getSession();
+      const authUid = sessionRes.data.session?.user.id ?? null;
       const [usersRes, selfRes] = await Promise.all([
         supabase
           .from("users")

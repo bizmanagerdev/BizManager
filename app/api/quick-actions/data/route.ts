@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { toHebrewError } from "@/lib/error-messages";
-import { createSupabaseRouteClient } from "@/lib/supabase/route";
+import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { loadQuickActionsData } from "@/app/(app)/dashboard/quick-actions-data";
 
 // The dropdown/picker data behind the top-bar quick-create (+) menu — the same
@@ -8,42 +8,25 @@ import { loadQuickActionsData } from "@/app/(app)/dashboard/quick-actions-data";
 // every other page pays nothing for it until the user actually opens the menu.
 // `currentUserId`/`role` ride along so the task + expense dialogs can default the
 // assignee and gate their manager-only sections without a second round trip.
-// Auth is checked here rather than via requireProfile(), which redirects (that's
-// page behaviour — a fetch() wants a status code).
+//
+// requireRouteAccess(), like every other API route: it answers with a status
+// code (not requireProfile()'s page redirect) and reads the session from the
+// cookie. This used to call supabase.auth.getUser() — a round trip to the Auth
+// server (~250 ms p75, seconds on a bad day) in front of every + menu open, on
+// top of the profile read and the lists. RLS still checks every query below
+// against the caller's JWT.
 export async function GET() {
   try {
-    const supabase = await createSupabaseRouteClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    const authUserId = user?.id;
-    if (!authUserId) return NextResponse.json({ error: "לא מחובר." }, { status: 401 });
+    const access = await requireRouteAccess();
+    if (!access.ok) return access.response;
+    const { supabase, profile } = access.value;
 
-    let { data: profile } = await supabase
-      .from("users")
-      .select("id,role,active,system_access,locale")
-      .eq("auth_user_id", authUserId)
-      .maybeSingle();
-    if (!profile) {
-      // Pre-migration: the `locale` column may not exist yet.
-      const legacy = await supabase
-        .from("users")
-        .select("id,role,active,system_access")
-        .eq("auth_user_id", authUserId)
-        .maybeSingle();
-      profile = legacy.data as typeof profile;
-    }
-    if (!profile || !profile.active || !profile.system_access) {
-      return NextResponse.json({ error: "אין הרשאה." }, { status: 403 });
-    }
-
-    const data = await loadQuickActionsData(supabase, { id: profile.id as string });
-    const rawLocale = (profile as { locale?: unknown }).locale;
+    const data = await loadQuickActionsData(supabase, { id: profile.id });
     return NextResponse.json({
       ...data,
       currentUserId: profile.id,
       role: profile.role ?? null,
-      locale: rawLocale === "ar" ? "ar" : "he",
+      locale: profile.locale,
     });
   } catch (error: unknown) {
     return NextResponse.json({ error: toHebrewError(error, "טעינת הנתונים נכשלה.") }, { status: 500 });

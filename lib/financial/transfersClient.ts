@@ -46,9 +46,12 @@ export async function saveAccountTransfer(input: TransferInput): Promise<Result>
     return { ok: true };
   }
 
+  // The session already in this browser has our id — no Auth-server round trip
+  // (getUser) in front of the save. RLS still checks the lookup and the insert.
   const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const authUser = session?.user ?? null;
   const { data: me } = authUser
     ? await supabase.from("users").select("id").eq("auth_user_id", authUser.id).maybeSingle()
     : { data: null };

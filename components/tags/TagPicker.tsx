@@ -58,12 +58,14 @@ async function createTagDirect(name: string, requestedKind: string): Promise<Tag
     .maybeSingle();
   if (existing) return existing as TagOption;
 
+  // The session already in this browser has our id — no Auth-server round trip
+  // (getUser) in front of the save. RLS still checks the insert.
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
   const { data, error } = await supabase
     .from("tags")
-    .insert({ kind, name, created_by: user?.id ?? null })
+    .insert({ kind, name, created_by: session?.user.id ?? null })
     .select("id,kind,name,color")
     .maybeSingle();
   if (error || !data) return null;
