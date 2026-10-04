@@ -62,8 +62,7 @@ export type DocumentRowContext = {
   categoryRows: DocumentCategoryRow[];
   selectedIds: Set<string>;
   toggleSelected: (id: string) => void;
-  /** Long-pressing a tile turns this on, and every tile shows its checkbox. */
-  selectionMode: boolean;
+  /** A long press selects the tile, which is what puts the page into selection. */
   onEnterSelection: (doc: DocumentArchiveItem) => void;
   /** The active category filter — a row does not repeat a type you filtered to. */
   typeChips: Set<string>;
@@ -108,8 +107,8 @@ export function DocumentTile({
     toggleSelected,
     expiryOf,
     attentionReason,
-    selectionMode,
   } = ctx;
+  const selecting = selectedIds.size > 0;
   // A long press is how a phone asks "which ones?"; the tap that follows it
   // must not also open the document it was selecting.
   const longPress = useLongPress(() => ctx.onEnterSelection(doc));
@@ -125,7 +124,7 @@ export function DocumentTile({
                         tabIndex={0}
                         onClick={() => {
                           if (longPress.consumed()) return;
-                          if (selectionMode || selectedIds.size > 0) {
+                          if (selecting) {
                             toggleSelected(doc.id);
                             return;
                           }
@@ -148,7 +147,7 @@ export function DocumentTile({
                               and always on touch where there is no hover. */}
                           <label
                             className={`absolute start-1 top-1 z-20 flex h-7 w-7 cursor-pointer items-center justify-center rounded-md bg-background/90 shadow-sm transition-opacity ${
-                              selectedIds.size > 0 || selectionMode
+                              selecting
                                 ? "opacity-100"
                                 : "opacity-0 focus-within:opacity-100 group-hover/card:opacity-100"
                             }`}

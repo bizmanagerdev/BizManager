@@ -22,9 +22,6 @@ export const SYSTEM_CATEGORY_FILTER = "__system__";
 export const UNCATEGORIZED_FILTER = "__none__";
 
 
-// Sorting is separate from grouping: grouping decides what sits together,
-// this decides the order inside. Always returns a new array — the caller's
-// list is the memoised filter result and must not be mutated.
 /** Section order, governed by the same מיון choice as the documents inside, so
  *  the page has ONE ordering rule rather than a visible one and a hidden one. */
 export function compareGroups(
@@ -74,8 +71,6 @@ export function facetTriggerLabel(name: string, selected: Set<string>, options: 
   return `${name}: ${selected.size} נבחרו`;
 }
 
-/** Milliseconds, or null when there is no usable date. Exported for the tests
- *  that pin the ordering. */
 /**
  * What makes two documents one card.
  *
@@ -165,6 +160,8 @@ export function packGroups(spans: number[], columns: number, lookahead = 3): num
   return order;
 }
 
+/** Milliseconds, or null when there is no usable date. Exported for the tests
+ *  that pin the ordering. */
 export function documentTime(doc: { uploaded_at: string | null }): number | null {
   const raw = (doc.uploaded_at ?? "").trim();
   if (!raw) return null;
@@ -172,6 +169,9 @@ export function documentTime(doc: { uploaded_at: string | null }): number | null
   return Number.isNaN(parsed) ? null : parsed;
 }
 
+// Sorting is separate from grouping: grouping decides what sits together,
+// this decides the order inside. Always returns a new array — the caller's
+// list is the memoised filter result and must not be mutated.
 export function sortDocuments(items: DocumentArchiveItem[], sortBy: string): DocumentArchiveItem[] {
   const copy = [...items];
   // Undated rows sink to the bottom in either direction rather than sorting as
@@ -374,11 +374,6 @@ export function groupLabel(groupBy: string, doc: DocumentArchiveItem) {
 
 
 /**
- * The half of a document's title the section heading is not already carrying.
- * Titles read "<category> · <entity>"; under a heading naming the entity, the
- * card only needs to say which kind of paper it is.
- */
-/**
  * A chip's halves: what kind of thing it is, then which one. The server writes
  * some labels with the kind already in them ("הזמנה · בית גדליה"), so it is
  * stripped before being added back — otherwise the chip stutters.
@@ -395,6 +390,11 @@ export function entityChipParts(type: string, label: string): string[] {
   return [kind, name];
 }
 
+/**
+ * The half of a document's title the section heading is not already carrying.
+ * Titles read "<category> · <entity>"; under a heading naming the entity, the
+ * card only needs to say which kind of paper it is.
+ */
 export function cardTitle(doc: DocumentArchiveItem, groupHeading: string): string {
   const full = doc.title;
   if (!groupHeading) return full;

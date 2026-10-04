@@ -874,8 +874,6 @@ export default function DocumentsArchiveClient({
   useSetPageTitle("מסמכים", undefined, undefined, false, true);
 
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
-  /** Turned on by a long press; leaving the selection empty turns it back off. */
-  const [selectionMode, setSelectionMode] = useState(false);
   /** What the "סינון" badge counts: facets, not the search box beside it. */
   const activeFilterCount = attachedTo.size + typeChips.size + expiryChips.size;
 
@@ -1008,11 +1006,11 @@ export default function DocumentsArchiveClient({
       typeChips,
       expiryOf,
       attentionReason,
-      selectionMode,
-      onEnterSelection: (doc: DocumentArchiveItem) => {
-        setSelectionMode(true);
-        toggleSelected(doc.id);
-      },
+      // Selection mode is not a separate switch: it IS "something is selected".
+      // A flag of its own outlived the selection — deselect the last tile and
+      // the bar holding ביטול disappeared, leaving every tap toggling with no
+      // way out but a refresh.
+      onEnterSelection: (doc: DocumentArchiveItem) => toggleSelected(doc.id),
       onPreview: setPreviewDoc,
       onAssign: setAssignDoc,
       onToggleNoLinkNeeded: (doc: DocumentArchiveItem) => void toggleNoLinkNeeded(doc),
@@ -1039,7 +1037,6 @@ export default function DocumentsArchiveClient({
       expiryOf,
       attentionReason,
       toggleNoLinkNeeded,
-      selectionMode,
     ]
   );
 
@@ -2240,7 +2237,7 @@ export default function DocumentsArchiveClient({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button type="button" size="sm" variant="outline" onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }}>
+          <Button type="button" size="sm" variant="outline" onClick={() => setSelectedIds(new Set())}>
             ביטול
           </Button>
         </div>
