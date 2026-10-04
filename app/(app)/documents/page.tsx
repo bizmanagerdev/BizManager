@@ -173,18 +173,66 @@ export default async function DocumentsPage({
   // the pre-migration column list instead of failing the page.
   const DOC_COLUMNS_BASE =
     "id,document_type,business_domain,title,file_name,storage_key,uploaded_at,notes,uploaded_by";
-  const runDocumentsQuery = (columns: string) =>
-    supabase
+
+  // ── searching past the window ────────────────────────────────────────────
+  //
+  // The archive loads the newest MAX_DOCUMENTS and the browser filters them in
+  // memory. That is instant, and it matches on far more than the database
+  // could: a document is findable by its customer's name, its project, its
+  // vehicle — labels that live in other tables and are already in hand here.
+  //
+  // It has one failure, and only one: once the archive is bigger than the
+  // window, a search cannot find what the window does not contain, and the file
+  // being hunted for is usually the old one. So the database narrows ONLY in
+  // that case. Below the cap nothing changes — same query, same rich matching,
+  // no extra round trip, no behaviour to re-learn.
+  //
+  // The facets stay in the browser on purpose. They are set operations over
+  // data already loaded, they answer within a frame, and a round trip per tap
+  // would make this page slower than the one it replaced.
+  const searchTerm = normalizeString(params.q);
+
+  // PostgREST parses its filter string positionally, so a comma or a paren in
+  // the term reads as syntax rather than as text. Dropping them costs nothing —
+  // and the browser still matches the untouched term against everything.
+  const safeSearchTerm = searchTerm.replace(/[,()*\\]/g, " ").trim();
+
+  const runDocumentsQuery = (columns: string, withSearch: boolean) => {
+    const query = supabase
       .from("documents")
       .select(columns, { count: "estimated" })
       .order("uploaded_at", { ascending: false, nullsFirst: false })
       .range(0, MAX_DOCUMENTS - 1);
+    if (!withSearch || !safeSearchTerm) return query;
+    return query.or(
+      `title.ilike.*${safeSearchTerm}*,file_name.ilike.*${safeSearchTerm}*,notes.ilike.*${safeSearchTerm}*`
+    );
+  };
 
+  const FULL_COLUMNS = `${DOC_COLUMNS_BASE},source,valid_until,no_link_needed`;
   let { data: documentsRaw, error: documentsError, count } = await runDocumentsQuery(
-    `${DOC_COLUMNS_BASE},source,valid_until,no_link_needed`
+    FULL_COLUMNS,
+    false
   );
   if (documentsError?.code === "42703") {
-    ({ data: documentsRaw, error: documentsError, count } = await runDocumentsQuery(DOC_COLUMNS_BASE));
+    ({ data: documentsRaw, error: documentsError, count } = await runDocumentsQuery(
+      DOC_COLUMNS_BASE,
+      false
+    ));
+  }
+
+  // Only now, knowing the archive outgrew the window, is it worth asking the
+  // database to do the narrowing — one extra round trip in the one case that
+  // needs it, and never on an ordinary load.
+  if (safeSearchTerm && typeof count === "number" && count > MAX_DOCUMENTS) {
+    const columns = documentsError?.code === "42703" ? DOC_COLUMNS_BASE : FULL_COLUMNS;
+    const narrowed = await runDocumentsQuery(columns, true);
+    // A failure here is not worth losing the page over: the browser still has
+    // the recent window to search, which is what it had before any of this.
+    if (!narrowed.error) {
+      documentsRaw = narrowed.data;
+      count = narrowed.count;
+    }
   }
 
   const documents = (documentsRaw ?? []) as unknown as DocumentRow[];

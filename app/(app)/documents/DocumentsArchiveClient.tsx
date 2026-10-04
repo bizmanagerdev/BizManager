@@ -5,7 +5,7 @@ import { useSetPageTitle } from "@/components/layout/page-title-context";
 import Image from "next/image";
 import type { ReactNode } from "react";
 import { useDeferredValue, useEffect, useMemo, useState, useTransition, useSyncExternalStore, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { DownloadIcon, FilterIcon, ChevronDownIcon, DocumentIcon, DeleteIcon, GridIcon, ListIcon, MoreIcon, ChevronLeftIcon, ChevronRightIcon, ExternalLinkIcon, FolderIcon, ImageIcon, LayersIcon, LinkIcon, ProductIcon, SearchIcon, TagIcon, UploadIcon } from "@/components/ui/icons";
 import { MetaRow } from "@/components/ui/meta-row";
@@ -181,6 +181,8 @@ export default function DocumentsArchiveClient({
   isTruncated: boolean;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
   const documents = useUndoOverlay(documentsProp, (d) => d.id, "document");
   const [query, setQuery] = useState(initialFilters.q);
@@ -427,6 +429,35 @@ export default function DocumentsArchiveClient({
 
   /** What the filters and every count on this page actually ran over. */
   const loadedDocumentCount = isTruncated ? documents.length : totalDocuments;
+
+  // ── keeping the server's window in step with the search ──────────────────
+  //
+  // Typing filters what is already loaded, in the same frame — that does not
+  // change. Separately, and later, the address bar is updated so the server can
+  // re-run the search across the WHOLE archive rather than the newest thousand.
+  //
+  // Everything here exists to stop that second job from being felt:
+  //   * 350ms after the last keystroke, not on each one — a five-letter word is
+  //     one request, not five.
+  //   * inside startTransition, so React keeps the current results on screen
+  //     and interactive while the new set streams in. No spinner, no blank.
+  //   * replace, not push, so searching does not fill up the back button.
+  //   * skipped entirely when the address bar already says this, which is the
+  //     common case of typing and then deleting back to where you started.
+  useEffect(() => {
+    const trimmed = query.trim();
+    const current = (searchParams?.get("q") ?? "").trim();
+    if (trimmed === current) return;
+    const timer = setTimeout(() => {
+      const next = new URLSearchParams(searchParams?.toString() ?? "");
+      if (trimmed) next.set("q", trimmed);
+      else next.delete("q");
+      startTransition(() => {
+        router.replace(`${pathname}?${next.toString()}`, { scroll: false });
+      });
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [query, searchParams, pathname, router]);
 
   const deferredQuery = useDeferredValue(query);
   const normalizedQuery = normalizeText(deferredQuery);

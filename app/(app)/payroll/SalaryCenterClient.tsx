@@ -5511,7 +5511,7 @@ export default function SalaryCenterClient({
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="font-medium">{"הקצאות לפריטי חוב"}</div>
-              <Button variant="outline" onClick={() => autoDistributeWorkerPayment()} disabled={isPending}>
+              <Button type="button" variant="outline" onClick={() => autoDistributeWorkerPayment()} disabled={isPending}>
                 {"פיזור אוטומטי"}
               </Button>
             </div>

@@ -15,17 +15,17 @@ import {
 
 describe("formatSessionRange", () => {
   it("shows an open ('still clocked in') session with no end time", () => {
-    expect(formatSessionRange("2026-09-17T08:00:00", null)).toBe("17.09.26 • 08:00 - פתוח");
+    expect(formatSessionRange("2026-09-17T08:00:00+03:00", null)).toBe("17.09.26 • 08:00 - פתוח");
   });
 
   it("shows a same-day session as one date with a time range", () => {
-    expect(formatSessionRange("2026-09-17T08:00:00", "2026-09-17T16:30:00")).toBe(
+    expect(formatSessionRange("2026-09-17T08:00:00+03:00", "2026-09-17T16:30:00+03:00")).toBe(
       "17.09.26 • 08:00-16:30"
     );
   });
 
   it("shows a session spanning midnight with both dates", () => {
-    expect(formatSessionRange("2026-09-17T22:00:00", "2026-09-18T06:00:00")).toBe(
+    expect(formatSessionRange("2026-09-17T22:00:00+03:00", "2026-09-18T06:00:00+03:00")).toBe(
       "17.09.26 22:00 → 18.09.26 06:00"
     );
   });
