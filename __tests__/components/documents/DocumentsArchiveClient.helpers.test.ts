@@ -250,3 +250,61 @@ describe("labels", () => {
     expect(formatDate(null)).toBe("—");
   });
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// The order of the TRAYS must agree with the order INSIDE them.
+//
+// compareGroups compared uploaded_at as strings while sortDocuments parsed it,
+// so the page ran two ordering rules — the bug already reported once for the
+// documents themselves. Strings fail in exactly the ways that occur here: a
+// timestamp with a +03:00 offset against one in UTC, and Postgres's
+// space-separated form against ISO's T.
+// ────────────────────────────────────────────────────────────────────────────
+describe("compareGroups — agrees with the documents inside", () => {
+  const tray = (label: string, items: Array<Record<string, unknown>>) => ({
+    label,
+    items: items.map((over, i) => doc({ id: `${label}-${i}`, ...over })),
+  });
+  const order = (sortBy: string, ...trays: ReturnType<typeof tray>[]) =>
+    [...trays].sort((a, b) => compareGroups(a, b, sortBy)).map((t) => t.label);
+
+  it("compares instants, not text, across time zones", () => {
+    // 23:00 in Israel is 20:00 UTC — an hour BEFORE 21:00 UTC, though the
+    // string "23" sorts after "21".
+    const israel = tray("ישראל", [{ uploaded_at: "2026-09-18T23:00:00+03:00" }]);
+    const utc = tray("UTC", [{ uploaded_at: "2026-09-18T21:00:00Z" }]);
+    expect(order("newest", israel, utc)).toEqual(["UTC", "ישראל"]);
+  });
+
+  it("compares instants, not text, across Postgres and ISO formats", () => {
+    // A space sorts before a T, so any space-form timestamp read as older than
+    // every ISO one on the same day, whatever the hour.
+    const evening = tray("ערב", [{ uploaded_at: "2026-09-18 22:00:00+00" }]);
+    const morning = tray("בוקר", [{ uploaded_at: "2026-09-18T08:00:00Z" }]);
+    expect(order("newest", morning, evening)).toEqual(["ערב", "בוקר"]);
+  });
+
+  it("does not let an undated document make a tray the oldest", () => {
+    // The reduce reset to "" whenever an undated document came LAST, so the
+    // answer depended on the order of the array.
+    const withGap = tray("חסר", [{ uploaded_at: "2026-09-01T00:00:00Z" }, { uploaded_at: null }]);
+    const plain = tray("רגיל", [{ uploaded_at: "2026-05-01T00:00:00Z" }]);
+    expect(order("oldest", withGap, plain)).toEqual(["רגיל", "חסר"]);
+  });
+
+  it("sinks a tray with no dates at all, in both directions", () => {
+    const undated = tray("ללא", [{ uploaded_at: null }]);
+    const dated = tray("עם", [{ uploaded_at: "2026-01-01T00:00:00Z" }]);
+    expect(order("newest", undated, dated)).toEqual(["עם", "ללא"]);
+    expect(order("oldest", undated, dated)).toEqual(["עם", "ללא"]);
+  });
+
+  it("orders trays by their soonest expiry under תוקף קרוב", () => {
+    // Inside a tray the documents already sort by expiry; the trays fell back
+    // to upload date. Upload dates here are chosen to disagree on purpose.
+    const later = tray("מאוחר", [{ valid_until: "2027-06-01", uploaded_at: "2026-09-20T00:00:00Z" }]);
+    const sooner = tray("קרוב", [{ valid_until: "2026-11-01", uploaded_at: "2026-01-01T00:00:00Z" }]);
+    const none = tray("ללא תוקף", [{ valid_until: null, uploaded_at: "2026-06-01T00:00:00Z" }]);
+    expect(order("expiry", later, none, sooner)).toEqual(["קרוב", "מאוחר", "ללא תוקף"]);
+  });
+});

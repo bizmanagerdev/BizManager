@@ -29,18 +29,51 @@ export function compareGroups(
   b: { label: string; items: DocumentArchiveItem[] },
   sortBy: string
 ): number {
-  const newest = (g: { items: DocumentArchiveItem[] }) =>
-    g.items.reduce((max, d) => (String(d.uploaded_at ?? "") > max ? String(d.uploaded_at ?? "") : max), "");
-  const oldest = (g: { items: DocumentArchiveItem[] }) =>
-    g.items.reduce(
-      (min, d) => (min === "" || String(d.uploaded_at ?? "") < min ? String(d.uploaded_at ?? "") : min),
-      ""
-    );
-
-  if (sortBy === "newest") return newest(b).localeCompare(newest(a));
-  if (sortBy === "oldest") return oldest(a).localeCompare(oldest(b));
   if (sortBy === "name" || sortBy === "category") return a.label.localeCompare(b.label, "he");
-  return newest(b).localeCompare(newest(a));
+
+  // Same reading of a date as sortDocuments, deliberately. This used to compare
+  // uploaded_at as TEXT while the documents inside a tray were compared as
+  // instants — so a "+03:00" timestamp read as later than an earlier UTC one,
+  // Postgres's space-separated form read as older than every ISO one that day,
+  // and the order of the trays could disagree with the order inside them.
+  if (sortBy === "expiry") {
+    // valid_until is a bare yyyy-mm-dd, which DOES compare correctly as text —
+    // the same comparison sortDocuments makes for this sort.
+    const soonest = (g: { items: DocumentArchiveItem[] }) =>
+      g.items.reduce<string | null>((min, d) => {
+        const value = (d.valid_until ?? "").trim();
+        if (!value) return min;
+        return min === null || value < min ? value : min;
+      }, null);
+    return sinkMissing(soonest(a), soonest(b), (x, y) => x.localeCompare(y));
+  }
+
+  // Undated documents are skipped rather than read as "", which sorted before
+  // every real date — and whether it won depended on where in the array the
+  // undated one happened to sit.
+  const extreme = (g: { items: DocumentArchiveItem[] }, pick: (x: number, y: number) => number) =>
+    g.items.reduce<number | null>((acc, d) => {
+      const time = documentTime(d);
+      if (time === null) return acc;
+      return acc === null ? time : pick(acc, time);
+    }, null);
+
+  if (sortBy === "oldest") {
+    return sinkMissing(extreme(a, Math.min), extreme(b, Math.min), (x, y) => x - y);
+  }
+  return sinkMissing(extreme(a, Math.max), extreme(b, Math.max), (x, y) => y - x);
+}
+
+/**
+ * A tray with nothing to sort by goes last in EITHER direction, the way an
+ * undated document does inside one — not first under הישנים because an empty
+ * value happens to compare as the smallest.
+ */
+function sinkMissing<T>(a: T | null, b: T | null, compare: (x: T, y: T) => number): number {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return compare(a, b);
 }
 
 export const GROUP_BY_OPTIONS: Record<string, string> = {
