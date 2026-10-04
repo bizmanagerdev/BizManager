@@ -851,6 +851,7 @@ export async function createTestPayment(
     dueDate?: string;
     checkNumber?: string;
     orderId?: string;
+    accountId?: string;
   } = {}
 ): Promise<TestPayment> {
   const recordedBy = await getAdminUserId();
@@ -874,6 +875,7 @@ export async function createTestPayment(
       check_number: overrides.checkNumber ?? "12345",
       recorded_by: recordedBy,
       payment_date: new Date().toISOString(),
+      account_id: overrides.accountId ?? null,
     })
     .select("id")
     .single();
