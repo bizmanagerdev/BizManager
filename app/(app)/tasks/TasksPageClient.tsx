@@ -1493,7 +1493,15 @@ export default function TasksPageClient(props: Props) {
             paddingBottom: BOARD_BLEED,
             marginBottom: -BOARD_BLEED,
           }}
-          className="relative -mx-3 flex min-h-[20rem] flex-col overflow-hidden bg-primary md:-mx-6 lg:-mx-8"
+          // The h-[…] classes are the board's height from the server HTML on,
+          // until the loop above finds something to correct: the screen minus
+          // the 60px top bar (and, on a phone, the 59px bottom nav and its
+          // safe-area inset), plus the 48px BOARD_BLEED. The loop still has the
+          // last word — this just means it starts within a few px of the answer,
+          // instead of the board loading at its content height and the lists'
+          // bottom rows jumping down once the page's JS ran (Speed Insights:
+          // layout shift on /tasks).
+          className="relative -mx-3 flex h-[calc(100dvh-119px-env(safe-area-inset-bottom)+48px)] min-h-[20rem] flex-col overflow-hidden bg-primary md:-mx-6 md:h-[calc(100dvh-60px+48px)] lg:-mx-8"
         >
           <SortableContext items={columnOrder.map(columnSortableId)} strategy={horizontalListSortingStrategy}>
             {/* snap-mandatory + snap-center on each list: one swipe steps to the

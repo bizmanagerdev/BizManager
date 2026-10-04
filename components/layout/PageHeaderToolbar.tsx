@@ -27,11 +27,18 @@ export function PageHeaderToolbar({ children }: { children: ReactNode }) {
     () => true,
     () => false
   );
-  if (!mounted) return null;
 
   // The slot is rendered by AppShell, above us in the tree, so it's in the DOM
   // by the time we render on the client.
-  const host = document.getElementById(PAGE_HEADER_TOOLBAR_ID);
-  if (!host) return null;
-  return createPortal(children, host);
+  const host = mounted ? document.getElementById(PAGE_HEADER_TOOLBAR_ID) : null;
+
+  // The marker is in the server HTML, unlike the portal: it tells the slot to
+  // hold its space open before the portal fills it, so the page doesn't jump
+  // down when it does (see the [data-page-header-toolbar] rule in globals.css).
+  return (
+    <>
+      <span hidden data-page-header-toolbar="" />
+      {host ? createPortal(children, host) : null}
+    </>
+  );
 }

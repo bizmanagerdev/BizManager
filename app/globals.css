@@ -726,3 +726,21 @@ body:has(.dark-topbar-page) #page-header-toolbar {
   --input: var(--sidebar-border);
   --ring: var(--sidebar-ring);
 }
+
+/* Hold the phone toolbar strip open from the FIRST paint on a page that fills it.
+   The strip (AppShell's #page-header-toolbar) is `empty:hidden`, and its content
+   only arrives through PageHeaderToolbar's portal once the page's JS has run — so
+   on a phone the strip used to pop open a second or two after the page showed,
+   pushing everything under it down by its full height (Speed Insights: layout
+   shift on /sales, /payroll/attendance and the other pages that use it). The
+   portal component also renders a hidden [data-page-header-toolbar] marker from
+   the server HTML on, so the strip is open at its min height before it has
+   anything in it, and the controls then fill it without moving the page.
+   Same :has() trick as .board-backdrop above; unlayered and keyed off the id so
+   it beats `empty:hidden`. Where :has() isn't supported, the strip just opens
+   late, as before. */
+@media (max-width: 767px) {
+  body:has([data-page-header-toolbar]) #page-header-toolbar {
+    display: flex;
+  }
+}
