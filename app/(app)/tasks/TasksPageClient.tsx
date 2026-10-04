@@ -1477,8 +1477,18 @@ export default function TasksPageClient(props: Props) {
           mid-lifecycle (the matchMedia listener firing after a resize) otherwise trips
           React's "final argument to useEffect changed size" error inside dnd-kit's own
           hooks. A resize across the 768px breakpoint is rare enough that a remount
-          here is unnoticeable, and it's not expected to happen mid-drag. */}
-      <DndContext key={touchDrag ? "touch" : "mouse"} sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          here is unnoticeable, and it's not expected to happen mid-drag.
+          A fixed id: without one dnd-kit numbers its aria-describedby ids from a
+          module-level counter, which on the server keeps counting across requests,
+          so the server's "DndDescribedBy-N" never matched the browser's and React
+          logged a hydration mismatch (and left cards pointing at a missing id). */}
+      <DndContext
+        id="tasks-board-dnd"
+        key={touchDrag ? "touch" : "mouse"}
+        sensors={sensors}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
         {/* The board is a dark surface (like Trello's): it's what makes the light
             lists and white cards pop, and it marks where the page stops and the
             board begins. Flat navy — the same primary as the chrome above it, so

@@ -220,8 +220,9 @@ export default function DashboardCustomizer({
     <div className="space-y-3">
       {/* rectSortingStrategy, not the vertical one: the chips wrap, so a strategy
           that only knows about a single column would compute the drop target from
-          the wrong axis. */}
-      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+          the wrong axis. A fixed id, so the server and the browser give the chips
+          the same aria-describedby (see the tasks board's DndContext). */}
+      <DndContext id="dashboard-widgets-dnd" sensors={sensors} onDragEnd={handleDragEnd}>
         <SortableContext items={items.map((w) => w.id)} strategy={rectSortingStrategy}>
           <div className="flex flex-wrap gap-2">
             {items.map((w) => (
