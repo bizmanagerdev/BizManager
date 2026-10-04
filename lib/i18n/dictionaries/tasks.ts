@@ -295,7 +295,8 @@ export const tasksDict: Dictionary<TasksKey> = {
     nextButton: "הבא ›",
     savingEllipsis: "שומר...",
     autosaveSaved: "נשמר",
-    showsFromToastPrefix: "המשימה נשמרה ותופיע ברשימה מ־",
+    // No trailing space: the date follows the maqaf directly ("מ־16/05/27").
+    showsFromToastPrefix: "המשימה תופיע ברשימה מ־",
     autosaveFailed: "לא נשמר",
     unsavedTitle: "השינויים לא נשמרו",
     unsavedDescription: "למשימה חסר שם, או פרויקט/נכס שהתחום שבחרת מחייב — לכן השינויים האחרונים לא נשמרו. לצאת בלי לשמור אותם?",
@@ -477,7 +478,7 @@ export const tasksDict: Dictionary<TasksKey> = {
     nextButton: "التالي ›",
     savingEllipsis: "جارٍ الحفظ...",
     autosaveSaved: "تم الحفظ",
-    showsFromToastPrefix: "تم حفظ المهمة وستظهر في القائمة من",
+    showsFromToastPrefix: "ستظهر المهمة في القائمة من ",
     autosaveFailed: "لم يُحفظ",
     unsavedTitle: "لم تُحفظ التغييرات",
     unsavedDescription: "اسم المهمة فارغ، أو ينقصها المشروع/العقار الذي يتطلبه المجال المختار — لذلك لم تُحفظ التغييرات الأخيرة. هل تريد الخروج دون حفظها؟",

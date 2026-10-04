@@ -753,7 +753,8 @@ export function TaskUpsertDialog(rawProps: Props) {
       [...reminderDates].filter(Boolean).sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0] ?? null;
     const showsFrom = taskShowsFromDate({ status, dueDate, nextReminderAt });
     if (!showsFrom) return false;
-    toast.info(`${t(tasksDict, props.locale, "showsFromToastPrefix")} ${formatShortDate(showsFrom)}`);
+    // The prefix carries its own spacing ("מ־" joins the date; Arabic "من " doesn't).
+    toast.info(`${t(tasksDict, props.locale, "showsFromToastPrefix")}${formatShortDate(showsFrom)}`);
     return true;
   }
 
