@@ -8,18 +8,13 @@ import {
   getAdminUserId,
 } from "./db";
 
-// KNOWN FLAKY (2026-09-17): "a worker can log a colleague's full manual
-// shift" intermittently fails with "אין הרשאה לבצע את הפעולה" (RLS/
-// permission-denied) from /api/attendance/phone-reports/manual — but static
-// review of phone_attendance_worker_insert (supabase/migrations/
-// 20260811020000_attendance_reported_by.sql) and current_app_user_id()/
-// is_payroll_worker() found nothing wrong, and a raw postgres "permission
-// denied for table users" (auth.users, needs GRANT SELECT ... TO
-// service_role) shows up unpredictably across UNRELATED tests in the same
-// run too — most likely session_heartbeat's own background write to
-// public.users (components/layout/PresenceTracker.tsx) racing on the same
-// connection pool, not a bug in this route. Needs a live trace to pin down;
-// not yet reproduced deterministically enough to fix with confidence.
+// "a worker can log a colleague's full manual shift" used to fail with
+// "אין הרשאה לבצע את הפעולה": the route inserted with .insert().select(),
+// and RETURNING needs a SELECT policy too — a worker can see only a
+// colleague's OPEN rows (phone_attendance_worker_select_open_coworkers), so
+// reading back a colleague's pending_review row was refused even though the
+// insert itself was allowed. The route now mints the id itself and inserts
+// without reading back.
 //
 // "Sign in a colleague" (components/attendance/AttendanceLogDialog.tsx,
 // opened from the quick-create "דיווח נוכחות" tile) — tested via its real

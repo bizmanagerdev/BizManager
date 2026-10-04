@@ -73,8 +73,15 @@ export async function POST(req: Request) {
     const noteText = typeof body.notes === "string" ? body.notes.trim().slice(0, 500) : "";
     const notes = ["נוסף ידנית", noteText].filter(Boolean).join(" · ");
 
+    // The id is minted here rather than read back with .insert().select():
+    // RETURNING needs a SELECT policy too, and a worker can only see a
+    // colleague's OPEN rows — so filing a colleague's completed
+    // (pending_review) shift would fail on the read-back after the insert
+    // itself was allowed.
+    const id = crypto.randomUUID();
     const row = parsedOut
       ? {
+          id,
           user_id: userId,
           clock_in: parsedIn.toISOString(),
           clock_out: parsedOut.toISOString(),
@@ -85,6 +92,7 @@ export async function POST(req: Request) {
           notes,
         }
       : {
+          id,
           user_id: userId,
           clock_in: parsedIn.toISOString(),
           status: "open",
@@ -93,7 +101,7 @@ export async function POST(req: Request) {
           notes,
         };
 
-    const { data: inserted, error: insertError } = await supabase.from(PHONE_ATTENDANCE_TABLE).insert(row).select("id").maybeSingle();
+    const { error: insertError } = await supabase.from(PHONE_ATTENDANCE_TABLE).insert(row);
     if (insertError) {
       // Unique "one open per user" index — a shift is already open for this worker.
       if (insertError.code === "23505") {
@@ -102,18 +110,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: toHebrewError(insertError.message) }, { status: 400 });
     }
 
-    if (inserted?.id) {
-      logAuditEventAfterResponse({
-        supabase,
-        tableName: PHONE_ATTENDANCE_TABLE,
-        recordId: inserted.id,
-        action: "create",
-        changedBy: profile.id,
-        userRole: profile.role,
-      });
-    }
+    logAuditEventAfterResponse({
+      supabase,
+      tableName: PHONE_ATTENDANCE_TABLE,
+      recordId: id,
+      action: "create",
+      changedBy: profile.id,
+      userRole: profile.role,
+    });
 
-    return NextResponse.json({ ok: true, id: inserted?.id ?? null, opened: !parsedOut });
+    return NextResponse.json({ ok: true, id, opened: !parsedOut });
   } catch (error: unknown) {
     return NextResponse.json({ error: toHebrewError(error, "שגיאה לא צפויה בהוספת המשמרת.") }, { status: 500 });
   }
