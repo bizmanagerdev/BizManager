@@ -23,6 +23,39 @@ test.describe("login", () => {
     await expect(page.getByText(", E2E", { exact: false })).toBeVisible();
   });
 
+  test("the form is in the HTML: typed before any JS runs, it still signs in", async ({ page }) => {
+    // /login is statically prerendered WITH its form. Using useSearchParams()
+    // in LoginClient made Next bail the page out to client rendering — empty
+    // HTML, blank until all its JS loaded (~1.4 s on a mid-range phone). Hold
+    // every script back, so this only passes if the form came in the HTML and
+    // React keeps what was typed into it before hydration.
+    let release!: () => void;
+    const scriptsHeld = new Promise<void>((resolve) => (release = resolve));
+    await page.route("**/_next/static/**", async (route) => {
+      if (route.request().resourceType() === "script") await scriptsHeld;
+      await route.continue();
+    });
+
+    await page.goto("/login", { waitUntil: "commit" });
+    await expect(page.locator('input[type="password"]')).toBeVisible();
+    await page.locator('input[type="email"]').fill(E2E_USERS.admin.email);
+    await page.locator('input[type="password"]').fill(E2E_USERS.admin.password);
+    release();
+
+    // Hydrated = React has attached to the field; only then does submit work.
+    await page.waitForFunction(() => {
+      const el = document.querySelector('input[type="email"]');
+      return !!el && Object.keys(el).some((k) => k.startsWith("__reactProps$"));
+    });
+    await page.getByRole("button", { name: "התחברות" }).click();
+    await page.waitForURL("**/dashboard");
+  });
+
+  test("?email= prefills the email field", async ({ page }) => {
+    await page.goto(`/login?email=${encodeURIComponent(E2E_USERS.admin.email)}`);
+    await expect(page.locator('input[type="email"]')).toHaveValue(E2E_USERS.admin.email);
+  });
+
   test("a wrong password shows a Hebrew error and stays on /login", async ({ page }) => {
     await page.goto("/login");
     await page.locator('input[type="email"]').fill(E2E_USERS.admin.email);

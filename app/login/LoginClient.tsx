@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, type ChangeEvent } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useRouter } from "next/navigation";
 import { HideIcon, ShowIcon } from "@/components/ui/icons";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AuthScreen } from "@/components/auth/AuthScreen";
@@ -11,10 +11,29 @@ import { toHebrewError } from "@/lib/error-messages";
 
 export default function LoginClient() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
 
-  const [email, setEmail] = useState<string>((searchParams.get("email") ?? "").trim());
+  const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
+
+  // ?email= is read here, after mount, NOT with useSearchParams(): that hook
+  // made Next bail the whole page out of its static prerender, so /login
+  // shipped as empty HTML and stayed blank until all of its JS had loaded
+  // (~1.4 s on a mid-range phone, before the network). Now the form is in the
+  // HTML from the first byte — which means it can be typed into, or filled by
+  // a password manager, before React takes over. Keep whatever is already in
+  // the fields, or the state would disagree with what the user sees.
+  useEffect(() => {
+    const typedEmail = emailRef.current?.value ?? "";
+    const linkedEmail = (new URLSearchParams(window.location.search).get("email") ?? "").trim();
+    // A one-time sync from outside React (the URL and pre-hydration DOM input)
+    // on mount — a legitimate effect-driven setState, not a render cascade.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (typedEmail || linkedEmail) setEmail(typedEmail || linkedEmail);
+    const typedPassword = passwordRef.current?.value ?? "";
+    if (typedPassword) setPassword(typedPassword);
+  }, []);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [navTarget, setNavTarget] = useState<"forgot" | null>(null);
@@ -87,6 +106,7 @@ export default function LoginClient() {
         <div className="space-y-2">
           <label className="text-sm font-medium text-foreground">אימייל</label>
           <Input
+            ref={emailRef}
             type="email"
             value={email}
             onChange={onEmailChange}
@@ -99,6 +119,7 @@ export default function LoginClient() {
           <label className="text-sm font-medium text-foreground">סיסמה</label>
           <div className="relative">
             <Input
+              ref={passwordRef}
               placeholder="הקלד/י סיסמה"
               type={showPassword ? "text" : "password"}
               value={password}

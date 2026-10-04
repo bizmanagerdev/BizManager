@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AuthScreen } from "@/components/auth/AuthScreen";
 import { Button } from "@/components/ui/button";
@@ -10,11 +10,18 @@ import { Input } from "@/components/ui/input";
 
 export default function ForgotPasswordClient() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const emailRef = useRef<HTMLInputElement>(null);
 
-  const [email, setEmail] = useState<string>(
-    (searchParams.get("email") ?? "").trim()
-  );
+  const [email, setEmail] = useState<string>("");
+
+  // ?email= is read after mount, not with useSearchParams() — that hook kept
+  // this page out of its static prerender (blank until JS loaded). Anything
+  // typed or autofilled before React took over wins. Same as LoginClient.
+  useEffect(() => {
+    const typedEmail = emailRef.current?.value ?? "";
+    const linkedEmail = (new URLSearchParams(window.location.search).get("email") ?? "").trim();
+    if (typedEmail || linkedEmail) setEmail(typedEmail || linkedEmail);
+  }, []);
   const [err, setErr] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
@@ -77,6 +84,7 @@ export default function ForgotPasswordClient() {
         <div className="space-y-2">
           <label className="text-sm font-medium text-foreground">אימייל</label>
           <Input
+            ref={emailRef}
             type="email"
             value={email}
             onChange={onEmailChange}

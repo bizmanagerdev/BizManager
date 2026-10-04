@@ -1,11 +1,6 @@
-import { Suspense } from "react";
 import ForgotPasswordClient from "@/app/forgot-password/ForgotPasswordClient";
 
+// Fully static, same as /login — see app/login/page.tsx.
 export default function ForgotPasswordPage() {
-  return (
-    <Suspense>
-      <ForgotPasswordClient />
-    </Suspense>
-  );
+  return <ForgotPasswordClient />;
 }
-
