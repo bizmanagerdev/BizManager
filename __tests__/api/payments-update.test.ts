@@ -178,7 +178,7 @@ describe("POST /api/payments/update — persistence & audit", () => {
   it("persists, logs an 'update' audit event and syncs tags on success", async () => {
     const sb = makeSupabase({ payments: { data: { ...EXISTING, id: "pay-1" }, error: null } });
     grant(sb);
-    const res = await post(VALID);
+    const res = await post({ ...VALID, tag_ids: [] });
     expect(res.status).toBe(200);
     expect(logAuditEvent).toHaveBeenCalledWith(
       expect.objectContaining({ tableName: "payments", action: "update", recordId: "pay-1", changedBy: "prof-1" })
@@ -187,6 +187,14 @@ describe("POST /api/payments/update — persistence & audit", () => {
       replace: true,
       createdBy: "prof-1",
     });
+  });
+
+  it("leaves the payment's tags alone when the caller sends no tag_ids (screens with no tag picker)", async () => {
+    const sb = makeSupabase({ payments: { data: { ...EXISTING, id: "pay-1" }, error: null } });
+    grant(sb);
+    const res = await post(VALID); // no tag_ids — e.g. the checks page or project income
+    expect(res.status).toBe(200);
+    expect(syncEntityTags).not.toHaveBeenCalled();
   });
 });
 

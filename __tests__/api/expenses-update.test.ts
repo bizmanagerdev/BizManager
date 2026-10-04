@@ -221,12 +221,19 @@ describe("POST /api/expenses/update — persistence & audit", () => {
 
   it("logs an 'update' audit event and syncs tags on success", async () => {
     grant(sb(standaloneExpenseRow()));
-    const res = await post(VALID);
+    const res = await post({ ...VALID, tag_ids: [] });
     expect(res.status).toBe(200);
     expect(logAuditEvent).toHaveBeenCalledWith(
       expect.objectContaining({ tableName: "expenses", action: "update", recordId: "exp-1", changedBy: "prof-1" })
     );
     expect(syncEntityTags).toHaveBeenCalled();
+  });
+
+  it("leaves the expense's tags alone when the caller sends no tag_ids", async () => {
+    grant(sb(standaloneExpenseRow()));
+    const res = await post(VALID);
+    expect(res.status).toBe(200);
+    expect(syncEntityTags).not.toHaveBeenCalled();
   });
 });
 

@@ -1,6 +1,6 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { parseTagIds, syncEntityTags } from "@/lib/tags";
@@ -221,7 +221,7 @@ export async function POST(req: Request) {
     }
 
     if (updatedExpenseId) {
-      await logAuditEvent({
+      logAuditEventAfterResponse({
         supabase,
         tableName: "expenses",
         recordId: updatedExpenseId,
@@ -229,10 +229,14 @@ export async function POST(req: Request) {
         changedBy: profile.id,
         userRole: profile.role,
       });
-      await syncEntityTags(supabase, "expense", updatedExpenseId, parseTagIds(body.tag_ids), {
-        replace: true,
-        createdBy: profile.id,
-      });
+      // Only when the caller sent tags — replace:true clears every link first
+      // (see the same guard in payments/update).
+      if ("tag_ids" in body) {
+        await syncEntityTags(supabase, "expense", updatedExpenseId, parseTagIds(body.tag_ids), {
+          replace: true,
+          createdBy: profile.id,
+        });
+      }
     }
 
     return NextResponse.json({ expense, projectExpense });

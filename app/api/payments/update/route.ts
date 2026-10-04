@@ -1,6 +1,6 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
-import { logAuditEvent } from "@/lib/audit";
+import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { buildPaymentInsert, PAYMENT_SELECT } from "@/lib/payments";
 import { getCurrentVatRate } from "@/lib/settings/vat";
@@ -150,7 +150,7 @@ export async function POST(req: Request) {
 
     if (paymentError) return NextResponse.json({ error: toHebrewError(paymentError.message) }, { status: 400 });
     if (payment?.id) {
-      await logAuditEvent({
+      logAuditEventAfterResponse({
         supabase,
         tableName: "payments",
         recordId: payment.id,
@@ -158,10 +158,16 @@ export async function POST(req: Request) {
         changedBy: profile.id,
         userRole: profile.role,
       });
-      await syncEntityTags(supabase, "payment", payment.id, parseTagIds(body.tag_ids), {
-        replace: true,
-        createdBy: profile.id,
-      });
+      // Only when the caller sent tags. replace:true clears every link first, so
+      // an edit from a screen with no tag picker (checks, project income, rent
+      // schedule) used to wipe the payment's tags — same guard as customers and
+      // tasks/update.
+      if ("tag_ids" in body) {
+        await syncEntityTags(supabase, "payment", payment.id, parseTagIds(body.tag_ids), {
+          replace: true,
+          createdBy: profile.id,
+        });
+      }
     }
 
     return NextResponse.json({ payment });
