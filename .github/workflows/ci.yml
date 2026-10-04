@@ -95,6 +95,14 @@ jobs:
           docker version
           docker ps
 
+      - name: Enable storage for this CI run only
+        # supabase/config.toml keeps storage off so local dev stays light;
+        # the documents upload E2E test needs it, so it's switched on here
+        # for the CI stack alone. Bucket + policy are created after start.
+        run: |
+          sed -i '/^\[storage\]/,/^enabled/ s/^enabled = false/enabled = true/' supabase/config.toml
+          grep -n -A 3 '^\[storage\]' supabase/config.toml
+
       - name: Start local Supabase stack
         # --yes: a bare `supabase start` can hit a confirmation prompt (e.g.
         # first-time image pull) — with no TTY on a CI runner that fails
@@ -263,6 +271,41 @@ jobs:
 
       - name: Grant service_role read on auth.users (CI-only local stack)
         run: psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -c "GRANT SELECT ON auth.users TO service_role;"
+
+      - name: Create the documents bucket and a staff storage policy (CI-only local stack)
+        # Production's admin/office policies on storage.objects were made by
+        # hand in the dashboard and never captured in a migration, so the
+        # local stack has none. This stand-in only exists in the CI database.
+        run: |
+          psql -v ON_ERROR_STOP=1 "postgresql://postgres:postgres@127.0.0.1:54322/postgres" <<'SQL'
+          insert into storage.buckets (id, name, public)
+          values ('business-documents', 'business-documents', false)
+          on conflict (id) do nothing;
+
+          drop policy if exists ci_staff_business_documents on storage.objects;
+          create policy ci_staff_business_documents on storage.objects
+          for all to authenticated
+          using (
+            bucket_id = 'business-documents'
+            and exists (
+              select 1 from public.users u
+              where u.auth_user_id = auth.uid()
+                and u.role in ('admin', 'office')
+                and u.active = true
+                and coalesce(u.system_access, false) = true
+            )
+          )
+          with check (
+            bucket_id = 'business-documents'
+            and exists (
+              select 1 from public.users u
+              where u.auth_user_id = auth.uid()
+                and u.role in ('admin', 'office')
+                and u.active = true
+                and coalesce(u.system_access, false) = true
+            )
+          );
+          SQL
 
       - name: Run E2E tests
         run: npm run test:e2e

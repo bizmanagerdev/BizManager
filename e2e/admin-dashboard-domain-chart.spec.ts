@@ -7,24 +7,18 @@ import { createTestExpense, deleteTestExpense } from "./db";
 // which round-trips to loadDomainChartMonth (a server action, re-checking the
 // viewer's role) rather than re-deriving anything client-side.
 //
-// Skipped: confirmed via a multi-round diagnostic that the underlying data
-// path is correct (loadDomainCashBreakdown, called directly against the live
-// CI stack as a signed-in admin, returns real bars) and that
-// DomainChartSlowCell (DashboardSections.tsx) does mount <DomainChartCard>
-// once a same-month expense is seeded (its own null-when-empty gate — see
-// the card's own comment there — was the FIRST bug this chased down and is
-// fixed by seeding an expense). But even with the card genuinely mounted,
-// CI still reports its title element as present in the DOM yet stably
-// "hidden" for the full 15s wait, on every retry, every run. That doesn't
-// match a data or a locator bug — it matches something in Next.js's
-// streaming-SSR "reveal" mechanism (server-streamed Suspense content sits
-// behind a `hidden` attribute until a small inline script un-hides it)
-// failing to run for this one client component specifically, which would
-// need real browser devtools/console access to pin down further, not
-// available from this CI-only, curl-based diagnostic loop. Revisit with
-// that access rather than more blind retries.
+// Was skipped: CI reported the title as present in the DOM yet stably
+// "hidden". At xl and up the dashboard is a FIXED-height grid
+// (DASHBOARD_BOARD_CLASS: xl:h-[calc(100dvh-61px-3rem)]) whose rows are minmax(0,…fr),
+// and Playwright's default 1280x720 viewport sits exactly on the xl
+// breakpoint — with every widget populated, the chart's row can collapse to
+// zero height, which Playwright counts as hidden. Below xl the board is a
+// plain stack and this card gets a fixed 16rem (see the card's own comment),
+// so the test runs at a narrower viewport.
 test.describe("admin — dashboard domain chart card", () => {
-  test.skip("switching the chart's month picker loads without error", async ({ page }) => {
+  test.use({ viewport: { width: 1100, height: 900 } });
+
+  test("switching the chart's month picker loads without error", async ({ page }) => {
     test.setTimeout(60_000);
     const expense = await createTestExpense({ amount: 42, description: `E2E domain chart ${Date.now()}` });
     try {

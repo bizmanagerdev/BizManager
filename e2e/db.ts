@@ -780,6 +780,18 @@ export async function createTestDocument(overrides: { title?: string } = {}): Pr
   return data as TestDocument;
 }
 
+export async function getDocumentFile(
+  id: string
+): Promise<{ file_name: string; storage_key: string | null } | null> {
+  const { data, error } = await adminClient()
+    .from("documents")
+    .select("file_name,storage_key")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return data as { file_name: string; storage_key: string | null } | null;
+}
+
 export async function deleteTestDocument(id: string): Promise<void> {
   const { error } = await adminClient().from("documents").delete().eq("id", id);
   if (error) throw error;
