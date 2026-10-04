@@ -12,8 +12,8 @@
 // cleared on unmount: signing in as someone else re-renders the layout and
 // overwrites it, and leaving the authenticated area is a full navigation.
 
-import * as Sentry from "@sentry/nextjs";
 import { useEffect } from "react";
+import { withSentry } from "@/lib/sentry-lazy";
 
 type Props = {
   id: string;
@@ -24,13 +24,15 @@ type Props = {
 
 export default function SentryUser({ id, email, fullName, role }: Props) {
   useEffect(() => {
-    Sentry.setUser({
-      id,
-      email: email ?? undefined,
-      username: fullName ?? undefined,
+    withSentry((Sentry) => {
+      Sentry.setUser({
+        id,
+        email: email ?? undefined,
+        username: fullName ?? undefined,
+      });
+      // Separate tag so you can filter/group by role in the issue stream.
+      Sentry.setTag("user.role", role);
     });
-    // Separate tag so you can filter/group by role in the issue stream.
-    Sentry.setTag("user.role", role);
   }, [id, email, fullName, role]);
 
   return null;

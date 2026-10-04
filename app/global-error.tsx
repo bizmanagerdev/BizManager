@@ -3,8 +3,8 @@
 // Root-level error boundary: reports unhandled render errors to Sentry and shows
 // a Hebrew fallback. Replaces the whole document when a top-level error occurs,
 // so it must render its own <html>/<body>.
-import * as Sentry from "@sentry/nextjs";
 import { useEffect } from "react";
+import { withSentry } from "@/lib/sentry-lazy";
 import { reloadIfStaleBuild } from "@/lib/ui/auto-recover";
 
 export default function GlobalError({
@@ -13,7 +13,8 @@ export default function GlobalError({
   error: Error & { digest?: string };
 }) {
   useEffect(() => {
-    Sentry.captureException(error);
+    // Reported before the reload below — see app/(app)/error.tsx.
+    withSentry((Sentry) => Sentry.captureException(error));
     // See lib/ui/auto-recover.ts — a stale/mismatched build gets one
     // automatic hard reload instead of leaving the user stuck here.
     reloadIfStaleBuild(error);

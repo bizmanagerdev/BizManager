@@ -1,5 +1,5 @@
 import { processLock } from "@supabase/supabase-js";
-import * as Sentry from "@sentry/nextjs";
+import { withSentry } from "@/lib/sentry-lazy";
 
 /**
  * Wrapper around the lock every client-side Supabase call (auth AND every
@@ -120,12 +120,10 @@ export async function instrumentedLock<R>(
     const result = await processLock(name, acquireTimeout, fn);
     const waitedMs = Date.now() - startedAt;
     if (waitedMs > SLOW_THRESHOLD_MS) {
-      Sentry.addBreadcrumb({
-        category: "auth-lock",
-        message: "lock acquired slowly",
-        level: "warning",
-        data: { name, waitedMs, path: path(), interactive },
-      });
+      const data = { name, waitedMs, path: path(), interactive };
+      withSentry((Sentry) =>
+        Sentry.addBreadcrumb({ category: "auth-lock", message: "lock acquired slowly", level: "warning", data })
+      );
     }
     return result;
   } catch (firstErr) {
@@ -139,21 +137,27 @@ export async function instrumentedLock<R>(
     // outright the first time it takes a bit too long.
     try {
       const result = await processLock(name, RETRY_TIMEOUT_MS, fn);
-      Sentry.addBreadcrumb({
-        category: "auth-lock",
-        message: "lock acquired on retry after initial timeout",
-        level: "warning",
-        data: { name, waitedMs: Date.now() - startedAt, path: path(), interactive },
-      });
+      const data = { name, waitedMs: Date.now() - startedAt, path: path(), interactive };
+      withSentry((Sentry) =>
+        Sentry.addBreadcrumb({
+          category: "auth-lock",
+          message: "lock acquired on retry after initial timeout",
+          level: "warning",
+          data,
+        })
+      );
       return result;
     } catch (secondErr) {
       if (isAcquireTimeoutError(secondErr)) {
         const waitedMs = Date.now() - startedAt;
-        Sentry.captureMessage("auth lock acquisition timed out", {
-          level: "warning",
-          tags: { area: "auth-lock", interactive: String(interactive) },
-          extra: { name, waitedMs, path: path(), retried: true },
-        });
+        const extra = { name, waitedMs, path: path(), retried: true };
+        withSentry((Sentry) =>
+          Sentry.captureMessage("auth lock acquisition timed out", {
+            level: "warning",
+            tags: { area: "auth-lock", interactive: String(interactive) },
+            extra,
+          })
+        );
         if (interactive) emit(AUTH_LOCK_EVENTS.timeout, { waitedMs });
       }
       throw secondErr;

@@ -1,5 +1,10 @@
 // Sentry init for the browser. No-op unless NEXT_PUBLIC_SENTRY_DSN is set.
 import * as Sentry from "@sentry/nextjs";
+import { provideSentry } from "@/lib/sentry-lazy";
+
+// Runs before hydration, so every withSentry() call in the browser uses this
+// already-loaded SDK and never depends on loading a chunk (lib/sentry-lazy.ts).
+provideSentry(Sentry);
 
 const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
 

@@ -19,9 +19,9 @@
 // actually a connection issue. Matches global-error.tsx's honest, generic
 // wording instead.
 import { useEffect } from "react";
-import * as Sentry from "@sentry/nextjs";
 import { Button } from "@/components/ui/button";
 import { RefreshIcon, WarningIcon } from "@/components/ui/icons";
+import { withSentry } from "@/lib/sentry-lazy";
 import { reloadIfStaleBuild } from "@/lib/ui/auto-recover";
 
 export default function AppError({
@@ -32,7 +32,10 @@ export default function AppError({
   reset: () => void;
 }) {
   useEffect(() => {
-    Sentry.captureException(error);
+    // Report BEFORE the reload below: the page only unloads after pending
+    // promise callbacks run, and the browser already has the SDK loaded, so
+    // the lazily loaded report still goes out first (lib/sentry-lazy.ts).
+    withSentry((Sentry) => Sentry.captureException(error));
     // A stale/mismatched build gets one automatic hard reload instead of
     // making the user notice and press "נסה שוב" — reset() alone can't fix
     // this class of error since it re-renders against the same broken

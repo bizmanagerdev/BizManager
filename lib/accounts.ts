@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/nextjs";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isCollectedPayment } from "@/lib/orders/paymentStatus";
 import {
@@ -13,6 +12,7 @@ import type { LoanRepayment } from "@/lib/loans";
 import { buildFocusHref } from "@/lib/audit";
 import { getBusinessDomainLabel } from "@/lib/expenses";
 import { propertyDisplayName } from "@/lib/properties";
+import { withSentry } from "@/lib/sentry-lazy";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Accounts layer (חשבונות) — real money containers with a running balance.
@@ -310,9 +310,8 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     if (error) {
       const message = error instanceof Error ? error.message : String((error as { message?: unknown })?.message ?? error);
       failedTables.push(table);
-      Sentry.captureException(new Error(`[accounts] balance scan failed for "${table}": ${message}`), {
-        tags: { area: "accounts", table },
-      });
+      const scanError = new Error(`[accounts] balance scan failed for "${table}": ${message}`);
+      withSentry((Sentry) => Sentry.captureException(scanError, { tags: { area: "accounts", table } }));
       return [] as Row[];
     }
     return data;

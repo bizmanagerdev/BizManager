@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { BackspaceIcon, LocationIcon, SpinnerIcon, SyncIcon, WarningIcon } from "@/components/ui/icons";
-import * as Sentry from "@sentry/nextjs";
+import { withSentry } from "@/lib/sentry-lazy";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
@@ -635,11 +635,13 @@ export default function OrderConfirmDialog({
         // The client handles this failure, so it never reaches Sentry on its own —
         // report it with the real server message + status. That's what was missing
         // when this only surfaced as a screenshot of "אישור ההזמנה נכשל".
-        Sentry.captureMessage("order confirm failed", {
-          level: "error",
-          tags: { area: "order-confirm" },
-          extra: { orderId, status: result.status, serverError: result.error },
-        });
+        withSentry((Sentry) =>
+          Sentry.captureMessage("order confirm failed", {
+            level: "error",
+            tags: { area: "order-confirm" },
+            extra: { orderId, status: result.status, serverError: result.error },
+          })
+        );
         const fallback =
           result.status === 413
             ? "הקבצים שצורפו גדולים מדי. צמצמו את מספר התמונות ונסו שוב."
@@ -655,7 +657,7 @@ export default function OrderConfirmDialog({
         router.refresh();
       });
     } catch (err: unknown) {
-      Sentry.captureException(err, { tags: { area: "order-confirm" } });
+      withSentry((Sentry) => Sentry.captureException(err, { tags: { area: "order-confirm" } }));
       setError(toHebrewError(err, "שגיאה לא ידועה"));
     } finally {
       setSubmitting(false);
