@@ -1,7 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { UserProfile, UserRole } from "@/lib/auth/requireProfile";
-import { getScheduleEntries, type CalendarEntry } from "@/lib/projectSchedule";
+import type { UserRole } from "@/lib/auth/requireProfile";
 import { isPayrollWorkerType } from "@/lib/payroll-worker-type";
 import type { SalaryAgreementRow } from "@/lib/payroll";
 import { EMPTY_QUICK_ACTIONS, type QuickActionsData } from "@/app/(app)/dashboard/quick-actions-types";
@@ -40,21 +39,19 @@ function formatOrderDate(value: string | null) {
  * data and NEVER rejects, so it can be passed unawaited from the dashboard page
  * to the client (the buttons render instantly; this streams in to fill dialogs).
  */
-export async function loadQuickActionsData(
-  supabase: SupabaseClient,
-  profile: Pick<UserProfile, "id">
-): Promise<QuickActionsData> {
+export async function loadQuickActionsData(supabase: SupabaseClient): Promise<QuickActionsData> {
   try {
+    // One round of queries, all at once. (The viewer's schedule and open shift
+    // used to ride along too — three more round trips one after another — but
+    // no + dialog reads them.)
     const [
       { data: projectRows },
       { data: orderRows },
       { data: propertyRows },
-      { data: productRows },
+      productsWithStock,
       { data: customerRows },
       { data: userRows },
       { data: salaryAgreementRows },
-      { data: currentOpenSessionRow },
-      scheduleEntries,
     ] = await Promise.all([
       supabase
         .from("project_dashboard_view")
@@ -72,12 +69,17 @@ export async function loadQuickActionsData(
         .eq("is_active", true)
         .order("address", { ascending: true })
         .range(0, 99),
+      // Live stock (on-hand − reserved) is attached as soon as the products
+      // arrive, still inside this round, so the quick-create order dialog's
+      // catalog tiles can warn on shortfalls the same way the full
+      // /sales/orders/new page does.
       supabase
         .from("products_with_last_used")
         .select("id,name,sku,barcode,description,base_price,base_cost,active")
         .order("order_count", { ascending: false })
         .order("name", { ascending: true })
-        .range(0, 49),
+        .range(0, 49)
+        .then(({ data: productRows }) => attachProductStock(supabase, (productRows ?? []) as Row[])),
       supabase
         .from("customer_overview_view")
         .select("customer_id,customer_name,name_for_invoice,phone,email,address")
@@ -92,15 +94,6 @@ export async function loadQuickActionsData(
         .from("salary_agreements")
         .select("id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours")
         .order("valid_from", { ascending: false }),
-      supabase
-        .from("attendance_sessions")
-        .select("id,clock_in")
-        .eq("user_id", profile.id)
-        .is("clock_out", null)
-        .order("clock_in", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      getScheduleEntries(supabase, { scope: "mine", userId: profile.id }).catch(() => [] as CalendarEntry[]),
     ]);
 
     const projects = ((projectRows ?? []) as Row[])
@@ -154,11 +147,6 @@ export async function loadQuickActionsData(
         pay_tracking_mode: row.pay_tracking_mode,
       }));
 
-    const currentOpenSession =
-      currentOpenSessionRow && typeof currentOpenSessionRow.clock_in === "string"
-        ? { id: typeof currentOpenSessionRow.id === "string" ? currentOpenSessionRow.id : "", clock_in: currentOpenSessionRow.clock_in }
-        : null;
-
     const customers = ((customerRows ?? []) as Row[])
       .map((row) => ({
         id: getString(row, "customer_id") ?? "",
@@ -169,13 +157,6 @@ export async function loadQuickActionsData(
       }))
       .filter((row) => row.id) as unknown as Row[];
 
-    // Attach live stock (on-hand − reserved) so the quick-create order dialog's
-    // catalog tiles can warn on shortfalls the same way the full /sales/orders/new
-    // page does — this loader previously returned products_with_last_used rows
-    // as-is, with no stock field, so the shortfall warning silently never fired
-    // when adding items from the dashboard's "+" quick-create dialog.
-    const productsWithStock = await attachProductStock(supabase, (productRows ?? []) as Row[]);
-
     return {
       customers,
       products: productsWithStock,
@@ -183,9 +164,7 @@ export async function loadQuickActionsData(
       orders,
       properties,
       users,
-      currentOpenSession,
       salaryAgreements: ((salaryAgreementRows ?? []) as SalaryAgreementRow[]) ?? [],
-      scheduleEntries: scheduleEntries ?? [],
     };
   } catch {
     return EMPTY_QUICK_ACTIONS;

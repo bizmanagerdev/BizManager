@@ -36,7 +36,7 @@ describe("GET /api/quick-actions/data", () => {
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(loadQuickActionsData).toHaveBeenCalledWith(supabase, { id: "u1" });
+    expect(loadQuickActionsData).toHaveBeenCalledWith(supabase);
     expect(body).toEqual({ ...LISTS, currentUserId: "u1", role: "worker", locale: "ar" });
   });
 

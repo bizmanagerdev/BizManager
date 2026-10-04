@@ -29,6 +29,8 @@ type Props = {
   appName?: string;
   companyName?: string;
   userName?: string;
+  /** Signed-in user's public.users id — keys the + menu's on-device copy of its lists. */
+  viewerId?: string;
   viewerRole?: string;
   /** Signed-in worker's UI language ('he' | 'ar'); office/admin are always 'he'. */
   viewerLocale?: string | null;
@@ -55,6 +57,7 @@ export default function AppShell({
   appName,
   companyName,
   userName,
+  viewerId,
   viewerRole,
   viewerLocale,
   viewerSectionAccess = DEFAULT_SECTION_ACCESS,
@@ -164,6 +167,7 @@ export default function AppShell({
               <BottomNav
                 items={bottom}
                 moreItems={more}
+                viewerId={viewerId}
                 viewerRole={viewerRole}
                 viewerLocale={viewerLocale === "ar" ? "ar" : "he"}
               />
@@ -173,7 +177,7 @@ export default function AppShell({
 
         {/* Quick-create, floating over the bottom-left corner on desktop — it
             portals itself to <body>, see the component for why. */}
-        <DesktopQuickCreateFab viewerRole={viewerRole} />
+        <DesktopQuickCreateFab viewerId={viewerId} viewerRole={viewerRole} />
       </div>
       </PageTitleProvider>
      </SidebarCollapseProvider>

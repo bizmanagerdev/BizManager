@@ -34,6 +34,7 @@ export default async function AppGroupLayout({ children }: { children: ReactNode
   return (
     <AppShell
       userName={profile.full_name ?? profile.email ?? undefined}
+      viewerId={profile.id}
       viewerRole={profile.role}
       viewerLocale={profile.locale}
       viewerSectionAccess={profile.section_access}

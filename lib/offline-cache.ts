@@ -71,3 +71,14 @@ export async function loadSnapshot<T>(key: string): Promise<Snapshot<T> | null> 
     return null;
   }
 }
+
+/** Drop the snapshot for `key` (e.g. it no longer matches the signed-in user's
+ *  settings). Best-effort. */
+export async function deleteSnapshot(key: string): Promise<void> {
+  if (!idbAvailable()) return;
+  try {
+    await tx("readwrite", (s) => s.delete(key));
+  } catch {
+    // unavailable — nothing to drop
+  }
+}

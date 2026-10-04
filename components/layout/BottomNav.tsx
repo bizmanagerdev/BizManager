@@ -22,6 +22,7 @@ import type { Locale } from "@/lib/i18n/types";
 type Props = {
   items: SidebarNavItem[];
   moreItems?: SidebarNavItem[];
+  viewerId?: string;
   viewerRole?: string;
   viewerLocale?: Locale;
 };
@@ -45,7 +46,7 @@ function toMoreSections(items: SidebarNavItem[]): MoreSection[] {
   return sections;
 }
 
-export function BottomNav({ items, moreItems = [], viewerRole, viewerLocale = "he" }: Props) {
+export function BottomNav({ items, moreItems = [], viewerId, viewerRole, viewerLocale = "he" }: Props) {
   const [moreOpen, setMoreOpen] = useState(false);
   const moreBodyRef = useRef<HTMLDivElement>(null);
   const moreSwipeProps = useSwipeToDismiss({
@@ -107,7 +108,7 @@ export function BottomNav({ items, moreItems = [], viewerRole, viewerLocale = "h
 
           {/* The centre + — quick-create without leaving the page. */}
           <div className="flex shrink-0 items-center justify-center px-1">
-            <QuickCreateMenu viewerRole={viewerRole} variant="fab" />
+            <QuickCreateMenu viewerId={viewerId} viewerRole={viewerRole} variant="fab" />
           </div>
 
           <div className="flex flex-1 items-center justify-around gap-0.5">

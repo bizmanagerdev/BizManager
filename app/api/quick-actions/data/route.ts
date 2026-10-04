@@ -21,7 +21,7 @@ export async function GET() {
     if (!access.ok) return access.response;
     const { supabase, profile } = access.value;
 
-    const data = await loadQuickActionsData(supabase, { id: profile.id });
+    const data = await loadQuickActionsData(supabase);
     return NextResponse.json({
       ...data,
       currentUserId: profile.id,

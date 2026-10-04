@@ -22,7 +22,7 @@ const subscribe = () => () => {};
  * accounts page's + / −), which has to keep working at every width — the visible
  * + down there is the bottom nav's FAB.
  */
-export function DesktopQuickCreateFab({ viewerRole }: { viewerRole?: string }) {
+export function DesktopQuickCreateFab({ viewerId, viewerRole }: { viewerId?: string; viewerRole?: string }) {
   // Server render → false, so nothing is emitted into the SSR HTML and there's
   // no hydration mismatch; the portal appears on the client re-render.
   const onClient = useSyncExternalStore(
@@ -34,7 +34,7 @@ export function DesktopQuickCreateFab({ viewerRole }: { viewerRole?: string }) {
 
   return createPortal(
     <div className="fixed bottom-6 left-6 z-40 hidden md:block">
-      <QuickCreateMenu viewerRole={viewerRole} variant="desktopFab" />
+      <QuickCreateMenu viewerId={viewerId} viewerRole={viewerRole} variant="desktopFab" />
     </div>,
     document.body
   );

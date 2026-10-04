@@ -5,7 +5,6 @@
 // The option shapes below used to live in DashboardActions.tsx, the dashboard's
 // own tile grid. That grid is gone — every create flow is behind the + menu now
 // — so they live here, next to the payload that carries them.
-import type { CalendarEntry } from "@/lib/projectSchedule";
 import type { SalaryAgreementRow } from "@/lib/payroll";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import type { PayrollWorkerType } from "@/lib/payroll-worker-type";
@@ -38,12 +37,6 @@ export type EntityOption = {
   subtitle?: string;
 };
 
-/** The viewer's currently-running shift, if they have one. */
-export type OpenSessionInfo = {
-  id: string;
-  clock_in: string;
-};
-
 /** The data the quick-action create dialogs need (dropdowns / pickers). */
 export type QuickActionsData = {
   customers: Row[];
@@ -52,9 +45,7 @@ export type QuickActionsData = {
   orders: EntityOption[];
   properties: EntityOption[];
   users: UserOption[];
-  currentOpenSession: OpenSessionInfo | null;
   salaryAgreements: SalaryAgreementRow[];
-  scheduleEntries: CalendarEntry[];
 };
 
 export const EMPTY_QUICK_ACTIONS: QuickActionsData = {
@@ -64,7 +55,5 @@ export const EMPTY_QUICK_ACTIONS: QuickActionsData = {
   orders: [],
   properties: [],
   users: [],
-  currentOpenSession: null,
   salaryAgreements: [],
-  scheduleEntries: [],
 };

@@ -13,7 +13,7 @@
 
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { AddIcon, CashIcon, ClockIcon, CloseIcon, ExpenseIcon, IncomeIcon, NotificationIcon, OrderIcon, PaymentIcon, ProjectIcon, SpinnerIcon, TaskIcon, TimerIcon, TransferIcon, UserIcon, VehicleIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,7 @@ import {
 import { t } from "@/lib/i18n/t";
 import { quickCreateDict } from "@/lib/i18n/dictionaries/quickCreate";
 import type { Locale } from "@/lib/i18n/types";
+import { deleteSnapshot, loadSnapshot, saveSnapshot } from "@/lib/offline-cache";
 
 // The dialogs (order wizard, project wizard, expense form…) are a big chunk of
 // JS. Nobody pays for it until the + menu is first opened.
@@ -116,32 +117,69 @@ const ADMIN_OR_OFFICE_ACTIONS = new Set<QuickCreateAction>([
 // approval queue as everything else.
 const WORKER_ACTIONS = new Set<QuickCreateAction>(["task", "reminder", "attendance"]);
 
-// Module-scope cache: the top bar remounts on some navigations, and the picker
-// data (customers / products / projects…) is the same for the whole session, so
-// fetch it at most once per page load and share it across mounts.
+// Module-scope store: the + menu is mounted twice (bottom-nav FAB + desktop
+// FAB) and remounts on some navigations, and the picker data (customers /
+// products / projects…) is shared by all of them, so it's loaded once and every
+// mounted menu re-renders when it changes.
+//
+// Speed (the dialogs must open the moment a tile is tapped): the lists are kept
+// on the device too (lib/offline-cache, keyed by user), so after a reload the
+// last copy is shown at once while a fresh one loads, and the dialog code and
+// the lists are fetched while the page is idle (warmQuickCreate) instead of
+// when + is tapped. The "טוען..." dialog below is only left for a first ever
+// open on a device.
 let dataCache: QuickCreateData | null = null;
+/** Loaded from the server during this page load (not just the device copy). */
+let dataFresh = false;
 let inFlight: Promise<QuickCreateData | null> | null = null;
+let snapshotKey: string | null = null;
+const dataListeners = new Set<() => void>();
+
+// A device copy younger than this is good enough until the menu is opened (which
+// always refreshes); older, and the idle warm-up refreshes it straight away.
+const SNAPSHOT_FRESH_MS = 10 * 60 * 1000;
+
+function setQuickCreateData(next: QuickCreateData | null, fresh: boolean) {
+  dataCache = next;
+  dataFresh = fresh;
+  dataListeners.forEach((notify) => notify());
+}
+
+function subscribeQuickCreateData(notify: () => void) {
+  dataListeners.add(notify);
+  return () => {
+    dataListeners.delete(notify);
+  };
+}
 
 // `locale` rides along in this same payload (see quick-create-types.ts) but,
 // unlike the picker lists, it can change mid-session — a worker flips the
 // toggle in /profile without a hard reload. ProfileClient calls this right
 // before router.refresh() so the next + open re-fetches instead of reusing a
-// stale language/role.
+// stale language/role — and the device copy goes with it.
 export function invalidateQuickCreateCache() {
-  dataCache = null;
   inFlight = null;
+  if (snapshotKey) void deleteSnapshot(snapshotKey);
+  setQuickCreateData(null, false);
 }
 
 function loadQuickCreateData(): Promise<QuickCreateData | null> {
-  if (dataCache) return Promise.resolve(dataCache);
+  if (dataCache && dataFresh) return Promise.resolve(dataCache);
   if (!inFlight) {
     inFlight = fetch("/api/quick-actions/data", { cache: "no-store" })
       .then((response) => (response.ok ? response.json() : null))
       .then((json: QuickCreateData | null) => {
-        if (json) dataCache = { ...EMPTY_QUICK_CREATE_DATA, ...json };
+        if (json) {
+          const loaded = { ...EMPTY_QUICK_CREATE_DATA, ...json };
+          setQuickCreateData(loaded, true);
+          // Salary agreements stay off the device — the only payroll figures in
+          // this payload, and only the worker-shift steps use them (by then the
+          // fresh copy has long arrived).
+          if (snapshotKey) void saveSnapshot(snapshotKey, { ...loaded, salaryAgreements: [] });
+        }
         return dataCache;
       })
-      .catch(() => null)
+      .catch(() => dataCache)
       .finally(() => {
         inFlight = null;
       });
@@ -149,10 +187,59 @@ function loadQuickCreateData(): Promise<QuickCreateData | null> {
   return inFlight;
 }
 
+let warmed = false;
+
+/**
+ * Once per page load, while the page is idle: fetch the dialog code (the + menu's
+ * dialogs and the two big forms they load in turn), put the device copy of the
+ * lists in memory, refresh the lists if that copy is old or missing, and — for
+ * admin/office, who get the money dialogs — warm the bank-accounts cache those
+ * dialogs read when they open.
+ */
+function warmQuickCreate(viewerId: string | undefined, privileged: boolean) {
+  if (warmed) return;
+  warmed = true;
+  snapshotKey = viewerId ? `quick-create-data:${viewerId}` : null;
+
+  void import("@/components/layout/QuickCreateDialogs").catch(() => {});
+  void import("@/components/expenses/ExpenseDialog").catch(() => {});
+  void import("@/components/tasks/TaskUpsertDialog").catch(() => {});
+
+  void (async () => {
+    if (!dataCache && snapshotKey) {
+      const snapshot = await loadSnapshot<QuickCreateData>(snapshotKey);
+      if (snapshot && !dataCache) {
+        setQuickCreateData({ ...EMPTY_QUICK_CREATE_DATA, ...snapshot.data }, false);
+        if (Date.now() - snapshot.savedAt < SNAPSHOT_FRESH_MS) return;
+      }
+    }
+    if (!dataFresh) void loadQuickCreateData();
+  })();
+
+  if (privileged) {
+    void import("@/components/financial/AccountSelect")
+      .then((accountSelect) => accountSelect.loadAccounts())
+      .catch(() => {});
+  }
+}
+
+/** After the page has settled — the warm-up must never compete with it. */
+function whenIdle(run: () => void): () => void {
+  if (typeof window.requestIdleCallback === "function") {
+    const id = window.requestIdleCallback(run, { timeout: 4000 });
+    return () => window.cancelIdleCallback(id);
+  }
+  const id = window.setTimeout(run, 1500);
+  return () => window.clearTimeout(id);
+}
+
 export function QuickCreateMenu({
+  viewerId,
   viewerRole,
   variant = "topbar",
 }: {
+  /** Signed-in user's public.users id — keys the device copy of the lists. */
+  viewerId?: string;
   viewerRole?: string;
   /**
    * "fab" = the raised + in the mobile bottom nav.
@@ -176,7 +263,11 @@ export function QuickCreateMenu({
   // (where there is no hover) the tap is the only interaction.
   const panel = useHoverPanel();
   const [action, setAction] = useState<QuickCreateAction | null>(null);
-  const [data, setData] = useState<QuickCreateData | null>(dataCache);
+  const data = useSyncExternalStore(
+    subscribeQuickCreateData,
+    () => dataCache,
+    () => null
+  );
   // Only ever "ar" for a worker (see quick-create-types.ts) — the tiles a
   // worker sees (task/reminder/attendance) render in Arabic; every other
   // viewer's locale is always "he", so this is a no-op for them.
@@ -196,25 +287,15 @@ export function QuickCreateMenu({
   // in-progress wizard draft state the user might reopen to.
   const [dialogsMounted, setDialogsMounted] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
-  const activeRef = useRef(true);
-  useEffect(() => {
-    activeRef.current = true;
-    return () => {
-      activeRef.current = false;
-    };
-  }, []);
 
-  // Warm the data (and the dialog bundle) the moment the menu is opened, so the
-  // form is ready by the time the user has picked an item.
+  useEffect(() => whenIdle(() => warmQuickCreate(viewerId, privileged)), [viewerId, privileged]);
+
+  // Mount the dialog host the moment the menu is opened, and make sure this
+  // page load has the server's copy of the lists (the device copy, if that's
+  // what's showing, stays on screen until it arrives).
   const prefetch = useCallback(() => {
     setDialogsMounted(true);
-    if (dataCache) {
-      setData(dataCache);
-      return;
-    }
-    void loadQuickCreateData().then((loaded) => {
-      if (activeRef.current && loaded) setData(loaded);
-    });
+    if (!dataFresh) void loadQuickCreateData();
   }, []);
 
   // Other pages can open a quick-create dialog (optionally pre-dated) by firing a
