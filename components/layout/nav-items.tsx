@@ -47,9 +47,6 @@ const SIDEBAR_ITEMS: SidebarNavItem[] = [
   { title: "יומן", url: "/calendar", icon: CalendarIcon },
   { title: "פרויקטים", url: "/projects", icon: ProjectIcon },
   { title: "משימות", url: "/tasks", icon: TaskIcon },
-  // The weekly office meeting is run FROM the app, so it needs a door of its
-  // own — it sits next to משימות because that is what it produces.
-  { title: "ישיבה שבועית", url: "/meetings", icon: ChecklistIcon },
   { title: "מכירות", url: "/sales", icon: OrderIcon },
   { title: "לקוחות", url: "/customers", icon: UsersIcon },
   { title: "תיעוד פניות", url: "/communications", icon: ChatIcon },
@@ -94,23 +91,23 @@ const SIDEBAR_ITEMS: SidebarNavItem[] = [
     ],
   },
   { title: "מסמכים", url: "/documents", icon: FolderIcon },
+  // The weekly office meeting is run FROM the app, so it needs a door of its
+  // own — directly above פעילות (user, 2026-10-04). On a phone that also puts
+  // it in עוד's last row (מסמכים · ישיבה שבועית · פעילות · הגדרות ניהול),
+  // since עוד follows this list.
+  { title: "ישיבה שבועית", url: "/meetings", icon: ChecklistIcon },
   { title: "פעילות", url: "/activity", icon: ActivityIcon },
   { title: "הגדרות ניהול", url: "/settings", icon: SettingsIcon },
 ];
 
-// Four tabs + עוד, with the centre "+" between them — so the bar reads
-// דשבורד · פרויקטים · מכירות · [+] · ישיבה · עוד. The three originals keep
-// their order; the meeting is appended, so it lands on the far side of the FAB
-// (user, 2026-09-23: wanted it reachable from the bar, not behind עוד).
-//
-// "ישיבה", not "ישיבה שבועית": a tab here is a fifth of the bar's width, and
-// the full name cannot fit without truncating — which this app doesn't do. The
-// sidebar and עוד still carry the full name, where there is room for it.
+// Three tabs + עוד, with the centre "+" between them — the bar reads
+// דשבורד · פרויקטים · [+] · מכירות · עוד. ישיבה שבועית was a fourth tab here
+// for a while (2026-09-23) but squeezed the bar; it lives in עוד's last row now
+// (user, 2026-10-04 — see its place in SIDEBAR_ITEMS).
 const BOTTOM_NAV_ITEMS: SidebarNavItem[] = [
   { title: "דשבורד", url: "/dashboard", icon: DashboardIcon },
   { title: "פרויקטים", url: "/projects", icon: ProjectIcon },
   { title: "מכירות", url: "/sales", icon: OrderIcon },
-  { title: "ישיבה", url: "/meetings", icon: ChecklistIcon },
 ];
 
 // עוד IS the sidebar minus the bar's own tabs — same order, same groups, same
@@ -258,10 +255,10 @@ export function useNavItems(
   // Three thumb targets + the centre "+" for a worker; the fourth destination
   // ("השעות שלי") sits behind עוד so his bar keeps its shape.
   //
-  // Staff get the bar filtered by role, the same way עוד already is: ישיבה is
-  // admin/office only, and this list is no longer safe to hand out whole —
-  // `isWorker` is the 'worker' role alone, so a worker_no_access account (or a
-  // viewer whose role hasn't resolved yet) reaches this branch too.
+  // Staff get the bar filtered by role, the same way עוד already is — so a
+  // role-gated tab added here later can't leak — since `isWorker` is the
+  // 'worker' role alone, and a worker_no_access account (or a viewer whose
+  // role hasn't resolved yet) reaches this branch too.
   const bottomNavItems = useMemo(
     () => (isWorker ? workerNavItems.slice(0, 3) : filterByRole(BOTTOM_NAV_ITEMS, isAdmin, isOffice, initialEmail)),
     [isAdmin, isOffice, isWorker, workerNavItems, initialEmail]
