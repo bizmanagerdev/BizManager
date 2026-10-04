@@ -76,16 +76,23 @@ self.addEventListener("install", (event) => {
 // ── Activate ─────────────────────────────────────────────────────────────────
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
-          keys
-            .filter((k) => !ALL_CACHES.includes(k))
-            .map((k) => caches.delete(k))
-        )
-      )
-      .then(() => self.clients.claim())
+    (async () => {
+      // Navigation preload: the browser starts a page's network request while
+      // this worker is still waking up, instead of after. The phone puts the
+      // worker to sleep between uses, so without it every app launch / full
+      // page load waited for the worker to boot BEFORE the request even left.
+      // The fetch handler below picks the response up from event.preloadResponse.
+      if (self.registration.navigationPreload) {
+        try {
+          await self.registration.navigationPreload.enable();
+        } catch {
+          // Unsupported or refused — navigations just fetch() as before.
+        }
+      }
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((k) => !ALL_CACHES.includes(k)).map((k) => caches.delete(k)));
+      await self.clients.claim();
+    })()
   );
 });
 
@@ -336,10 +343,19 @@ self.addEventListener("fetch", (event) => {
   if (request.mode === "navigate") {
     event.respondWith(
       (async () => {
-        const network = fetch(request).then((res) => {
-          putInCache(PAGES_CACHE, request, res);
-          return res;
-        });
+        // The request the browser already started while this worker booted
+        // (navigation preload, enabled on activate) — or, where that isn't
+        // available, a fresh one. A preloaded redirect arrives unfollowed
+        // (opaqueredirect): not ok, so putInCache skips it, and the browser
+        // follows it itself.
+        const network = Promise.resolve(event.preloadResponse)
+          // A failed preload gets one ordinary fetch() before the cache fallback.
+          .catch(() => undefined)
+          .then((preloaded) => preloaded || fetch(request))
+          .then((res) => {
+            putInCache(PAGES_CACHE, request, res);
+            return res;
+          });
 
         let res = null;
         try {
