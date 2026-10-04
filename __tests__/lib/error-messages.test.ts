@@ -47,6 +47,11 @@ describe("toHebrewError — exact-match table", () => {
 });
 
 describe("toHebrewError — pattern rules", () => {
+  it("a turned-off user's blocked login reads like the no-access page, not raw GoTrue English", () => {
+    expect(toHebrewError("User is banned")).toBe(
+      "לחשבון שלך אין גישה למערכת. אם זה נראה כמו טעות, פני או פנה למנהל המערכת."
+    );
+  });
   it("Postgres constraint violations get specific, actionable wording", () => {
     expect(toHebrewError('duplicate key value violates unique constraint "orders_pkey"')).toBe(
       "הערך כבר קיים במערכת."

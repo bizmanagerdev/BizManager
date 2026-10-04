@@ -2,6 +2,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { initialBanAttributes, mayLogIn } from "@/lib/auth/loginAccess";
 import {
   getPayTrackingModeForWorkerType,
   normalizePayrollWorkerType,
@@ -149,6 +150,9 @@ export async function POST(req: Request) {
         full_name: fullName || undefined,
         phone: phone || undefined,
       },
+      // Created inactive → the login starts banned, same as turning it off later
+      // would leave it (lib/auth/loginAccess.ts).
+      ...initialBanAttributes(mayLogIn({ active, systemAccess, role })),
     });
 
     if (signUpError) {

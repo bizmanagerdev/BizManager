@@ -141,6 +141,13 @@ const PATTERN_RULES: Array<{ test: RegExp; hebrew: string }> = [
   // the generic fallback, so a user changing their password just saw "נכשל" with
   // no idea why — and neither did we.
   {
+    // A user whose access was turned off is banned in Supabase Auth too (see
+    // lib/auth/loginAccess.ts), so signing in fails here instead of landing on
+    // /no-access. Same wording as that page.
+    test: /user is banned/i,
+    hebrew: "לחשבון שלך אין גישה למערכת. אם זה נראה כמו טעות, פני או פנה למנהל המערכת.",
+  },
+  {
     test: /new password should be different|should be different from the old password/i,
     hebrew: "הסיסמה החדשה זהה לנוכחית. יש לבחור סיסמה אחרת.",
   },

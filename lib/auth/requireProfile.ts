@@ -4,6 +4,7 @@ import * as Sentry from "@sentry/nextjs";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isPayrollWorkerType, type PayrollWorkerType } from "@/lib/payroll-worker-type";
 import { sanitizeSectionAccess, type SectionAccess } from "@/lib/auth/sections";
+import { mayLogIn } from "@/lib/auth/loginAccess";
 
 export type UserRole = "admin" | "office" | "worker" | "worker_no_access";
 
@@ -100,7 +101,7 @@ export const requireProfile = cache(async () => {
     section_access: sanitizeSectionAccess(rawSectionAccess),
     avatar_color: typeof rawAvatarColor === "string" ? rawAvatarColor : null,
   };
-  if (!typed.active || !typed.system_access || typed.role === "worker_no_access") {
+  if (!mayLogIn({ active: typed.active, systemAccess: typed.system_access, role: typed.role })) {
     redirect("/no-access");
   }
 

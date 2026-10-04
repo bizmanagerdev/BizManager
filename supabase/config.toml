@@ -173,7 +173,11 @@ site_url = "http://127.0.0.1:3000"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
 additional_redirect_urls = ["https://127.0.0.1:3000"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
-jwt_expiry = 3600
+# 24 hours, matching production: opening the app after a short break no longer
+# waits on a token refresh in middleware. Safe only together with
+# 20261004150000_inactive_users_lose_access.sql, which cuts off a turned-off
+# user's still-valid token immediately instead of when it expires.
+jwt_expiry = 86400
 # JWT issuer URL. If not set, defaults to auth.external_url.
 # jwt_issuer = ""
 # Path to JWT signing key. DO NOT commit your signing keys file to git.

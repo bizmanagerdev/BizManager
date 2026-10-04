@@ -2,6 +2,7 @@
 import { createSupabaseRouteClient } from "@/lib/supabase/route";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import { sanitizeSectionAccess, type SectionAccess } from "@/lib/auth/sections";
+import { mayLogIn } from "@/lib/auth/loginAccess";
 
 type RouteProfile = {
   id: string;
@@ -98,7 +99,7 @@ export async function requireRouteAccess(options?: {
     section_access: sanitizeSectionAccess(rawSectionAccess),
   };
 
-  if (!typed.active || !typed.system_access || typed.role === "worker_no_access") {
+  if (!mayLogIn({ active: typed.active, systemAccess: typed.system_access, role: typed.role })) {
     return {
       ok: false,
       response: NextResponse.json({ error: "No access" }, { status: 403 }),

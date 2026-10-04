@@ -1,6 +1,8 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { syncLoginAccess } from "@/lib/auth/loginAccess";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type DeleteWorkerPayload = {
   user_id?: string;
@@ -39,6 +41,24 @@ export async function POST(req: Request) {
       existingUserResult.data.role === "worker_no_access"
         ? existingUserResult.data.role
         : "worker";
+
+    // End their login too, not just the profile — otherwise the session they
+    // already have keeps renewing (lib/auth/loginAccess.ts). First, so a
+    // failure here leaves the worker exactly as they were.
+    const authUserId = existingUserResult.data.auth_user_id;
+    if (authUserId) {
+      const adminClient = createSupabaseAdminClient();
+      if (!adminClient) {
+        return NextResponse.json(
+          { error: toHebrewError("SUPABASE_SERVICE_ROLE_KEY not configured") },
+          { status: 500 }
+        );
+      }
+      const banError = await syncLoginAccess(adminClient, authUserId, false);
+      if (banError) {
+        return NextResponse.json({ error: toHebrewError(banError) }, { status: 400 });
+      }
+    }
 
     const rpcResult = await supabase.rpc("admin_upsert_user_profile", {
       p_user_id: existingUserResult.data.id,

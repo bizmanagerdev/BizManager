@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { sanitizeSectionAccess, type SectionAccess } from "@/lib/auth/sections";
+import { mayLogIn, syncLoginAccess } from "@/lib/auth/loginAccess";
 import {
   getPayTrackingModeForWorkerType,
   normalizePayrollWorkerType,
@@ -222,6 +223,24 @@ export async function POST(req: Request) {
         } else {
           authUserId = createdAuthUser.user.id;
         }
+      }
+    }
+
+    // The login has to follow the profile both ways: turning access off bans
+    // the auth user so their session stops renewing, turning it back on lifts
+    // the ban (lib/auth/loginAccess.ts). Before the profile write, so a failure
+    // can't leave someone turned off on paper but still logged in.
+    if (authUserId) {
+      const adminClient = createSupabaseAdminClient();
+      if (!adminClient) {
+        return NextResponse.json(
+          { error: toHebrewError("SUPABASE_SERVICE_ROLE_KEY not configured") },
+          { status: 500 }
+        );
+      }
+      const banError = await syncLoginAccess(adminClient, authUserId, mayLogIn({ active, systemAccess, role }));
+      if (banError) {
+        return NextResponse.json({ error: toHebrewError(banError) }, { status: 400 });
       }
     }
 
