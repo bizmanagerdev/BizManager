@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fuzzyTextMatch, normalizeSearchText } from "@/lib/search/customerMatch";
 import { projectTypesMatching } from "@/lib/search/projectTypeLabels";
-import { loadProjectSearchIndex } from "@/app/(app)/projects/actions";
+import { fetchSearchIndex } from "@/lib/search/fetchSearchIndex";
 import type { ProjectSearchIndexEntry } from "@/app/(app)/projects/loadProjects";
 import type { CustomerSearchIndexEntry } from "./useCustomerSearchIndex";
 import { customerMatchesQuery } from "@/lib/search/customerMatch";
@@ -24,8 +24,8 @@ const listeners = new Set<() => void>();
 async function loadIndex(force = false): Promise<ProjectSearchIndexEntry[]> {
   if (!force && cache && !cache.stale && Date.now() - cache.loadedAt < TTL_MS) return cache.data;
   if (!force && inflight) return inflight;
-  inflight = loadProjectSearchIndex()
-    .then(({ projects }) => {
+  inflight = fetchSearchIndex<ProjectSearchIndexEntry>("projects")
+    .then((projects) => {
       cache = { data: projects, loadedAt: Date.now(), stale: false };
       void saveSnapshot(SNAPSHOT_KEY, projects);
       return projects;

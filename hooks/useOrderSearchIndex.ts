@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { customerMatchesQuery, fuzzyTextMatch, normalizeSearchText } from "@/lib/search/customerMatch";
-import { loadOrderSearchIndex } from "@/app/(app)/sales/actions";
+import { fetchSearchIndex } from "@/lib/search/fetchSearchIndex";
 import type { OrderSearchIndexEntry } from "@/app/(app)/sales/loadOrders";
 import type { CustomerSearchIndexEntry } from "./useCustomerSearchIndex";
 import { loadSnapshot, saveSnapshot } from "@/lib/offline-cache";
@@ -22,8 +22,8 @@ const listeners = new Set<() => void>();
 async function loadIndex(force = false): Promise<OrderSearchIndexEntry[]> {
   if (!force && cache && !cache.stale && Date.now() - cache.loadedAt < TTL_MS) return cache.data;
   if (!force && inflight) return inflight;
-  inflight = loadOrderSearchIndex()
-    .then(({ orders }) => {
+  inflight = fetchSearchIndex<OrderSearchIndexEntry>("orders")
+    .then((orders) => {
       cache = { data: orders, loadedAt: Date.now(), stale: false };
       void saveSnapshot(SNAPSHOT_KEY, orders);
       return orders;

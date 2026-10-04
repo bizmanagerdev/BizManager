@@ -2,7 +2,6 @@
 
 import { requireProfile } from "@/lib/auth/requireProfile";
 import {
-  loadCustomerSearchIndexRows,
   loadCustomersByIds,
   loadCustomersPage,
   type CustomersFilters,
@@ -28,12 +27,4 @@ export async function loadCustomerRowsByIds(customerIds: string[]) {
   return { rows };
 }
 
-/**
- * Load the full lightweight customer index for the client-side in-memory search
- * (instant customer type-ahead across the app). Re-authenticates per call.
- */
-export async function loadCustomerSearchIndex() {
-  const { supabase } = await requireProfile();
-  const customers = await loadCustomerSearchIndexRows(supabase);
-  return { customers };
-}
+// The customer search index is a GET now: app/api/search-index/[kind]/route.ts.

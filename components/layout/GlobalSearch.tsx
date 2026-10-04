@@ -160,7 +160,8 @@ function SearchResults({
 
 export function GlobalSearch({ className, desktopOnly = false, mobileOnly = false, iconOnly = false }: Props) {
   const router = useRouter();
-  const { search: searchCustomers } = useCustomerSearchIndex();
+  // Only the offline fallback below reads it, so it loads once the page is idle.
+  const { search: searchCustomers } = useCustomerSearchIndex({ deferUntilIdle: true });
   const desktopRef = useRef<HTMLDivElement | null>(null);
   const mobileInputRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");

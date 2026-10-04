@@ -6,7 +6,6 @@ import { findOrderIdsMatchingContent } from "@/lib/search/findMatchingChildIds";
 import {
   loadOrdersByIds,
   loadOrdersPage,
-  loadOrderSearchIndexRows,
   type OrdersFilters,
 } from "./loadOrders";
 import {
@@ -31,15 +30,7 @@ export async function loadOrderRowsByIds(ids: string[]) {
   return { rows };
 }
 
-/**
- * Load the full lightweight order index for the client-side in-memory search
- * (instant order type-ahead on the orders list). Re-authenticates per call.
- */
-export async function loadOrderSearchIndex() {
-  const { supabase } = await requireProfile();
-  const orders = await loadOrderSearchIndexRows(supabase);
-  return { orders };
-}
+// The order search index is a GET now: app/api/search-index/[kind]/route.ts.
 
 /**
  * Order ids reached only through a line item's product/notes or the order's

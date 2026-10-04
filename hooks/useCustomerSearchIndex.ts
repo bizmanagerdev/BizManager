@@ -7,7 +7,7 @@ import {
   normalizeSearchText,
   type CustomerSearchFields,
 } from "@/lib/search/customerMatch";
-import { loadCustomerSearchIndex } from "@/app/(app)/customers/actions";
+import { fetchSearchIndex } from "@/lib/search/fetchSearchIndex";
 import type { CustomerSearchIndexEntry } from "@/app/(app)/customers/loadCustomers";
 import { loadSnapshot, saveSnapshot } from "@/lib/offline-cache";
 
@@ -33,8 +33,8 @@ async function loadIndex(force = false): Promise<CustomerSearchIndexEntry[]> {
   // re-attempts the server so it refreshes as soon as the connection is back.
   if (!force && cache && !cache.stale && Date.now() - cache.loadedAt < TTL_MS) return cache.data;
   if (!force && inflight) return inflight;
-  inflight = loadCustomerSearchIndex()
-    .then(({ customers }) => {
+  inflight = fetchSearchIndex<CustomerSearchIndexEntry>("customers")
+    .then((customers) => {
       cache = { data: customers, loadedAt: Date.now(), stale: false };
       // Persist the directory so customer lookup keeps working with no signal.
       void saveSnapshot(SNAPSHOT_KEY, customers);
@@ -89,7 +89,17 @@ export function searchCustomerEntries(
  * instant — no per-keystroke network round-trip. Matching uses the same shared
  * rules as the server (fuzzy Hebrew names, phone↔whatsapp cross-match).
  */
-export function useCustomerSearchIndex() {
+export function useCustomerSearchIndex({
+  deferUntilIdle = false,
+}: {
+  /**
+   * Wait for the page to go idle before the first load. For a caller that's
+   * mounted on every page but only needs the list later — the top bar's search
+   * uses it purely as its offline fallback — so it doesn't compete with the
+   * page's own loading. Pickers leave this off: they need the list now.
+   */
+  deferUntilIdle?: boolean;
+} = {}) {
   const [entries, setEntries] = useState<CustomerSearchIndexEntry[]>(cache?.data ?? []);
   const [loading, setLoading] = useState(!cache);
   const [error, setError] = useState<string | null>(null);
@@ -107,22 +117,34 @@ export function useCustomerSearchIndex() {
     // loadIndex resolves instantly from the module cache when it is warm, so
     // this paints synchronously-ish without a network round-trip; only the
     // first cold load actually hits the server (or the offline snapshot).
-    loadIndex()
-      .then((data) => {
-        if (cancelled) return;
-        setEntries(data);
-        setLoading(false);
-        syncMeta();
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setError("שגיאת טעינת רשימת הלקוחות");
-        setLoading(false);
-      });
+    const load = () => {
+      loadIndex()
+        .then((data) => {
+          if (cancelled) return;
+          setEntries(data);
+          setLoading(false);
+          syncMeta();
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setError("שגיאת טעינת רשימת הלקוחות");
+          setLoading(false);
+        });
+    };
+    if (!deferUntilIdle || cache) {
+      load();
+      return () => {
+        cancelled = true;
+      };
+    }
+    const idle = typeof window.requestIdleCallback === "function";
+    const handle = idle ? window.requestIdleCallback(load, { timeout: 5000 }) : window.setTimeout(load, 2000);
     return () => {
       cancelled = true;
+      if (idle) window.cancelIdleCallback(handle);
+      else window.clearTimeout(handle);
     };
-  }, [syncMeta]);
+  }, [syncMeta, deferUntilIdle]);
 
   // Reload when the index is invalidated (e.g. after a customer is created).
   useEffect(() => {

@@ -5,7 +5,6 @@ import { findProjectIdsMatchingContent } from "@/lib/search/findMatchingChildIds
 import {
   loadProjectsByIds,
   loadProjectsPage,
-  loadProjectSearchIndexRows,
   type ProjectsFilters,
 } from "./loadProjects";
 
@@ -23,15 +22,7 @@ export async function loadProjectRowsByIds(ids: string[]) {
   return { rows };
 }
 
-/**
- * Load the full lightweight project index for the client-side in-memory search
- * (instant project type-ahead on the projects list). Re-authenticates per call.
- */
-export async function loadProjectSearchIndex() {
-  const { supabase } = await requireProfile();
-  const projects = await loadProjectSearchIndexRows(supabase);
-  return { projects };
-}
+// The project search index is a GET now: app/api/search-index/[kind]/route.ts.
 
 /**
  * Project ids reached only through a task/task-comment or the project's own
