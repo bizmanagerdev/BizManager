@@ -47,6 +47,7 @@ Rules:
 - Never edit an already-applied migration — add a new one.
 - If a change touches an RPC, the migration is the source of truth; the deployed function must match it.
 - Never add to `db/sql/` — the freeze is enforced in CI.
+- A new `SECURITY DEFINER` function that users can call starts with `perform public.require_app_role(...)` (see `20261004170000_guard_definer_functions.sql`) — it bypasses RLS, so nothing else checks who's calling.
 - A new table with RLS also gets the restrictive `active_users_only` policy (copy it from `20261004150000_inactive_users_lose_access.sql`). Without it, a turned-off user's still-valid login can reach that table through any permissive policy.
 
 ## Money code — extra care
