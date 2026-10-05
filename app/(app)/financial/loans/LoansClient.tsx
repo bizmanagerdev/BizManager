@@ -264,8 +264,9 @@ export default function LoansClient({ loans: loansProp, summary }: { loans: Loan
         onOpenChange={(open) => {
           if (open) return;
           setRepayLoan(null);
-          // Strip ?repay= so the dialog doesn't reopen on the next render/refresh.
-          if (repayParam) router.replace("/financial/loans");
+          // Strip ?repay= so the dialog doesn't reopen on the next render/refresh —
+          // staying on the loans tab (it's no longer the page's default tab).
+          if (repayParam) router.replace("/financial/loans?tab=loans");
         }}
       />
       <LoanDocumentsDialog loan={docsLoan} onOpenChange={(open) => !open && setDocsLoan(null)} />

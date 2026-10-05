@@ -139,7 +139,8 @@ export default function usePaymentItemActions({
           editItem?.expenseId
             ? {
                 id: editItem.expenseId,
-                amount: editItem.amount,
+                // The whole bill — `amount` is only what's left of a partly-paid one.
+                amount: editItem.totalAmount ?? editItem.amount,
                 category: editItem.category,
                 description: editItem.descriptionRaw,
                 notes: editItem.notes,

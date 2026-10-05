@@ -121,6 +121,45 @@ describe("toPaymentCalendarItems", () => {
     expect(item.dueDate).toBe("2026-07-10");
     expect(item.paymentMethod).toBe("bank_transfer");
   });
+
+  it("a partly-paid bill is on the board for what's left, with the whole bill kept beside it", () => {
+    // ₪33,431 container invoice, ₪10,000 already paid → ₪23,431 to pay.
+    const [item] = toPaymentCalendarItems(
+      [
+        entry({
+          id: "expense:e1",
+          expenseId: "e1",
+          stage: "pending",
+          flowDate: "2026-07-01",
+          amount: 33431,
+          signedAmount: -33431,
+          paymentStatus: "partial",
+          expensePaidAmount: 10000,
+        }),
+      ],
+      today
+    );
+    expect(item.amount).toBe(23431);
+    // The edit dialog seeds the bill from this — never from `amount`.
+    expect(item.totalAmount).toBe(33431);
+    expect(item.paidAmount).toBe(10000);
+    expect(item.overdue).toBe(true);
+  });
+
+  it("an unpaid or paid bill keeps its own amount and has no separate total", () => {
+    const items = toPaymentCalendarItems(
+      [
+        entry({ id: "unpaid", expenseId: "e2", paymentStatus: "not_paid", amount: 500, signedAmount: -500 }),
+        entry({ id: "paid", expenseId: "e3", paymentStatus: "paid", stage: "posted", amount: 700, signedAmount: -700, expensePaidAmount: 700 }),
+      ],
+      today
+    );
+    const byId = Object.fromEntries(items.map((i) => [i.id, i]));
+    expect(byId.unpaid.amount).toBe(500);
+    expect(byId.unpaid.totalAmount).toBeNull();
+    expect(byId.paid.amount).toBe(700);
+    expect(byId.paid.totalAmount).toBeNull();
+  });
 });
 
 describe("markVariableTemplateRows — a generated row from a סכום משתנה template carries an estimate", () => {

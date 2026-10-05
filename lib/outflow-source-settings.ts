@@ -171,7 +171,9 @@ export function reminderWorkDaysForItem(
   if (item.id.startsWith("salary_proj:") && item.workerUserId) {
     return effectiveReminderWorkDays("salary", settings[sourceSettingKey("salary", item.workerUserId)]);
   }
-  if (item.id.startsWith("loan_planned:") && item.sourceId) {
+  // A loan's planned instalment and its plan-less due date are the same kind of
+  // obligation — both follow the loan's setting.
+  if ((item.id.startsWith("loan_planned:") || item.id.startsWith("loan_due:")) && item.sourceId) {
     return effectiveReminderWorkDays("loan", settings[sourceSettingKey("loan", item.sourceId)]);
   }
   if (item.id.startsWith("ccharge") && item.category) {

@@ -1064,6 +1064,43 @@ export function buildLoanEntries(loans: Loan[], referenceDate: string): Financia
       });
     }
 
+    // ── A due date with no plan behind it ──
+    // A loan we TOOK whose outstanding principal isn't covered by planned
+    // installments still has to be repaid by its due date. That remainder is an
+    // obligation on that day — exactly like a planned installment (forecast
+    // only, never P&L, pending once the date passes so the calendar flags it
+    // late) — instead of the loan being visible only on the loans page.
+    const dueDate = loan.due_date ? loan.due_date.slice(0, 10) : null;
+    if (taken && dueDate && loan.derivedStatus !== "written_off" && loan.unscheduledPrincipal > 0.009) {
+      const amount = Math.round(loan.unscheduledPrincipal * 100) / 100;
+      const description = `פירעון הלוואה${counterparty ? ` (${counterparty})` : ""}`;
+      entries.push({
+        id: `loan_due:${loan.id}`,
+        type: "outflow",
+        amount,
+        signedAmount: -amount,
+        businessDomain,
+        domainName,
+        flowDate: dueDate,
+        recordedDate: null,
+        dueDate,
+        stage: dueDate < referenceDate ? "pending" : "scheduled",
+        sourceKind: "general",
+        sourceId: loan.id,
+        sourceLabel: description,
+        sourceHref: `/financial/loans/${loan.id}`,
+        description,
+        origin: "loan",
+        reference: null,
+        paymentMethod: loan.repayment_method,
+        paymentMethodLabel: loan.repayment_method ? paymentMethodLabel(loan.repayment_method) : null,
+        paymentStatus: "not_paid",
+        recordedByName: null,
+        customerId: loan.counterparty_customer_id,
+        searchText: [description, counterparty ?? "", domainName].join(" ").toLowerCase(),
+      });
+    }
+
     // ── Repayments: principal (cash only) + interest (P&L) ──
     for (const repayment of loan.paidRepayments) {
       if (!repayment.id || !repayment.repayment_date) continue;

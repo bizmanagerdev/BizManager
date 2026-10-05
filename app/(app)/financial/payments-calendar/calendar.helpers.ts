@@ -3,6 +3,7 @@
 // PaymentCalendarItem lives here so it can be tested in node and reused by an
 // incoming-money view unchanged.
 import { isoLocal, toDateOnly } from "@/components/ui/month-calendar";
+import { isExpenseBusinessDomain } from "@/lib/expenses";
 import type { CalendarDirection, PaymentCalendarItem } from "@/lib/payables";
 
 export type Option = { id: string; label: string };
@@ -86,6 +87,47 @@ export function fmtIls(value: number) {
 export function amountLabel(item: PaymentCalendarItem): string {
   if (item.variableAmount) return item.amount > 0 ? `~${fmtIls(item.amount)}` : "משתנה";
   return fmtIls(item.amount);
+}
+
+// A partly-paid bill is on the board for what's left of it (`amount`). This is
+// the line beside it that says so — "שולם ₪10,000 מתוך ₪33,431" — so the
+// remainder is never mistaken for the whole bill. Null for everything else.
+export function partialPaidNote(item: PaymentCalendarItem): string | null {
+  const total = item.totalAmount ?? null;
+  if (total === null || !(total > item.amount)) return null;
+  return `שולם ${fmtIls(total - item.amount)} מתוך ${fmtIls(total)}`;
+}
+
+// The body for /api/expenses/split. The split REPLACES the original expense row
+// with its installments, so everything the row carried has to travel with them:
+//   • its project / order / property link — without it the installments drop
+//     out of that project's costs (and its "אנחנו חייבים");
+//   • its account and payment method;
+//   • the part already paid on a partly-paid bill, as its own paid installment
+//     on the bill's date — otherwise that payment would vanish from the books.
+// `rows` are the installments for what is still owed (the item's `amount`).
+export function buildSplitRequestBody(
+  item: PaymentCalendarItem,
+  rows: ReadonlyArray<{ date: string; amount: number }>
+) {
+  const total = item.totalAmount ?? null;
+  const paidPart = total !== null && total > item.amount ? Math.round((total - item.amount) * 100) / 100 : 0;
+  return {
+    source_expense_id: item.expenseId,
+    business_domain: isExpenseBusinessDomain(item.businessDomain) ? item.businessDomain : "general_business",
+    category: item.category || "רכישה",
+    description: item.descriptionRaw || item.label,
+    notes: item.notes,
+    account_id: item.accountId,
+    payment_method: item.paymentMethod,
+    project_id: item.expenseProjectId,
+    order_id: item.expenseOrderId,
+    property_id: item.expensePropertyId,
+    installments: [
+      ...(paidPart > 0.009 ? [{ expense_date: item.dueDate.slice(0, 10), amount: paidPart, paid: true }] : []),
+      ...rows.map((r) => ({ expense_date: r.date, amount: r.amount })),
+    ],
+  };
 }
 
 export function addDaysIso(iso: string, n: number): string {

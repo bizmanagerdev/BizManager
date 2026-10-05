@@ -37,6 +37,8 @@ import {
 } from "@/components/layout/TopNavigationProgress";
 import { paymentStatusClasses } from "@/lib/orders/paymentStatus";
 import { rowNavigateProps } from "@/lib/ui/row-navigation";
+import ProjectOpeningOverlay, { showProjectOpening } from "@/app/(app)/projects/[id]/ProjectOpeningOverlay";
+import { projectPreviewFromRow, rememberProjectPreview } from "@/app/(app)/projects/[id]/projectPreview";
 import { DataTableShell } from "@/components/ui/data-table-shell";
 import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
 import { cn } from "@/lib/utils";
@@ -657,6 +659,16 @@ export default function ProjectsClient({
   // One swiped-open row at a time, like a native list.
   const [swipedRow, setSwipedRow] = useState<string | null>(null);
 
+  // A tapped project's page shows its header at once, from this row, until
+  // the page's own data arrives: over the list straight away on a phone, and
+  // as the page's loading screen everywhere.
+  const openProject = (row: ProjectRow) => {
+    const preview = projectPreviewFromRow(row);
+    if (!preview) return;
+    rememberProjectPreview(preview);
+    showProjectOpening(preview);
+  };
+
   // Project create/edit now run through the shared <NewProjectClient/> wizard, so
   // this component only tracks dialog open/submit state — the wizard owns the form.
   const [createOpen, setCreateOpen] = useState(false);
@@ -1191,7 +1203,7 @@ export default function ProjectsClient({
                   <tr
                     key={`${id}-table`}
                     className="cursor-pointer align-top hover:bg-muted/20 focus-visible:bg-muted/20"
-                    {...rowNavigateProps(router, detailHref, { prefetch: true })}
+                    {...rowNavigateProps(router, detailHref, { prefetch: true, onNavigate: () => openProject(row) })}
                   >
                     <td className="px-4 py-4">
                       <div className="block">
@@ -1404,7 +1416,7 @@ export default function ProjectsClient({
                   >
                     <div
                       className="block cursor-pointer p-4"
-                      {...rowNavigateProps(router, detailHref, { prefetch: true })}
+                      {...rowNavigateProps(router, detailHref, { prefetch: true, onNavigate: () => openProject(row) })}
                     >
                       <div className="space-y-3">
                         {/* Glance line — the two statuses, nothing else. Tighter and
@@ -1699,6 +1711,7 @@ export default function ProjectsClient({
         onConfirm={editDiscardGuard.confirmDiscard}
       />
 
+      <ProjectOpeningOverlay />
     </PageStack>
   );
 }

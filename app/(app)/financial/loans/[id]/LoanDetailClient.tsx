@@ -48,7 +48,7 @@ export default function LoanDetailClient({ loan }: { loan: Loan }) {
   function confirmDelete() {
     setDeleteOpen(false);
     emitNavigationStart();
-    router.push("/financial/loans");
+    router.push("/financial/loans?tab=loans");
     scheduleDeferredDelete({
       scope: "loan",
       id: loan.id,
@@ -67,7 +67,7 @@ export default function LoanDetailClient({ loan }: { loan: Loan }) {
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 space-y-1">
           <nav className="flex items-center gap-1.5 text-xs text-muted-foreground" aria-label="ניווט">
-            <Link href="/financial/loans" className="hover:text-foreground hover:underline">
+            <Link href="/financial/loans?tab=loans" className="hover:text-foreground hover:underline">
               חובות
             </Link>
             <ChevronLeftIcon className="h-3.5 w-3.5" />

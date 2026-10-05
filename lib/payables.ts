@@ -6,6 +6,7 @@ import {
   type FinancialEntryOrigin,
 } from "@/lib/financial";
 import { getBusinessDomainLabel, type ExpenseBusinessDomain } from "@/lib/expenses";
+import { withOpenAmount } from "@/lib/financial/expenseOpen";
 import { loadOutflowSourceSettings } from "@/lib/outflow-sources";
 import { sourceSettingKey, type OutflowSourceSettings, type OutflowSourceSettingsRecord } from "@/lib/outflow-source-settings";
 
@@ -23,7 +24,13 @@ export type PaymentCalendarItem = {
   // only one direction fills are marked as such.
   direction: CalendarDirection;
   date: string; // YYYY-MM-DD (the flow date the money moves)
+  // What moves on `date` — for a partly-paid expense, only the part still owed
+  // (expenseOpenAmount), so every total on the board is "left to pay".
   amount: number;
+  // The whole bill, present only when it differs from `amount` (a partly-paid
+  // expense). Anything that writes the expense back — the edit dialog — must
+  // seed from this, never from `amount`, or it would shrink the bill.
+  totalAmount?: number | null;
   label: string;
   sourceLabel: string;
   sourceHref: string | null;
@@ -118,11 +125,17 @@ export function expenseSourceHref(entry: Pick<FinancialEntry, "id" | "origin" | 
 export function toPaymentCalendarItems(entries: FinancialEntry[], todayIso: string): PaymentCalendarItem[] {
   return entries
     .filter((entry) => entry.type === "outflow")
-    .map((entry) => ({
+    .map((entry) => {
+      // A partly-paid bill is on the board for what's left of it, not its face value.
+      const open = withOpenAmount(entry);
+      return { entry, amount: open.amount, totalAmount: open.amount !== entry.amount ? entry.amount : null };
+    })
+    .map(({ entry, amount, totalAmount }) => ({
       id: entry.id,
       direction: "out" as const,
       date: entry.flowDate,
-      amount: entry.amount,
+      amount,
+      totalAmount,
       label: entry.description,
       sourceLabel: entry.sourceLabel,
       sourceHref: expenseSourceHref(entry),
@@ -784,7 +797,9 @@ export function dropInactiveOutflowSources(
   const inactive = (key: string) => settings.get(key)?.isActive === false;
   return items.filter((item) => {
     if (item.id.startsWith("salary_proj:") && item.workerUserId) return !inactive(sourceSettingKey("salary", item.workerUserId));
-    if (item.id.startsWith("loan_planned:") && item.sourceId) return !inactive(sourceSettingKey("loan", item.sourceId));
+    if ((item.id.startsWith("loan_planned:") || item.id.startsWith("loan_due:")) && item.sourceId) {
+      return !inactive(sourceSettingKey("loan", item.sourceId));
+    }
     if (item.id.startsWith("ccharge_proj:") && item.category) return !inactive(sourceSettingKey("card", item.category));
     return true;
   });

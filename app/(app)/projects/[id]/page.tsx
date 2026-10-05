@@ -1,5 +1,4 @@
 ﻿import dynamic from "next/dynamic";
-import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -9,9 +8,10 @@ import { sanitizeLedgerPrefs } from "@/lib/projectLedgerPrefs";
 import EntityActivityTimeline from "@/app/(app)/activity/EntityActivityTimeline";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import ProjectMobileHeader from "@/app/(app)/projects/[id]/ProjectMobileHeader";
+import ProjectPageHeading, { projectTypeLabel } from "@/app/(app)/projects/[id]/ProjectPageHeading";
 import ProjectRemindersSection from "@/app/(app)/projects/[id]/ProjectRemindersSection";
 import type { ProjectShareData } from "@/app/(app)/projects/[id]/ProjectShareActions";
-import { ArrowLeftIcon, ChevronLeftIcon, ClipboardIcon, DeliveryIcon, HistoryIcon, HomeIcon, LocationIcon, NoteIcon } from "@/components/ui/icons";
+import { ArrowLeftIcon, ClipboardIcon, DeliveryIcon, HistoryIcon, HomeIcon, LocationIcon, NoteIcon } from "@/components/ui/icons";
 import { AddressLink } from "@/components/ui/address-link";
 import { StatActionCard } from "@/components/ui/stat-action-card";
 import { ProjectStatusPicker } from "@/components/projects/ProjectStatusPicker";
@@ -35,8 +35,6 @@ import type { FinancialAttachment } from "@/lib/payments";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 import type { WorkSessionRow } from "@/lib/payroll";
 import { getCurrentVatRate } from "@/lib/settings/vat";
-import { Badge } from "@/components/ui/badge";
-import { ContactTapZone } from "@/components/ui/contact-link";
 import { CustomerContactCard } from "@/components/customers/CustomerContactCard";
 import { formatShortDate } from "@/lib/date";
 import { STORAGE_BUCKET } from "@/lib/storage";
@@ -228,19 +226,6 @@ function isMissingColumnError(error: unknown, columnName: string) {
     typeof message === "string" &&
     message.toLowerCase().includes(columnName.toLowerCase())
   );
-}
-
-function projectTypeLabel(type: string | null | undefined) {
-  switch (type) {
-    case "logistics":
-      return "לוגיסטיקה";
-    case "construction":
-      return "שיפוצים";
-    case "moving":
-      return "הובלה";
-    default:
-      return type ?? "לא הוגדר";
-  }
 }
 
 function formatDate(value: string | null | undefined) {
@@ -1424,49 +1409,14 @@ export default async function ProjectPage({
 
         {/* Desktop heading, same shape as an order: where you are, what this
             is, and the handful of things you can do to it. */}
-        <div className="hidden flex-col gap-2 lg:flex">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0 space-y-1">
-              <nav
-                className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground"
-                aria-label="ניווט"
-              >
-                <Link href="/projects" className="hover:text-foreground hover:underline">
-                  פרויקטים
-                </Link>
-                <ChevronLeftIcon className="h-3.5 w-3.5 shrink-0" />
-                {overviewCustomerId ? (
-                  <Link
-                    href={`/customers/${overviewCustomerId}`}
-                    className="text-foreground hover:underline"
-                  >
-                    {customerDisplayName || "לקוח"}
-                  </Link>
-                ) : (
-                  <span className="text-foreground">{customerDisplayName || "ללא לקוח משויך"}</span>
-                )}
-                {customerPhone ? (
-                  <>
-                    <span>·</span>
-                    <ContactTapZone
-                      kind={customerPhone.includes("@") ? "mailto" : "tel"}
-                      value={customerPhone}
-                      className="hover:text-foreground hover:underline"
-                    >
-                      <span dir="ltr">{customerPhone}</span>
-                    </ContactTapZone>
-                  </>
-                ) : null}
-              </nav>
-              {/* Just the name and the kind of job: status, dates and manager
-                  are on the סטטוס הפרויקט card, which every project has now. */}
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-lg font-bold tracking-tight">{projectName}</h1>
-                <Badge variant="outline">{projectTypeLabel(projectType)}</Badge>
-              </div>
-            </div>
-
-            {overview ? (
+        <ProjectPageHeading
+          customerId={overviewCustomerId}
+          customerDisplayName={customerDisplayName}
+          customerPhone={customerPhone}
+          projectName={projectName}
+          projectType={projectType}
+          actions={
+            overview ? (
               <ProjectDetailsActions
                 project={overview}
                 customerOptions={customerOptions}
@@ -1475,9 +1425,9 @@ export default async function ProjectPage({
                 projectDocumentsError={projectDocumentsErrorMessage}
                 share={projectShareData}
               />
-            ) : null}
-          </div>
-        </div>
+            ) : null
+          }
+        />
 
         {overviewError ? (
           <div className="text-destructive text-sm">

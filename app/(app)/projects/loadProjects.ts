@@ -4,6 +4,7 @@ import { findMatchingCustomers } from "@/lib/search/findMatchingCustomers";
 import { findProjectIdsMatchingContent } from "@/lib/search/findMatchingChildIds";
 import { projectTypesMatching } from "@/lib/search/projectTypeLabels";
 import { toHebrewError } from "@/lib/error-messages";
+import { attachOwedToRows, loadProjectOwed, type ProjectOwed } from "@/lib/projects/owed";
 
 type Row = Record<string, unknown>;
 
@@ -79,6 +80,11 @@ export async function loadProjectsPage(
   const from = (safePage - 1) * PROJECTS_PAGE_SIZE;
   const to = safePage * PROJECTS_PAGE_SIZE - 1;
 
+  // "אנחנו חייבים" per project. It doesn't need this page's ids — it reads the
+  // few projects that owe anything — so it starts now and loads alongside the
+  // list query instead of adding a round trip after it.
+  const owedPromise = loadOwedSafely(supabase);
+
   // The search's OR conditions need two lookups first; everything else is
   // known now. Built once, applied to whichever select runs below.
   let searchConditions: string | null = null;
@@ -143,7 +149,10 @@ export async function loadProjectsPage(
   }
 
   const rows = (data ?? []) as unknown as Row[];
-  const rowsWithPaymentStatus = await enrichProjectRows(supabase, rows, inline);
+  const [rowsWithPaymentStatus, owedByProject] = await Promise.all([
+    enrichProjectRows(supabase, rows, inline),
+    owedPromise,
+  ]);
 
   const totalCount = typeof count === "number" ? count : rows.length;
   // Drive "has more" off page fullness, not the estimated count (estimates for a
@@ -151,7 +160,7 @@ export async function loadProjectsPage(
   const hasMore = rows.length === PROJECTS_PAGE_SIZE;
 
   return {
-    rows: rowsWithPaymentStatus,
+    rows: attachOwedToRows(rowsWithPaymentStatus, owedByProject),
     totalCount,
     hasMore,
     error: error ? toHebrewError(error.message) : null,
@@ -167,12 +176,27 @@ export async function loadProjectsPage(
  */
 export async function loadProjectsByIds(supabase: SupabaseClient, ids: string[]): Promise<Row[]> {
   if (ids.length === 0) return [];
+  // Keyed by these ids, so it starts alongside the list read.
+  const owedPromise = loadOwedSafely(supabase, ids);
   const listRead = await supabase.from("project_dashboard_view").select(PROJECT_LIST_SELECT).in("id", ids);
   if (!isMissingColumn(listRead.error)) {
-    return enrichProjectRows(supabase, (listRead.data ?? []) as unknown as Row[], true);
+    const [rows, owedByProject] = await Promise.all([
+      enrichProjectRows(supabase, (listRead.data ?? []) as unknown as Row[], true),
+      owedPromise,
+    ]);
+    return attachOwedToRows(rows, owedByProject);
   }
   const { data } = await supabase.from("project_dashboard_view").select(PROJECT_DASHBOARD_SELECT).in("id", ids);
-  return enrichProjectRows(supabase, (data ?? []) as Row[], false);
+  const [rows, owedByProject] = await Promise.all([
+    enrichProjectRows(supabase, (data ?? []) as Row[], false),
+    owedPromise,
+  ]);
+  return attachOwedToRows(rows, owedByProject);
+}
+
+/** The owed figures never fail the list — a failed read just shows nothing owed. */
+function loadOwedSafely(supabase: SupabaseClient, ids: string[] | null = null): Promise<Map<string, ProjectOwed>> {
+  return loadProjectOwed(supabase, ids).catch(() => new Map<string, ProjectOwed>());
 }
 
 /**

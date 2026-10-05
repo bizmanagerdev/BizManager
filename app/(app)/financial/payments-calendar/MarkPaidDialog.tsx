@@ -13,13 +13,20 @@ import { toHebrewError } from "@/lib/error-messages";
 import type { PaymentCalendarItem } from "@/lib/payables";
 import { fmtIls } from "./calendar.helpers";
 
+// Only what the dialog reads — so a list that isn't the calendar (the חובות page)
+// can open it for an expense without inventing a whole calendar item.
+export type MarkPaidTarget = Pick<
+  PaymentCalendarItem,
+  "id" | "label" | "amount" | "variableAmount" | "expenseId" | "recurringTemplateId" | "recurrenceKey" | "date"
+>;
+
 // ── Inline mark-paid dialog (account required) ──────────────────────────────────
 export default function MarkPaidDialog({
   item,
   onClose,
   onSaved,
 }: {
-  item: PaymentCalendarItem | null;
+  item: MarkPaidTarget | null;
   onClose: () => void;
   // Given the expense row that now holds the payment (a forecast gets one on
   // the spot). Awaited: the dialog stays busy until the board has caught up.

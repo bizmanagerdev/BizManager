@@ -53,7 +53,14 @@ const PHONE = { id: "c1", phone: "0501234567" };
 
 type Call = { table: string; select: string };
 
-function fakeSupabase({ viewHasListColumns }: { viewHasListColumns: boolean }) {
+// What we owe on p1 ("אנחנו חייבים"): an unpaid ₪3,000 bill and ₪500 of wages.
+const OWED_LINK = { project_id: "p1", expenses: { id: "e1", amount: 3000, paid_amount: null, payment_status: "not_paid", expense_date: "2026-09-01", category: "רכישה", description: null } };
+const OWED_WAGES = { project_id: "p1", owed_amount: 500, paid_amount: 0 };
+
+// The two "אנחנו חייבים" reads start before the list query, alongside it.
+const OWED_TABLES = ["project_expenses", "project_worker_balance_view"];
+
+function fakeSupabase({ viewHasListColumns, owed = false }: { viewHasListColumns: boolean; owed?: boolean }) {
   const calls: Call[] = [];
   const supabase = {
     from(table: string) {
@@ -72,10 +79,12 @@ function fakeSupabase({ viewHasListColumns }: { viewHasListColumns: boolean }) {
         if (table === "projects") return { data: [SETTINGS], error: null };
         if (table === "project_financials_view") return { data: [FINANCIALS], error: null };
         if (table === "customers") return { data: [PHONE], error: null };
+        if (table === "project_expenses") return { data: owed ? [OWED_LINK] : [], error: null };
+        if (table === "project_worker_balance_view") return { data: owed ? [OWED_WAGES] : [], error: null };
         return { data: [], error: null };
       };
       const builder: Record<string, unknown> = {};
-      for (const method of ["eq", "not", "or", "order", "range", "in"]) builder[method] = () => builder;
+      for (const method of ["eq", "not", "or", "order", "range", "in", "gt"]) builder[method] = () => builder;
       builder.select = (select: string) => {
         call.select = select;
         return builder;
@@ -99,8 +108,16 @@ describe("loadProjectsPage", () => {
     const { loadProjectsPage } = await import("@/app/(app)/projects/loadProjects");
     const { supabase, calls } = fakeSupabase({ viewHasListColumns: true });
     const result = await loadProjectsPage(supabase as never, { page: 1, filters });
-    expect(calls.map((c) => c.table)).toEqual(["project_dashboard_view"]);
+    expect(calls.map((c) => c.table)).toEqual([...OWED_TABLES, "project_dashboard_view"]);
     expect(result.rows).toHaveLength(1);
+  });
+
+  it("puts what we owe on each project on its row — 0 when nothing is owed", async () => {
+    const { loadProjectsPage } = await import("@/app/(app)/projects/loadProjects");
+    const owing = await loadProjectsPage(fakeSupabase({ viewHasListColumns: true, owed: true }).supabase as never, { page: 1, filters });
+    expect(owing.rows[0]).toMatchObject({ we_owe_amount: 3500, we_owe_expenses: 3000, we_owe_workers: 500 });
+    const clear = await loadProjectsPage(fakeSupabase({ viewHasListColumns: true }).supabase as never, { page: 1, filters });
+    expect(clear.rows[0]).toMatchObject({ we_owe_amount: 0, we_owe_expenses: 0, we_owe_workers: 0 });
   });
 
   it("falls back to the two-step read while the view lacks them, without remembering it", async () => {
@@ -108,6 +125,7 @@ describe("loadProjectsPage", () => {
     const first = fakeSupabase({ viewHasListColumns: false });
     await loadProjectsPage(first.supabase as never, { page: 1, filters });
     expect(first.calls.map((c) => c.table)).toEqual([
+      ...OWED_TABLES,
       "project_dashboard_view",
       "project_dashboard_view",
       "projects",
@@ -117,7 +135,7 @@ describe("loadProjectsPage", () => {
     // Once the migration lands, the same server goes straight to one query.
     const second = fakeSupabase({ viewHasListColumns: true });
     await loadProjectsPage(second.supabase as never, { page: 1, filters });
-    expect(second.calls.map((c) => c.table)).toEqual(["project_dashboard_view"]);
+    expect(second.calls.map((c) => c.table)).toEqual([...OWED_TABLES, "project_dashboard_view"]);
   });
 
   it("gives the browser the same rows either way", async () => {

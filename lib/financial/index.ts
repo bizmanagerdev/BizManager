@@ -42,6 +42,7 @@ import {
   summarizeEntries,
 } from "./entries";
 import { fetchLoans, summarizeLoans, type Loan, type LoansSummary } from "@/lib/loans";
+import { withOpenAmount } from "@/lib/financial/expenseOpen";
 import { clampFromToBooksStart } from "@/lib/settings/booksStartDate";
 import {
   type FinancialEntry,
@@ -463,8 +464,14 @@ export async function getFinancialPageData(
   // Liability buckets stay REAL-ONLY: "התחייבויות פתוחות" means debts already
   // created (and feeds the net-worth calc), and the מאזן tab is accounting, not a
   // forecast — projected bills that don't exist yet must not inflate them.
-  const openLiabilityEntries = filteredEntries.filter((entry) => entry.type === "outflow" && entry.stage === "pending");
-  const scheduledLiabilityEntries = filteredEntries.filter((entry) => entry.type === "outflow" && entry.stage === "scheduled");
+  // A partly-paid bill is owed for what's left of it, not its face value — the
+  // same rule as the payments calendar and the חובות page (withOpenAmount).
+  const openLiabilityEntries = filteredEntries
+    .filter((entry) => entry.type === "outflow" && entry.stage === "pending")
+    .map(withOpenAmount);
+  const scheduledLiabilityEntries = filteredEntries
+    .filter((entry) => entry.type === "outflow" && entry.stage === "scheduled")
+    .map(withOpenAmount);
   const sourceCount = new Set(filteredEntries.map((entry) => entry.sourceId).filter((value): value is string => Boolean(value))).size;
 
   // Return the full sorted ledger (capped) so the client can infinite-scroll it

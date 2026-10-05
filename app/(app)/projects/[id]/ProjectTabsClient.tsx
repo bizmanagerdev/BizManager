@@ -71,6 +71,8 @@ import type { ExpenseWorkerOption } from "@/components/expenses/ExpenseDialog";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
 import BilledCustomerPrintButton from "./BilledCustomerPrintButton";
 import ProjectMovements, { type Movement } from "./ProjectMovements";
+import ProjectOwedBreakdown from "./ProjectOwedBreakdown";
+import { emptyProjectOwed, withWorkerBalance, type ProjectOwed } from "@/lib/projects/owed";
 import {
   LEDGER_GROUP_BY_LABELS,
   LEDGER_SORT_BY_LABELS,
@@ -257,6 +259,7 @@ export default function ProjectTabsClient({
   paymentRecordedByNameByValue,
   paymentAuditById,
   workerBalance,
+  owed,
   salaryAgreements,
   monthlySalaryItems,
   accountNameById,
@@ -305,6 +308,9 @@ export default function ProjectTabsClient({
   paymentRecordedByNameByValue: Record<string, string>;
   paymentAuditById: Record<string, AuditRecordInfo>;
   workerBalance: ProjectWorkerBalance;
+  /** The project's expenses we haven't fully paid ("אנחנו חייבים"); the wages
+   *  part is filled in here from `workerBalance`. */
+  owed?: ProjectOwed;
   salaryAgreements: ProjectSalaryAgreement[];
   monthlySalaryItems: ProjectMonthlySalaryItem[];
   /** Account id → name, for the חשבון shown on each תנועות row. */
@@ -754,6 +760,10 @@ export default function ProjectTabsClient({
   const grossProfit = toNumber(financials?.gross_profit) ?? null;
   const totalWorkerPaid = toNumber(workerBalance?.paid_amount) ?? 0;
   const totalWorkerOwed = toNumber(workerBalance?.owed_amount) ?? 0;
+  const owedSummary = useMemo(
+    () => withWorkerBalance(owed ?? emptyProjectOwed(), totalWorkerOwed, totalWorkerPaid),
+    [owed, totalWorkerOwed, totalWorkerPaid]
+  );
   const billedExpensesFromDb = toNumber(financials?.expenses_billed) ?? null;
   const customerTotalPrice = toNumber(financials?.customer_total_price) ?? null;
   const billableCustomerItems = expensesUi.filter((item) =>
@@ -1187,14 +1197,9 @@ export default function ProjectTabsClient({
         ) : null}
       </dl>
 
-      {totalWorkerOwed > 0.009 ? (
-        <div className="mt-3 rounded-2xl border border-warning/40 bg-warning-soft/60 px-3 py-2 text-xs text-warning-soft-foreground">
-          <span>יתרה לעובדים </span>
-          <LtrInline>{formatIls(totalWorkerOwed)}</LtrInline>
-          <span> · שולם </span>
-          <LtrInline>{formatIls(totalWorkerPaid)}</LtrInline>
-        </div>
-      ) : null}
+      {/* What WE still owe on the project — unpaid expenses + wages — as one
+          number with its breakdown (it used to be wages only). */}
+      <ProjectOwedBreakdown owed={owedSummary} />
 
       {vatCollectedTotal > 0.009 ? (
         <div className="mt-2 text-xs text-muted-foreground">

@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MetaRow } from "@/components/ui/meta-row";
 import type { PaymentCalendarItem } from "@/lib/payables";
-import { DIRECTION_WORDS, MONEY_SIGN, STAGE_BADGE, STAGE_DOT, amountLabel, itemStageKey, stageLabelFor } from "./calendar.helpers";
+import { DIRECTION_WORDS, MONEY_SIGN, STAGE_BADGE, STAGE_DOT, amountLabel, itemStageKey, partialPaidNote, stageLabelFor } from "./calendar.helpers";
 
 // ── Shared item card (used by the day panel and anywhere a payment is listed) ───
 export default function PaymentItemCard({
@@ -61,6 +61,8 @@ export default function PaymentItemCard({
   ];
   const metaLine = metaItems.filter(Boolean).join(" • ");
   const amountText = amountLabel(item);
+  // A partly-paid bill shows what's left; this says what it was out of.
+  const partialText = partialPaidNote(item);
   const noteText = item.notes?.trim() || "";
 
   // Compact single-block row for the day panel: title + amount on one line,
@@ -87,6 +89,12 @@ export default function PaymentItemCard({
           <div className="mt-1.5 flex flex-wrap gap-1">
             {item.autoPaid ? <Badge variant="outline">הוראת קבע</Badge> : isForecast ? <Badge variant="neutral">קבועה</Badge> : null}
             {item.variableAmount ? <Badge variant="warning">משתנה</Badge> : null}
+          </div>
+        ) : null}
+        {partialText ? (
+          <div className="mt-1.5 text-xs text-muted-foreground">
+            <Badge variant="warning" className="me-1.5 px-2 py-0 text-[10px]">שולם חלקית</Badge>
+            {partialText}
           </div>
         ) : null}
         {noteText ? (
@@ -172,6 +180,12 @@ export default function PaymentItemCard({
       <div className="mt-0.5 text-sm text-muted-foreground">
         {metaLine}
       </div>
+      {partialText ? (
+        <div className="mt-0.5 text-sm text-muted-foreground">
+          <Badge variant="warning" className="me-1.5">שולם חלקית</Badge>
+          {partialText}
+        </div>
+      ) : null}
       {noteText ? (
         <div className="mt-0.5 text-sm text-muted-foreground">הערה: {noteText}</div>
       ) : null}

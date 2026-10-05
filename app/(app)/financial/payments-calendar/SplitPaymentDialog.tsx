@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { toHebrewError } from "@/lib/error-messages";
-import { isExpenseBusinessDomain } from "@/lib/expenses";
 import type { PaymentCalendarItem } from "@/lib/payables";
+import { buildSplitRequestBody, partialPaidNote } from "./calendar.helpers";
 import {
   InstallmentFields,
   buildInstallmentRows,
@@ -54,14 +54,12 @@ export function SplitPaymentDialog({ open, onOpenChange, sourceItem, onSaved }: 
       const res = await fetch("/api/expenses/split", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          source_expense_id: sourceItem.expenseId,
-          business_domain: isExpenseBusinessDomain(sourceItem.businessDomain) ? sourceItem.businessDomain : "general_business",
-          category: sourceItem.category || "רכישה",
-          description: sourceItem.descriptionRaw || sourceItem.label,
-          notes: sourceItem.notes,
-          installments: rows.map((r) => ({ expense_date: r.date, amount: Number(r.amount) })),
-        }),
+        body: JSON.stringify(
+          buildSplitRequestBody(
+            sourceItem,
+            rows.map((r) => ({ date: r.date, amount: Number(r.amount) }))
+          )
+        ),
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
@@ -86,7 +84,14 @@ export function SplitPaymentDialog({ open, onOpenChange, sourceItem, onSaved }: 
       open={open}
       onOpenChange={onOpenChange}
       title="פיצול לתשלומים"
-      description={sourceItem ? `${sourceItem.label} — סכום מקורי ${fmtIls(total)}` : undefined}
+      description={
+        sourceItem
+          ? partialPaidNote(sourceItem)
+            ? // A partly-paid bill splits only what's left; the paid part is kept as is.
+              `${sourceItem.label} — נשאר לשלם ${fmtIls(total)} (${partialPaidNote(sourceItem)})`
+            : `${sourceItem.label} — סכום מקורי ${fmtIls(total)}`
+          : undefined
+      }
       onSubmit={() => void submit()}
       submitLabel="פצל לתשלומים"
       busyLabel="שומר..."

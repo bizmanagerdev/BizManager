@@ -312,3 +312,72 @@ describe("deriveLoan / summarizeLoans", () => {
     expect(summary.borrowedActiveCount).toBe(0);
   });
 });
+
+describe("a due date with no repayment plan", () => {
+  it("a taken loan with a due date and no plan is owed, in full, on that date", () => {
+    const loan = deriveLoan(
+      { id: "D1", direction: "taken", amount: 7000, lender: "ספק", loan_date: "2024-01-01", due_date: "2025-03-01" },
+      []
+    );
+    const due = buildLoanEntries([loan], REF).find((e) => e.id === "loan_due:D1");
+    expect(due).toMatchObject({
+      type: "outflow",
+      amount: 7000,
+      flowDate: "2025-03-01",
+      stage: "scheduled",
+      origin: "loan",
+      paymentStatus: "not_paid",
+      sourceHref: "/financial/loans/D1",
+    });
+  });
+
+  it("once the date has passed it is pending — the calendar shows it late", () => {
+    const loan = deriveLoan({ id: "D2", direction: "taken", amount: 5000, loan_date: "2024-01-01", due_date: "2024-06-01" }, []);
+    const due = buildLoanEntries([loan], REF).find((e) => e.id === "loan_due:D2");
+    expect(due?.stage).toBe("pending");
+  });
+
+  it("only the part the plan doesn't cover falls on the due date", () => {
+    const loan = deriveLoan(
+      { id: "D3", direction: "taken", amount: 10000, loan_date: "2024-01-01", due_date: "2025-06-01" },
+      [makeInstallment({ id: "p1", loan_id: "D3", repayment_date: "2025-01-01", amount: 4000 })]
+    );
+    const entries = buildLoanEntries([loan], REF);
+    expect(entries.find((e) => e.id === "loan_planned:p1")?.amount).toBe(4000);
+    expect(entries.find((e) => e.id === "loan_due:D3")?.amount).toBe(6000);
+  });
+
+  it("repaid principal is not owed again", () => {
+    const loan = deriveLoan(
+      { id: "D4", direction: "taken", amount: 10000, loan_date: "2024-01-01", due_date: "2025-06-01" },
+      [makeRepayment({ id: "r9", loan_id: "D4", amount: 2500 })]
+    );
+    expect(buildLoanEntries([loan], REF).find((e) => e.id === "loan_due:D4")?.amount).toBe(7500);
+  });
+
+  it("no due-date entry for a fully planned, repaid, written-off, undated or lent loan", () => {
+    const fullyPlanned = deriveLoan(
+      { id: "N1", direction: "taken", amount: 3000, loan_date: "2024-01-01", due_date: "2025-01-01" },
+      [makeInstallment({ id: "p2", loan_id: "N1", repayment_date: "2025-01-01", amount: 3000 })]
+    );
+    const repaid = deriveLoan(
+      { id: "N2", direction: "taken", amount: 3000, loan_date: "2024-01-01", due_date: "2025-01-01" },
+      [makeRepayment({ id: "r10", loan_id: "N2", amount: 3000 })]
+    );
+    const writtenOff = deriveLoan(
+      { id: "N3", direction: "taken", amount: 3000, loan_date: "2024-01-01", due_date: "2025-01-01", status: "written_off" },
+      []
+    );
+    const undated = deriveLoan({ id: "N4", direction: "taken", amount: 3000, loan_date: "2024-01-01", due_date: null }, []);
+    const lent = deriveLoan({ id: "N5", direction: "given", amount: 3000, loan_date: "2024-01-01", due_date: "2025-01-01" }, []);
+    const entries = buildLoanEntries([fullyPlanned, repaid, writtenOff, undated, lent], REF);
+    expect(entries.filter((e) => e.id.startsWith("loan_due:"))).toEqual([]);
+  });
+
+  it("never reaches the P&L", () => {
+    const loan = deriveLoan({ id: "D5", direction: "taken", amount: 7000, loan_date: "2024-12-01", due_date: "2024-12-20" }, []);
+    const rows = aggregateProfitLoss(buildLoanEntries([loan], REF));
+    const totalExpenses = rows.reduce((sum, row) => sum + row.accrualExpense + row.cashExpense, 0);
+    expect(totalExpenses).toBe(0);
+  });
+});

@@ -169,19 +169,33 @@ describe("rowNavigateProps — prefetch on intent", () => {
     }
   });
 
-  it("fetches at once when a finger goes down (touch has no hover) or the row gets focus", () => {
+  it("fetches nothing on touch — not on a finger going down, which also starts every scroll", () => {
+    vi.useFakeTimers();
+    try {
+      const prefetch = vi.fn();
+      const props = rowNavigateProps({ push: vi.fn(), prefetch }, "/projects/p1", { prefetch: true }) as unknown as {
+        onPointerEnter: (e: React.PointerEvent) => void;
+      };
+      props.onPointerEnter(pointer("touch"));
+      vi.advanceTimersByTime(500);
+      expect(prefetch).not.toHaveBeenCalled();
+      expect("onPointerDown" in props).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("fetches when the keyboard moves onto the row, not when a tap or click focuses it", () => {
     const prefetch = vi.fn();
     const props = rowNavigateProps({ push: vi.fn(), prefetch }, "/projects/p1", { prefetch: true }) as unknown as {
-      onPointerEnter: (e: React.PointerEvent) => void;
-      onPointerDown: () => void;
-      onFocus: () => void;
+      onFocus: (e: React.FocusEvent) => void;
     };
-    props.onPointerEnter(pointer("touch"));
+    const focus = (keyboard: boolean) =>
+      ({ currentTarget: { matches: (selector: string) => keyboard && selector === ":focus-visible" } }) as unknown as React.FocusEvent;
+    props.onFocus(focus(false));
     expect(prefetch).not.toHaveBeenCalled();
-    props.onPointerDown();
-    expect(prefetch).toHaveBeenCalledTimes(1);
-    props.onFocus();
-    expect(prefetch).toHaveBeenCalledTimes(2);
+    props.onFocus(focus(true));
+    expect(prefetch).toHaveBeenCalledWith("/projects/p1", { kind: "full" });
   });
 
   it("still navigates on click", () => {
@@ -189,5 +203,15 @@ describe("rowNavigateProps — prefetch on intent", () => {
     const props = rowNavigateProps({ push, prefetch: vi.fn() }, "/projects/p1", { prefetch: true });
     props.onClick({ target: el("<span>x</span>") } as unknown as React.MouseEvent);
     expect(push).toHaveBeenCalledWith("/projects/p1");
+  });
+
+  it("runs onNavigate just before navigating — and not for a click on a button inside the row", () => {
+    const calls: string[] = [];
+    const push = vi.fn(() => calls.push("push"));
+    const props = rowNavigateProps({ push }, "/projects/p1", { onNavigate: () => calls.push("onNavigate") });
+    props.onClick({ target: el("<div><button>x</button></div>").querySelector("button") } as unknown as React.MouseEvent);
+    expect(calls).toEqual([]);
+    props.onClick({ target: el("<span>x</span>") } as unknown as React.MouseEvent);
+    expect(calls).toEqual(["onNavigate", "push"]);
   });
 });
