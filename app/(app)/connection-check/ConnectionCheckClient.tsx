@@ -238,13 +238,73 @@ async function powerSyncAddress(): Promise<Result> {
 // syncs — powersync_probe, admins only, the only table PowerSync can read.
 const POWERSYNC_URL = "https://6ac3ebc2f0708554f16bfb92.powersync.journeyapps.com";
 
+// What the sync connection hands back, a piece at a time (null: it closed).
+type SyncConnection = { read: () => Promise<string | null> };
+
+function syncRequest() {
+  return {
+    buckets: [],
+    include_checksum: true,
+    raw_data: true,
+    client_id: `bizh-check-${Math.random().toString(36).slice(2)}`,
+    streams: { include_defaults: true, subscriptions: [] },
+  };
+}
+
+/** PowerSync's default on the web: one long HTTP answer that keeps streaming. */
+async function openHttpSync(token: string, signal: AbortSignal): Promise<SyncConnection> {
+  const response = await fetch(`${POWERSYNC_URL}/sync/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Token ${token}` },
+    body: JSON.stringify(syncRequest()),
+    signal,
+    cache: "no-store",
+  });
+  if (response.status === 401) throw new Error("PowerSync לא קיבל את הכניסה (Client Auth)");
+  if (!response.ok || !response.body) throw new Error(`תשובה לא תקינה (${response.status})`);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  return {
+    read: async () => {
+      const { done, value } = await reader.read();
+      return done ? null : decoder.decode(value, { stream: true });
+    },
+  };
+}
+
+/**
+ * The other way PowerSync can sync: a WebSocket, opened by PowerSync's own
+ * library exactly as the app would (each message is a binary record, but the
+ * names and the row ids inside it are plain text).
+ */
+async function openWebSocketSync(token: string, signal: AbortSignal): Promise<SyncConnection> {
+  const { WebRemote, FetchStrategy } = await import("@powersync/web");
+  const remote = new WebRemote(
+    { fetchCredentials: async () => ({ endpoint: POWERSYNC_URL, token }) },
+    { log: () => {} }
+  );
+  const stream = await remote.socketStreamRaw({
+    path: "/sync/stream",
+    fetchStrategy: FetchStrategy.Sequential,
+    abortSignal: signal,
+    data: syncRequest(),
+  });
+  const decoder = new TextDecoder();
+  return {
+    read: async () => {
+      const { done, value } = await stream.next();
+      return done ? null : decoder.decode(value);
+    },
+  };
+}
+
 /**
  * The real thing, end to end, the way the app would sync: open PowerSync's
  * sync connection as the signed-in person, wait for its first full answer, add
  * one row to the test table through our database, and time how long that row
  * takes to come back down the open connection. Then the row is removed.
  */
-async function powerSyncLive(): Promise<Result> {
+async function powerSyncProbe(open: (token: string, signal: AbortSignal) => Promise<SyncConnection>): Promise<Result> {
   const supabase = createSupabaseBrowserClient();
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData.session?.access_token;
@@ -254,45 +314,24 @@ async function powerSyncLive(): Promise<Result> {
   const controller = new AbortController();
   let probeId: string | null = null;
   try {
-    const response = await withTimeout(
-      fetch(`${POWERSYNC_URL}/sync/stream`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Token ${token}` },
-        body: JSON.stringify({
-          buckets: [],
-          include_checksum: true,
-          raw_data: true,
-          client_id: `bizh-check-${Math.random().toString(36).slice(2)}`,
-          streams: { include_defaults: true, subscriptions: [] },
-        }),
-        signal: controller.signal,
-        cache: "no-store",
-      }),
-      15_000
-    );
-    if (response.status === 401) return { status: "fail", detail: "PowerSync לא קיבל את הכניסה (Client Auth)" };
-    if (!response.ok || !response.body) return { status: "fail", detail: `תשובה לא תקינה (${response.status})` };
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    // Read lines until `match` says stop, or the time runs out.
-    const readUntil = (match: (line: string) => boolean, timeoutMs: number) =>
+    const connection = await withTimeout(open(token, controller.signal), 15_000);
+    // Read until `text` turns up, or the time runs out. The tail of what came
+    // before is kept, so a word split between two pieces still counts.
+    let seen = "";
+    const readUntil = (text: string, timeoutMs: number) =>
       withTimeout(
         (async () => {
           for (;;) {
-            const { done, value } = await reader.read();
-            if (done) throw new Error("PowerSync סגר את החיבור");
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split("\n");
-            buffer = lines.pop() ?? "";
-            if (lines.some(match)) return;
+            const piece = await connection.read();
+            if (piece === null) throw new Error("PowerSync סגר את החיבור");
+            seen = (seen + piece).slice(-(piece.length + 200));
+            if (seen.includes(text)) return;
           }
         })(),
         timeoutMs
       );
 
-    await readUntil((line) => line.includes('"checkpoint_complete"'), 15_000);
+    await readUntil("checkpoint_complete", 15_000);
     const connectedAfter = ms(started);
 
     const { data: inserted, error } = await supabase
@@ -306,7 +345,7 @@ async function powerSyncLive(): Promise<Result> {
     probeId = (inserted as { id: string }).id;
     const insertedAt = performance.now();
     try {
-      await readUntil((line) => line.includes(probeId as string), 20_000);
+      await readUntil(probeId, 20_000);
     } catch {
       return {
         status: "warn",
@@ -415,7 +454,8 @@ const CHECKS: Check[] = [
   { id: "new", label: "כתובת אינטרנט חדשה", run: newAddress },
   { id: "newLive", label: "חיבור חי לכתובת חדשה", run: newAddressLive },
   { id: "powersync", label: "הכתובת של PowerSync", run: powerSyncAddress },
-  { id: "powersyncLive", label: "PowerSync — סנכרון אמיתי", run: powerSyncLive },
+  { id: "powersyncLive", label: "PowerSync — סנכרון אמיתי (חיבור רגיל)", run: () => powerSyncProbe(openHttpSync) },
+  { id: "powersyncSocket", label: "PowerSync — סנכרון אמיתי בחיבור חי (WebSocket)", run: () => powerSyncProbe(openWebSocketSync) },
   { id: "storage", label: "שמירת מידע על המכשיר", run: deviceStorage },
   { id: "worker", label: "עבודה ברקע (Worker)", run: backgroundWorker },
   { id: "wasm", label: "WebAssembly", run: webAssembly },
