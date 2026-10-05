@@ -47,7 +47,7 @@ export type Me = { email: string | null; canTrackSessions: boolean; canViewSalar
 let meCache: Me | null = null;
 let meInFlight: Promise<void> | null = null;
 
-function userMenuLinks(locale: Locale): {
+function userMenuLinks(locale: Locale, viewerRole?: string): {
   href: string;
   label: string;
   icon: typeof UserIcon;
@@ -70,10 +70,12 @@ function userMenuLinks(locale: Locale): {
       icon: WalletIcon,
       gate: (me) => me?.canViewSalary === true,
     },
-    // TEMPORARY (2026-10-05): what this phone's network and filter (NetFree,
-    // Hadran…) let through, before the app's data moves onto the device. Remove
-    // once the results are in.
-    { href: "/connection-check", label: t(topbarDict, locale, "connectionCheckLabel"), icon: NetworkIcon },
+    // TEMPORARY (2026-10-05), admins only: what this phone's network and
+    // filter (NetFree, Hadran…) let through, before the app's data moves onto
+    // the device. Remove once the results are in.
+    ...(viewerRole === "admin"
+      ? [{ href: "/connection-check", label: t(topbarDict, locale, "connectionCheckLabel"), icon: NetworkIcon }]
+      : []),
   ];
 }
 
@@ -523,7 +525,7 @@ export function TopBar({
           <div className="-mx-1 my-1 h-px bg-muted" />
 
           {/* One entry per errand — these are the profile's tabs. */}
-          {userMenuLinks(viewerLocale).filter((link) => !link.gate || link.gate(me)).map((link) => (
+          {userMenuLinks(viewerLocale, viewerRole).filter((link) => !link.gate || link.gate(me)).map((link) => (
             <Link
               key={link.href}
               href={link.href}

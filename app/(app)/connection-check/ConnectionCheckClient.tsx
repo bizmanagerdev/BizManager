@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { markConnectionCheckDone } from "@/lib/connection-check";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,8 +12,10 @@ import { Card, CardContent } from "@/components/ui/card";
 // Hadran, Rimon…) — lets the app do, checked before the app's data moves onto
 // the device: a sync engine needs a connection that stays open, maybe a new
 // web address, storage on the device, and background workers. Each check runs
-// in turn and says plainly what it found; the results are copied as text to
-// send back. Remove with the menu link once the results are in.
+// in turn and says plainly what it found; when the run ends the results go to
+// our server on their own (admins read them on /connection-check/results),
+// with copy-as-text as the fallback. Remove with the menu link and the
+// dashboard card once the results are in.
 
 type Status = "waiting" | "running" | "pass" | "warn" | "fail" | "info";
 type Result = { status: Status; detail: string };
@@ -51,14 +55,17 @@ function errorText(error: unknown) {
 }
 
 /** How the app is open: the Android app, the installed web app, or a browser. */
-function whereOpen(): Result {
+function openedIn(): string {
   const capacitor = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
-  const kind = capacitor?.isNativePlatform?.()
+  return capacitor?.isNativePlatform?.()
     ? "אפליקציית אנדרואיד"
     : window.matchMedia("(display-mode: standalone)").matches
       ? "אפליקציה מותקנת (PWA)"
       : "דפדפן";
-  return { status: "info", detail: `${kind} · ${navigator.userAgent}` };
+}
+
+function whereOpen(): Result {
+  return { status: "info", detail: `${openedIn()} · ${navigator.userAgent}` };
 }
 
 async function ourSite(): Promise<Result> {
@@ -189,6 +196,133 @@ function newAddressLive(): Promise<Result> {
   });
 }
 
+/** Whether an image at `url` really loads — a filter's "blocked" page isn't one. */
+function imageLoads(url: string, timeoutMs = 8_000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const image = new Image();
+    const timer = setTimeout(() => {
+      image.src = "";
+      resolve(false);
+    }, timeoutMs);
+    image.onload = () => {
+      clearTimeout(timer);
+      resolve(image.naturalWidth > 0);
+    };
+    image.onerror = () => {
+      clearTimeout(timer);
+      resolve(false);
+    };
+    image.src = `${url}?bizh=${Date.now()}`;
+  });
+}
+
+/**
+ * PowerSync's own addresses, no account needed: each customer's sync address
+ * is <id>.powersync.journeyapps.com, so the phone has to reach journeyapps.com
+ * (its icon loads), and PowerSync's dashboard (its icon loads). The customer
+ * address itself can't be checked without an account — filters normally allow
+ * or block a whole address family, so journeyapps.com is the telling one.
+ */
+async function powerSyncAddress(): Promise<Result> {
+  const started = performance.now();
+  const [journeyApps, dashboard] = await Promise.all([
+    imageLoads("https://journeyapps.com/favicon.ico"),
+    imageLoads("https://dashboard.powersync.com/favicon.ico"),
+  ]);
+  const detail = `journeyapps.com ${journeyApps ? "✓" : "✗"} · dashboard.powersync.com ${dashboard ? "✓" : "✗"} · ${ms(started)} ms`;
+  const status: Status = journeyApps && dashboard ? "pass" : journeyApps || dashboard ? "warn" : "fail";
+  return { status, detail };
+}
+
+// The PowerSync instance (the dev one, 2026-10-05) and the throwaway table it
+// syncs — powersync_probe, admins only, the only table PowerSync can read.
+const POWERSYNC_URL = "https://6ac3ebc2f0708554f16bfb92.powersync.journeyapps.com";
+
+/**
+ * The real thing, end to end, the way the app would sync: open PowerSync's
+ * sync connection as the signed-in person, wait for its first full answer, add
+ * one row to the test table through our database, and time how long that row
+ * takes to come back down the open connection. Then the row is removed.
+ */
+async function powerSyncLive(): Promise<Result> {
+  const supabase = createSupabaseBrowserClient();
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData.session?.access_token;
+  if (!token) return { status: "fail", detail: "אין חיבור משתמש" };
+
+  const started = performance.now();
+  const controller = new AbortController();
+  let probeId: string | null = null;
+  try {
+    const response = await withTimeout(
+      fetch(`${POWERSYNC_URL}/sync/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Token ${token}` },
+        body: JSON.stringify({
+          buckets: [],
+          include_checksum: true,
+          raw_data: true,
+          client_id: `bizh-check-${Math.random().toString(36).slice(2)}`,
+          streams: { include_defaults: true, subscriptions: [] },
+        }),
+        signal: controller.signal,
+        cache: "no-store",
+      }),
+      15_000
+    );
+    if (response.status === 401) return { status: "fail", detail: "PowerSync לא קיבל את הכניסה (Client Auth)" };
+    if (!response.ok || !response.body) return { status: "fail", detail: `תשובה לא תקינה (${response.status})` };
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    // Read lines until `match` says stop, or the time runs out.
+    const readUntil = (match: (line: string) => boolean, timeoutMs: number) =>
+      withTimeout(
+        (async () => {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) throw new Error("PowerSync סגר את החיבור");
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
+            if (lines.some(match)) return;
+          }
+        })(),
+        timeoutMs
+      );
+
+    await readUntil((line) => line.includes('"checkpoint_complete"'), 15_000);
+    const connectedAfter = ms(started);
+
+    const { data: inserted, error } = await supabase
+      .from("powersync_probe")
+      .insert({ note: "connection check" })
+      .select("id")
+      .single();
+    if (error || !inserted) {
+      return { status: "warn", detail: `התחבר תוך ${connectedAfter} ms, אבל לא ניתן היה להוסיף שורת בדיקה (${error?.message ?? "?"})` };
+    }
+    probeId = (inserted as { id: string }).id;
+    const insertedAt = performance.now();
+    try {
+      await readUntil((line) => line.includes(probeId as string), 20_000);
+    } catch {
+      return {
+        status: "warn",
+        detail: `התחבר תוך ${connectedAfter} ms, אבל השורה החדשה לא הגיעה דרך PowerSync תוך 20 שנ' (מוחזק בדרך?)`,
+      };
+    }
+    return {
+      status: "pass",
+      detail: `התחבר תוך ${connectedAfter} ms · שורה חדשה הגיעה דרך PowerSync תוך ${ms(insertedAt)} ms`,
+    };
+  } finally {
+    controller.abort();
+    if (probeId) void supabase.from("powersync_probe").delete().eq("id", probeId);
+  }
+}
+
 /** Store something on the device, read it back, and say how much room there is. */
 async function deviceStorage(): Promise<Result> {
   const name = "biz_connection_check";
@@ -280,6 +414,8 @@ const CHECKS: Check[] = [
   { id: "stream", label: "חיבור שנשאר פתוח ושולח מידע לאורך זמן", run: openStream },
   { id: "new", label: "כתובת אינטרנט חדשה", run: newAddress },
   { id: "newLive", label: "חיבור חי לכתובת חדשה", run: newAddressLive },
+  { id: "powersync", label: "הכתובת של PowerSync", run: powerSyncAddress },
+  { id: "powersyncLive", label: "PowerSync — סנכרון אמיתי", run: powerSyncLive },
   { id: "storage", label: "שמירת מידע על המכשיר", run: deviceStorage },
   { id: "worker", label: "עבודה ברקע (Worker)", run: backgroundWorker },
   { id: "wasm", label: "WebAssembly", run: webAssembly },
@@ -290,11 +426,50 @@ function initialResults(): Record<string, Result> {
   return Object.fromEntries(CHECKS.map((check) => [check.id, { status: "waiting", detail: "" } as Result]));
 }
 
-export default function ConnectionCheckClient({ userName }: { userName: string }) {
-  useSetPageTitle("בדיקת חיבור");
+function buildReport(userName: string, results: Record<string, Result>) {
+  return [
+    `בדיקת חיבור BizH — ${userName} — ${new Date().toLocaleString("he-IL")}`,
+    ...CHECKS.map((check) => {
+      const result = results[check.id];
+      return `${STATUS_MARK[result.status]} ${check.label}: ${result.detail}`;
+    }),
+  ].join("\n");
+}
+
+const TEXT = {
+  he: {
+    title: "בדיקת חיבור",
+    intro: "הבדיקה לוקחת כחצי דקה. נא להמתין עד שהיא מסתיימת.",
+    sending: "מסיים…",
+    sent: "✅ הבדיקה הסתיימה. תודה!",
+    failed: "הבדיקה הסתיימה, אבל התוצאות לא נשמרו.",
+  },
+  ar: {
+    title: "فحص الاتصال",
+    intro: "يستغرق الفحص نصف دقيقة تقريباً. الرجاء الانتظار حتى ينتهي.",
+    sending: "جارٍ الإنهاء…",
+    sent: "✅ انتهى الفحص. شكراً!",
+    failed: "انتهى الفحص، لكن لم يتم حفظ النتائج.",
+  },
+} as const;
+
+type SendState = "idle" | "sending" | "sent" | "failed";
+
+export default function ConnectionCheckClient({
+  userName,
+  locale,
+  isAdmin,
+}: {
+  userName: string;
+  locale: "he" | "ar";
+  isAdmin: boolean;
+}) {
+  const text = TEXT[locale];
+  useSetPageTitle(text.title);
   const [results, setResults] = useState<Record<string, Result>>(initialResults);
   const [running, setRunning] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [sendState, setSendState] = useState<SendState>("idle");
   const runId = useRef(0);
 
   // A new run supersedes the one before it (the "בדיקה מחדש" button).
@@ -303,7 +478,9 @@ export default function ConnectionCheckClient({ userName }: { userName: string }
     const isCurrent = () => runId.current === id;
     setRunning(true);
     setCopied(false);
+    setSendState("idle");
     setResults(initialResults());
+    const collected: Record<string, Result> = {};
     // One at a time, so one check's traffic doesn't slow another's timing.
     for (const check of CHECKS) {
       if (!isCurrent()) return;
@@ -315,10 +492,30 @@ export default function ConnectionCheckClient({ userName }: { userName: string }
         result = { status: "fail", detail: errorText(error) };
       }
       if (!isCurrent()) return;
+      collected[check.id] = result;
       setResults((prev) => ({ ...prev, [check.id]: result }));
     }
     setRunning(false);
-  }, []);
+    // Done on this device: the dashboard stops asking. Then the results go to
+    // our server on their own — nobody has to copy or send anything.
+    markConnectionCheckDone();
+    setSendState("sending");
+    try {
+      const response = await fetch("/api/connection-check/report", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          openedIn: openedIn(),
+          userAgent: navigator.userAgent,
+          results: collected,
+          report: buildReport(userName, collected),
+        }),
+      });
+      if (isCurrent()) setSendState(response.ok ? "sent" : "failed");
+    } catch {
+      if (isCurrent()) setSendState("failed");
+    }
+  }, [userName]);
 
   // Starts on its own once the page is up — nothing to press first.
   useEffect(() => {
@@ -326,19 +523,12 @@ export default function ConnectionCheckClient({ userName }: { userName: string }
     return () => clearTimeout(timer);
   }, [runAll]);
 
-  const reportText = () =>
-    [
-      `בדיקת חיבור BizH — ${userName} — ${new Date().toLocaleString("he-IL")}`,
-      ...CHECKS.map((check) => {
-        const result = results[check.id];
-        return `${STATUS_MARK[result.status]} ${check.label}: ${result.detail}`;
-      }),
-    ].join("\n");
+  const reportText = () => buildReport(userName, results);
 
   const copyReport = async () => {
-    const text = reportText();
+    const report = reportText();
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(report);
       setCopied(true);
     } catch {
       // Some app shells refuse the clipboard API — fall back to selecting a
@@ -350,12 +540,25 @@ export default function ConnectionCheckClient({ userName }: { userName: string }
     }
   };
 
+  // Copying is only the fallback for when the results couldn't be saved.
+  const showCopy = !running && sendState === "failed";
+
   return (
-    <div className="mx-auto max-w-2xl space-y-3">
-      <p className="text-sm text-muted-foreground">
-        הבדיקה לוקחת כחצי דקה ובודקת מה הרשת והסינון בטלפון הזה מאפשרים לאפליקציה. בסיום יש ללחוץ על
-        &quot;העתקת התוצאות&quot; ולשלוח אותן.
-      </p>
+    <div className="mx-auto max-w-2xl space-y-3" dir={locale === "ar" ? "rtl" : undefined}>
+      <p className="text-sm text-muted-foreground">{text.intro}</p>
+      {sendState !== "idle" ? (
+        <div
+          className={
+            sendState === "failed"
+              ? "rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm font-medium"
+              : sendState === "sent"
+                ? "rounded-xl border border-success/40 bg-success/10 px-4 py-3 text-sm font-medium"
+                : "rounded-xl border px-4 py-3 text-sm text-muted-foreground"
+          }
+        >
+          {sendState === "sending" ? text.sending : sendState === "sent" ? text.sent : text.failed}
+        </div>
+      ) : null}
       <Card>
         <CardContent className="divide-y divide-border/60 p-0">
           {CHECKS.map((check) => {
@@ -366,7 +569,9 @@ export default function ConnectionCheckClient({ userName }: { userName: string }
                   {STATUS_MARK[result.status]}
                 </span>
                 <div className="min-w-0">
-                  <div className="text-sm font-medium">{check.label}</div>
+                  <div className="text-sm font-medium" dir="rtl">
+                    {check.label}
+                  </div>
                   {result.detail ? (
                     <div className="break-words text-xs text-muted-foreground" dir="auto">
                       {result.detail}
@@ -379,21 +584,30 @@ export default function ConnectionCheckClient({ userName }: { userName: string }
         </CardContent>
       </Card>
       <div className="flex flex-wrap gap-2">
-        <Button type="button" onClick={() => void copyReport()} disabled={running}>
-          {copied ? "הועתק ✓" : "העתקת התוצאות"}
-        </Button>
+        {showCopy ? (
+          <Button type="button" onClick={() => void copyReport()}>
+            {copied ? "הועתק ✓" : "העתקת התוצאות"}
+          </Button>
+        ) : null}
         <Button type="button" variant="outline" onClick={() => void runAll()} disabled={running}>
           בדיקה מחדש
         </Button>
+        {isAdmin ? (
+          <Button asChild variant="outline">
+            <Link href="/connection-check/results">תוצאות כל המשתמשים</Link>
+          </Button>
+        ) : null}
       </div>
       {/* The same text, for copying by hand where the clipboard is blocked. */}
-      <textarea
-        id="connection-check-report"
-        readOnly
-        value={running ? "" : reportText()}
-        className="h-40 w-full rounded-md border bg-muted/30 p-2 text-xs"
-        dir="rtl"
-      />
+      {showCopy ? (
+        <textarea
+          id="connection-check-report"
+          readOnly
+          value={reportText()}
+          className="h-40 w-full rounded-md border bg-muted/30 p-2 text-xs"
+          dir="rtl"
+        />
+      ) : null}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { firstAccessiblePrefix, hasSectionAccess, isStaffRole } from "@/lib/auth
 import DashboardGreetingTitle from "@/components/dashboard/DashboardGreetingTitle";
 import { firstNameOf, greetingForHour, viewerHour } from "@/lib/dashboard/greeting";
 import { DashboardPanels, PanelsFallback } from "@/app/(app)/dashboard/DashboardSections";
+import ConnectionCheckCard from "@/components/dashboard/ConnectionCheckCard";
 
 export const revalidate = 60;
 
@@ -61,6 +62,9 @@ export default async function DashboardPage() {
           own height calc is trimmed by the same lg amount, so the board grows
           into the reclaimed space instead of leaving it empty at the bottom. */}
       <PageStack className="-mt-2 md:-mt-3 lg:-mt-4">
+        {/* TEMPORARY (2026-10-05): the connection check, first thing for
+            admins until they've run it on this device. */}
+        {profile.role === "admin" ? <ConnectionCheckCard locale={profile.locale === "ar" ? "ar" : "he"} /> : null}
         <Suspense fallback={<PanelsFallback />}>
           <DashboardPanels />
         </Suspense>
