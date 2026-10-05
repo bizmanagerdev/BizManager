@@ -1,6 +1,7 @@
 "use client";
 
 import { useSetPageTitle } from "@/components/layout/page-title-context";
+import { HeaderActionsPlaceholder } from "@/components/layout/HeaderActionsMenu";
 import OrderPageHeading from "@/app/(app)/sales/orders/[id]/OrderPageHeading";
 import type { OrderPreview } from "@/app/(app)/sales/orders/[id]/orderPreview";
 
@@ -11,6 +12,10 @@ import type { OrderPreview } from "@/app/(app)/sales/orders/[id]/orderPreview";
 // heading doesn't move and the blocks fill in. Rendered over the list the
 // moment a row is tapped (RouteOpeningOverlay) and as the page's loading
 // screen (OrderPageLoading).
+
+// The page's ⋮ (OrderHeaderMenu), held in place until it arrives — one
+// element, so the bar's title isn't re-set on every render.
+const HEADER_MENU_PLACEHOLDER = <HeaderActionsPlaceholder />;
 
 function ActionsSkeleton() {
   return (
@@ -30,7 +35,9 @@ export default function OrderPagePreview({
   /** Marks this as the route's loading screen for the top progress bar. */
   routeLoading?: boolean;
 }) {
-  useSetPageTitle("הזמנה", preview.customerDisplayName);
+  // Named in the phone's top bar as on the page, beside the ⋮ the page will
+  // put there, so the name wraps the same way now as it will then.
+  useSetPageTitle("הזמנה", preview.customerDisplayName, HEADER_MENU_PLACEHOLDER);
 
   return (
     <div className="space-y-3" data-route-loading={routeLoading ? "true" : undefined} aria-busy="true">

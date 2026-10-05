@@ -1,6 +1,7 @@
 "use client";
 
 import { useSetPageTitle } from "@/components/layout/page-title-context";
+import { HeaderActionsPlaceholder } from "@/components/layout/HeaderActionsMenu";
 import ProjectMobileHeader from "@/app/(app)/projects/[id]/ProjectMobileHeader";
 import ProjectPageHeading, { projectTypeLabel } from "@/app/(app)/projects/[id]/ProjectPageHeading";
 import type { ProjectPreview } from "@/app/(app)/projects/[id]/projectPreview";
@@ -12,6 +13,10 @@ import { formatShortDate } from "@/lib/date";
 // same gaps), so when the page lands the header doesn't move and the blocks
 // fill in. Rendered over the list the moment a row is tapped
 // (RouteOpeningOverlay) and as the page's loading screen (ProjectPageLoading).
+
+// The page's ⋮ (ProjectDetailsActions' header menu), held in place until it
+// arrives — one element, so the bar's title isn't re-set on every render.
+const HEADER_MENU_PLACEHOLDER = <HeaderActionsPlaceholder />;
 
 function ActionsSkeleton() {
   return (
@@ -47,8 +52,10 @@ export default function ProjectPagePreview({
   /** Marks this as the route's loading screen for the top progress bar. */
   routeLoading?: boolean;
 }) {
-  // The phone's top bar carries the project's name, as on the page itself.
-  useSetPageTitle("פרויקט", preview.name);
+  // The phone's top bar carries the project's name, as on the page itself —
+  // beside the ⋮ the page will put there, so the name wraps the same way now
+  // as it will then.
+  useSetPageTitle("פרויקט", preview.name, HEADER_MENU_PLACEHOLDER);
 
   return (
     <div

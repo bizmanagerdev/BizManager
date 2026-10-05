@@ -292,7 +292,11 @@ export function TopBar({
       {headerTitle ? (
         <div
           className={cn(
-            "flex min-w-0 flex-1 flex-col justify-center overflow-hidden px-[12px] leading-tight",
+            // px-[4px]: the search cluster beyond it keeps its own 12px
+            // (ms-[12px]) plus the bar's gap, so more padding here only took
+            // width from the title — a record's name next to a page's ⋮ was
+            // cut to one word a line on a phone with larger text.
+            "flex min-w-0 flex-1 flex-col justify-center overflow-hidden px-[4px] leading-tight",
             // PHONE ONLY, unless the page asks otherwise (user, 2026-08-19).
             // There's no sidebar on a phone, so the bar has to say where you are;
             // past `lg` the sidebar says it, and repeating it in a bar that is

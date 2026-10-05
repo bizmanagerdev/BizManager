@@ -52,3 +52,24 @@ export function HeaderActionsMenu({ children }: { children: ReactNode }) {
 }
 
 export default HeaderActionsMenu;
+
+/**
+ * The ⋮ as it will look, before the page that owns the menu has arrived — for
+ * a loading screen that already names the record (see useRoutePreview). It
+ * holds the trigger's exact place, so the title beside it wraps the same way
+ * before and after and nothing shifts when the real menu takes over. Not a
+ * button: there's nothing to open yet.
+ */
+export function HeaderActionsPlaceholder() {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        TOPBAR_ICON_BUTTON,
+        "pointer-events-none inline-flex items-center justify-center lg:hidden [&_svg]:!size-[18px]"
+      )}
+    >
+      <MoreIcon strokeWidth={TOPBAR_ICON_STROKE} />
+    </span>
+  );
+}
