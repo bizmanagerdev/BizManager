@@ -18,19 +18,25 @@ function isKeyboardFocus(element: Element) {
 
 // Skip row-level navigation when the click/keydown originated on an interactive
 // element inside the row (so per-row buttons/links still work as expected).
-export function shouldIgnoreRowNavigation(target: EventTarget | null): boolean {
+// `row` is the element the row handler sits on (the event's currentTarget).
+export function shouldIgnoreRowNavigation(target: EventTarget | null, row?: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  // [role="button"] only, not [role="link"] — the clickable ROW ITSELF commonly
-  // carries role="link" (see e.g. SalesOrdersClient.tsx), and target.closest()
-  // matches an element against itself too, so including "link" here would make
-  // every click inside such a row match its own wrapper and cancel ALL navigation.
-  if (target.closest('a, button, input, textarea, select, label, [role="button"]')) return true;
+  // closest() matches the target itself and keeps walking up past the row, so it
+  // can land on the row (clickableRowProps gives every row role="link" or
+  // role="button") or on something around it (a row listed inside a dialog).
+  // Those are the row's own context, not an element inside it — counting them
+  // would cancel every click and keypress on the row.
+  const isInsideRow = (match: Element | null) =>
+    match !== null && !(row instanceof Node && match.contains(row));
+  // [role="button"] only, not [role="link"] — a caller that doesn't pass `row`
+  // would have every click inside a role="link" row match the row itself.
+  if (isInsideRow(target.closest('a, button, input, textarea, select, label, [role="button"]'))) return true;
   // A dialog/menu/popover opened from inside a row is portaled elsewhere in the
   // DOM, but React still bubbles its events up through the component tree to the
   // row handler. Clicking any non-interactive area inside such an overlay (e.g.
   // the delivery-date section in the order-confirm dialog) must NOT navigate the
   // row — otherwise the dialog disappears mid-edit. Bail on any portaled surface.
-  return Boolean(
+  return isInsideRow(
     target.closest(
       '[role="dialog"], [role="alertdialog"], [role="menu"], [role="menuitem"], [role="listbox"], [data-radix-popper-content-wrapper]'
     )
@@ -53,11 +59,11 @@ export function clickableRowProps(
     role,
     tabIndex: 0,
     onClick: (event: MouseEvent) => {
-      if (shouldIgnoreRowNavigation(event.target)) return;
+      if (shouldIgnoreRowNavigation(event.target, event.currentTarget)) return;
       onActivate();
     },
     onKeyDown: (event: KeyboardEvent) => {
-      if (shouldIgnoreRowNavigation(event.target)) return;
+      if (shouldIgnoreRowNavigation(event.target, event.currentTarget)) return;
       if (event.key !== "Enter" && event.key !== " ") return;
       event.preventDefault();
       onActivate();

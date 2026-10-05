@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { shouldIgnoreRowNavigation, clickableRowProps, rowNavigateProps } from "@/lib/ui/row-navigation";
 
 function el(html: string): HTMLElement {
@@ -51,6 +51,65 @@ describe("shouldIgnoreRowNavigation", () => {
   });
 });
 
+describe("shouldIgnoreRowNavigation — given the row (the handler's currentTarget)", () => {
+  // Mounted in the document, so a "portaled" dialog can be a sibling of the row
+  // rather than inside it — the way Radix renders one into <body>.
+  function mount(html: string): HTMLElement {
+    const host = document.createElement("div");
+    host.innerHTML = html;
+    document.body.appendChild(host);
+    return host;
+  }
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("a role=\"button\" row doesn't count as an interactive element inside itself", () => {
+    // closest() matches the target and every ancestor, the row included — so
+    // without the row to stop at, a role="button" row cancels its own clicks.
+    const host = mount('<div role="button" id="row"><div><span id="name">דוד</span></div></div>');
+    const row = host.querySelector("#row")!;
+    expect(shouldIgnoreRowNavigation(host.querySelector("#name"), row)).toBe(false);
+    // A keypress lands on the focused row itself.
+    expect(shouldIgnoreRowNavigation(row, row)).toBe(false);
+    // The trap, for the record: without the row, it matches itself.
+    expect(shouldIgnoreRowNavigation(host.querySelector("#name"))).toBe(true);
+  });
+
+  it("still true for buttons, links and role=\"button\" elements inside a role=\"button\" row", () => {
+    const host = mount(
+      '<table><tbody><tr role="button" id="row"><td>' +
+        '<button id="btn"><span id="btn-icon">x</span></button>' +
+        '<a href="/x" id="link">קישור</a>' +
+        '<span role="button" id="menu">תפריט</span>' +
+        "<input id=\"input\" />" +
+        "</td></tr></tbody></table>"
+    );
+    const row = host.querySelector("#row")!;
+    for (const id of ["btn", "btn-icon", "link", "menu", "input"]) {
+      expect(shouldIgnoreRowNavigation(host.querySelector(`#${id}`), row)).toBe(true);
+    }
+  });
+
+  it("an interactive element AROUND the row doesn't cancel it — only what sits inside", () => {
+    const host = mount('<div role="dialog"><label><div role="link" id="row"><span id="cell">x</span></div></label></div>');
+    const row = host.querySelector("#row")!;
+    expect(shouldIgnoreRowNavigation(host.querySelector("#cell"), row)).toBe(false);
+  });
+
+  it("true for a click inside a dialog/menu portaled out of the row, interactive or not", () => {
+    const host = mount(
+      '<div role="button" id="row"><span>שורה</span></div>' +
+        '<div role="dialog"><p id="dialog-text">תאריך אספקה</p><button id="dialog-save">שמירה</button></div>' +
+        '<div data-radix-popper-content-wrapper=""><div role="menu"><div role="menuitem" id="item">מחיקה</div></div></div>'
+    );
+    const row = host.querySelector("#row")!;
+    expect(shouldIgnoreRowNavigation(host.querySelector("#dialog-text"), row)).toBe(true);
+    expect(shouldIgnoreRowNavigation(host.querySelector("#dialog-save"), row)).toBe(true);
+    expect(shouldIgnoreRowNavigation(host.querySelector("#item"), row)).toBe(true);
+  });
+});
+
 describe("clickableRowProps", () => {
   it("defaults to role=\"link\", tabIndex=0", () => {
     const props = clickableRowProps(() => {});
@@ -94,6 +153,26 @@ describe("clickableRowProps", () => {
   it("respects an explicit role override", () => {
     expect(clickableRowProps(() => {}, { role: "button" }).role).toBe("button");
   });
+
+  it("a role=\"button\" row activates on click and on Enter — not on its inner button", () => {
+    const onActivate = vi.fn();
+    const props = clickableRowProps(onActivate, { role: "button" });
+    const row = el(`<table><tbody><tr role="${props.role}"><td><span>דוד</span><button>עריכה</button></td></tr></tbody></table>`)
+      .querySelector("tr")!;
+    const span = row.querySelector("span")!;
+    const button = row.querySelector("button")!;
+    const preventDefault = vi.fn();
+
+    props.onClick({ target: span, currentTarget: row } as unknown as React.MouseEvent);
+    expect(onActivate).toHaveBeenCalledTimes(1);
+
+    props.onKeyDown({ target: row, currentTarget: row, key: "Enter", preventDefault } as unknown as React.KeyboardEvent);
+    expect(onActivate).toHaveBeenCalledTimes(2);
+
+    props.onClick({ target: button, currentTarget: row } as unknown as React.MouseEvent);
+    props.onKeyDown({ target: button, currentTarget: row, key: "Enter", preventDefault } as unknown as React.KeyboardEvent);
+    expect(onActivate).toHaveBeenCalledTimes(2); // unchanged
+  });
 });
 
 describe("rowNavigateProps", () => {
@@ -124,6 +203,19 @@ describe("rowNavigateProps", () => {
     const button = el("<div><button>x</button></div>").querySelector("button")!;
     props.onClick({ target: button } as unknown as React.MouseEvent);
     expect(push).not.toHaveBeenCalled();
+  });
+
+  it("a role=\"button\" row navigates (the salary centre's worker rows) — but not from a dialog it opened", () => {
+    const push = vi.fn();
+    const props = rowNavigateProps({ push }, "/payroll/workers/w1", { role: "button" });
+    const row = el('<div role="button"><div class="font-semibold">דוד</div></div>');
+    const dialog = el('<div role="dialog"><p>x</p></div>').querySelector("p")!;
+
+    props.onClick({ target: row.querySelector("div"), currentTarget: row } as unknown as React.MouseEvent);
+    expect(push).toHaveBeenCalledWith("/payroll/workers/w1");
+
+    props.onClick({ target: dialog, currentTarget: row } as unknown as React.MouseEvent);
+    expect(push).toHaveBeenCalledTimes(1);
   });
 });
 
