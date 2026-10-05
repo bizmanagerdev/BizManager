@@ -29,6 +29,7 @@ import type {
 import { formatMovingEndpoint } from "@/lib/projects/movingAddress";
 import { PAYMENT_SELECT } from "@/lib/payments";
 import { loadAccounts } from "@/lib/accounts";
+import { emptyProjectOwed, loadProjectOwed } from "@/lib/projects/owed";
 import { splitPaymentAmounts } from "@/lib/orders/paymentStatus";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import type { FinancialAttachment } from "@/lib/payments";
@@ -683,6 +684,13 @@ export default async function ProjectPage({
     (accounts) => Object.fromEntries(accounts.map((account) => [account.id, account.name])) as Record<string, string>
   );
   accountNamesPromise.catch(() => {});
+  // "אנחנו חייבים" — the project's unpaid expenses (the wages part comes from
+  // the worker balance the batch above already reads). Keyed only by the id,
+  // so it loads with everything else; a failed read shows nothing owed rather
+  // than failing the page.
+  const owedPromise = loadProjectOwed(supabase, [id], { includeWorkers: false })
+    .then((byProject) => byProject.get(id) ?? emptyProjectOwed())
+    .catch(() => emptyProjectOwed());
 
   const [
     currentVatRate,
@@ -1024,6 +1032,8 @@ export default async function ProjectPage({
       overview ? activityPromise : Promise.resolve([]),
       accountNamesPromise,
     ]);
+  // Started with the first batch; long since settled by now.
+  const projectOwed = await owedPromise;
 
   const {
     salaryAgreements,
@@ -1460,6 +1470,7 @@ export default async function ProjectPage({
             paymentRecordedByNameByValue={paymentRecordedByNameByValue}
             paymentAuditById={paymentAuditResult.byRecordId}
             workerBalance={workerBalance ?? null}
+            owed={projectOwed}
             salaryAgreements={(salaryAgreements ?? []) as ProjectSalaryAgreement[]}
             monthlySalaryItems={monthlySalaryItems}
             accountNameById={accountNameById}

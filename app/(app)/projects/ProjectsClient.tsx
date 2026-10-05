@@ -178,7 +178,13 @@ function toBasicProjectRow(entry: ProjectSearchIndexEntry): ProjectRow {
     collection_status: "unpriced",
     late_amount: 0,
     expected_amount: 0,
+    we_owe_amount: 0,
   };
+}
+
+/** "אנחנו חייבים" — what we still owe on the project (unpaid expenses + wages). */
+function weOweValue(row: ProjectRow) {
+  return getNumber(row, "we_owe_amount") ?? 0;
 }
 
 function formatIls(amount: number) {
@@ -1261,6 +1267,13 @@ export default function ProjectsClient({
                             <div className={profit !== null && profit < 0 ? "text-destructive" : ""}>
                               רווח: {profit === null ? "-" : formatIls(profit)}
                             </div>
+                            {/* What WE still owe on it — unpaid expenses + wages (the
+                                breakdown is on the project page). Only when there is any. */}
+                            {weOweValue(row) > 0.009 ? (
+                              <div className="text-xs font-medium text-warning-strong">
+                                אנחנו חייבים: {formatIls(weOweValue(row))}
+                              </div>
+                            ) : null}
                           </div>
                         )}
                       </td>
@@ -1502,6 +1515,14 @@ export default function ProjectsClient({
                                 <div className="text-[10px] text-muted-foreground">מחיר</div>
                                 <div className="text-[13px] font-semibold">
                                   {actualPrice === null ? "-" : formatIls(actualPrice)}
+                                </div>
+                              </div>
+                            ) : null}
+                            {canSeeMoney && currentStatus !== "quote" && weOweValue(row) > 0.009 ? (
+                              <div className="whitespace-nowrap">
+                                <div className="text-[10px] text-muted-foreground">אנחנו חייבים</div>
+                                <div className="text-[13px] font-semibold text-warning-strong">
+                                  {formatIls(weOweValue(row))}
                                 </div>
                               </div>
                             ) : null}
