@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
-import { BankIcon, CalendarIcon, ChartIcon, LayersIcon } from "@/components/ui/icons";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { BankIcon, CalendarIcon, ChartIcon, CloseIcon, LayersIcon, ListIcon } from "@/components/ui/icons";
+import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { SectionCard } from "@/components/ui/section-card";
 import { SummaryCard } from "@/app/(app)/financial/FinancialPage.ui";
@@ -20,15 +21,22 @@ import {
   totalDebtsByKind,
   type DebtBreakdownRow,
   type DebtItem,
+  type DebtTiming,
   type DebtTotals,
 } from "@/lib/debts";
 import { formatShortDate } from "@/lib/date";
 import { accountOptions, domainOptions, filterDebts, type KindFilter } from "./debts.helpers";
+import DebtsSections from "./DebtsSections";
 import { formatIls } from "./shared";
 
 // The דוח tab: what we owe, cut every useful way — by when it's due, by kind,
 // month by month, by the account it will leave from, and by business domain.
-// Filter by kind / account / domain and every figure on the tab follows.
+// Filter by kind / account / domain and every figure on the tab follows. The
+// summary cards open the debts behind them, right under the cards.
+
+/** A summary card: every debt, or one timing bucket. */
+type ReportBucket = "all" | DebtTiming;
+const DETAIL_ID = "debts-report-detail";
 
 const SHORT_TIMING: Record<(typeof DEBT_TIMINGS)[number], string> = {
   overdue: "באיחור",
@@ -166,6 +174,36 @@ export default function DebtsReport({
   const domainRows = useMemo(() => debtsByDomain(filtered, todayIso), [filtered, todayIso]);
   const monthRows = useMemo(() => debtsByMonth(filtered, todayIso, 6), [filtered, todayIso]);
 
+  // The card that's open, and the debts behind it — under the same filters as
+  // its figure, narrowed to that timing (a series shows only its late part
+  // under "באיחור"), so the list always adds up to the number on the card.
+  const [openBucket, setOpenBucket] = useState<ReportBucket | null>(null);
+  const bucketItems = useMemo(
+    () =>
+      openBucket === null
+        ? []
+        : openBucket === "all"
+          ? filtered
+          : filterDebts(items, { timing: openBucket, domain, search: "", kind, account }, todayIso),
+    [openBucket, filtered, items, domain, kind, account, todayIso]
+  );
+  const bucketOpen = useMemo(() => bucketItems.reduce((sum, item) => sum + item.open, 0), [bucketItems]);
+  const cardToggle = (bucket: ReportBucket) => ({
+    active: openBucket === bucket,
+    controls: DETAIL_ID,
+    onClick: () => setOpenBucket((current) => (current === bucket ? null : bucket)),
+  });
+
+  // On a phone the list opens below all five cards — bring it into view when
+  // it starts below the fold (a card tapped near the top of a short screen).
+  useEffect(() => {
+    if (!openBucket) return;
+    const panel = document.getElementById(DETAIL_ID);
+    if (panel && panel.getBoundingClientRect().top > window.innerHeight * 0.6) {
+      panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [openBucket]);
+
   const selectClass = "w-full sm:w-auto";
 
   return (
@@ -201,31 +239,66 @@ export default function DebtsReport({
         ) : null}
       </div>
 
+      {/* Each card opens the debts behind its figure right under the cards
+          (tap again, or ✕, to close). */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         <SummaryCard
           title="סה״כ חובות"
           value={formatIls(totals.open)}
           description={`${totals.count} חובות פתוחים`}
           accent="destructive"
+          {...cardToggle("all")}
         />
         <SummaryCard
           title={DEBT_TIMING_LABEL.overdue}
           value={formatIls(totals.overdue)}
           description="עבר המועד ועדיין לא שולם"
           accent={totals.overdue > 0.009 ? "destructive" : "default"}
+          {...cardToggle("overdue")}
         />
         <SummaryCard
           title={DEBT_TIMING_LABEL.soon}
           value={formatIls(totals.soon)}
           description={`עד ${formatShortDate(addDaysIso(todayIso, DEBT_SOON_DAYS))}`}
+          {...cardToggle("soon")}
         />
-        <SummaryCard title={DEBT_TIMING_LABEL.later} value={formatIls(totals.later)} description="מעבר לשבוע הקרוב" />
+        <SummaryCard
+          title={DEBT_TIMING_LABEL.later}
+          value={formatIls(totals.later)}
+          description="מעבר לשבוע הקרוב"
+          {...cardToggle("later")}
+        />
         <SummaryCard
           title={DEBT_TIMING_LABEL.undated}
           value={formatIls(totals.undated)}
           description="לא נקבע מתי לשלם"
+          {...cardToggle("undated")}
         />
       </div>
+
+      {openBucket ? (
+        <SectionCard
+          id={DETAIL_ID}
+          icon={<ListIcon className="h-4 w-4" />}
+          title={`${openBucket === "all" ? "כל החובות" : DEBT_TIMING_LABEL[openBucket]} — ${
+            bucketItems.length === 1 ? "חוב אחד" : `${bucketItems.length} חובות`
+          } · ${formatIls(bucketOpen)}`}
+          aside={
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8"
+              aria-label="סגירת הפירוט"
+              onClick={() => setOpenBucket(null)}
+            >
+              <CloseIcon className="h-4 w-4" />
+            </Button>
+          }
+        >
+          <DebtsSections key={openBucket} items={bucketItems} emptyMessage="אין חובות כאן לסינון הזה." />
+        </SectionCard>
+      ) : null}
 
       <ReportSection icon={<LayersIcon className="h-4 w-4" />} title="לפי סוג">
         <TimingMatrix rows={kindRows} footer={kindRows.length ? totals : emptyDebtTotals()} />

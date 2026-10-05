@@ -134,17 +134,26 @@ function ItemPrimaryAction({ item, actions }: { item: DebtItem; actions: Expense
       </div>
     );
   }
+  if (item.kind === "loan" && item.link) {
+    // Loans show in the דוח tab's lists (the חובות tab leaves them to their own tab).
+    return (
+      <div className="flex justify-end">
+        <Button asChild size="sm" variant="outline" className={ROW_ACTION}>
+          <NavLink to={item.link.href}>רישום החזר</NavLink>
+        </Button>
+      </div>
+    );
+  }
   return null;
 }
 
-// The list shows expenses and wages only — loans live on their own tab.
 export function isExpandable(item: DebtItem): boolean {
   if (item.kind === "expense") return (item.expenseLines?.length ?? 0) > 1;
   if (item.kind === "wages") return (item.wageLines?.length ?? 0) > 0;
-  return false;
+  return item.parts.length > 1;
 }
 
-/** What opens under an item: its installments, or a worker's shifts/payslips. */
+/** What opens under an item: its installments, a worker's shifts/payslips, a loan's plan. */
 export function ItemDetail({ item, actions }: { item: DebtItem; actions: ExpenseLineActions }) {
   if (item.kind === "expense") {
     return (
@@ -201,7 +210,19 @@ export function ItemDetail({ item, actions }: { item: DebtItem; actions: Expense
       </div>
     );
   }
-  return null;
+  return (
+    <div className="space-y-1.5">
+      {item.parts.map((part, index) => (
+        <div
+          key={`${part.date ?? "none"}-${index}`}
+          className="flex items-center justify-between gap-2 rounded-lg border border-border/50 bg-background/60 px-2.5 py-2 text-sm"
+        >
+          <span className="text-muted-foreground">{part.date ? `החזר ב-${formatShortDate(part.date)}` : "ללא מועד פירעון"}</span>
+          <span className="font-semibold tabular-nums" dir="ltr">{formatIls(part.amount)}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 // ── Desktop ─────────────────────────────────────────────────────────────────

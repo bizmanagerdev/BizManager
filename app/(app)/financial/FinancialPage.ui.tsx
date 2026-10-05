@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Card, CardContent } from "@/components/ui/card";
+import { ChevronDownIcon } from "@/components/ui/icons";
 import { NativeSelect } from "@/components/ui/native-select";
 import { cn } from "@/lib/utils";
 import type { FinancialEntry, FinancialEntryStage, FinancialSourceKind } from "@/lib/financial";
@@ -51,28 +52,61 @@ export function SummaryCard({
   value,
   description,
   accent,
+  onClick,
+  active = false,
+  controls,
 }: {
   title: string;
   value: string;
   description: string;
   accent?: "success" | "destructive" | "default";
+  /** Makes the whole card a button that opens/closes what's behind the figure
+   *  (its list); `active` while that is open, `controls` is its element id. */
+  onClick?: () => void;
+  active?: boolean;
+  controls?: string;
 }) {
+  const body = (
+    <>
+      <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
+        <span>{title}</span>
+        {onClick ? (
+          <ChevronDownIcon className={cn("h-4 w-4 shrink-0 transition-transform", active && "rotate-180 text-secondary")} />
+        ) : null}
+      </div>
+      <div
+        dir="ltr"
+        className={cn(
+          "mt-2 text-2xl font-semibold tabular-nums",
+          accent === "success" && "text-success",
+          accent === "destructive" && "text-destructive"
+        )}
+      >
+        {value}
+      </div>
+      <div className="mt-1 text-xs text-muted-foreground">{description}</div>
+    </>
+  );
+  if (!onClick) {
+    return (
+      <Card className="overflow-hidden">
+        <CardContent className="p-5 text-right">{body}</CardContent>
+      </Card>
+    );
+  }
+  // Same card; the selected one takes the app's "on" colour (secondary), like
+  // a pressed filter chip.
   return (
-    <Card className="overflow-hidden">
-      <CardContent className="p-5 text-right">
-        <div className="text-sm text-muted-foreground">{title}</div>
-        <div
-          dir="ltr"
-          className={cn(
-            "mt-2 text-2xl font-semibold tabular-nums",
-            accent === "success" && "text-success",
-            accent === "destructive" && "text-destructive"
-          )}
-        >
-          {value}
-        </div>
-        <div className="mt-1 text-xs text-muted-foreground">{description}</div>
-      </CardContent>
+    <Card className={cn("overflow-hidden transition-colors", active && "border-secondary ring-2 ring-secondary/30")}>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-expanded={active}
+        aria-controls={controls}
+        className="block h-full w-full rounded-[1.125rem] p-5 text-right transition-colors hover:bg-secondary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {body}
+      </button>
     </Card>
   );
 }

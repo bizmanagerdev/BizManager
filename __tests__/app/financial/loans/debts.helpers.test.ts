@@ -9,7 +9,14 @@ import {
   narrowItemToTiming,
   parseTimingFilter,
 } from "@/app/(app)/financial/loans/debts.helpers";
-import { buildExpenseDebts, buildLoanDebts, type DebtSourceNames, type ExpenseDebtRow } from "@/lib/debts";
+import {
+  DEBT_TIMINGS,
+  buildExpenseDebts,
+  buildLoanDebts,
+  totalDebts,
+  type DebtSourceNames,
+  type ExpenseDebtRow,
+} from "@/lib/debts";
 import { deriveLoan } from "@/lib/loans";
 
 const TODAY = "2026-10-05";
@@ -71,6 +78,19 @@ describe("filterDebts", () => {
   it("timing keeps only the matching part of each debt", () => {
     const soon = filterDebts(items, { timing: "soon", domain: "all", search: "" }, TODAY);
     expect(soon.map((i) => [i.key, i.open])).toEqual([["expense:pension", 5900]]);
+  });
+
+  it("each דוח card's list adds up to the card's figure — under the report's filters too", () => {
+    for (const filters of [
+      { domain: "all", kind: "all" as const, account: "all" },
+      { domain: "property_management", kind: "expense" as const, account: "acc1" },
+    ]) {
+      const cards = totalDebts(filterDebts(items, { ...filters, timing: "all", search: "" }, TODAY), TODAY);
+      for (const timing of DEBT_TIMINGS) {
+        const list = filterDebts(items, { ...filters, timing, search: "" }, TODAY);
+        expect(list.reduce((sum, item) => sum + item.open, 0)).toBeCloseTo(cards[timing], 2);
+      }
+    }
   });
 
   it("search, domain, kind and account narrow the list", () => {

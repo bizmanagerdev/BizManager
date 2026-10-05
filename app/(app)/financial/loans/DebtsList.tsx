@@ -1,78 +1,38 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { CloseIcon, FilterIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import MarkPaidDialog, { type MarkPaidTarget } from "@/app/(app)/financial/payments-calendar/MarkPaidDialog";
-import { ExpenseDialog } from "@/app/(app)/financial/payments-calendar/LazyExpenseDialog";
-import { useRefreshAndWait } from "@/app/(app)/financial/payments-calendar/useRefreshAndWait";
-import { DEBT_TIMING_LABEL, installmentLabel, totalDebts, type DebtItem, type ExpenseDebtLine } from "@/lib/debts";
+import { DEBT_TIMING_LABEL, totalDebts, type DebtItem } from "@/lib/debts";
 import {
   TIMING_FILTER_OPTIONS,
   domainOptions,
   filterDebts,
-  groupByKind,
   parseTimingFilter,
   type TimingFilter,
 } from "./debts.helpers";
-import { KindSection, type ExpenseLineActions } from "./DebtsList.ui";
+import DebtsSections from "./DebtsSections";
 import { formatIls } from "./shared";
 
 // The חובות tab: what the business still owes that isn't a loan, grouped by
-// kind — unpaid expenses, wages — most urgent first. Pay an expense right here
-// (סמן כשולם, or edit it to record a partial payment); wages are paid on the
-// worker's card, where the payment is allocated properly. Loans have their own
+// kind — unpaid expenses, wages — most urgent first, with search and filters.
+// The list itself (and paying from it) is DebtsSections. Loans have their own
 // tab.
 export default function DebtsList({ items, todayIso }: { items: DebtItem[]; todayIso: string }) {
   const [timing, setTiming] = useState<TimingFilter>("all");
   const [domain, setDomain] = useState("all");
   const [search, setSearch] = useState("");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
-  const [markTarget, setMarkTarget] = useState<MarkPaidTarget | null>(null);
-  const [editing, setEditing] = useState<{ item: DebtItem; line: ExpenseDebtLine } | null>(null);
-  // Dialogs stay busy until the list already shows the change (house rule for
-  // payment dialogs) — then close.
-  const { refreshAndWait } = useRefreshAndWait();
 
   const domains = useMemo(() => domainOptions(items), [items]);
   const filtered = useMemo(
     () => filterDebts(items, { timing, domain, search }, todayIso),
     [items, timing, domain, search, todayIso]
   );
-  const groups = useMemo(() => groupByKind(filtered), [filtered]);
   const totals = useMemo(() => totalDebts(filtered, todayIso), [filtered, todayIso]);
   const filtersActive = timing !== "all" || domain !== "all";
-
-  const toggle = useCallback((key: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }, []);
-
-  const actions = useMemo<ExpenseLineActions>(
-    () => ({
-      onMarkPaid: (item, line) =>
-        setMarkTarget({
-          id: `expense:${line.expenseId}`,
-          label: [item.title, installmentLabel(line)].filter(Boolean).join(" — "),
-          // What's left — a partly-paid bill is closed for its remainder.
-          amount: line.open,
-          variableAmount: false,
-          expenseId: line.expenseId,
-          recurringTemplateId: null,
-          recurrenceKey: null,
-          date: line.date,
-        }),
-      onEdit: (item, line) => setEditing({ item, line }),
-    }),
-    []
-  );
 
   // On desktop the select stands alone, so its options say what they filter
   // ("הצג: באיחור"); in the phone panel a label above already does.
@@ -96,8 +56,6 @@ export default function DebtsList({ items, todayIso }: { items: DebtItem[]; toda
         ))}
       </NativeSelect>
     ) : null;
-
-  const editLine = editing?.line ?? null;
 
   return (
     <div className="space-y-4">
@@ -191,70 +149,9 @@ export default function DebtsList({ items, todayIso }: { items: DebtItem[]; toda
         ) : null}
       </div>
 
-      {groups.length === 0 ? (
-        <div className="rounded-2xl border border-border/70 bg-background/70 px-4 py-10 text-center text-sm text-muted-foreground">
-          {items.length === 0 ? "אין חובות פתוחים — הכל שולם." : "אין חובות שתואמים לסינון."}
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {groups.map((group) => (
-            <KindSection
-              key={group.kind}
-              kind={group.kind}
-              items={group.items}
-              expanded={expanded}
-              onToggle={toggle}
-              actions={actions}
-            />
-          ))}
-        </div>
-      )}
-
-      <MarkPaidDialog
-        item={markTarget}
-        onClose={() => setMarkTarget(null)}
-        onSaved={async () => {
-          await refreshAndWait();
-          setMarkTarget(null);
-        }}
-      />
-
-      {/* Edit the expense in place — the shared dialog, seeded the way the
-          payments calendar seeds it. Recording a partial payment happens here
-          (status "שולם חלקית" + how much). Its source stays locked. */}
-      <ExpenseDialog
-        open={Boolean(editing)}
-        onOpenChange={(o: boolean) => {
-          if (!o) setEditing(null);
-        }}
-        editingExpense={
-          editLine
-            ? {
-                id: editLine.expenseId,
-                amount: editLine.amount,
-                category: editLine.category,
-                description: editLine.description,
-                notes: editLine.notes,
-                expense_date: editLine.date,
-                business_domain: editLine.businessDomain,
-                payment_status: editLine.paymentStatus,
-                paid_amount: editLine.paidAmount,
-                payment_method: editLine.paymentMethod,
-                paid_date: editLine.paidDate,
-                account_id: editLine.accountId,
-                project_id: editLine.projectId,
-                order_id: editLine.orderId,
-                property_id: editLine.propertyId,
-              }
-            : null
-        }
-        editingSourceLabel={editing?.item.link?.label ?? null}
-        lockedProjectId={editLine?.projectId}
-        lockedOrderId={editLine?.orderId}
-        lockedPropertyId={editLine?.propertyId}
-        onSaved={async () => {
-          await refreshAndWait();
-        }}
+      <DebtsSections
+        items={filtered}
+        emptyMessage={items.length === 0 ? "אין חובות פתוחים — הכל שולם." : "אין חובות שתואמים לסינון."}
       />
     </div>
   );
