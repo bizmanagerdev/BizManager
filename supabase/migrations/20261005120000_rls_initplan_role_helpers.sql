@@ -316,9 +316,22 @@ alter policy phone_attendance_worker_close on public.phone_attendance_reports
   using ((((select public.current_user_role()) = 'worker'::user_role_enum) AND (status = 'open'::text) AND is_payroll_worker(user_id)))
   with check ((((select public.current_user_role()) = 'worker'::user_role_enum) AND is_payroll_worker(user_id) AND (((status = 'open'::text) AND (clock_out IS NULL)) OR ((status = 'pending_review'::text) AND (clock_out IS NOT NULL) AND (clock_out > clock_in)))));
 
-alter policy phone_attendance_worker_close_own on public.phone_attendance_reports
-  using (((user_id = (select public.current_app_user_id())) AND (status = 'open'::text) AND (source = 'app'::text)))
-  with check (((user_id = (select public.current_app_user_id())) AND (status = 'pending_review'::text) AND (source = 'app'::text)));
+-- This policy and phone_attendance_worker_insert_own below still exist in
+-- production but were dropped by 20260811010000, so a database built from the
+-- migrations (CI, local) doesn't have them and a bare alter fails. Alter them
+-- only where they exist.
+do $$
+begin
+  if exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'phone_attendance_reports'
+      and policyname = 'phone_attendance_worker_close_own'
+  ) then
+    alter policy phone_attendance_worker_close_own on public.phone_attendance_reports
+      using (((user_id = (select public.current_app_user_id())) AND (status = 'open'::text) AND (source = 'app'::text)))
+      with check (((user_id = (select public.current_app_user_id())) AND (status = 'pending_review'::text) AND (source = 'app'::text)));
+  end if;
+end $$;
 
 alter policy phone_attendance_worker_edit_pending_own on public.phone_attendance_reports
   using (((user_id = (select public.current_app_user_id())) AND (status = 'pending_review'::text)))
@@ -327,8 +340,17 @@ alter policy phone_attendance_worker_edit_pending_own on public.phone_attendance
 alter policy phone_attendance_worker_insert on public.phone_attendance_reports
   with check ((((select public.current_user_role()) = 'worker'::user_role_enum) AND is_payroll_worker(user_id) AND (reported_by = (select public.current_app_user_id())) AND (status = ANY (ARRAY['open'::text, 'pending_review'::text])) AND (source = 'app'::text) AND (((status = 'open'::text) AND (clock_out IS NULL)) OR ((status = 'pending_review'::text) AND (clock_out IS NOT NULL) AND (clock_out > clock_in)))));
 
-alter policy phone_attendance_worker_insert_own on public.phone_attendance_reports
-  with check (((user_id = (select public.current_app_user_id())) AND (status = 'open'::text) AND (source = 'app'::text)));
+do $$
+begin
+  if exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'phone_attendance_reports'
+      and policyname = 'phone_attendance_worker_insert_own'
+  ) then
+    alter policy phone_attendance_worker_insert_own on public.phone_attendance_reports
+      with check (((user_id = (select public.current_app_user_id())) AND (status = 'open'::text) AND (source = 'app'::text)));
+  end if;
+end $$;
 
 alter policy phone_attendance_worker_select_open_coworkers on public.phone_attendance_reports
   using ((((select public.current_user_role()) = 'worker'::user_role_enum) AND (status = 'open'::text) AND is_payroll_worker(user_id)));
