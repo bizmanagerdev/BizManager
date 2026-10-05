@@ -44,6 +44,9 @@ import {
 import { parseOrderComments, type OrderComment } from "@/lib/orders/comments";
 import OrderReminderDialog from "@/components/orders/OrderReminderDialog";
 import { rowNavigateProps } from "@/lib/ui/row-navigation";
+import RouteOpeningOverlay, { showRouteOpening } from "@/components/layout/RouteOpeningOverlay";
+import OrderPagePreview from "@/app/(app)/sales/orders/[id]/OrderPagePreview";
+import { orderPreviewFromRow, orderPreviewSlot } from "@/app/(app)/sales/orders/[id]/orderPreview";
 import { DataTableShell } from "@/components/ui/data-table-shell";
 import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
 import {
@@ -402,6 +405,16 @@ export default function SalesOrdersClient({
   const [query, setQuery] = useState(initialQuery);
   // One swiped-open row at a time, like a native list.
   const [swipedRow, setSwipedRow] = useState<string | null>(null);
+
+  // A tapped order's page is named at once, from this row, until the page's
+  // own data arrives: over the list straight away on a phone, and as the
+  // page's loading screen everywhere.
+  const openOrder = (row: OrderView) => {
+    const preview = orderPreviewFromRow(row);
+    if (!preview) return;
+    orderPreviewSlot.remember(preview);
+    showRouteOpening(<OrderPagePreview preview={preview} />);
+  };
   const [paymentSnapshot] = useState(() => new Map<string, number>());
   // One shared reminder dialog for the whole list; a row's bell button sets its target.
   const [reminderTarget, setReminderTarget] = useState<{ id: string; customerId: string; label: string } | null>(null);
@@ -844,7 +857,7 @@ export default function SalesOrdersClient({
                           ? PREPAYMENT_ROW_CLASSES
                           : ""
                       }`}
-                      {...rowNavigateProps(router, `/sales/orders/${row.id}`)}
+                      {...rowNavigateProps(router, `/sales/orders/${row.id}`, { prefetch: true, onNavigate: () => openOrder(row) })}
                     >
                       <td className="px-4 py-4">
                         <div>
@@ -1038,7 +1051,7 @@ export default function SalesOrdersClient({
                       >
                         <div
                           className="cursor-pointer divide-y divide-border/60 p-3 [&>*]:py-2 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0"
-                          {...rowNavigateProps(router, `/sales/orders/${row.id}`)}
+                          {...rowNavigateProps(router, `/sales/orders/${row.id}`, { prefetch: true, onNavigate: () => openOrder(row) })}
                         >
                           {/* Compact card. Two rules:
                               1. NOTHING truncates — names, cities and product chips
@@ -1196,6 +1209,8 @@ export default function SalesOrdersClient({
           }}
         />
       ) : null}
+
+      <RouteOpeningOverlay />
     </div>
   );
 }

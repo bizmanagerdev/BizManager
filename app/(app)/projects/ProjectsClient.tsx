@@ -37,7 +37,8 @@ import {
 } from "@/components/layout/TopNavigationProgress";
 import { paymentStatusClasses } from "@/lib/orders/paymentStatus";
 import { rowNavigateProps } from "@/lib/ui/row-navigation";
-import ProjectOpeningOverlay, { showProjectOpening } from "@/app/(app)/projects/[id]/ProjectOpeningOverlay";
+import RouteOpeningOverlay, { showRouteOpening } from "@/components/layout/RouteOpeningOverlay";
+import ProjectPagePreview from "@/app/(app)/projects/[id]/ProjectPagePreview";
 import { projectPreviewFromRow, rememberProjectPreview } from "@/app/(app)/projects/[id]/projectPreview";
 import { DataTableShell } from "@/components/ui/data-table-shell";
 import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
@@ -672,7 +673,7 @@ export default function ProjectsClient({
     const preview = projectPreviewFromRow(row);
     if (!preview) return;
     rememberProjectPreview(preview);
-    showProjectOpening(preview);
+    showRouteOpening(<ProjectPagePreview preview={preview} />);
   };
 
   // Project create/edit now run through the shared <NewProjectClient/> wizard, so
@@ -1732,7 +1733,7 @@ export default function ProjectsClient({
         onConfirm={editDiscardGuard.confirmDiscard}
       />
 
-      <ProjectOpeningOverlay />
+      <RouteOpeningOverlay />
     </PageStack>
   );
 }

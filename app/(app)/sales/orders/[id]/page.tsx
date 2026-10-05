@@ -3,11 +3,12 @@ import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { StatActionCard, collectionStatusTextClass } from "@/components/ui/stat-action-card";
-import { ChevronLeftIcon, CommentIcon, CopyIcon, DeliveryIcon, DocumentIcon, HistoryIcon, OrderIcon, PaymentIcon, ReceiptIcon } from "@/components/ui/icons";
+import { CommentIcon, CopyIcon, DeliveryIcon, DocumentIcon, HistoryIcon, OrderIcon, PaymentIcon, ReceiptIcon } from "@/components/ui/icons";
 import EntityActivityTimeline from "@/app/(app)/activity/EntityActivityTimeline";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
 import { getOrderStatusLabel } from "@/lib/ui/status-colors";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getEntityAuditTrail, getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import DeleteOrderButton from "@/app/(app)/sales/orders/[id]/DeleteOrderButton";
 import OrderRemindersSection from "@/app/(app)/sales/orders/[id]/OrderRemindersSection";
@@ -20,6 +21,7 @@ import InvoiceQuickMenu from "@/app/(app)/sales/orders/InvoiceQuickMenu";
 import OrderCommentsThread from "@/app/(app)/sales/orders/[id]/OrderCommentsThread";
 import OrderShareActions from "@/app/(app)/sales/orders/[id]/OrderShareActions";
 import OrderHeaderMenu from "@/app/(app)/sales/orders/[id]/OrderHeaderMenu";
+import OrderPageHeading from "@/app/(app)/sales/orders/[id]/OrderPageHeading";
 import { CustomerContactCard } from "@/components/customers/CustomerContactCard";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import { OrderPaymentActionsClient } from "@/app/(app)/sales/orders/OrderPaymentActionsClient";
@@ -40,6 +42,11 @@ type Row = Record<string, unknown>;
 function getString(row: Row, key: string) {
   const value = row[key];
   return typeof value === "string" ? value : null;
+}
+
+/** The distinct non-empty strings of `values`, in first-seen order. */
+function uniqueStrings(values: Array<string | null>): string[] {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
 }
 
 function getNumber(row: Row, key: string) {
@@ -118,44 +125,253 @@ export default async function SalesOrderPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { profile, supabase } = await requireStaffPage();
+  // Every read goes out at once — alongside the "who's asking" check, and
+  // each as soon as what it needs is in (the customer once the order row is
+  // there, the products once the lines are, the documents once the payments
+  // are) instead of in rounds that each waited for the round's slowest read.
+  // They run under the caller's own RLS whatever their role, and a caller who
+  // isn't staff is still redirected below before anything is rendered.
+  const supabase = await createSupabaseServerClient();
+  const profilePromise = requireStaffPage();
+
+  const morningDocSelect =
+    "id,morning_document_id,morning_document_number,document_type,document_type_label,status,customer_id,order_id,project_id,payment_id,document_id,morning_client_id,amount,currency,morning_url,pdf_url,issued_at,closed_at,notes";
+
+  const orderPromise = Promise.resolve(
+    supabase
+      .from("orders")
+      .select("id,customer_id,branch_id,order_date,status,payment_status,payment_terms,due_date,discount_amount,notes,needs_invoice,invoice_sent_at,delivery_confirmed_at,requested_delivery_date,created_by")
+      .eq("id", id)
+      .maybeSingle()
+  );
+  const itemsPromise = Promise.resolve(
+    supabase
+      .from("order_items")
+      .select("id,order_id,product_id,description,quantity_ordered,quantity_delivered,unit_price,discount_amount,line_total,notes")
+      .eq("order_id", id)
+  );
+  const paymentsPromise = Promise.resolve(
+    supabase
+      .from("payments")
+      .select("id,payment_date,amount_total,payment_method,payment_status,due_date,reference_number,check_number,account_id,notes,created_at,recorded_by")
+      .eq("order_id", id)
+      .order("payment_date", { ascending: false })
+  );
+  const financialsPromise = Promise.resolve(
+    supabase
+      .from("order_financials_view")
+      .select("id,total_amount,total_paid,collected_amount,pending_amount,overdue_amount,remaining_balance,payment_count,payment_status,next_due_date")
+      .eq("id", id)
+      .maybeSingle()
+  );
+  const deliveryLinksPromise = Promise.resolve(
+    supabase
+      .from("document_links")
+      .select("document_id,created_at")
+      .eq("entity_type", "order")
+      .eq("entity_id", id)
+  );
+  // Separate best-effort read: the column only exists after running
+  // db/sql/add_collect_payment_on_delivery.sql — never break the page before that.
+  const collectPromise = Promise.resolve(
+    supabase.from("orders").select("collect_payment_on_delivery").eq("id", id).maybeSingle()
+  );
+  const orderMorningDocumentsPromise = Promise.resolve(
+    supabase
+      .from("morning_documents")
+      .select(morningDocSelect)
+      .eq("order_id", id)
+      .order("issued_at", { ascending: false })
+  );
+
+  const customerPromise = orderPromise.then(({ data: order }) => {
+    const orderCustomerId = getString((order as Row | null) ?? {}, "customer_id");
+    return orderCustomerId
+      ? supabase
+          .from("customers")
+          .select("id,name,name_for_invoice,registration_number,email,phone,address")
+          .eq("id", orderCustomerId)
+          .maybeSingle()
+      : { data: null as Row | null };
+  });
+  const branchPromise = orderPromise.then(({ data: order }) => {
+    const orderBranchId = getString((order as Row | null) ?? {}, "branch_id");
+    return orderBranchId
+      ? supabase.from("customer_branches").select("id,name,address,phone").eq("id", orderBranchId).maybeSingle()
+      : { data: null as Row | null };
+  });
+  // The lines' products with their live stock (on-hand − reserved), so the
+  // item list can name exactly which product is short — same signal/formula as
+  // the orders list badge and the create/confirm wizards. Names and stock are
+  // read side by side, both by the lines' product ids.
+  const productsPromise = itemsPromise.then(async ({ data: items }) => {
+    const productIds = uniqueStrings(((items ?? []) as Row[]).map((item) => getString(item, "product_id")));
+    if (productIds.length === 0) return [] as Row[];
+    const [{ data: products }, stock] = await Promise.all([
+      supabase.from("products").select("id,name,sku,barcode").in("id", productIds),
+      attachProductStock(
+        supabase,
+        productIds.map((productId) => ({ id: productId }))
+      ),
+    ]);
+    const availableById = new Map(stock.map((row) => [row.id, row.available_quantity]));
+    return ((products ?? []) as Row[]).map((product) => ({
+      ...product,
+      available_quantity: availableById.get(product.id) ?? null,
+    }));
+  });
+  const paymentIdsPromise = paymentsPromise.then(({ data: payments }) =>
+    uniqueStrings(((payments ?? []) as Row[]).map((payment) => getString(payment, "id")))
+  );
+  const paymentAuditPromise = paymentIdsPromise.then((paymentIds) =>
+    getLatestAuditByRecordIds(supabase, { tableName: "payments", recordIds: paymentIds })
+  );
+  const paymentMorningDocumentsPromise = paymentIdsPromise.then(async (paymentIds) => {
+    if (paymentIds.length === 0) return { data: [] as Row[], error: null };
+    const { data, error } = await supabase
+      .from("morning_documents")
+      .select(morningDocSelect)
+      .in("payment_id", paymentIds)
+      .order("issued_at", { ascending: false });
+    return { data: (data ?? []) as Row[], error };
+  });
+  // Who recorded each payment, and who created the order.
+  const recordedByNamesPromise = Promise.all([orderPromise, paymentsPromise]).then(
+    ([{ data: order }, { data: payments }]) =>
+      resolveUserDisplayNamesForValues(
+        supabase,
+        uniqueStrings([
+          ...((payments ?? []) as Row[]).map((payment) => getString(payment, "recorded_by")),
+          getString((order as Row | null) ?? {}, "created_by"),
+        ])
+      )
+  );
+  // The delivery photos: their documents, then every one signed in ONE
+  // storage call (was one request per image).
+  const deliveryImagesPromise = deliveryLinksPromise.then(async ({ data: links }) => {
+    const linkRows = (links ?? []) as Row[];
+    const documentIds = uniqueStrings(linkRows.map((link) => getString(link, "document_id")));
+    if (documentIds.length === 0) return [];
+    const { data: deliveryDocuments } = await supabase
+      .from("documents")
+      .select("id,file_name,storage_key,uploaded_at,document_type")
+      .in("id", documentIds);
+
+    const deliveryDocumentMap = new Map<string, Row>();
+    ((deliveryDocuments ?? []) as Row[]).forEach((row) => {
+      const documentId = getString(row as Row, "id");
+      if (documentId) deliveryDocumentMap.set(documentId, row as Row);
+    });
+
+    const deliveryImageDocs = linkRows
+      .map((link) => {
+        const documentId = getString(link, "document_id");
+        const document = documentId ? deliveryDocumentMap.get(documentId) : null;
+        if (!documentId || !document) return null;
+        if (getString(document, "document_type") !== "order_delivery_image") return null;
+        const storageKey = getString(document, "storage_key");
+        if (!storageKey) return null;
+        return {
+          id: documentId,
+          storageKey,
+          file_name: getString(document, "file_name"),
+          uploaded_at: getString(document, "uploaded_at") ?? getString(link, "created_at"),
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
+    const signedUrlByKey = new Map<string, string>();
+    if (deliveryImageDocs.length > 0) {
+      const { data: signedList } = await supabase.storage
+        .from(STORAGE_BUCKET)
+        .createSignedUrls(
+          deliveryImageDocs.map((d) => d.storageKey),
+          60 * 60
+        );
+      (signedList ?? []).forEach((entry) => {
+        if (entry && typeof entry.path === "string" && typeof entry.signedUrl === "string") {
+          signedUrlByKey.set(entry.path, entry.signedUrl);
+        }
+      });
+    }
+
+    return deliveryImageDocs.map((d) => ({
+      id: d.id,
+      file_name: d.file_name,
+      uploaded_at: d.uploaded_at,
+      url: signedUrlByKey.get(d.storageKey) ?? null,
+    }));
+  });
+  // Comment avatars should use each author's CHOSEN color (users.avatar_color),
+  // matching the color they picked everywhere else. Comments store only the
+  // author's display name, so we resolve name/email → color here. The users
+  // table is small, so one plain read (only when there are notes) is fine.
+  const commentAuthorColorsPromise = orderPromise.then(async ({ data: order }) => {
+    const colors: Record<string, string> = {};
+    if (!getString((order as Row | null) ?? {}, "notes")) return colors;
+    const { data: userRows } = await supabase.from("users").select("full_name,email,avatar_color");
+    for (const row of (userRows ?? []) as Row[]) {
+      const color =
+        typeof row.avatar_color === "string" && row.avatar_color.trim() ? row.avatar_color.trim() : null;
+      if (!color) continue;
+      const fullName = typeof row.full_name === "string" ? row.full_name.trim() : "";
+      const email = typeof row.email === "string" ? row.email.trim() : "";
+      if (fullName) colors[fullName] = color;
+      if (email) colors[email] = color;
+    }
+    return colors;
+  });
+
+  const pageReads = [
+    orderPromise,
+    itemsPromise,
+    paymentsPromise,
+    financialsPromise,
+    deliveryLinksPromise,
+    collectPromise,
+    customerPromise,
+    branchPromise,
+    productsPromise,
+    paymentAuditPromise,
+    recordedByNamesPromise,
+    orderMorningDocumentsPromise,
+    paymentMorningDocumentsPromise,
+    deliveryImagesPromise,
+    commentAuthorColorsPromise,
+  ] as const;
+  // Settled below; until then a redirect from the check mustn't leave them
+  // as unhandled rejections.
+  for (const read of pageReads) read.catch(() => {});
+
+  const { profile } = await profilePromise;
+  // This order's own change history plus payments recorded against it — admin
+  // only, mirroring /activity access, and started as soon as the role is known.
+  const orderActivityPromise =
+    profile.role === "admin"
+      ? getEntityAuditTrail(supabase, [
+          { tableName: "orders", recordId: id },
+          { tableName: "payments", jsonKey: "order_id", value: id },
+        ]).then((trail) => trail.items)
+      : null;
+  orderActivityPromise?.catch(() => {});
 
   const [
     { data: order, error: orderError },
     { data: orderItems, error: itemsError },
     { data: payments, error: paymentsError },
     { data: financials, error: financialsError },
-    { data: deliveryLinks, error: deliveryLinksError },
+    { error: deliveryLinksError },
     { data: collectRow },
-  ] = await Promise.all([
-    supabase
-      .from("orders")
-      .select("id,customer_id,branch_id,order_date,status,payment_status,payment_terms,due_date,discount_amount,notes,needs_invoice,invoice_sent_at,delivery_confirmed_at,requested_delivery_date,created_by")
-      .eq("id", id)
-      .maybeSingle(),
-    supabase
-      .from("order_items")
-      .select("id,order_id,product_id,description,quantity_ordered,quantity_delivered,unit_price,discount_amount,line_total,notes")
-      .eq("order_id", id),
-    supabase
-      .from("payments")
-      .select("id,payment_date,amount_total,payment_method,payment_status,due_date,reference_number,check_number,account_id,notes,created_at,recorded_by")
-      .eq("order_id", id)
-      .order("payment_date", { ascending: false }),
-    supabase
-      .from("order_financials_view")
-      .select("id,total_amount,total_paid,collected_amount,pending_amount,overdue_amount,remaining_balance,payment_count,payment_status,next_due_date")
-      .eq("id", id)
-      .maybeSingle(),
-    supabase
-      .from("document_links")
-      .select("document_id,created_at")
-      .eq("entity_type", "order")
-      .eq("entity_id", id),
-    // Separate best-effort read: the column only exists after running
-    // db/sql/add_collect_payment_on_delivery.sql — never break the page before that.
-    supabase.from("orders").select("collect_payment_on_delivery").eq("id", id).maybeSingle(),
-  ]);
+    { data: customer },
+    { data: branch },
+    productsWithStock,
+    paymentAuditResult,
+    paymentRecordedByNameByValue,
+    { data: orderMorningDocuments, error: orderMorningDocumentsError },
+    { data: paymentMorningDocuments, error: paymentMorningDocumentsError },
+    deliveryImagesResolved,
+    commentAuthorColors,
+  ] = await Promise.all(pageReads);
 
   const collectOnDelivery = (collectRow as Row | null)?.collect_payment_on_delivery === true;
 
@@ -163,98 +379,9 @@ export default async function SalesOrderPage({
     order && typeof (order as Row).customer_id === "string"
       ? ((order as Row).customer_id as string)
       : null;
-  const branchId =
-    order && typeof (order as Row).branch_id === "string" ? ((order as Row).branch_id as string) : null;
-
-  // Derive all the lookup keys from the first batch up front so the dependent
-  // reads below can all run in ONE parallel round trip instead of ~5 sequential.
-  const productIds = Array.from(
-    new Set(
-      (orderItems ?? [])
-        .map((row) => (typeof row?.product_id === "string" ? row.product_id : null))
-        .filter(Boolean)
-    )
-  ) as string[];
-  const paymentIds = Array.from(
-    new Set(
-      ((payments ?? []) as Row[])
-        .map((payment) => getString(payment, "id"))
-        .filter((value): value is string => Boolean(value))
-    )
-  );
-  const paymentRecordedByValues = Array.from(
-    new Set(
-      ((payments ?? []) as Row[])
-        .map((payment) => getString(payment, "recorded_by"))
-        .filter((value): value is string => Boolean(value))
-    )
-  );
   const orderCreatedBy = getString((order as Row) ?? {}, "created_by");
-  const deliveryDocumentIds = Array.from(
-    new Set(
-      ((deliveryLinks ?? []) as Row[])
-        .map((row) => getString(row as Row, "document_id"))
-        .filter((value): value is string => Boolean(value))
-    )
-  );
-
-  const morningDocSelect =
-    "id,morning_document_id,morning_document_number,document_type,document_type_label,status,customer_id,order_id,project_id,payment_id,document_id,morning_client_id,amount,currency,morning_url,pdf_url,issued_at,closed_at,notes";
-
-  const [
-    { data: customer },
-    { data: branch },
-    { data: products },
-    paymentAuditResult,
-    paymentRecordedByNameByValue,
-    { data: orderMorningDocuments, error: orderMorningDocumentsError },
-    { data: paymentMorningDocuments, error: paymentMorningDocumentsError },
-    { data: deliveryDocuments },
-  ] = await Promise.all([
-    customerId
-      ? supabase
-          .from("customers")
-          .select("id,name,name_for_invoice,registration_number,email,phone,address")
-          .eq("id", customerId)
-          .maybeSingle()
-      : Promise.resolve({ data: null as Row | null }),
-    branchId
-      ? supabase.from("customer_branches").select("id,name,address,phone").eq("id", branchId).maybeSingle()
-      : Promise.resolve({ data: null as Row | null }),
-    productIds.length > 0
-      ? supabase.from("products").select("id,name,sku,barcode").in("id", productIds)
-      : Promise.resolve({ data: [] as Row[] }),
-    getLatestAuditByRecordIds(supabase, { tableName: "payments", recordIds: paymentIds }),
-    resolveUserDisplayNamesForValues(
-      supabase,
-      Array.from(new Set([...paymentRecordedByValues, ...(orderCreatedBy ? [orderCreatedBy] : [])]))
-    ),
-    supabase
-      .from("morning_documents")
-      .select(morningDocSelect)
-      .eq("order_id", id)
-      .order("issued_at", { ascending: false }),
-    paymentIds.length > 0
-      ? supabase
-          .from("morning_documents")
-          .select(morningDocSelect)
-          .in("payment_id", paymentIds)
-          .order("issued_at", { ascending: false })
-      : Promise.resolve({ data: [] as Row[], error: null }),
-    deliveryDocumentIds.length > 0
-      ? supabase
-          .from("documents")
-          .select("id,file_name,storage_key,uploaded_at,document_type")
-          .in("id", deliveryDocumentIds)
-      : Promise.resolve({ data: [] as Row[] }),
-  ]);
-
   const orderCreatedByName = orderCreatedBy ? paymentRecordedByNameByValue[orderCreatedBy] ?? null : null;
 
-  // Live stock (on-hand − reserved) per line, so the item list can name exactly
-  // which product is short — same signal/formula as the orders list badge and
-  // the create/confirm wizards.
-  const productsWithStock = await attachProductStock(supabase, (products ?? []) as Row[]);
   const productMap = new Map<string, Row>();
   productsWithStock.forEach((row) => {
     if (typeof row?.id === "string") {
@@ -272,52 +399,6 @@ export default async function SalesOrderPage({
   ).filter((row) => Boolean(getString(row as Row, "id"))) as MorningLocalDocument[];
 
   const orderLevelMorningDocuments = morningDocuments.filter((document) => !document.payment_id);
-
-  const deliveryDocumentMap = new Map<string, Row>();
-  ((deliveryDocuments ?? []) as Row[]).forEach((row) => {
-    const documentId = getString(row as Row, "id");
-    if (documentId) deliveryDocumentMap.set(documentId, row as Row);
-  });
-
-  // Sign every delivery image in ONE storage call (was one request per image).
-  const deliveryImageDocs = ((deliveryLinks ?? []) as Row[])
-    .map((link) => {
-      const documentId = getString(link as Row, "document_id");
-      const document = documentId ? deliveryDocumentMap.get(documentId) : null;
-      if (!documentId || !document) return null;
-      if (getString(document, "document_type") !== "order_delivery_image") return null;
-      const storageKey = getString(document, "storage_key");
-      if (!storageKey) return null;
-      return {
-        id: documentId,
-        storageKey,
-        file_name: getString(document, "file_name"),
-        uploaded_at: getString(document, "uploaded_at") ?? getString(link as Row, "created_at"),
-      };
-    })
-    .filter((row): row is NonNullable<typeof row> => Boolean(row));
-
-  const signedUrlByKey = new Map<string, string>();
-  if (deliveryImageDocs.length > 0) {
-    const { data: signedList } = await supabase.storage
-      .from(STORAGE_BUCKET)
-      .createSignedUrls(
-        deliveryImageDocs.map((d) => d.storageKey),
-        60 * 60
-      );
-    (signedList ?? []).forEach((entry) => {
-      if (entry && typeof entry.path === "string" && typeof entry.signedUrl === "string") {
-        signedUrlByKey.set(entry.path, entry.signedUrl);
-      }
-    });
-  }
-
-  const deliveryImagesResolved = deliveryImageDocs.map((d) => ({
-    id: d.id,
-    file_name: d.file_name,
-    uploaded_at: d.uploaded_at,
-    url: signedUrlByKey.get(d.storageKey) ?? null,
-  }));
 
   const customerName =
     getString((customer as Row) ?? {}, "name") ??
@@ -345,23 +426,6 @@ export default async function SalesOrderPage({
   const effectivePhone = branchPhone ?? customerPhone;
   const orderNotes = getString((order as Row) ?? {}, "notes");
 
-  // Comment avatars should use each author's CHOSEN color (users.avatar_color),
-  // matching the color they picked everywhere else. Comments store only the
-  // author's display name, so we resolve name/email → color here. The users
-  // table is small, so one plain read (only when there are notes) is fine.
-  const commentAuthorColors: Record<string, string> = {};
-  if (orderNotes) {
-    const { data: userRows } = await supabase.from("users").select("full_name,email,avatar_color");
-    for (const row of (userRows ?? []) as Row[]) {
-      const color =
-        typeof row.avatar_color === "string" && row.avatar_color.trim() ? row.avatar_color.trim() : null;
-      if (!color) continue;
-      const fullName = typeof row.full_name === "string" ? row.full_name.trim() : "";
-      const email = typeof row.email === "string" ? row.email.trim() : "";
-      if (fullName) commentAuthorColors[fullName] = color;
-      if (email) commentAuthorColors[email] = color;
-    }
-  }
 
   const orderDate = getString((order as Row) ?? {}, "order_date");
   const orderNeedsInvoice =
@@ -498,17 +562,8 @@ export default async function SalesOrderPage({
     remainingBalance,
   };
 
-  // Per-entity activity timeline (admin only, mirroring /activity access). Shows
-  // this order's own change history plus payments recorded against it.
-  const orderActivity =
-    profile.role === "admin" && order
-      ? (
-          await getEntityAuditTrail(supabase, [
-            { tableName: "orders", recordId: id },
-            { tableName: "payments", jsonKey: "order_id", value: id },
-          ])
-        ).items
-      : [];
+  // Per-entity activity timeline (admin only — started above, with the reads).
+  const orderActivity = orderActivityPromise && order ? await orderActivityPromise : [];
 
   // The handful of things you do to an order. Rendered twice: inline in the
   // desktop heading, and — on the phone — as a פעולות section at the foot of the
@@ -539,40 +594,19 @@ export default async function SalesOrderPage({
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-3">
-        {/* Desktop chrome only. Everything this line used to say — order date,
-            how long ago, who entered it — is in the סטטוס הזמנה card now. */}
-        <div className="hidden space-y-2 lg:block">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-            {/* Desktop only — on the phone the customer name and the order number
-                are in the top bar, so a "מכירות ‹ name" line here is a repeat. */}
-            <nav
-              className="hidden min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground lg:flex"
-              aria-label="ניווט"
-            >
-              <Link href="/sales" className="hover:text-foreground hover:underline">
-                מכירות
-              </Link>
-              <ChevronLeftIcon className="h-3.5 w-3.5 shrink-0" />
-              <h1 className="min-w-0 text-lg font-bold text-foreground">
-                {customerId ? (
-                  <Link href={`/customers/${customerId}`} className="hover:underline">
-                    {customerDisplayName}
-                  </Link>
-                ) : (
-                  customerName
-                )}
-              </h1>
-            </nav>
-            {/* Desktop only — on the phone these live at the foot of the page,
-                where the project page keeps them. */}
-            {order ? (
-              <div className="hidden shrink-0 flex-wrap items-center gap-2 lg:flex">
+        <OrderPageHeading
+          customerId={customerId}
+          customerName={customerName}
+          customerDisplayName={customerDisplayName}
+          actions={
+            order ? (
+              <>
                 {orderActionButtons}
                 <DeleteOrderButton orderId={id} />
-              </div>
-            ) : null}
-          </div>
-        </div>
+              </>
+            ) : null
+          }
+        />
 
         {orderError ? <p className="text-sm text-destructive">שגיאת הזמנה: {orderError.message}</p> : null}
         {itemsError ? <p className="text-sm text-destructive">שגיאת פריטים: {itemsError.message}</p> : null}

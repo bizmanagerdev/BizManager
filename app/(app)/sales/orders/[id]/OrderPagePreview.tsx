@@ -1,0 +1,53 @@
+"use client";
+
+import { useSetPageTitle } from "@/components/layout/page-title-context";
+import OrderPageHeading from "@/app/(app)/sales/orders/[id]/OrderPageHeading";
+import type { OrderPreview } from "@/app/(app)/sales/orders/[id]/orderPreview";
+
+// An order page before its data arrives: named like the page — "הזמנה" and
+// the customer in the phone's top bar, the same heading on desktop — over grey
+// blocks where the status, customer and payment cards and the items will be.
+// Laid out like the page (same stack, same gaps), so when the page lands the
+// heading doesn't move and the blocks fill in. Rendered over the list the
+// moment a row is tapped (RouteOpeningOverlay) and as the page's loading
+// screen (OrderPageLoading).
+
+function ActionsSkeleton() {
+  return (
+    <div className="flex items-center gap-2" aria-hidden>
+      {[0, 1, 2, 3].map((i) => (
+        <div key={i} className="h-9 w-20 animate-pulse rounded-md bg-muted/60" />
+      ))}
+    </div>
+  );
+}
+
+export default function OrderPagePreview({
+  preview,
+  routeLoading = false,
+}: {
+  preview: OrderPreview;
+  /** Marks this as the route's loading screen for the top progress bar. */
+  routeLoading?: boolean;
+}) {
+  useSetPageTitle("הזמנה", preview.customerDisplayName);
+
+  return (
+    <div className="space-y-3" data-route-loading={routeLoading ? "true" : undefined} aria-busy="true">
+      <OrderPageHeading
+        customerId={preview.customerId}
+        customerName={preview.customerName}
+        customerDisplayName={preview.customerDisplayName}
+        actions={<ActionsSkeleton />}
+      />
+      <div className="space-y-3" aria-hidden>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-48 animate-pulse rounded-xl border bg-muted/40" />
+          ))}
+        </div>
+        <div className="h-80 animate-pulse rounded-xl border bg-muted/40" />
+      </div>
+    </div>
+  );
+}

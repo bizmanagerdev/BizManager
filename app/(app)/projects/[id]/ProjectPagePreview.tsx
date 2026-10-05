@@ -11,7 +11,7 @@ import { formatShortDate } from "@/lib/date";
 // where the cards and movements will be. Laid out like the page (same stack,
 // same gaps), so when the page lands the header doesn't move and the blocks
 // fill in. Rendered over the list the moment a row is tapped
-// (ProjectOpeningOverlay) and as the page's loading screen (ProjectPageLoading).
+// (RouteOpeningOverlay) and as the page's loading screen (ProjectPageLoading).
 
 function ActionsSkeleton() {
   return (
