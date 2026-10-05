@@ -58,6 +58,7 @@ import type { Locale } from "@/lib/i18n/types";
 /** One domain's cash in a window — what loadDomainCashBreakdown returns. */
 type CashPoint = { domainName: string; inflow: number; outflow: number };
 import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
+import { israelDateKey } from "@/lib/timezone";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -441,9 +442,11 @@ export async function DashboardPanels() {
     ? ensureRecurringTasksForDate(supabase).catch(() => undefined)
     : Promise.resolve(undefined);
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayIso = today.toISOString().slice(0, 10);
+  // Israel's date, not the server's UTC one: the calendar feed files reminders
+  // and tasks under their Israel date, so between 00:00 and 03:00 Israel time a
+  // UTC "today" was still yesterday and the היום card showed the wrong day.
+  const todayIso = israelDateKey();
+  const today = new Date(`${todayIso}T00:00:00Z`);
   // The month the domain chart opens on — its picker can then walk backwards
   // from here without a page load.
   const currentMonth = todayIso.slice(0, 7);
