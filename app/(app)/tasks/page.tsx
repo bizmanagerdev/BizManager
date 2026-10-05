@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { hasSectionAccess, isStaffRole } from "@/lib/auth/roleAccess";
 import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
 import { propertyDisplayName } from "@/lib/properties";
@@ -30,34 +31,13 @@ export default async function TasksPage({
   const filterDomain = typeof params.domain === "string" ? params.domain.trim() : "";
   const filterLinkedId = typeof params.linked_id === "string" ? params.linked_id.trim() : "";
 
-  const { profile, supabase } = await requireProfile();
-  if (!isStaffRole(profile.role) && !hasSectionAccess(profile.role, profile.section_access, "tasks")) {
-    redirect("/no-access");
-  }
-  const canSeeAll = profile.role === "admin" || profile.role === "office";
-  // Everyone defaults to their own tasks ("mine" = assigned / member / creator).
-  // Admin/office can opt into "all"; workers are always restricted (re-enforced
-  // in the loader).
-  const filterScope: "mine" | "all" = !canSeeAll ? "mine" : params.scope === "all" ? "all" : "mine";
-
-  const filters = {
-    q,
-    priority: filterPriority,
-    domain: filterDomain,
-    linkedId: filterLinkedId,
-    scope: filterScope,
-  };
-
-  // Run the recurring-tasks write concurrently with the reads (awaited below)
-  // instead of as a blocking pre-step — it no longer adds a serial round-trip
-  // wave ahead of the board load. Trade-off: on the rare day a template first
-  // fires, its tasks appear on the next load.
-  const recurringTasksPromise = canSeeAll
-    ? ensureRecurringTasksForDate(supabase).catch(() => undefined)
-    : Promise.resolve(undefined);
-
-  const [boardResult, projectsResult, propertiesResult, customersResult, usersResult] = await Promise.all([
-    loadTasksBoard(supabase, { filters, userId: profile.id, canSeeAll, locale: profile.locale }),
+  // The pickers' lists (and the users' colours) don't depend on who's asking,
+  // so they go out alongside the "who's asking" check instead of after it —
+  // under the caller's own RLS whatever their role; a caller without access is
+  // still redirected below before anything is rendered.
+  const supabase = await createSupabaseServerClient();
+  const profilePromise = requireProfile();
+  const optionsPromise = Promise.all([
     supabase
       .from("project_dashboard_view")
       .select("id,name,customer_name")
@@ -84,11 +64,44 @@ export default async function TasksPage({
       .neq("role", "worker_no_access")
       .order("full_name", { ascending: true })
       .range(0, 499),
+    // Chosen avatar colors — separate, tolerant query so a missing column (before
+    // db/sql/add_user_avatar_color.sql runs) can't break the user list.
+    supabase.from("users").select("id,avatar_color").range(0, 499),
   ]);
+  optionsPromise.catch(() => {});
 
-  // Chosen avatar colors — separate, tolerant query so a missing column (before
-  // db/sql/add_user_avatar_color.sql runs) can't break the user list.
-  const colorsResult = await supabase.from("users").select("id,avatar_color").range(0, 499);
+  const { profile } = await profilePromise;
+  if (!isStaffRole(profile.role) && !hasSectionAccess(profile.role, profile.section_access, "tasks")) {
+    redirect("/no-access");
+  }
+  const canSeeAll = profile.role === "admin" || profile.role === "office";
+  // Everyone defaults to their own tasks ("mine" = assigned / member / creator).
+  // Admin/office can opt into "all"; workers are always restricted (re-enforced
+  // in the loader).
+  const filterScope: "mine" | "all" = !canSeeAll ? "mine" : params.scope === "all" ? "all" : "mine";
+
+  const filters = {
+    q,
+    priority: filterPriority,
+    domain: filterDomain,
+    linkedId: filterLinkedId,
+    scope: filterScope,
+  };
+
+  // Run the recurring-tasks write concurrently with the reads (awaited below)
+  // instead of as a blocking pre-step — it no longer adds a serial round-trip
+  // wave ahead of the board load. Trade-off: on the rare day a template first
+  // fires, its tasks appear on the next load.
+  const recurringTasksPromise = canSeeAll
+    ? ensureRecurringTasksForDate(supabase).catch(() => undefined)
+    : Promise.resolve(undefined);
+
+  const [boardResult, [projectsResult, propertiesResult, customersResult, usersResult, colorsResult]] =
+    await Promise.all([
+      loadTasksBoard(supabase, { filters, userId: profile.id, canSeeAll, locale: profile.locale }),
+      optionsPromise,
+    ]);
+
   const colorById = new Map<string, string>();
   for (const row of (colorsResult.data ?? []) as Row[]) {
     const id = getString(row, "id");

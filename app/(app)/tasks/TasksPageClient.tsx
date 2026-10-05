@@ -25,6 +25,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { computeInsertSortOrder } from "@/lib/tasks/sortOrder";
 import { isTaskWaitingForLater } from "@/lib/tasks/visibility";
+import { filterBoardLocally } from "@/lib/tasks/boardFilters";
 import { AddIcon, AttachIcon, BuildingIcon, CheckboxCheckedIcon, CheckboxUncheckedIcon, ClockIcon, CloseIcon, CommentIcon, DragIcon, FilterIcon, LockIcon, NotificationIcon, ProjectIcon, RecurringIcon, SearchIcon, UserIcon, WazeIcon, ZoomInIcon, ZoomOutIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { offlineFetch } from "@/lib/offline-queue";
@@ -631,18 +632,49 @@ export default function TasksPageClient(props: Props) {
   const searchParams = useSearchParams();
   const canSeeAll = props.canSeeAll ?? false;
 
-  const urlQ = searchParams.get("q") ?? "";
-  const urlPriority = searchParams.get("priority") ?? "";
-  const urlDomain = searchParams.get("domain") ?? "";
-  const urlLinkedId = searchParams.get("linked_id") ?? "";
+  // The filters in the URL — what the server's board (props.tasks) is for.
+  const committedFilters = useMemo<UrlFilters>(
+    () => ({
+      q: searchParams.get("q") ?? "",
+      priority: searchParams.get("priority") ?? "",
+      domain: searchParams.get("domain") ?? "",
+      linkedId: searchParams.get("linked_id") ?? "",
+      scope: !canSeeAll ? "mine" : searchParams.get("scope") === "all" ? "all" : "mine",
+    }),
+    [searchParams, canSeeAll]
+  );
+  const searchKey = searchParams.toString();
+  // Filters just picked are shown at once — in the controls, and as the board
+  // worked out from the tasks already here (filterBoardLocally) — until the
+  // server's board for them arrives, which is when the URL moves.
+  const [pendingFilters, setPendingFilters] = useState<{ filters: UrlFilters; from: string } | null>(null);
+  if (pendingFilters && pendingFilters.from !== searchKey) setPendingFilters(null);
+  const shownFilters = pendingFilters?.filters ?? committedFilters;
+  const urlQ = shownFilters.q;
+  const urlPriority = shownFilters.priority;
+  const urlDomain = shownFilters.domain;
+  const urlLinkedId = shownFilters.linkedId;
   // Deep link to a single task (e.g. /tasks?task=<id>) opens its card. This is
   // what the old /tasks/[id] detail page redirects to now.
   const urlTask = searchParams.get("task") ?? "";
-  const urlScope: "mine" | "all" = !canSeeAll ? "mine" : searchParams.get("scope") === "all" ? "all" : "mine";
+  const urlScope = shownFilters.scope;
 
   const [tasks, setTasks] = useState<TaskBoardItem[]>(props.tasks);
-  // Re-sync when the server re-renders (e.g. after a save → router.refresh()).
-  useEffect(() => setTasks(props.tasks), [props.tasks]);
+  // Re-sync when the server re-renders (e.g. after a save → router.refresh(),
+  // or with the board for new filters) — during render rather than in an
+  // effect, so new filters never show a frame of the previous board.
+  const [syncedTasks, setSyncedTasks] = useState(props.tasks);
+  if (props.tasks !== syncedTasks) {
+    setSyncedTasks(props.tasks);
+    setTasks(props.tasks);
+  }
+  const visibleTasks = useMemo(
+    () =>
+      pendingFilters
+        ? filterBoardLocally(tasks, pendingFilters.filters, committedFilters, props.currentUserId)
+        : tasks,
+    [tasks, pendingFilters, committedFilters, props.currentUserId]
+  );
 
   // Per-user column order, drag-reorderable, persisted per device in localStorage.
   const storageKey = `tasks-board-order:${props.currentUserId}`;
@@ -907,7 +939,7 @@ export default function TasksPageClient(props: Props) {
   const tasksByStatus = useMemo(() => {
     const map = new Map<string, TaskBoardItem[]>();
     for (const status of BOARD_STATUSES) map.set(status, []);
-    for (const task of tasks) {
+    for (const task of visibleTasks) {
       const status = task.status && map.has(task.status) ? task.status : "todo";
       map.get(status)!.push(task);
     }
@@ -917,7 +949,7 @@ export default function TasksPageClient(props: Props) {
       list.sort((a, b) => (a.sort_order ?? Number.MAX_SAFE_INTEGER) - (b.sort_order ?? Number.MAX_SAFE_INTEGER));
     }
     return map;
-  }, [tasks]);
+  }, [visibleTasks]);
 
   const isColumnDrag = activeDragId?.startsWith(COLUMN_PREFIX) ?? false;
   const activeColumnStatus = isColumnDrag && activeDragId ? activeDragId.slice(COLUMN_PREFIX.length) : null;
@@ -929,10 +961,23 @@ export default function TasksPageClient(props: Props) {
   // memo recomputed every render too, which re-ran useSetHeaderToolbar's
   // effect every render, which called setState every render: an infinite
   // "Maximum update depth exceeded" loop (caught after shipping, 2026-08-27).
+  // Read through refs so pushFilters stays stable (see above).
+  const searchKeyRef = useRef(searchKey);
+  const committedFiltersRef = useRef(committedFilters);
+  useEffect(() => {
+    searchKeyRef.current = searchKey;
+    committedFiltersRef.current = committedFilters;
+  }, [searchKey, committedFilters]);
   const pushFilters = useCallback(
     (filters: UrlFilters) => {
+      const href = buildTasksUrl(filters);
+      // Back to the board the URL already has: nothing to show ahead — and
+      // any filters still on their way are dropped, not left showing.
+      setPendingFilters(
+        href === buildTasksUrl(committedFiltersRef.current) ? null : { filters, from: searchKeyRef.current }
+      );
       emitNavigationStart();
-      router.push(buildTasksUrl(filters));
+      router.push(href);
     },
     [router]
   );

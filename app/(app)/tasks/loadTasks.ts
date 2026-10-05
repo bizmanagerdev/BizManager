@@ -61,6 +61,11 @@ const OPEN_LIMIT = 1000;
 
 const TASK_SELECT =
   "id,subject,subject_he,subject_ar,status,priority,due_date,due_time,city,business_domain,project_id,property_id,customer_id,assigned_user_id,is_private,private_owner_id,sort_order";
+// What the board reads per task: the task, the two timestamps the "mine" union
+// re-ranks by, and the assignee's name and colour riding along (one read
+// instead of a users lookup after the tasks).
+const TASK_ROW_SELECT = `${TASK_SELECT},created_at,updated_at,assignee:users!tasks_assigned_user_id_fkey(full_name,email,avatar_color)`;
+const OPEN_STATUSES_OR = "status.is.null,status.in.(todo,in_progress,blocked)";
 
 function getString(row: Row, key: string) {
   const value = row[key];
@@ -89,6 +94,9 @@ type TaskRow = {
   is_private: boolean | null;
   private_owner_id: string | null;
   sort_order: number | null;
+  created_at: string | null;
+  updated_at: string | null;
+  assignee: { full_name: string | null; email: string | null; avatar_color: string | null } | null;
 };
 
 export type TasksBoardResult = {
@@ -114,68 +122,60 @@ export async function loadTasksBoard(
   const { q, priority, domain, linkedId } = filters;
   const scope = canSeeAll ? filters.scope : "mine";
 
-  // Tasks I'm a member of (for the "mine" scope union with assigned_user_id).
-  let memberTaskIds: string[] = [];
-  if (scope === "mine") {
-    const { data } = await supabase
-      .from("task_members")
-      .select("task_id")
-      .eq("user_id", userId)
-      .range(0, 999);
-    memberTaskIds = uniqueIds((data ?? []) as Row[], "task_id");
-  }
-
-  // Apply the shared filters while still on the filter builder (filters must come
-  // before order/range, which return a transform builder without filter methods).
-  let openFilter = supabase
-    .from("tasks")
-    .select(TASK_SELECT)
-    .or("status.is.null,status.in.(todo,in_progress,blocked)");
-  let doneFilter = supabase.from("tasks").select(TASK_SELECT).eq("status", "done");
-
-  if (scope === "mine") {
-    // Mine = assigned to me, a member of, or a private task I own.
-    const parts = [`assigned_user_id.eq.${userId}`, `private_owner_id.eq.${userId}`];
-    if (memberTaskIds.length > 0) parts.push(`id.in.(${memberTaskIds.join(",")})`);
-    const mineOr = parts.join(",");
-    openFilter = openFilter.or(mineOr);
-    doneFilter = doneFilter.or(mineOr);
-  }
-  if (priority) {
-    openFilter = openFilter.eq("priority", priority);
-    doneFilter = doneFilter.eq("priority", priority);
-  }
-  if (domain) {
-    openFilter = openFilter.eq("business_domain", domain);
-    doneFilter = doneFilter.eq("business_domain", domain);
-  }
-  if (linkedId && (domain === "logistics_projects" || domain === "property_management")) {
-    const linkCol = domain === "logistics_projects" ? "project_id" : "property_id";
-    openFilter = openFilter.eq(linkCol, linkedId);
-    doneFilter = doneFilter.eq(linkCol, linkedId);
-  }
-  if (q) {
-    const escaped = `%${q.replace(/[%,]/g, " ")}%`;
-    openFilter = openFilter.ilike("subject", escaped);
-    doneFilter = doneFilter.ilike("subject", escaped);
-  }
-
+  // One read of the board's tasks for a column (open or done) and a scope
+  // part. The shared filters are applied while still on the filter builder
+  // (filters must come before order/range, which return a transform builder
+  // without filter methods).
+  //
   // Selection order stays as before (recency) — it only decides WHICH rows make
   // the cut (the done column is capped to the most recently touched). Display
   // order within each column comes from sort_order (see the re-sort below), so a
   // manual drag-reorder (or "newest on top" for a card nobody has moved) is what
   // the board shows.
-  const openQuery = openFilter
-    .order("created_at", { ascending: false, nullsFirst: false })
-    .range(0, OPEN_LIMIT - 1);
-  const doneQuery = doneFilter.order("updated_at", { ascending: false }).range(0, DONE_LIMIT - 1);
+  const readColumn = (column: "open" | "done", part: "all" | "assignedOrOwned" | "member") => {
+    let query =
+      part === "member"
+        ? // Tasks I'm a member of, through the membership row itself — no
+          // separate read of my memberships first.
+          supabase.from("tasks").select(`${TASK_ROW_SELECT},task_members!inner(user_id)`).eq("task_members.user_id", userId)
+        : supabase.from("tasks").select(TASK_ROW_SELECT);
+    query = column === "open" ? query.or(OPEN_STATUSES_OR) : query.eq("status", "done");
+    if (part === "assignedOrOwned") query = query.or(`assigned_user_id.eq.${userId},private_owner_id.eq.${userId}`);
+    if (priority) query = query.eq("priority", priority);
+    if (domain) query = query.eq("business_domain", domain);
+    if (linkedId && (domain === "logistics_projects" || domain === "property_management")) {
+      query = query.eq(domain === "logistics_projects" ? "project_id" : "property_id", linkedId);
+    }
+    if (q) query = query.ilike("subject", `%${q.replace(/[%,]/g, " ")}%`);
+    return column === "open"
+      ? query.order("created_at", { ascending: false, nullsFirst: false }).range(0, OPEN_LIMIT - 1)
+      : query.order("updated_at", { ascending: false }).range(0, DONE_LIMIT - 1);
+  };
 
-  const [openRes, doneRes] = await Promise.all([openQuery, doneQuery]);
-  const error = openRes.error?.message ?? doneRes.error?.message ?? null;
+  // Mine = assigned to me, a member of, or a private task I own: the
+  // assigned/owned read and the member read go out together, and their union
+  // is re-ranked and re-capped exactly as one read would have been.
+  const parts = scope === "mine" ? (["assignedOrOwned", "member"] as const) : (["all"] as const);
+  const results = await Promise.all([
+    ...parts.map((part) => readColumn("open", part)),
+    ...parts.map((part) => readColumn("done", part)),
+  ]);
+  const error = results.find((result) => result.error)?.error?.message ?? null;
+  const columnRows = (column: "open" | "done") => {
+    const reads = column === "open" ? results.slice(0, parts.length) : results.slice(parts.length);
+    const byId = new Map<string, TaskRow>();
+    for (const read of reads) {
+      for (const row of (read.data ?? []) as unknown as TaskRow[]) byId.set(row.id, row);
+    }
+    const rankKey = column === "open" ? "created_at" : "updated_at";
+    return [...byId.values()]
+      .sort((a, b) => (b[rankKey] ?? "").localeCompare(a[rankKey] ?? ""))
+      .slice(0, column === "open" ? OPEN_LIMIT : DONE_LIMIT);
+  };
   const bySortOrder = (a: TaskRow, b: TaskRow) =>
     (a.sort_order ?? Number.MAX_SAFE_INTEGER) - (b.sort_order ?? Number.MAX_SAFE_INTEGER);
-  const openRows = (openRes.data ?? []) as TaskRow[];
-  const doneRows = (doneRes.data ?? []) as TaskRow[];
+  const openRows = columnRows("open");
+  const doneRows = columnRows("done");
   openRows.sort(bySortOrder);
   doneRows.sort(bySortOrder);
   const taskRows = [...openRows, ...doneRows]
@@ -222,7 +222,8 @@ export async function loadTasksBoard(
     customerIds.length
       ? supabase.from("customers").select("id,name,phone").in("id", customerIds)
       : Promise.resolve({ data: [] as Row[] }),
-    supabase.from("task_members").select("task_id,user_id").in("task_id", taskIds),
+    // Each member's name and colour ride along (no users lookup after this).
+    supabase.from("task_members").select("task_id,user_id,users(full_name,email,avatar_color)").in("task_id", taskIds),
     supabase.from("task_comments").select("task_id").in("task_id", taskIds).range(0, 9999),
     supabase
       .from("reminders")
@@ -244,13 +245,13 @@ export async function loadTasksBoard(
   ]);
 
   const memberRows = (membersRes.data ?? []) as Row[];
-  const assigneeIds = uniqueIds(taskRows as unknown as Row[], "assigned_user_id");
-  const memberUserIds = uniqueIds(memberRows, "user_id");
-  const allUserIds = [...new Set([...assigneeIds, ...memberUserIds])];
-
-  const usersRes = allUserIds.length
-    ? await supabase.from("users").select("id,full_name,email,avatar_color").in("id", allUserIds)
-    : { data: [] as Row[] };
+  // Every assignee's and member's name and colour, from the rows that carried
+  // them: the tasks (assignee) and the memberships (users).
+  // A user the viewer can't read leaves no entry, as before (name null, not "").
+  const userRows: Row[] = [
+    ...taskRows.flatMap((task) => (task.assignee ? [{ id: task.assigned_user_id, ...task.assignee }] : [])),
+    ...memberRows.flatMap((member) => (member.users ? [{ id: member.user_id, ...(member.users as Row) }] : [])),
+  ];
 
   const projectNameById = new Map(
     ((projectsRes.data ?? []) as Row[]).map((r) => [getString(r, "id"), getString(r, "name")] as const)
@@ -264,13 +265,9 @@ export async function loadTasksBoard(
     )
   );
   const userNameById = new Map(
-    ((usersRes.data ?? []) as Row[]).map(
-      (r) => [getString(r, "id"), getString(r, "full_name") ?? getString(r, "email") ?? ""] as const
-    )
+    userRows.map((r) => [getString(r, "id"), getString(r, "full_name") ?? getString(r, "email") ?? ""] as const)
   );
-  const userColorById = new Map(
-    ((usersRes.data ?? []) as Row[]).map((r) => [getString(r, "id"), getString(r, "avatar_color")] as const)
-  );
+  const userColorById = new Map(userRows.map((r) => [getString(r, "id"), getString(r, "avatar_color")] as const));
 
   const membersByTask = new Map<string, TaskMember[]>();
   for (const row of memberRows) {
