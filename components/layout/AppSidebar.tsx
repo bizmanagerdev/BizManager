@@ -8,7 +8,7 @@ import { NavLink } from "@/components/NavLink";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useNavCounts, type NavCount } from "@/lib/ui/nav-counts-store";
-import { EXACT_MATCH_CHILDREN, type SidebarNavItem } from "@/components/layout/nav-items";
+import { EXACT_MATCH_CHILDREN, FULLY_PREFETCHED_URLS, type SidebarNavItem } from "@/components/layout/nav-items";
 import { RAIL_WIDTH, useSidebarCollapse } from "@/components/layout/sidebar-collapse-context";
 
 interface Props {
@@ -122,9 +122,9 @@ function NavFlyout({
           to={state.item.url}
           end={state.item.url === "/"}
           onClick={onLeave}
-          // Dashboard is the one destination worth fully warming ahead of a click
-          // — see the matching prefetch below in the main list.
-          prefetch={state.item.url === "/dashboard" ? true : undefined}
+          // Fully warmed ahead of a click — see FULLY_PREFETCHED_URLS and the
+          // matching prefetch below in the main list.
+          prefetch={FULLY_PREFETCHED_URLS.has(state.item.url) ? true : undefined}
           // Standalone row: it carries the filled look itself (nothing behind it).
           className={cn(flyoutTopRow, "bg-secondary text-secondary-foreground")}
           activeClassName={linkActive}
@@ -389,14 +389,15 @@ export function AppSidebar({ items }: Props) {
               to={item.url}
               end={item.url === "/"}
               {...hover(item)}
-              // The dashboard is always mounted here, so it's worth fully
-              // prefetching (data included, not just the loading shell) instead of
-              // Next's default "prefetch nothing for a dynamic route" — the client
-              // then treats it as fresh for minutes rather than 0 seconds, so
-              // leaving the dashboard and coming back reuses that warm copy
-              // instead of paying a full server round-trip again (user, 2026-08-31:
-              // returning to the dashboard should be instant).
-              prefetch={item.url === "/dashboard" ? true : undefined}
+              // The dashboard and projects are always mounted here, so they're
+              // worth fully prefetching (data included, not just the loading
+              // shell) instead of Next's default "prefetch nothing for a dynamic
+              // route" — the client then treats them as fresh for minutes rather
+              // than 0 seconds, so a click (or coming back) reuses that warm copy
+              // instead of paying a full server round-trip (user, 2026-08-31:
+              // returning to the dashboard should be instant; 2026-10-05:
+              // projects should open as fast as the dashboard).
+              prefetch={FULLY_PREFETCHED_URLS.has(item.url) ? true : undefined}
               className={cn(linkBase, collapsed && "justify-center px-0")}
               activeClassName={linkActive}
               pendingClassName={linkPending}

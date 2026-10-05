@@ -27,11 +27,12 @@ const PROJECT_DASHBOARD_SELECT =
 // What enrichProjectRows otherwise reads in a second round trip (projects,
 // project_financials_view, customers). project_dashboard_view returns them
 // itself since 20261005150000_project_dashboard_view_list_columns, so the
-// list is ONE query. Until that migration runs they don't exist: the first
-// query that finds them missing (42703) switches this server instance back to
-// the two-step read.
+// list is ONE query. A database without that migration (42703, missing
+// column) gets the old two-step read for that request. Not remembered: a
+// server that once saw them missing must not keep the slow read after the
+// migration lands (it did, for the instances that loaded /projects in the
+// minutes between that deploy and the migration).
 const PROJECT_LIST_SELECT = `${PROJECT_DASHBOARD_SELECT},expenses_billed_separately,customer_total_price,expenses_billed,collected_amount,pending_amount,overdue_amount,outstanding_amount,next_due_date,payment_terms,due_date,no_charge,branch_id,customer_phone`;
-let listColumnsMissing = false;
 
 function isMissingColumn(error: { code?: string } | null | undefined) {
   return error?.code === "42703";
@@ -60,6 +61,8 @@ export type ProjectsPageResult = {
   totalCount: number;
   hasMore: boolean;
   error: string | null;
+  /** When the rows were read (Date.now()) — how old a copy shown later is. */
+  loadedAt: number;
 };
 
 /**
@@ -132,10 +135,9 @@ export async function loadProjectsPage(
     return query.range(from, to);
   };
 
-  let inline = !listColumnsMissing;
-  let { data, error, count } = await runQuery(inline ? PROJECT_LIST_SELECT : PROJECT_DASHBOARD_SELECT);
-  if (inline && isMissingColumn(error)) {
-    listColumnsMissing = true;
+  let inline = true;
+  let { data, error, count } = await runQuery(PROJECT_LIST_SELECT);
+  if (isMissingColumn(error)) {
     inline = false;
     ({ data, error, count } = await runQuery(PROJECT_DASHBOARD_SELECT));
   }
@@ -153,6 +155,7 @@ export async function loadProjectsPage(
     totalCount,
     hasMore,
     error: error ? toHebrewError(error.message) : null,
+    loadedAt: Date.now(),
   };
 }
 
@@ -164,10 +167,9 @@ export async function loadProjectsPage(
  */
 export async function loadProjectsByIds(supabase: SupabaseClient, ids: string[]): Promise<Row[]> {
   if (ids.length === 0) return [];
-  if (!listColumnsMissing) {
-    const { data, error } = await supabase.from("project_dashboard_view").select(PROJECT_LIST_SELECT).in("id", ids);
-    if (!isMissingColumn(error)) return enrichProjectRows(supabase, (data ?? []) as unknown as Row[], true);
-    listColumnsMissing = true;
+  const listRead = await supabase.from("project_dashboard_view").select(PROJECT_LIST_SELECT).in("id", ids);
+  if (!isMissingColumn(listRead.error)) {
+    return enrichProjectRows(supabase, (listRead.data ?? []) as unknown as Row[], true);
   }
   const { data } = await supabase.from("project_dashboard_view").select(PROJECT_DASHBOARD_SELECT).in("id", ids);
   return enrichProjectRows(supabase, (data ?? []) as Row[], false);

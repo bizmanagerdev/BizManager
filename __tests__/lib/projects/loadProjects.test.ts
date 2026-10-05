@@ -103,7 +103,7 @@ describe("loadProjectsPage", () => {
     expect(result.rows).toHaveLength(1);
   });
 
-  it("falls back to the two-step read while the view lacks them, and remembers that", async () => {
+  it("falls back to the two-step read while the view lacks them, without remembering it", async () => {
     const { loadProjectsPage } = await import("@/app/(app)/projects/loadProjects");
     const first = fakeSupabase({ viewHasListColumns: false });
     await loadProjectsPage(first.supabase as never, { page: 1, filters });
@@ -114,10 +114,10 @@ describe("loadProjectsPage", () => {
       "project_financials_view",
       "customers",
     ]);
-    // The next load goes straight to the two-step read — no failing query first.
-    const second = fakeSupabase({ viewHasListColumns: false });
+    // Once the migration lands, the same server goes straight to one query.
+    const second = fakeSupabase({ viewHasListColumns: true });
     await loadProjectsPage(second.supabase as never, { page: 1, filters });
-    expect(second.calls[0].select).not.toContain("customer_phone");
+    expect(second.calls.map((c) => c.table)).toEqual(["project_dashboard_view"]);
   });
 
   it("gives the browser the same rows either way", async () => {

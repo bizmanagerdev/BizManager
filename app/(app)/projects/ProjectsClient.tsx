@@ -363,6 +363,7 @@ export default function ProjectsClient({
   defaultProjectManagerId,
   tabCounts,
   initialFilters,
+  renderedAt,
 }: {
   initialProjects: ProjectRow[];
   initialHasMore?: boolean;
@@ -374,6 +375,10 @@ export default function ProjectsClient({
   defaultProjectManagerId?: string;
   tabCounts?: { projects: number; quotes: number; closed: number };
   initialFilters?: { view: ProjectsView; status: string; customerId: string | null; sort: SortMode; q: string };
+  /** When the server rendered these rows (Date.now() there). The nav prefetches
+   *  /projects ahead of a click, so they may be minutes old by the time they
+   *  show; an old page is shown at once and refreshed (below). */
+  renderedAt?: number;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -454,7 +459,9 @@ export default function ProjectsClient({
       rows: initialProjects,
       hasMore: initialHasMore,
       totalCount: totalCount ?? null,
-      at: Date.now(),
+      // As old as the server render, not this mount: a page the nav prefetched
+      // minutes ago is then refreshed by the effect below right away.
+      at: Math.min(renderedAt ?? Date.now(), Date.now()),
     });
     // Only a new server page triggers this — serverKey/hasMore/count come with it.
     // eslint-disable-next-line react-hooks/exhaustive-deps

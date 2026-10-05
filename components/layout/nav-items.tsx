@@ -121,6 +121,15 @@ const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = SIDEBAR_ITEMS.filter((item) => !
 // — one selected tab at a time, in the sidebar and in עוד alike.
 export const EXACT_MATCH_CHILDREN = new Set(["/financial", "/payroll"]);
 
+// The destinations the nav fully prefetches — data included, not just the
+// loading shell (Next's default for a dynamic route) — so a click shows the
+// page at once from a copy fetched ahead, instead of waiting on the server.
+// The client keeps that copy for minutes, so coming back is instant too. Kept
+// to the most-visited pages: each costs one background render of that page.
+// /projects refreshes its list quietly when that copy is more than a few
+// seconds old (ProjectsClient, renderedAt).
+export const FULLY_PREFETCHED_URLS = new Set(["/dashboard", "/projects"]);
+
 const ADMIN_ONLY_URLS = new Set(["/activity", "/financial", "/settings", "/financial/loans", "/financial/reports", "/financial/bank"]);
 const ADMIN_OR_OFFICE_URLS = new Set<string>(["/meetings", "/payroll", "/payroll/attendance", "/collections", "/communications", "/checks", "/financial/statements", "/financial/taxes", "/financial/payments-calendar", "/vehicles"]);
 

@@ -204,6 +204,10 @@ export default async function ProjectsPage({
             defaultProjectManagerId={defaultProjectManagerId ?? undefined}
             tabCounts={tabCounts}
             initialFilters={filters}
+            // When the rows were read — the nav prefetches this page ahead of a
+            // click and the browser may show that copy minutes later, so the
+            // list refreshes itself when it's older than a few seconds.
+            renderedAt={projectsResult.loadedAt}
           />
         )}
       </div>
