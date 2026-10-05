@@ -114,6 +114,9 @@ type InitialFilters = {
 
 type Props = {
   data: FinancialPageData;
+  /** The flow page arrives with only its newest ledger/upcoming rows; the full
+   *  lists are loaded right after from /api/financial/entries. */
+  entriesPartial?: boolean;
   earnedRevenue?: EarnedRevenueReport | null;
   projectBreakdown?: ProjectBreakdown | null;
   domainProof?: DomainProofMap | null;
@@ -241,6 +244,7 @@ function getEntryId(entry: FinancialEntry) {
 
 export default function FinancialPageClient({
   data,
+  entriesPartial = false,
   initialFilters,
   view = "flow",
   earnedRevenue = null,
@@ -342,8 +346,50 @@ export default function FinancialPageClient({
   // or mark-paid disappears/updates instantly without waiting on router.refresh().
   // Same scope on both arrays: an entry can appear in either (or both), and the
   // overlay is keyed by entry.id regardless of which array holds it.
-  const upcomingEntries = useUndoOverlay(data.upcomingEntries, getEntryId, "financial-entry");
-  const ledgerEntries = useUndoOverlay(data.ledgerEntries, getEntryId, "financial-entry");
+  //
+  // The page arrives with only the newest rows (entriesPartial — the full lists
+  // were ~1.5 MB to download and parse before anything showed). The full
+  // lists are loaded right after, so search, the month list, the CSV export
+  // and a deep link to an older entry cover everything again. A new server
+  // render (a filter, or the refresh after a save) starts over from its rows.
+  const [fullLists, setFullLists] = useState<{
+    source: FinancialPageData;
+    ledger: FinancialEntry[];
+    upcoming: FinancialEntry[];
+  } | null>(null);
+  useEffect(() => {
+    if (!entriesPartial) return;
+    let cancelled = false;
+    const source = data;
+    void fetch(`/api/financial/entries?${searchParams.toString()}`, { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body: { ledgerEntries?: unknown; upcomingEntries?: unknown } | null) => {
+        if (cancelled || !body || !Array.isArray(body.ledgerEntries) || !Array.isArray(body.upcomingEntries)) return;
+        setFullLists({
+          source,
+          ledger: body.ledgerEntries as FinancialEntry[],
+          upcoming: body.upcomingEntries as FinancialEntry[],
+        });
+      })
+      // Failed: the newest rows stay — what the page had, just not the rest.
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // The URL these rows were rendered for is the one to load the rest of.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, entriesPartial]);
+  const listsComplete = !entriesPartial || fullLists?.source === data;
+  const upcomingEntries = useUndoOverlay(
+    fullLists?.source === data ? fullLists.upcoming : data.upcomingEntries,
+    getEntryId,
+    "financial-entry"
+  );
+  const ledgerEntries = useUndoOverlay(
+    fullLists?.source === data ? fullLists.ledger : data.ledgerEntries,
+    getEntryId,
+    "financial-entry"
+  );
 
   // Deep link from the activity feed: /financial?focus=expense:<uuid> must OPEN
   // that expense's own dialog — the whole record, exactly as if it had been
@@ -432,8 +478,9 @@ export default function FinancialPageClient({
   // The lists hold only the newest entries (the server caps them) — say so, and
   // that search + date filters cover the whole period, so "5 מתוך 5" is never
   // mistaken for "that's all there is".
+  // (Not while the rest of the rows are still on their way.)
   const ledgerCapNote =
-    data.ledgerTotalCount > ledgerEntries.length ? (
+    listsComplete && data.ledgerTotalCount > ledgerEntries.length ? (
       <span className="mt-1 block text-xs text-muted-foreground">
         מוצגות {ledgerEntries.length.toLocaleString("he-IL")} התנועות האחרונות מתוך{" "}
         {data.ledgerTotalCount.toLocaleString("he-IL")} — חיפוש וסינון תאריכים חלים על כל התקופה.

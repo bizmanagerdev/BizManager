@@ -2,9 +2,15 @@ import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
 import type { UserProfile } from "@/lib/auth/requireProfile";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { type FinancialPageInitialFilters } from "@/app/(app)/financial/FinancialPageClient";
 import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
-import { getFinancialPageData } from "@/lib/financial";
+import {
+  cashFlowCustomerId,
+  flowViewData,
+  loadCashFlowData,
+  loadCashFlowProjections,
+  normalizeFinancialSearchParams,
+  reportsViewData,
+} from "@/lib/financial/cashFlowPage";
 import {
   loadEarnedRevenueByMonth,
   type EarnedRevenueReport,
@@ -20,7 +26,6 @@ import {
 import { loadDomainProof, type DomainProofMap } from "@/lib/financial/domainProof";
 import { loadCustomerRanking, type CustomerRankingReport } from "@/lib/financial/customerRanking";
 import { ensureRecurringExpensesForDate } from "@/lib/recurring-expenses";
-import { loadProjectedOutflowEntries } from "@/lib/payables";
 import { propertyDisplayName } from "@/lib/properties";
 import { clampFromToBooksStart, getBooksStartDate } from "@/lib/settings/booksStartDate";
 
@@ -35,42 +40,12 @@ function getString(row: Row | null | undefined, key: string) {
   return typeof value === "string" ? value : null;
 }
 
-function normalizeType(value: string | undefined) {
-  return value === "inflow" || value === "outflow" ? value : "all";
-}
-
-function normalizeStage(value: string | undefined) {
-  return value === "actual" || value === "future" || value === "pending" ? value : "all";
-}
-
-function normalizePage(value: string | undefined) {
-  if (!value) return 1;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
-}
-
 // This client component is ~2,400 lines (the whole cash-flow ledger UI).
 // Lazy-loaded so a visitor doesn't download it before actually opening the
 // page — same pattern already used for ProjectTabsClient/SalaryCenterClient.
 const FinancialPageClient = dynamic(() => import("@/app/(app)/financial/FinancialPageClient"), {
   loading: () => <DetailPageSkeleton />,
 });
-
-export function normalizeFinancialSearchParams(
-  searchParams: Record<string, string | string[] | undefined>
-): FinancialPageInitialFilters {
-  return {
-    from: firstValue(searchParams.from)?.trim() ?? "",
-    to: firstValue(searchParams.to)?.trim() ?? "",
-    domain: firstValue(searchParams.domain)?.trim() ?? "",
-    sourceId: firstValue(searchParams.sourceId)?.trim() ?? "",
-    type: normalizeType(firstValue(searchParams.type)),
-    stage: normalizeStage(firstValue(searchParams.stage)),
-    q: firstValue(searchParams.q)?.trim() ?? "",
-    ledgerPage: normalizePage(firstValue(searchParams.ledgerPage)),
-    upcomingPage: normalizePage(firstValue(searchParams.upcomingPage)),
-  };
-}
 
 export default async function CashFlowPageContent({
   profile,
@@ -83,7 +58,7 @@ export default async function CashFlowPageContent({
   searchParams: Record<string, string | string[] | undefined>;
   view?: "flow" | "reports";
 }) {
-  const customerId = firstValue(searchParams.customer_id)?.trim() ?? "";
+  const customerId = cashFlowCustomerId(searchParams);
   const customerName = firstValue(searchParams.customer_name)?.trim() ?? "";
   const customerPage = firstValue(searchParams.customer_page)?.trim() ?? "";
   const initialFilters = normalizeFinancialSearchParams(searchParams);
@@ -130,12 +105,7 @@ export default async function CashFlowPageContent({
   if (canSeeCashflow) {
     await ensureRecurringExpensesForDate(supabase);
   }
-  const projectedOutflowEntries = canSeeCashflow
-    ? loadProjectedOutflowEntries(supabase, {
-        referenceDate: new Date().toISOString().slice(0, 10),
-        months: 6,
-      }).catch(() => [])
-    : [];
+  const projectedOutflowEntries = canSeeCashflow ? loadCashFlowProjections(supabase) : [];
 
   const booksStartDate = await booksStartDatePromise;
   const reportFrom = clampFromToBooksStart(initialFilters.from, booksStartDate);
@@ -168,23 +138,17 @@ export default async function CashFlowPageContent({
       : null;
   reportsPromise?.catch(() => {});
 
-  const data = await getFinancialPageData(
-    supabase,
-    {
-      customerId: customerId || null,
-      from: initialFilters.from || null,
-      to: initialFilters.to || null,
-      notBefore: booksStartDate,
-      domain: initialFilters.domain || null,
-      sourceId: initialFilters.sourceId || null,
-      type: initialFilters.type === "all" ? null : initialFilters.type,
-      stage: initialFilters.stage === "all" ? null : initialFilters.stage,
-      q: initialFilters.q || null,
-      ledgerPage: initialFilters.ledgerPage,
-      upcomingPage: initialFilters.upcomingPage,
-    },
-    { projectedOutflowEntries }
-  );
+  const fullData = await loadCashFlowData(supabase, {
+    filters: initialFilters,
+    customerId,
+    notBefore: booksStartDate,
+    projectedOutflowEntries,
+  });
+  // Each view gets only what it shows: the flow view its newest ledger rows
+  // (FinancialPageClient loads the rest right after the page, from
+  // /api/financial/entries), the reports view no ledger lists at all.
+  const { data, entriesPartial } =
+    view === "reports" ? { data: reportsViewData(fullData), entriesPartial: false } : flowViewData(fullData);
 
   const canViewCashflow = profile.role === "admin";
 
@@ -250,6 +214,7 @@ export default async function CashFlowPageContent({
           q: initialFilters.q,
         })}
         data={data}
+        entriesPartial={entriesPartial}
         earnedRevenue={earnedRevenue}
         projectBreakdown={projectBreakdown}
         domainProof={domainProof}
