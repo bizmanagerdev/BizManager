@@ -628,6 +628,12 @@ export async function getCollectionsData(
     amountsOnly?: boolean;
   } = {}
 ): Promise<CollectionsData> {
+  const today = new Date().toISOString().slice(0, 10);
+  // Open loans we gave out and pending/overdue rent don't read collections_view
+  // — started now so they load alongside it instead of after it.
+  const loanRowsPromise = buildLoanSourceRows(supabase, today).catch(() => [] as CollectionSourceRow[]);
+  const rentRowsPromise = buildRentSourceRows(supabase, today).catch(() => [] as CollectionSourceRow[]);
+
   let rawRows: Row[];
   try {
     rawRows = await fetchAllPaged<Row>((lo, hi) =>
@@ -648,7 +654,22 @@ export async function getCollectionsData(
     };
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  // Last contact / next reminder per customer needs only WHO is in the list —
+  // every customer on a collections_view, loan or rent row — so it's looked up
+  // alongside the due dates and titles below, not in a round trip of its own
+  // at the end. Best-effort, as before: a failure leaves those fields empty.
+  const activityPromise = amountsOnly
+    ? null
+    : Promise.all([loanRowsPromise, rentRowsPromise]).then(([loanSourceRows, rentSourceRows]) =>
+        getCollectionActivityByCustomer(supabase, [
+          ...rawRows.map((row) => str(row, "customer_id")).filter((id): id is string => Boolean(id)),
+          ...[...loanSourceRows, ...rentSourceRows]
+            .map((row) => row.customer_id)
+            .filter((id): id is string => Boolean(id)),
+        ])
+      );
+  activityPromise?.catch(() => {});
+
   // Per-source effective due dates (from payment terms / override) drive the late calc.
   const [orderDueById, projectDueById] = await Promise.all([
     fetchOrderDueDates(
@@ -724,8 +745,8 @@ export async function getCollectionsData(
   const [, , loanRows, rentRows] = await Promise.all([
     amountsOnly ? undefined : enrichCollectionTitles(supabase, rows),
     amountsOnly ? undefined : attachPendingPayments(supabase, rows),
-    buildLoanSourceRows(supabase, today).catch(() => [] as CollectionSourceRow[]),
-    buildRentSourceRows(supabase, today).catch(() => [] as CollectionSourceRow[]),
+    loanRowsPromise,
+    rentRowsPromise,
   ]);
   if (loanRows.length > 0) rows.push(...loanRows);
   if (rentRows.length > 0) rows.push(...rentRows);
@@ -781,12 +802,9 @@ export async function getCollectionsData(
 
   // Enrich with last-contact / next-reminder (best-effort — ignore if the
   // communication_center tables don't exist yet).
-  if (!amountsOnly) {
+  if (activityPromise) {
     try {
-      const customerIds = customers
-        .map((c) => c.customer_id)
-        .filter((id): id is string => Boolean(id));
-      const activity = await getCollectionActivityByCustomer(supabase, customerIds);
+      const activity = await activityPromise;
       for (const group of customers) {
         if (!group.customer_id) continue;
         const a = activity.get(group.customer_id);

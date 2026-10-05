@@ -93,15 +93,45 @@ export default async function CashFlowPageContent({
   // the read overlaps the recurring/projection work below.
   const booksStartDatePromise = view === "reports" ? getBooksStartDate(supabase) : Promise.resolve(null);
 
+  // The recurring-expense dialog's pick-lists depend on nothing else here —
+  // started now so they load alongside the ledger instead of after it.
+  const canManageExpenses = profile.role === "admin" || profile.role === "office";
+  const optionsPromise = canManageExpenses
+    ? Promise.all([
+        // project_overview_view has project_dashboard_view's rows without the
+        // financial and task totals these options never read.
+        supabase
+          .from("project_overview_view")
+          .select("id,name,customer_name")
+          .order("updated_at", { ascending: false })
+          .range(0, 999),
+        supabase
+          .from("properties")
+          .select("id,name,address,is_active")
+          .order("address", { ascending: true })
+          .range(0, 999),
+        supabase
+          .from("order_overview_view")
+          .select("order_id,customer_name,order_date")
+          .order("order_date", { ascending: false })
+          .range(0, 499),
+      ])
+    : null;
+  // Awaited further down. This only stops a failure that lands meanwhile from
+  // being reported as unhandled before then.
+  optionsPromise?.catch(() => {});
+
   // Expected outgoing money (upcoming salaries + recurring bills) to show in the
   // future/forecast views alongside expected income — 6-month horizon, calendar-
   // parity. Only for the roles that can see cash flow; never blocks the page.
+  // Loaded alongside the ledger scan: getFinancialPageData awaits it only once
+  // the entries are in.
   const canSeeCashflow = profile.role === "admin" || profile.role === "office";
   if (canSeeCashflow) {
     await ensureRecurringExpensesForDate(supabase);
   }
   const projectedOutflowEntries = canSeeCashflow
-    ? await loadProjectedOutflowEntries(supabase, {
+    ? loadProjectedOutflowEntries(supabase, {
         referenceDate: new Date().toISOString().slice(0, 10),
         months: 6,
       }).catch(() => [])
@@ -109,6 +139,34 @@ export default async function CashFlowPageContent({
 
   const booksStartDate = await booksStartDatePromise;
   const reportFrom = clampFromToBooksStart(initialFilters.from, booksStartDate);
+
+  // Earned (booked) revenue per month per domain + per-project breakdown — only
+  // needed on the reports view (the per-project detail proves the פרויקטים total).
+  // Started before the ledger is awaited, so the two run side by side.
+  const reportsPromise =
+    view === "reports"
+      ? Promise.all([
+          loadEarnedRevenueByMonth(supabase, {
+            from: reportFrom,
+            to: initialFilters.to || null,
+          }),
+          loadProjectPeriodBreakdown(supabase, {
+            from: reportFrom,
+            to: initialFilters.to || null,
+          }),
+          loadDomainProof(supabase, {
+            from: reportFrom,
+            to: initialFilters.to || null,
+          }),
+          // Customer analytics are book-wide (not date-scoped) — always the latest picture.
+          loadCustomerRanking(supabase),
+          loadProductMarginByMonth(supabase, {
+            from: reportFrom,
+            to: initialFilters.to || null,
+          }),
+        ])
+      : null;
+  reportsPromise?.catch(() => {});
 
   const data = await getFinancialPageData(
     supabase,
@@ -128,61 +186,23 @@ export default async function CashFlowPageContent({
     { projectedOutflowEntries }
   );
 
-  const canManageExpenses = profile.role === "admin" || profile.role === "office";
   const canViewCashflow = profile.role === "admin";
 
-  // Earned (booked) revenue per month per domain + per-project breakdown — only
-  // needed on the reports view (the per-project detail proves the פרויקטים total).
   let earnedRevenue: EarnedRevenueReport | null = null;
   let projectBreakdown: ProjectBreakdown | null = null;
   let domainProof: DomainProofMap | null = null;
   let customerRanking: CustomerRankingReport | null = null;
   let productMargin: ProductMarginReport | null = null;
-  if (view === "reports") {
-    [earnedRevenue, projectBreakdown, domainProof, customerRanking, productMargin] = await Promise.all([
-      loadEarnedRevenueByMonth(supabase, {
-        from: reportFrom,
-        to: initialFilters.to || null,
-      }),
-      loadProjectPeriodBreakdown(supabase, {
-        from: reportFrom,
-        to: initialFilters.to || null,
-      }),
-      loadDomainProof(supabase, {
-        from: reportFrom,
-        to: initialFilters.to || null,
-      }),
-      // Customer analytics are book-wide (not date-scoped) — always the latest picture.
-      loadCustomerRanking(supabase),
-      loadProductMarginByMonth(supabase, {
-        from: reportFrom,
-        to: initialFilters.to || null,
-      }),
-    ]);
+  if (reportsPromise) {
+    [earnedRevenue, projectBreakdown, domainProof, customerRanking, productMargin] = await reportsPromise;
   }
 
   let projectOptions: Array<{ id: string; label: string }> = [];
   let propertyOptions: Array<{ id: string; label: string }> = [];
   let orderOptions: Array<{ id: string; label: string }> = [];
 
-  if (canManageExpenses) {
-    const [projectsResult, propertiesResult, ordersResult] = await Promise.all([
-      supabase
-        .from("project_dashboard_view")
-        .select("id,name,customer_name")
-        .order("updated_at", { ascending: false })
-        .range(0, 999),
-      supabase
-        .from("properties")
-        .select("id,name,address,is_active")
-        .order("address", { ascending: true })
-        .range(0, 999),
-      supabase
-        .from("order_overview_view")
-        .select("order_id,customer_name,order_date")
-        .order("order_date", { ascending: false })
-        .range(0, 499),
-    ]);
+  if (optionsPromise) {
+    const [projectsResult, propertiesResult, ordersResult] = await optionsPromise;
 
     projectOptions = ((projectsResult.data ?? []) as Row[])
       .map((row) => {

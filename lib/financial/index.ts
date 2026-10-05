@@ -122,11 +122,17 @@ export async function loadFinancialEntries(
   // `await`ed after everything else had already resolved).
   const loansPromise = customerId ? Promise.resolve([] as Loan[]) : fetchLoans(supabase);
 
-  const [paymentRows, expenseRows, workerPaymentsResult, projectRows, orderRows, templateMetaById, settlementConfirmations] = await Promise.all([
+  const [paymentRows, expenseScan, workerPaymentsResult, projectRows, orderRows, templateMetaById, settlementConfirmations] = await Promise.all([
     // Reaches back one more month: last month's card payments are money on the
     // 10th of this one, so a window starting now still has to read them.
     scanPaymentRows(supabase, cardScanSince(scanSince)),
-    scanExpenseRows(supabase, scanSince),
+    // Which project each expense belongs to (project_expenses) needs only the
+    // expense ids, so it's looked up the moment they arrive — alongside the
+    // other scans, not in a round trip of its own after all of them.
+    scanExpenseRows(supabase, scanSince).then(async (rows) => ({
+      rows,
+      projectLinks: await fetchProjectExpenseLinksByExpenseIds(supabase, rows.map((row) => row.id)),
+    })),
     (async () => {
       try {
         const [workerPaymentRows, attendanceSessionRows, workerDebtItemRows] = await Promise.all([
@@ -162,10 +168,7 @@ export async function loadFinancialEntries(
   ]);
 
   const paymentLinks = paymentRows.map(resolvePaymentLinks);
-  const projectExpenseLinksByExpenseId = await fetchProjectExpenseLinksByExpenseIds(
-    supabase,
-    expenseRows.map((row) => row.id)
-  );
+  const { rows: expenseRows, projectLinks: projectExpenseLinksByExpenseId } = expenseScan;
   const workerPaymentById = new Map(
     workerPaymentsResult.workerPaymentRows
       .filter((row) => row.id)
@@ -355,7 +358,9 @@ export async function loadDomainCashBreakdown(
 export async function getFinancialPageData(
   supabase: SupabaseClient,
   filters: FinancialPageFilters = {},
-  injected: { projectedOutflowEntries?: FinancialEntry[] } = {}
+  // May be a promise, so the caller can load the projections while the entries
+  // scan runs; it's only awaited once the entries are in.
+  injected: { projectedOutflowEntries?: FinancialEntry[] | Promise<FinancialEntry[]> } = {}
 ): Promise<FinancialPageData> {
   // Books start date: nothing before it counts, so an earlier (or empty) `from` is raised to it.
   const notBefore = normalizeDate(filters.notBefore);
@@ -426,7 +431,7 @@ export async function getFinancialPageData(
       realWageMonths.add(`${entry.workerUserId}:${entry.flowDate.slice(0, 7)}`);
     }
   }
-  const projections = (injected.projectedOutflowEntries ?? []).filter(
+  const projections = ((await injected.projectedOutflowEntries) ?? []).filter(
     (p) => !(p.origin === "worker_owed" && p.workerUserId && realWageMonths.has(`${p.workerUserId}:${p.flowDate.slice(0, 7)}`))
   );
   // Respect the ledger's active filters for the list/summaries; the P&L-style

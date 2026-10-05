@@ -16,9 +16,12 @@ export default async function CollectionsPage() {
     redirect("/no-access");
   }
 
-  const data = await getCollectionsData(supabase);
-  // Best-effort: payment table may not be migrated yet.
-  const dueToday: PaymentDueToday[] = await getPaymentsDueToday(supabase).catch(() => [] as PaymentDueToday[]);
+  // Independent reads — loaded together, not one after the other.
+  const [data, dueToday] = await Promise.all([
+    getCollectionsData(supabase),
+    // Best-effort: payment table may not be migrated yet.
+    getPaymentsDueToday(supabase).catch(() => [] as PaymentDueToday[]),
+  ]);
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>

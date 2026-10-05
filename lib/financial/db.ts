@@ -19,6 +19,16 @@ import {
   type WorkerUserRow,
 } from "./types";
 import { chunkStrings, isMissingColumnError, uniqueStrings } from "./utils";
+import { runTogether } from "@/lib/upload-together";
+
+// Look rows up by id, ID_CHUNK_SIZE ids per request. The chunks don't depend on
+// each other, so they go out together (up to 6 at once) instead of one round
+// trip after another — a year of expenses is ~1,000 ids, which was five trips
+// in a row. Rows come back in chunk order, the same order the loop gave.
+async function selectByIdChunks<T>(ids: string[], select: (chunk: string[]) => Promise<T[]>): Promise<T[]> {
+  const parts = await runTogether(chunkStrings(uniqueStrings(ids), ID_CHUNK_SIZE), select, 6);
+  return parts.flat();
+}
 
 async function scanRows<T extends Record<string, unknown>>(
   supabase: SupabaseClient,
@@ -197,14 +207,15 @@ export async function scanWorkerDebtItemRows(supabase: SupabaseClient, since?: s
 
 export async function fetchProjectsByIds(supabase: SupabaseClient, ids: string[]) {
   const map = new Map<string, ProjectRow>();
-  for (const chunk of chunkStrings(uniqueStrings(ids), ID_CHUNK_SIZE)) {
+  const rows = await selectByIdChunks(ids, async (chunk) => {
     const { data, error } = await supabase
       .from("projects")
       .select("id,name,customer_id,status,start_date,end_date")
       .in("id", chunk);
     if (error) throw error;
-    ((data ?? []) as ProjectRow[]).forEach((row) => { if (row.id) map.set(row.id, row); });
-  }
+    return (data ?? []) as ProjectRow[];
+  });
+  rows.forEach((row) => { if (row.id) map.set(row.id, row); });
   return map;
 }
 
@@ -220,14 +231,15 @@ export async function scanProjectRows(supabase: SupabaseClient, since?: string |
 
 export async function fetchOrdersByIds(supabase: SupabaseClient, ids: string[]) {
   const map = new Map<string, OrderRow>();
-  for (const chunk of chunkStrings(uniqueStrings(ids), ID_CHUNK_SIZE)) {
+  const rows = await selectByIdChunks(ids, async (chunk) => {
     const { data, error } = await supabase
       .from("orders")
       .select("id,customer_id,order_date,status,total_amount,payment_status")
       .in("id", chunk);
     if (error) throw error;
-    ((data ?? []) as OrderRow[]).forEach((row) => { if (row.id) map.set(row.id, row); });
-  }
+    return (data ?? []) as OrderRow[];
+  });
+  rows.forEach((row) => { if (row.id) map.set(row.id, row); });
   return map;
 }
 
@@ -243,45 +255,48 @@ export async function scanOrderRows(supabase: SupabaseClient, since?: string | n
 
 export async function fetchPropertiesByIds(supabase: SupabaseClient, ids: string[]) {
   const map = new Map<string, PropertyRow>();
-  for (const chunk of chunkStrings(uniqueStrings(ids), ID_CHUNK_SIZE)) {
+  const rows = await selectByIdChunks(ids, async (chunk) => {
     const { data, error } = await supabase
       .from("properties")
       .select("id,address")
       .in("id", chunk);
     if (error) throw error;
-    ((data ?? []) as PropertyRow[]).forEach((row) => { if (row.id) map.set(row.id, row); });
-  }
+    return (data ?? []) as PropertyRow[];
+  });
+  rows.forEach((row) => { if (row.id) map.set(row.id, row); });
   return map;
 }
 
 export async function fetchPropertyCustomerLinks(supabase: SupabaseClient, propertyIds: string[]) {
   const map = new Map<string, Set<string>>();
-  for (const chunk of chunkStrings(uniqueStrings(propertyIds), ID_CHUNK_SIZE)) {
+  const rows = await selectByIdChunks(propertyIds, async (chunk) => {
     const { data, error } = await supabase
       .from("lease_agreements")
       .select("property_id,customer_id")
       .in("property_id", chunk);
     if (error) throw error;
-    ((data ?? []) as LeaseAgreementRow[]).forEach((row) => {
-      if (!row.property_id || !row.customer_id) return;
-      const current = map.get(row.property_id) ?? new Set<string>();
-      current.add(row.customer_id);
-      map.set(row.property_id, current);
-    });
-  }
+    return (data ?? []) as LeaseAgreementRow[];
+  });
+  rows.forEach((row) => {
+    if (!row.property_id || !row.customer_id) return;
+    const current = map.get(row.property_id) ?? new Set<string>();
+    current.add(row.customer_id);
+    map.set(row.property_id, current);
+  });
   return map;
 }
 
 export async function fetchProjectFinancialsByIds(supabase: SupabaseClient, projectIds: string[]) {
   const map = new Map<string, ProjectFinancialRow>();
-  for (const chunk of chunkStrings(uniqueStrings(projectIds), ID_CHUNK_SIZE)) {
+  const rows = await selectByIdChunks(projectIds, async (chunk) => {
     const { data, error } = await supabase
       .from("project_financials_view")
       .select("id,customer_total_price,expenses_billed")
       .in("id", chunk);
     if (error) throw error;
-    ((data ?? []) as ProjectFinancialRow[]).forEach((row) => { if (row.id) map.set(row.id, row); });
-  }
+    return (data ?? []) as ProjectFinancialRow[];
+  });
+  rows.forEach((row) => { if (row.id) map.set(row.id, row); });
   return map;
 }
 
@@ -300,18 +315,19 @@ export async function fetchOrderFinancialsByIds(supabase: SupabaseClient, orderI
   let lastError: unknown = null;
   for (const variant of selectVariants) {
     try {
-      for (const chunk of chunkStrings(safeOrderIds, ID_CHUNK_SIZE)) {
+      const rows = await selectByIdChunks(safeOrderIds, async (chunk) => {
         const { data, error } = await supabase
           .from("order_financials_view")
           .select(variant.select)
           .in(variant.idColumn, chunk);
         if (error) throw error;
-        ((data ?? []) as unknown as OrderFinancialRow[]).forEach((row) => {
-          const id = variant.readId(row);
-          if (!id) return;
-          map.set(id, { ...row, id });
-        });
-      }
+        return (data ?? []) as unknown as OrderFinancialRow[];
+      });
+      rows.forEach((row) => {
+        const id = variant.readId(row);
+        if (!id) return;
+        map.set(id, { ...row, id });
+      });
       return map;
     } catch (error) {
       lastError = error;
@@ -333,60 +349,58 @@ export async function fetchOrderFinancialsByIds(supabase: SupabaseClient, orderI
 
 export async function fetchProjectExpenseLinksByExpenseIds(supabase: SupabaseClient, expenseIds: string[]) {
   const map = new Map<string, string>();
-  for (const chunk of chunkStrings(uniqueStrings(expenseIds), ID_CHUNK_SIZE)) {
+  const rows = await selectByIdChunks(expenseIds, async (chunk) => {
     const { data, error } = await supabase
       .from("project_expenses")
       .select("expense_id,project_id")
       .in("expense_id", chunk);
     if (error) throw error;
-    ((data ?? []) as ProjectExpenseLinkRow[]).forEach((row) => {
-      if (!row.expense_id || !row.project_id || map.has(row.expense_id)) return;
-      map.set(row.expense_id, row.project_id);
-    });
-  }
+    return (data ?? []) as ProjectExpenseLinkRow[];
+  });
+  rows.forEach((row) => {
+    if (!row.expense_id || !row.project_id || map.has(row.expense_id)) return;
+    map.set(row.expense_id, row.project_id);
+  });
   return map;
 }
 
 export async function fetchWorkerUsersByIds(supabase: SupabaseClient, userIds: string[]) {
   const map = new Map<string, WorkerUserRow>();
-  for (const chunk of chunkStrings(uniqueStrings(userIds), ID_CHUNK_SIZE)) {
+  const rows = await selectByIdChunks(userIds, async (chunk) => {
     const { data, error } = await supabase
       .from("users")
       .select("id,pay_tracking_mode")
       .in("id", chunk);
     if (error) throw error;
-    ((data ?? []) as WorkerUserRow[]).forEach((row) => { if (row.id) map.set(row.id, row); });
-  }
+    return (data ?? []) as WorkerUserRow[];
+  });
+  rows.forEach((row) => { if (row.id) map.set(row.id, row); });
   return map;
 }
 
 export async function fetchSalaryAgreementsByUserIds(supabase: SupabaseClient, userIds: string[]) {
-  const rows: SalaryAgreementLiteRow[] = [];
-  for (const chunk of chunkStrings(uniqueStrings(userIds), ID_CHUNK_SIZE)) {
+  return selectByIdChunks(userIds, async (chunk) => {
     const { data, error } = await supabase
       .from("salary_agreements")
       .select("id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to")
       .in("user_id", chunk);
     if (error) throw error;
-    rows.push(...((data ?? []) as SalaryAgreementLiteRow[]));
-  }
-  return rows;
+    return (data ?? []) as SalaryAgreementLiteRow[];
+  });
 }
 
 export async function fetchWorkerPaymentAllocationsByPaymentIds(
   supabase: SupabaseClient,
   workerPaymentIds: string[]
 ) {
-  const rows: WorkerPaymentAllocationRow[] = [];
-  for (const chunk of chunkStrings(uniqueStrings(workerPaymentIds), ID_CHUNK_SIZE)) {
+  return selectByIdChunks(workerPaymentIds, async (chunk) => {
     const { data, error } = await supabase
       .from("worker_payment_allocations")
       .select("id,worker_payment_id,source_type,attendance_session_id,payslip_id,amount")
       .in("worker_payment_id", chunk);
     if (error) throw error;
-    rows.push(...((data ?? []) as WorkerPaymentAllocationRow[]));
-  }
-  return rows;
+    return (data ?? []) as WorkerPaymentAllocationRow[];
+  });
 }
 
 export async function scanAttendanceSessionRows(supabase: SupabaseClient, since?: string | null) {

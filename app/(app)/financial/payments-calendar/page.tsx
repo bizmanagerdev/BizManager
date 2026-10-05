@@ -42,6 +42,29 @@ export default async function PaymentsCalendarPage() {
   const { profile, supabase } = await requireProfile();
   if (profile.role !== "admin" && profile.role !== "office") redirect("/dashboard");
 
+  // ── Recurring templates + source lookups (for the תשלומים קבועים tab and the
+  //    expense dialog's domain-link pickers) ────────────────────────────────
+  // None of these depend on the ledger below, so they start now and load
+  // alongside it instead of after it.
+  const lookupsPromise = Promise.all([
+    supabase
+      .from("recurring_expense_templates")
+      .select("id,template_name,category,amount,is_variable_amount,auto_paid,reminder_work_days_before,description_template,notes_template,business_domain,project_id,order_id,property_id,account_id,included_in_base_price,billed_to_customer,project_expense_notes_template,frequency,interval_months,create_day_of_month,expense_day_of_month,create_month_of_year,expense_month_of_year,start_date,end_date,is_active")
+      .order("created_at", { ascending: true }),
+    // project_overview_view has project_dashboard_view's rows without the
+    // financial and task totals these options never read.
+    supabase.from("project_overview_view").select("id,name,customer_name")
+      .order("updated_at", { ascending: false }).range(0, 999),
+    supabase.from("properties").select("id,name,address,is_active")
+      .order("address", { ascending: true }).range(0, 999),
+    supabase.from("order_overview_view").select("order_id,customer_name,order_date")
+      .order("order_date", { ascending: false }).range(0, 499),
+    loadAccounts(supabase).catch(() => [] as Account[]),
+  ]);
+  // Awaited below. This only stops a failure that lands meanwhile from being
+  // reported as unhandled before then.
+  lookupsPromise.catch(() => {});
+
   // Materialize any recurring expenses due up to today before reading the ledger.
   // A failure never blocks the page, but it IS shown on it: a board whose
   // generator silently didn't run looks complete while missing this month's
@@ -89,21 +112,7 @@ export default async function PaymentsCalendarPage() {
     error = (err as { message?: string })?.message ?? "שגיאה בטעינת התשלומים";
   }
 
-  // ── Recurring templates + source lookups (for the תשלומים קבועים tab and the
-  //    expense dialog's domain-link pickers) ────────────────────────────────
-  const [expResult, projectsResult, propertiesResult, ordersResult, accounts] = await Promise.all([
-    supabase
-      .from("recurring_expense_templates")
-      .select("id,template_name,category,amount,is_variable_amount,auto_paid,reminder_work_days_before,description_template,notes_template,business_domain,project_id,order_id,property_id,account_id,included_in_base_price,billed_to_customer,project_expense_notes_template,frequency,interval_months,create_day_of_month,expense_day_of_month,create_month_of_year,expense_month_of_year,start_date,end_date,is_active")
-      .order("created_at", { ascending: true }),
-    supabase.from("project_dashboard_view").select("id,name,customer_name")
-      .order("updated_at", { ascending: false }).range(0, 999),
-    supabase.from("properties").select("id,name,address,is_active")
-      .order("address", { ascending: true }).range(0, 999),
-    supabase.from("order_overview_view").select("order_id,customer_name,order_date")
-      .order("order_date", { ascending: false }).range(0, 499),
-    loadAccounts(supabase).catch(() => [] as Account[]),
-  ]);
+  const [expResult, projectsResult, propertiesResult, ordersResult, accounts] = await lookupsPromise;
 
   const expenseMissingSchema = Boolean(expResult.error?.message && looksLikeMissingSchema(expResult.error.message));
 
