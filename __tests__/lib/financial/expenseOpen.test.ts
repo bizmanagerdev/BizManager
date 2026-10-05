@@ -3,9 +3,12 @@ import {
   expenseOpenAmount,
   expensePaidSoFar,
   normalizeExpensePaymentState,
+  openLiabilityEntries,
   withOpenAmount,
 } from "@/lib/financial/expenseOpen";
+import { buildLoanEntries } from "@/lib/financial/entries";
 import type { FinancialEntry } from "@/lib/financial/types";
+import { deriveLoan, summarizeLoans } from "@/lib/loans";
 
 // The ONE rule for "how much of this expense do we still owe". Every screen
 // that says "we owe X" (calendar, חובות, a project's הוצאות שלא שולמו, the open
@@ -109,5 +112,59 @@ describe("withOpenAmount", () => {
 
   it("a scheduled (future) partial is owed for its remainder too", () => {
     expect(withOpenAmount(entry({ stage: "scheduled" })).amount).toBe(23431);
+  });
+});
+
+describe("openLiabilityEntries — the balance sheet's open bills", () => {
+  it("bills already due and unpaid, each for what's left — not future bills, not money coming in", () => {
+    const open = openLiabilityEntries([
+      entry(),
+      entry({ id: "expense:e2", amount: 1627, signedAmount: -1627, paymentStatus: "not_paid", expensePaidAmount: null }),
+      entry({ id: "expense:e3", stage: "scheduled" }),
+      entry({ id: "expense:e4", stage: "posted", paymentStatus: "paid" }),
+      entry({ id: "payment:x", type: "inflow", origin: "payment", stage: "pending" }),
+    ]);
+    expect(open.map((e) => [e.id, e.amount])).toEqual([
+      ["expense:e1", 23431],
+      ["expense:e2", 1627],
+    ]);
+  });
+
+  it("a late loan installment counts once in net worth — inside the loan's balance, not again as an open bill", () => {
+    // ברנדווין: ₪200,000 taken, a ₪157,200 installment planned for September, still unpaid.
+    const loan = deriveLoan(
+      { id: "B", direction: "taken", amount: 200000, lender: "ברנדווין", loan_date: "2026-01-01" },
+      [
+        {
+          id: "p1",
+          loan_id: "B",
+          repayment_date: "2026-09-01",
+          amount: 157200,
+          interest_amount: 0,
+          method: null,
+          account_id: null,
+          notes: null,
+          created_at: null,
+          status: "planned",
+          installment_index: 1,
+          installment_count: 1,
+        },
+      ]
+    );
+    // A loan whose due date passed with no plan at all is the same case.
+    const dueLoan = deriveLoan(
+      { id: "R", direction: "taken", amount: 5000, lender: "רוזנפלד", loan_date: "2026-01-01", due_date: "2026-08-01" },
+      []
+    );
+    const ledger = [...buildLoanEntries([loan, dueLoan], "2026-10-05"), entry()];
+    // Both late loan amounts are on the ledger (the calendar shows them as late)…
+    expect(ledger.filter((e) => e.origin === "loan" && e.stage === "pending").map((e) => e.amount)).toEqual([157200, 5000]);
+
+    // …but the open bills are only the real bill, and the loans are counted once, in full.
+    const openBills = openLiabilityEntries(ledger).reduce((sum, e) => sum + e.amount, 0);
+    const borrowed = summarizeLoans([loan, dueLoan]).borrowedOutstanding;
+    expect(openBills).toBe(23431);
+    expect(borrowed).toBe(205000);
+    expect(openBills + borrowed).toBe(228431); // was 390,631 — the ₪162,200 counted twice
   });
 });

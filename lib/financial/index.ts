@@ -42,7 +42,7 @@ import {
   summarizeEntries,
 } from "./entries";
 import { fetchLoans, summarizeLoans, type Loan, type LoansSummary } from "@/lib/loans";
-import { withOpenAmount } from "@/lib/financial/expenseOpen";
+import { openLiabilityEntries, withOpenAmount } from "@/lib/financial/expenseOpen";
 import { clampFromToBooksStart } from "@/lib/settings/booksStartDate";
 import {
   type FinancialEntry,
@@ -466,9 +466,11 @@ export async function getFinancialPageData(
   // forecast — projected bills that don't exist yet must not inflate them.
   // A partly-paid bill is owed for what's left of it, not its face value — the
   // same rule as the payments calendar and the חובות page (withOpenAmount).
-  const openLiabilityEntries = filteredEntries
-    .filter((entry) => entry.type === "outflow" && entry.stage === "pending")
-    .map(withOpenAmount);
+  // Late loan installments stay out: the loan's own outstanding balance
+  // (loansSummary) already holds them, and net worth subtracts that too.
+  const openLiabilities = openLiabilityEntries(filteredEntries);
+  // The forward view is cash planning, not net worth — loan installments due
+  // ahead belong in it like any other payment.
   const scheduledLiabilityEntries = filteredEntries
     .filter((entry) => entry.type === "outflow" && entry.stage === "scheduled")
     .map(withOpenAmount);
@@ -499,7 +501,7 @@ export async function getFinancialPageData(
     forecastEndIso,
     openReceivablesSummary: summarizeEntries(openReceivableEntries),
     plannedReceivablesSummary: summarizeEntries(plannedReceivableEntries),
-    openLiabilitiesSummary: summarizeEntries(openLiabilityEntries),
+    openLiabilitiesSummary: summarizeEntries(openLiabilities),
     scheduledLiabilitiesSummary: summarizeEntries(scheduledLiabilityEntries),
     loansSummary,
     domainGroups: buildDomainGroups([...filteredEntries, ...projFiltered], referenceDate),

@@ -71,3 +71,17 @@ export function withOpenAmount(entry: FinancialEntry): FinancialEntry {
   if (open === entry.amount) return entry;
   return { ...entry, amount: open, signedAmount: -open };
 }
+
+/**
+ * "התחייבויות פתוחות": bills already due and not yet paid, each for what's left
+ * of it. A loan's late installment (or its passed due date) is NOT one of them:
+ * it is already part of that loan's outstanding balance, which the balance
+ * sheet counts on its own row (הלוואות שלקחתי). Counting it here too would
+ * subtract the same money from net worth twice. It still shows, as late, on the
+ * payments calendar and the חובות page.
+ */
+export function openLiabilityEntries(entries: FinancialEntry[]): FinancialEntry[] {
+  return entries
+    .filter((entry) => entry.type === "outflow" && entry.stage === "pending" && entry.origin !== "loan")
+    .map(withOpenAmount);
+}
