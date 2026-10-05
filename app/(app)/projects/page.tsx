@@ -73,10 +73,12 @@ export default async function ProjectsPage({
       .select("id,full_name,email,active")
       .order("full_name", { ascending: true })
       .range(0, OPTIONS_PAGE_SIZE - 1),
+    // Straight from customers: customer_overview_view would total every
+    // customer's orders, projects and payments just to name 50 of them.
     supabase
-      .from("customer_overview_view")
-      .select("customer_id,customer_name,name_for_invoice,phone,email")
-      .order("customer_name", { ascending: true })
+      .from("customers")
+      .select("id,name,name_for_invoice,phone,email")
+      .order("name", { ascending: true })
       .range(0, OPTIONS_PAGE_SIZE - 1),
     // Tab counts — folded into this batch so they run concurrently instead of as
     // a second sequential round-trip wave. These only need status/customer_id,
@@ -111,14 +113,15 @@ export default async function ProjectsPage({
   const rowsWithPaymentStatus = projectsResult.rows;
   const loadError = projectsResult.error;
 
+  // Same values customer_overview_view gave: trimmed, blanks as null, and the
+  // name falling back to the invoice name, then "לקוח".
+  const trimmed = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
   const customerOptions = ((customers ?? []) as Row[])
     .map((row) => {
-      const id = typeof row?.customer_id === "string" ? row.customer_id : "";
-      const label = typeof row?.customer_name === "string" ? row.customer_name.trim() : "";
-      const phone = typeof row?.phone === "string" ? row.phone : null;
-      const email = typeof row?.email === "string" ? row.email : null;
-      const name_for_invoice = typeof row?.name_for_invoice === "string" ? row.name_for_invoice : null;
-      return { id, label, phone, email, name_for_invoice };
+      const id = typeof row?.id === "string" ? row.id : "";
+      const name_for_invoice = trimmed(row?.name_for_invoice);
+      const label = trimmed(row?.name) ?? name_for_invoice ?? "לקוח";
+      return { id, label, phone: trimmed(row?.phone), email: trimmed(row?.email), name_for_invoice };
     })
     .filter((row: { id: string; label: string }) => row.id && row.label);
 

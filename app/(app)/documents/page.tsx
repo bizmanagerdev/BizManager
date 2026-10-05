@@ -70,11 +70,6 @@ type ProjectLookupRow = {
   customer_name: string | null;
 };
 
-type ProjectUploadRow = {
-  id: string;
-  name: string | null;
-};
-
 type PropertyLookupRow = {
   id: string;
   name: string | null;
@@ -116,6 +111,12 @@ type LinkedEntity = {
 
 function normalizeString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+// The name customer_overview_view gives a customer, read off the customers
+// row itself: the name, else the invoice name, else "לקוח".
+function customerDisplayName(row: Row) {
+  return normalizeString(row.name) || normalizeString(row.name_for_invoice) || "לקוח";
 }
 
 function uniqueById<T extends { id: string }>(items: T[]) {
@@ -167,6 +168,34 @@ export default async function DocumentsPage({
 }) {
   const params = (await searchParams) ?? {};
   const { profile, supabase } = await requireStaffPage();
+
+  // Everything that doesn't depend on WHICH documents come back starts now,
+  // alongside the documents query. These used to run after it, and after each
+  // other — about ten round trips in a row on every load.
+  const filterCustomerId = normalizeString(params.customer_id) || "";
+  const independentLookups = Promise.all([
+    supabase.from("project_overview_view").select("id,name,project_type,customer_id,customer_name"),
+    supabase.from("properties").select("id,name,address").order("address", { ascending: true }).range(0, 999),
+    // Customers straight from their table: customer_overview_view would total
+    // every customer's orders, projects and payments just to name them.
+    supabase
+      .from("customers")
+      .select("id,name,name_for_invoice")
+      .order("name", { ascending: true })
+      .range(0, 999),
+    supabase
+      .from("order_overview_view")
+      .select("order_id,customer_id,customer_name,order_date")
+      .order("order_date", { ascending: false })
+      .range(0, 499),
+    supabase.from("tasks").select("id,subject,created_at").order("created_at", { ascending: false }).range(0, 499),
+    filterCustomerId
+      ? supabase.from("customers").select("phone").eq("id", filterCustomerId).maybeSingle<{ phone: string | null }>()
+      : Promise.resolve({ data: null as { phone: string | null } | null }),
+  ]);
+  // Awaited below. This only stops a failure that lands while the documents
+  // query is still running from being reported as unhandled meanwhile.
+  independentLookups.catch(() => {});
 
   // `source` arrives with 20260922183535. Selecting a column the database does
   // not have yet 42703s the WHOLE query and blanks the archive, so fall back to
@@ -244,15 +273,19 @@ export default async function DocumentsPage({
         .filter((value): value is string => Boolean(value))
     )
   );
-  const [documentUploaderNames, documentUploaderColors] = await Promise.all([
+  // One round trip for everything that needs only the documents themselves:
+  // who uploaded them, which vehicle/statement/lease owns them, their links,
+  // their tags (entity_tags → tags, its own 2-step chain) and their file URLs.
+  const [
+    documentUploaderNames,
+    documentUploaderColors,
+    fkOwnersResult,
+    linksResult,
+    tagsResult,
+    signedUrlByStorageKey,
+  ] = await Promise.all([
     resolveUserDisplayNamesForValues(supabase, documentUploadedByValues),
     resolveUserColorsForValues(supabase, documentUploadedByValues),
-  ]);
-
-  // The tags lookup (entity_tags → tags, its own internal 2-step chain) and the
-  // document_links fetch both only depend on documentIds, not on each other —
-  // run them as one round trip instead of sequentially.
-  const [fkOwnersResult] = await Promise.all([
     (async () => {
       const vehicleByDocument = new Map<string, { id: string; label: string }>();
       const statementDocumentIds = new Set<string>();
@@ -318,10 +351,6 @@ export default async function DocumentsPage({
       }
       return { vehicleByDocument, statementDocumentIds, leaseByDocument };
     })(),
-  ]);
-  const { vehicleByDocument, statementDocumentIds, leaseByDocument } = fkOwnersResult;
-
-  const [linksResult, tagsResult] = await Promise.all([
     documentIds.length > 0
       ? supabase
           .from("document_links")
@@ -386,7 +415,24 @@ export default async function DocumentsPage({
       }
       return { tagsByDocument, refYearByDocument, vehicleTagOptions };
     })(),
+    // ONE batched signed-URL call for every document instead of one call per
+    // document (was up to MAX_DOCUMENTS=1000 concurrent Storage round trips).
+    (async () => {
+      const signedUrls = new Map<string, string>();
+      const documentStorageKeys = Array.from(
+        new Set(documents.map((doc) => normalizeString(doc.storage_key)).filter(Boolean))
+      );
+      if (documentStorageKeys.length === 0) return signedUrls;
+      const { data: signed } = await supabase.storage
+        .from(DOCUMENTS_BUCKET)
+        .createSignedUrls(documentStorageKeys, 60 * 60);
+      for (const item of signed ?? []) {
+        if (item.path && item.signedUrl) signedUrls.set(item.path, item.signedUrl);
+      }
+      return signedUrls;
+    })(),
   ]);
+  const { vehicleByDocument, statementDocumentIds, leaseByDocument } = fkOwnersResult;
 
   const { data: linksRaw, error: linksError } = linksResult;
   const { tagsByDocument, refYearByDocument, vehicleTagOptions } = tagsResult;
@@ -427,21 +473,10 @@ export default async function DocumentsPage({
 
   // Worker names for session attachments linked via entity_type='user'
   // (attendance_sessions.user_id = public.users.id).
-  const workerNames =
-    userIds.size > 0 ? await resolveUserDisplayNamesForValues(supabase, Array.from(userIds)) : {};
-
-  const [allProjectsResult, uploadProjectsResult, allPropertiesResult, tasksOverviewResult, tasksMetaResult, ordersResult] = await Promise.all([
-    supabase.from("project_overview_view").select("id,name,project_type,customer_id,customer_name"),
-    supabase
-      .from("project_dashboard_view")
-      .select("id,name")
-      .order("name", { ascending: true })
-      .range(0, 999),
-    supabase
-      .from("properties")
-      .select("id,name,address")
-      .order("address", { ascending: true })
-      .range(0, 999),
+  const [workerNames, tasksOverviewResult, tasksMetaResult, ordersResult, independentResults] = await Promise.all([
+    userIds.size > 0
+      ? resolveUserDisplayNamesForValues(supabase, Array.from(userIds))
+      : Promise.resolve({} as Awaited<ReturnType<typeof resolveUserDisplayNamesForValues>>),
     taskIds.size > 0
       ? supabase
           .from("task_overview_view")
@@ -457,7 +492,16 @@ export default async function DocumentsPage({
           .select("order_id,customer_id,customer_name,order_date,status")
           .in("order_id", Array.from(orderIds))
       : Promise.resolve({ data: [] as OrderLookupRow[], error: null }),
+    independentLookups,
   ]);
+  const [
+    allProjectsResult,
+    allPropertiesResult,
+    { data: allCustomerRows },
+    { data: allOrderRows },
+    { data: allTaskRows },
+    { data: filterCustomerRow },
+  ] = independentResults;
 
   const taskMetaRows = (tasksMetaResult.data ?? []) as TaskMetaRow[];
   const projectCustomerIdByProjectId = new Map<string, string>();
@@ -478,17 +522,19 @@ export default async function DocumentsPage({
   const customersResult =
     derivedCustomerIds.size > 0
       ? await supabase
-          .from("customer_overview_view")
-          .select("customer_id,customer_name")
-          .in("customer_id", Array.from(derivedCustomerIds))
-      : { data: [] as CustomerLookupRow[], error: null };
+          .from("customers")
+          .select("id,name,name_for_invoice")
+          .in("id", Array.from(derivedCustomerIds))
+      : { data: [] as Row[], error: null };
 
   const projectsById = new Map<string, ProjectLookupRow>();
   ((allProjectsResult.data ?? []) as ProjectLookupRow[]).forEach((row) => {
     projectsById.set(row.id, row);
   });
 
-  const uploadProjectOptions: ArchiveTargetOption[] = ((uploadProjectsResult.data ?? []) as ProjectUploadRow[])
+  // project_overview_view has exactly project_dashboard_view's rows, without
+  // the financial and task totals the options never used.
+  const uploadProjectOptions: ArchiveTargetOption[] = ((allProjectsResult.data ?? []) as ProjectLookupRow[])
     .map((row) => ({
       id: row.id,
       label: normalizeString(row.name) || `פרויקט ${row.id.slice(0, 8)}`,
@@ -518,29 +564,15 @@ export default async function DocumentsPage({
   });
 
   const customersById = new Map<string, CustomerLookupRow>();
-  ((customersResult.data ?? []) as CustomerLookupRow[]).forEach((row) => {
-    customersById.set(row.customer_id, row);
+  ((customersResult.data ?? []) as Row[]).forEach((row) => {
+    const customerId = normalizeString(row.id);
+    if (customerId) customersById.set(customerId, { customer_id: customerId, customer_name: customerDisplayName(row) });
   });
 
   const ordersById = new Map<string, OrderLookupRow>();
   ((ordersResult.data ?? []) as OrderLookupRow[]).forEach((row) => {
     ordersById.set(row.order_id, row);
   });
-
-  // ONE batched signed-URL call for every document instead of one call per
-  // document (was up to MAX_DOCUMENTS=1000 concurrent Storage round trips).
-  const documentStorageKeys = Array.from(
-    new Set(documents.map((doc) => normalizeString(doc.storage_key)).filter(Boolean))
-  );
-  const signedUrlByStorageKey = new Map<string, string>();
-  if (documentStorageKeys.length > 0) {
-    const { data: signed } = await supabase.storage
-      .from(DOCUMENTS_BUCKET)
-      .createSignedUrls(documentStorageKeys, 60 * 60);
-    for (const item of signed ?? []) {
-      if (item.path && item.signedUrl) signedUrlByStorageKey.set(item.path, item.signedUrl);
-    }
-  }
 
   const archiveItems = documents.map((doc): DocumentArchiveItem => {
       const docLinks = linksByDocumentId.get(doc.id) ?? [];
@@ -857,30 +889,13 @@ export default async function DocumentsPage({
       };
     });
 
-  const { data: allCustomerRows } = await supabase
-    .from("customer_overview_view")
-    .select("customer_id,customer_name")
-    .order("customer_name", { ascending: true })
-    .range(0, 999);
-  const customerAssignOptions: ArchiveTargetOption[] = (allCustomerRows ?? [])
+  const customerAssignOptions: ArchiveTargetOption[] = ((allCustomerRows ?? []) as Row[])
     .map((row) => ({
-      id: normalizeString((row as Row).customer_id),
-      label: normalizeString((row as Row).customer_name),
+      id: normalizeString(row.id),
+      label: customerDisplayName(row),
     }))
     .filter((option) => option.id && option.label);
 
-  const [{ data: allOrderRows }, { data: allTaskRows }] = await Promise.all([
-    supabase
-      .from("order_overview_view")
-      .select("order_id,customer_id,customer_name,order_date")
-      .order("order_date", { ascending: false })
-      .range(0, 499),
-    supabase
-      .from("tasks")
-      .select("id,subject,created_at")
-      .order("created_at", { ascending: false })
-      .range(0, 499),
-  ]);
   const orderAssignOptions: ArchiveTargetOption[] = (allOrderRows ?? [])
     .map((row) => {
       const id = normalizeString((row as Row).order_id);
@@ -897,16 +912,7 @@ export default async function DocumentsPage({
     }))
     .filter((option) => option.id && option.label);
 
-  const filterCustomerId = normalizeString(params.customer_id) || "";
-  let filterCustomerPhone = "";
-  if (filterCustomerId) {
-    const { data: filterCustomerRow } = await supabase
-      .from("customer_overview_view")
-      .select("phone")
-      .eq("customer_id", filterCustomerId)
-      .maybeSingle<{ phone: string | null }>();
-    filterCustomerPhone = normalizeString(filterCustomerRow?.phone) || "";
-  }
+  const filterCustomerPhone = normalizeString(filterCustomerRow?.phone) || "";
 
   const initialFilters: DocumentArchiveFilters = {
     customer_id: filterCustomerId,
@@ -933,7 +939,6 @@ export default async function DocumentsPage({
     documentsError?.message ??
     linksError?.message ??
     allProjectsResult.error?.message ??
-    uploadProjectsResult.error?.message ??
     allPropertiesResult.error?.message ??
     tasksOverviewResult.error?.message ??
     tasksMetaResult.error?.message ??
