@@ -377,6 +377,7 @@ export default function SalesOrdersClient({
   canRemind = false,
   view = "open",
   tabLabel = "הזמנות",
+  loadedAt,
 }: {
   orders: Row[];
   initialHasMore?: boolean;
@@ -392,6 +393,9 @@ export default function SalesOrdersClient({
   view?: "open" | "closed";
   /** Which sales tab we're on — names the page in the mobile header. */
   tabLabel?: string;
+  /** When the server read these rows — an aged copy refreshes itself
+   *  (useInfiniteScroll's loadedAt). */
+  loadedAt?: number;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -439,6 +443,7 @@ export default function SalesOrdersClient({
     initialHasMore,
     fetchPage,
     getId: getRowId,
+    loadedAt,
   });
 
   // Offline readability: cache the canonical open-orders list so it can be opened

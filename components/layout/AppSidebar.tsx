@@ -389,14 +389,14 @@ export function AppSidebar({ items }: Props) {
               to={item.url}
               end={item.url === "/"}
               {...hover(item)}
-              // The dashboard and projects are always mounted here, so they're
+              // The dashboard, projects and sales are always mounted here, so they're
               // worth fully prefetching (data included, not just the loading
               // shell) instead of Next's default "prefetch nothing for a dynamic
               // route" — the client then treats them as fresh for minutes rather
               // than 0 seconds, so a click (or coming back) reuses that warm copy
               // instead of paying a full server round-trip (user, 2026-08-31:
               // returning to the dashboard should be instant; 2026-10-05:
-              // projects should open as fast as the dashboard).
+              // projects should open as fast as the dashboard; sales too).
               prefetch={FULLY_PREFETCHED_URLS.has(item.url) ? true : undefined}
               className={cn(linkBase, collapsed && "justify-center px-0")}
               activeClassName={linkActive}

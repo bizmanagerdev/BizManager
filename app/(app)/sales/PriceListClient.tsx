@@ -66,6 +66,7 @@ export default function PriceListClient({
   totalCount,
   initialQuery = "",
   initialCategoryFilter = "",
+  loadedAt,
 }: {
   initialProducts: ProductRow[];
   initialCategories: CategoryOption[];
@@ -73,6 +74,9 @@ export default function PriceListClient({
   totalCount?: number;
   initialQuery?: string;
   initialCategoryFilter?: string;
+  /** When the server read these rows — an aged copy refreshes itself
+   *  (useInfiniteScroll's loadedAt). */
+  loadedAt?: number;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -99,6 +103,7 @@ export default function PriceListClient({
     initialHasMore,
     fetchPage,
     getId: getRowId,
+    loadedAt,
   });
   const [categories, setCategories] = useState<CategoryOption[]>(initialCategories);
   const [query, setQuery] = useState(initialQuery);

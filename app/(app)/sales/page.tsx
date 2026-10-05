@@ -6,6 +6,8 @@ import SalesDeliveriesQueue from "@/app/(app)/sales/SalesDeliveriesQueue";
 import InventoryRealtimeBadge from "@/app/(app)/sales/InventoryRealtimeBadge";
 import SalesTabsNav from "@/app/(app)/sales/SalesTabsNav";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { withLoadedAt } from "@/lib/loaded-at";
 import { DELIVERY_REGIONS } from "@/lib/ui/cities";
 import { loadOrdersPage } from "@/app/(app)/sales/loadOrders";
 import { loadPriceListPage, loadInventoryListPage } from "@/app/(app)/sales/loadProducts";
@@ -113,13 +115,13 @@ export default async function SalesPage({
       ? params.region
       : null;
 
-  const { profile, supabase } = await requireStaffPage();
-  const [
-    { count: openOrdersCount },
-    { count: closedOrdersCount },
-    { count: productsCount },
-    { count: deliveriesCount },
-  ] = await Promise.all([
+  // The page's reads and the "who's asking" check go out together, and the
+  // tab counts alongside the tab's own list rather than before it. They run
+  // under the caller's own RLS whatever their role, and a caller who isn't
+  // staff is still redirected below before anything is rendered.
+  const supabase = await createSupabaseServerClient();
+  const profilePromise = requireStaffPage();
+  const countsPromise = Promise.all([
     (() => {
       // Tab count — only needs status/customer_id, so it counts the plain
       // orders table rather than order_overview_view (which forces a
@@ -172,6 +174,54 @@ export default async function SalesPage({
     })(),
   ]);
 
+  // The active tab's first page, stamped with when it was read: the tabs and
+  // the nav fetch this page ahead of a click, and a list shown from a copy
+  // that has aged refreshes itself (useInfiniteScroll's loadedAt).
+  const ordersPromise =
+    activeTab === "orders" || activeTab === "closed"
+      ? withLoadedAt(
+          loadOrdersPage(supabase, {
+            page: 1,
+            filters: {
+              tab: activeTab,
+              customerId,
+              q: searchQuery,
+              paymentStatus: paymentStatusFilter,
+              invoice: invoiceFilter,
+            },
+          })
+        )
+      : null;
+  const priceListPromise =
+    activeTab === "price-list"
+      ? withLoadedAt(
+          loadPriceListPage(supabase, { page: 1, filters: { q: searchQuery, category: categoryFilter } })
+        )
+      : null;
+  const inventoryPromise =
+    activeTab === "inventory"
+      ? withLoadedAt(
+          loadInventoryListPage(supabase, { page: 1, filters: { q: searchQuery, category: categoryFilter } })
+        )
+      : null;
+  const deliveriesPromise =
+    activeTab === "deliveries"
+      ? withLoadedAt(loadDeliveriesPage(supabase, { page: 1, filters: { customerId } }))
+      : null;
+  // Settled below; until then a redirect from the check mustn't leave them
+  // as unhandled rejections.
+  for (const pending of [countsPromise, ordersPromise, priceListPromise, inventoryPromise, deliveriesPromise]) {
+    pending?.catch(() => {});
+  }
+
+  const { profile } = await profilePromise;
+  const [
+    { count: openOrdersCount },
+    { count: closedOrdersCount },
+    { count: productsCount },
+    { count: deliveriesCount },
+  ] = await countsPromise;
+
   const salesTabCounts = {
     orders: typeof openOrdersCount === "number" ? openOrdersCount : 0,
     closed: typeof closedOrdersCount === "number" ? closedOrdersCount : 0,
@@ -182,18 +232,8 @@ export default async function SalesPage({
 
   let content: ReactNode = null;
 
-  if (activeTab === "orders" || activeTab === "closed") {
-    const ordersFilters = {
-      tab: activeTab,
-      customerId,
-      q: searchQuery,
-      paymentStatus: paymentStatusFilter,
-      invoice: invoiceFilter,
-    } as const;
-    const { rows: ordersWithDue, totalCount, hasMore, error } = await loadOrdersPage(supabase, {
-      page: 1,
-      filters: ordersFilters,
-    });
+  if (ordersPromise) {
+    const { rows: ordersWithDue, totalCount, hasMore, error, loadedAt } = await ordersPromise;
 
     content = error ? (
       <p className="text-sm text-destructive">שגיאה בטעינת הזמנות: {error}</p>
@@ -209,16 +249,14 @@ export default async function SalesPage({
         initialInvoiceFilter={invoiceFilter}
         customerId={customerId}
         totalCount={totalCount}
+        loadedAt={loadedAt}
         canRemind={profile.role === "admin" || profile.role === "office"}
       />
     );
   }
 
-  if (activeTab === "price-list") {
-    const { products, categories, totalCount, hasMore, error: loadError } = await loadPriceListPage(
-      supabase,
-      { page: 1, filters: { q: searchQuery, category: categoryFilter } }
-    );
+  if (priceListPromise) {
+    const { products, categories, totalCount, hasMore, error: loadError, loadedAt } = await priceListPromise;
 
     content = loadError ? (
       <p className="text-sm text-destructive">שגיאה בטעינת מחירון: {loadError}</p>
@@ -230,11 +268,12 @@ export default async function SalesPage({
         totalCount={totalCount}
         initialQuery={searchQuery}
         initialCategoryFilter={categoryFilter}
+        loadedAt={loadedAt}
       />
     );
   }
 
-  if (activeTab === "inventory") {
+  if (inventoryPromise) {
     const {
       items,
       movements,
@@ -243,10 +282,8 @@ export default async function SalesPage({
       totalCount,
       hasMore,
       error: loadError,
-    } = await loadInventoryListPage(supabase, {
-      page: 1,
-      filters: { q: searchQuery, category: categoryFilter },
-    });
+      loadedAt,
+    } = await inventoryPromise;
 
     content = loadError ? (
       <p className="text-sm text-destructive">שגיאה בטעינת מלאי: {loadError}</p>
@@ -260,15 +297,13 @@ export default async function SalesPage({
         totalCount={totalCount}
         initialQuery={searchQuery}
         initialCategoryFilter={categoryFilter}
+        loadedAt={loadedAt}
       />
     );
   }
 
-  if (activeTab === "deliveries") {
-    const { deliveries, totalCount, hasMore, error: loadError } = await loadDeliveriesPage(supabase, {
-      page: 1,
-      filters: { customerId },
-    });
+  if (deliveriesPromise) {
+    const { deliveries, totalCount, hasMore, error: loadError, loadedAt } = await deliveriesPromise;
 
     const regionLinks = [
       { label: "הכל", value: null },
@@ -290,6 +325,7 @@ export default async function SalesPage({
         regionLinks={regionLinks}
         totalCount={totalCount}
         customerId={customerId}
+        loadedAt={loadedAt}
       />
     );
   }

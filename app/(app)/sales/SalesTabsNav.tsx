@@ -84,6 +84,12 @@ export default function SalesTabsNav({
           <Link
             key={tab.id}
             href={buildTabHref(tab.id, searchParams)}
+            // The other tabs are fetched whole (data included) as soon as the
+            // bar is on screen, so switching shows them at once instead of
+            // waiting a second on the server. An aged copy refreshes its list
+            // quietly once shown (useInfiniteScroll's loadedAt). Not the tab
+            // you're on — that one is already here.
+            prefetch={isActive ? undefined : true}
             aria-current={isActive ? "page" : undefined}
             className={triggerClassName(isActive)}
             onClick={() => emitNavigationStart()}

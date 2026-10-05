@@ -22,7 +22,18 @@ type Options<T> = {
   getId: (row: T) => string;
   /** Start loading this far before the sentinel is actually on screen. Default "400px". */
   rootMargin?: string;
+  /**
+   * When the server read `initialRows` (Date.now() there). Next can show a
+   * page it fetched ahead of the click — minutes ago, possibly — so a first
+   * page older than STALE_FIRST_PAGE_MS is shown at once and then quietly
+   * swapped for a fresh one (`fetchPage(1)`). Leave unset to never refetch.
+   */
+  loadedAt?: number;
 };
+
+// How old a first page may be before it is fetched again behind the scenes —
+// the same window the projects list uses.
+export const STALE_FIRST_PAGE_MS = 15_000;
 
 /**
  * Fetch-from-DB-as-you-scroll: keep an accumulating list of server rows and pull
@@ -46,6 +57,7 @@ export function useInfiniteScroll<T>({
   fetchPage,
   getId,
   rootMargin = "400px",
+  loadedAt,
 }: Options<T>) {
   const [rows, setRows] = useState<T[]>(initialRows);
   const [nextPage, setNextPage] = useState(2);
@@ -107,6 +119,29 @@ export function useInfiniteScroll<T>({
     observe(mobileSentinelRef.current, null);
     return () => observers.forEach((io) => io.disconnect());
   }, [hasMore, loading, nextPage, fetchPage, getId, rootMargin]);
+
+  // An old first page (see `loadedAt`): fetch it again and swap it in — only
+  // if nothing past it has been added meanwhile, so a scroll isn't undone.
+  const latestRef = useRef({ fetchPage, nextPage });
+  useEffect(() => {
+    latestRef.current = { fetchPage, nextPage };
+  }, [fetchPage, nextPage]);
+  useEffect(() => {
+    if (loadedAt === undefined || Date.now() - loadedAt <= STALE_FIRST_PAGE_MS) return;
+    let cancelled = false;
+    latestRef.current
+      .fetchPage(1)
+      .then((result) => {
+        if (cancelled || latestRef.current.nextPage !== 2) return;
+        setRows(result.rows);
+        setHasMore(result.hasMore);
+      })
+      // The copy on screen stays; the next visit tries again.
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [initialRows, loadedAt]);
 
   return {
     /** The accumulated rows to render. */

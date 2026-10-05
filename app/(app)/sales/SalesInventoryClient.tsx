@@ -121,6 +121,7 @@ export default function SalesInventoryClient({
   totalCount,
   initialQuery = "",
   initialCategoryFilter = "",
+  loadedAt,
 }: {
   initialItems: InventoryItem[];
   movements: Row[];
@@ -130,6 +131,9 @@ export default function SalesInventoryClient({
   totalCount?: number;
   initialQuery?: string;
   initialCategoryFilter?: string;
+  /** When the server read these rows — an aged copy refreshes itself
+   *  (useInfiniteScroll's loadedAt). */
+  loadedAt?: number;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -172,6 +176,7 @@ export default function SalesInventoryClient({
     initialHasMore,
     fetchPage,
     getId: getItemId,
+    loadedAt,
   });
 
   const [movementRows, setMovementRows] = useState<Row[]>(movements);

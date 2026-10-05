@@ -176,6 +176,7 @@ export default function SalesDeliveriesQueue({
   totalCount,
   customerId = null,
   canOpenOrder = true,
+  loadedAt,
 }: {
   initialDeliveries: DeliveryItem[];
   initialHasMore?: boolean;
@@ -190,6 +191,9 @@ export default function SalesDeliveriesQueue({
    * "סמן כסופק" (which collects payment too).
    */
   canOpenOrder?: boolean;
+  /** When the server read these rows — an aged copy refreshes itself
+   *  (useInfiniteScroll's loadedAt). */
+  loadedAt?: number;
 }) {
   // Fetch-from-DB-as-you-scroll: accumulate delivery pages, then group region →
   // city → customer over everything loaded so far (no "next page" button).
@@ -206,6 +210,7 @@ export default function SalesDeliveriesQueue({
     initialHasMore,
     fetchPage,
     getId: getRowId,
+    loadedAt,
   });
 
   const deliveriesByRegion = useMemo(

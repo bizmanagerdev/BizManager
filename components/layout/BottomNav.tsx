@@ -72,7 +72,7 @@ export function BottomNav({ items, moreItems = [], viewerId, viewerRole, viewerL
       key={item.title}
       to={item.url}
       end={item.url === "/"}
-      // Same reasoning as the desktop sidebar: the dashboard and projects tabs
+      // Same reasoning as the desktop sidebar: the dashboard, projects and sales tabs
       // are always mounted here, so fully prefetch them instead of leaving a
       // dynamic route uncached (FULLY_PREFETCHED_URLS).
       prefetch={FULLY_PREFETCHED_URLS.has(item.url) ? true : undefined}
