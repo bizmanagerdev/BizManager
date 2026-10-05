@@ -938,7 +938,11 @@ export default function RecurringExpensesManager(props: Props) {
           {!sources.loading && (excluded.oneOff || excluded.hourly || excluded.card || excluded.settlement) ? (
             <p className="text-sm text-muted-foreground">
               <span className="font-medium text-foreground">לא נכלל בסכום: </span>
+              {/* A span, not MetaRow's default div: it sits inside a <p>, and a
+                  div there is invalid HTML — React threw away the server HTML
+                  for the whole tab and rebuilt it in the browser. */}
               <MetaRow
+                as="span"
                 className="inline"
                 items={[
                   excluded.oneOff ? `${excluded.oneOff} הלוואות בהחזר חד-פעמי` : null,
