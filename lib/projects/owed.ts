@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { expenseOpenAmount, expensePaidSoFar, normalizeExpensePaymentState } from "@/lib/financial/expenseOpen";
 import { fetchAllPagedResult } from "@/lib/supabase/paginate";
 
-// "אנחנו חייבים" for a project: what WE still owe on it — the project's
+// "הוצאות שלא שולמו" for a project: what WE still owe on it — the project's
 // expenses that aren't fully paid (a supplier invoice, a container bill…) plus
 // the wages still owed to workers for it. The mirror of what the customer owes
 // us, shown on every row of the projects list and broken down on the project.
@@ -194,7 +194,7 @@ export async function loadProjectOwed(
 }
 
 /**
- * The projects list's fields for "אנחנו חייבים": `we_owe_amount` (the one
+ * The projects list's fields for "הוצאות שלא שולמו": `we_owe_amount` (the one
  * number on the row) and its two parts. Every row gets them — 0 when nothing
  * is owed — so a row never shows a stale figure from before a payment.
  */

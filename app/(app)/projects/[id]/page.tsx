@@ -684,7 +684,7 @@ export default async function ProjectPage({
     (accounts) => Object.fromEntries(accounts.map((account) => [account.id, account.name])) as Record<string, string>
   );
   accountNamesPromise.catch(() => {});
-  // "אנחנו חייבים" — the project's unpaid expenses (the wages part comes from
+  // "הוצאות שלא שולמו" — the project's unpaid expenses (the wages part comes from
   // the worker balance the batch above already reads). Keyed only by the id,
   // so it loads with everything else; a failed read shows nothing owed rather
   // than failing the page.

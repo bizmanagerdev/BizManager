@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import type { ProjectOwed } from "@/lib/projects/owed";
 import { formatDate, formatIls, LtrInline } from "./ProjectTabsClient.helpers";
 
-// "אנחנו חייבים" on the project's money card: ONE number — what we still owe on
+// "הוצאות שלא שולמו" on the project's money card: ONE number — what we still owe on
 // this project — and under it what makes it up: each expense not fully paid
 // (with how much of it was already paid), and the wages still owed. It is the
 // mirror of the customer's balance, which the תשלום card states. Renders
@@ -31,7 +31,7 @@ export default function ProjectOwedBreakdown({ owed }: { owed: ProjectOwed }) {
   return (
     <div className="mt-3 rounded-2xl border border-warning/40 bg-warning-soft/60 px-3 py-2.5 text-xs text-warning-soft-foreground">
       <div className="flex items-center justify-between gap-2 text-sm font-semibold">
-        <span>אנחנו חייבים</span>
+        <span>הוצאות שלא שולמו</span>
         <LtrInline>{formatIls(owed.total)}</LtrInline>
       </div>
       <ul className="mt-2 space-y-1.5">

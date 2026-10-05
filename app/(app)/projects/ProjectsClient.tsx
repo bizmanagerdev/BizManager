@@ -183,7 +183,7 @@ function toBasicProjectRow(entry: ProjectSearchIndexEntry): ProjectRow {
   };
 }
 
-/** "אנחנו חייבים" — what we still owe on the project (unpaid expenses + wages). */
+/** "הוצאות שלא שולמו" — what we still owe on the project (unpaid expenses + wages). */
 function weOweValue(row: ProjectRow) {
   return getNumber(row, "we_owe_amount") ?? 0;
 }
@@ -1272,7 +1272,8 @@ export default function ProjectsClient({
                                 breakdown is on the project page). Only when there is any. */}
                             {weOweValue(row) > 0.009 ? (
                               <div className="text-xs font-medium text-warning-strong">
-                                אנחנו חייבים: {formatIls(weOweValue(row))}
+                                הוצאות שלא שולמו:{" "}
+                                <span className="whitespace-nowrap">{formatIls(weOweValue(row))}</span>
                               </div>
                             ) : null}
                           </div>
@@ -1521,7 +1522,7 @@ export default function ProjectsClient({
                             ) : null}
                             {canSeeMoney && currentStatus !== "quote" && weOweValue(row) > 0.009 ? (
                               <div className="whitespace-nowrap">
-                                <div className="text-[10px] text-muted-foreground">אנחנו חייבים</div>
+                                <div className="text-[10px] text-muted-foreground">הוצאות שלא שולמו</div>
                                 <div className="text-[13px] font-semibold text-warning-strong">
                                   {formatIls(weOweValue(row))}
                                 </div>

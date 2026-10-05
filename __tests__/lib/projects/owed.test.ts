@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { attachOwedToRows, combineProjectOwed, emptyProjectOwed, loadProjectOwed, withWorkerBalance } from "@/lib/projects/owed";
 
-// "אנחנו חייבים" on a project = its expenses not fully paid (what's left of
+// "הוצאות שלא שולמו" on a project = its expenses not fully paid (what's left of
 // each) + the wages still owed for it.
 
 describe("combineProjectOwed", () => {

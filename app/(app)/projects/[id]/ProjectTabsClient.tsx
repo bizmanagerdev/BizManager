@@ -308,7 +308,7 @@ export default function ProjectTabsClient({
   paymentRecordedByNameByValue: Record<string, string>;
   paymentAuditById: Record<string, AuditRecordInfo>;
   workerBalance: ProjectWorkerBalance;
-  /** The project's expenses we haven't fully paid ("אנחנו חייבים"); the wages
+  /** The project's expenses we haven't fully paid ("הוצאות שלא שולמו"); the wages
    *  part is filled in here from `workerBalance`. */
   owed?: ProjectOwed;
   salaryAgreements: ProjectSalaryAgreement[];

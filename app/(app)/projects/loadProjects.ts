@@ -80,7 +80,7 @@ export async function loadProjectsPage(
   const from = (safePage - 1) * PROJECTS_PAGE_SIZE;
   const to = safePage * PROJECTS_PAGE_SIZE - 1;
 
-  // "אנחנו חייבים" per project. It doesn't need this page's ids — it reads the
+  // "הוצאות שלא שולמו" per project. It doesn't need this page's ids — it reads the
   // few projects that owe anything — so it starts now and loads alongside the
   // list query instead of adding a round trip after it.
   const owedPromise = loadOwedSafely(supabase);

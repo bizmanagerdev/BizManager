@@ -101,7 +101,7 @@ export function partialPaidNote(item: PaymentCalendarItem): string | null {
 // The body for /api/expenses/split. The split REPLACES the original expense row
 // with its installments, so everything the row carried has to travel with them:
 //   • its project / order / property link — without it the installments drop
-//     out of that project's costs (and its "אנחנו חייבים");
+//     out of that project's costs (and its "הוצאות שלא שולמו");
 //   • its account and payment method;
 //   • the part already paid on a partly-paid bill, as its own paid installment
 //     on the bill's date — otherwise that payment would vanish from the books.

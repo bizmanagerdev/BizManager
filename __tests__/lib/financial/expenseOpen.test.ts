@@ -8,7 +8,7 @@ import {
 import type { FinancialEntry } from "@/lib/financial/types";
 
 // The ONE rule for "how much of this expense do we still owe". Every screen
-// that says "we owe X" (calendar, חובות, a project's אנחנו חייבים, the open
+// that says "we owe X" (calendar, חובות, a project's הוצאות שלא שולמו, the open
 // liabilities total) goes through it, so these cases are the contract.
 
 describe("expenseOpenAmount", () => {

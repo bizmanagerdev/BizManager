@@ -53,11 +53,11 @@ const PHONE = { id: "c1", phone: "0501234567" };
 
 type Call = { table: string; select: string };
 
-// What we owe on p1 ("אנחנו חייבים"): an unpaid ₪3,000 bill and ₪500 of wages.
+// What we owe on p1 ("הוצאות שלא שולמו"): an unpaid ₪3,000 bill and ₪500 of wages.
 const OWED_LINK = { project_id: "p1", expenses: { id: "e1", amount: 3000, paid_amount: null, payment_status: "not_paid", expense_date: "2026-09-01", category: "רכישה", description: null } };
 const OWED_WAGES = { project_id: "p1", owed_amount: 500, paid_amount: 0 };
 
-// The two "אנחנו חייבים" reads start before the list query, alongside it.
+// The two "הוצאות שלא שולמו" reads start before the list query, alongside it.
 const OWED_TABLES = ["project_expenses", "project_worker_balance_view"];
 
 function fakeSupabase({ viewHasListColumns, owed = false }: { viewHasListColumns: boolean; owed?: boolean }) {

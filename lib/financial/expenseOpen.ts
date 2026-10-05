@@ -2,7 +2,7 @@ import type { FinancialEntry } from "@/lib/financial/types";
 
 // ── How much of an expense is still owed ────────────────────────────────────
 // ONE rule, used by every screen that says "we still owe X" (the payments
-// calendar, the חובות page, a project's "אנחנו חייבים", the open-liabilities
+// calendar, the חובות page, a project's "הוצאות שלא שולמו", the open-liabilities
 // total), so the same bill never shows two different balances:
 //
 //   paid      → 0 (nothing left)
