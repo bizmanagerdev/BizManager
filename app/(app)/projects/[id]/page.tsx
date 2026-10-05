@@ -2,6 +2,7 @@
 import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import ProjectDetailsActions, { REMINDERS_SECTION_ID } from "@/app/(app)/projects/[id]/ProjectDetailsActions";
 import { getEntityAuditTrail, getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import { sanitizeLedgerPrefs } from "@/lib/projectLedgerPrefs";
@@ -271,7 +272,12 @@ export default async function ProjectPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { profile, supabase } = await requireStaffPage();
+  // The queries below and the "who's asking" check go out together. They run
+  // under the caller's own RLS whatever their role, and a caller who isn't
+  // staff is still redirected (awaited below, before anything is rendered) —
+  // the check just no longer puts its users lookup in front of every query.
+  const supabase = await createSupabaseServerClient();
+  const profilePromise = requireStaffPage();
   // These reads are all independent (keyed only by the project id), so fetch them
   // in ONE parallel batch instead of ~10 sequential round trips.
   const batchPromise = Promise.all([
@@ -358,6 +364,10 @@ export default async function ProjectPage({
       .order("id", { ascending: false })
       .range(0, 99),
   ]);
+
+  // Awaited below; this only keeps a failure that lands first from being
+  // reported as unhandled meanwhile.
+  batchPromise.catch(() => {});
 
   // Everything keyed only by the project id starts now, alongside the batch
   // above — the attendance sessions, payments, the project's own documents,
@@ -659,6 +669,8 @@ export default async function ProjectPage({
     return { normalizedProjectDocuments, projectDocumentsErrorMessage };
   })();
   projectDocsChainPromise.catch(() => {});
+
+  const { profile } = await profilePromise;
 
   // Per-entity activity timeline (admin only, mirroring /activity access):
   // this project's own changes plus payments and worker sessions logged

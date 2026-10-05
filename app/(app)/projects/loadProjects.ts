@@ -24,6 +24,28 @@ const CLOSED_STATUSES = ["quote", "completed"];
 const PROJECT_DASHBOARD_SELECT =
   "id,name,status,project_type,start_date,end_date,agreed_base_price,actual_price,customer_id,customer_name,project_manager_id,project_manager_name,created_at,updated_at,total_expenses,gross_profit,total_tasks,completed_tasks,open_tasks";
 
+// What enrichProjectRows otherwise reads in a second round trip (projects,
+// project_financials_view, customers). project_dashboard_view returns them
+// itself since 20261005150000_project_dashboard_view_list_columns, so the
+// list is ONE query. Until that migration runs they don't exist: the first
+// query that finds them missing (42703) switches this server instance back to
+// the two-step read.
+const PROJECT_LIST_SELECT = `${PROJECT_DASHBOARD_SELECT},expenses_billed_separately,customer_total_price,expenses_billed,collected_amount,pending_amount,overdue_amount,outstanding_amount,next_due_date,payment_terms,due_date,no_charge,branch_id,customer_phone`;
+let listColumnsMissing = false;
+
+function isMissingColumn(error: { code?: string } | null | undefined) {
+  return error?.code === "42703";
+}
+
+// The list columns only enrichProjectRows reads — dropped from the row it
+// returns, so the browser gets exactly the fields the two-step read gave.
+const LIST_ONLY_COLUMNS = ["expenses_billed", "collected_amount", "pending_amount", "next_due_date"] as const;
+function withoutListOnlyColumns(row: Row): Row {
+  const copy = { ...row };
+  for (const key of LIST_ONLY_COLUMNS) delete copy[key];
+  return copy;
+}
+
 function toNumber(value: unknown) {
   if (typeof value === "number") return value;
   if (typeof value === "string") {
@@ -54,20 +76,9 @@ export async function loadProjectsPage(
   const from = (safePage - 1) * PROJECTS_PAGE_SIZE;
   const to = safePage * PROJECTS_PAGE_SIZE - 1;
 
-  let query = supabase
-    .from("project_dashboard_view")
-    .select(PROJECT_DASHBOARD_SELECT, { count: "estimated" });
-
-  if (view === "quotes") {
-    query = query.eq("status", "quote");
-  } else if (view === "closed") {
-    query = query.eq("status", "completed");
-  } else {
-    query = query.not("status", "in", `(${CLOSED_STATUSES.join(",")})`);
-  }
-
-  if (statusFilter !== "all") query = query.eq("status", statusFilter);
-  if (customerId) query = query.eq("customer_id", customerId);
+  // The search's OR conditions need two lookups first; everything else is
+  // known now. Built once, applied to whichever select runs below.
+  let searchConditions: string | null = null;
   if (searchQuery) {
     const escaped = searchQuery.replace(/[%,]/g, " ");
     // Match the project name directly; match the customer through the shared
@@ -90,23 +101,47 @@ export async function loadProjectsPage(
     if (taskProjectIds.length > 0) {
       conditions.push(`id.in.(${taskProjectIds.join(",")})`);
     }
-    query = query.or(conditions.join(","));
+    searchConditions = conditions.join(",");
   }
 
-  if (sort === "profit_desc") {
-    query = query.order("gross_profit", { ascending: false, nullsFirst: false });
-  } else if (sort === "start_date_desc") {
-    query = query.order("start_date", { ascending: false, nullsFirst: false });
-  } else if (sort === "start_date") {
-    query = query.order("start_date", { ascending: true, nullsFirst: false });
-  } else {
-    query = query.order("updated_at", { ascending: false });
+  const runQuery = (select: string) => {
+    let query = supabase.from("project_dashboard_view").select(select, { count: "estimated" });
+
+    if (view === "quotes") {
+      query = query.eq("status", "quote");
+    } else if (view === "closed") {
+      query = query.eq("status", "completed");
+    } else {
+      query = query.not("status", "in", `(${CLOSED_STATUSES.join(",")})`);
+    }
+
+    if (statusFilter !== "all") query = query.eq("status", statusFilter);
+    if (customerId) query = query.eq("customer_id", customerId);
+    if (searchConditions) query = query.or(searchConditions);
+
+    if (sort === "profit_desc") {
+      query = query.order("gross_profit", { ascending: false, nullsFirst: false });
+    } else if (sort === "start_date_desc") {
+      query = query.order("start_date", { ascending: false, nullsFirst: false });
+    } else if (sort === "start_date") {
+      query = query.order("start_date", { ascending: true, nullsFirst: false });
+    } else {
+      query = query.order("updated_at", { ascending: false });
+    }
+
+    return query.range(from, to);
+  };
+
+  let inline = !listColumnsMissing;
+  let { data, error, count } = await runQuery(inline ? PROJECT_LIST_SELECT : PROJECT_DASHBOARD_SELECT);
+  if (inline && isMissingColumn(error)) {
+    listColumnsMissing = true;
+    inline = false;
+    ({ data, error, count } = await runQuery(PROJECT_DASHBOARD_SELECT));
   }
 
-  const { data, error, count } = await query.range(from, to);
-
-  const rows = (data ?? []) as Row[];
-  const rowsWithPaymentStatus = await enrichProjectRows(supabase, rows);
+  const rows = (data ?? []) as unknown as Row[];
+  const rowsWithPaymentStatus = await enrichProjectRows(supabase, rows, inline);
 
   const totalCount = typeof count === "number" ? count : rows.length;
   // Drive "has more" off page fullness, not the estimated count (estimates for a
@@ -129,16 +164,25 @@ export async function loadProjectsPage(
  */
 export async function loadProjectsByIds(supabase: SupabaseClient, ids: string[]): Promise<Row[]> {
   if (ids.length === 0) return [];
+  if (!listColumnsMissing) {
+    const { data, error } = await supabase.from("project_dashboard_view").select(PROJECT_LIST_SELECT).in("id", ids);
+    if (!isMissingColumn(error)) return enrichProjectRows(supabase, (data ?? []) as unknown as Row[], true);
+    listColumnsMissing = true;
+  }
   const { data } = await supabase.from("project_dashboard_view").select(PROJECT_DASHBOARD_SELECT).in("id", ids);
-  return enrichProjectRows(supabase, (data ?? []) as Row[]);
+  return enrichProjectRows(supabase, (data ?? []) as Row[], false);
 }
 
 /**
  * Enrich base project rows (id/customer_id/status/financial-view columns) with
  * per-project settings, financials and a term-aware collection status. Shared
  * by the paginated list load above and loadProjectsByIds.
+ *
+ * `inline`: the rows already carry the settings, financial and phone columns
+ * (PROJECT_LIST_SELECT) — they're read from the rows themselves, with no
+ * further query. Otherwise they're looked up as before.
  */
-async function enrichProjectRows(supabase: SupabaseClient, rows: Row[]): Promise<Row[]> {
+async function enrichProjectRows(supabase: SupabaseClient, rows: Row[], inline: boolean): Promise<Row[]> {
   const projectIds = rows
     .map((row) => (typeof row?.id === "string" ? row.id : ""))
     .filter(Boolean);
@@ -155,7 +199,13 @@ async function enrichProjectRows(supabase: SupabaseClient, rows: Row[]): Promise
   // used to be split into two `await`ed waves (settings alone, then financials
   // + phone together), silently adding a full extra network round-trip to
   // every projects-list load/tab switch for no reason.
-  const [{ data: projectSettingsRows }, { data: financialRows }, { data: customerPhoneRows }] = await Promise.all([
+  const [{ data: projectSettingsRows }, { data: financialRows }, { data: customerPhoneRows }] = inline
+    ? [
+        { data: rows },
+        { data: rows },
+        { data: rows.map((row) => ({ id: row.customer_id, phone: row.customer_phone })) },
+      ]
+    : await Promise.all([
     projectIds.length > 0
       ? supabase.from("projects").select("id,expenses_billed_separately,payment_terms,due_date,no_charge,branch_id").in("id", projectIds)
       : Promise.resolve({ data: [] as Row[] }),
@@ -265,7 +315,7 @@ async function enrichProjectRows(supabase: SupabaseClient, rows: Row[]): Promise
           });
 
     return {
-      ...row,
+      ...withoutListOnlyColumns(row),
       customer_phone: phoneByCustomerId.get(typeof row?.customer_id === "string" ? row.customer_id : "") ?? null,
       total_expenses: totalExpenses,
       gross_profit: grossProfit,

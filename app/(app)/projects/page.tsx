@@ -1,5 +1,6 @@
 ﻿import dynamic from "next/dynamic";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import AppShell from "@/components/layout/AppShell";
 import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { loadProjectsPage } from "@/app/(app)/projects/loadProjects";
@@ -40,16 +41,13 @@ export default async function ProjectsPage({
       ? params.customer_name.trim()
       : null;
 
-  const { profile, supabase } = await requireStaffPage();
-
-  const [
-    projectsResult,
-    { data: users },
-    { data: customers },
-    projectsCountRes,
-    quotesCountRes,
-    closedCountRes,
-  ] = await Promise.all([
+  // The page's queries and the "who's asking" check go out together. They run
+  // under the caller's own RLS whatever their role, and a caller who isn't
+  // staff is still redirected below before anything is rendered — the check
+  // just no longer puts its users lookup in front of every query.
+  const supabase = await createSupabaseServerClient();
+  const profilePromise = requireStaffPage();
+  const dataPromise = Promise.all([
     loadProjectsPage(supabase, { page: 1, filters }),
     supabase
       .from("users")
@@ -92,6 +90,19 @@ export default async function ProjectsPage({
       return q;
     })(),
   ]);
+  // Awaited right after the check; this only keeps a failure that lands first
+  // from being reported as unhandled meanwhile.
+  dataPromise.catch(() => {});
+
+  const { profile } = await profilePromise;
+  const [
+    projectsResult,
+    { data: users },
+    { data: customers },
+    projectsCountRes,
+    quotesCountRes,
+    closedCountRes,
+  ] = await dataPromise;
 
   const rowsWithPaymentStatus = projectsResult.rows;
   const loadError = projectsResult.error;
