@@ -266,6 +266,31 @@ function userDisplayName(row: UnknownRow | null | undefined) {
   return "משתמש";
 }
 
+// What project_overview_view gave the page (its own type, minus the fields
+// read from projects — set on `overview` below from projectDetailsRaw).
+type DashboardOverview = Omit<
+  ProjectOverview,
+  | "price_includes_vat"
+  | "vat_rate"
+  | "no_charge"
+  | "notes"
+  | "items_to_move"
+  | "origin_address"
+  | "origin_floor"
+  | "origin_has_elevator"
+  | "destination_address"
+  | "destination_floor"
+  | "destination_has_elevator"
+>;
+type DashboardFinancials = ProjectFinancials extends infer T ? Exclude<T, null> : never;
+type DashboardTaskProgress = ProjectTaskProgress extends infer T ? Exclude<T, null> : never;
+type DashboardRow = DashboardOverview &
+  Omit<DashboardFinancials, "id"> &
+  Omit<DashboardTaskProgress, "project_id">;
+
+const OVERVIEW_COLUMNS =
+  "id,name,status,project_type,start_date,end_date,agreed_base_price,actual_price,expenses_billed_separately,customer_id,customer_name,project_manager_id,project_manager_name,created_at,updated_at";
+
 export default async function ProjectPage({
   params,
 }: {
@@ -282,25 +307,17 @@ export default async function ProjectPage({
   // in ONE parallel batch instead of ~10 sequential round trips.
   const batchPromise = Promise.all([
     getCurrentVatRate(supabase),
+    // The overview, the financial totals and the task counts in ONE read:
+    // project_dashboard_view is project_overview_view joined with
+    // project_financials_view and project_task_progress_view (one row per
+    // project in each), so it returns exactly what three separate reads did —
+    // with one request and one query plan instead of three. Split back into
+    // the three shapes the page uses right after the batch.
     supabase
-      .from("project_overview_view")
-      .select(
-        "id,name,status,project_type,start_date,end_date,agreed_base_price,actual_price,expenses_billed_separately,customer_id,customer_name,project_manager_id,project_manager_name,created_at,updated_at"
-      )
+      .from("project_dashboard_view")
+      .select(`${OVERVIEW_COLUMNS},total_expenses,expenses_billed,customer_total_price,gross_profit,total_tasks,completed_tasks,open_tasks`)
       .eq("id", id)
-      .maybeSingle<
-        Omit<
-          ProjectOverview,
-          | "notes"
-          | "items_to_move"
-          | "origin_address"
-          | "origin_floor"
-          | "origin_has_elevator"
-          | "destination_address"
-          | "destination_floor"
-          | "destination_has_elevator"
-        >
-      >(),
+      .maybeSingle<DashboardRow>(),
     supabase
       .from("projects")
       .select("id,notes,items_to_move,origin_address,origin_floor,origin_has_elevator,destination_address,destination_floor,destination_has_elevator,payment_terms,due_date,price_includes_vat,no_charge,vat_rate,branch_id")
@@ -323,20 +340,10 @@ export default async function ProjectPage({
         branch_id: string | null;
       }>(),
     supabase
-      .from("project_financials_view")
-      .select("id,agreed_base_price,actual_price,total_expenses,expenses_billed,customer_total_price,gross_profit")
-      .eq("id", id)
-      .maybeSingle<ProjectFinancials extends infer T ? Exclude<T, null> : never>(),
-    supabase
       .from("project_worker_balance_view")
       .select("project_id,earned_amount,paid_amount,owed_amount")
       .eq("project_id", id)
       .maybeSingle<ProjectWorkerBalance extends infer T ? Exclude<T, null> : never>(),
-    supabase
-      .from("project_task_progress_view")
-      .select("project_id,total_tasks,completed_tasks,open_tasks")
-      .eq("project_id", id)
-      .maybeSingle<ProjectTaskProgress extends infer T ? Exclude<T, null> : never>(),
     supabase
       .from("task_overview_view")
       .select(
@@ -694,16 +701,54 @@ export default async function ProjectPage({
 
   const [
     currentVatRate,
-    { data: overviewRaw, error: overviewError },
+    { data: dashboardRow, error: overviewError },
     { data: projectDetailsRaw },
-    { data: financials },
     { data: workerBalance },
-    { data: tasks },
     { data: projectTasks },
     { data: assignableUsers },
     { data: customers },
     { data: projectExpenses, error: projectExpensesError },
   ] = await batchPromise;
+
+  // The three shapes the separate reads gave, from the one dashboard row.
+  const overviewRaw: DashboardOverview | null = dashboardRow
+    ? {
+        id: dashboardRow.id,
+        name: dashboardRow.name,
+        status: dashboardRow.status,
+        project_type: dashboardRow.project_type,
+        start_date: dashboardRow.start_date,
+        end_date: dashboardRow.end_date,
+        agreed_base_price: dashboardRow.agreed_base_price,
+        actual_price: dashboardRow.actual_price,
+        expenses_billed_separately: dashboardRow.expenses_billed_separately,
+        customer_id: dashboardRow.customer_id,
+        customer_name: dashboardRow.customer_name,
+        project_manager_id: dashboardRow.project_manager_id,
+        project_manager_name: dashboardRow.project_manager_name,
+        created_at: dashboardRow.created_at,
+        updated_at: dashboardRow.updated_at,
+      }
+    : null;
+  const financials: DashboardFinancials | null = dashboardRow
+    ? {
+        id: dashboardRow.id,
+        agreed_base_price: dashboardRow.agreed_base_price,
+        actual_price: dashboardRow.actual_price,
+        total_expenses: dashboardRow.total_expenses,
+        expenses_billed: dashboardRow.expenses_billed,
+        customer_total_price: dashboardRow.customer_total_price,
+        gross_profit: dashboardRow.gross_profit,
+      }
+    : null;
+  const tasks: DashboardTaskProgress | null = dashboardRow
+    ? {
+        project_id: dashboardRow.id,
+        total_tasks: dashboardRow.total_tasks,
+        completed_tasks: dashboardRow.completed_tasks,
+        open_tasks: dashboardRow.open_tasks,
+      }
+    : null;
 
   const overview: ProjectOverview | null = overviewRaw
     ? {

@@ -1191,7 +1191,7 @@ export default function ProjectsClient({
                   <tr
                     key={`${id}-table`}
                     className="cursor-pointer align-top hover:bg-muted/20 focus-visible:bg-muted/20"
-                    {...rowNavigateProps(router, detailHref)}
+                    {...rowNavigateProps(router, detailHref, { prefetch: true })}
                   >
                     <td className="px-4 py-4">
                       <div className="block">
@@ -1404,7 +1404,7 @@ export default function ProjectsClient({
                   >
                     <div
                       className="block cursor-pointer p-4"
-                      {...rowNavigateProps(router, detailHref)}
+                      {...rowNavigateProps(router, detailHref, { prefetch: true })}
                     >
                       <div className="space-y-3">
                         {/* Glance line — the two statuses, nothing else. Tighter and

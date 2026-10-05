@@ -1,5 +1,10 @@
-import type { KeyboardEvent, MouseEvent } from "react";
+import type { KeyboardEvent, MouseEvent, PointerEvent } from "react";
+import { PrefetchKind } from "next/dist/client/components/router-reducer/router-reducer-types";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
+
+// How long the mouse has to rest on a row before its page is fetched ahead —
+// long enough that sweeping across a list doesn't load every row it passes.
+const HOVER_PREFETCH_DELAY_MS = 100;
 
 // Skip row-level navigation when the click/keydown originated on an interactive
 // element inside the row (so per-row buttons/links still work as expected).
@@ -58,12 +63,46 @@ export function clickableRowProps(
  * stays importable from anywhere.
  */
 export function rowNavigateProps(
-  router: { push: (href: string) => void },
+  router: { push: (href: string) => void; prefetch?: (href: string, options?: { kind: PrefetchKind }) => void },
   href: string,
-  options?: { role?: "link" | "button" }
+  options?: {
+    role?: "link" | "button";
+    /**
+     * Start loading the row's page (data included) on intent rather than on
+     * the click: after the mouse rests on the row briefly, the moment a finger
+     * or button goes down, or on keyboard focus — so the page is mostly or
+     * entirely in hand by the time the click lands. Opt-in: each prefetch is a
+     * full server render of that page, so only lists whose rows lead to a
+     * heavy, much-visited page use it.
+     */
+    prefetch?: boolean;
+  }
 ) {
-  return clickableRowProps(() => {
-    emitNavigationStart();
-    router.push(href);
-  }, options);
+  const props = clickableRowProps(
+    () => {
+      emitNavigationStart();
+      router.push(href);
+    },
+    { role: options?.role }
+  );
+  const prefetch = router.prefetch;
+  if (!options?.prefetch || !prefetch) return props;
+
+  const prefetchNow = () => prefetch(href, { kind: PrefetchKind.FULL });
+  let hoverTimer: ReturnType<typeof setTimeout> | null = null;
+  return {
+    ...props,
+    onPointerEnter: (event: PointerEvent) => {
+      if (event.pointerType !== "mouse") return;
+      hoverTimer = setTimeout(prefetchNow, HOVER_PREFETCH_DELAY_MS);
+    },
+    onPointerLeave: () => {
+      if (hoverTimer) clearTimeout(hoverTimer);
+      hoverTimer = null;
+    },
+    // Touch has no hover: the press itself is the earliest sign, ~100 ms
+    // before the click it becomes.
+    onPointerDown: prefetchNow,
+    onFocus: prefetchNow,
+  } as const;
 }
