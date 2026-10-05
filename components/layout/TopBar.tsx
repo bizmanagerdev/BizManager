@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ClockIcon, LogoutIcon, NotificationIcon, UserIcon, WalletIcon } from "@/components/ui/icons";
+import { ClockIcon, LogoutIcon, NetworkIcon, NotificationIcon, UserIcon, WalletIcon } from "@/components/ui/icons";
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import { getAvatarColorCache, setAvatarColorCache, subscribeAvatarColor } from "@/lib/ui/avatar-color";
 import { BackButton } from "@/components/layout/BackButton";
@@ -70,6 +70,10 @@ function userMenuLinks(locale: Locale): {
       icon: WalletIcon,
       gate: (me) => me?.canViewSalary === true,
     },
+    // TEMPORARY (2026-10-05): what this phone's network and filter (NetFree,
+    // Hadran…) let through, before the app's data moves onto the device. Remove
+    // once the results are in.
+    { href: "/connection-check", label: t(topbarDict, locale, "connectionCheckLabel"), icon: NetworkIcon },
   ];
 }
 
