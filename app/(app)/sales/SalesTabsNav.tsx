@@ -1,6 +1,9 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { PrefetchKind } from "next/dist/client/components/router-reducer/router-reducer-types";
 import { DeliveryIcon, InventoryIcon, OrderIcon, SuccessIcon, TagIcon } from "@/components/ui/icons";
 import type { IconComponent } from "@/components/ui/icons";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
@@ -74,6 +77,34 @@ export default function SalesTabsNav({
   counts: Record<SalesTab, number>;
   searchParams: SalesTabsSearchParams;
 }) {
+  const router = useRouter();
+  // One string (hrefs never contain a space), so the effect below re-runs when
+  // the set of tabs changes rather than on every render.
+  const otherTabHrefs = tabs
+    .filter((tab) => tab.id !== activeTab)
+    .map((tab) => buildTabHref(tab.id, searchParams))
+    .join(" ");
+  // The other tabs are fetched whole (data included) once the page is idle, so
+  // switching shows them at once instead of waiting a second on the server; an
+  // aged copy refreshes its list quietly once shown (useInfiniteScroll's
+  // loadedAt). Once per visit to a tab, and by hand rather than with <Link
+  // prefetch>: Next fetches every on-screen <Link prefetch> again after each
+  // save that refreshes the page (router.refresh(), a revalidating action) —
+  // four page loads per save here. A save now leaves the copies out of date
+  // until the next tab switch, which loads normally and fetches the others
+  // again (user, 2026-10-05: option B).
+  useEffect(() => {
+    const prefetchOtherTabs = () => {
+      for (const href of otherTabHrefs.split(" ")) router.prefetch(href, { kind: PrefetchKind.FULL });
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      const handle = window.requestIdleCallback(prefetchOtherTabs, { timeout: 2000 });
+      return () => window.cancelIdleCallback(handle);
+    }
+    const timer = setTimeout(prefetchOtherTabs, 300);
+    return () => clearTimeout(timer);
+  }, [router, otherTabHrefs]);
+
   return (
     <div dir="rtl" className={LIST_CLASSES}>
       {tabs.map((tab) => {
@@ -84,12 +115,8 @@ export default function SalesTabsNav({
           <Link
             key={tab.id}
             href={buildTabHref(tab.id, searchParams)}
-            // The other tabs are fetched whole (data included) as soon as the
-            // bar is on screen, so switching shows them at once instead of
-            // waiting a second on the server. An aged copy refreshes its list
-            // quietly once shown (useInfiniteScroll's loadedAt). Not the tab
-            // you're on — that one is already here.
-            prefetch={isActive ? undefined : true}
+            // Prefetched by hand above — see there for why not here.
+            prefetch={false}
             aria-current={isActive ? "page" : undefined}
             className={triggerClassName(isActive)}
             onClick={() => emitNavigationStart()}
