@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
-import { useOfflineRows } from "@/hooks/useOfflineRows";
+import { useOfflineRows, useOnline } from "@/hooks/useOfflineRows";
 import StaleDataBadge from "@/components/layout/StaleDataBadge";
 import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
@@ -14,6 +14,19 @@ import { SwipeActions } from "@/components/ui/swipe-actions";
 import { NativeSelect } from "@/components/ui/native-select";
 import { findProjectContentMatches, loadMoreProjects, loadProjectRowsByIds } from "@/app/(app)/projects/actions";
 import type { ProjectsFilters } from "@/app/(app)/projects/loadProjects";
+import {
+  DEFAULT_PROJECTS_SORT,
+  parseProjectsFilters,
+  projectsFiltersKey,
+} from "@/app/(app)/projects/projectsFilters";
+import {
+  PROJECTS_FIRST_PAGE_FRESH_MS,
+  fetchProjectsFirstPage,
+  forgetOtherProjectsFirstPages,
+  getProjectsFirstPage,
+  markOtherProjectsFirstPagesStale,
+  rememberProjectsFirstPage,
+} from "@/app/(app)/projects/projectsListCache";
 import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import { searchProjectEntries, useProjectSearchIndex, type ProjectSearchIndexEntry } from "@/hooks/useProjectSearchIndex";
 import { ChatIcon, DocumentIcon, EditIcon, FilterIcon, ProjectIcon, SearchIcon, SuccessIcon } from "@/components/ui/icons";
@@ -369,21 +382,143 @@ export default function ProjectsClient({
   const searchParams = useSearchParams();
   const prefillHandled = useRef(false);
 
-  // Fetch-from-DB-as-you-scroll: accumulate project pages and pull the next one
-  // from the server when the bottom comes into view (no "next page" button).
-  const fetchFilters = useMemo<ProjectsFilters>(
-    () => ({
-      view: initialFilters?.view ?? "projects",
-      status: initialFilters?.status ?? "all",
-      customerId: initialFilters?.customerId ?? null,
-      sort: initialFilters?.sort ?? "start_date",
-      q: initialFilters?.q ?? "",
-    }),
+  // ── Which list is on screen ──────────────────────────────────────────────
+  // The URL holds the tab and filters. Changing them updates the URL in the
+  // browser only (pushFilters below) — the page is NOT re-rendered on the
+  // server for each switch, which used to cost a full round of queries (the
+  // list, users, customers, the three tab counts) every time. The list's first
+  // page comes from what this session already loaded for those filters (shown
+  // at once, refreshed quietly when it's more than a few seconds old) or, the
+  // first time, from /api/projects/list. The other tabs are loaded in the
+  // background once the page settles, so switching to them is instant.
+  const online = useOnline();
+  const currentFilters = useMemo(() => parseProjectsFilters((key) => searchParams.get(key)), [searchParams]);
+  const currentKey = projectsFiltersKey(currentFilters);
+  const serverFilters = useMemo<ProjectsFilters>(
+    () => initialFilters ?? parseProjectsFilters(() => null),
     [initialFilters]
   );
+  const serverKey = projectsFiltersKey(serverFilters);
+
+  type ShownList = {
+    key: string;
+    filters: ProjectsFilters;
+    rows: ProjectRow[];
+    hasMore: boolean;
+    totalCount: number | null;
+  };
+  const [shown, setShown] = useState<ShownList>(() => ({
+    key: serverKey,
+    filters: serverFilters,
+    rows: initialProjects,
+    hasMore: initialHasMore,
+    totalCount: totalCount ?? null,
+  }));
+  // A fresh server render (arriving here, or router.refresh() after a save)
+  // is the truth for its filters; otherwise a switch to a list this session
+  // already holds shows it right away. ("Adjust state during render", guarded
+  // so each branch settles in one pass.)
+  const [prevInitialProjects, setPrevInitialProjects] = useState(initialProjects);
+  if (prevInitialProjects !== initialProjects) {
+    setPrevInitialProjects(initialProjects);
+    setShown({
+      key: serverKey,
+      filters: serverFilters,
+      rows: initialProjects,
+      hasMore: initialHasMore,
+      totalCount: totalCount ?? null,
+    });
+  } else if (shown.key !== currentKey) {
+    const kept = getProjectsFirstPage(currentKey);
+    if (kept) {
+      setShown({
+        key: currentKey,
+        filters: currentFilters,
+        rows: kept.rows as ProjectRow[],
+        hasMore: kept.hasMore,
+        totalCount: kept.totalCount,
+      });
+    }
+  }
+
+  // Keep the server's page for its filters. The first time it's coming back
+  // to the page: the other lists stay for an instant switch, refreshed when
+  // shown. After that it's a save: what the other lists hold may have changed
+  // (a quote approved, a project closed), so they're dropped and reloaded.
+  const serverPagesSeen = useRef(0);
+  useEffect(() => {
+    if (serverPagesSeen.current === 0) markOtherProjectsFirstPagesStale(serverKey);
+    else forgetOtherProjectsFirstPages(serverKey);
+    serverPagesSeen.current += 1;
+    rememberProjectsFirstPage(serverKey, {
+      rows: initialProjects,
+      hasMore: initialHasMore,
+      totalCount: totalCount ?? null,
+      at: Date.now(),
+    });
+    // Only a new server page triggers this — serverKey/hasMore/count come with it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialProjects]);
+
+  // Load the list on screen when there's nothing current for it.
+  useEffect(() => {
+    if (!online) return;
+    const kept = getProjectsFirstPage(currentKey);
+    if (kept && Date.now() - kept.at < PROJECTS_FIRST_PAGE_FRESH_MS) return;
+    let cancelled = false;
+    const filters = currentFilters;
+    void fetchProjectsFirstPage(filters).then((page) => {
+      if (cancelled || !page) return;
+      setShown((prev) => {
+        // Unchanged since it was shown — keep it, and the pages scrolled in under it.
+        if (prev.key === currentKey && JSON.stringify(prev.rows) === JSON.stringify(page.rows)) return prev;
+        return {
+          key: currentKey,
+          filters,
+          rows: page.rows as ProjectRow[],
+          hasMore: page.hasMore,
+          totalCount: page.totalCount,
+        };
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // currentFilters is derived from currentKey's searchParams.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentKey, online]);
+
+  // Once the page has settled, load each tab's default list in the
+  // background, so the first switch to it is already instant.
+  useEffect(() => {
+    if (!online) return;
+    const prefetch = () => {
+      for (const view of ["projects", "quotes", "closed"] as const) {
+        const filters: ProjectsFilters = {
+          view,
+          status: "all",
+          sort: DEFAULT_PROJECTS_SORT,
+          q: "",
+          customerId: serverFilters.customerId,
+        };
+        const kept = getProjectsFirstPage(projectsFiltersKey(filters));
+        if (!kept || Date.now() - kept.at >= PROJECTS_FIRST_PAGE_FRESH_MS) void fetchProjectsFirstPage(filters);
+      }
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      const handle = window.requestIdleCallback(prefetch, { timeout: 3000 });
+      return () => window.cancelIdleCallback(handle);
+    }
+    const timer = window.setTimeout(prefetch, 1500);
+    return () => window.clearTimeout(timer);
+  }, [initialProjects, online, serverFilters.customerId]);
+
+  // Fetch-from-DB-as-you-scroll: accumulate project pages and pull the next one
+  // from the server when the bottom comes into view (no "next page" button).
+  const shownFilters = shown.filters;
   const fetchPage = useCallback(
-    (page: number) => loadMoreProjects(page, fetchFilters),
-    [fetchFilters]
+    (page: number) => loadMoreProjects(page, shownFilters),
+    [shownFilters]
   );
   const getRowId = useCallback((row: ProjectRow) => String(row.id ?? ""), []);
   const {
@@ -395,8 +530,8 @@ export default function ProjectsClient({
     mobileSentinelRef,
     scrollRef,
   } = useInfiniteScroll<ProjectRow>({
-    initialRows: initialProjects,
-    initialHasMore,
+    initialRows: shown.rows,
+    initialHasMore: shown.hasMore,
     fetchPage,
     getId: getRowId,
   });
@@ -468,15 +603,11 @@ export default function ProjectsClient({
     };
   }, [query, offline, projectIndexEntries, customerIndexEntries, projectIndexLoading, activeTab, status, scopeCustomerId]);
 
-  // Tab/status/sort changes push a new URL, which re-runs the server page with
-  // the new searchParams — but Next only shows the route's loading.tsx
-  // skeleton for a genuinely new segment, not for a searchParams-only
-  // navigation on the same page, so switching tabs used to give no feedback
-  // at all for the 1-3s the RSC round-trip takes (user, 2026-09-02: "i want
-  // the loader to appear when switching it might help the feeling"). Wrapping
-  // the push in a transition exposes isFiltersPending, which drives the same
-  // shared top progress bar every other navigation in the app uses.
-  const [isFiltersPending, startFiltersTransition] = useTransition();
+  // Until the list for the new tab/filters is in (the first time only — kept
+  // and prefetched lists show at once), the old one stays up dimmed and the
+  // shared top progress bar runs, as every other navigation in the app does
+  // (user, 2026-09-02: "i want the loader to appear when switching").
+  const isFiltersPending = online && shown.key !== currentKey;
 
   useEffect(() => {
     if (!isFiltersPending) return;
@@ -484,8 +615,9 @@ export default function ProjectsClient({
     return () => emitProgressActivityEnd();
   }, [isFiltersPending]);
 
-  // Push filter changes to URL — server re-fetches with the new filters applied
-  // across the full dataset, then we get a fresh paginated slice back.
+  // Put filter changes in the URL — in the browser only (see "Which list is on
+  // screen" above); Next keeps useSearchParams in step with history.pushState,
+  // and back/forward restore the earlier tab the same way.
   const pushFilters = useCallback(
     (next: Partial<{ view: ProjectsView; status: string; sort: SortMode; q: string }>) => {
       const merged = {
@@ -507,11 +639,9 @@ export default function ProjectsClient({
       if (merged.sort !== defaultSort) params.set("sort", merged.sort);
       if (merged.q.trim()) params.set("q", merged.q.trim());
       const qs = params.toString();
-      startFiltersTransition(() => {
-        router.push(qs ? `/projects?${qs}` : "/projects", { scroll: false });
-      });
+      window.history.pushState(null, "", qs ? `/projects?${qs}` : "/projects");
     },
-    [activeTab, status, sort, query, router, searchParams]
+    [activeTab, status, sort, query, searchParams]
   );
 
   const setStatus = (next: string) => pushFilters({ status: next });
@@ -1378,7 +1508,7 @@ export default function ProjectsClient({
         <div className="pt-1 text-center text-xs text-muted-foreground">
           {loadingMore
             ? "טוען…"
-            : `מציג ${rows.length}${totalCount != null ? ` מתוך ${totalCount}` : ""} פרויקטים`}
+            : `מציג ${rows.length}${shown.totalCount != null ? ` מתוך ${shown.totalCount}` : ""} פרויקטים`}
         </div>
       ) : null}
 

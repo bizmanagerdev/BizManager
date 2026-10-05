@@ -2,11 +2,8 @@
 import { requireStaffPage } from "@/lib/auth/roleAccess";
 import AppShell from "@/components/layout/AppShell";
 import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
-import {
-  loadProjectsPage,
-  type ProjectsSort,
-  type ProjectsView,
-} from "@/app/(app)/projects/loadProjects";
+import { loadProjectsPage } from "@/app/(app)/projects/loadProjects";
+import { parseProjectsFilters } from "@/app/(app)/projects/projectsFilters";
 
 const ProjectsClient = dynamic(() => import("@/app/(app)/projects/ProjectsClient"), {
   loading: () => <DetailPageSkeleton />,
@@ -15,17 +12,6 @@ const ProjectsClient = dynamic(() => import("@/app/(app)/projects/ProjectsClient
 type Row = Record<string, unknown>;
 
 const OPTIONS_PAGE_SIZE = 50;
-
-function parseView(value: string | undefined): ProjectsView {
-  return value === "quotes" || value === "closed" ? value : "projects";
-}
-
-function parseSort(value: string | undefined, _view: ProjectsView): ProjectsSort {
-  if (value === "recent" || value === "start_date" || value === "start_date_desc" || value === "profit_desc") {
-    return value;
-  }
-  return "start_date_desc";
-}
 
 const CLOSED_STATUSES = ["quote", "completed"];
 
@@ -42,22 +28,19 @@ export default async function ProjectsPage({
   }>;
 }) {
   const params = (await searchParams) ?? {};
-  const customerId =
-    typeof params.customer_id === "string" && params.customer_id.trim()
-      ? params.customer_id.trim()
-      : null;
+  // The same reading of the URL the list GET route and the client use, so a
+  // tab the browser keeps matches what this page would have rendered.
+  const filters = parseProjectsFilters((key) => {
+    const value = params[key as keyof typeof params];
+    return typeof value === "string" ? value : null;
+  });
+  const { customerId } = filters;
   const customerName =
     typeof params.customer_name === "string" && params.customer_name.trim()
       ? params.customer_name.trim()
       : null;
-  const view = parseView(params.view);
-  const statusFilter = typeof params.status === "string" && params.status.trim() ? params.status.trim() : "all";
-  const sort = parseSort(params.sort, view);
-  const searchQuery = typeof params.q === "string" ? params.q.trim() : "";
 
   const { profile, supabase } = await requireStaffPage();
-
-  const filters = { view, status: statusFilter, customerId, sort, q: searchQuery };
 
   const [
     projectsResult,
@@ -209,7 +192,7 @@ export default async function ProjectsPage({
             viewerRole={profile.role}
             defaultProjectManagerId={defaultProjectManagerId ?? undefined}
             tabCounts={tabCounts}
-            initialFilters={{ view, status: statusFilter, customerId, sort, q: searchQuery }}
+            initialFilters={filters}
           />
         )}
       </div>

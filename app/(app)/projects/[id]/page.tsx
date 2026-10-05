@@ -163,6 +163,33 @@ async function buildAttachmentsByEntity(
   return byEntity;
 }
 
+/** An entity's document_links together with the documents they point at, in
+ *  ONE request: document_links.document_id → documents is a foreign key, so
+ *  PostgREST embeds each link's document. (This used to be two round trips in
+ *  a row — the links, then the documents by the ids they named.) A document
+ *  the caller can't read comes back as null, exactly as it was missing from
+ *  the separate read before. */
+async function loadLinkedDocuments(
+  supabase: SupabaseClient,
+  entityType: string,
+  entityIds: string[]
+): Promise<{ links: UnknownRow[]; documentById: Map<string, UnknownRow> }> {
+  const documentById = new Map<string, UnknownRow>();
+  if (entityIds.length === 0) return { links: [], documentById };
+  const { data } = await supabase
+    .from("document_links")
+    .select("document_id,entity_type,entity_id,created_at,document:documents(id,title,file_name,storage_key,uploaded_at,document_type)")
+    .eq("entity_type", entityType)
+    .in("entity_id", entityIds);
+  const links = (data ?? []) as UnknownRow[];
+  for (const link of links) {
+    const embedded = Array.isArray(link.document) ? link.document[0] : link.document;
+    const doc = embedded && typeof embedded === "object" ? (embedded as UnknownRow) : null;
+    if (doc && typeof doc.id === "string") documentById.set(doc.id, doc);
+  }
+  return { links, documentById };
+}
+
 /** A wage (session / payslip) has no account of its own — the money left
  *  through whichever worker payment(s) settled it. Returns source id → the
  *  distinct account ids of those payments. Silent on error (e.g. a role that
@@ -247,18 +274,7 @@ export default async function ProjectPage({
   const { profile, supabase } = await requireStaffPage();
   // These reads are all independent (keyed only by the project id), so fetch them
   // in ONE parallel batch instead of ~10 sequential round trips.
-  const [
-    currentVatRate,
-    { data: overviewRaw, error: overviewError },
-    { data: projectDetailsRaw },
-    { data: financials },
-    { data: workerBalance },
-    { data: tasks },
-    { data: projectTasks },
-    { data: assignableUsers },
-    { data: customers },
-    { data: projectExpenses, error: projectExpensesError },
-  ] = await Promise.all([
+  const batchPromise = Promise.all([
     getCurrentVatRate(supabase),
     supabase
       .from("project_overview_view")
@@ -328,10 +344,12 @@ export default async function ProjectPage({
       .select("id,full_name,email,role,active,payroll_worker_type,pay_tracking_mode")
       .order("full_name", { ascending: true })
       .range(0, 199),
+    // Straight from customers: customer_overview_view would total every
+    // customer's orders, projects and payments just to fill a picker.
     supabase
-      .from("customer_overview_view")
-      .select("customer_id,customer_name,phone")
-      .order("customer_name", { ascending: true })
+      .from("customers")
+      .select("id,name,name_for_invoice")
+      .order("name", { ascending: true })
       .range(0, 199),
     supabase
       .from("project_expenses")
@@ -340,6 +358,340 @@ export default async function ProjectPage({
       .order("id", { ascending: false })
       .range(0, 99),
   ]);
+
+  // Everything keyed only by the project id starts now, alongside the batch
+  // above — the attendance sessions, payments, the project's own documents,
+  // the account names and the admin activity trail don't need anything that
+  // batch returns. Each is awaited further down; the no-op catch only stops a
+  // failure that lands meanwhile from being reported as unhandled before then.
+  const sessionsChainPromise = (async () => {
+    const { data: attendanceSessions, error: attendanceSessionsError } = await supabase
+      .from("attendance_sessions")
+      .select("id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id")
+      .eq("project_id", id)
+      .order("clock_in", { ascending: false })
+      .range(0, 99);
+
+    const attendanceSessionIds = Array.from(
+      new Set(
+        (attendanceSessions ?? [])
+          .map((session) => (typeof session.id === "string" ? session.id : null))
+          .filter((value): value is string => Boolean(value))
+      )
+    );
+
+    // Everything below needs only the session ids — one round trip together.
+    const [sessionPaymentRows, sessionDocs, sessionAccountIds] = await Promise.all([
+      // Effective per-session paid status comes from ONE source of truth — the
+      // session_effective_payment_view — which already folds in the rule that a paid
+      // monthly payslip covers all of that month's sessions (so payslip-mode workers'
+      // sessions aren't shown as unpaid). See db/sql/create_session_effective_payment_view.sql.
+      // Tolerant: until that view is deployed, fall back to the raw session debt rows
+      // (same behaviour as before — session workers keep their status).
+      (async (): Promise<Array<Record<string, unknown>>> => {
+        if (attendanceSessionIds.length === 0) return [];
+        const effectiveResult = await supabase
+          .from("session_effective_payment_view")
+          .select("session_id,paid_amount,owed_amount,payment_status,last_payment_date,due_date")
+          .in("session_id", attendanceSessionIds);
+        if (!effectiveResult.error) return (effectiveResult.data ?? []) as Array<Record<string, unknown>>;
+        const fallback = await supabase
+          .from("worker_debt_items_view")
+          .select("source_id,paid_amount,owed_amount,payment_status,last_payment_date,due_date")
+          .eq("source_type", "session")
+          .in("source_id", attendanceSessionIds);
+        return ((fallback.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+          ...row,
+          session_id: row.source_id,
+        }));
+      })(),
+      loadLinkedDocuments(supabase, "session", attendanceSessionIds),
+      loadWageAccountIds(supabase, "attendance_session_id", attendanceSessionIds),
+    ]);
+
+    const sessionDebtById = new Map<string, Record<string, unknown>>();
+    sessionPaymentRows.forEach((row) => {
+      const sessionId = getFirstString(row as UnknownRow, ["session_id"]);
+      if (sessionId) sessionDebtById.set(sessionId, row as Record<string, unknown>);
+    });
+
+    const sessionAttachmentByEntityId = await buildAttachmentsByEntity(
+      supabase,
+      sessionDocs.links,
+      sessionDocs.documentById
+    );
+
+    return {
+      attendanceSessions: (attendanceSessions ?? []) as AttendanceSessionRow[],
+      attendanceSessionsError,
+      sessionDebtById,
+      sessionAttachmentByEntityId,
+      sessionAccountIds,
+    };
+  })();
+  sessionsChainPromise.catch(() => {});
+
+  const paymentsChainPromise = (async () => {
+    const { data: payments, error: paymentsQueryError } = await supabase
+      .from("payments")
+      .select(PAYMENT_SELECT)
+      .eq("project_id", id)
+      .order("payment_date", { ascending: false })
+      .range(0, 99);
+
+    const paymentIds = Array.from(
+      new Set(
+        (payments ?? [])
+          .map((row) => (typeof row.id === "string" ? row.id : null))
+          .filter((value): value is string => Boolean(value))
+      )
+    );
+
+    const paymentRecordedByValues = Array.from(
+      new Set(
+        (payments ?? [])
+          .map((row) => (typeof row.recorded_by === "string" ? row.recorded_by : null))
+          .filter((value): value is string => Boolean(value))
+      )
+    );
+
+    // Everything below needs only the payments themselves — one round trip
+    // together instead of five in a row.
+    const MORNING_SELECT =
+      "id,morning_document_id,morning_document_number,document_type,document_type_label,status,customer_id,order_id,project_id,payment_id,document_id,morning_client_id,amount,currency,morning_url,pdf_url,issued_at,closed_at,notes";
+    const [
+      paymentAuditResult,
+      [paymentRecordedByIdUsersResult, paymentRecordedByAuthUsersResult],
+      paymentDocs,
+      [
+        { data: projectMorningDocuments, error: projectMorningDocumentsError },
+        { data: paymentMorningDocuments, error: paymentMorningDocumentsError },
+      ],
+    ] = await Promise.all([
+      getLatestAuditByRecordIds(supabase, {
+        tableName: "payments",
+        recordIds: paymentIds,
+      }),
+      Promise.all([
+        paymentRecordedByValues.length > 0
+          ? supabase
+              .from("users")
+              .select("id,auth_user_id,full_name,email")
+              .in("id", paymentRecordedByValues)
+          : Promise.resolve({ data: [] as UnknownRow[], error: null }),
+        paymentRecordedByValues.length > 0
+          ? supabase
+              .from("users")
+              .select("id,auth_user_id,full_name,email")
+              .in("auth_user_id", paymentRecordedByValues)
+          : Promise.resolve({ data: [] as UnknownRow[], error: null }),
+      ]),
+      loadLinkedDocuments(supabase, "payment", paymentIds),
+      Promise.all([
+        supabase
+          .from("morning_documents")
+          .select(MORNING_SELECT)
+          .eq("project_id", id)
+          .order("issued_at", { ascending: false }),
+        paymentIds.length > 0
+          ? supabase
+              .from("morning_documents")
+              .select(MORNING_SELECT)
+              .in("payment_id", paymentIds)
+              .order("issued_at", { ascending: false })
+          : Promise.resolve({ data: [], error: null }),
+      ]),
+    ]);
+
+    const paymentRecordedByNameByValue: Record<string, string> = {};
+    for (const row of [
+      ...((paymentRecordedByIdUsersResult.data ?? []) as UnknownRow[]),
+      ...((paymentRecordedByAuthUsersResult.data ?? []) as UnknownRow[]),
+    ]) {
+      const displayName = userDisplayName(row);
+      const userId = getFirstString(row, ["id"]);
+      const authUserId = getFirstString(row, ["auth_user_id"]);
+      if (userId) paymentRecordedByNameByValue[userId] = displayName;
+      if (authUserId) paymentRecordedByNameByValue[authUserId] = displayName;
+    }
+
+    const paymentAttachmentByEntityId = await buildAttachmentsByEntity(
+      supabase,
+      paymentDocs.links,
+      paymentDocs.documentById
+    );
+
+    const paymentsWithPhotos = (payments ?? []).map((payment) => {
+      const attachments = paymentAttachmentByEntityId.get(payment.id);
+      return attachments
+        ? {
+            ...payment,
+            attachments,
+          }
+        : payment;
+    });
+
+    const paymentsError = paymentsQueryError?.message ?? null;
+
+    const morningDocuments = Array.from(
+      new Map(
+        [
+          ...((projectMorningDocuments ?? []) as Record<string, unknown>[]),
+          ...((paymentMorningDocuments ?? []) as Record<string, unknown>[]),
+        ].map((row) => [getFirstString(row, ["id"]) ?? crypto.randomUUID(), row])
+      ).values()
+    ) as MorningLocalDocument[];
+
+    return {
+      payments,
+      paymentsWithPhotos,
+      paymentsError,
+      paymentAuditResult,
+      paymentRecordedByNameByValue,
+      morningDocuments,
+      morningDocumentsError:
+        projectMorningDocumentsError?.message ?? paymentMorningDocumentsError?.message ?? null,
+    };
+  })();
+  paymentsChainPromise.catch(() => {});
+
+  const projectDocsChainPromise = (async () => {
+    // The links and their documents in one request (see loadLinkedDocuments).
+    const { data: projectDocumentLinks, error: projectDocumentsError } = await supabase
+      .from("document_links")
+      .select("document_id,entity_type,entity_id,created_at,document:documents(id,document_type,title,file_name,storage_key,uploaded_at,uploaded_by)")
+      .eq("entity_type", "project")
+      .eq("entity_id", id)
+      .order("created_at", { ascending: false })
+      .range(0, 199);
+
+    const projectDocumentsRaw = ((projectDocumentLinks ?? []) as UnknownRow[])
+      .map((link) => (Array.isArray(link.document) ? link.document[0] : link.document))
+      .filter((doc): doc is UnknownRow => Boolean(doc) && typeof doc === "object") as DocumentRow[];
+
+    const projectDocumentsErrorMessage = projectDocumentsError?.message ?? null;
+
+    const projectDocumentsById = new Map<string, UnknownRow>();
+    (projectDocumentsRaw ?? []).forEach((row) => {
+      if (typeof row.id === "string") projectDocumentsById.set(row.id, row);
+    });
+
+    const projectDocumentUploadedByValues = Array.from(
+      new Set(
+        ((projectDocumentsRaw ?? []) as DocumentRow[])
+          .map((row) => (typeof row.uploaded_by === "string" ? row.uploaded_by : null))
+          .filter((value): value is string => Boolean(value))
+      )
+    );
+
+    // Batch every document's signed URL in ONE call instead of one request
+    // per document (this list can run to 200 — was a real N+1). Signed
+    // alongside the uploader-name lookup, not after it.
+    const projectDocumentStorageKeys = Array.from(
+      new Set(
+        ((projectDocumentsRaw ?? []) as DocumentRow[])
+          .map((row) => (typeof row.storage_key === "string" ? row.storage_key : null))
+          .filter((value): value is string => Boolean(value))
+      )
+    );
+    const [projectDocumentUploaderNames, signed] = await Promise.all([
+      resolveUserDisplayNamesForValues(supabase, projectDocumentUploadedByValues),
+      projectDocumentStorageKeys.length > 0
+        ? supabase.storage
+            .from(DOCUMENTS_BUCKET)
+            .createSignedUrls(projectDocumentStorageKeys, 60 * 60)
+            .then(({ data }) => data)
+        : Promise.resolve(null),
+    ]);
+    const projectDocumentUrlByStorageKey = new Map<string, string>();
+    for (const entry of signed ?? []) {
+      if (entry.path && entry.signedUrl) projectDocumentUrlByStorageKey.set(entry.path, entry.signedUrl);
+    }
+
+    const projectDocumentsUnique = (projectDocumentLinks ?? []).map((link) => {
+      const documentId = typeof link.document_id === "string" ? link.document_id : null;
+      if (!documentId) return null;
+
+      const row = projectDocumentsById.get(documentId) ?? null;
+      if (!row) return null;
+
+      const storageKey = getFirstString(row, ["storage_key"]);
+      const fileName = getFirstString(row, ["file_name"]);
+      const title = getFirstString(row, ["title"]);
+      const documentType = getFirstString(row, ["document_type"]);
+      const uploadedBy = getFirstString(row, ["uploaded_by"]);
+      const entityType = getFirstString(link, ["entity_type"]);
+      const entityId = getFirstString(link, ["entity_id"]);
+      const uploadedAt =
+        getFirstString(row, ["uploaded_at"]) ?? getFirstString(link, ["created_at"]);
+
+      return {
+        document_id: documentId,
+        storage_key: storageKey,
+        file_name: fileName,
+        title,
+        document_type: documentType,
+        entity_type: entityType,
+        entity_id: entityId,
+        uploaded_at: uploadedAt,
+        uploaded_by_name: uploadedBy ? projectDocumentUploaderNames[uploadedBy] ?? null : null,
+        url: storageKey ? projectDocumentUrlByStorageKey.get(storageKey) ?? null : null,
+      };
+    });
+
+    const normalizedProjectDocuments = projectDocumentsUnique.filter(
+      (
+        document
+      ): document is {
+        document_id: string;
+        storage_key: string | null;
+        file_name: string | null;
+        title: string | null;
+        document_type: string | null;
+        entity_type: string | null;
+        entity_id: string | null;
+        uploaded_at: string | null;
+        uploaded_by_name: string | null;
+        url: string | null;
+      } => Boolean(document)
+    );
+
+    return { normalizedProjectDocuments, projectDocumentsErrorMessage };
+  })();
+  projectDocsChainPromise.catch(() => {});
+
+  // Per-entity activity timeline (admin only, mirroring /activity access):
+  // this project's own changes plus payments and worker sessions logged
+  // against it. Dropped below if the project itself isn't found.
+  const activityPromise =
+    profile.role === "admin"
+      ? getEntityAuditTrail(supabase, [
+          { tableName: "projects", recordId: id },
+          { tableName: "payments", jsonKey: "project_id", value: id },
+          { tableName: "attendance_sessions", jsonKey: "project_id", value: id },
+        ]).then((trail) => trail.items)
+      : Promise.resolve([]);
+  activityPromise.catch(() => {});
+
+  // Account names for the תנועות rows — inactive ones too, since an old
+  // row can still point at an account that's since been closed.
+  const accountNamesPromise = loadAccounts(supabase).then(
+    (accounts) => Object.fromEntries(accounts.map((account) => [account.id, account.name])) as Record<string, string>
+  );
+  accountNamesPromise.catch(() => {});
+
+  const [
+    currentVatRate,
+    { data: overviewRaw, error: overviewError },
+    { data: projectDetailsRaw },
+    { data: financials },
+    { data: workerBalance },
+    { data: tasks },
+    { data: projectTasks },
+    { data: assignableUsers },
+    { data: customers },
+    { data: projectExpenses, error: projectExpensesError },
+  ] = await batchPromise;
 
   const overview: ProjectOverview | null = overviewRaw
     ? {
@@ -397,9 +749,25 @@ export default async function ProjectPage({
   const [expensesChain, sessionsChain, paymentsChain, projectDocsChain, customerBranchChain, activityChain, accountNameById] =
     await Promise.all([
       (async () => {
-        const { data: salaryAgreements } =
+        const expenseIds = Array.from(
+          new Set(
+            (projectExpenses ?? [])
+              .map((row) => (typeof row.expense_id === "string" ? row.expense_id : null))
+              .filter((value): value is string => Boolean(value))
+          )
+        );
+
+        // Everything here needs only the users and project_expenses rows from
+        // the batch above — one round trip together instead of five in a row.
+        const [
+          { data: salaryAgreements },
+          monthlySalaryResult,
+          { expenses, expensesError },
+          expenseAuditResult,
+          expenseDocs,
+        ] = await Promise.all([
           assignableUserIds.length > 0
-            ? await supabase
+            ? supabase
                 .from("salary_agreements")
                 .select(
                   // due_day_of_next_month is what dates a payslip line in the ledger:
@@ -408,18 +776,54 @@ export default async function ProjectPage({
                 )
                 .in("user_id", assignableUserIds)
                 .order("valid_from", { ascending: false })
-            : { data: [] as ProjectSalaryAgreement[] };
+            : Promise.resolve({ data: [] as ProjectSalaryAgreement[] }),
+          // Monthly-salary (payslip) costs attributed to THIS project via the worker's
+          // salary agreement (business_domain=פרויקטים + project_id). Shown as read-only
+          // lines in the project's expenses; the totals come from project_financials_view.
+          supabase
+            .from("worker_debt_items_view")
+            .select(
+              "source_id,user_id,period_month,earned_amount,paid_amount,owed_amount,payment_status,is_billable_to_customer,bill_to_customer_amount"
+            )
+            .eq("source_type", "payslip")
+            .eq("project_id", id),
+          (async (): Promise<{ expenses: ExpenseRow[]; expensesError: { message: string } | null }> => {
+            if (expenseIds.length === 0) return { expenses: [], expensesError: null };
+            const primaryResult = await supabase
+              .from("expenses")
+              .select(
+                "id,expense_date,amount,payment_method,payment_status,paid_amount,category,description,business_domain,notes,account_id,recorded_by,created_at,updated_at,recurring_expense_template_id"
+              )
+              .order("expense_date", { ascending: false })
+              .in("id", expenseIds);
 
-        // Monthly-salary (payslip) costs attributed to THIS project via the worker's
-        // salary agreement (business_domain=פרויקטים + project_id). Shown as read-only
-        // lines in the project's expenses; the totals come from project_financials_view.
-        const monthlySalaryResult = await supabase
-          .from("worker_debt_items_view")
-          .select(
-            "source_id,user_id,period_month,earned_amount,paid_amount,owed_amount,payment_status,is_billable_to_customer,bill_to_customer_amount"
-          )
-          .eq("source_type", "payslip")
-          .eq("project_id", id);
+            if (primaryResult.error && isMissingColumnError(primaryResult.error, "payment_method")) {
+              const fallbackResult = await supabase
+                .from("expenses")
+                .select("id,expense_date,amount,payment_status,paid_amount,category,description,business_domain,notes,recorded_by,created_at,updated_at,recurring_expense_template_id")
+                .order("expense_date", { ascending: false })
+                .in("id", expenseIds);
+
+              return {
+                expensesError: fallbackResult.error ? { message: fallbackResult.error.message } : null,
+                expenses: ((fallbackResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+                  ...row,
+                  payment_method: null,
+                })) as ExpenseRow[],
+              };
+            }
+            return {
+              expensesError: primaryResult.error ? { message: primaryResult.error.message } : null,
+              expenses: (primaryResult.data ?? []) as ExpenseRow[],
+            };
+          })(),
+          getLatestAuditByRecordIds(supabase, {
+            tableName: "expenses",
+            recordIds: expenseIds,
+          }),
+          loadLinkedDocuments(supabase, "expense", expenseIds),
+        ]);
+
         const monthlySalaryItems: ProjectMonthlySalaryItem[] = (
           (monthlySalaryResult.data ?? []) as Array<Record<string, unknown>>
         ).map((row) => ({
@@ -433,55 +837,6 @@ export default async function ProjectPage({
           is_billable_to_customer: (row.is_billable_to_customer as boolean | null) ?? null,
           bill_to_customer_amount: (row.bill_to_customer_amount as number | string | null) ?? null,
         }));
-        // Awaited at the end of this chain — runs alongside the expense queries.
-        const payslipAccountIdsPromise = loadWageAccountIds(
-          supabase,
-          "payslip_id",
-          monthlySalaryItems.map((item) => item.payslip_id).filter(Boolean)
-        );
-
-        const expenseIds = Array.from(
-          new Set(
-            (projectExpenses ?? [])
-              .map((row) => (typeof row.expense_id === "string" ? row.expense_id : null))
-              .filter((value): value is string => Boolean(value))
-          )
-        );
-
-        let expenses: ExpenseRow[] = [];
-        let expensesError: { message: string } | null = null;
-
-        if (expenseIds.length > 0) {
-          const primaryResult = await supabase
-            .from("expenses")
-            .select(
-              "id,expense_date,amount,payment_method,payment_status,paid_amount,category,description,business_domain,notes,account_id,recorded_by,created_at,updated_at,recurring_expense_template_id"
-            )
-            .order("expense_date", { ascending: false })
-            .in("id", expenseIds);
-
-          if (primaryResult.error && isMissingColumnError(primaryResult.error, "payment_method")) {
-            const fallbackResult = await supabase
-              .from("expenses")
-              .select("id,expense_date,amount,payment_status,paid_amount,category,description,business_domain,notes,recorded_by,created_at,updated_at,recurring_expense_template_id")
-              .order("expense_date", { ascending: false })
-              .in("id", expenseIds);
-
-            expensesError = fallbackResult.error ? { message: fallbackResult.error.message } : null;
-            expenses = ((fallbackResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
-              ...row,
-              payment_method: null,
-            })) as ExpenseRow[];
-          } else {
-            expensesError = primaryResult.error ? { message: primaryResult.error.message } : null;
-            expenses = (primaryResult.data ?? []) as ExpenseRow[];
-          }
-        }
-
-        const expenseAuditResult = await getLatestAuditByRecordIds(supabase, {
-          tableName: "expenses",
-          recordIds: expenseIds,
-        });
 
         const expenseRecordedByValues = Array.from(
           new Set(
@@ -490,21 +845,6 @@ export default async function ProjectPage({
               .filter((value): value is string => Boolean(value))
           )
         );
-
-        const [expenseRecordedByIdUsersResult, expenseRecordedByAuthUsersResult] = await Promise.all([
-          expenseRecordedByValues.length > 0
-            ? supabase
-                .from("users")
-                .select("id,auth_user_id,full_name,email")
-                .in("id", expenseRecordedByValues)
-            : Promise.resolve({ data: [] as UnknownRow[], error: null }),
-          expenseRecordedByValues.length > 0
-            ? supabase
-                .from("users")
-                .select("id,auth_user_id,full_name,email")
-                .in("auth_user_id", expenseRecordedByValues)
-            : Promise.resolve({ data: [] as UnknownRow[], error: null }),
-        ]);
 
         // A row generated from a recurring template reads by the template's
         // name — the same label the ledger and the payments calendar use.
@@ -515,25 +855,55 @@ export default async function ProjectPage({
               .filter((value): value is string => Boolean(value))
           )
         );
+
+        // The second and last round trip: what the expenses above point at.
+        const [
+          [expenseRecordedByIdUsersResult, expenseRecordedByAuthUsersResult],
+          { data: templateRows },
+          expenseAttachmentByEntityId,
+          payslipAccountIds,
+        ] = await Promise.all([
+          Promise.all([
+            expenseRecordedByValues.length > 0
+              ? supabase
+                  .from("users")
+                  .select("id,auth_user_id,full_name,email")
+                  .in("id", expenseRecordedByValues)
+              : Promise.resolve({ data: [] as UnknownRow[], error: null }),
+            expenseRecordedByValues.length > 0
+              ? supabase
+                  .from("users")
+                  .select("id,auth_user_id,full_name,email")
+                  .in("auth_user_id", expenseRecordedByValues)
+              : Promise.resolve({ data: [] as UnknownRow[], error: null }),
+          ]),
+          recurringTemplateIds.length > 0
+            ? supabase
+                .from("recurring_expense_templates")
+                .select("id,template_name,created_by")
+                .in("id", recurringTemplateIds)
+            : Promise.resolve({ data: [] as Array<{ id: string | null; template_name: string | null; created_by: string | null }> }),
+          buildAttachmentsByEntity(supabase, expenseDocs.links, expenseDocs.documentById),
+          loadWageAccountIds(
+            supabase,
+            "payslip_id",
+            monthlySalaryItems.map((item) => item.payslip_id).filter(Boolean)
+          ),
+        ]);
+
         const recurringTemplateNames: Record<string, string> = {};
         // Who set each rule up — the generator stamps them on every bill it
         // creates, which is how a generated bill is told from one a person
         // entered (see isGeneratedRecurringExpense).
         const recurringTemplateAuthors: Record<string, string> = {};
-        if (recurringTemplateIds.length > 0) {
-          const { data: templateRows } = await supabase
-            .from("recurring_expense_templates")
-            .select("id,template_name,created_by")
-            .in("id", recurringTemplateIds);
-          for (const row of (templateRows ?? []) as Array<{
-            id: string | null;
-            template_name: string | null;
-            created_by: string | null;
-          }>) {
-            const name = row.template_name?.trim();
-            if (row.id && name) recurringTemplateNames[row.id] = name;
-            if (row.id && typeof row.created_by === "string") recurringTemplateAuthors[row.id] = row.created_by;
-          }
+        for (const row of (templateRows ?? []) as Array<{
+          id: string | null;
+          template_name: string | null;
+          created_by: string | null;
+        }>) {
+          const name = row.template_name?.trim();
+          if (row.id && name) recurringTemplateNames[row.id] = name;
+          if (row.id && typeof row.created_by === "string") recurringTemplateAuthors[row.id] = row.created_by;
         }
 
         const expenseRecordedByNameByValue: Record<string, string> = {};
@@ -553,42 +923,6 @@ export default async function ProjectPage({
           if (typeof e.id === "string") expensesById.set(e.id, e);
         });
 
-        const { data: expenseLinks } =
-          expenseIds.length > 0
-            ? await supabase
-                .from("document_links")
-                .select("document_id,entity_type,entity_id,created_at")
-                .eq("entity_type", "expense")
-                .in("entity_id", expenseIds)
-            : { data: [] as UnknownRow[] };
-
-        const expenseDocumentIds = Array.from(
-          new Set(
-            (expenseLinks ?? [])
-              .map((row) => (typeof row.document_id === "string" ? row.document_id : null))
-              .filter((value): value is string => Boolean(value))
-          )
-        );
-
-        const { data: expenseDocuments } =
-          expenseDocumentIds.length > 0
-            ? await supabase
-                .from("documents")
-                .select("id,title,file_name,storage_key,uploaded_at,document_type")
-                .in("id", expenseDocumentIds)
-            : { data: [] as UnknownRow[] };
-
-        const expenseDocumentById = new Map<string, UnknownRow>();
-        (expenseDocuments ?? []).forEach((row) => {
-          if (typeof row.id === "string") expenseDocumentById.set(row.id, row);
-        });
-
-        const expenseAttachmentByEntityId = await buildAttachmentsByEntity(
-          supabase,
-          expenseLinks ?? [],
-          expenseDocumentById
-        );
-
         expenseAttachmentByEntityId.forEach((attachment, entityId) => {
           const expense = expensesById.get(entityId);
           if (!expense) return;
@@ -606,7 +940,7 @@ export default async function ProjectPage({
         return {
           salaryAgreements,
           monthlySalaryItems,
-          payslipAccountIds: await payslipAccountIdsPromise,
+          payslipAccountIds,
           expenseList,
           expenseRecordedByNameByValue,
           recurringTemplateNames,
@@ -615,372 +949,19 @@ export default async function ProjectPage({
           expensesError,
         };
       })(),
+      sessionsChainPromise,
+      paymentsChainPromise,
+      projectDocsChainPromise,
       (async () => {
-        const { data: attendanceSessions, error: attendanceSessionsError } = await supabase
-          .from("attendance_sessions")
-          .select("id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id")
-          .eq("project_id", id)
-          .order("clock_in", { ascending: false })
-          .range(0, 99);
-
-        const attendanceSessionIds = Array.from(
-          new Set(
-            (attendanceSessions ?? [])
-              .map((session) => (typeof session.id === "string" ? session.id : null))
-              .filter((value): value is string => Boolean(value))
-          )
-        );
-        // Awaited at the end of this chain — runs alongside the queries below.
-        const sessionAccountIdsPromise = loadWageAccountIds(
-          supabase,
-          "attendance_session_id",
-          attendanceSessionIds
-        );
-
-        // Effective per-session paid status comes from ONE source of truth — the
-        // session_effective_payment_view — which already folds in the rule that a paid
-        // monthly payslip covers all of that month's sessions (so payslip-mode workers'
-        // sessions aren't shown as unpaid). See db/sql/create_session_effective_payment_view.sql.
-        // Tolerant: until that view is deployed, fall back to the raw session debt rows
-        // (same behaviour as before — session workers keep their status).
-        let sessionPaymentRows: Array<Record<string, unknown>> = [];
-        if (attendanceSessionIds.length > 0) {
-          const effectiveResult = await supabase
-            .from("session_effective_payment_view")
-            .select("session_id,paid_amount,owed_amount,payment_status,last_payment_date,due_date")
-            .in("session_id", attendanceSessionIds);
-          if (effectiveResult.error) {
-            const fallback = await supabase
-              .from("worker_debt_items_view")
-              .select("source_id,paid_amount,owed_amount,payment_status,last_payment_date,due_date")
-              .eq("source_type", "session")
-              .in("source_id", attendanceSessionIds);
-            sessionPaymentRows = ((fallback.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
-              ...row,
-              session_id: row.source_id,
-            }));
-          } else {
-            sessionPaymentRows = (effectiveResult.data ?? []) as Array<Record<string, unknown>>;
-          }
-        }
-
-        const sessionDebtById = new Map<string, Record<string, unknown>>();
-        sessionPaymentRows.forEach((row) => {
-          const sessionId = getFirstString(row as UnknownRow, ["session_id"]);
-          if (sessionId) sessionDebtById.set(sessionId, row as Record<string, unknown>);
-        });
-
-        const { data: sessionLinks } =
-          attendanceSessionIds.length > 0
-            ? await supabase
-                .from("document_links")
-                .select("document_id,entity_type,entity_id,created_at")
-                .eq("entity_type", "session")
-                .in("entity_id", attendanceSessionIds)
-            : { data: [] as UnknownRow[] };
-
-        const sessionDocumentIds = Array.from(
-          new Set(
-            (sessionLinks ?? [])
-              .map((row) => (typeof row.document_id === "string" ? row.document_id : null))
-              .filter((value): value is string => Boolean(value))
-          )
-        );
-
-        const { data: sessionDocuments } =
-          sessionDocumentIds.length > 0
-            ? await supabase
-                .from("documents")
-                .select("id,title,file_name,storage_key,uploaded_at,document_type")
-                .in("id", sessionDocumentIds)
-            : { data: [] as UnknownRow[] };
-
-        const sessionDocumentById = new Map<string, UnknownRow>();
-        (sessionDocuments ?? []).forEach((row) => {
-          if (typeof row.id === "string") sessionDocumentById.set(row.id, row);
-        });
-
-        const sessionAttachmentByEntityId = await buildAttachmentsByEntity(
-          supabase,
-          sessionLinks ?? [],
-          sessionDocumentById
-        );
-
-        return {
-          attendanceSessions: (attendanceSessions ?? []) as AttendanceSessionRow[],
-          attendanceSessionsError,
-          sessionDebtById,
-          sessionAttachmentByEntityId,
-          sessionAccountIds: await sessionAccountIdsPromise,
-        };
-      })(),
-      (async () => {
-        const { data: payments, error: paymentsQueryError } = await supabase
-          .from("payments")
-          .select(PAYMENT_SELECT)
-          .eq("project_id", id)
-          .order("payment_date", { ascending: false })
-          .range(0, 99);
-
-        const paymentIds = Array.from(
-          new Set(
-            (payments ?? [])
-              .map((row) => (typeof row.id === "string" ? row.id : null))
-              .filter((value): value is string => Boolean(value))
-          )
-        );
-
-        const paymentAuditResult = await getLatestAuditByRecordIds(supabase, {
-          tableName: "payments",
-          recordIds: paymentIds,
-        });
-
-        const paymentRecordedByValues = Array.from(
-          new Set(
-            (payments ?? [])
-              .map((row) => (typeof row.recorded_by === "string" ? row.recorded_by : null))
-              .filter((value): value is string => Boolean(value))
-          )
-        );
-
-        const [paymentRecordedByIdUsersResult, paymentRecordedByAuthUsersResult] = await Promise.all([
-          paymentRecordedByValues.length > 0
-            ? supabase
-                .from("users")
-                .select("id,auth_user_id,full_name,email")
-                .in("id", paymentRecordedByValues)
-            : Promise.resolve({ data: [] as UnknownRow[], error: null }),
-          paymentRecordedByValues.length > 0
-            ? supabase
-                .from("users")
-                .select("id,auth_user_id,full_name,email")
-                .in("auth_user_id", paymentRecordedByValues)
-            : Promise.resolve({ data: [] as UnknownRow[], error: null }),
-        ]);
-
-        const paymentRecordedByNameByValue: Record<string, string> = {};
-        for (const row of [
-          ...((paymentRecordedByIdUsersResult.data ?? []) as UnknownRow[]),
-          ...((paymentRecordedByAuthUsersResult.data ?? []) as UnknownRow[]),
-        ]) {
-          const displayName = userDisplayName(row);
-          const userId = getFirstString(row, ["id"]);
-          const authUserId = getFirstString(row, ["auth_user_id"]);
-          if (userId) paymentRecordedByNameByValue[userId] = displayName;
-          if (authUserId) paymentRecordedByNameByValue[authUserId] = displayName;
-        }
-
-        const { data: paymentLinks } =
-          paymentIds.length > 0
-            ? await supabase
-                .from("document_links")
-                .select("document_id,entity_type,entity_id,created_at")
-                .eq("entity_type", "payment")
-                .in("entity_id", paymentIds)
-            : { data: [] as UnknownRow[] };
-
-        const paymentDocumentIds = Array.from(
-          new Set(
-            (paymentLinks ?? [])
-              .map((row) => (typeof row.document_id === "string" ? row.document_id : null))
-              .filter((value): value is string => Boolean(value))
-          )
-        );
-
-        const { data: paymentDocuments } =
-          paymentDocumentIds.length > 0
-            ? await supabase
-                .from("documents")
-                .select("id,title,file_name,storage_key,uploaded_at,document_type")
-                .in("id", paymentDocumentIds)
-            : { data: [] as UnknownRow[] };
-
-        const paymentDocumentById = new Map<string, UnknownRow>();
-        (paymentDocuments ?? []).forEach((row) => {
-          if (typeof row.id === "string") paymentDocumentById.set(row.id, row);
-        });
-
-        const paymentAttachmentByEntityId = await buildAttachmentsByEntity(
-          supabase,
-          paymentLinks ?? [],
-          paymentDocumentById
-        );
-
-        const paymentsWithPhotos = (payments ?? []).map((payment) => {
-          const attachments = paymentAttachmentByEntityId.get(payment.id);
-          return attachments
-            ? {
-                ...payment,
-                attachments,
-              }
-            : payment;
-        });
-
-        const paymentsError = paymentsQueryError?.message ?? null;
-
-        const [
-          { data: projectMorningDocuments, error: projectMorningDocumentsError },
-          { data: paymentMorningDocuments, error: paymentMorningDocumentsError },
-        ] = await Promise.all([
-          supabase
-            .from("morning_documents")
-            .select(
-              "id,morning_document_id,morning_document_number,document_type,document_type_label,status,customer_id,order_id,project_id,payment_id,document_id,morning_client_id,amount,currency,morning_url,pdf_url,issued_at,closed_at,notes"
-            )
-            .eq("project_id", id)
-            .order("issued_at", { ascending: false }),
-          paymentIds.length > 0
-            ? supabase
-                .from("morning_documents")
-                .select(
-                  "id,morning_document_id,morning_document_number,document_type,document_type_label,status,customer_id,order_id,project_id,payment_id,document_id,morning_client_id,amount,currency,morning_url,pdf_url,issued_at,closed_at,notes"
-                )
-                .in("payment_id", paymentIds)
-                .order("issued_at", { ascending: false })
-            : Promise.resolve({ data: [], error: null }),
-        ]);
-
-        const morningDocuments = Array.from(
-          new Map(
-            [
-              ...((projectMorningDocuments ?? []) as Record<string, unknown>[]),
-              ...((paymentMorningDocuments ?? []) as Record<string, unknown>[]),
-            ].map((row) => [getFirstString(row, ["id"]) ?? crypto.randomUUID(), row])
-          ).values()
-        ) as MorningLocalDocument[];
-
-        return {
-          payments,
-          paymentsWithPhotos,
-          paymentsError,
-          paymentAuditResult,
-          paymentRecordedByNameByValue,
-          morningDocuments,
-          morningDocumentsError:
-            projectMorningDocumentsError?.message ?? paymentMorningDocumentsError?.message ?? null,
-        };
-      })(),
-      (async () => {
-        const { data: projectDocumentLinks, error: projectDocumentsError } = await supabase
-          .from("document_links")
-          .select("document_id,entity_type,entity_id,created_at")
-          .eq("entity_type", "project")
-          .eq("entity_id", id)
-          .order("created_at", { ascending: false })
-          .range(0, 199);
-
-        const projectDocumentIds = Array.from(
-          new Set(
-            (projectDocumentLinks ?? [])
-              .map((row) => (typeof row.document_id === "string" ? row.document_id : null))
-              .filter((value): value is string => Boolean(value))
-          )
-        );
-
-        const { data: projectDocumentsRaw, error: projectDocumentsReadError } =
-          projectDocumentIds.length > 0
-            ? await supabase
-                .from("documents")
-                .select("id,document_type,title,file_name,storage_key,uploaded_at,uploaded_by")
-                .in("id", projectDocumentIds)
-            : { data: [] as DocumentRow[], error: null };
-
-        const projectDocumentsErrorMessage =
-          projectDocumentsError?.message ?? projectDocumentsReadError?.message ?? null;
-
-        const projectDocumentsById = new Map<string, UnknownRow>();
-        (projectDocumentsRaw ?? []).forEach((row) => {
-          if (typeof row.id === "string") projectDocumentsById.set(row.id, row);
-        });
-
-        const projectDocumentUploadedByValues = Array.from(
-          new Set(
-            ((projectDocumentsRaw ?? []) as DocumentRow[])
-              .map((row) => (typeof row.uploaded_by === "string" ? row.uploaded_by : null))
-              .filter((value): value is string => Boolean(value))
-          )
-        );
-        const projectDocumentUploaderNames = await resolveUserDisplayNamesForValues(
-          supabase,
-          projectDocumentUploadedByValues
-        );
-
-        // Batch every document's signed URL in ONE call instead of one request
-        // per document (this list can run to 200 — was a real N+1).
-        const projectDocumentStorageKeys = Array.from(
-          new Set(
-            ((projectDocumentsRaw ?? []) as DocumentRow[])
-              .map((row) => (typeof row.storage_key === "string" ? row.storage_key : null))
-              .filter((value): value is string => Boolean(value))
-          )
-        );
-        const projectDocumentUrlByStorageKey = new Map<string, string>();
-        if (projectDocumentStorageKeys.length > 0) {
-          const { data: signed } = await supabase.storage
-            .from(DOCUMENTS_BUCKET)
-            .createSignedUrls(projectDocumentStorageKeys, 60 * 60);
-          for (const entry of signed ?? []) {
-            if (entry.path && entry.signedUrl) projectDocumentUrlByStorageKey.set(entry.path, entry.signedUrl);
-          }
-        }
-
-        const projectDocumentsUnique = (projectDocumentLinks ?? []).map((link) => {
-          const documentId = typeof link.document_id === "string" ? link.document_id : null;
-          if (!documentId) return null;
-
-          const row = projectDocumentsById.get(documentId) ?? null;
-          if (!row) return null;
-
-          const storageKey = getFirstString(row, ["storage_key"]);
-          const fileName = getFirstString(row, ["file_name"]);
-          const title = getFirstString(row, ["title"]);
-          const documentType = getFirstString(row, ["document_type"]);
-          const uploadedBy = getFirstString(row, ["uploaded_by"]);
-          const entityType = getFirstString(link, ["entity_type"]);
-          const entityId = getFirstString(link, ["entity_id"]);
-          const uploadedAt =
-            getFirstString(row, ["uploaded_at"]) ?? getFirstString(link, ["created_at"]);
-
-          return {
-            document_id: documentId,
-            storage_key: storageKey,
-            file_name: fileName,
-            title,
-            document_type: documentType,
-            entity_type: entityType,
-            entity_id: entityId,
-            uploaded_at: uploadedAt,
-            uploaded_by_name: uploadedBy ? projectDocumentUploaderNames[uploadedBy] ?? null : null,
-            url: storageKey ? projectDocumentUrlByStorageKey.get(storageKey) ?? null : null,
-          };
-        });
-
-        const normalizedProjectDocuments = projectDocumentsUnique.filter(
-          (
-            document
-          ): document is {
-            document_id: string;
-            storage_key: string | null;
-            file_name: string | null;
-            title: string | null;
-            document_type: string | null;
-            entity_type: string | null;
-            entity_id: string | null;
-            uploaded_at: string | null;
-            uploaded_by_name: string | null;
-            url: string | null;
-          } => Boolean(document)
-        );
-
-        return { normalizedProjectDocuments, projectDocumentsErrorMessage };
-      })(),
-      (async () => {
+        // Straight from customers (not customer_overview_view, which totals the
+        // customer's whole history to answer a contact lookup). The fields are
+        // trimmed and blanks dropped below (cleanField), as the view did.
         const [{ data: customerRow }, { data: branchRow }] = await Promise.all([
           overviewCustomerId
             ? supabase
-                .from("customer_overview_view")
+                .from("customers")
                 .select("phone,email,address,name_for_invoice")
-                .eq("customer_id", overviewCustomerId)
+                .eq("id", overviewCustomerId)
                 .maybeSingle<{
                   phone: string | null;
                   email: string | null;
@@ -998,26 +979,8 @@ export default async function ProjectPage({
         ]);
         return { customerRow, branchRow };
       })(),
-      (async () => {
-        // Per-entity activity timeline (admin only, mirroring /activity access):
-        // this project's own changes plus payments and worker sessions logged
-        // against it.
-        if (profile.role !== "admin" || !overview) return [];
-        return (
-          await getEntityAuditTrail(supabase, [
-            { tableName: "projects", recordId: id },
-            { tableName: "payments", jsonKey: "project_id", value: id },
-            { tableName: "attendance_sessions", jsonKey: "project_id", value: id },
-          ])
-        ).items;
-      })(),
-      // Account names for the תנועות rows — inactive ones too, since an old
-      // row can still point at an account that's since been closed.
-      (async () =>
-        Object.fromEntries((await loadAccounts(supabase)).map((account) => [account.id, account.name])) as Record<
-          string,
-          string
-        >)(),
+      overview ? activityPromise : Promise.resolve([]),
+      accountNamesPromise,
     ]);
 
   const {
@@ -1133,10 +1096,12 @@ export default async function ProjectPage({
     typeof projectDetailsRaw?.due_date === "string" ? projectDetailsRaw.due_date.slice(0, 10) : null;
   const projectPaymentTerms =
     typeof projectDetailsRaw?.payment_terms === "string" ? projectDetailsRaw.payment_terms : null;
+  // The name customer_overview_view gave: the name, else the invoice name,
+  // else "לקוח".
   const customerOptions = ((customers ?? []) as UnknownRow[])
     .map((row) => ({
-      id: typeof row.customer_id === "string" ? row.customer_id : "",
-      label: typeof row.customer_name === "string" ? row.customer_name.trim() : "",
+      id: typeof row.id === "string" ? row.id : "",
+      label: cleanField(getFirstString(row, ["name"])) ?? cleanField(getFirstString(row, ["name_for_invoice"])) ?? "לקוח",
     }))
     .filter((row) => row.id && row.label);
   const managerOptions = ((assignableUsers ?? []) as UnknownRow[])
