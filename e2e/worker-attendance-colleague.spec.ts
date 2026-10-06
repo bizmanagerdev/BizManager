@@ -65,7 +65,7 @@ test.describe("worker role scoping — signing in a colleague's attendance", () 
     }
   });
 
-  test("a worker cannot sign in an admin — RLS makes the admin invisible as a target", async ({ page }) => {
+  test("a worker cannot sign in an admin", async ({ page }) => {
     const signer = await createTestWorker();
     const adminId = await getAdminUserId();
     try {
@@ -75,11 +75,15 @@ test.describe("worker role scoping — signing in a colleague's attendance", () 
       const response = await page.request.post("/api/attendance/phone-reports/manual", {
         data: { user_id: adminId, clock_in: new Date().toISOString() },
       });
-      // users_worker_view_coworkers only lets a worker SELECT other worker/
-      // worker_no_access rows — the route's own lookup of the admin's row
-      // (as the calling worker) returns 0 rows, so this is "not found", not
-      // a permission-denied.
-      expect(response.status()).toBe(404);
+      // The route looks the target up through user_directory(), which lets a
+      // worker see everyone's name and role (it used to read `users`, where
+      // RLS hid the admin entirely and this came back 404). The admin is now
+      // found and refused by role. The RLS insert policy
+      // (phone_attendance_worker_insert: is_payroll_worker(user_id)) would
+      // refuse it independently even if the route didn't.
+      expect(response.status()).toBe(400);
+      const body = (await response.json()) as { error?: string };
+      expect(body.error).toBe("ניתן לבחור רק עובד.");
     } finally {
       await deleteTestWorker(signer);
     }

@@ -14,6 +14,10 @@ import {
 // actions.ts) — no network response to wait on, so these tests poll the DB
 // directly, same pattern as the ProjectStatusPicker test elsewhere in this
 // suite (also a direct-write, no-route case).
+//
+// /financial/loans is now the חובות hub (DebtsHubClient.tsx) and opens on its
+// "debts" tab; the loans list and its "הלוואה חדשה" button live under the
+// "הלוואות" tab, so the tests open ?tab=loans directly.
 test.describe("admin — loans", () => {
   test("admin can create a loan through the dialog", async ({ page }) => {
     test.setTimeout(60_000);
@@ -21,7 +25,7 @@ test.describe("admin — loans", () => {
     let loanId: string | null = null;
     try {
       await loginAs(page, "admin");
-      await page.goto("/financial/loans");
+      await page.goto("/financial/loans?tab=loans");
 
       await page.getByRole("button", { name: "הלוואה חדשה" }).click();
       await page.getByRole("button", { name: "הלוואה שלקחתי" }).click();
@@ -57,7 +61,7 @@ test.describe("admin — loans", () => {
     const loan = await createTestLoan({ amount: 5000 });
     try {
       await loginAs(page, "admin");
-      await page.goto("/financial/loans");
+      await page.goto("/financial/loans?tab=loans");
 
       // /financial/loans lists every loan — scope to this test's own card by
       // its unique (Date.now()-suffixed) lender name.
