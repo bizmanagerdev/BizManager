@@ -81,6 +81,7 @@ const shown = () => screen.queryAllByRole("listitem").map((li) => li.textContent
 
 describe("LocalProjectsPage", () => {
   beforeEach(() => {
+    localStorage.clear(); // a fresh device: nothing stored from the last test
     device.db = newDb();
     nav.replace.mockReset();
     computeLocalCard.mockReset();

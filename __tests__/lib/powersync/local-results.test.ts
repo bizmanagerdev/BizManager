@@ -57,13 +57,13 @@ describe("kept device results", () => {
     const first = vi.fn();
     const stop = watchResult(asDb(db), board, { onData: first, onError: vi.fn() });
     await settle();
-    expect(first).toHaveBeenLastCalledWith({ version: 1 });
+    expect(first).toHaveBeenLastCalledWith({ version: 1 }, expect.any(String));
     stop();
 
     const again = vi.fn();
     const stopAgain = watchResult(asDb(db), board, { onData: again, onError: vi.fn() });
     // Synchronously, before any new work.
-    expect(again).toHaveBeenCalledWith({ version: 1 });
+    expect(again).toHaveBeenCalledWith({ version: 1 }, expect.any(String));
     stopAgain(); // closed before its quiet check runs
     expect(peekResult(asDb(db), resultKey(board))).toEqual({ data: { version: 1 } });
     // Another database (someone else signed in) never sees it.
@@ -86,7 +86,7 @@ describe("kept device results", () => {
     db.change("tasks"); // a burst: one redo
     await sleep(400);
     expect(computeLocalCard.mock.calls.length).toBe(callsBefore + 1);
-    expect(onData).toHaveBeenLastCalledWith({ version: callsBefore + 1 });
+    expect(onData).toHaveBeenLastCalledWith({ version: callsBefore + 1 }, expect.any(String));
   });
 
   it("the usual views are prepared in the background, then handed over without new work", async () => {
@@ -110,5 +110,19 @@ describe("kept device results", () => {
     await settle();
     expect(onError).toHaveBeenCalledWith("no-data", expect.anything());
     expect(computeLocalCard).not.toHaveBeenCalled();
+  });
+
+  it("a result that comes out the same isn't handed on again (nothing to redraw)", async () => {
+    computeLocalCard.mockImplementation(async () => ({ items: ["t1"] }));
+    const db = fakeDb();
+    const onData = vi.fn();
+    watchResult(asDb(db), board, { onData, onError: vi.fn() });
+    await settle();
+    expect(onData).toHaveBeenCalledTimes(1);
+
+    db.change("tasks"); // redone — but the same
+    await sleep(400);
+    expect(computeLocalCard).toHaveBeenCalledTimes(2);
+    expect(onData).toHaveBeenCalledTimes(1);
   });
 });

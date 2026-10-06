@@ -28,6 +28,7 @@ import { fetchMyAvatarColor } from "@/lib/profile/selfSettings";
 import { cn } from "@/lib/utils";
 import { wipeLocalDataBeforeLogout } from "@/lib/powersync/store";
 import { clearRememberedCards } from "@/lib/ui/remembered-cards";
+import { clearStoredResults } from "@/lib/powersync/stored-results";
 import { LocalSyncStatusLine } from "@/components/powersync/LocalSyncStatusLine";
 import { t } from "@/lib/i18n/t";
 import { topbarDict } from "@/lib/i18n/dictionaries/topbar";
@@ -543,12 +544,13 @@ export function TopBar({
             action="/api/auth/logout"
             method="post"
             onSubmit={(event) => {
-              // Remove this person's on-device copy and remembered dashboard
-              // cards before the session ends (never holds logout up for more
-              // than a few seconds).
+              // Remove this person's on-device copy, its stored page results
+              // and the remembered dashboard cards before the session ends
+              // (never holds logout up for more than a few seconds).
               event.preventDefault();
               const form = event.currentTarget;
               clearRememberedCards();
+              clearStoredResults();
               void wipeLocalDataBeforeLogout().then(() => form.submit());
             }}
           >

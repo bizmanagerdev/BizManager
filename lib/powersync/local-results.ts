@@ -2,6 +2,7 @@ import type { CommonPowerSyncDatabase } from "@powersync/web";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LocalCardKind, LocalCardViewer } from "./dashboard-local";
 import type { LocalReader } from "./local-supabase";
+import { storeResult } from "./stored-results";
 
 // The device versions' results, kept and kept current — so a page drawn from
 // the on-device copy is there the moment it's opened, instead of being worked
@@ -15,6 +16,9 @@ import type { LocalReader } from "./local-supabase";
 //   kept ready in the background (warmResults — the four pages' usual views).
 // - Each table is read from the device database once per change, not once per
 //   query (the versioned reader; see loadTable in local-supabase.ts).
+// - What's on screen and the background pages are also stored on the device
+//   (stored-results.ts), so the next time the app opens they show before the
+//   device database is even open.
 //
 // All of it reads the device's own copy: no request reaches the server.
 
@@ -50,7 +54,8 @@ export function resultKey({ kind, viewer, filters }: ResultSpec): string {
 }
 
 export type ResultListener = {
-  onData: (data: unknown) => void;
+  /** A new result (`json`: the same, serialised — to compare with a stored copy). */
+  onData: (data: unknown, json: string) => void;
   /** "no-data": the copy holds nothing yet (the sync rules aren't deployed). */
   onError: (reason: "no-data" | "error", error?: unknown) => void;
 };
@@ -60,6 +65,8 @@ class NoDataError extends Error {}
 type Entry = {
   spec: ResultSpec;
   data: unknown;
+  /** `data` serialised: a result that comes out the same isn't handed on again. */
+  json: string;
   hasData: boolean;
   /** Bumped whenever a table it reads changes; `doneAt` is the count its data reflects. */
   dirty: number;
@@ -71,6 +78,9 @@ type Entry = {
   /** The tables it reads (LOCAL_CARD_TABLES), known once the code is loaded. */
   tables: string[] | null;
   timer: ReturnType<typeof setTimeout> | null;
+  /** When it was last stored on the device, and a store waiting its turn. */
+  storedAt: number;
+  storeTimer: ReturnType<typeof setTimeout> | null;
 };
 
 type Engine = {
@@ -90,6 +100,8 @@ type Engine = {
 const ON_SCREEN_DELAY_MS = 300;
 /** Kept results for lists nobody is looking at (filters visited earlier). */
 const MAX_IDLE_ENTRIES = 60;
+/** A result is stored on the device at most this often (it can change every second). */
+const STORE_EVERY_MS = 5000;
 
 let engine: Engine | null = null;
 
@@ -179,6 +191,20 @@ async function drainIdle(e: Engine) {
   }
 }
 
+/** Store what's on screen or kept ready in the background — throttled, in an idle moment. */
+function storeLater(entry: Entry) {
+  if (entry.storeTimer) return;
+  const wait = Math.max(0, entry.storedAt + STORE_EVERY_MS - Date.now());
+  entry.storeTimer = setTimeout(() => {
+    requestIdle(() => {
+      entry.storeTimer = null;
+      if (!entry.hasData || (entry.listeners.size === 0 && entry.background === 0)) return;
+      entry.storedAt = Date.now();
+      storeResult(resultKey(entry.spec), entry.data, entry.json);
+    });
+  }, wait);
+}
+
 function deviceHasPeople(e: Engine): Promise<boolean> {
   e.hasPeople ??= e.db
     .get<{ n: number }>("SELECT count(*) AS n FROM users")
@@ -201,10 +227,17 @@ function run(e: Engine, entry: Entry): Promise<void> {
       const [{ computeLocalCard, LOCAL_CARD_TABLES }, { createLocalSupabase }] = await loadLocalDataCode();
       entry.tables ??= LOCAL_CARD_TABLES[entry.spec.kind];
       const data = await computeLocalCard(createLocalSupabase(e.reader), entry.spec.kind, entry.spec.viewer, entry.spec.filters);
-      entry.data = data;
-      entry.hasData = true;
+      const json = JSON.stringify(data);
       entry.doneAt = target;
-      for (const listener of entry.listeners) listener.onData(data);
+      // The same as before (a quiet check, a change that didn't touch it):
+      // nothing to redraw, nothing to store.
+      if (!entry.hasData || json !== entry.json) {
+        entry.data = data;
+        entry.json = json;
+        entry.hasData = true;
+        for (const listener of entry.listeners) listener.onData(data, json);
+        if (entry.listeners.size > 0 || entry.background > 0) storeLater(entry);
+      }
     } catch (error) {
       // Not tried again until something changes (or it's opened again).
       entry.doneAt = target;
@@ -229,6 +262,7 @@ function entryFor(e: Engine, spec: ResultSpec): Entry {
     entry = {
       spec,
       data: undefined,
+      json: "",
       hasData: false,
       dirty: 1,
       doneAt: 0,
@@ -237,6 +271,8 @@ function entryFor(e: Engine, spec: ResultSpec): Entry {
       background: 0,
       tables: null,
       timer: null,
+      storedAt: 0,
+      storeTimer: null,
     };
   }
   e.entries.set(key, entry);
@@ -271,7 +307,7 @@ export function watchResult(db: CommonPowerSyncDatabase, spec: ResultSpec, liste
   const e = engineFor(db);
   const entry = entryFor(e, spec);
   entry.listeners.add(listener);
-  if (entry.hasData) listener.onData(entry.data);
+  if (entry.hasData) listener.onData(entry.data, entry.json);
   if (!entry.hasData || entry.dirty !== entry.doneAt) {
     void run(e, entry);
   } else {

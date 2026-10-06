@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { closeLocalDatabase, openLocalDatabase } from "@/lib/powersync/database";
 import { registerLocalDataWipe } from "@/lib/powersync/store";
+import { clearStoredResults } from "@/lib/powersync/stored-results";
 import { withSentry } from "@/lib/sentry-lazy";
 import type { LocalCardViewer } from "@/lib/powersync/dashboard-local";
 import LocalPagesWarmup from "@/components/powersync/LocalPagesWarmup";
@@ -18,7 +19,15 @@ import LocalPagesWarmup from "@/components/powersync/LocalPagesWarmup";
 // - signed out (here or in another tab): wipe.
 // With the signed-in person's details (`viewer`), it also keeps their
 // device-version pages ready in the background (LocalPagesWarmup).
+// The page results stored on the device (lib/powersync/stored-results.ts) go
+// with the copy: wiped at logout, and anyone else's dropped when this person
+// is signed in.
 export default function LocalDataHost({ viewer }: { viewer?: LocalCardViewer }) {
+  const viewerId = viewer?.userId;
+  useEffect(() => {
+    if (viewerId) clearStoredResults(viewerId);
+  }, [viewerId]);
+
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
     let cancelled = false;
@@ -37,13 +46,17 @@ export default function LocalDataHost({ viewer }: { viewer?: LocalCardViewer }) 
 
     const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_OUT") {
+        clearStoredResults();
         void closeLocalDatabase({ wipe: true });
       } else if (event === "SIGNED_IN" && session?.user.id) {
         void open(session.user.id);
       }
     });
 
-    registerLocalDataWipe(() => closeLocalDatabase({ wipe: true }));
+    registerLocalDataWipe(() => {
+      clearStoredResults();
+      return closeLocalDatabase({ wipe: true });
+    });
 
     return () => {
       cancelled = true;

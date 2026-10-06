@@ -40,6 +40,12 @@ vi.mock("@/app/(app)/sales/SalesHeader", () => ({
   default: (props: { counts: { closed: number } }) => <div>closed: {props.counts.closed}</div>,
 }));
 vi.mock("@/app/(app)/sales/SalesDeliveriesQueue", () => ({ default: () => null }));
+vi.mock("@/app/(app)/sales/PriceListClient", () => ({
+  default: (props: { initialProducts: Array<{ name: string }> }) => <div>price list: {props.initialProducts.map((p) => p.name).join(",")}</div>,
+}));
+vi.mock("@/app/(app)/sales/SalesInventoryClient", () => ({
+  default: (props: { initialItems: Array<{ productId: string }> }) => <div>stock: {props.initialItems.map((i) => i.productId).join(",")}</div>,
+}));
 vi.mock("@/app/(app)/sales/SalesOrdersClient", async () => {
   const { useLocalListPager } = await import("@/components/powersync/LocalListPager");
   const { useState } = await import("react");
@@ -83,6 +89,7 @@ const shown = () => screen.queryAllByRole("listitem").map((li) => li.textContent
 
 describe("LocalSalesPage", () => {
   beforeEach(() => {
+    localStorage.clear(); // a fresh device: nothing stored from the last test
     device.db = newDb();
     nav.replace.mockReset();
     computeLocalCard.mockReset();
@@ -113,5 +120,25 @@ describe("LocalSalesPage", () => {
     computeLocalCard.mockRejectedValue(new Error("boom"));
     render(<LocalSalesPage {...props} />);
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/sales?tab=closed&data=server"));
+  });
+
+  it("price list → stock (same filters, other list): never shows one tab's data as the other's", async () => {
+    let finishStock: (value: unknown) => void = () => {};
+    computeLocalCard.mockImplementation((_local, kind, _viewer, filters) => {
+      if (kind === "salesCounts") return Promise.resolve({ filters, counts });
+      if (kind === "salesPriceList") return Promise.resolve({ filters, products: [{ name: "כיסא" }], categories: [], hasMore: false });
+      return new Promise((resolve) => (finishStock = resolve));
+    });
+    const priceList = { ...props, activeTab: "price-list" as const, tabsSearchParams: { tab: "price-list" } };
+    const { rerender } = render(<LocalSalesPage {...priceList} />);
+    expect(await screen.findByText("price list: כיסא")).toBeTruthy();
+
+    rerender(<LocalSalesPage {...priceList} activeTab="inventory" tabsSearchParams={{ tab: "inventory" }} />);
+    expect(screen.queryByText(/price list/)).toBeNull();
+    expect(screen.queryByText(/stock/)).toBeNull();
+
+    await waitFor(() => expect(computeLocalCard).toHaveBeenCalledWith(expect.anything(), "salesInventory", expect.anything(), expect.anything()));
+    await act(async () => finishStock({ filters: { q: "", category: "" }, items: [{ productId: "p1" }], movements: [], orderCustomerById: {}, performerNameById: {}, hasMore: false }));
+    expect(await screen.findByText("stock: p1")).toBeTruthy();
   });
 });

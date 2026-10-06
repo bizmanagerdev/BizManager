@@ -105,8 +105,8 @@ export default function LocalSalesPage({
     [db, kind, filtersKey]
   );
 
-  // The tab just switched: what's here is still the previous tab's list.
-  const tabData = tab && JSON.stringify((tab.data as { filters?: unknown }).filters) === filtersKey ? tab.data : null;
+  // The tab or its filters just changed: what's here is still the previous list.
+  const tabData = tab && tab.filtersKey === filtersKey ? tab.data : null;
   if (!tabData || !counts) return <SalesSkeleton />;
 
   let content: ReactNode = null;

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { useLocalDatabase, useLocalSyncStatus } from "@/lib/powersync/store";
 import { peekResult, resultKey, watchResult } from "@/lib/powersync/local-results";
+import { parseStoredResult, readStoredResultRaw, storedResultJson } from "@/lib/powersync/stored-results";
 import { withSentry } from "@/lib/sentry-lazy";
 import type { LocalCardKind, LocalCardViewer, LocalDashboardCards } from "@/lib/powersync/dashboard-local";
 
@@ -11,7 +12,9 @@ import type { LocalCardKind, LocalCardViewer, LocalDashboardCards } from "@/lib/
 // the server's own loader (lib/powersync/dashboard-local.ts). Kept and kept
 // current by lib/powersync/local-results.ts: a part this device has worked out
 // before (opened earlier, or prepared in the background) shows at once, and
-// updates by itself whenever a table it reads changes.
+// updates by itself whenever a table it reads changes. Right after the app
+// opens — before the device database is ready — the last result stored on the
+// device shows meanwhile (lib/powersync/stored-results.ts).
 //
 // If this device's copy can't serve it — not downloaded yet, the sync rules
 // not deployed, or an error — the page reloads as the server version
@@ -36,6 +39,8 @@ function fallBackToServer(router: ReturnType<typeof useRouter>, page: string, hr
   }
   router.replace(href);
 }
+
+const neverChanges = () => () => {};
 
 export type LocalCardResult<K extends LocalCardKind> = {
   data: LocalDashboardCards[K];
@@ -66,15 +71,30 @@ export function useLocalCard<K extends LocalCardKind>({
   const filtersKey = JSON.stringify(filters ?? null);
   const key = resultKey({ kind, viewer, filters });
 
-  // What this device already holds for it shows on the very first paint.
-  const [result, setResult] = useState<LocalCardResult<K> | null>(() => {
+  // The last result the device worked out (this kind only — another list's
+  // data never stands in for this one).
+  const [result, setResult] = useState<(LocalCardResult<K> & { key: string; kind: K }) | null>(() => {
     const kept = peekResult(db, key);
-    return kept ? { data: kept.data as LocalDashboardCards[K], filtersKey } : null;
+    return kept ? { data: kept.data as LocalDashboardCards[K], filtersKey, key, kind } : null;
   });
-  // Other filters than the result held: the kept result for them, if any —
-  // otherwise the previous one for a moment (callers can narrow it).
-  const kept = result?.filtersKey === filtersKey ? null : peekResult(db, key);
-  const shown: LocalCardResult<K> | null = kept ? { data: kept.data as LocalDashboardCards[K], filtersKey } : result;
+  // For exactly this part: the device's result, or what it already holds for it.
+  const keptNow = result?.key === key ? null : peekResult(db, key);
+  const current: LocalCardResult<K> | null =
+    result?.key === key ? result : keptNow ? { data: keptNow.data as LocalDashboardCards[K], filtersKey } : null;
+  // Before the device has it (the app just opened): the copy stored on the
+  // device last time. Read on the client only, so the server's HTML matches.
+  const storedRaw = useSyncExternalStore(neverChanges, () => readStoredResultRaw(key), () => null);
+  const stored = useMemo(() => parseStoredResult(storedRaw), [storedRaw]);
+  // Read by the watch below without restarting it when the stored copy changes.
+  const storedRef = useRef({ raw: storedRaw, parsed: stored });
+  useEffect(() => {
+    storedRef.current = { raw: storedRaw, parsed: stored };
+  }, [storedRaw, stored]);
+  const shown: LocalCardResult<K> | null =
+    current ??
+    (stored ? { data: stored.data as LocalDashboardCards[K], filtersKey } : null) ??
+    // Other filters, same list: the previous result for a moment (callers can narrow it).
+    (result?.kind === kind ? result : null);
 
   // Read through a ref: a change of URL that isn't a change of filters
   // (?task=…) mustn't start the work over.
@@ -83,11 +103,12 @@ export function useLocalCard<K extends LocalCardKind>({
     serverHrefRef.current = serverHref;
   }, [serverHref]);
 
-  // Not ready in time → the server version. A page that already fell back
-  // this session goes straight there while the copy still isn't ready.
-  const showing = shown !== null;
+  // The device hasn't answered for this part in time → the server version
+  // (even with a stored copy on screen). A page that already fell back this
+  // session goes straight there while the copy still isn't ready.
+  const answered = current !== null;
   useEffect(() => {
-    if (showing) return;
+    if (answered) return;
     if (fellBack.has(page) && !ready) {
       router.replace(serverHrefRef.current);
       return;
@@ -97,7 +118,7 @@ export function useLocalCard<K extends LocalCardKind>({
       FALLBACK_AFTER_MS
     );
     return () => clearTimeout(timer);
-  }, [showing, ready, router, page]);
+  }, [answered, ready, router, page]);
 
   const { userId, role, locale } = viewer;
   useEffect(() => {
@@ -107,7 +128,15 @@ export function useLocalCard<K extends LocalCardKind>({
       db,
       { kind, viewer: { userId, role, locale }, filters: cardFilters },
       {
-        onData: (data) => setResult({ data: data as LocalDashboardCards[K], filtersKey }),
+        onData: (data, json) =>
+          setResult((prev) => {
+            // Handed the same result again: keep it, so nothing redraws.
+            if (prev?.key === key && prev.data === data) return prev;
+            // The first answer equals the stored copy on screen: keep that copy.
+            const copy = storedRef.current;
+            const same = prev?.key !== key && copy.parsed !== null && storedResultJson(copy.raw) === json;
+            return { data: (same ? copy.parsed?.data : data) as LocalDashboardCards[K], filtersKey, key, kind };
+          }),
         onError: (reason, error) => {
           if (reason === "error") {
             withSentry((Sentry) =>
@@ -118,7 +147,7 @@ export function useLocalCard<K extends LocalCardKind>({
         },
       }
     );
-  }, [db, ready, kind, userId, role, locale, filtersKey, router, page]);
+  }, [db, ready, kind, userId, role, locale, filtersKey, key, router, page]);
 
   return shown;
 }

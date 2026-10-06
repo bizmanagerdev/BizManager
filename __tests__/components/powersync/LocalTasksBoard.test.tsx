@@ -49,6 +49,8 @@ vi.mock("@/app/(app)/tasks/TasksPageClient", () => ({
 }));
 
 import LocalTasksBoard from "@/app/(app)/tasks/LocalTasksBoard";
+import { resultKey } from "@/lib/powersync/local-results";
+import { storeResult } from "@/lib/powersync/stored-results";
 
 const viewer = { userId: "me", role: "admin", locale: "he" as const };
 const allFilters = { q: "", priority: "", domain: "", linkedId: "", scope: "all" as const };
@@ -66,6 +68,7 @@ const flush = () => act(async () => {});
 
 describe("LocalTasksBoard", () => {
   beforeEach(() => {
+    localStorage.clear(); // a fresh device: nothing stored from the last test
     nav.replace.mockReset();
     nav.search = "scope=all";
     computeLocalCard.mockReset();
@@ -143,5 +146,19 @@ describe("LocalTasksBoard", () => {
     await flush();
     expect(nav.replace).toHaveBeenCalledWith("/tasks?scope=all&data=server");
     expect(shown()).toEqual([]);
+  });
+
+  it("right after the app opens, the board stored last time shows before the device database is ready", async () => {
+    localStorage.clear();
+    storeResult(resultKey({ kind: "tasksBoard", viewer, filters: allFilters }), {
+      filters: allFilters,
+      items: [task("t9", "high")],
+      options,
+    });
+    device.db = null; // not open yet
+    render(<LocalTasksBoard viewer={viewer} filters={allFilters} canSeeAll />);
+    expect(shown()).toEqual(["t9"]);
+    expect(computeLocalCard).not.toHaveBeenCalled();
+    localStorage.clear();
   });
 });
