@@ -98,7 +98,7 @@ export async function runDashboardShadow(
   const results: ShadowResult[] = [];
   for (const card of Object.keys(snapshot.cards) as LocalCardKind[]) {
     try {
-      const filters = card === "projectsList" ? snapshot.cards.projectsList?.filters : undefined;
+      const filters = (snapshot.cards[card] as { filters?: unknown } | undefined)?.filters;
       const { value, ms } = await timed(() => computeLocalCard(local, card, viewer, filters));
       results.push(compare(card, snapshot.cards[card], value, ms));
     } catch (error) {

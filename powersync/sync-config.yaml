@@ -1,4 +1,4 @@
-# BizManager — PowerSync Sync Streams, foundation v1.2 (2026-10-06).
+# BizManager — PowerSync Sync Streams, foundation v1.3 (2026-10-06).
 #
 # Every stream is for admins and office only: the signed-in person's role is
 # looked up in public.users by their Supabase login id (users.id differs from
@@ -92,5 +92,8 @@ streams:
       - SELECT salary_agreements.* FROM salary_agreements, staff_gate AS bucket
       - SELECT worker_payments.* FROM worker_payments, staff_gate AS bucket
       - SELECT worker_payment_allocations.* FROM worker_payment_allocations, staff_gate AS bucket
+      # The sales tabs' stock movements and product categories.
+      - SELECT inventory_movements.* FROM inventory_movements, staff_gate AS bucket
+      - SELECT product_categories.* FROM product_categories, staff_gate AS bucket
       # Temporary: the connection check's live test row.
       - SELECT powersync_probe.* FROM powersync_probe, staff_gate AS bucket

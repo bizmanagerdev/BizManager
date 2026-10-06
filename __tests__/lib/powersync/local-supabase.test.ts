@@ -3,6 +3,8 @@ import { coerceRow, createLocalSupabase, normalizeTimestamp, type LocalReader } 
 import { getPropertiesSummary } from "@/lib/properties";
 import { getMyTasks } from "@/lib/dashboard/tasks-overview";
 import { loadProjectsPage } from "@/app/(app)/projects/loadProjects";
+import { loadOrdersPage } from "@/app/(app)/sales/loadOrders";
+import { loadPriceListPage } from "@/app/(app)/sales/loadProducts";
 
 // The on-device stand-in for the Supabase client: the server's loaders run
 // against it unchanged, so it has to answer exactly like PostgREST — values
@@ -456,5 +458,77 @@ describe("the money views, worked out on the device", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("the sales tabs, worked out on the device", () => {
+  const tables = {
+    customers: [
+      { id: "c1", name: "  ", name_for_invoice: "חברה", phone: "050", email: null, address: "חיפה|הרצל 1" },
+    ],
+    users: [{ id: "u1", full_name: "מנהל", email: "a@b.c" }],
+    customer_branches: [],
+    orders: [
+      { id: "o1", customer_id: "c1", created_by: "u1", branch_id: null, status: "confirmed", order_date: "2026-10-05T08:00:00.000000", created_at: "2026-10-05T08:00:00.000000", total_amount: "100", discount_amount: "0", notes: null, needs_invoice: 1, invoice_sent_at: null, delivery_confirmed_at: null },
+      { id: "o2", customer_id: "c1", created_by: "u1", branch_id: null, status: "delivered", order_date: "2026-10-04T08:00:00.000000", created_at: "2026-10-04T08:00:00.000000", total_amount: "50", discount_amount: "0", notes: null, needs_invoice: 0, invoice_sent_at: null, delivery_confirmed_at: null },
+    ],
+    payments: [
+      { id: "p1", order_id: "o1", amount_total: "40", payment_status: "cleared", due_date: null },
+      { id: "p2", order_id: "o1", amount_total: "60", payment_status: "pending", due_date: "2026-10-01" },
+    ],
+    order_items: [],
+    products: [
+      { id: "pr1", name: "כיסא", sku: "S1", barcode: null, description: null, base_price: "10", base_cost: "5", active: 1, category_id: "cat1", low_stock_threshold: "2" },
+    ],
+    inventory: [{ id: "pr1", product_id: "pr1", quantity_on_hand: "7", quantity_reserved: "1", updated_at: "2026-10-05T08:00:00.000000" }],
+    inventory_movements: [
+      { id: "m1", product_id: "pr1", movement_type: "in", quantity: "10", source_type: "purchase", notes: null },
+      { id: "m2", product_id: "pr1", movement_type: "out", quantity: "4", source_type: "order", notes: null },
+      { id: "m3", product_id: "pr1", movement_type: "in", quantity: "1", source_type: "manual_adjustment", notes: "החזרת לקוח - פגום" },
+    ],
+    product_categories: [{ id: "cat1", name: "ריהוט", active: 1 }],
+  };
+
+  it("order_overview_view: names, money and payment status per order", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-06T09:00:00Z"));
+    try {
+      const db = createLocalSupabase(fakeReader(tables));
+      const { data } = await db.from("order_overview_view").select("order_id,customer_name,customer_city,total_paid,pending_amount,overdue_amount,remaining_balance,payment_status,created_by_name,needs_invoice").eq("order_id", "o1").maybeSingle();
+      expect(data).toEqual({
+        order_id: "o1",
+        customer_name: "חברה",
+        customer_city: "חיפה",
+        total_paid: 40,
+        pending_amount: 60,
+        overdue_amount: 60,
+        remaining_balance: 60,
+        payment_status: "partial",
+        created_by_name: "מנהל",
+        needs_invoice: true,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("the orders tab loader: open orders only, newest first", async () => {
+    const db = createLocalSupabase(fakeReader(tables));
+    const result = await loadOrdersPage(db, {
+      page: 1,
+      filters: { tab: "orders", customerId: null, q: "", paymentStatus: "all", invoice: "all" },
+    });
+    expect(result.error).toBeNull();
+    expect(result.rows.map((r) => r.order_id ?? r.id)).toEqual(["o1"]);
+  });
+
+  it("the price list loader: stock, purchased and sold (net of customer returns)", async () => {
+    const db = createLocalSupabase(fakeReader(tables));
+    const result = await loadPriceListPage(db, { page: 1, filters: { q: "", category: "" } });
+    expect(result.error).toBeNull();
+    expect(result.categories).toEqual([expect.objectContaining({ id: "cat1", name: "ריהוט" })]);
+    expect(result.products).toEqual([
+      expect.objectContaining({ id: "pr1", name: "כיסא", stock: 7, purchasedAmount: 11, soldAmount: 3, unitPrice: 10 }),
+    ]);
   });
 });

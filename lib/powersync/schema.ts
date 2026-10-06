@@ -493,6 +493,24 @@ const worker_payment_allocations = new Table(
   { indexes: { by_payment: ["worker_payment_id"] } }
 );
 
+// Stock movements and product categories (the sales tabs: price list, stock).
+
+const inventory_movements = new Table(
+  {
+    product_id: text,
+    movement_type: text,
+    quantity: text,
+    source_type: text,
+    source_id: text,
+    performed_by: text,
+    notes: text,
+    created_at: text,
+  },
+  { indexes: { by_product: ["product_id"], by_created: ["created_at"] } }
+);
+
+const product_categories = new Table({ name: text, active: int });
+
 /** TEMPORARY: the connection check's live test row. */
 const powersync_probe = new Table({ note: text, created_at: text });
 
@@ -521,6 +539,8 @@ export const AppSchema = new Schema({
   salary_agreements,
   worker_payments,
   worker_payment_allocations,
+  inventory_movements,
+  product_categories,
   powersync_probe,
 });
 

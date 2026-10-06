@@ -12,6 +12,10 @@ import { DELIVERY_REGIONS } from "@/lib/ui/cities";
 import { loadOrdersPage } from "@/app/(app)/sales/loadOrders";
 import { loadPriceListPage, loadInventoryListPage } from "@/app/(app)/sales/loadProducts";
 import { loadDeliveriesPage } from "@/app/(app)/sales/loadDeliveries";
+import DashboardLocalShadow from "@/components/powersync/DashboardLocalShadow";
+import type { DashboardShadowCards } from "@/lib/powersync/dashboard-shadow";
+import { LOCAL_DATA_SHADOW, localDataEnabledFor } from "@/lib/powersync/config";
+import { israelDateKey } from "@/lib/timezone";
 
 const SalesInventoryClient = dynamic(() => import("@/app/(app)/sales/SalesInventoryClient"), {
   loading: () => <DetailPageSkeleton />,
@@ -231,9 +235,23 @@ export default async function SalesPage({
   } as const;
 
   let content: ReactNode = null;
+  // The device-copy shadow check for the open tab (lib/powersync/dashboard-shadow.ts) —
+  // not for searches, which also read tables the device doesn't hold.
+  let shadowCards: DashboardShadowCards | null = null;
+  let shadowReadAt = 0; // the open tab's read time (set with shadowCards)
 
   if (ordersPromise) {
     const { rows: ordersWithDue, totalCount, hasMore, error, loadedAt } = await ordersPromise;
+    if (!error && (activeTab === "orders" || activeTab === "closed")) {
+      shadowReadAt = loadedAt;
+      shadowCards = {
+        salesOrders: {
+          filters: { tab: activeTab, customerId, q: searchQuery, paymentStatus: paymentStatusFilter, invoice: invoiceFilter },
+          rows: ordersWithDue,
+          hasMore,
+        },
+      };
+    }
 
     content = error ? (
       <p className="text-sm text-destructive">שגיאה בטעינת הזמנות: {error}</p>
@@ -257,6 +275,10 @@ export default async function SalesPage({
 
   if (priceListPromise) {
     const { products, categories, totalCount, hasMore, error: loadError, loadedAt } = await priceListPromise;
+    if (!loadError) {
+      shadowReadAt = loadedAt;
+      shadowCards = { salesPriceList: { filters: { q: searchQuery, category: categoryFilter }, products, categories, hasMore } };
+    }
 
     content = loadError ? (
       <p className="text-sm text-destructive">שגיאה בטעינת מחירון: {loadError}</p>
@@ -284,6 +306,19 @@ export default async function SalesPage({
       error: loadError,
       loadedAt,
     } = await inventoryPromise;
+    if (!loadError) {
+      shadowReadAt = loadedAt;
+      shadowCards = {
+        salesInventory: {
+          filters: { q: searchQuery, category: categoryFilter },
+          items,
+          movements,
+          orderCustomerById,
+          performerNameById,
+          hasMore,
+        },
+      };
+    }
 
     content = loadError ? (
       <p className="text-sm text-destructive">שגיאה בטעינת מלאי: {loadError}</p>
@@ -304,6 +339,10 @@ export default async function SalesPage({
 
   if (deliveriesPromise) {
     const { deliveries, totalCount, hasMore, error: loadError, loadedAt } = await deliveriesPromise;
+    if (!loadError) {
+      shadowReadAt = loadedAt;
+      shadowCards = { salesDeliveries: { filters: { customerId }, deliveries, hasMore } };
+    }
 
     const regionLinks = [
       { label: "הכל", value: null },
@@ -353,6 +392,18 @@ export default async function SalesPage({
           </div>
         </div>
         {content}
+        {shadowCards && !searchQuery && LOCAL_DATA_SHADOW.sales && localDataEnabledFor(profile.role) ? (
+          <DashboardLocalShadow
+            snapshot={{
+              renderedAt: new Date(shadowReadAt).toISOString(),
+              userId: profile.id,
+              role: profile.role ?? "",
+              locale: profile.locale,
+              todayIso: israelDateKey(),
+              cards: shadowCards,
+            }}
+          />
+        ) : null}
       </div>
     </AppShell>
   );

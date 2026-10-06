@@ -33,6 +33,7 @@ const BOOLEAN_COLUMNS: Record<string, readonly string[]> = {
   attendance_sessions: ["is_billable_to_customer"],
   project_expenses: ["included_in_base_price", "billed_to_customer"],
   salary_agreements: ["is_billable_to_customer"],
+  product_categories: ["active"],
 };
 
 const NUMERIC_COLUMNS: Record<string, readonly string[]> = {
@@ -51,6 +52,7 @@ const NUMERIC_COLUMNS: Record<string, readonly string[]> = {
   salary_agreements: ["hourly_rate", "monthly_salary", "overtime_rate", "standard_daily_hours", "bill_to_customer_amount"],
   worker_payment_allocations: ["amount"],
   worker_payments: ["amount"],
+  inventory_movements: ["quantity"],
 };
 
 const JSON_COLUMNS: Record<string, readonly string[]> = {
@@ -85,6 +87,8 @@ const LOCAL_TABLES = new Set([
   "salary_agreements",
   "worker_payments",
   "worker_payment_allocations",
+  "inventory_movements",
+  "product_categories",
 ]);
 
 /**
@@ -742,6 +746,80 @@ const VIEWS: Record<string, SourceLoader> = {
 
   worker_debt_items_view: (reader) => workerDebtItems(reader),
   project_financials_view: (reader) => projectFinancials(reader),
+
+  // order_overview_view: each order with its customer, branch, who made it,
+  // and its money (collected = cleared or unknown payments; pending; overdue
+  // = pending and due by today; the balance never below zero).
+  order_overview_view: async (reader) => {
+    const [orders, customers, users, branches, payments] = await Promise.all([
+      loadTable(reader, "orders"),
+      loadTable(reader, "customers"),
+      loadTable(reader, "users"),
+      loadTable(reader, "customer_branches"),
+      loadTable(reader, "payments"),
+    ]);
+    const today = utcToday();
+    const customerById = new Map(customers.map((c) => [c.id, c]));
+    const userById = new Map(users.map((u) => [u.id, u]));
+    const branchById = new Map(branches.map((b) => [b.id, b]));
+    const paymentsByOrder = groupBy(
+      payments.filter((p) => p.order_id != null),
+      (p) => p.order_id
+    );
+    return orders.map((o) => {
+      const c = customerById.get(o.customer_id) ?? {};
+      const u = o.created_by ? userById.get(o.created_by) ?? {} : {};
+      const cb = o.branch_id ? branchById.get(o.branch_id) ?? {} : {};
+      const list = paymentsByOrder.get(o.id) ?? [];
+      const collected = clean(
+        list.reduce((t, p) => t + (["pending", "rejected"].includes(String(p.payment_status ?? "cleared")) ? 0 : num(p.amount_total)), 0)
+      );
+      const pending = clean(list.reduce((t, p) => t + (p.payment_status === "pending" ? num(p.amount_total) : 0), 0));
+      const overdue = clean(
+        list.reduce(
+          (t, p) => t + (p.payment_status === "pending" && p.due_date != null && String(p.due_date) <= today ? num(p.amount_total) : 0),
+          0
+        )
+      );
+      const nextDue =
+        list
+          .filter((p) => p.payment_status === "pending" && p.due_date != null)
+          .map((p) => String(p.due_date))
+          .sort()[0] ?? null;
+      const total = num(o.total_amount);
+      return {
+        order_id: o.id,
+        customer_id: o.customer_id,
+        customer_name: trimOrNull(c.name) ?? trimOrNull(c.name_for_invoice) ?? "לקוח",
+        customer_email: trimOrNull(c.email),
+        customer_phone: trimOrNull(c.phone),
+        customer_address: trimOrNull(c.address),
+        customer_city: cityOf(c.address),
+        order_date: o.order_date,
+        created_at: o.created_at,
+        status: o.status ?? "draft",
+        payment_status: collected <= 0 ? "unpaid" : collected + 0.009 >= total ? "paid" : "partial",
+        discount_amount: num(o.discount_amount),
+        total_amount: total,
+        total_paid: collected,
+        collected_amount: collected,
+        pending_amount: pending,
+        overdue_amount: overdue,
+        next_due_date: nextDue,
+        remaining_balance: clean(Math.max(total - collected, 0)),
+        payment_count: list.length,
+        created_by_user_id: o.created_by ?? null,
+        created_by_name: trimOrNull(u.full_name) ?? trimOrNull(u.email),
+        notes: trimOrNull(o.notes),
+        customer_name_for_invoice: trimOrNull(c.name_for_invoice),
+        needs_invoice: o.needs_invoice ?? null,
+        invoice_sent_at: o.invoice_sent_at ?? null,
+        delivery_confirmed_at: o.delivery_confirmed_at ?? null,
+        branch_id: o.branch_id ?? null,
+        customer_branch_name: trimOrNull(cb.name),
+      };
+    });
+  },
 
   // project_worker_balance_view: the workers' pay items, summed per project.
   project_worker_balance_view: async (reader) => {
