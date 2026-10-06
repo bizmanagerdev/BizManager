@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
@@ -17,9 +18,16 @@ const BUILD_ID =
   process.env.BUILD_ID ??
   "v13";
 
+// Where the app loads PowerSync's on-device database files from: a folder per
+// SDK version, copied by scripts/copy-powersync-assets.mjs (see there for why).
+const POWERSYNC_VERSION = (
+  JSON.parse(readFileSync("node_modules/@powersync/web/package.json", "utf8")) as { version: string }
+).version;
+
 const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_BUILD_ID: BUILD_ID,
+    NEXT_PUBLIC_POWERSYNC_ASSETS: `/powersync/${POWERSYNC_VERSION}`,
   },
   experimental: {
     turbopackUseSystemTlsCerts: true,
@@ -65,6 +73,11 @@ const nextConfig: NextConfig = {
   // dialog's own content, not a fixed timeout).
   async headers() {
     return [
+      {
+        // A new SDK version gets a new folder, so these never change in place.
+        source: "/powersync/:path*",
+        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+      },
       {
         source: "/sw.js",
         headers: [

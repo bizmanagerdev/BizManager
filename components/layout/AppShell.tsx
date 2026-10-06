@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, Suspense, useContext, type ReactNode } from "react";
+import dynamic from "next/dynamic";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { TopBar, type Me } from "@/components/layout/TopBar";
 import { BottomNav } from "@/components/layout/BottomNav";
@@ -23,6 +24,11 @@ import { SidebarCollapseProvider } from "@/components/layout/sidebar-collapse-co
 import { PageTitleProvider } from "@/components/layout/page-title-context";
 import { PAGE_HEADER_TOOLBAR_ID } from "@/components/layout/PageHeaderToolbar";
 import { AlertBar } from "@/components/reminders/AlertBar";
+import { localDataEnabledFor } from "@/lib/powersync/config";
+
+// The on-device copy (PowerSync). Browser-only, and only loaded for the people
+// it's switched on for — nobody else downloads the SDK.
+const LocalDataHost = dynamic(() => import("@/components/powersync/LocalDataHost"), { ssr: false });
 
 type Props = {
   children: ReactNode;
@@ -103,6 +109,7 @@ export default function AppShell({
         <AuthLockToasts />
         <UndoHotkeyListener />
         <ConnectionTelemetry />
+        {localDataEnabledFor(viewerRole) ? <LocalDataHost /> : null}
         <TopBar
           appName={appName}
           companyName={companyName}

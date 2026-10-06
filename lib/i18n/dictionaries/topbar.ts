@@ -12,6 +12,12 @@ export type TopbarKey =
   | "salaryLabel"
   | "connectionCheckLabel"
   | "logout"
+  | "localDataTitle"
+  | "localDataSynced"
+  | "localDataFirstSync"
+  | "localDataOffline"
+  | "localDataError"
+  | "localDataUpdatedAt"
   | "myInbox"
   | "waitingForAction"
   | "allClear"
@@ -38,6 +44,12 @@ export const topbarDict: Dictionary<TopbarKey> = {
     salaryLabel: "משכורת",
     connectionCheckLabel: "בדיקת חיבור",
     logout: "התנתקות",
+    localDataTitle: "נתונים במכשיר",
+    localDataSynced: "מעודכן",
+    localDataFirstSync: "מוריד בפעם הראשונה…",
+    localDataOffline: "לא מחובר",
+    localDataError: "שגיאת סנכרון",
+    localDataUpdatedAt: "עודכן",
     myInbox: "התיבה שלי",
     waitingForAction: "ממתינים לטיפול",
     allClear: "הכול נקי.",
@@ -63,6 +75,12 @@ export const topbarDict: Dictionary<TopbarKey> = {
     salaryLabel: "الراتب",
     connectionCheckLabel: "فحص الاتصال",
     logout: "تسجيل الخروج",
+    localDataTitle: "البيانات على الجهاز",
+    localDataSynced: "محدّثة",
+    localDataFirstSync: "يتم التنزيل لأول مرة…",
+    localDataOffline: "غير متصل",
+    localDataError: "خطأ في المزامنة",
+    localDataUpdatedAt: "آخر تحديث",
     myInbox: "صندوق الوارد الخاص بي",
     waitingForAction: "بانتظار المعالجة",
     allClear: "لا يوجد شيء يتطلب المعالجة.",

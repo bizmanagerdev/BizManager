@@ -8,8 +8,11 @@
     "@radix-ui/react-focus-scope": "1.1.10"
   },
   "scripts": {
+    "postinstall": "node scripts/copy-powersync-assets.mjs",
+    "predev": "node scripts/copy-powersync-assets.mjs",
     "dev": "next dev",
     "dev:insecure": "set NODE_TLS_REJECT_UNAUTHORIZED=0&& next dev",
+    "prebuild": "node scripts/copy-powersync-assets.mjs",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
@@ -36,6 +39,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@hebcal/core": "^6.5.2",
+    "@powersync/react": "^2.0.2",
     "@powersync/web": "^2.4.2",
     "@radix-ui/react-dialog": "^1.1.14",
     "@radix-ui/react-dropdown-menu": "^2.1.15",

@@ -71,5 +71,8 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // powersync/: the on-device database's library files (public, versioned,
+  // cached for a year) — never behind the login redirect, or a phone could
+  // keep a cached redirect in place of the file.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|powersync/).*)"],
 };

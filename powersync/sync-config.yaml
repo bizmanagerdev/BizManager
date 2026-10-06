@@ -1,0 +1,83 @@
+# BizManager — PowerSync Sync Streams, foundation v1 (2026-10-06).
+#
+# Every stream is for admins and office only: the signed-in person's role is
+# looked up in public.users by their Supabase login id (users.id differs from
+# the login id for some people). Workers get nothing until their own streams
+# are added with the dashboard step.
+#
+# Gate pattern: `FROM <table>, staff_gate AS bucket` — the row syncs only when
+# the lookup returns a row, and all admins share one bucket (keyed by role).
+# (This PowerSync version supports neither EXISTS nor `IN ('a', 'b')` lists.)
+#
+# Source of truth: powersync/sync-config.yaml in the repo. Paste the whole file
+# into the PowerSync dashboard (Sync Streams) and deploy.
+
+config:
+  edition: 3
+
+with:
+  staff_gate: SELECT role FROM users WHERE auth_user_id = auth.user_id() AND active = true AND system_access = true AND (role = 'admin' OR role = 'office')
+  admin_gate: SELECT role FROM users WHERE auth_user_id = auth.user_id() AND active = true AND system_access = true AND role = 'admin'
+  office_gate: SELECT role FROM users WHERE auth_user_id = auth.user_id() AND active = true AND system_access = true AND role = 'office'
+  # The signed-in staff member's own users.id.
+  staff_me: SELECT id FROM users WHERE auth_user_id = auth.user_id() AND active = true AND system_access = true AND (role = 'admin' OR role = 'office')
+
+streams:
+  # Names and colours of everyone, plus what the staff screens show.
+  people:
+    auto_subscribe: true
+    query: |
+      SELECT users.id, users.full_name, users.email, users.phone, users.avatar_color,
+             users.role, users.active, users.system_access, users.locale
+      FROM users, staff_gate AS bucket
+
+  tasks:
+    auto_subscribe: true
+    queries:
+      - SELECT tasks.* FROM tasks, staff_gate AS bucket WHERE tasks.is_private = false
+      - SELECT * FROM tasks WHERE is_private = true AND private_owner_id IN staff_me
+      - |
+        SELECT task_members.task_id || ':' || task_members.user_id AS id,
+               task_members.task_id, task_members.user_id, task_members.created_at
+        FROM task_members, staff_gate AS bucket
+
+  # Open reminders the person sees in their alerts: their own, ones they made
+  # for nobody in particular, and their role's shared alerts.
+  reminders:
+    auto_subscribe: true
+    queries:
+      - SELECT * FROM reminders WHERE status = 'pending' AND assigned_to IN staff_me
+      - SELECT * FROM reminders WHERE status = 'pending' AND assigned_to IS NULL AND created_by IN staff_me
+      - |
+        SELECT reminders.* FROM reminders, admin_gate AS bucket
+        WHERE reminders.status = 'pending'
+          AND (reminders.audience_role = 'all' OR reminders.audience_role = 'office' OR reminders.audience_role = 'admin')
+      - |
+        SELECT reminders.* FROM reminders, office_gate AS bucket
+        WHERE reminders.status = 'pending'
+          AND (reminders.audience_role = 'all' OR reminders.audience_role = 'office')
+
+  business:
+    auto_subscribe: true
+    queries:
+      - SELECT projects.* FROM projects, staff_gate AS bucket
+      - SELECT orders.* FROM orders, staff_gate AS bucket
+      - |
+        SELECT order_delivery_recipients.order_id || ':' || order_delivery_recipients.user_id AS id,
+               order_delivery_recipients.order_id, order_delivery_recipients.user_id,
+               order_delivery_recipients.created_at
+        FROM order_delivery_recipients, staff_gate AS bucket
+      - SELECT customers.* FROM customers, staff_gate AS bucket
+      - SELECT customer_branches.* FROM customer_branches, staff_gate AS bucket
+      - SELECT order_items.* FROM order_items, staff_gate AS bucket
+      - SELECT products.* FROM products, staff_gate AS bucket
+      - |
+        SELECT inventory.product_id AS id, inventory.product_id, inventory.quantity_on_hand,
+               inventory.quantity_reserved, inventory.updated_at
+        FROM inventory, staff_gate AS bucket
+      - SELECT payments.* FROM payments, staff_gate AS bucket
+      - SELECT phone_attendance_reports.* FROM phone_attendance_reports, staff_gate AS bucket
+      - SELECT properties.* FROM properties, staff_gate AS bucket
+      - SELECT lease_agreements.* FROM lease_agreements, staff_gate AS bucket
+      # Temporary: the connection check's live test row.
+      - SELECT powersync_probe.* FROM powersync_probe, staff_gate AS bucket

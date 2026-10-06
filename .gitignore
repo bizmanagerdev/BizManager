@@ -55,3 +55,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# PowerSync worker files — copied from node_modules by scripts/copy-powersync-assets.mjs
+/public/powersync/

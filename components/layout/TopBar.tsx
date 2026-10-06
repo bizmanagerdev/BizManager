@@ -26,6 +26,8 @@ import { titleForPath } from "@/lib/ui/route-titles";
 import { fetchMyProfile } from "@/lib/profile/fetchMyProfile";
 import { fetchMyAvatarColor } from "@/lib/profile/selfSettings";
 import { cn } from "@/lib/utils";
+import { wipeLocalDataBeforeLogout } from "@/lib/powersync/store";
+import { LocalSyncStatusLine } from "@/components/powersync/LocalSyncStatusLine";
 import { t } from "@/lib/i18n/t";
 import { topbarDict } from "@/lib/i18n/dictionaries/topbar";
 import { commonDict } from "@/lib/i18n/dictionaries/common";
@@ -522,6 +524,7 @@ export function TopBar({
               {me?.email ? <div className="truncate text-xs text-muted-foreground">{me.email}</div> : null}
             </div>
           </div>
+          <LocalSyncStatusLine locale={viewerLocale} />
           <div className="-mx-1 my-1 h-px bg-muted" />
 
           {/* One entry per errand — these are the profile's tabs. */}
@@ -541,7 +544,17 @@ export function TopBar({
           ))}
 
           <div className="-mx-1 my-1 h-px bg-muted" />
-          <form action="/api/auth/logout" method="post">
+          <form
+            action="/api/auth/logout"
+            method="post"
+            onSubmit={(event) => {
+              // Remove this person's on-device copy before the session ends
+              // (never holds logout up for more than a few seconds).
+              event.preventDefault();
+              const form = event.currentTarget;
+              void wipeLocalDataBeforeLogout().then(() => form.submit());
+            }}
+          >
             <button
               type="submit"
               className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10"

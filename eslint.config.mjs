@@ -56,6 +56,9 @@ const eslintConfig = defineConfig([
     // copied straight from node_modules) — not app source, and re-linting it
     // just surfaces noise from a vendored/bundled file on every full-project run.
     "android/**",
+    // PowerSync's prebuilt worker files, copied from node_modules
+    // (scripts/copy-powersync-assets.mjs) — vendored, minified.
+    "public/powersync/**",
   ]),
 ]);
 
