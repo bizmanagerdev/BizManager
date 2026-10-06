@@ -156,10 +156,49 @@ describe("service worker: the device pages' frames", () => {
     expect(await open(worker, "https://biz-h.com/tasks")).toBe(FRAME);
     expect(worker.frames().has("https://biz-h.com/tasks")).toBe(true);
 
-    worker.fetchMock.mockClear();
-    expect(await open(worker, "https://biz-h.com/tasks")).toBe(FRAME);
-    // A fresh frame: not even refreshed in the background.
-    expect(worker.fetchMock).not.toHaveBeenCalled();
+    // Opened again later: the saved frame at once, a fresh copy saved behind it.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.now() + 60_000));
+    try {
+      worker.fetchMock.mockClear();
+      expect(await open(worker, "https://biz-h.com/tasks")).toBe(FRAME);
+      expect(worker.fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a reload right after (a newer version on the server) never gets the same old frame again", async () => {
+    let body = FRAME;
+    let release: () => void = () => {};
+    const worker = loadWorkerWithCaches(() => new Response(body, { status: 200 }));
+    await open(worker, "https://biz-h.com/tasks"); // saved
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.now() + 60_000));
+    try {
+      // Opened: served the saved frame; its background refresh is held back.
+      const pending = new Promise<void>((resolve) => (release = resolve));
+      worker.fetchMock.mockImplementationOnce(async () => {
+        await pending;
+        return new Response(body, { status: 200 });
+      });
+      let responded: Promise<Response> | undefined;
+      worker.handlers.fetch({
+        request: { method: "GET", url: "https://biz-h.com/tasks", mode: "navigate", headers: new Headers() },
+        preloadResponse: Promise.resolve(undefined),
+        respondWith: (promise: Promise<Response>) => (responded = promise),
+        waitUntil: () => {},
+      });
+      expect(await (await responded!).text()).toBe(FRAME);
+
+      // Seconds later the page reloads for the newer version: the network, not the old frame.
+      body = '<html><body><span hidden data-device-page="tasks"></span>new version</body></html>';
+      vi.setSystemTime(new Date(Date.now() + 2_000));
+      expect(await open(worker, "https://biz-h.com/tasks")).toContain("new version");
+    } finally {
+      release();
+      vi.useRealTimers();
+    }
   });
 
   it("never saves a page with its data in it — and drops a saved frame when the page comes back as one", async () => {

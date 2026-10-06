@@ -328,8 +328,10 @@ function evaluate(filter: Filter, row: Row): boolean | null {
 }
 
 // ── Sorting (Postgres: en_US.UTF-8 collation, NULLS LAST ascending) ─────────
+// Spaces and punctuation count, before any letter — "א. י. ג." comes before
+// "אבי", as the database sorts them (seen in the shadow check, 2026-10-06).
 
-const collator = new Intl.Collator("en-US", { sensitivity: "variant", ignorePunctuation: true, numeric: false });
+const collator = new Intl.Collator("en-US", { sensitivity: "variant", numeric: false });
 
 type Order = { column: string; ascending: boolean; nullsFirst: boolean };
 

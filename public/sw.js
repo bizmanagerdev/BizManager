@@ -268,8 +268,13 @@ const OFFLINE_HTML = `<!doctype html>
 // (lib/powersync/device-frames.ts).
 const FRAME_PATHS = new Set(["/dashboard", "/tasks", "/projects", "/sales"]);
 const FRAME_MARK = 'data-device-page="';
-// A saved frame older than this is replaced in the background when used.
-const FRAME_REFRESH_AFTER_MS = 60 * 60 * 1000;
+// A navigation to a frame this soon after one was served is a reload — the
+// page found a newer version on the server, or the person pulled to refresh
+// — so it gets the frame saved since (the newer version) or the network,
+// never the same old frame again (which would keep an old version running).
+const FRAME_RELOAD_WINDOW_MS = 20 * 1000;
+// When each URL's frame was last served (this worker's lifetime is enough).
+const frameServedAt = new Map();
 
 function isFrameRequest(url) {
   return FRAME_PATHS.has(url.pathname) && !url.searchParams.has("data") && !url.searchParams.has("q");
@@ -400,19 +405,23 @@ self.addEventListener("fetch", (event) => {
     const frame = isFrameRequest(url);
     event.respondWith(
       (async () => {
-        // A device page with a saved frame: that, at once (see above).
+        // A device page with a saved frame: that, at once (see above) — and
+        // a fresh copy saved in the background for next time, so a frame is
+        // never more than one opening old (a new version arrives on the next
+        // opening, or on the reload the page does when it finds one).
         if (frame) {
           const saved = await matchFrame(request);
-          if (saved) {
-            const savedAt = Number(saved.headers.get("X-Bizh-Frame-Saved") || 0);
-            const preloaded = Promise.resolve(event.preloadResponse).catch(() => undefined);
+          const savedAt = saved ? Number(saved.headers.get("X-Bizh-Frame-Saved") || 0) : 0;
+          const servedAt = frameServedAt.get(request.url) ?? 0;
+          const isReload = Date.now() - servedAt < FRAME_RELOAD_WINDOW_MS && savedAt <= servedAt;
+          if (saved && !isReload) {
+            frameServedAt.set(request.url, Date.now());
             event.waitUntil(
-              Date.now() - savedAt > FRAME_REFRESH_AFTER_MS
-                ? preloaded
-                    .then((res) => res || fetch(request))
-                    .then((res) => saveFrame(request, res))
-                    .catch(() => {})
-                : preloaded
+              Promise.resolve(event.preloadResponse)
+                .catch(() => undefined)
+                .then((res) => res || fetch(request))
+                .then((res) => saveFrame(request, res))
+                .catch(() => {})
             );
             return saved;
           }

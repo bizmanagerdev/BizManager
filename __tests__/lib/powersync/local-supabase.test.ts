@@ -151,6 +151,27 @@ describe("order, range, count, single", () => {
     expect((data as Row[]).map((r) => r.name)).toEqual(["אולם", "בית", "גן"]);
   });
 
+  it("spaces and punctuation count, before any letter — like the database", async () => {
+    const names = createLocalSupabase(
+      fakeReader({
+        customers: [
+          { id: "1", name: "אבי אינגבר" },
+          { id: "2", name: "א.ד.ע. בניה מודלרית בע''מ" },
+          { id: "3", name: "אבן הפקות היכלי מלכות" },
+          { id: "4", name: "א. י. ג. שירותי הסעדה בע''מ" },
+        ],
+      })
+    );
+    const { data } = await names.from("customers").select("name").order("name");
+    // The order the server returned (shadow check, 2026-10-06).
+    expect((data as Row[]).map((r) => r.name)).toEqual([
+      "א. י. ג. שירותי הסעדה בע''מ",
+      "א.ד.ע. בניה מודלרית בע''מ",
+      "אבי אינגבר",
+      "אבן הפקות היכלי מלכות",
+    ]);
+  });
+
   it("range + count report the page and the full match count", async () => {
     const { data, count } = await db.from("projects").select("id", { count: "estimated" }).order("id").range(1, 1);
     expect(data).toEqual([{ id: "b" }]);
@@ -275,6 +296,21 @@ describe("the server's own loaders, run on the device copy", () => {
     expect(summary.expiring).toEqual([
       { id: "l1", propertyId: "p1", label: "דירה 1", tenantName: "שוכר", endDate: "2026-11-01", daysLeft: 26 },
     ]);
+  });
+
+  it("getPropertiesSummary: vacant properties by name, whatever order they're stored in", async () => {
+    const db = createLocalSupabase(
+      fakeReader({
+        properties: [
+          { id: "b", name: "הר יונה שונות", address: "x", is_active: 1 },
+          { id: "a", name: "אחיסמך", address: "y", is_active: 1 },
+        ],
+        lease_agreements: [],
+        customers: [],
+      })
+    );
+    const summary = await getPropertiesSummary(db, "2026-10-06");
+    expect(summary.vacant.map((p) => p.label)).toEqual(["אחיסמך", "הר יונה שונות"]);
   });
 
   it("getMyTasks: mine + member tasks, open only, with project names", async () => {

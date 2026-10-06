@@ -797,7 +797,9 @@ export async function getPropertiesSummary(
           return !end || end >= today;
         });
       })
-      .map((id) => ({ id, label: labelById.get(id) ?? "נכס" }));
+      .map((id) => ({ id, label: labelById.get(id) ?? "נכס" }))
+      // By name (then id) — the database returns the properties in no set order.
+      .sort((a, b) => a.label.localeCompare(b.label, "he") || a.id.localeCompare(b.id));
 
     const expiring = leases
       .filter((l) => {
