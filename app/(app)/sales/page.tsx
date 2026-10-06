@@ -1,14 +1,17 @@
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
 import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import SalesDeliveriesQueue from "@/app/(app)/sales/SalesDeliveriesQueue";
 import SalesHeader from "@/app/(app)/sales/SalesHeader";
 import LocalSalesPage from "@/app/(app)/sales/LocalSalesPage";
+import SalesServerCheck from "@/app/(app)/sales/SalesServerCheck";
+import DeviceFrameMark from "@/components/powersync/DeviceFrameMark";
+import { deviceCheckDue } from "@/lib/powersync/device-check";
 import { loadSalesTabCounts } from "@/app/(app)/sales/loadSalesCounts";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { withLoadedAt } from "@/lib/loaded-at";
+import { serverRenderedAt, withLoadedAt } from "@/lib/loaded-at";
 import { DELIVERY_REGIONS } from "@/lib/ui/cities";
 import { loadOrdersPage } from "@/app/(app)/sales/loadOrders";
 import { loadPriceListPage, loadInventoryListPage } from "@/app/(app)/sales/loadProducts";
@@ -176,9 +179,13 @@ export default async function SalesPage({
   // hold. ?data=server is the way back when the copy can't serve it. (The
   // early reads, if they went out, are just not waited for.)
   if (localDataPageOn("sales", profile) && params.data !== "server" && !searchQuery) {
+    // Once a day per device, the server's own tab too — streamed after the
+    // page, for the device to compare (lib/powersync/device-check.ts).
+    const checkDue = LOCAL_DATA_SHADOW.sales && (await deviceCheckDue("sales"));
     return (
       <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
         <div className="space-y-4">
+          <DeviceFrameMark page="sales" renderedAt={serverRenderedAt()} />
           <LocalSalesPage
             viewer={{ userId: profile.id, role: profile.role ?? "", locale: profile.locale }}
             activeTab={activeTab}
@@ -192,6 +199,21 @@ export default async function SalesPage({
             tabsSearchParams={params}
             canRemind={profile.role === "admin" || profile.role === "office"}
           />
+          {checkDue ? (
+            <Suspense fallback={null}>
+              <SalesServerCheck
+                supabase={supabase}
+                activeTab={activeTab}
+                customerId={customerId}
+                category={categoryFilter}
+                paymentStatus={paymentStatusFilter}
+                invoice={invoiceFilter}
+                userId={profile.id}
+                role={profile.role ?? ""}
+                locale={profile.locale}
+              />
+            </Suspense>
+          ) : null}
         </div>
       </AppShell>
     );

@@ -8,3 +8,8 @@ export async function withLoadedAt<T extends object>(promise: Promise<T>): Promi
   const value = await promise;
   return { ...value, loadedAt: Date.now() };
 }
+
+/** When the server rendered this page (Date.now() there) — see DeviceFrameMark. */
+export function serverRenderedAt(): number {
+  return Date.now();
+}

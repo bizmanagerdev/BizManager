@@ -10,7 +10,8 @@ const V = new URL(self.location.href).searchParams.get("v") || "v13";
 const STATIC_CACHE = `bizh-static-${V}`;   // immutable _next/static chunks
 const PAGES_CACHE  = `bizh-pages-${V}`;    // navigation responses
 const API_CACHE    = `bizh-api-${V}`;      // /api GET responses
-const ALL_CACHES   = [STATIC_CACHE, PAGES_CACHE, API_CACHE];
+const FRAMES_CACHE = `bizh-frames-${V}`;   // the device pages' frames (below)
+const ALL_CACHES   = [STATIC_CACHE, PAGES_CACHE, API_CACHE, FRAMES_CACHE];
 
 // Detect development environments. The SW must NEVER run on localhost / Vercel
 // preview deployments — it caches stale Next.js dev chunks and HTML which
@@ -254,6 +255,61 @@ const OFFLINE_HTML = `<!doctype html>
 </body>
 </html>`;
 
+// ── The device pages' frames ─────────────────────────────────────────────────
+// Pages drawn from the phone's own copy of the data (PowerSync — the
+// dashboard, tasks, projects and sales for admins and office) come from the
+// server as a frame: the layout and an empty page the phone fills in. That
+// frame is saved and the app opens on it AT ONCE, instead of waiting a second
+// for the server; the page then refreshes its server parts itself
+// (components/powersync/DeviceFrameMark). Only a response that IS such a frame
+// is saved — it carries data-device-page — never a page with the data in it,
+// a search, or the server version (?data=server). Cleared on every deploy
+// (versioned name), at logout and when someone else signs in
+// (lib/powersync/device-frames.ts).
+const FRAME_PATHS = new Set(["/dashboard", "/tasks", "/projects", "/sales"]);
+const FRAME_MARK = 'data-device-page="';
+// A saved frame older than this is replaced in the background when used.
+const FRAME_REFRESH_AFTER_MS = 60 * 60 * 1000;
+
+function isFrameRequest(url) {
+  return FRAME_PATHS.has(url.pathname) && !url.searchParams.has("data") && !url.searchParams.has("q");
+}
+
+async function matchFrame(request) {
+  try {
+    return (await (await caches.open(FRAMES_CACHE)).match(request)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// `response` must be a copy nobody else reads.
+async function saveFrame(request, response) {
+  try {
+    const cache = await caches.open(FRAMES_CACHE);
+    if (!response || !response.ok || response.redirected || response.type === "opaqueredirect") {
+      await cache.delete(request);
+      return;
+    }
+    const html = await response.text();
+    if (!html.includes(FRAME_MARK)) {
+      await cache.delete(request);
+      return;
+    }
+    await cache.put(
+      request,
+      new Response(html, {
+        headers: {
+          "Content-Type": response.headers.get("Content-Type") || "text/html; charset=utf-8",
+          "X-Bizh-Frame-Saved": String(Date.now()),
+        },
+      })
+    );
+  } catch {
+    // Not saved — the next open just waits for the server, as before.
+  }
+}
+
 // ── Fetch ─────────────────────────────────────────────────────────────────────
 self.addEventListener("fetch", (event) => {
   const { request } = event;
@@ -341,8 +397,27 @@ self.addEventListener("fetch", (event) => {
   // logged anywhere. Racing a timer guarantees the launch always gets an answer:
   // the real page, the last cached one, or the Hebrew offline page.
   if (request.mode === "navigate") {
+    const frame = isFrameRequest(url);
     event.respondWith(
       (async () => {
+        // A device page with a saved frame: that, at once (see above).
+        if (frame) {
+          const saved = await matchFrame(request);
+          if (saved) {
+            const savedAt = Number(saved.headers.get("X-Bizh-Frame-Saved") || 0);
+            const preloaded = Promise.resolve(event.preloadResponse).catch(() => undefined);
+            event.waitUntil(
+              Date.now() - savedAt > FRAME_REFRESH_AFTER_MS
+                ? preloaded
+                    .then((res) => res || fetch(request))
+                    .then((res) => saveFrame(request, res))
+                    .catch(() => {})
+                : preloaded
+            );
+            return saved;
+          }
+        }
+
         // The request the browser already started while this worker booted
         // (navigation preload, enabled on activate) — or, where that isn't
         // available, a fresh one. A preloaded redirect arrives unfollowed
@@ -354,6 +429,16 @@ self.addEventListener("fetch", (event) => {
           .then((preloaded) => preloaded || fetch(request))
           .then((res) => {
             putInCache(PAGES_CACHE, request, res);
+            // A device page's frame, for next time (or a stale one dropped).
+            // Best effort: on a timed-out launch the event may be over by now.
+            if (frame) {
+              const saving = saveFrame(request, res.clone());
+              try {
+                event.waitUntil(saving);
+              } catch {
+                // Still runs; the worker may just not wait for it.
+              }
+            }
             return res;
           });
 

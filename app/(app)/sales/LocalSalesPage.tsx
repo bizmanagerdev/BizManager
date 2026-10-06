@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { LocalListPagerProvider } from "@/components/powersync/LocalListPager";
 import { useLocalCard } from "@/components/powersync/useLocalCard";
+import { useDevicePageTiming } from "@/components/powersync/useDevicePageTiming";
 import { loadLocalDataCode, localClient } from "@/lib/powersync/local-results";
 import type {
   LocalCardViewer,
@@ -107,6 +108,7 @@ export default function LocalSalesPage({
 
   // The tab or its filters just changed: what's here is still the previous list.
   const tabData = tab && tab.filtersKey === filtersKey ? tab.data : null;
+  useDevicePageTiming(`sales:${activeTab}`, tabData ? tab : null);
   if (!tabData || !counts) return <SalesSkeleton />;
 
   let content: ReactNode = null;

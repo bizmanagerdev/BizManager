@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useLocalCard } from "@/components/powersync/useLocalCard";
+import { useDevicePageTiming } from "@/components/powersync/useDevicePageTiming";
 import type { LocalCardViewer } from "@/lib/powersync/dashboard-local";
 import { filterBoardLocally } from "@/lib/tasks/boardFilters";
 import type { TasksFilters } from "./loadTasks";
@@ -34,6 +35,7 @@ export default function LocalTasksBoard({
   }, [searchParams]);
 
   const result = useLocalCard({ kind: "tasksBoard", viewer, filters, page: "tasks", serverHref });
+  useDevicePageTiming("tasks", result, result?.data.items.length);
 
   // New filters: until the device's board for them is ready (a moment), the
   // board already here narrowed to them — what the server version shows while

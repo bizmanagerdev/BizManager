@@ -8,6 +8,7 @@ import AttendanceApprovals from "@/components/dashboard/AttendanceApprovals";
 import PropertiesCard from "@/components/dashboard/PropertiesCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLocalCard } from "@/components/powersync/useLocalCard";
+import { useDevicePageTiming } from "@/components/powersync/useDevicePageTiming";
 import type { LocalCardKind, LocalCardViewer, LocalDashboardCards } from "@/lib/powersync/dashboard-local";
 import { cn } from "@/lib/utils";
 
@@ -33,7 +34,9 @@ export default function LocalDashboardCard<K extends LocalCardKind>({
   /** The loading placeholder's sizing, matching the board's cells. */
   fillClassName?: string;
 }) {
-  const data = useLocalCard({ kind, viewer, page: "dashboard", serverHref: "/dashboard?data=server" })?.data ?? null;
+  const result = useLocalCard({ kind, viewer, page: "dashboard", serverHref: "/dashboard?data=server" });
+  useDevicePageTiming(`dashboard:${kind}`, result);
+  const data = result?.data ?? null;
 
   if (data === null) {
     return <Skeleton className={cn("h-16 w-full rounded-[1.125rem] xl:h-full", fillClassName)} />;

@@ -46,6 +46,14 @@ export type LocalCardResult<K extends LocalCardKind> = {
   data: LocalDashboardCards[K];
   /** The filters it was worked out for (JSON) — the previous ones for a moment after they change. */
   filtersKey: string;
+  /**
+   * Where it came from: worked out now by the device, kept from earlier
+   * (opened before, or prepared in the background), stored on the device
+   * last time (the app just opened), or the previous filters' result.
+   */
+  source: "device" | "kept" | "stored" | "previous";
+  /** How long the device took to work it out (source "device"). */
+  computeMs?: number;
 };
 
 export function useLocalCard<K extends LocalCardKind>({
@@ -75,12 +83,16 @@ export function useLocalCard<K extends LocalCardKind>({
   // data never stands in for this one).
   const [result, setResult] = useState<(LocalCardResult<K> & { key: string; kind: K }) | null>(() => {
     const kept = peekResult(db, key);
-    return kept ? { data: kept.data as LocalDashboardCards[K], filtersKey, key, kind } : null;
+    return kept ? { data: kept.data as LocalDashboardCards[K], filtersKey, key, kind, source: "kept" } : null;
   });
   // For exactly this part: the device's result, or what it already holds for it.
   const keptNow = result?.key === key ? null : peekResult(db, key);
   const current: LocalCardResult<K> | null =
-    result?.key === key ? result : keptNow ? { data: keptNow.data as LocalDashboardCards[K], filtersKey } : null;
+    result?.key === key
+      ? result
+      : keptNow
+        ? { data: keptNow.data as LocalDashboardCards[K], filtersKey, source: "kept" }
+        : null;
   // Before the device has it (the app just opened): the copy stored on the
   // device last time. Read on the client only, so the server's HTML matches.
   const storedRaw = useSyncExternalStore(neverChanges, () => readStoredResultRaw(key), () => null);
@@ -92,9 +104,9 @@ export function useLocalCard<K extends LocalCardKind>({
   }, [storedRaw, stored]);
   const shown: LocalCardResult<K> | null =
     current ??
-    (stored ? { data: stored.data as LocalDashboardCards[K], filtersKey } : null) ??
+    (stored ? { data: stored.data as LocalDashboardCards[K], filtersKey, source: "stored" } : null) ??
     // Other filters, same list: the previous result for a moment (callers can narrow it).
-    (result?.kind === kind ? result : null);
+    (result?.kind === kind ? { ...result, source: "previous" } : null);
 
   // Read through a ref: a change of URL that isn't a change of filters
   // (?task=…) mustn't start the work over.
@@ -128,14 +140,21 @@ export function useLocalCard<K extends LocalCardKind>({
       db,
       { kind, viewer: { userId, role, locale }, filters: cardFilters },
       {
-        onData: (data, json) =>
+        onData: (data, json, computeMs) =>
           setResult((prev) => {
             // Handed the same result again: keep it, so nothing redraws.
             if (prev?.key === key && prev.data === data) return prev;
             // The first answer equals the stored copy on screen: keep that copy.
             const copy = storedRef.current;
             const same = prev?.key !== key && copy.parsed !== null && storedResultJson(copy.raw) === json;
-            return { data: (same ? copy.parsed?.data : data) as LocalDashboardCards[K], filtersKey, key, kind };
+            return {
+              data: (same ? copy.parsed?.data : data) as LocalDashboardCards[K],
+              filtersKey,
+              key,
+              kind,
+              source: "device",
+              computeMs,
+            };
           }),
         onError: (reason, error) => {
           if (reason === "error") {

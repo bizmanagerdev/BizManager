@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import dynamic from "next/dynamic";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -12,6 +13,10 @@ import {
 import { parseProjectsFilters } from "@/app/(app)/projects/projectsFilters";
 import LocalProjectsPage from "@/app/(app)/projects/LocalProjectsPage";
 import ProjectsCustomerHeader from "@/app/(app)/projects/ProjectsCustomerHeader";
+import ProjectsServerCheck from "@/app/(app)/projects/ProjectsServerCheck";
+import DeviceFrameMark from "@/components/powersync/DeviceFrameMark";
+import { serverRenderedAt } from "@/lib/loaded-at";
+import { deviceCheckDue } from "@/lib/powersync/device-check";
 import DashboardLocalShadow from "@/components/powersync/DashboardLocalShadow";
 import { LOCAL_DATA_PAGES, LOCAL_DATA_SHADOW, localDataEnabledFor, localDataPageOn } from "@/lib/powersync/config";
 import { israelDateKey } from "@/lib/timezone";
@@ -75,13 +80,28 @@ export default async function ProjectsPage({
   // out from this person's on-device copy (LocalProjectsPage). Searches still
   // go to the server. ?data=server is the way back when the copy can't serve it.
   if (localDataPageOn("projects", profile) && params.data !== "server" && !filters.q) {
+    // Once a day per device, the server's own list too — streamed after the
+    // page, for the device to compare (lib/powersync/device-check.ts).
+    const checkDue = LOCAL_DATA_SHADOW.projects && (await deviceCheckDue("projects"));
     return (
       <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
         <div className="space-y-4">
+          <DeviceFrameMark page="projects" renderedAt={serverRenderedAt()} />
           <LocalProjectsPage
             viewer={{ userId: profile.id, role: profile.role ?? "", locale: profile.locale }}
             customerName={customerName}
           />
+          {checkDue ? (
+            <Suspense fallback={null}>
+              <ProjectsServerCheck
+                supabase={supabase}
+                filters={filters}
+                userId={profile.id}
+                role={profile.role ?? ""}
+                locale={profile.locale}
+              />
+            </Suspense>
+          ) : null}
         </div>
       </AppShell>
     );

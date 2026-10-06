@@ -25,10 +25,14 @@ export function localDataEnabledFor(role: string | null | undefined): boolean {
  * that page to today's server version.
  */
 export const LOCAL_DATA_PAGES = {
-  dashboard: false,
-  projects: false,
-  sales: false,
-  tasks: false,
+  // On for every admin and office user from 2026-10-06 (the owner's call: the
+  // speed for everyone, and the timing and comparison reports from every
+  // device). Each page still compares itself with the server's version once
+  // a day per device (lib/powersync/device-check.ts).
+  dashboard: true,
+  projects: true,
+  sales: true,
+  tasks: true,
 } as const;
 
 /**

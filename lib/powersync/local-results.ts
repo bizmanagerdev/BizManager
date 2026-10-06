@@ -54,8 +54,11 @@ export function resultKey({ kind, viewer, filters }: ResultSpec): string {
 }
 
 export type ResultListener = {
-  /** A new result (`json`: the same, serialised — to compare with a stored copy). */
-  onData: (data: unknown, json: string) => void;
+  /**
+   * A new result (`json`: the same, serialised — to compare with a stored
+   * copy; `computeMs`: how long the device took to work it out).
+   */
+  onData: (data: unknown, json: string, computeMs: number) => void;
   /** "no-data": the copy holds nothing yet (the sync rules aren't deployed). */
   onError: (reason: "no-data" | "error", error?: unknown) => void;
 };
@@ -67,6 +70,8 @@ type Entry = {
   data: unknown;
   /** `data` serialised: a result that comes out the same isn't handed on again. */
   json: string;
+  /** How long the last working-out took (ms). */
+  computeMs: number;
   hasData: boolean;
   /** Bumped whenever a table it reads changes; `doneAt` is the count its data reflects. */
   dirty: number;
@@ -226,7 +231,9 @@ function run(e: Engine, entry: Entry): Promise<void> {
       if (!(await deviceHasPeople(e))) throw new NoDataError("The device copy holds no data yet");
       const [{ computeLocalCard, LOCAL_CARD_TABLES }, { createLocalSupabase }] = await loadLocalDataCode();
       entry.tables ??= LOCAL_CARD_TABLES[entry.spec.kind];
+      const started = performance.now();
       const data = await computeLocalCard(createLocalSupabase(e.reader), entry.spec.kind, entry.spec.viewer, entry.spec.filters);
+      const computeMs = performance.now() - started;
       const json = JSON.stringify(data);
       entry.doneAt = target;
       // The same as before (a quiet check, a change that didn't touch it):
@@ -234,8 +241,9 @@ function run(e: Engine, entry: Entry): Promise<void> {
       if (!entry.hasData || json !== entry.json) {
         entry.data = data;
         entry.json = json;
+        entry.computeMs = computeMs;
         entry.hasData = true;
-        for (const listener of entry.listeners) listener.onData(data, json);
+        for (const listener of entry.listeners) listener.onData(data, json, computeMs);
         if (entry.listeners.size > 0 || entry.background > 0) storeLater(entry);
       }
     } catch (error) {
@@ -263,6 +271,7 @@ function entryFor(e: Engine, spec: ResultSpec): Entry {
       spec,
       data: undefined,
       json: "",
+      computeMs: 0,
       hasData: false,
       dirty: 1,
       doneAt: 0,
@@ -307,7 +316,7 @@ export function watchResult(db: CommonPowerSyncDatabase, spec: ResultSpec, liste
   const e = engineFor(db);
   const entry = entryFor(e, spec);
   entry.listeners.add(listener);
-  if (entry.hasData) listener.onData(entry.data, entry.json);
+  if (entry.hasData) listener.onData(entry.data, entry.json, entry.computeMs);
   if (!entry.hasData || entry.dirty !== entry.doneAt) {
     void run(e, entry);
   } else {

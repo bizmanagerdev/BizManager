@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
@@ -8,7 +9,11 @@ import { commonDict } from "@/lib/i18n/dictionaries/common";
 import DashboardLocalShadow from "@/components/powersync/DashboardLocalShadow";
 import { LOCAL_DATA_PAGES, LOCAL_DATA_SHADOW, localDataEnabledFor, localDataPageOn } from "@/lib/powersync/config";
 import { israelDateKey } from "@/lib/timezone";
+import { deviceCheckDue } from "@/lib/powersync/device-check";
 import LocalTasksBoard from "./LocalTasksBoard";
+import TasksServerCheck from "./TasksServerCheck";
+import DeviceFrameMark from "@/components/powersync/DeviceFrameMark";
+import { serverRenderedAt } from "@/lib/loaded-at";
 import TasksPageClient from "./TasksPageClient";
 import { loadTaskPickerOptions, loadTasksBoard } from "./loadTasks";
 
@@ -60,14 +65,31 @@ export default async function TasksPage({
   // them. ?data=server is the way back when the copy can't serve it.
   const localMode = localDataPageOn("tasks", profile) && params.data !== "server";
   if (localMode) {
+    // Once a day per device, the server's own board too — streamed after the
+    // page, for the device to compare (lib/powersync/device-check.ts).
+    const checkDue =
+      profile.locale !== "ar" && LOCAL_DATA_SHADOW.tasks && (await deviceCheckDue("tasks"));
     return (
       <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
         <div className="space-y-4">
+          <DeviceFrameMark page="tasks" renderedAt={serverRenderedAt()} />
           <LocalTasksBoard
             viewer={{ userId: profile.id, role: profile.role ?? "", locale: profile.locale }}
             filters={filters}
             canSeeAll={canSeeAll}
           />
+          {checkDue ? (
+            <Suspense fallback={null}>
+              <TasksServerCheck
+                supabase={supabase}
+                filters={filters}
+                userId={profile.id}
+                role={profile.role ?? ""}
+                locale={profile.locale}
+                canSeeAll={canSeeAll}
+              />
+            </Suspense>
+          ) : null}
         </div>
       </AppShell>
     );

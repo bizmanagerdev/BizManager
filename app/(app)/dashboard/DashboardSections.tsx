@@ -1,4 +1,5 @@
 import { Suspense, type ReactNode } from "react";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { t } from "@/lib/i18n/t";
 import { dashboardDict } from "@/lib/i18n/dictionaries/dashboard";
@@ -65,6 +66,9 @@ import LocalDashboardCard from "@/components/powersync/LocalDashboardCard";
 import { RememberCard, RememberedCardFallback } from "@/components/dashboard/RememberedCard";
 import type { DashboardShadowSnapshot } from "@/lib/powersync/dashboard-shadow";
 import { LOCAL_DATA_SHADOW, localDataEnabledFor, localDataPageOn } from "@/lib/powersync/config";
+import { deviceCheckCookie, deviceCheckDue } from "@/lib/powersync/device-check";
+import DeviceFrameMark from "@/components/powersync/DeviceFrameMark";
+import { serverRenderedAt } from "@/lib/loaded-at";
 
 // ── Suspense fallbacks (kept close to the real layout so the swap is shift-free) ──
 
@@ -394,6 +398,65 @@ async function PropertiesSlowCell({
 /** What every shadow check needs besides the cards themselves. */
 type ShadowBase = Omit<DashboardShadowSnapshot, "cards">;
 
+/**
+ * The device-drawn cards as the server reads them, for the device to compare
+ * with its own — once a day per device (lib/powersync/device-check.ts). In
+ * its own Suspense boundary after the board, so it never holds the board up.
+ */
+async function DashboardServerCheck({
+  supabase,
+  base,
+  role,
+  show,
+}: {
+  supabase: SupabaseClient;
+  base: ShadowBase;
+  role: string | null;
+  show: { todaySchedule: boolean; todayAlerts: boolean; myTasks: boolean; deliveries: boolean; attendanceQueue: boolean; properties: boolean };
+}) {
+  const { userId, locale, todayIso } = base;
+  const [inbox, schedule, myTasks, deliveries, deliveriesSpark, queue, queueSpark, queueOptions, properties] = await Promise.all([
+    show.todayAlerts ? getInboxView(supabase, { userId, role }).catch(() => null) : Promise.resolve(null),
+    show.todaySchedule
+      ? getScheduleEntries(supabase, { scope: "mine", userId }).catch(() => null)
+      : Promise.resolve(null),
+    show.myTasks ? getMyTasks(supabase, userId, locale).catch(() => null) : Promise.resolve(null),
+    show.deliveries
+      ? loadDeliveriesPage(supabase, { page: 1, filters: { customerId: null } }).then((r) => (r.error ? null : r.deliveries), () => null)
+      : Promise.resolve(null),
+    show.deliveries ? loadDeliveriesSpark(supabase).catch(() => null) : Promise.resolve(null),
+    show.attendanceQueue ? loadPhoneQueueData(supabase).catch(() => null) : Promise.resolve(null),
+    show.attendanceQueue ? loadAttendanceSpark(supabase).catch(() => [] as number[]) : Promise.resolve([] as number[]),
+    show.attendanceQueue ? loadAttendanceClassificationOptions(supabase).catch(() => null) : Promise.resolve(null),
+    show.properties ? getPropertiesSummary(supabase, todayIso).catch(() => null) : Promise.resolve(null),
+  ]);
+  const doneCookie = deviceCheckCookie("dashboard");
+  return (
+    <>
+      <DashboardLocalShadow
+        checkMoneyViews
+        doneCookie={doneCookie}
+        snapshot={{
+          ...base,
+          cards: {
+            ...(schedule ? { todaySchedule: schedule } : {}),
+            ...(inbox ? { todayAlerts: todaySlice(inbox) } : {}),
+            ...(myTasks ? { myTasks } : {}),
+            ...(deliveries && deliveriesSpark ? { deliveries: { items: deliveries, spark: deliveriesSpark } } : {}),
+          },
+        }}
+      />
+      {queue ? (
+        <DashboardLocalShadow
+          doneCookie={doneCookie}
+          snapshot={{ ...base, cards: { attendanceQueue: { data: queue, spark: queueSpark, options: queueOptions } } }}
+        />
+      ) : null}
+      {properties ? <DashboardLocalShadow doneCookie={doneCookie} snapshot={{ ...base, cards: { properties } }} /> : null}
+    </>
+  );
+}
+
 async function DomainChartSlowCell({
   breakdownPromise,
   prevBreakdownPromise,
@@ -470,6 +533,13 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
   const ordered = resolveWidgets(role, prefs, profile.section_access);
   const visible = new Set(ordered.map((w) => w.id));
   const show = (id: WidgetId) => visible.has(id);
+
+  // On the device version, the cards it draws are still compared with the
+  // server's once a day per device (DashboardServerCheck, after the board).
+  const serverCheck: ShadowBase | null =
+    localMode && LOCAL_DATA_SHADOW.dashboard && (await deviceCheckDue("dashboard"))
+      ? { renderedAt: new Date().toISOString(), userId: profile.id, role: role ?? "", locale, todayIso: israelDateKey() }
+      : null;
 
   // "What you missed since last here" — admin + office, role-filtered inside,
   // same "hidden widgets skip fetches" rule every other widget follows.
@@ -885,6 +955,26 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
             },
           }}
         />
+      ) : null}
+
+      {localMode ? <DeviceFrameMark page="dashboard" renderedAt={serverRenderedAt()} /> : null}
+
+      {serverCheck ? (
+        <Suspense fallback={null}>
+          <DashboardServerCheck
+            supabase={supabase}
+            base={serverCheck}
+            role={role}
+            show={{
+              todaySchedule: show("todaySchedule"),
+              todayAlerts: show("todayAlerts"),
+              myTasks: show("myTasks"),
+              deliveries: show("deliveries") && locale !== "ar",
+              attendanceQueue: show("attendanceQueue") && isAdminOrOffice,
+              properties: show("properties") && isAdminOrOffice,
+            }}
+          />
+        </Suspense>
       ) : null}
 
       {present.length === 0 ? (

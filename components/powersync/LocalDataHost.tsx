@@ -8,6 +8,8 @@ import { clearStoredResults } from "@/lib/powersync/stored-results";
 import { withSentry } from "@/lib/sentry-lazy";
 import type { LocalCardViewer } from "@/lib/powersync/dashboard-local";
 import LocalPagesWarmup from "@/components/powersync/LocalPagesWarmup";
+import { installNavigationTiming } from "@/lib/ui/navigation-timing";
+import { clearDeviceFrames, keepDeviceFramesFor } from "@/lib/powersync/device-frames";
 
 // Keeps the on-device copy open for the signed-in person, in the background.
 // Renders nothing. AppShell mounts it only for people the copy is switched on
@@ -25,8 +27,13 @@ import LocalPagesWarmup from "@/components/powersync/LocalPagesWarmup";
 export default function LocalDataHost({ viewer }: { viewer?: LocalCardViewer }) {
   const viewerId = viewer?.userId;
   useEffect(() => {
-    if (viewerId) clearStoredResults(viewerId);
+    if (!viewerId) return;
+    clearStoredResults(viewerId);
+    keepDeviceFramesFor(viewerId);
   }, [viewerId]);
+
+  // From here on, page changes are timed (the device pages' timing report).
+  useEffect(() => installNavigationTiming(), []);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -47,6 +54,7 @@ export default function LocalDataHost({ viewer }: { viewer?: LocalCardViewer }) 
     const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_OUT") {
         clearStoredResults();
+        void clearDeviceFrames();
         void closeLocalDatabase({ wipe: true });
       } else if (event === "SIGNED_IN" && session?.user.id) {
         void open(session.user.id);

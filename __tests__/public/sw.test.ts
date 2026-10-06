@@ -86,3 +86,100 @@ describe("service worker navigation preload", () => {
     expect(worker.fetchMock).toHaveBeenCalledTimes(1);
   });
 });
+
+// The device pages' frames: a page drawn from the phone's copy arrives as a
+// frame (it carries data-device-page). It's saved, and the next time the app
+// opens on that page it's answered from the saved frame at once — refreshed
+// in the background only when it's old. Pages with their data in them, the
+// server version (?data=server) and searches are never saved.
+
+function loadWorkerWithCaches(network: () => Response) {
+  const handlers: Record<string, (event: unknown) => void> = {};
+  const stores = new Map<string, Map<string, Response>>();
+  const keyOf = (request: { url: string } | string) => (typeof request === "string" ? request : request.url);
+  const caches = {
+    open: async (name: string) => {
+      if (!stores.has(name)) stores.set(name, new Map());
+      const store = stores.get(name)!;
+      return {
+        put: async (request: { url: string }, response: Response) => void store.set(keyOf(request), response),
+        match: async (request: { url: string }) => store.get(keyOf(request))?.clone(),
+        delete: async (request: { url: string }) => store.delete(keyOf(request)),
+        add: async () => {},
+      };
+    },
+    keys: async () => [...stores.keys()],
+    delete: async (name: string) => stores.delete(name),
+    match: async () => undefined,
+  };
+  const fetchMock = vi.fn(async () => network());
+  const self = {
+    location: new URL("https://biz-h.com/sw.js?v=test"),
+    addEventListener: (type: string, handler: (event: unknown) => void) => {
+      handlers[type] = handler;
+    },
+    registration: { navigationPreload: { enable: vi.fn(async () => {}) } },
+    clients: { claim: vi.fn(async () => {}), matchAll: vi.fn(async () => []) },
+    skipWaiting: vi.fn(async () => {}),
+  };
+  vm.runInContext(
+    SW_SOURCE,
+    vm.createContext({ self, caches, fetch: fetchMock, Response, URL, Date, setTimeout, clearTimeout, Promise })
+  );
+  const frames = () => stores.get("bizh-frames-test") ?? new Map<string, Response>();
+  return { handlers, fetchMock, frames };
+}
+
+async function open(worker: { handlers: Record<string, (event: unknown) => void> }, url: string) {
+  let responded: Promise<Response> | undefined;
+  const background: Promise<unknown>[] = [];
+  worker.handlers.fetch({
+    request: { method: "GET", url, mode: "navigate", headers: new Headers({ accept: "text/html" }) },
+    preloadResponse: Promise.resolve(undefined),
+    respondWith: (promise: Promise<Response>) => {
+      responded = promise;
+    },
+    waitUntil: (promise: Promise<unknown>) => void background.push(promise),
+  });
+  if (!responded) throw new Error("the navigation wasn't answered");
+  const res = await responded;
+  const text = await res.text();
+  await Promise.all(background);
+  return text;
+}
+
+const FRAME = '<html><body><span hidden data-device-page="tasks"></span></body></html>';
+
+describe("service worker: the device pages' frames", () => {
+  it("saves a device page's frame, then opens on it at once without waiting for the server", async () => {
+    const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200, headers: { "Content-Type": "text/html" } }));
+    expect(await open(worker, "https://biz-h.com/tasks")).toBe(FRAME);
+    expect(worker.frames().has("https://biz-h.com/tasks")).toBe(true);
+
+    worker.fetchMock.mockClear();
+    expect(await open(worker, "https://biz-h.com/tasks")).toBe(FRAME);
+    // A fresh frame: not even refreshed in the background.
+    expect(worker.fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("never saves a page with its data in it — and drops a saved frame when the page comes back as one", async () => {
+    let body = FRAME;
+    const worker = loadWorkerWithCaches(() => new Response(body, { status: 200 }));
+    await open(worker, "https://biz-h.com/tasks");
+    expect(worker.frames().has("https://biz-h.com/tasks")).toBe(true);
+
+    // The page was switched back to the server version: no marker.
+    body = "<html><body>the server's board</body></html>";
+    worker.frames().clear();
+    expect(await open(worker, "https://biz-h.com/tasks")).toBe(body);
+    expect(worker.frames().has("https://biz-h.com/tasks")).toBe(false);
+  });
+
+  it("leaves other pages, the server version and searches alone", async () => {
+    const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
+    await open(worker, "https://biz-h.com/tasks?data=server");
+    await open(worker, "https://biz-h.com/projects?q=דנה");
+    await open(worker, "https://biz-h.com/customers");
+    expect(worker.frames().size).toBe(0);
+  });
+});

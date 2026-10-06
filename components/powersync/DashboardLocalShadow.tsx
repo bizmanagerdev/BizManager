@@ -64,13 +64,23 @@ function report(results: ShadowResult[]) {
   );
 }
 
+/** A server copy older than this isn't compared (it came from a saved page frame). */
+const STALE_SNAPSHOT_MS = 10 * 60 * 1000;
+
 export default function DashboardLocalShadow({
   snapshot,
   checkMoneyViews = false,
+  doneCookie,
 }: {
   snapshot: DashboardShadowSnapshot;
   /** Also run the daily whole-money-views check (one instance per board). */
   checkMoneyViews?: boolean;
+  /**
+   * On a page shown from the device: the cookie that tells the server this
+   * device has compared the page today, so it doesn't send its own version
+   * again until tomorrow (lib/powersync/device-check.ts).
+   */
+  doneCookie?: string;
 }) {
   const db = useLocalDatabase();
   const status = useLocalSyncStatus();
@@ -84,6 +94,9 @@ export default function DashboardLocalShadow({
   useEffect(() => {
     if (!db || !fresh || done.current) return;
     done.current = true;
+    // A server copy from long ago — inside a page frame the app saved and
+    // opened on (public/sw.js) — would "differ" from today's device copy.
+    if (Date.now() - Date.parse(snapshot.renderedAt) > STALE_SNAPSHOT_MS) return;
     void (async () => {
       // No people on the device = the sync rules that carry the dashboard's
       // tables aren't deployed yet: nothing to compare against.
@@ -91,6 +104,9 @@ export default function DashboardLocalShadow({
       if (!people.n) return;
       const { runDashboardShadow, runMoneyViewsCheck } = await import("@/lib/powersync/dashboard-shadow");
       report(await runDashboardShadow(db, snapshot));
+      if (doneCookie) {
+        document.cookie = `${doneCookie}=${snapshot.todayIso}; path=/; max-age=${2 * 24 * 60 * 60}; samesite=lax`;
+      }
       // The money views are heavy to read whole: once a day per device. It
       // counts as done only once it has finished — leaving the page halfway
       // means it runs again next time.
@@ -103,7 +119,7 @@ export default function DashboardLocalShadow({
     })().catch((error) =>
       withSentry((Sentry) => Sentry.captureException(error, { tags: { area: "powersync" }, fingerprint: ["powersync-shadow", "crashed"] }))
     );
-  }, [db, fresh, snapshot, checkMoneyViews]);
+  }, [db, fresh, snapshot, checkMoneyViews, doneCookie]);
 
   return null;
 }
