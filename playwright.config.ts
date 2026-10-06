@@ -29,7 +29,22 @@ export default defineConfig({
   },
 
   projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
+      testIgnore: /mobile-.*\.spec\.ts/,
+    },
+    // The Android app is a native shell that loads the live site in Android's
+    // Chrome WebView (capacitor.config.ts), so the phone experience IS the web
+    // app at phone size. A Pixel profile runs the same Chromium engine with a
+    // phone viewport, touch and a mobile user agent. The two native plugins
+    // (push, share) aren't reachable this way; the real APK points at
+    // production and is never driven by these tests.
+    {
+      name: "mobile",
+      use: { ...devices["Pixel 7"] },
+      testMatch: /mobile-.*\.spec\.ts/,
+    },
   ],
 
   // Starts the app itself against the LOCAL Supabase stack (see e2e/README.md
