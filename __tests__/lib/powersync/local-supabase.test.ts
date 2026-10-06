@@ -5,7 +5,7 @@ import { getMyTasks } from "@/lib/dashboard/tasks-overview";
 import { loadProjectsPage } from "@/app/(app)/projects/loadProjects";
 import { loadOrdersPage } from "@/app/(app)/sales/loadOrders";
 import { loadPriceListPage } from "@/app/(app)/sales/loadProducts";
-import { loadTasksBoard } from "@/app/(app)/tasks/loadTasks";
+import { loadTaskPickerOptions, loadTasksBoard } from "@/app/(app)/tasks/loadTasks";
 
 // The on-device stand-in for the Supabase client: the server's loaders run
 // against it unchanged, so it has to answer exactly like PostgREST — values
@@ -622,5 +622,41 @@ describe("the tasks board, worked out on the device", () => {
     expect(all.items.map((t) => t.id)).toEqual(["t2", "t1", "t5", "t3", "t4"]);
     const search = await loadTasksBoard(db, { filters: { ...filters, q: "חבר", scope: "all" }, userId: "me", canSeeAll: true });
     expect(search.items.map((t) => t.id)).toEqual(["t2"]);
+  });
+});
+
+describe("the task dialog's pickers, worked out on the device", () => {
+  it("projects (newest first, with the customer), active properties and customers, people who can be given a task", async () => {
+    const reader = fakeReader({
+      projects: [
+        { id: "p1", name: "ישן", customer_id: "c1", updated_at: "2026-09-01T10:00:00.000000" },
+        { id: "p2", name: "חדש", customer_id: "c1", updated_at: "2026-10-01T10:00:00.000000" },
+        { id: "p3", name: "בלי לקוח", customer_id: "gone", updated_at: "2026-10-02T10:00:00.000000" },
+      ],
+      customers: [
+        { id: "c1", name: "לקוח", phone: "050", active: 1 },
+        { id: "c2", name: "אחר", phone: null, active: 1 },
+        { id: "c3", name: "לא פעיל", phone: null, active: 0 },
+      ],
+      properties: [
+        { id: "pr1", name: "בית", address: "רחוב 1", is_active: 1 },
+        { id: "pr2", name: null, address: "רחוב 2", is_active: 0 },
+      ],
+      users: [
+        { id: "u1", full_name: "דנה", avatar_color: "#111", role: "worker", active: 1 },
+        { id: "u2", full_name: "בלי גישה", avatar_color: null, role: "worker_no_access", active: 1 },
+        { id: "u3", full_name: "עזב", avatar_color: null, role: "worker", active: 0 },
+      ],
+    });
+    const options = await loadTaskPickerOptions(createLocalSupabase(reader));
+    expect(options.projects).toEqual([
+      { id: "p2", label: "חדש (לקוח)" },
+      { id: "p1", label: "ישן (לקוח)" },
+    ]);
+    expect(options.customers.map((c) => c.label)).toEqual(["אחר", "לקוח · 050"]);
+    expect(options.properties.map((p) => p.id)).toEqual(["pr1"]);
+    expect(options.users).toEqual([{ id: "u1", label: "דנה", color: "#111" }]);
+    // The projects picker asks for names only — no money worked out for it.
+    expect(reader.queries.some((q) => /FROM (payments|expenses|payslips)/.test(q))).toBe(false);
   });
 });

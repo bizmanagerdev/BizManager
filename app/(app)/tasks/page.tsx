@@ -3,28 +3,21 @@ import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { hasSectionAccess, isStaffRole } from "@/lib/auth/roleAccess";
-import { propertyDisplayName } from "@/lib/properties";
 import { t } from "@/lib/i18n/t";
 import { commonDict } from "@/lib/i18n/dictionaries/common";
 import DashboardLocalShadow from "@/components/powersync/DashboardLocalShadow";
-import { LOCAL_DATA_SHADOW, localDataEnabledFor } from "@/lib/powersync/config";
+import { LOCAL_DATA_PAGES, LOCAL_DATA_SHADOW, localDataEnabledFor } from "@/lib/powersync/config";
 import { israelDateKey } from "@/lib/timezone";
+import LocalTasksBoard from "./LocalTasksBoard";
 import TasksPageClient from "./TasksPageClient";
-import { loadTasksBoard } from "./loadTasks";
+import { loadTaskPickerOptions, loadTasksBoard } from "./loadTasks";
 
 export const revalidate = 30;
-
-type Row = Record<string, unknown>;
-
-function getString(row: Row, key: string) {
-  const value = row[key];
-  return typeof value === "string" ? value : null;
-}
 
 export default async function TasksPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ q?: string; priority?: string; domain?: string; linked_id?: string; scope?: string }>;
+  searchParams?: Promise<{ q?: string; priority?: string; domain?: string; linked_id?: string; scope?: string; data?: string }>;
 }) {
   const params = (await searchParams) ?? {};
 
@@ -36,34 +29,13 @@ export default async function TasksPage({
   // The pickers' lists (and the users' colours) don't depend on who's asking,
   // so they go out alongside the "who's asking" check instead of after it —
   // under the caller's own RLS whatever their role; a caller without access is
-  // still redirected below before anything is rendered.
+  // still redirected below before anything is rendered. With the device
+  // version on (LOCAL_DATA_PAGES.tasks) the device works them out itself, so
+  // they wait for the check and go out only for people without a device copy.
   const supabase = await createSupabaseServerClient();
   const profilePromise = requireProfile();
-  const optionsPromise = Promise.all([
-    supabase
-      .from("project_dashboard_view")
-      .select("id,name,customer_name")
-      .order("updated_at", { ascending: false })
-      .range(0, 999),
-    // property_directory(): every property's id, name, address and is_active —
-    // all a worker may see of a property.
-    supabase
-      .rpc("property_directory")
-      .order("address", { ascending: true })
-      .range(0, 999),
-    // Active customers for the "linked customer" picker (searchable, A–Z). The card
-    // display resolves the name/phone via a direct id query, not this list.
-    supabase
-      .from("customers")
-      .select("id,name,phone,active")
-      .eq("active", true)
-      .order("name", { ascending: true })
-      .range(0, 1999),
-    // user_directory(): everyone's name, colour, role and active flag — all a
-    // worker may see of other people.
-    supabase.rpc("user_directory").order("full_name", { ascending: true }).range(0, 499),
-  ]);
-  optionsPromise.catch(() => {});
+  const earlyOptionsPromise = LOCAL_DATA_PAGES.tasks ? null : loadTaskPickerOptions(supabase);
+  earlyOptionsPromise?.catch(() => {});
 
   const { profile } = await profilePromise;
   if (!isStaffRole(profile.role) && !hasSectionAccess(profile.role, profile.section_access, "tasks")) {
@@ -83,56 +55,28 @@ export default async function TasksPage({
     scope: filterScope,
   };
 
-  const [boardResult, [projectsResult, propertiesResult, customersResult, usersResult]] =
-    await Promise.all([
-      loadTasksBoard(supabase, { filters, userId: profile.id, canSeeAll, locale: profile.locale }),
-      optionsPromise,
-    ]);
+  // The device version: the board and its pickers are worked out from this
+  // person's on-device copy (LocalTasksBoard), so the server reads nothing for
+  // them. ?data=server is the way back when the copy can't serve it.
+  const localMode = LOCAL_DATA_PAGES.tasks && localDataEnabledFor(profile.role) && params.data !== "server";
+  if (localMode) {
+    return (
+      <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
+        <div className="space-y-4">
+          <LocalTasksBoard
+            viewer={{ userId: profile.id, role: profile.role ?? "", locale: profile.locale }}
+            filters={filters}
+            canSeeAll={canSeeAll}
+          />
+        </div>
+      </AppShell>
+    );
+  }
 
-  const projectRows = (projectsResult.data ?? []) as Row[];
-  const propertyRows = (propertiesResult.data ?? []) as Row[];
-  const customerRows = (customersResult.data ?? []) as Row[];
-  const userRows = (usersResult.data ?? []) as Row[];
-
-  const projectOptions = projectRows
-    .map((p) => {
-      const id = getString(p, "id") ?? "";
-      const name = getString(p, "name") ?? "";
-      const customerName = getString(p, "customer_name");
-      const label = customerName ? `${name} (${customerName})` : name;
-      return { id, label };
-    })
-    .filter((p) => p.id && p.label);
-
-  const propertyOptions = propertyRows
-    .filter((p) => p.is_active !== false)
-    .map((p) => ({
-      id: getString(p, "id") ?? "",
-      label: propertyDisplayName({ name: getString(p, "name"), address: getString(p, "address") ?? "" }),
-    }))
-    .filter((p) => p.id && p.label);
-
-  const customerOptions = customerRows
-    .map((c) => {
-      const id = getString(c, "id") ?? "";
-      const name = getString(c, "name") ?? "";
-      const phone = getString(c, "phone");
-      // Phone in the label so the searchable picker matches on it too.
-      const label = phone ? `${name} · ${phone}` : name;
-      return { id, label };
-    })
-    .filter((c) => c.id && c.label);
-
-  // Only people with system access can be assigned / added as task members;
-  // no-access workers (payroll-only, can't log in) are left out of the pickers.
-  const userOptions = userRows
-    .filter((u) => u.active !== false && u.role !== "worker_no_access")
-    .map((u) => ({
-      id: getString(u, "id") ?? "",
-      label: getString(u, "full_name") ?? "",
-      color: getString(u, "avatar_color"),
-    }))
-    .filter((u) => u.id && u.label);
+  const [boardResult, options] = await Promise.all([
+    loadTasksBoard(supabase, { filters, userId: profile.id, canSeeAll, locale: profile.locale }),
+    earlyOptionsPromise ?? loadTaskPickerOptions(supabase),
+  ]);
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
@@ -149,19 +93,21 @@ export default async function TasksPage({
         ) : (
           <TasksPageClient
             tasks={boardResult.items}
-            projects={projectOptions}
-            properties={propertyOptions}
-            customers={customerOptions}
-            users={userOptions}
+            projects={options.projects}
+            properties={options.properties}
+            customers={options.customers}
+            users={options.users}
             canSeeAll={canSeeAll}
             currentUserId={profile.id}
             locale={profile.locale}
             initialFilters={{ q, priority: filterPriority, domain: filterDomain, linkedId: filterLinkedId, scope: filterScope }}
           />
         )}
-        {/* The device-copy shadow check of the board (lib/powersync/dashboard-shadow.ts).
-            Not for Arabic readers: their board translates task names on the
-            server as it reads them, which the device doesn't. */}
+        {/* The device-copy shadow check of the board and its pickers
+            (lib/powersync/dashboard-shadow.ts) — the same lists as above, so
+            they travel to the browser once. Not for Arabic readers: their
+            board translates task names on the server as it reads them, which
+            the device doesn't. */}
         {!boardResult.error && profile.locale !== "ar" && LOCAL_DATA_SHADOW.tasks && localDataEnabledFor(profile.role) ? (
           <DashboardLocalShadow
             snapshot={{
@@ -170,7 +116,7 @@ export default async function TasksPage({
               role: profile.role ?? "",
               locale: profile.locale,
               todayIso: israelDateKey(),
-              cards: { tasksBoard: { filters, items: boardResult.items } },
+              cards: { tasksBoard: { filters, items: boardResult.items, options } },
             }}
           />
         ) : null}

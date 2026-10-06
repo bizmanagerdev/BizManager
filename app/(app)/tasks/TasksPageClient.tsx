@@ -125,7 +125,12 @@ type UrlFilters = {
   scope: "mine" | "all";
 };
 
-function buildTasksUrl(filters: UrlFilters) {
+/**
+ * The board's URL for these filters. `serverData`: this is the server version
+ * of a page that normally reads the device copy (?data=server, after the copy
+ * couldn't serve it) — kept, so filtering doesn't bounce back to the device.
+ */
+function buildTasksUrl(filters: UrlFilters, serverData = false) {
   const params = new URLSearchParams();
   if (filters.q) params.set("q", filters.q);
   if (filters.priority) params.set("priority", filters.priority);
@@ -133,6 +138,7 @@ function buildTasksUrl(filters: UrlFilters) {
   if (filters.linkedId) params.set("linked_id", filters.linkedId);
   // "mine" is the default for everyone, so only persist the opt-in "all".
   if (filters.scope === "all") params.set("scope", "all");
+  if (serverData) params.set("data", "server");
   const qs = params.toString();
   return qs ? `/tasks?${qs}` : "/tasks";
 }
@@ -970,11 +976,12 @@ export default function TasksPageClient(props: Props) {
   }, [searchKey, committedFilters]);
   const pushFilters = useCallback(
     (filters: UrlFilters) => {
-      const href = buildTasksUrl(filters);
+      const serverData = new URLSearchParams(searchKeyRef.current).get("data") === "server";
+      const href = buildTasksUrl(filters, serverData);
       // Back to the board the URL already has: nothing to show ahead — and
       // any filters still on their way are dropped, not left showing.
       setPendingFilters(
-        href === buildTasksUrl(committedFiltersRef.current) ? null : { filters, from: searchKeyRef.current }
+        href === buildTasksUrl(committedFiltersRef.current, serverData) ? null : { filters, from: searchKeyRef.current }
       );
       emitNavigationStart();
       router.push(href);

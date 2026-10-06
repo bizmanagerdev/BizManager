@@ -16,7 +16,13 @@ import { loadPhoneQueueData, type PhoneQueueData } from "@/lib/attendance/phone-
 import { loadAttendanceClassificationOptions } from "@/lib/payroll-page-loader";
 import { getPropertiesSummary, type PropertiesSummary } from "@/lib/properties";
 import { loadProjectsPage, type ProjectsFilters } from "@/app/(app)/projects/loadProjects";
-import { loadTasksBoard, type TaskBoardItem, type TasksFilters } from "@/app/(app)/tasks/loadTasks";
+import {
+  loadTaskPickerOptions,
+  loadTasksBoard,
+  type TaskBoardItem,
+  type TaskPickerOptions,
+  type TasksFilters,
+} from "@/app/(app)/tasks/loadTasks";
 import { israelDateKey } from "@/lib/timezone";
 import type { Locale } from "@/lib/i18n/types";
 
@@ -47,8 +53,8 @@ export type LocalDashboardCards = {
     InventoryListPageResult,
     "items" | "movements" | "orderCustomerById" | "performerNameById" | "hasMore"
   >;
-  /** /tasks, the whole board, for the given filters. */
-  tasksBoard: { filters: TasksFilters; items: TaskBoardItem[] };
+  /** /tasks, the whole board for the given filters, and the task dialog's pickers. */
+  tasksBoard: { filters: TasksFilters; items: TaskBoardItem[]; options: TaskPickerOptions };
 };
 
 export type LocalCardKind = keyof LocalDashboardCards;
@@ -147,9 +153,12 @@ export async function computeLocalCard<K extends LocalCardKind>(
     case "tasksBoard": {
       const taskFilters = need<TasksFilters>();
       const canSeeAll = role === "admin" || role === "office";
-      const result = await loadTasksBoard(local, { filters: taskFilters, userId, canSeeAll, locale });
+      const [result, options] = await Promise.all([
+        loadTasksBoard(local, { filters: taskFilters, userId, canSeeAll, locale }),
+        loadTaskPickerOptions(local),
+      ]);
       if (result.error) throw new Error(result.error);
-      return { filters: taskFilters, items: result.items } as LocalDashboardCards[K];
+      return { filters: taskFilters, items: result.items, options } as LocalDashboardCards[K];
     }
     default:
       throw new Error(`Unknown dashboard card ${String(kind)}`);

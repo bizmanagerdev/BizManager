@@ -408,7 +408,25 @@ function sumMoney(values: number[]): number {
   return values.reduce((total, v) => total + Math.round(v * 100), 0) / 100;
 }
 
-type SourceLoader = (reader: LocalReader, pushdown: Filter[]) => Promise<Row[]>;
+/**
+ * A table, view or RPC as the device works it out. `columns`: every column
+ * the query reads (selected, filtered on, sorted by), or null for all — so a
+ * view can skip the parts nobody asked for.
+ */
+type SourceLoader = (reader: LocalReader, pushdown: Filter[], columns: Set<string> | null) => Promise<Row[]>;
+
+/** Every column a filter looks at. */
+function filterColumns(filter: Filter): string[] {
+  switch (filter.kind) {
+    case "not":
+      return filterColumns(filter.filter);
+    case "or":
+    case "and":
+      return filter.filters.flatMap(filterColumns);
+    default:
+      return [filter.column];
+  }
+}
 
 // ── The money views, as Postgres computes them ───────────────────────────────
 // Postgres sums numeric exactly; here sums are floats, cleaned of float noise
@@ -850,13 +868,18 @@ const VIEWS: Record<string, SourceLoader> = {
   // project_dashboard_view = project_overview_view (inner join customers, the
   // manager's name) + project_financials_view + task progress (tasks this
   // viewer can see) + a few project columns + the customer's phone.
-  project_dashboard_view: async (reader) => {
+  // The money and the task counts are worked out only when the query reads
+  // them (a picker asking for id + name doesn't need every payment).
+  project_dashboard_view: async (reader, _pushdown, columns) => {
+    const wants = (names: string[]) => columns === null || names.some((n) => columns.has(n));
+    const needsMoney = wants(PROJECT_DASHBOARD_MONEY_COLUMNS);
+    const needsTasks = wants(["total_tasks", "completed_tasks", "open_tasks"]);
     const [projects, customers, users, tasks, financials] = await Promise.all([
       loadTable(reader, "projects"),
       loadTable(reader, "customers"),
       loadTable(reader, "users"),
-      loadTable(reader, "tasks"),
-      projectFinancials(reader),
+      needsTasks ? loadTable(reader, "tasks") : Promise.resolve([] as Row[]),
+      needsMoney ? projectFinancials(reader) : Promise.resolve([] as Row[]),
     ]);
     const customerById = new Map(customers.map((c) => [c.id, c]));
     const userName = new Map(users.map((u) => [u.id, u.full_name]));
@@ -908,6 +931,12 @@ const VIEWS: Record<string, SourceLoader> = {
       });
   },
 };
+
+/** project_dashboard_view's columns that come from project_financials_view. */
+const PROJECT_DASHBOARD_MONEY_COLUMNS = [
+  "total_expenses", "gross_profit", "customer_total_price", "expenses_billed", "collected_amount",
+  "pending_amount", "overdue_amount", "outstanding_amount", "next_due_date",
+];
 
 const RPCS: Record<string, SourceLoader> = {
   // user_directory(): logs_shifts needs pay types the device doesn't hold.
@@ -1019,11 +1048,22 @@ class LocalQuery implements PromiseLike<Result> {
     if (kind === "rpc") {
       const rpc = RPCS[name];
       if (!rpc) throw new Error(`RPC ${name} isn't available on the device`);
-      return rpc(this.reader, this.filters);
+      return rpc(this.reader, this.filters, null);
     }
-    if (VIEWS[name]) return VIEWS[name](this.reader, this.filters);
+    if (VIEWS[name]) return VIEWS[name](this.reader, this.filters, this.columnsRead());
     if (!LOCAL_TABLES.has(name)) throw new Error(`Table ${name} isn't synced to the device`);
     return loadTable(this.reader, name, this.filters);
+  }
+
+  /** Every column this query reads from its source — null when it selects "*". */
+  private columnsRead(): Set<string> | null {
+    const items = parseSelect(this.selectText);
+    if (items.some((i) => i.kind === "all")) return null;
+    return new Set([
+      ...items.flatMap((i) => (i.kind === "column" ? [i.column] : [])),
+      ...this.filters.flatMap(filterColumns),
+      ...this.orders.map((o) => o.column),
+    ]);
   }
 
   /** Each embed in `items`: its target rows (projected) for each source row, after the embed's filters. */

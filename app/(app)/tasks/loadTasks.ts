@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { TaskOption, UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { translateToArabic } from "@/lib/i18n/translateToHebrew";
 import type { Locale } from "@/lib/i18n/types";
+import { propertyDisplayName } from "@/lib/properties";
 import { earliestReminderByTask, isTaskWaitingForLater } from "@/lib/tasks/visibility";
 
 type Row = Record<string, unknown>;
@@ -353,4 +355,85 @@ export async function loadTasksBoard(
   });
 
   return { items, error, loadedAt: Date.now() };
+}
+
+export type TaskPickerOptions = {
+  projects: TaskOption[];
+  properties: TaskOption[];
+  customers: TaskOption[];
+  users: UserOption[];
+};
+
+/**
+ * The task dialog's pickers: projects, properties, active customers and the
+ * people a task can be given to. Read under the caller's own access; a list
+ * that fails to load is just empty.
+ */
+export async function loadTaskPickerOptions(supabase: SupabaseClient): Promise<TaskPickerOptions> {
+  const [projectsResult, propertiesResult, customersResult, usersResult] = await Promise.all([
+    supabase
+      .from("project_dashboard_view")
+      .select("id,name,customer_name")
+      .order("updated_at", { ascending: false })
+      .range(0, 999),
+    // property_directory(): every property's id, name, address and is_active —
+    // all a worker may see of a property.
+    supabase
+      .rpc("property_directory")
+      .order("address", { ascending: true })
+      .range(0, 999),
+    // Active customers for the "linked customer" picker (searchable, A–Z). The card
+    // display resolves the name/phone via a direct id query, not this list.
+    supabase
+      .from("customers")
+      .select("id,name,phone,active")
+      .eq("active", true)
+      .order("name", { ascending: true })
+      .range(0, 1999),
+    // user_directory(): everyone's name, colour, role and active flag — all a
+    // worker may see of other people.
+    supabase.rpc("user_directory").order("full_name", { ascending: true }).range(0, 499),
+  ]);
+
+  const projects = ((projectsResult.data ?? []) as Row[])
+    .map((p) => {
+      const id = getString(p, "id") ?? "";
+      const name = getString(p, "name") ?? "";
+      const customerName = getString(p, "customer_name");
+      const label = customerName ? `${name} (${customerName})` : name;
+      return { id, label };
+    })
+    .filter((p) => p.id && p.label);
+
+  const properties = ((propertiesResult.data ?? []) as Row[])
+    .filter((p) => p.is_active !== false)
+    .map((p) => ({
+      id: getString(p, "id") ?? "",
+      label: propertyDisplayName({ name: getString(p, "name"), address: getString(p, "address") ?? "" }),
+    }))
+    .filter((p) => p.id && p.label);
+
+  const customers = ((customersResult.data ?? []) as Row[])
+    .map((c) => {
+      const id = getString(c, "id") ?? "";
+      const name = getString(c, "name") ?? "";
+      const phone = getString(c, "phone");
+      // Phone in the label so the searchable picker matches on it too.
+      const label = phone ? `${name} · ${phone}` : name;
+      return { id, label };
+    })
+    .filter((c) => c.id && c.label);
+
+  // Only people with system access can be assigned / added as task members;
+  // no-access workers (payroll-only, can't log in) are left out of the pickers.
+  const users = ((usersResult.data ?? []) as Row[])
+    .filter((u) => u.active !== false && u.role !== "worker_no_access")
+    .map((u) => ({
+      id: getString(u, "id") ?? "",
+      label: getString(u, "full_name") ?? "",
+      color: getString(u, "avatar_color"),
+    }))
+    .filter((u) => u.id && u.label);
+
+  return { projects, properties, customers, users };
 }
