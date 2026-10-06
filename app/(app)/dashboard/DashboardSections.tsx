@@ -64,7 +64,7 @@ import DashboardLocalShadow from "@/components/powersync/DashboardLocalShadow";
 import LocalDashboardCard from "@/components/powersync/LocalDashboardCard";
 import { RememberCard, RememberedCardFallback } from "@/components/dashboard/RememberedCard";
 import type { DashboardShadowSnapshot } from "@/lib/powersync/dashboard-shadow";
-import { LOCAL_DATA_PAGES, LOCAL_DATA_SHADOW, localDataEnabledFor } from "@/lib/powersync/config";
+import { LOCAL_DATA_SHADOW, localDataEnabledFor, localDataPageOn } from "@/lib/powersync/config";
 
 // ── Suspense fallbacks (kept close to the real layout so the swap is shift-free) ──
 
@@ -453,7 +453,7 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
   // person's on-device copy (components/powersync/LocalDashboardCard), so their
   // server queries below are skipped. ?data=server (the cards' own fallback
   // when a device's copy isn't ready) forces the server version.
-  const localMode = LOCAL_DATA_PAGES.dashboard && localDataEnabledFor(role) && !forceServer;
+  const localMode = localDataPageOn("dashboard", profile) && !forceServer;
   const localViewer = { userId: profile.id, role: role ?? "", locale };
   // The device-copy shadow check (lib/powersync/dashboard-shadow.ts): the
   // figures below are also worked out on the device and compared. Read time

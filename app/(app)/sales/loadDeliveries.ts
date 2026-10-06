@@ -114,7 +114,11 @@ export async function loadDeliveriesPage(
       { count: "estimated" }
     )
     .not("status", "in", `(${CLOSED_ORDER_STATUSES.join(",")})`)
-    .order("order_date", { ascending: false });
+    // Same-day orders: the newest first, then by id — a fixed order (Postgres
+    // returns ties in any order, so a page could differ from load to load).
+    .order("order_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .order("order_id", { ascending: false });
 
   if (filters.customerId) deliveriesQuery = deliveriesQuery.eq("customer_id", filters.customerId);
 

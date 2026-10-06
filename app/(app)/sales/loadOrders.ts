@@ -218,10 +218,15 @@ export async function loadOrdersPage(
           .select(ORDER_SELECT, { count: "estimated" })
           .not("status", "in", `(${CLOSED_ORDER_STATUSES.join(",")})`)
           .order("order_date", { ascending: false })
+          .order("created_at", { ascending: false })
+          .order("order_id", { ascending: false })
       : supabase
           .from("order_overview_view")
           .select(ORDER_SELECT, { count: "estimated" })
-          .order("order_date", { ascending: false });
+          // Same-day orders: the newest first, then by id — a fixed order.
+          .order("order_date", { ascending: false })
+          .order("created_at", { ascending: false })
+          .order("order_id", { ascending: false });
 
   if (customerId) ordersQuery = ordersQuery.eq("customer_id", customerId);
   if (invoice === "needs") {

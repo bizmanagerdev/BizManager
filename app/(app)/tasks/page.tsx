@@ -6,7 +6,7 @@ import { hasSectionAccess, isStaffRole } from "@/lib/auth/roleAccess";
 import { t } from "@/lib/i18n/t";
 import { commonDict } from "@/lib/i18n/dictionaries/common";
 import DashboardLocalShadow from "@/components/powersync/DashboardLocalShadow";
-import { LOCAL_DATA_PAGES, LOCAL_DATA_SHADOW, localDataEnabledFor } from "@/lib/powersync/config";
+import { LOCAL_DATA_PAGES, LOCAL_DATA_SHADOW, localDataEnabledFor, localDataPageOn } from "@/lib/powersync/config";
 import { israelDateKey } from "@/lib/timezone";
 import LocalTasksBoard from "./LocalTasksBoard";
 import TasksPageClient from "./TasksPageClient";
@@ -58,7 +58,7 @@ export default async function TasksPage({
   // The device version: the board and its pickers are worked out from this
   // person's on-device copy (LocalTasksBoard), so the server reads nothing for
   // them. ?data=server is the way back when the copy can't serve it.
-  const localMode = LOCAL_DATA_PAGES.tasks && localDataEnabledFor(profile.role) && params.data !== "server";
+  const localMode = localDataPageOn("tasks", profile) && params.data !== "server";
   if (localMode) {
     return (
       <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>

@@ -30,6 +30,16 @@ function alreadyReported(key: string): boolean {
   }
 }
 
+/** Has `key` been marked today (without marking it)? */
+function wasReported(key: string): boolean {
+  try {
+    const seen = JSON.parse(localStorage.getItem(REPORTED_KEY) ?? "{}") as Record<string, boolean>;
+    return Boolean(seen[key]);
+  } catch {
+    return false;
+  }
+}
+
 function report(results: ShadowResult[]) {
   const day = new Date().toISOString().slice(0, 10);
   for (const result of results) {
@@ -81,9 +91,14 @@ export default function DashboardLocalShadow({
       if (!people.n) return;
       const { runDashboardShadow, runMoneyViewsCheck } = await import("@/lib/powersync/dashboard-shadow");
       report(await runDashboardShadow(db, snapshot));
-      // The money views are heavy to read whole: once a day per device.
-      if (checkMoneyViews && !alreadyReported(`${new Date().toISOString().slice(0, 10)}:money-views-ran`)) {
-        report(await runMoneyViewsCheck(db));
+      // The money views are heavy to read whole: once a day per device. It
+      // counts as done only once it has finished — leaving the page halfway
+      // means it runs again next time.
+      const moneyKey = `${new Date().toISOString().slice(0, 10)}:money-views-ran`;
+      if (checkMoneyViews && !wasReported(moneyKey)) {
+        const results = await runMoneyViewsCheck(db);
+        alreadyReported(moneyKey);
+        report(results);
       }
     })().catch((error) =>
       withSentry((Sentry) => Sentry.captureException(error, { tags: { area: "powersync" }, fingerprint: ["powersync-shadow", "crashed"] }))

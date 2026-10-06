@@ -32,6 +32,21 @@ export const LOCAL_DATA_PAGES = {
 } as const;
 
 /**
+ * People (users.id) who already get the device version of every page that has
+ * one, before its switch above is on for everyone — to try it on real phones.
+ * Their own pages then skip the shadow check; everyone else's still runs it.
+ */
+export const LOCAL_DATA_PREVIEW_USERS: readonly string[] = [
+  "2fcc692e-5bd7-41a1-b4c4-3aabfa7d580e", // the owner (admin), from 2026-10-06
+];
+
+/** Does this person get the device version of `page`? */
+export function localDataPageOn(page: keyof typeof LOCAL_DATA_PAGES, viewer: { id: string; role: string | null | undefined }): boolean {
+  if (!localDataEnabledFor(viewer.role)) return false;
+  return LOCAL_DATA_PAGES[page] || LOCAL_DATA_PREVIEW_USERS.includes(viewer.id);
+}
+
+/**
  * Pages whose cards are also worked out from the device copy in the
  * background and compared with the server's (nothing on screen changes) —
  * the check that has to come out clean before a page's switch above flips.

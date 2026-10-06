@@ -137,6 +137,8 @@ export async function loadProjectsPage(
     } else {
       query = query.order("updated_at", { ascending: false });
     }
+    // Ties (same start date, no profit figure yet): by id — a fixed order.
+    query = query.order("id", { ascending: true });
 
     return query.range(from, to);
   };

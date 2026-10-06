@@ -4,6 +4,7 @@ import { getPropertiesSummary } from "@/lib/properties";
 import { getMyTasks } from "@/lib/dashboard/tasks-overview";
 import { loadProjectsPage } from "@/app/(app)/projects/loadProjects";
 import { loadOrdersPage } from "@/app/(app)/sales/loadOrders";
+import { loadDeliveriesPage } from "@/app/(app)/sales/loadDeliveries";
 import { loadPriceListPage } from "@/app/(app)/sales/loadProducts";
 import { loadTaskPickerOptions, loadTasksBoard } from "@/app/(app)/tasks/loadTasks";
 
@@ -658,5 +659,29 @@ describe("the task dialog's pickers, worked out on the device", () => {
     expect(options.users).toEqual([{ id: "u1", label: "דנה", color: "#111" }]);
     // The projects picker asks for names only — no money worked out for it.
     expect(reader.queries.some((q) => /FROM (payments|expenses|payslips)/.test(q))).toBe(false);
+  });
+});
+
+describe("same-day rows keep one order", () => {
+  it("deliveries: same order date → the newest order first (the server sorts the same way)", async () => {
+    const order = (id: string, created: string) => ({
+      id, customer_id: "c1", branch_id: null, status: "confirmed", order_date: "2026-10-05T00:00:00.000000",
+      created_at: created, total_amount: "10", notes: null,
+    });
+    const db = createLocalSupabase(
+      fakeReader({
+        // Stored oldest first: without the tie-breaker the device would list them that way.
+        orders: [order("o-early", "2026-10-05T06:19:59.700113"), order("o-late", "2026-10-05T09:11:43.707316")],
+        customers: [{ id: "c1", name: "לקוח", name_for_invoice: null, phone: null, address: null }],
+        customer_branches: [],
+        order_items: [],
+        products: [],
+        inventory: [],
+        payments: [],
+      })
+    );
+    const { deliveries, error } = await loadDeliveriesPage(db, { page: 1, filters: { customerId: null } });
+    expect(error).toBeNull();
+    expect(deliveries.map((d) => d.id)).toEqual(["o-late", "o-early"]);
   });
 });
