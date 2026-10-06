@@ -107,8 +107,7 @@ export default async function ProfilePage() {
         .order("name", { ascending: true })
         .range(0, 199),
       supabase
-        .from("properties")
-        .select("id,name,address")
+        .rpc("property_directory")
         .order("address", { ascending: true })
         .range(0, 199),
     ]),
@@ -168,7 +167,7 @@ export default async function ProfilePage() {
       ? supabase.from("projects").select("id,name").in("id", linkedProjectIds)
       : Promise.resolve({ data: [] as Row[] }),
     linkedPropertyIds.length
-      ? supabase.from("properties").select("id,name,address").in("id", linkedPropertyIds)
+      ? supabase.rpc("property_directory").in("id", linkedPropertyIds)
       : Promise.resolve({ data: [] as Row[] }),
   ]);
   const linkLabelById = new Map<string, string>();

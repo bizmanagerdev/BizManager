@@ -43,9 +43,10 @@ export default async function TasksPage({
       .select("id,name,customer_name")
       .order("updated_at", { ascending: false })
       .range(0, 999),
+    // property_directory(): every property's id, name, address and is_active —
+    // all a worker may see of a property.
     supabase
-      .from("properties")
-      .select("id,name,address,is_active")
+      .rpc("property_directory")
       .order("address", { ascending: true })
       .range(0, 999),
     // Active customers for the "linked customer" picker (searchable, A–Z). The card
@@ -56,17 +57,9 @@ export default async function TasksPage({
       .eq("active", true)
       .order("name", { ascending: true })
       .range(0, 1999),
-    supabase
-      .from("users")
-      .select("id,full_name,email,active")
-      // Only workers with system access can be assigned / added as task members;
-      // no-access workers (payroll-only, can't log in) are excluded from the pickers.
-      .neq("role", "worker_no_access")
-      .order("full_name", { ascending: true })
-      .range(0, 499),
-    // Chosen avatar colors — separate, tolerant query so a missing column (before
-    // db/sql/add_user_avatar_color.sql runs) can't break the user list.
-    supabase.from("users").select("id,avatar_color").range(0, 499),
+    // user_directory(): everyone's name, colour, role and active flag — all a
+    // worker may see of other people.
+    supabase.rpc("user_directory").order("full_name", { ascending: true }).range(0, 499),
   ]);
   optionsPromise.catch(() => {});
 
@@ -96,18 +89,11 @@ export default async function TasksPage({
     ? ensureRecurringTasksForDate(supabase).catch(() => undefined)
     : Promise.resolve(undefined);
 
-  const [boardResult, [projectsResult, propertiesResult, customersResult, usersResult, colorsResult]] =
+  const [boardResult, [projectsResult, propertiesResult, customersResult, usersResult]] =
     await Promise.all([
       loadTasksBoard(supabase, { filters, userId: profile.id, canSeeAll, locale: profile.locale }),
       optionsPromise,
     ]);
-
-  const colorById = new Map<string, string>();
-  for (const row of (colorsResult.data ?? []) as Row[]) {
-    const id = getString(row, "id");
-    const color = getString(row, "avatar_color");
-    if (id && color) colorById.set(id, color);
-  }
 
   await recurringTasksPromise;
 
@@ -145,16 +131,15 @@ export default async function TasksPage({
     })
     .filter((c) => c.id && c.label);
 
+  // Only people with system access can be assigned / added as task members;
+  // no-access workers (payroll-only, can't log in) are left out of the pickers.
   const userOptions = userRows
-    .filter((u) => u.active !== false)
-    .map((u) => {
-      const id = getString(u, "id") ?? "";
-      return {
-        id,
-        label: getString(u, "full_name") ?? getString(u, "email") ?? "",
-        color: colorById.get(id) ?? null,
-      };
-    })
+    .filter((u) => u.active !== false && u.role !== "worker_no_access")
+    .map((u) => ({
+      id: getString(u, "id") ?? "",
+      label: getString(u, "full_name") ?? "",
+      color: getString(u, "avatar_color"),
+    }))
     .filter((u) => u.id && u.label);
 
   return (

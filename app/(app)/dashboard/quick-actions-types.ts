@@ -28,6 +28,8 @@ export type UserOption = {
   role?: UserRole;
   payroll_worker_type?: PayrollWorkerType | null;
   pay_tracking_mode?: string | null;
+  /** Logs shifts (a session-logging worker type) — the attendance picker's test. */
+  logs_shifts?: boolean;
 };
 
 /** An order or a property — anything pickable by name with an optional detail line. */

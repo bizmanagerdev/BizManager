@@ -8,6 +8,7 @@ import {
   invalidateAuditFlagCache,
   logAuditEvent,
   resolvePrivateTaskIds,
+  resolveUserDisplayNamesForValues,
   TRIGGER_AUDITED_TABLES,
   type AuditLogRow,
 } from "@/lib/audit";
@@ -38,27 +39,28 @@ vi.mock("@/lib/supabase/admin", () => ({ createSupabaseAdminClient: vi.fn(() => 
 // they look like they mean.
 
 function makeSupabase(opts: { auditEnabled?: boolean | null; insertError?: { message: string } | null } = {}) {
-  const calls = { businessSettingsSelects: 0, insert: [] as unknown[] };
+  const calls = { auditFlagReads: 0, insert: [] as unknown[] };
+  // The audit switch is read through get_audit_logging() (workers can't read
+  // business_settings); undefined = the flag couldn't be read.
+  const rpc = (name: string) => {
+    if (name === "get_audit_logging") {
+      calls.auditFlagReads += 1;
+      return Promise.resolve({ data: opts.auditEnabled === undefined ? null : opts.auditEnabled, error: null });
+    }
+    return Promise.resolve({ data: null, error: null });
+  };
   const from = (table: string) => {
     const builder: Record<string, unknown> = {};
     builder.select = () => builder;
     builder.eq = () => builder;
-    builder.maybeSingle = () => {
-      if (table === "business_settings") {
-        calls.businessSettingsSelects += 1;
-        return Promise.resolve({
-          data: opts.auditEnabled === undefined ? null : { audit_logging_enabled: opts.auditEnabled },
-        });
-      }
-      return Promise.resolve({ data: null, error: null });
-    };
+    builder.maybeSingle = () => Promise.resolve({ data: null, error: null });
     builder.insert = (values: unknown) => {
       calls.insert.push(values);
       return Promise.resolve({ error: table === "audit_logs" ? (opts.insertError ?? null) : null });
     };
     return builder;
   };
-  return { from, calls };
+  return { from, rpc, calls };
 }
 
 const BASE = {
@@ -106,7 +108,7 @@ describe("logAuditEvent — argument guard", () => {
     await logAuditEvent({ ...BASE, recordId: "", supabase: database as never });
     await logAuditEvent({ ...BASE, action: "", supabase: database as never });
     expect(database.calls.insert).toHaveLength(0);
-    expect(database.calls.businessSettingsSelects).toBe(0);
+    expect(database.calls.auditFlagReads).toBe(0);
   });
 });
 
@@ -117,17 +119,17 @@ describe("logAuditEvent — the global audit on/off switch", () => {
     expect(database.calls.insert).toHaveLength(0);
   });
 
-  it("defaults to enabled (inserts) when the settings row/column isn't present yet", async () => {
+  it("defaults to enabled (inserts) when the flag can't be read", async () => {
     const database = makeSupabase({ auditEnabled: undefined as never });
     await logAuditEvent({ ...BASE, supabase: database as never });
     expect(database.calls.insert).toHaveLength(1);
   });
 
-  it("caches the flag for repeated calls — only reads business_settings once", async () => {
+  it("caches the flag for repeated calls — only reads it once", async () => {
     const database = makeSupabase({ auditEnabled: true });
     await logAuditEvent({ ...BASE, supabase: database as never });
     await logAuditEvent({ ...BASE, recordId: "rec-2", supabase: database as never });
-    expect(database.calls.businessSettingsSelects).toBe(1);
+    expect(database.calls.auditFlagReads).toBe(1);
     expect(database.calls.insert).toHaveLength(2);
   });
 
@@ -136,7 +138,7 @@ describe("logAuditEvent — the global audit on/off switch", () => {
     await logAuditEvent({ ...BASE, supabase: database as never });
     invalidateAuditFlagCache();
     await logAuditEvent({ ...BASE, recordId: "rec-2", supabase: database as never });
-    expect(database.calls.businessSettingsSelects).toBe(2);
+    expect(database.calls.auditFlagReads).toBe(2);
   });
 });
 
@@ -544,5 +546,41 @@ describe("resolvePrivateTaskIds", () => {
     ]);
     expect(from).not.toHaveBeenCalled();
     expect(result.size).toBe(0);
+  });
+});
+
+describe("resolveUserDisplayNamesForValues — names through user_labels()", () => {
+  // Workers can't read other people's user rows, so names come from the
+  // user_labels() function, keyed by whichever id was asked for (a users.id or
+  // a login id).
+  function labelsClient(rows: Array<{ value: string; full_name: string | null }>) {
+    const rpc = vi.fn(() => Promise.resolve({ data: rows, error: null }));
+    const from = vi.fn();
+    return { rpc, from };
+  }
+
+  it("asks once, with every distinct value, and maps each value to its name", async () => {
+    const database = labelsClient([
+      { value: "user-1", full_name: "  Dana  " },
+      { value: "auth-2", full_name: "Yossi" },
+    ]);
+    const map = await resolveUserDisplayNamesForValues(database as never, ["user-1", "auth-2", "user-1", ""]);
+    expect(database.rpc).toHaveBeenCalledTimes(1);
+    expect(database.rpc).toHaveBeenCalledWith("user_labels", { p_values: ["user-1", "auth-2"] });
+    expect(database.from).not.toHaveBeenCalled();
+    expect(map).toEqual({ "user-1": "Dana", "auth-2": "Yossi" });
+  });
+
+  it("falls back to the generic label for a person with no name", async () => {
+    const database = labelsClient([{ value: "user-3", full_name: null }]);
+    const map = await resolveUserDisplayNamesForValues(database as never, ["user-3"]);
+    expect(map).toEqual({ "user-3": "משתמש" });
+  });
+
+  it("doesn't call the database when there's nothing to resolve", async () => {
+    const database = labelsClient([]);
+    const map = await resolveUserDisplayNamesForValues(database as never, ["", ""]);
+    expect(database.rpc).not.toHaveBeenCalled();
+    expect(map).toEqual({});
   });
 });

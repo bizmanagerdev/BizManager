@@ -61,10 +61,10 @@ const OPEN_LIMIT = 1000;
 
 const TASK_SELECT =
   "id,subject,subject_he,subject_ar,status,priority,due_date,due_time,city,business_domain,project_id,property_id,customer_id,assigned_user_id,is_private,private_owner_id,sort_order";
-// What the board reads per task: the task, the two timestamps the "mine" union
-// re-ranks by, and the assignee's name and colour riding along (one read
-// instead of a users lookup after the tasks).
-const TASK_ROW_SELECT = `${TASK_SELECT},created_at,updated_at,assignee:users!tasks_assigned_user_id_fkey(full_name,email,avatar_color)`;
+// What the board reads per task: the task and the two timestamps the "mine"
+// union re-ranks by. People's names and colours come from user_directory() in
+// the second round (workers can't read other people's user rows).
+const TASK_ROW_SELECT = `${TASK_SELECT},created_at,updated_at`;
 const OPEN_STATUSES_OR = "status.is.null,status.in.(todo,in_progress,blocked)";
 
 function getString(row: Row, key: string) {
@@ -96,7 +96,6 @@ type TaskRow = {
   sort_order: number | null;
   created_at: string | null;
   updated_at: string | null;
-  assignee: { full_name: string | null; email: string | null; avatar_color: string | null } | null;
 };
 
 export type TasksBoardResult = {
@@ -210,20 +209,22 @@ export async function loadTasksBoard(
   const propertyIds = uniqueIds(taskRows as unknown as Row[], "property_id");
   const customerIds = uniqueIds(taskRows as unknown as Row[], "customer_id");
 
-  const [projectsRes, propertiesRes, customersRes, membersRes, commentsRes, remindersRes, attachmentsRes] =
+  const [projectsRes, propertiesRes, customersRes, membersRes, usersRes, commentsRes, remindersRes, attachmentsRes] =
     await Promise.all([
     projectIds.length
       ? supabase.from("project_dashboard_view").select("id,name").in("id", projectIds)
       : Promise.resolve({ data: [] as Row[] }),
     propertyIds.length
-      ? supabase.from("properties").select("id,address").in("id", propertyIds)
+      ? supabase.rpc("property_directory").in("id", propertyIds)
       : Promise.resolve({ data: [] as Row[] }),
     // Direct id lookup (name + phone) — never resolved through a capped picker list.
     customerIds.length
       ? supabase.from("customers").select("id,name,phone").in("id", customerIds)
       : Promise.resolve({ data: [] as Row[] }),
-    // Each member's name and colour ride along (no users lookup after this).
-    supabase.from("task_members").select("task_id,user_id,users(full_name,email,avatar_color)").in("task_id", taskIds),
+    supabase.from("task_members").select("task_id,user_id").in("task_id", taskIds),
+    // Everyone's name and colour (a few dozen rows), alongside the members —
+    // their ids aren't known before this round.
+    supabase.rpc("user_directory"),
     supabase.from("task_comments").select("task_id").in("task_id", taskIds).range(0, 9999),
     supabase
       .from("reminders")
@@ -245,13 +246,7 @@ export async function loadTasksBoard(
   ]);
 
   const memberRows = (membersRes.data ?? []) as Row[];
-  // Every assignee's and member's name and colour, from the rows that carried
-  // them: the tasks (assignee) and the memberships (users).
-  // A user the viewer can't read leaves no entry, as before (name null, not "").
-  const userRows: Row[] = [
-    ...taskRows.flatMap((task) => (task.assignee ? [{ id: task.assigned_user_id, ...task.assignee }] : [])),
-    ...memberRows.flatMap((member) => (member.users ? [{ id: member.user_id, ...(member.users as Row) }] : [])),
-  ];
+  const userRows = (usersRes.data ?? []) as Row[];
 
   const projectNameById = new Map(
     ((projectsRes.data ?? []) as Row[]).map((r) => [getString(r, "id"), getString(r, "name")] as const)
@@ -265,7 +260,7 @@ export async function loadTasksBoard(
     )
   );
   const userNameById = new Map(
-    userRows.map((r) => [getString(r, "id"), getString(r, "full_name") ?? getString(r, "email") ?? ""] as const)
+    userRows.map((r) => [getString(r, "id"), getString(r, "full_name") ?? ""] as const)
   );
   const userColorById = new Map(userRows.map((r) => [getString(r, "id"), getString(r, "avatar_color")] as const));
 

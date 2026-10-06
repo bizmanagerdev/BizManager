@@ -167,8 +167,7 @@ export async function POST(req: Request) {
       }
       if (part.propertyId) {
         const { data: property, error: propertyError } = await supabase
-          .from("properties")
-          .select("id")
+          .rpc("property_directory")
           .eq("id", part.propertyId)
           .maybeSingle();
         if (propertyError) return NextResponse.json({ error: toHebrewError(propertyError.message) }, { status: 400 });

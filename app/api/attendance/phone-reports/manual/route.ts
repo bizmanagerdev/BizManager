@@ -2,7 +2,6 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { logAuditEventAfterResponse } from "@/lib/audit-after";
-import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions } from "@/lib/payroll-worker-type";
 import { minutesBetween } from "@/lib/payroll";
 import { PHONE_ATTENDANCE_TABLE } from "@/lib/attendance/phone-reports";
 
@@ -51,19 +50,19 @@ export async function POST(req: Request) {
       if (parsedOut <= parsedIn) return NextResponse.json({ error: "שעת היציאה חייבת להיות אחרי הכניסה." }, { status: 400 });
     }
 
+    // user_directory(): a worker logging a colleague can't read the colleague's
+    // user row; it says who they are and whether they log shifts.
     const { data: worker, error: workerError } = await supabase
-      .from("users")
-      .select("id,active,role,payroll_worker_type,pay_tracking_mode")
+      .rpc("user_directory")
       .eq("id", userId)
-      .maybeSingle();
+      .maybeSingle<{ id: string; active: boolean | null; role: string | null; logs_shifts: boolean | null }>();
     if (workerError) return NextResponse.json({ error: toHebrewError(workerError.message) }, { status: 400 });
     if (!worker?.id) return NextResponse.json({ error: "העובד לא נמצא." }, { status: 404 });
     if (worker.active === false) return NextResponse.json({ error: "העובד אינו פעיל." }, { status: 400 });
     if (worker.role !== "worker" && worker.role !== "worker_no_access") {
       return NextResponse.json({ error: "ניתן לבחור רק עובד." }, { status: 400 });
     }
-    const workerType = normalizePayrollWorkerType(worker.payroll_worker_type, worker.pay_tracking_mode);
-    if (!payrollWorkerTypeAllowsSessions(workerType)) {
+    if (worker.logs_shifts !== true) {
       return NextResponse.json({ error: "סוג העובד הזה לא מתעד משמרות." }, { status: 409 });
     }
 

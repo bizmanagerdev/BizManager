@@ -47,10 +47,11 @@ export async function fetchEntityReminders(
   const assigneeIds = [...new Set(rows.map((r) => s(r, "assigned_to")).filter((v): v is string => Boolean(v)))];
   const nameById = new Map<string, string>();
   if (assigneeIds.length) {
-    const { data: users } = await supabase.from("users").select("id,full_name,email").in("id", assigneeIds);
+    // user_directory(): workers can't read other people's user rows.
+    const { data: users } = await supabase.rpc("user_directory").in("id", assigneeIds);
     for (const u of (users ?? []) as Row[]) {
       const id = s(u, "id");
-      if (id) nameById.set(id, s(u, "full_name") ?? s(u, "email") ?? id.slice(0, 8));
+      if (id) nameById.set(id, s(u, "full_name") ?? id.slice(0, 8));
     }
   }
 

@@ -186,7 +186,7 @@ export async function getScheduleEntries(
       ? supabase.from("projects").select("id,name").in("id", taskProjectIds)
       : empty,
     taskUserIds.length
-      ? supabase.from("users").select("id,full_name,email").in("id", taskUserIds)
+      ? supabase.rpc("user_directory").in("id", taskUserIds)
       : empty,
     customerIds.length
       ? supabase.from("customers").select("id,name").in("id", customerIds)

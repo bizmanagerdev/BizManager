@@ -1172,7 +1172,7 @@ export async function resolveAuditTitles(
       ? supabase.from("projects").select("id,name").in("id", Array.from(projectIds))
       : Promise.resolve({ data: [] as NamedRow[] }),
     propertyIds.size > 0
-      ? supabase.from("properties").select("id,name,address").in("id", Array.from(propertyIds))
+      ? supabase.rpc("property_directory").in("id", Array.from(propertyIds))
       : Promise.resolve({ data: [] as { id?: string; name?: string; address?: string }[] }),
     userIds.size > 0
       ? resolveUserDisplayNamesForValues(supabase, Array.from(userIds))
@@ -1498,28 +1498,14 @@ export async function resolveUserDisplayNamesForValues(
   const uniqueValues = Array.from(new Set(values.filter(Boolean)));
   if (uniqueValues.length === 0) return {} as Record<string, string>;
 
-  const [byIdResult, byAuthUserIdResult] = await Promise.all([
-    supabase
-      .from("users")
-      .select("id,auth_user_id,full_name,email")
-      .in("id", uniqueValues),
-    supabase
-      .from("users")
-      .select("id,auth_user_id,full_name,email")
-      .in("auth_user_id", uniqueValues),
-  ]);
+  // user_labels(): the name behind each user id or login id. Workers can't read
+  // other people's user rows, so the lookup runs with the database's rights.
+  const { data } = await supabase.rpc("user_labels", { p_values: uniqueValues });
 
   const map: Record<string, string> = {};
-  for (const row of [
-    ...((byIdResult.data ?? []) as AuditActorRow[]),
-    ...((byAuthUserIdResult.data ?? []) as AuditActorRow[]),
-  ]) {
-    const displayName = actorDisplayName(row);
-    if (typeof row.id === "string" && row.id) {
-      map[row.id] = displayName;
-    }
-    if (typeof row.auth_user_id === "string" && row.auth_user_id) {
-      map[row.auth_user_id] = displayName;
+  for (const row of (data ?? []) as Array<{ value?: string | null; full_name?: string | null }>) {
+    if (typeof row.value === "string" && row.value) {
+      map[row.value] = actorDisplayName({ id: row.value, full_name: row.full_name ?? null, email: null });
     }
   }
 
@@ -1922,8 +1908,10 @@ async function backfillMissingAuditActor({
 }
 
 // Global audit on/off flag (mirrors business_settings.audit_logging_enabled,
-// flipped from Settings → System). Cached briefly so we never pay a read per
-// write on a warm server instance.
+// flipped from Settings → System). Read through get_audit_logging(), which
+// reads it with the database's own rights — workers can't read
+// business_settings, and a blocked read must not switch auditing back on.
+// Cached briefly so we never pay a read per write on a warm server instance.
 let auditFlagCache: { value: boolean; at: number } | null = null;
 const AUDIT_FLAG_TTL_MS = 60_000;
 
@@ -1934,13 +1922,9 @@ export function invalidateAuditFlagCache() {
 async function isAuditLoggingEnabled(supabase: SupabaseClient): Promise<boolean> {
   const now = Date.now();
   if (auditFlagCache && now - auditFlagCache.at < AUDIT_FLAG_TTL_MS) return auditFlagCache.value;
-  const { data } = await supabase
-    .from("business_settings")
-    .select("audit_logging_enabled")
-    .eq("id", true)
-    .maybeSingle();
-  // Default ON if the column/row isn't present yet.
-  const value = (data as { audit_logging_enabled?: boolean } | null)?.audit_logging_enabled ?? true;
+  const { data } = await supabase.rpc("get_audit_logging");
+  // Default ON if the flag can't be read.
+  const value = typeof data === "boolean" ? data : true;
   auditFlagCache = { value, at: now };
   return value;
 }
@@ -2497,7 +2481,7 @@ export async function enrichDocumentLinks(supabase: SupabaseClient, items: Audit
       ? supabase.from("tasks").select("id,subject,is_private").in("id", Array.from(taskIds))
       : Promise.resolve({ data: [] as { id?: string; subject?: string; is_private?: boolean }[] }),
     propertyIds.size > 0
-      ? supabase.from("properties").select("id,name,address").in("id", Array.from(propertyIds))
+      ? supabase.rpc("property_directory").in("id", Array.from(propertyIds))
       : Promise.resolve({ data: [] as { id?: string; name?: string; address?: string }[] }),
   ]);
 

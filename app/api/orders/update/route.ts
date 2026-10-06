@@ -3,6 +3,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { after, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasDeliveriesAccess } from "@/lib/auth/roleAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { buildPaymentInsert } from "@/lib/payments";
@@ -537,16 +538,19 @@ export async function POST(req: Request) {
     // new payment row. Failures are logged via audit and never abort the order save.
     // Runs after the response is sent so the external Morning API never delays the save.
     const actor = { profileId: profile.id, authUserId: user.id, role: profile.role };
+    // A worker's delivery confirmation issues with the server's own access:
+    // workers can't read the Morning settings or save Morning documents.
+    const morningSupabase = profile.role === "worker" ? (createSupabaseAdminClient() ?? supabase) : supabase;
     after(async () => {
       try {
-        await tryAutoIssueInvoiceForOrder(supabase, {
+        await tryAutoIssueInvoiceForOrder(morningSupabase, {
           orderId: updatedOrderId,
           newStatus: status,
           trigger: "status-change",
           actor,
         });
         for (const paymentId of insertedPaymentIds) {
-          await tryAutoIssueReceiptForPayment(supabase, { paymentId, actor });
+          await tryAutoIssueReceiptForPayment(morningSupabase, { paymentId, actor });
         }
       } catch (morningError) {
         console.error("Morning auto-issue failed after order update", morningError);

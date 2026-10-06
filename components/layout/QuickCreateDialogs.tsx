@@ -43,7 +43,6 @@ import { CollectPaymentDialog } from "@/components/collections/CollectPaymentDia
 import ReminderFormDialog from "@/components/reminders/ReminderFormDialog";
 import { AttendanceLogDialog } from "@/components/attendance/AttendanceLogDialog";
 import { OrderDeliveryDateDialog } from "@/components/orders/OrderDeliveryDateDialog";
-import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions } from "@/lib/payroll-worker-type";
 import type { QuickCreateAction, QuickCreateData } from "@/components/layout/quick-create-types";
 import { toHebrewError } from "@/lib/error-messages";
 import { offlineFetch } from "@/lib/offline-queue";
@@ -154,11 +153,9 @@ export default function QuickCreateDialogs({
   const restrictAttendanceToSelf = data.role === "worker" && data.locale === "ar";
   const attendanceWorkers = useMemo(() => {
     const eligible = data.users
-      .filter(
-        (u) =>
-          (u.role === "worker" || u.role === "worker_no_access") &&
-          payrollWorkerTypeAllowsSessions(normalizePayrollWorkerType(u.payroll_worker_type, u.pay_tracking_mode))
-      )
+      // logs_shifts comes from user_directory(): workers can't read coworkers'
+      // pay types.
+      .filter((u) => (u.role === "worker" || u.role === "worker_no_access") && u.logs_shifts === true)
       .map((u) => ({ id: u.id, label: u.label }));
     return restrictAttendanceToSelf ? eligible.filter((u) => u.id === data.currentUserId) : eligible;
   }, [data.users, restrictAttendanceToSelf, data.currentUserId]);

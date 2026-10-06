@@ -51,6 +51,7 @@ export async function loadQuickActionsData(supabase: SupabaseClient): Promise<Qu
       productsWithStock,
       { data: customerRows },
       { data: userRows },
+      { data: payrollTypeRows },
       { data: salaryAgreementRows },
     ] = await Promise.all([
       supabase
@@ -64,8 +65,7 @@ export async function loadQuickActionsData(supabase: SupabaseClient): Promise<Qu
         .order("order_date", { ascending: false })
         .range(0, 99),
       supabase
-        .from("properties")
-        .select("id,name,address,is_active")
+        .rpc("property_directory")
         .eq("is_active", true)
         .order("address", { ascending: true })
         .range(0, 99),
@@ -85,11 +85,12 @@ export async function loadQuickActionsData(supabase: SupabaseClient): Promise<Qu
         .select("customer_id,customer_name,name_for_invoice,phone,email,address")
         .order("customer_name", { ascending: true })
         .range(0, 49),
-      supabase
-        .from("users")
-        .select("id,full_name,email,role,active,payroll_worker_type,pay_tracking_mode")
-        .order("full_name", { ascending: true })
-        .range(0, 499),
+      // Everyone's name, role and whether they log shifts — all a worker may
+      // see of other people.
+      supabase.rpc("user_directory").order("full_name", { ascending: true }).range(0, 499),
+      // Pay types for the shift editor: admins and office read everyone's, a
+      // worker only their own.
+      supabase.from("users").select("id,payroll_worker_type,pay_tracking_mode").range(0, 499),
       supabase
         .from("salary_agreements")
         .select("id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours")
@@ -123,19 +124,22 @@ export async function loadQuickActionsData(supabase: SupabaseClient): Promise<Qu
       .map((row) => ({ id: getString(row, "id") ?? "", name: firstString(row, ["name", "address"], "Property"), subtitle: "" }))
       .filter((row) => row.id);
 
+    const payrollTypeById = new Map(((payrollTypeRows ?? []) as Row[]).map((row) => [getString(row, "id"), row] as const));
     const users = ((userRows ?? []) as Row[])
       .map((row) => {
+        const id = getString(row, "id") ?? "";
         const fullName = getString(row, "full_name");
-        const email = getString(row, "email");
         const role = getString(row, "role");
-        const workerType = row.payroll_worker_type;
+        const payrollType = payrollTypeById.get(id);
+        const workerType = payrollType?.payroll_worker_type;
         return {
-          id: getString(row, "id") ?? "",
-          label: fullName && fullName.trim() ? fullName : email ?? "",
+          id,
+          label: fullName && fullName.trim() ? fullName : "",
           role: isUserRole(role) ? role : undefined,
           active: row.active,
           payroll_worker_type: isPayrollWorkerType(workerType) ? workerType : null,
-          pay_tracking_mode: getString(row, "pay_tracking_mode"),
+          pay_tracking_mode: payrollType ? getString(payrollType, "pay_tracking_mode") : null,
+          logs_shifts: row.logs_shifts === true,
         };
       })
       .filter((row) => row.id && row.label && row.active !== false)
@@ -145,6 +149,7 @@ export async function loadQuickActionsData(supabase: SupabaseClient): Promise<Qu
         role: row.role,
         payroll_worker_type: row.payroll_worker_type,
         pay_tracking_mode: row.pay_tracking_mode,
+        logs_shifts: row.logs_shifts,
       }));
 
     const customers = ((customerRows ?? []) as Row[])

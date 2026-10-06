@@ -24,10 +24,9 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
   const [activity, usersResult, projectsResult, ordersResult, propertiesResult] = await Promise.all([
     fetchVehicleActivity(supabase, id),
     supabase
-      .from("users")
-      .select("id,full_name,email,avatar_color,active")
+      .rpc("user_directory")
       .eq("active", true)
-      // Task pickers only offer workers with system access (no payroll-only workers).
+      // Task pickers only offer people with system access (no payroll-only workers).
       .neq("role", "worker_no_access")
       .order("full_name", { ascending: true }),
     supabase.from("project_dashboard_view").select("id,name").order("name", { ascending: true }).range(0, 999),
@@ -36,12 +35,12 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
       .select("order_id,customer_name,order_date")
       .order("order_date", { ascending: false })
       .range(0, 499),
-    supabase.from("properties").select("id,name,address").order("address", { ascending: true }).range(0, 999),
+    supabase.rpc("property_directory").order("address", { ascending: true }).range(0, 999),
   ]);
 
   const users: UserOption[] = ((usersResult.data ?? []) as Array<Record<string, unknown>>).map((u) => ({
     id: String(u.id ?? ""),
-    label: (typeof u.full_name === "string" && u.full_name) || (typeof u.email === "string" ? u.email : "") || "משתמש",
+    label: (typeof u.full_name === "string" && u.full_name) || "משתמש",
     color: typeof u.avatar_color === "string" ? u.avatar_color : null,
   }));
 

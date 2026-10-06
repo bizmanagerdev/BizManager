@@ -108,15 +108,14 @@ export async function POST(req: Request) {
 
     if (propertyId) {
       const { data: property, error: propertyError } = await supabase
-        .from("properties")
-        .select("id")
+        .rpc("property_directory")
         .eq("id", propertyId)
         .maybeSingle();
 
       if (propertyError) {
         return NextResponse.json({ error: toHebrewError(propertyError.message) }, { status: 400 });
       }
-      if (!property?.id) {
+      if (!(property as { id?: string } | null)?.id) {
         return NextResponse.json({ error: "הנכס שנבחר לא קיים." }, { status: 400 });
       }
     }
