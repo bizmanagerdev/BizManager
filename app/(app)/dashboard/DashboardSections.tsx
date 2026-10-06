@@ -57,7 +57,6 @@ import type { Locale } from "@/lib/i18n/types";
 
 /** One domain's cash in a window — what loadDomainCashBreakdown returns. */
 type CashPoint = { domainName: string; inflow: number; outflow: number };
-import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
 import { israelDateKey } from "@/lib/timezone";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -434,14 +433,6 @@ export async function DashboardPanels() {
         .catch(() => [] as AuditFeedItem[])
     : Promise.resolve([] as AuditFeedItem[]);
 
-  // Recurring-task generation does a write + a few round-trips. Run it
-  // concurrently with the reads (awaited below) rather than blocking ahead of
-  // them. Trade-off: on the rare day a template first fires, its tasks appear on
-  // the next load.
-  const recurringTasksPromise = isAdminOrOffice
-    ? ensureRecurringTasksForDate(supabase).catch(() => undefined)
-    : Promise.resolve(undefined);
-
   // Israel's date, not the server's UTC one: the calendar feed files reminders
   // and tasks under their Israel date, so between 00:00 and 03:00 Israel time a
   // UTC "today" was still yesterday and the היום card showed the wrong day.
@@ -565,7 +556,6 @@ export async function DashboardPanels() {
   ]);
 
   // Let the recurring-tasks write (started above) finish before responding.
-  await recurringTasksPromise;
 
   // The dated alerts, grouped HERE (server) because that's pure rule knowledge;
   // the card only draws them. Its sibling does the date bucketing on the client,

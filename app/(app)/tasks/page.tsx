@@ -3,7 +3,6 @@ import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { hasSectionAccess, isStaffRole } from "@/lib/auth/roleAccess";
-import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
 import { propertyDisplayName } from "@/lib/properties";
 import { t } from "@/lib/i18n/t";
 import { commonDict } from "@/lib/i18n/dictionaries/common";
@@ -81,21 +80,11 @@ export default async function TasksPage({
     scope: filterScope,
   };
 
-  // Run the recurring-tasks write concurrently with the reads (awaited below)
-  // instead of as a blocking pre-step — it no longer adds a serial round-trip
-  // wave ahead of the board load. Trade-off: on the rare day a template first
-  // fires, its tasks appear on the next load.
-  const recurringTasksPromise = canSeeAll
-    ? ensureRecurringTasksForDate(supabase).catch(() => undefined)
-    : Promise.resolve(undefined);
-
   const [boardResult, [projectsResult, propertiesResult, customersResult, usersResult]] =
     await Promise.all([
       loadTasksBoard(supabase, { filters, userId: profile.id, canSeeAll, locale: profile.locale }),
       optionsPromise,
     ]);
-
-  await recurringTasksPromise;
 
   const projectRows = (projectsResult.data ?? []) as Row[];
   const propertyRows = (propertiesResult.data ?? []) as Row[];

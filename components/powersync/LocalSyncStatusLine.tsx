@@ -30,20 +30,25 @@ export function LocalSyncStatusLine({ locale }: { locale: Locale }) {
     : null;
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground" role="status">
+    <div className="flex items-start gap-2 px-3 py-1.5 text-xs text-muted-foreground" role="status">
       <span
         aria-hidden
         className={cn(
-          "h-2 w-2 shrink-0 rounded-full",
+          "mt-1 h-2 w-2 shrink-0 rounded-full",
           state === "synced" && "bg-emerald-500",
           state === "first" && "animate-pulse bg-amber-500",
           state === "offline" && "bg-muted-foreground/50",
           state === "error" && "bg-destructive"
         )}
       />
-      <span className="truncate">
+      {/* Wraps rather than truncating — the menu is narrow on phones. "Up to
+          date" already says it's current, so it carries just the time. */}
+      <span className="min-w-0">
         {t(topbarDict, locale, "localDataTitle")}: {label}
-        {time && state !== "first" ? ` · ${t(topbarDict, locale, "localDataUpdatedAt")} ${time}` : ""}
+        {time && state === "synced" ? ` · ${time}` : ""}
+        {time && (state === "offline" || state === "error")
+          ? ` · ${t(topbarDict, locale, "localDataUpdatedAt")} ${time}`
+          : ""}
       </span>
     </div>
   );

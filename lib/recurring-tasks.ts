@@ -248,6 +248,16 @@ export function ensureRecurringTasksForDate(
   return ensureRecurringTasksForDateCached(supabase, options);
 }
 
+/**
+ * Generate now, past the once-a-day cache: the nightly job
+ * (/api/cron/recurring-tasks) and saving a template, so a template that's
+ * already due this month gets its task at once. Safe to repeat — templates
+ * that already have this month's tasks are skipped.
+ */
+export function generateRecurringTasksNow(supabase: SupabaseClient, options?: { today?: Date }) {
+  return runEnsureRecurringTasksForDate(supabase, options);
+}
+
 export function ensureRecurringTasksForDateCached(
   supabase: SupabaseClient,
   options?: { today?: Date }

@@ -2,6 +2,8 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
+import { runAfterResponse } from "@/lib/after-response";
+import { generateRecurringTasksNow } from "@/lib/recurring-tasks";
 
 type Payload = {
   id?: string | null;
@@ -156,6 +158,10 @@ export async function POST(req: Request) {
     if (insertAssigneesError) {
       return NextResponse.json({ error: toHebrewError(insertAssigneesError.message) }, { status: 400 });
     }
+
+    // A template that's already due this month gets its task now, not at the
+    // nightly run (pages no longer generate on load).
+    runAfterResponse("recurring-tasks/generate", () => generateRecurringTasksNow(supabase));
 
     return NextResponse.json({ ok: true, id: templateId });
   } catch (err: unknown) {
