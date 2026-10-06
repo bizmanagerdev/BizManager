@@ -5,6 +5,9 @@ import AppShell from "@/components/layout/AppShell";
 import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { loadProjectsPage } from "@/app/(app)/projects/loadProjects";
 import { parseProjectsFilters } from "@/app/(app)/projects/projectsFilters";
+import DashboardLocalShadow from "@/components/powersync/DashboardLocalShadow";
+import { LOCAL_DATA_SHADOW, localDataEnabledFor } from "@/lib/powersync/config";
+import { israelDateKey } from "@/lib/timezone";
 
 const ProjectsClient = dynamic(() => import("@/app/(app)/projects/ProjectsClient"), {
   loading: () => <DetailPageSkeleton />,
@@ -188,6 +191,21 @@ export default async function ProjectsPage({
               ) : null;
             })()}
           </div>
+        ) : null}
+
+        {/* The device-copy shadow check for this list (lib/powersync/dashboard-shadow.ts) —
+            not for searches, which also read task comments the device doesn't hold. */}
+        {LOCAL_DATA_SHADOW.projects && localDataEnabledFor(profile.role) && !filters.q && !loadError ? (
+          <DashboardLocalShadow
+            snapshot={{
+              renderedAt: new Date(projectsResult.loadedAt).toISOString(),
+              userId: profile.id,
+              role: profile.role ?? "",
+              locale: profile.locale,
+              todayIso: israelDateKey(),
+              cards: { projectsList: { filters, rows: rowsWithPaymentStatus, hasMore } },
+            }}
+          />
         ) : null}
 
         {loadError ? (

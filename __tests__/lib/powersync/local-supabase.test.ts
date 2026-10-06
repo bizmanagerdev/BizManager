@@ -1,7 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { coerceRow, createLocalSupabase, normalizeTimestamp, type LocalReader } from "@/lib/powersync/local-supabase";
 import { getPropertiesSummary } from "@/lib/properties";
 import { getMyTasks } from "@/lib/dashboard/tasks-overview";
+import { loadProjectsPage } from "@/app/(app)/projects/loadProjects";
 
 // The on-device stand-in for the Supabase client: the server's loaders run
 // against it unchanged, so it has to answer exactly like PostgREST — values
@@ -169,8 +170,8 @@ describe("select lists", () => {
 
     const missing = await db.from("lease_agreements").select("id,nonexistent");
     expect(missing.error?.message).toMatch(/nonexistent/);
-    const notSynced = await db.from("expenses").select("id");
-    expect(notSynced.error?.message).toMatch(/expenses/);
+    const notSynced = await db.from("audit_logs").select("id");
+    expect(notSynced.error?.message).toMatch(/audit_logs/);
   });
 });
 
@@ -268,5 +269,192 @@ describe("the server's own loaders, run on the device copy", () => {
       ["t2", null, true],
       ["t1", "פרויקט", false],
     ]);
+  });
+});
+
+describe("the money views, worked out on the device", () => {
+  // One worked example, every figure by hand. "Today" is 2026-10-06 (UTC —
+  // the database's CURRENT_DATE).
+  const tables = {
+    users: [
+      { id: "u1", full_name: "שעתי", pay_tracking_mode: "session" },
+      { id: "u2", full_name: "חודשי", pay_tracking_mode: "payslip" },
+    ],
+    attendance_sessions: [
+      // 22:30 UTC on 30 Sept: UTC date 2026-09-30.
+      { id: "s1", user_id: "u1", clock_in: "2026-09-30T22:30:00.000000", labor_cost: "150.50", worked_minutes: 300, project_id: "p1", is_billable_to_customer: 1, bill_to_customer_amount: "200", business_domain: null, property_id: null },
+      { id: "s2", user_id: "u1", clock_in: "2026-10-01T08:00:00.000000", labor_cost: "0", worked_minutes: 60, project_id: "p1", is_billable_to_customer: 0, bill_to_customer_amount: null, business_domain: null, property_id: null },
+      { id: "s3", user_id: "u2", clock_in: "2026-10-02T08:00:00.000000", labor_cost: "100", worked_minutes: 60, project_id: null, is_billable_to_customer: 0, bill_to_customer_amount: null, business_domain: null, property_id: null },
+    ],
+    payslips: [{ id: "ps1", user_id: "u2", payroll_period_id: "pp1", gross_salary: "5000", total_work_minutes: 9000 }],
+    payroll_periods: [{ id: "pp1", end_date: "2026-08-31", period_month: "2026-08" }],
+    salary_agreements: [
+      { id: "a1", user_id: "u2", valid_from: "2026-01-01", valid_to: null, due_day_of_next_month: 15, business_domain: "logistics_projects", project_id: "p1", property_id: null, is_billable_to_customer: 1, bill_to_customer_amount: "6000" },
+      { id: "a2", user_id: "u2", valid_from: "2026-09-01", valid_to: null, due_day_of_next_month: 1, business_domain: null, project_id: null, property_id: null, is_billable_to_customer: 0, bill_to_customer_amount: null },
+    ],
+    worker_payments: [
+      { id: "wp1", payment_date: "2026-10-01" },
+      { id: "wp2", payment_date: "2026-09-15" },
+    ],
+    worker_payment_allocations: [
+      { id: "al1", worker_payment_id: "wp1", source_type: "session", attendance_session_id: "s1", payslip_id: null, amount: "50" },
+      { id: "al2", worker_payment_id: "wp2", source_type: "payslip", attendance_session_id: null, payslip_id: "ps1", amount: "5000" },
+      { id: "al3", worker_payment_id: "gone", source_type: "session", attendance_session_id: "s1", payslip_id: null, amount: "999" },
+    ],
+    projects: [
+      { id: "p1", name: "הובלה", customer_id: "c1", actual_price: "1000", agreed_base_price: null, price_includes_vat: 1, vat_rate: "0.18", status: "active" },
+      { id: "p2", name: "בלי מחיר", customer_id: "c-missing", actual_price: null, agreed_base_price: null, price_includes_vat: 0, vat_rate: null, status: "active" },
+    ],
+    project_expenses: [
+      { id: "pe1", project_id: "p1", expense_id: "e1", billed_to_customer: 1 },
+      { id: "pe2", project_id: "p1", expense_id: "e2", billed_to_customer: 0 },
+    ],
+    expenses: [
+      { id: "e1", amount: "100" },
+      { id: "e2", amount: "50" },
+    ],
+    payments: [
+      { id: "pay1", project_id: "p1", net_amount: "500", amount_total: "590", vat_amount: "90", payment_status: "cleared", payment_date: "2026-09-20T10:00:00.000000", due_date: null },
+      { id: "pay2", project_id: "p1", net_amount: null, amount_total: "300", vat_amount: null, payment_status: "pending", payment_date: "2026-09-01T10:00:00.000000", due_date: "2026-10-01" },
+      { id: "pay3", project_id: "p1", net_amount: "1000", amount_total: "1000", vat_amount: null, payment_status: "rejected", payment_date: "2026-09-02T10:00:00.000000", due_date: null },
+      { id: "pay4", project_id: "p2", net_amount: null, amount_total: "250", vat_amount: null, payment_status: null, payment_date: "2026-09-25T10:00:00.000000", due_date: null },
+    ],
+    customers: [{ id: "c1", name: "לקוח", phone: "050" }],
+    tasks: [
+      { id: "t1", project_id: "p1", status: "done" },
+      { id: "t2", project_id: "p1", status: "todo" },
+    ],
+  };
+
+  it("worker_debt_items_view: earned, paid and owed per shift and payslip", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-06T09:00:00Z"));
+    try {
+      const db = createLocalSupabase(fakeReader(tables));
+      const { data } = await db.from("worker_debt_items_view").select("*").order("source_type");
+      expect(data).toEqual([
+        expect.objectContaining({
+          source_type: "payslip",
+          source_id: "ps1",
+          project_id: "p1",
+          source_date: "2026-08-31",
+          due_date: "2026-09-15",
+          period_month: "2026-08",
+          earned_amount: 5000,
+          paid_amount: 5000,
+          owed_amount: 0,
+          payment_status: "paid",
+          business_domain: "logistics_projects",
+          is_billable_to_customer: true,
+          bill_to_customer_amount: 6000,
+          last_payment_date: "2026-09-15",
+        }),
+        expect.objectContaining({
+          source_type: "session",
+          source_id: "s1",
+          source_date: "2026-09-30",
+          period_month: "2026-09",
+          earned_amount: 150.5,
+          paid_amount: 50,
+          owed_amount: 100.5,
+          payment_status: "partial",
+          business_domain: "general_business",
+          last_payment_date: "2026-10-01",
+        }),
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("project_financials_view: price with VAT, billed costs, profit, collected / pending / overdue", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-06T09:00:00Z"));
+    try {
+      const db = createLocalSupabase(fakeReader(tables));
+      const { data } = await db.from("project_financials_view").select("*").order("id");
+      const [p1, p2] = data as Row[];
+      expect(p1).toMatchObject({
+        // 1000 × 1.18 + billed expense 100 + billable shift 200 + billable payslip 6000
+        customer_total_price: 7480,
+        // expenses 150 + labour 150.5 + payslip 5000
+        total_expenses: 5300.5,
+        gross_profit: 2179.5,
+        expenses_billed: 6300,
+        collected_amount: 500,
+        pending_amount: 300,
+        overdue_amount: 300,
+        outstanding_amount: 6980,
+        gross_collected: 590,
+        vat_collected: 90,
+        next_due_date: "2026-10-01",
+        last_payment_date: "2026-09-20",
+      });
+      // No price: the money collected is the price.
+      expect(p2).toMatchObject({ customer_total_price: 250, collected_amount: 250, gross_profit: 250, outstanding_amount: 0, next_due_date: null });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("inner lookups with a filter on the linked row, and the worker balance per project", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-06T09:00:00Z"));
+    try {
+      const db = createLocalSupabase(
+        fakeReader({
+          ...tables,
+          expenses: [
+            { id: "e1", amount: "100", paid_amount: "0", payment_status: "not_paid" },
+            { id: "e2", amount: "50", paid_amount: "50", payment_status: "paid" },
+          ],
+        })
+      );
+      const { data } = await db
+        .from("project_expenses")
+        .select("project_id,expenses!inner(id,payment_status)")
+        .in("expenses.payment_status", ["not_paid", "partial"]);
+      expect(data).toEqual([{ project_id: "p1", expenses: { id: "e1", payment_status: "not_paid" } }]);
+
+      const balance = await db.from("project_worker_balance_view").select("project_id,earned_amount,paid_amount,owed_amount");
+      // Only the payslip is on p1 (the shift's project is p1 too): 5000 + 150.5 earned, 5050 paid, 100.5 owed.
+      expect(balance.data).toEqual([{ project_id: "p1", earned_amount: 5150.5, paid_amount: 5050, owed_amount: 100.5 }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("the projects list loader, end to end on the device copy", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-06T09:00:00Z"));
+    try {
+      const db = createLocalSupabase(fakeReader(tables));
+      const result = await loadProjectsPage(db, {
+        page: 1,
+        filters: { view: "projects", status: "all", customerId: null, sort: "recent", q: "" },
+      });
+      expect(result.error).toBeNull();
+      expect(result.rows.map((r) => [r.id, r.gross_profit, r.customer_total_price, r.we_owe_amount])).toEqual([
+        // p2 has no customer row, so (like the view's inner join) it isn't listed.
+        // We owe on p1: the shift's unpaid 100.5 (the payslip is fully paid).
+        ["p1", 2179.5, 7480, 100.5],
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("project_dashboard_view: needs a customer; task progress; money from the financials", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-06T09:00:00Z"));
+    try {
+      const db = createLocalSupabase(fakeReader(tables));
+      const { data } = await db.from("project_dashboard_view").select("id,customer_name,total_tasks,completed_tasks,open_tasks,gross_profit,customer_phone");
+      expect(data).toEqual([
+        { id: "p1", customer_name: "לקוח", total_tasks: 2, completed_tasks: 1, open_tasks: 1, gross_profit: 2179.5, customer_phone: "050" },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

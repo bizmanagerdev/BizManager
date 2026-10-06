@@ -61,8 +61,10 @@ import { israelDateKey } from "@/lib/timezone";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import DashboardLocalShadow from "@/components/powersync/DashboardLocalShadow";
+import LocalDashboardCard from "@/components/powersync/LocalDashboardCard";
+import { RememberCard, RememberedCardFallback } from "@/components/dashboard/RememberedCard";
 import type { DashboardShadowSnapshot } from "@/lib/powersync/dashboard-shadow";
-import { LOCAL_DATA_SHADOW, localDataEnabledFor } from "@/lib/powersync/config";
+import { LOCAL_DATA_PAGES, LOCAL_DATA_SHADOW, localDataEnabledFor } from "@/lib/powersync/config";
 
 // ── Suspense fallbacks (kept close to the real layout so the swap is shift-free) ──
 
@@ -254,11 +256,14 @@ async function PaymentsSlowCell({
   paymentLeadRowsPromise,
   todayIso,
   locale,
+  rememberKey,
 }: {
   paymentsPromise: Promise<Awaited<ReturnType<typeof loadPaymentCalendarItems>> | null>;
   paymentLeadRowsPromise: Promise<{ id?: unknown; reminder_work_days_before?: unknown }[]>;
   todayIso: string;
   locale: Locale;
+  /** Keeps this card on the device for the next visit's placeholder. */
+  rememberKey: string;
 }) {
   const [paymentsResult, paymentLeadRows] = await Promise.all([paymentsPromise, paymentLeadRowsPromise]);
 
@@ -308,18 +313,30 @@ async function PaymentsSlowCell({
     lateCount: latePayments.length,
     lateTotal: sumAmounts(latePayments),
   };
-  return <UpcomingPayments summary={paymentsSummary} locale={locale} />;
+  return (
+    <>
+      <RememberCard rememberKey={rememberKey} kind="payments" props={{ summary: paymentsSummary, locale }} />
+      <UpcomingPayments summary={paymentsSummary} locale={locale} />
+    </>
+  );
 }
 
 async function CollectionsSlowCell({
   summaryPromise,
   locale,
+  rememberKey,
 }: {
   summaryPromise: Promise<Awaited<ReturnType<typeof getCollectionsSummary>> | null>;
   locale: Locale;
+  rememberKey: string;
 }) {
   const summary = await summaryPromise;
-  return summary ? <CollectionsCard summary={summary} locale={locale} /> : null;
+  return (
+    <>
+      <RememberCard rememberKey={rememberKey} kind="collections" props={summary ? { summary, locale } : null} />
+      {summary ? <CollectionsCard summary={summary} locale={locale} /> : null}
+    </>
+  );
 }
 
 async function AttendanceQueueSlowCell({
@@ -384,6 +401,7 @@ async function DomainChartSlowCell({
   currentMonth,
   todayIso,
   locale,
+  rememberKey,
 }: {
   breakdownPromise: Promise<CashPoint[]>;
   prevBreakdownPromise: Promise<CashPoint[]>;
@@ -391,6 +409,7 @@ async function DomainChartSlowCell({
   currentMonth: MonthKey;
   todayIso: string;
   locale: Locale;
+  rememberKey: string;
 }) {
   // Income vs expenses per business domain, for the month the card opens on.
   const [domainBreakdown, domainPrevBreakdown, booksStartDate] = await Promise.all([
@@ -403,15 +422,16 @@ async function DomainChartSlowCell({
   // header's picker fetches any other month itself. The widget still only
   // appears when THIS month has something — an empty board card is still an
   // empty card, picker or not.
-  return domainBars.length > 0 ? (
-    <DomainChartCard
-      initialBars={domainBars}
-      initialMonth={currentMonth}
-      todayIso={todayIso}
-      booksStartDate={booksStartDate}
-      locale={locale}
-    />
-  ) : null;
+  const cardProps =
+    domainBars.length > 0
+      ? { initialBars: domainBars, initialMonth: currentMonth, todayIso, booksStartDate, locale }
+      : null;
+  return (
+    <>
+      <RememberCard rememberKey={rememberKey} kind="domainChart" props={cardProps} />
+      {cardProps ? <DomainChartCard {...cardProps} /> : null}
+    </>
+  );
 }
 
 /**
@@ -423,16 +443,23 @@ async function DomainChartSlowCell({
  * Suspense boundary so the shell, greeting, and quick-action buttons are never
  * blocked by these heavier aggregations.
  */
-export async function DashboardPanels() {
+export async function DashboardPanels({ forceServer = false }: { forceServer?: boolean } = {}) {
   const { profile, supabase, user } = await requireProfile();
   const role = profile.role;
   const locale = profile.locale;
   const isAdminOrOffice = role === "admin" || role === "office";
+  // The device-copy version of the board (LOCAL_DATA_PAGES.dashboard): today,
+  // alerts, my tasks, deliveries, attendance and properties are drawn from the
+  // person's on-device copy (components/powersync/LocalDashboardCard), so their
+  // server queries below are skipped. ?data=server (the cards' own fallback
+  // when a device's copy isn't ready) forces the server version.
+  const localMode = LOCAL_DATA_PAGES.dashboard && localDataEnabledFor(role) && !forceServer;
+  const localViewer = { userId: profile.id, role: role ?? "", locale };
   // The device-copy shadow check (lib/powersync/dashboard-shadow.ts): the
   // figures below are also worked out on the device and compared. Read time
   // first, so the device only compares once its copy is at least this fresh.
   const shadow: ShadowBase | null =
-    LOCAL_DATA_SHADOW.dashboard && localDataEnabledFor(role)
+    !localMode && LOCAL_DATA_SHADOW.dashboard && localDataEnabledFor(role)
       ? { renderedAt: new Date().toISOString(), userId: profile.id, role: role ?? "", locale, todayIso: israelDateKey() }
       : null;
 
@@ -524,16 +551,16 @@ export async function DashboardPanels() {
   const collectionsPromise = show("collections") && isAdminOrOffice
     ? getCollectionsSummary(supabase, todayIso).catch(() => null)
     : Promise.resolve(null);
-  const attendanceQueuePromise = show("attendanceQueue") && isAdminOrOffice
+  const attendanceQueuePromise = show("attendanceQueue") && isAdminOrOffice && !localMode
     ? loadPhoneQueueData(supabase).catch(() => null as PhoneQueueData | null)
     : Promise.resolve(null);
-  const attendanceSparkPromise = show("attendanceQueue") && isAdminOrOffice
+  const attendanceSparkPromise = show("attendanceQueue") && isAdminOrOffice && !localMode
     ? loadAttendanceSpark(supabase).catch(() => [] as number[])
     : Promise.resolve([] as number[]);
-  const attendanceOptionsPromise = show("attendanceQueue") && isAdminOrOffice
+  const attendanceOptionsPromise = show("attendanceQueue") && isAdminOrOffice && !localMode
     ? loadAttendanceClassificationOptions(supabase).catch(() => null)
     : Promise.resolve(null);
-  const propertiesPromise = show("properties") && isAdminOrOffice
+  const propertiesPromise = show("properties") && isAdminOrOffice && !localMode
     ? getPropertiesSummary(supabase, todayIso).catch(() => null)
     : Promise.resolve(null);
   // Money before the books start date (Settings → כספים) isn't real — a month
@@ -568,18 +595,22 @@ export async function DashboardPanels() {
     // The inbox for today's DATED alerts; the schedule for today's tasks /
     // projects / reminders. Separate widgets, so hiding one skips only its
     // own query.
-    show("todayAlerts") ? getInboxView(supabase, { userId: profile.id, role }).catch(() => null) : Promise.resolve(null),
-    show("todaySchedule")
+    show("todayAlerts") && !localMode
+      ? getInboxView(supabase, { userId: profile.id, role }).catch(() => null)
+      : Promise.resolve(null),
+    show("todaySchedule") && !localMode
       ? getScheduleEntries(supabase, { scope: "mine", userId: profile.id }).catch(() => [] as CalendarEntry[])
       : Promise.resolve([] as CalendarEntry[]),
-    show("myTasks") ? getMyTasks(supabase, profile.id, locale) : Promise.resolve([]),
+    show("myTasks") && !localMode ? getMyTasks(supabase, profile.id, locale) : Promise.resolve([]),
     // No role gate: resolveWidgets already decided, and the deliveries widget is
     // now allowed for workers too (their whole job).
-    show("deliveries")
+    show("deliveries") && !localMode
       ? loadDeliveriesPage(supabase, { page: 1, filters: { customerId: null } }).then((r) => r.deliveries).catch(() => [] as DeliveryItem[])
       : Promise.resolve([] as DeliveryItem[]),
     // The shape behind the count — a week of daily totals, no figures shown.
-    show("deliveries") ? loadDeliveriesSpark(supabase).catch(() => [] as number[]) : Promise.resolve([] as number[]),
+    show("deliveries") && !localMode
+      ? loadDeliveriesSpark(supabase).catch(() => [] as number[])
+      : Promise.resolve([] as number[]),
     digestPromise,
   ]);
 
@@ -618,44 +649,77 @@ export async function DashboardPanels() {
     // Named by the DATE; the greeting is the top bar's now (DashboardGreetingTitle).
     // The SSR snapshot comes from the server's clock and the card re-reads it on
     // the client, so a restored page can't show yesterday.
-    todaySchedule: show("todaySchedule") ? (
+    todaySchedule: !show("todaySchedule") ? null : localMode ? (
+      <LocalDashboardCard
+        kind="todaySchedule"
+        viewer={localViewer}
+        initialDate={formatToday(new Date(), locale)}
+        fillClassName={CARD_FILL_CLASS}
+      />
+    ) : (
       <TodayScheduleCard entries={scheduleEntries} initialDate={formatToday(new Date(), locale)} locale={locale} />
-    ) : null,
+    ),
     // Renders null on a quiet day (nothing missed) or once dismissed — same
     // rule as every other widget whose content can turn out empty (see the
     // comment above `present` for the `empty:hidden` fallback that handles
     // it), so `show("activityDigest")` alone doesn't guarantee a visible card.
     activityDigest:
       digestItems.length > 0 ? <MissedDigestCell initialItems={digestItems} planned locale={locale} /> : null,
-    todayAlerts: alertsSlice ? <TodayAlertsCard alerts={alertsSlice.alerts} locale={locale} /> : null,
-    myTasks: <MyTasksPanel tasks={myTasks} locale={locale} />,
+    todayAlerts: localMode ? (
+      show("todayAlerts") ? <LocalDashboardCard kind="todayAlerts" viewer={localViewer} fillClassName={CARD_FILL_CLASS} /> : null
+    ) : alertsSlice ? (
+      <TodayAlertsCard alerts={alertsSlice.alerts} locale={locale} />
+    ) : null,
+    myTasks: localMode ? (
+      <LocalDashboardCard kind="myTasks" viewer={localViewer} fillClassName={CARD_FILL_CLASS} />
+    ) : (
+      <MyTasksPanel tasks={myTasks} locale={locale} />
+    ),
     // Deliveries is a Hebrew-only feature (user, 2026-08-19: "only Hebrew
     // workers need deliveries") — never shown to an Arabic-locale worker,
     // regardless of their dashboard widget prefs.
     deliveries:
-      locale === "ar" ? null : (
+      locale === "ar" ? null : localMode ? (
+        <LocalDashboardCard
+          kind="deliveries"
+          viewer={localViewer}
+          canOpenOrder={isAdminOrOffice}
+          fillClassName={CARD_FILL_CLASS}
+        />
+      ) : (
         <UpcomingDeliveries
           deliveries={deliveriesResult}
           spark={deliveriesSpark}
           canOpenOrder={isAdminOrOffice}
         />
       ),
+    // The money cards show their last version (kept on the device) while the
+    // fresh one is worked out — see components/dashboard/RememberedCard.
     payments: isAdminOrOffice ? (
-      <Suspense fallback={<SlowCardSkeleton />}>
+      <Suspense
+        fallback={<RememberedCardFallback rememberKey={`${profile.id}:payments`} kind="payments" className={CARD_FILL_CLASS} />}
+      >
         <PaymentsSlowCell
           paymentsPromise={paymentsPromise}
           paymentLeadRowsPromise={paymentLeadRowsPromise}
           todayIso={todayIso}
           locale={locale}
+          rememberKey={`${profile.id}:payments`}
         />
       </Suspense>
     ) : null,
     collections: show("collections") && isAdminOrOffice ? (
-      <Suspense fallback={<SlowCardSkeleton />}>
-        <CollectionsSlowCell summaryPromise={collectionsPromise} locale={locale} />
+      <Suspense
+        fallback={
+          <RememberedCardFallback rememberKey={`${profile.id}:collections`} kind="collections" className={CARD_FILL_CLASS} />
+        }
+      >
+        <CollectionsSlowCell summaryPromise={collectionsPromise} locale={locale} rememberKey={`${profile.id}:collections`} />
       </Suspense>
     ) : null,
-    attendanceQueue: show("attendanceQueue") && isAdminOrOffice ? (
+    attendanceQueue: !(show("attendanceQueue") && isAdminOrOffice) ? null : localMode ? (
+      <LocalDashboardCard kind="attendanceQueue" viewer={localViewer} fillClassName={CARD_FILL_CLASS} />
+    ) : (
       <Suspense fallback={<SlowCardSkeleton />}>
         <AttendanceQueueSlowCell
           dataPromise={attendanceQueuePromise}
@@ -665,15 +729,22 @@ export async function DashboardPanels() {
           shadow={shadow}
         />
       </Suspense>
-    ) : null,
-    properties: show("properties") && isAdminOrOffice ? (
+    ),
+    properties: !(show("properties") && isAdminOrOffice) ? null : localMode ? (
+      <LocalDashboardCard kind="properties" viewer={localViewer} fillClassName={CARD_FILL_CLASS} />
+    ) : (
       <Suspense fallback={<SlowCardSkeleton />}>
         <PropertiesSlowCell summaryPromise={propertiesPromise} locale={locale} shadow={shadow} />
       </Suspense>
-    ) : null,
+    ),
     domainChart: needDomainChart ? (
-      <Suspense fallback={<SlowCardSkeleton />}>
+      <Suspense
+        fallback={
+          <RememberedCardFallback rememberKey={`${profile.id}:domainChart`} kind="domainChart" className={CARD_FILL_CLASS} />
+        }
+      >
         <DomainChartSlowCell
+          rememberKey={`${profile.id}:domainChart`}
           breakdownPromise={domainBreakdownPromise}
           prevBreakdownPromise={domainPrevBreakdownPromise}
           booksStartDatePromise={booksStartDatePromise}
@@ -803,6 +874,7 @@ export async function DashboardPanels() {
 
       {shadow ? (
         <DashboardLocalShadow
+          checkMoneyViews
           snapshot={{
             ...shadow,
             cards: {

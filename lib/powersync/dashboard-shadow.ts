@@ -1,34 +1,16 @@
 import type { CommonPowerSyncDatabase } from "@powersync/web";
 import { createLocalSupabase } from "./local-supabase";
-import { getScheduleEntries, type CalendarEntry } from "@/lib/projectSchedule";
-import { getInboxView, todaySlice } from "@/lib/reminders/worklist";
-import { getMyTasks, type DashboardTask } from "@/lib/dashboard/tasks-overview";
-import { loadDeliveriesPage, type DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
-import { loadAttendanceSpark, loadDeliveriesSpark } from "@/lib/dashboard/sparklines";
-import { loadPhoneQueueData, type PhoneQueueData } from "@/lib/attendance/phone-reports";
-import { loadAttendanceClassificationOptions } from "@/lib/payroll-page-loader";
-import { getPropertiesSummary, type PropertiesSummary } from "@/lib/properties";
+import { computeLocalCard, type LocalCardKind, type LocalDashboardCards } from "./dashboard-local";
 import type { Locale } from "@/lib/i18n/types";
 
 // The dashboard's "shadow" check (PowerSync plan, dashboard step): while the
 // board still shows the server's figures, work out the same cards from the
-// on-device copy — with the SAME loaders, through createLocalSupabase — and
-// compare. Nothing on screen changes; differences are reported. The board
-// switches to the device copy (LOCAL_DATA_PAGES.dashboard) only after a stretch
-// with none.
+// on-device copy — with the SAME loaders (dashboard-local.ts, through
+// createLocalSupabase) — and compare. Nothing on screen changes; differences
+// are reported. The board switches to the device copy
+// (LOCAL_DATA_PAGES.dashboard) only after a stretch with none.
 
-export type DashboardShadowCards = Partial<{
-  todaySchedule: CalendarEntry[];
-  todayAlerts: ReturnType<typeof todaySlice> | null;
-  myTasks: DashboardTask[];
-  deliveries: { items: DeliveryItem[]; spark: number[] };
-  attendanceQueue: {
-    data: PhoneQueueData;
-    spark: number[];
-    options: Awaited<ReturnType<typeof loadAttendanceClassificationOptions>> | null;
-  };
-  properties: PropertiesSummary;
-}>;
+export type DashboardShadowCards = Partial<LocalDashboardCards>;
 
 export type DashboardShadowSnapshot = {
   /** When the server read these figures (ISO). */
@@ -41,7 +23,8 @@ export type DashboardShadowSnapshot = {
 };
 
 export type ShadowResult = {
-  card: keyof DashboardShadowCards;
+  /** A dashboard card, or a whole money view (runMoneyViewsCheck). */
+  card: string;
   match: boolean;
   /** How long the device took to work the card out, ms. */
   localMs: number;
@@ -93,7 +76,7 @@ function diff(server: unknown, local: unknown, path: string, out: ShadowResult["
   if (server !== local) out.push({ path, server: shorten(server), local: shorten(local) });
 }
 
-function compare(card: keyof DashboardShadowCards, server: unknown, local: unknown, localMs: number): ShadowResult {
+function compare(card: string, server: unknown, local: unknown, localMs: number): ShadowResult {
   const diffs: ShadowResult["diffs"] = [];
   diff(normalize(server), normalize(local), card, diffs);
   return { card, match: diffs.length === 0, localMs, diffs };
@@ -111,42 +94,50 @@ export async function runDashboardShadow(
   snapshot: DashboardShadowSnapshot
 ): Promise<ShadowResult[]> {
   const local = createLocalSupabase(db);
-  const { cards, userId, role, locale, todayIso } = snapshot;
+  const viewer = { userId: snapshot.userId, role: snapshot.role, locale: snapshot.locale };
   const results: ShadowResult[] = [];
-
-  const check = async <T>(card: keyof DashboardShadowCards, server: unknown, work: () => Promise<T>) => {
+  for (const card of Object.keys(snapshot.cards) as LocalCardKind[]) {
     try {
-      const { value, ms } = await timed(work);
-      results.push(compare(card, server, value, ms));
+      const filters = card === "projectsList" ? snapshot.cards.projectsList?.filters : undefined;
+      const { value, ms } = await timed(() => computeLocalCard(local, card, viewer, filters));
+      results.push(compare(card, snapshot.cards[card], value, ms));
     } catch (error) {
       results.push({ card, match: false, localMs: 0, diffs: [], error: error instanceof Error ? error.message : String(error) });
     }
-  };
+  }
+  return results;
+}
 
-  if (cards.todaySchedule) {
-    await check("todaySchedule", cards.todaySchedule, () => getScheduleEntries(local, { scope: "mine", userId }));
-  }
-  if (cards.todayAlerts !== undefined) {
-    await check("todayAlerts", cards.todayAlerts, async () => todaySlice(await getInboxView(local, { userId, role })));
-  }
-  if (cards.myTasks) {
-    await check("myTasks", cards.myTasks, () => getMyTasks(local, userId, locale));
-  }
-  if (cards.deliveries) {
-    await check("deliveries", cards.deliveries, async () => ({
-      items: (await loadDeliveriesPage(local, { page: 1, filters: { customerId: null } })).deliveries,
-      spark: await loadDeliveriesSpark(local),
-    }));
-  }
-  if (cards.attendanceQueue) {
-    await check("attendanceQueue", cards.attendanceQueue, async () => ({
-      data: await loadPhoneQueueData(local),
-      spark: await loadAttendanceSpark(local),
-      options: await loadAttendanceClassificationOptions(local),
-    }));
-  }
-  if (cards.properties) {
-    await check("properties", cards.properties, () => getPropertiesSummary(local, todayIso));
+/**
+ * The plan's "every figure on every project" check: the two money views the
+ * projects pages stand on — read whole from the server (as this person, so
+ * the same rows they'd see) and worked out whole on the device — compared row
+ * by row. Run once a day per device; projects move to the device copy only
+ * after this comes out clean.
+ */
+export async function runMoneyViewsCheck(db: CommonPowerSyncDatabase): Promise<ShadowResult[]> {
+  const { createSupabaseBrowserClient } = await import("@/lib/supabase/client");
+  const server = createSupabaseBrowserClient();
+  const local = createLocalSupabase(db);
+  const views = [
+    { name: "project_financials_view", key: (r: Record<string, unknown>) => String(r.id) },
+    { name: "worker_debt_items_view", key: (r: Record<string, unknown>) => `${r.source_type}:${r.source_id}` },
+  ] as const;
+  const results: ShadowResult[] = [];
+  for (const view of views) {
+    try {
+      const [serverRes, { value: localRes, ms }] = await Promise.all([
+        server.from(view.name).select("*").range(0, 9999),
+        timed(async () => local.from(view.name).select("*")),
+      ]);
+      if (serverRes.error) throw new Error(`server: ${serverRes.error.message}`);
+      if (localRes.error) throw new Error(`device: ${localRes.error.message}`);
+      const byKey = (rows: unknown) =>
+        [...((rows ?? []) as Record<string, unknown>[])].sort((a, b) => view.key(a).localeCompare(view.key(b)));
+      results.push(compare(view.name, byKey(serverRes.data), byKey(localRes.data), ms));
+    } catch (error) {
+      results.push({ card: view.name, match: false, localMs: 0, diffs: [], error: error instanceof Error ? error.message : String(error) });
+    }
   }
   return results;
 }

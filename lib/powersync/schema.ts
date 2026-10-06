@@ -26,6 +26,8 @@ const users = new Table(
     system_access: int,
     locale: text,
     notification_prefs: text,
+    pay_tracking_mode: text,
+    payroll_worker_type: text,
   },
   { indexes: { by_role: ["role"] } }
 );
@@ -379,6 +381,118 @@ const lease_agreements = new Table(
   { indexes: { by_property: ["property_id"] } }
 );
 
+// The money behind each project (project_financials_view, worker_debt_items_view
+// — worked out on the device by lib/powersync/local-supabase.ts).
+
+const expenses = new Table(
+  {
+    expense_date: text,
+    amount: text,
+    category: text,
+    description: text,
+    business_domain: text,
+    notes: text,
+    recorded_by: text,
+    created_at: text,
+    updated_at: text,
+    project_id: text,
+    order_id: text,
+    property_id: text,
+    recurring_expense_template_id: text,
+    recurrence_key: text,
+    payment_status: text,
+    paid_amount: text,
+    payment_method: text,
+    transaction_date: text,
+    account_id: text,
+    paid_date: text,
+    installment_group_id: text,
+    installment_index: int,
+    installment_count: int,
+  },
+  { indexes: { by_project: ["project_id"], by_date: ["expense_date"] } }
+);
+
+const project_expenses = new Table(
+  {
+    project_id: text,
+    expense_id: text,
+    included_in_base_price: int,
+    billed_to_customer: int,
+    notes: text,
+  },
+  { indexes: { by_project: ["project_id"], by_expense: ["expense_id"] } }
+);
+
+const payslips = new Table(
+  {
+    payroll_period_id: text,
+    user_id: text,
+    calculated_salary_type: text,
+    total_work_minutes: int,
+    calculated_base_salary: text,
+    manual_adjustments: text,
+    gross_salary: text,
+    notes: text,
+  },
+  { indexes: { by_user: ["user_id"], by_period: ["payroll_period_id"] } }
+);
+
+const payroll_periods = new Table({
+  period_month: text,
+  start_date: text,
+  end_date: text,
+  status: text,
+});
+
+const salary_agreements = new Table(
+  {
+    user_id: text,
+    salary_type: text,
+    hourly_rate: text,
+    monthly_salary: text,
+    valid_from: text,
+    valid_to: text,
+    notes: text,
+    overtime_rate: text,
+    standard_daily_hours: text,
+    due_day_of_next_month: int,
+    business_domain: text,
+    project_id: text,
+    property_id: text,
+    is_billable_to_customer: int,
+    bill_to_customer_amount: text,
+  },
+  { indexes: { by_user: ["user_id"] } }
+);
+
+const worker_payments = new Table(
+  {
+    user_id: text,
+    payment_date: text,
+    amount: text,
+    payment_method: text,
+    reference_number: text,
+    notes: text,
+    recorded_by: text,
+    created_at: text,
+    account_id: text,
+  },
+  { indexes: { by_user: ["user_id"] } }
+);
+
+const worker_payment_allocations = new Table(
+  {
+    worker_payment_id: text,
+    source_type: text,
+    attendance_session_id: text,
+    payslip_id: text,
+    amount: text,
+    created_at: text,
+  },
+  { indexes: { by_payment: ["worker_payment_id"] } }
+);
+
 /** TEMPORARY: the connection check's live test row. */
 const powersync_probe = new Table({ note: text, created_at: text });
 
@@ -400,6 +514,13 @@ export const AppSchema = new Schema({
   attendance_sessions,
   properties,
   lease_agreements,
+  expenses,
+  project_expenses,
+  payslips,
+  payroll_periods,
+  salary_agreements,
+  worker_payments,
+  worker_payment_allocations,
   powersync_probe,
 });
 

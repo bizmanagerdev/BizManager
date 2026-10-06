@@ -39,4 +39,5 @@ export const LOCAL_DATA_PAGES = {
  */
 export const LOCAL_DATA_SHADOW = {
   dashboard: true,
+  projects: true,
 } as const;

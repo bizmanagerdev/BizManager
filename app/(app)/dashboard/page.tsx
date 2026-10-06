@@ -11,7 +11,7 @@ import ConnectionCheckCard from "@/components/dashboard/ConnectionCheckCard";
 
 export const revalidate = 60;
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ data?: string }> }) {
   // Only the (fast, indexed) auth/profile check is awaited up front; the panels
   // below stream on their own.
   //
@@ -21,7 +21,7 @@ export default async function DashboardPage() {
   // shorter one everywhere else. That also drops this page's heaviest fetch: the
   // picker data (customers / products / projects / orders / workers) is now
   // loaded on demand by the menu itself, once, when it's first opened.
-  const { profile } = await requireProfile();
+  const [{ profile }, { data: dataSource }] = await Promise.all([requireProfile(), searchParams]);
 
   // A worker without the dashboard section would otherwise land here right
   // after login (middleware's post-login redirect is unconditionally
@@ -66,7 +66,8 @@ export default async function DashboardPage() {
             admins until they've run it on this device. */}
         {profile.role === "admin" ? <ConnectionCheckCard locale={profile.locale === "ar" ? "ar" : "he"} /> : null}
         <Suspense fallback={<PanelsFallback />}>
-          <DashboardPanels />
+          {/* ?data=server: the device-copy cards' fallback to the server version. */}
+          <DashboardPanels forceServer={dataSource === "server"} />
         </Suspense>
       </PageStack>
     </AppShell>

@@ -54,7 +54,14 @@ function report(results: ShadowResult[]) {
   );
 }
 
-export default function DashboardLocalShadow({ snapshot }: { snapshot: DashboardShadowSnapshot }) {
+export default function DashboardLocalShadow({
+  snapshot,
+  checkMoneyViews = false,
+}: {
+  snapshot: DashboardShadowSnapshot;
+  /** Also run the daily whole-money-views check (one instance per board). */
+  checkMoneyViews?: boolean;
+}) {
   const db = useLocalDatabase();
   const status = useLocalSyncStatus();
   const done = useRef(false);
@@ -72,12 +79,16 @@ export default function DashboardLocalShadow({ snapshot }: { snapshot: Dashboard
       // tables aren't deployed yet: nothing to compare against.
       const people = await db.get<{ n: number }>("SELECT count(*) AS n FROM users").catch(() => ({ n: 0 }));
       if (!people.n) return;
-      const { runDashboardShadow } = await import("@/lib/powersync/dashboard-shadow");
+      const { runDashboardShadow, runMoneyViewsCheck } = await import("@/lib/powersync/dashboard-shadow");
       report(await runDashboardShadow(db, snapshot));
+      // The money views are heavy to read whole: once a day per device.
+      if (checkMoneyViews && !alreadyReported(`${new Date().toISOString().slice(0, 10)}:money-views-ran`)) {
+        report(await runMoneyViewsCheck(db));
+      }
     })().catch((error) =>
       withSentry((Sentry) => Sentry.captureException(error, { tags: { area: "powersync" }, fingerprint: ["powersync-shadow", "crashed"] }))
     );
-  }, [db, fresh, snapshot]);
+  }, [db, fresh, snapshot, checkMoneyViews]);
 
   return null;
 }

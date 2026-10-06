@@ -1,4 +1,4 @@
-# BizManager — PowerSync Sync Streams, foundation v1.1 (2026-10-06).
+# BizManager — PowerSync Sync Streams, foundation v1.2 (2026-10-06).
 #
 # Every stream is for admins and office only: the signed-in person's role is
 # looked up in public.users by their Supabase login id (users.id differs from
@@ -29,7 +29,8 @@ streams:
     auto_subscribe: true
     query: |
       SELECT users.id, users.full_name, users.email, users.phone, users.avatar_color,
-             users.role, users.active, users.system_access, users.locale, users.notification_prefs
+             users.role, users.active, users.system_access, users.locale, users.notification_prefs,
+             users.pay_tracking_mode, users.payroll_worker_type
       FROM users, staff_gate AS bucket
 
   tasks:
@@ -81,5 +82,15 @@ streams:
       - SELECT attendance_sessions.* FROM attendance_sessions, staff_gate AS bucket
       - SELECT properties.* FROM properties, staff_gate AS bucket
       - SELECT lease_agreements.* FROM lease_agreements, staff_gate AS bucket
+      # The money behind each project (project_financials_view and
+      # worker_debt_items_view, worked out on the device). Admin and office
+      # read all of these in the app too.
+      - SELECT expenses.* FROM expenses, staff_gate AS bucket
+      - SELECT project_expenses.* FROM project_expenses, staff_gate AS bucket
+      - SELECT payslips.* FROM payslips, staff_gate AS bucket
+      - SELECT payroll_periods.* FROM payroll_periods, staff_gate AS bucket
+      - SELECT salary_agreements.* FROM salary_agreements, staff_gate AS bucket
+      - SELECT worker_payments.* FROM worker_payments, staff_gate AS bucket
+      - SELECT worker_payment_allocations.* FROM worker_payment_allocations, staff_gate AS bucket
       # Temporary: the connection check's live test row.
       - SELECT powersync_probe.* FROM powersync_probe, staff_gate AS bucket
