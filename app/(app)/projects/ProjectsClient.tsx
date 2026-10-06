@@ -481,7 +481,8 @@ export default function ProjectsClient({
 
   // Load the list on screen when there's nothing current for it.
   useEffect(() => {
-    if (!online) return;
+    // The device version's lists come from the phone: they load with no signal too.
+    if (!online && !listSource) return;
     const kept = getProjectsFirstPage(currentKey);
     if (kept && Date.now() - kept.at < PROJECTS_FIRST_PAGE_FRESH_MS) return;
     let cancelled = false;
@@ -505,12 +506,13 @@ export default function ProjectsClient({
     };
     // currentFilters is derived from currentKey's searchParams.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentKey, online]);
+  }, [currentKey, online, listSource]);
 
   // Once the page has settled, load each tab's default list in the
   // background, so the first switch to it is already instant.
   useEffect(() => {
-    if (!online) return;
+    // The device version's lists come from the phone: they load with no signal too.
+    if (!online && !listSource) return;
     const prefetch = () => {
       for (const view of ["projects", "quotes", "closed"] as const) {
         const filters: ProjectsFilters = {

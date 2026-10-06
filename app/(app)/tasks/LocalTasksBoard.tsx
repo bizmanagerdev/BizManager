@@ -4,6 +4,9 @@ import { useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useLocalCard } from "@/components/powersync/useLocalCard";
 import { useDevicePageTiming } from "@/components/powersync/useDevicePageTiming";
+import { DeviceTaskSavesProvider } from "@/components/powersync/DeviceTaskSaves";
+import { t } from "@/lib/i18n/t";
+import { tasksDict } from "@/lib/i18n/dictionaries/tasks";
 import type { LocalCardViewer } from "@/lib/powersync/dashboard-local";
 import { filterBoardLocally } from "@/lib/tasks/boardFilters";
 import type { TasksFilters } from "./loadTasks";
@@ -51,16 +54,25 @@ export default function LocalTasksBoard({
 
   const { options } = result.data;
   return (
-    <TasksPageClient
-      tasks={tasks}
-      projects={options.projects}
-      properties={options.properties}
-      customers={options.customers}
-      users={options.users}
-      canSeeAll={canSeeAll}
-      currentUserId={viewer.userId}
-      locale={viewer.locale}
-      initialFilters={filters}
-    />
+    // Moves, reorders and deletes are saved on the device copy first (instant,
+    // and they wait for the connection when there's none).
+    <DeviceTaskSavesProvider
+      refusedTitles={{
+        "task-status": t(tasksDict, viewer.locale, "toastErrorUpdateStatus"),
+        "task-delete": t(tasksDict, viewer.locale, "toastErrorDeleteTask"),
+      }}
+    >
+      <TasksPageClient
+        tasks={tasks}
+        projects={options.projects}
+        properties={options.properties}
+        customers={options.customers}
+        users={options.users}
+        canSeeAll={canSeeAll}
+        currentUserId={viewer.userId}
+        locale={viewer.locale}
+        initialFilters={filters}
+      />
+    </DeviceTaskSavesProvider>
   );
 }

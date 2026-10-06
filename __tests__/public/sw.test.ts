@@ -214,6 +214,17 @@ describe("service worker: the device pages' frames", () => {
     expect(worker.frames().has("https://biz-h.com/tasks")).toBe(false);
   });
 
+  it("a reload with no network: the saved frame, not an older offline copy", async () => {
+    let online = true;
+    const worker = loadWorkerWithCaches(() => {
+      if (!online) throw new TypeError("Failed to fetch");
+      return new Response(FRAME, { status: 200 });
+    });
+    await open(worker, "https://biz-h.com/tasks"); // saved, and served just now
+    online = false;
+    expect(await open(worker, "https://biz-h.com/tasks")).toBe(FRAME);
+  });
+
   it("leaves other pages, the server version and searches alone", async () => {
     const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
     await open(worker, "https://biz-h.com/tasks?data=server");

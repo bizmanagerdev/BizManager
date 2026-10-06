@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { israelDateKey } from "@/lib/timezone";
 
 /**
  * The seven-day series behind the cards' sparklines — a count per day, oldest
@@ -11,26 +12,36 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const SPARK_DAYS = 7;
 
-/** The last `days` ISO dates, oldest first, on the server's clock. */
+/**
+ * The last `days` dates, oldest first — Israel's calendar, whatever clock this
+ * runs on (the server's is UTC, a phone's is Israel's; the dashboard's device
+ * version works the same series out on the phone and they must agree).
+ */
 function recentDays(days: number): string[] {
+  const [y, m, d] = israelDateKey().split("-").map(Number);
   const out: string[] = [];
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  for (let i = days - 1; i >= 0; i -= 1) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    out.push(
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-    );
-  }
+  for (let i = days - 1; i >= 0; i -= 1) out.push(new Date(Date.UTC(y, m - 1, d - i)).toISOString().slice(0, 10));
   return out;
 }
 
-/** Bucket ISO timestamps/dates into a count per day, oldest first. */
+/** Where to start reading: a day before the first, so nothing just after Israel's midnight is cut off. */
+function readFrom(days: number): string {
+  const [y, m, d] = recentDays(days)[0].split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10);
+}
+
+/** A value's day: a timestamp by Israel's clock, a plain date as it is. */
+function israelDayOf(value: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value.slice(0, 10) : israelDateKey(date);
+}
+
+/** Bucket ISO timestamps/dates into a count per (Israel) day, oldest first. */
 function countByDay(values: (string | null | undefined)[], days: number): number[] {
   const buckets = new Map(recentDays(days).map((day) => [day, 0]));
   for (const value of values) {
-    const day = value?.slice(0, 10);
+    const day = value ? israelDayOf(value) : null;
     if (!day) continue;
     const current = buckets.get(day);
     if (current !== undefined) buckets.set(day, current + 1);
@@ -47,7 +58,7 @@ function countByDay(values: (string | null | undefined)[], days: number): number
 
 /** Shifts started per day — the shape behind "N נוכחים". */
 export async function loadAttendanceSpark(supabase: SupabaseClient, days = SPARK_DAYS): Promise<number[]> {
-  const since = recentDays(days)[0];
+  const since = readFrom(days);
   const { data, error } = await supabase
     .from("attendance_sessions")
     .select("clock_in")
@@ -59,7 +70,7 @@ export async function loadAttendanceSpark(supabase: SupabaseClient, days = SPARK
 
 /** Orders dated per day — the shape behind "N משלוחים קרובים". */
 export async function loadDeliveriesSpark(supabase: SupabaseClient, days = SPARK_DAYS): Promise<number[]> {
-  const since = recentDays(days)[0];
+  const since = readFrom(days);
   const { data, error } = await supabase
     .from("delivery_overview_view")
     .select("order_date")

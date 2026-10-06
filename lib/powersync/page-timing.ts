@@ -2,8 +2,9 @@ import { withSentry } from "@/lib/sentry-lazy";
 import { lastNavigationStart } from "@/lib/ui/navigation-timing";
 
 // How long a page drawn from the device copy took to show, and where the
-// time went — reported to Sentry ("PowerSync page timing"), at most a few
-// times a day per device and page so it stays cheap. What it tells apart:
+// time went — reported to Sentry ("PowerSync page timing"), at most
+// REPORTS_PER_DAY times a day per device and page so it stays cheap. What it
+// tells apart:
 //   serverMs — waiting for the server's answer for the page (0 = the app
 //              already had it);
 //   afterServerMs — from that answer to the page's content on screen: the
@@ -13,17 +14,27 @@ import { lastNavigationStart } from "@/lib/ui/navigation-timing";
 
 export type TimingSource = "device" | "kept" | "stored";
 
-const REPORTS_PER_DAY = 3;
+const REPORTS_PER_DAY = 10;
+
+function dailyKey(page: string): string {
+  return `bizh-timing:${new Date().toISOString().slice(0, 10)}:${page}`;
+}
 
 function underDailyLimit(page: string): boolean {
   try {
-    const key = `bizh-timing:${new Date().toISOString().slice(0, 10)}:${page}`;
-    const count = Number(localStorage.getItem(key) ?? "0");
-    if (count >= REPORTS_PER_DAY) return false;
-    localStorage.setItem(key, String(count + 1));
-    return true;
+    return Number(localStorage.getItem(dailyKey(page)) ?? "0") < REPORTS_PER_DAY;
   } catch {
     return false;
+  }
+}
+
+/** Counted when it's actually sent — a page that reloads before then doesn't use up the day's reports. */
+function countReport(page: string) {
+  try {
+    const key = dailyKey(page);
+    localStorage.setItem(key, String(Number(localStorage.getItem(key) ?? "0") + 1));
+  } catch {
+    // Storage blocked: no limit to keep.
   }
 }
 
@@ -66,11 +77,13 @@ export function reportPageTiming({
     paintMs: round(paintedAt - committedAt),
     size: size ?? null,
   };
-  withSentry((Sentry) =>
+  withSentry((Sentry) => {
+    if (!underDailyLimit(page)) return;
+    countReport(page);
     Sentry.captureMessage("PowerSync page timing", {
       level: "info",
       tags: { area: "powersync", timing_page: page, timing_source: source, timing_load: navStart === 0 ? "full" : "navigation" },
       extra,
-    })
-  );
+    });
+  });
 }

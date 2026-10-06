@@ -28,7 +28,7 @@ import { isTaskWaitingForLater } from "@/lib/tasks/visibility";
 import { filterBoardLocally } from "@/lib/tasks/boardFilters";
 import { AddIcon, AttachIcon, BuildingIcon, CheckboxCheckedIcon, CheckboxUncheckedIcon, ClockIcon, CloseIcon, CommentIcon, DragIcon, FilterIcon, LockIcon, NotificationIcon, ProjectIcon, RecurringIcon, SearchIcon, UserIcon, WazeIcon, ZoomInIcon, ZoomOutIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
-import { offlineFetch } from "@/lib/offline-queue";
+import { offlineFetch, type OfflineFetchResult } from "@/lib/offline-queue";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
 import { BOARD_STATUSES, type TaskBoardItem } from "@/app/(app)/tasks/loadTasks";
 import { AddressLink } from "@/components/ui/address-link";
@@ -55,6 +55,7 @@ import type { Locale } from "@/lib/i18n/types";
 import { t } from "@/lib/i18n/t";
 import { commonDict } from "@/lib/i18n/dictionaries/common";
 import { tasksDict } from "@/lib/i18n/dictionaries/tasks";
+import { useDeviceTaskSaves } from "@/components/powersync/DeviceTaskSaves";
 
 const TaskUpsertDialog = dynamic(
   () => import("@/components/tasks/TaskUpsertDialog").then((mod) => mod.TaskUpsertDialog),
@@ -1004,6 +1005,44 @@ export default function TasksPageClient(props: Props) {
     urlDomain === "logistics_projects" ? "project" : urlDomain === "property_management" ? "property" : "";
   const linkedOptions = linkedTarget === "project" ? props.projects : linkedTarget === "property" ? props.properties : [];
 
+  // Saves on the device copy when this board is drawn from it (instant: every
+  // page from the copy shows the change at once, and it goes up to the server
+  // on its own — lib/powersync/local-writes.ts); otherwise, or if the copy
+  // can't take it, straight to the server as before.
+  const deviceSaves = useDeviceTaskSaves();
+  const saveTaskMove = useCallback(
+    async (id: string, status: string, sortOrder: number): Promise<OfflineFetchResult> => {
+      if (deviceSaves) {
+        try {
+          await deviceSaves.move(id, status, sortOrder);
+          return { queued: false, ok: true, data: null };
+        } catch {
+          // The device copy couldn't take it — the server, as before.
+        }
+      }
+      return offlineFetch(
+        "/api/tasks/update-status",
+        { id, status, sort_order: sortOrder },
+        t(tasksDict, props.locale, "updateStatusOfflineLabel")
+      );
+    },
+    [deviceSaves, props.locale]
+  );
+  const saveTaskDelete = useCallback(
+    async (id: string): Promise<OfflineFetchResult> => {
+      if (deviceSaves) {
+        try {
+          await deviceSaves.remove(id);
+          return { queued: false, ok: true, data: null };
+        } catch {
+          // The device copy couldn't take it — the server, as before.
+        }
+      }
+      return offlineFetch("/api/tasks/delete", { id }, t(tasksDict, props.locale, "deleteTaskLabel"));
+    },
+    [deviceSaves, props.locale]
+  );
+
   const moveTask = useCallback(
     // No message, no toast: dragging a card to another list IS the feedback, and
     // a toast for something you just watched happen is noise. Callers that move
@@ -1025,11 +1064,7 @@ export default function TasksPageClient(props: Props) {
       );
       emitProgressActivityStart();
       try {
-        const result = await offlineFetch(
-          "/api/tasks/update-status",
-          { id: taskId, status: targetStatus, sort_order: newSortOrder },
-          t(tasksDict, props.locale, "updateStatusOfflineLabel")
-        );
+        const result = await saveTaskMove(taskId, targetStatus, newSortOrder);
         if (!result.queued && !result.ok) {
           toast.error(t(tasksDict, props.locale, "toastErrorUpdateStatus"), { description: toHebrewError(result.error, "") });
           setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: task.status, sort_order: task.sort_order } : t)));
@@ -1043,7 +1078,7 @@ export default function TasksPageClient(props: Props) {
         emitProgressActivityEnd();
       }
     },
-    [tasks, tasksByStatus, props.locale]
+    [tasks, tasksByStatus, props.locale, saveTaskMove]
   );
 
   function handleDragStart(event: DragStartEvent) {
@@ -1130,11 +1165,7 @@ export default function TasksPageClient(props: Props) {
     // sluggish rather than reassuring.
     void (async () => {
       try {
-        const result = await offlineFetch(
-          "/api/tasks/update-status",
-          { id: activeId, status: targetStatus, sort_order: newSortOrder },
-          t(tasksDict, props.locale, "updateStatusOfflineLabel")
-        );
+        const result = await saveTaskMove(activeId, targetStatus, newSortOrder);
         if (!result.queued && !result.ok) {
           toast.error(t(tasksDict, props.locale, "toastErrorUpdateStatus"), { description: toHebrewError(result.error, "") });
           setTasks(previousTasks);
@@ -1194,7 +1225,7 @@ export default function TasksPageClient(props: Props) {
       onCommit: async () => {
         emitProgressActivityStart();
         try {
-          const result = await offlineFetch("/api/tasks/delete", { id }, t(tasksDict, props.locale, "deleteTaskLabel"));
+          const result = await saveTaskDelete(id);
           if (!result.queued && !result.ok) {
             return {
               ok: false,

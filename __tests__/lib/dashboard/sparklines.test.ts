@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { loadAttendanceSpark, SPARK_DAYS } from "@/lib/dashboard/sparklines";
 
 function isoDaysAgo(n: number): string {
@@ -47,5 +47,23 @@ describe("loadAttendanceSpark", () => {
   it("respects a custom day count", async () => {
     const spark = await loadAttendanceSpark(makeSupabase([]), 3);
     expect(spark).toHaveLength(3);
+  });
+
+  it("counts by Israel's calendar on any clock — just after Israel's midnight the server (UTC) and a phone agree", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    // 00:15 on 7 Oct in Israel = 21:15 on 6 Oct UTC.
+    vi.setSystemTime(new Date("2026-10-06T21:15:00Z"));
+    try {
+      const spark = await loadAttendanceSpark(
+        makeSupabase([
+          { clock_in: "2026-10-06T21:05:00Z" }, // 00:05 on 7 Oct in Israel: today
+          { clock_in: "2026-10-06T07:00:00Z" }, // 10:00 on 6 Oct in Israel: yesterday
+        ])
+      );
+      expect(spark[spark.length - 1]).toBe(1);
+      expect(spark[spark.length - 2]).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -466,6 +466,13 @@ self.addEventListener("fetch", (event) => {
         // warms PAGES_CACHE for the next launch, but stop waiting on it here.
         network.catch(() => {});
 
+        // A device page reloaded with no network: its saved frame (the phone
+        // fills it from its own copy) rather than an older offline snapshot.
+        if (frame) {
+          const saved = await matchFrame(request);
+          if (saved) return saved;
+        }
+
         // Try the exact page, then dashboard, then login, then root
         const cached =
           (await matchCache(request)) ??
