@@ -15,6 +15,7 @@ import { Card } from "@/components/ui/card";
 
 import { DELIVERY_REGIONS, formatDeliveryAddress, getCityRegion } from "@/lib/ui/cities";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { useLocalListPager } from "@/components/powersync/LocalListPager";
 import { loadMoreDeliveries } from "@/app/(app)/sales/actions";
 import { paymentStatusClasses } from "@/lib/orders/paymentStatus";
 import { getPaymentStatusLabel } from "@/lib/ui/status-colors";
@@ -198,7 +199,12 @@ export default function SalesDeliveriesQueue({
   // Fetch-from-DB-as-you-scroll: accumulate delivery pages, then group region →
   // city → customer over everything loaded so far (no "next page" button).
   const fetchFilters = useMemo(() => ({ customerId }), [customerId]);
-  const fetchPage = useCallback((page: number) => loadMoreDeliveries(page, fetchFilters), [fetchFilters]);
+  // The device version of the page (LocalSalesPage) serves further pages from the device copy.
+  const localPager = useLocalListPager<DeliveryItem>();
+  const fetchPage = useCallback(
+    (page: number) => (localPager ? localPager(page) : loadMoreDeliveries(page, fetchFilters)),
+    [fetchFilters, localPager]
+  );
   const getRowId = useCallback((delivery: DeliveryItem) => delivery.id, []);
   const {
     rows: deliveries,

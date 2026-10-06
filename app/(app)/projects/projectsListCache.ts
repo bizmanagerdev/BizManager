@@ -48,23 +48,38 @@ export function markOtherProjectsFirstPagesStale(keepKey: string) {
   for (const [key, page] of firstPages) if (key !== keepKey) firstPages.set(key, { ...page, at: 0 });
 }
 
-/** Load (and keep) the first page for these filters. One request per list at
- *  a time; resolves to null on any failure — callers keep what they show. */
-export function fetchProjectsFirstPage(filters: ProjectsFilters): Promise<ProjectsFirstPage | null> {
+/** A first page as a source hands it over (null = couldn't). */
+export type ProjectsFirstPageRows = { rows: Row[]; hasMore: boolean; totalCount: number | null };
+export type ProjectsFirstPageLoader = (filters: ProjectsFilters) => Promise<ProjectsFirstPageRows | null>;
+
+/** The first page from the server (/api/projects/list). */
+export async function fetchProjectsFirstPageFromServer(filters: ProjectsFilters): Promise<ProjectsFirstPageRows | null> {
+  const res = await fetch(`/api/projects/list?${projectsFiltersQuery(filters)}`, { cache: "no-store" });
+  if (!res.ok) return null;
+  const body = (await res.json()) as { rows?: unknown; hasMore?: unknown; totalCount?: unknown };
+  return {
+    rows: Array.isArray(body.rows) ? (body.rows as Row[]) : [],
+    hasMore: body.hasMore === true,
+    totalCount: typeof body.totalCount === "number" ? body.totalCount : null,
+  };
+}
+
+/** Load (and keep) the first page for these filters — from the server, or
+ *  from `load` (the device copy, on the page's device version). One request
+ *  per list at a time; resolves to null on any failure — callers keep what
+ *  they show. */
+export function fetchProjectsFirstPage(
+  filters: ProjectsFilters,
+  load: ProjectsFirstPageLoader = fetchProjectsFirstPageFromServer
+): Promise<ProjectsFirstPage | null> {
   const key = projectsFiltersKey(filters);
   const pending = inflight.get(key);
   if (pending) return pending;
   const startedIn = generation;
-  const promise = fetch(`/api/projects/list?${projectsFiltersQuery(filters)}`, { cache: "no-store" })
-    .then(async (res) => {
-      if (!res.ok) return null;
-      const body = (await res.json()) as { rows?: unknown; hasMore?: unknown; totalCount?: unknown };
-      const page: ProjectsFirstPage = {
-        rows: Array.isArray(body.rows) ? (body.rows as Row[]) : [],
-        hasMore: body.hasMore === true,
-        totalCount: typeof body.totalCount === "number" ? body.totalCount : null,
-        at: Date.now(),
-      };
+  const promise = load(filters)
+    .then((loaded) => {
+      if (!loaded) return null;
+      const page: ProjectsFirstPage = { ...loaded, at: Date.now() };
       // Asked for before a save landed — what it holds may predate it.
       if (startedIn !== generation) return null;
       firstPages.set(key, page);

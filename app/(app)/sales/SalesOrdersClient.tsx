@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { CheckIcon, ChevronDownIcon, CommentIcon, EditIcon, NotificationIcon, SearchIcon } from "@/components/ui/icons";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { useLocalListPager } from "@/components/powersync/LocalListPager";
 import { useOfflineRows } from "@/hooks/useOfflineRows";
 import StaleDataBadge from "@/components/layout/StaleDataBadge";
 import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
@@ -442,7 +443,12 @@ export default function SalesOrdersClient({
     }),
     [showPaymentStatusFilter, customerId, initialQuery, initialPaymentFilter, initialInvoiceFilter]
   );
-  const fetchPage = useCallback((page: number) => loadMoreOrders(page, fetchFilters), [fetchFilters]);
+  // The device version of the page (LocalSalesPage) serves further pages from the device copy.
+  const localPager = useLocalListPager<Row>();
+  const fetchPage = useCallback(
+    (page: number) => (localPager ? localPager(page) : loadMoreOrders(page, fetchFilters)),
+    [fetchFilters, localPager]
+  );
   const getRowId = useCallback((row: Row) => getString(row, ["order_id", "id"]) ?? "", []);
   const {
     rows: accumulatedOrders,

@@ -50,6 +50,16 @@ function deviceHasData(db: CommonPowerSyncDatabase): Promise<boolean> {
   return hasPeople;
 }
 
+let deviceCode: Promise<[typeof import("@/lib/powersync/dashboard-local"), typeof import("@/lib/powersync/local-supabase")]> | null = null;
+/** The device-side code (the loaders and the client stand-in), loaded once for every part of the page. */
+export function loadLocalDataCode() {
+  deviceCode ??= Promise.all([import("@/lib/powersync/dashboard-local"), import("@/lib/powersync/local-supabase")]);
+  deviceCode.catch(() => {
+    deviceCode = null;
+  });
+  return deviceCode;
+}
+
 export type LocalCardResult<K extends LocalCardKind> = {
   data: LocalDashboardCards[K];
   /** The filters it was worked out for (JSON) — the previous ones for a moment after they change. */
@@ -108,10 +118,7 @@ export function useLocalCard<K extends LocalCardKind>({
 
     void (async () => {
       if (!(await deviceHasData(db))) return fallBackToServer(router, page, serverHrefRef.current, "no-data");
-      const [{ computeLocalCard, LOCAL_CARD_TABLES }, { createLocalSupabase }] = await Promise.all([
-        import("@/lib/powersync/dashboard-local"),
-        import("@/lib/powersync/local-supabase"),
-      ]);
+      const [{ computeLocalCard, LOCAL_CARD_TABLES }, { createLocalSupabase }] = await loadLocalDataCode();
       const local = createLocalSupabase(db);
       const cardFilters: unknown = JSON.parse(filtersKey) ?? undefined;
       const recompute = async () => {

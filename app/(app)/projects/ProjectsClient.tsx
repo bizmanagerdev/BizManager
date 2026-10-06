@@ -27,6 +27,7 @@ import {
   markOtherProjectsFirstPagesStale,
   rememberProjectsFirstPage,
 } from "@/app/(app)/projects/projectsListCache";
+import { useProjectsListSource } from "@/app/(app)/projects/ProjectsListSource";
 import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import { searchProjectEntries, useProjectSearchIndex, type ProjectSearchIndexEntry } from "@/hooks/useProjectSearchIndex";
 import { ChatIcon, DocumentIcon, EditIcon, FilterIcon, ProjectIcon, SearchIcon, SuccessIcon } from "@/components/ui/icons";
@@ -406,6 +407,8 @@ export default function ProjectsClient({
   // first time, from /api/projects/list. The other tabs are loaded in the
   // background once the page settles, so switching to them is instant.
   const online = useOnline();
+  // The page's device version (LocalProjectsPage) serves the lists from the device copy.
+  const listSource = useProjectsListSource();
   const currentFilters = useMemo(() => parseProjectsFilters((key) => searchParams.get(key)), [searchParams]);
   const currentKey = projectsFiltersKey(currentFilters);
   const serverFilters = useMemo<ProjectsFilters>(
@@ -483,7 +486,7 @@ export default function ProjectsClient({
     if (kept && Date.now() - kept.at < PROJECTS_FIRST_PAGE_FRESH_MS) return;
     let cancelled = false;
     const filters = currentFilters;
-    void fetchProjectsFirstPage(filters).then((page) => {
+    void fetchProjectsFirstPage(filters, listSource?.firstPage).then((page) => {
       if (cancelled || !page) return;
       setShown((prev) => {
         // Unchanged since it was shown — keep it, and the pages scrolled in under it.
@@ -518,7 +521,7 @@ export default function ProjectsClient({
           customerId: serverFilters.customerId,
         };
         const kept = getProjectsFirstPage(projectsFiltersKey(filters));
-        if (!kept || Date.now() - kept.at >= PROJECTS_FIRST_PAGE_FRESH_MS) void fetchProjectsFirstPage(filters);
+        if (!kept || Date.now() - kept.at >= PROJECTS_FIRST_PAGE_FRESH_MS) void fetchProjectsFirstPage(filters, listSource?.firstPage);
       }
     };
     if (typeof window.requestIdleCallback === "function") {
@@ -527,14 +530,14 @@ export default function ProjectsClient({
     }
     const timer = window.setTimeout(prefetch, 1500);
     return () => window.clearTimeout(timer);
-  }, [initialProjects, online, serverFilters.customerId]);
+  }, [initialProjects, online, serverFilters.customerId, listSource]);
 
   // Fetch-from-DB-as-you-scroll: accumulate project pages and pull the next one
   // from the server when the bottom comes into view (no "next page" button).
   const shownFilters = shown.filters;
   const fetchPage = useCallback(
-    (page: number) => loadMoreProjects(page, shownFilters),
-    [shownFilters]
+    (page: number) => (listSource ? listSource.page(page, shownFilters) : loadMoreProjects(page, shownFilters)),
+    [shownFilters, listSource]
   );
   const getRowId = useCallback((row: ProjectRow) => String(row.id ?? ""), []);
   const {

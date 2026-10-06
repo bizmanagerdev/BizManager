@@ -5,6 +5,9 @@ import { getMyTasks } from "@/lib/dashboard/tasks-overview";
 import { loadProjectsPage } from "@/app/(app)/projects/loadProjects";
 import { loadOrdersPage } from "@/app/(app)/sales/loadOrders";
 import { loadDeliveriesPage } from "@/app/(app)/sales/loadDeliveries";
+import { loadSalesTabCounts } from "@/app/(app)/sales/loadSalesCounts";
+import { loadProjectsPickerOptions, loadProjectsTabCounts, withListCustomers } from "@/app/(app)/projects/loadProjectsPageData";
+import { computeLocalListPage } from "@/lib/powersync/dashboard-local";
 import { loadPriceListPage } from "@/app/(app)/sales/loadProducts";
 import { loadTaskPickerOptions, loadTasksBoard } from "@/app/(app)/tasks/loadTasks";
 
@@ -683,5 +686,99 @@ describe("same-day rows keep one order", () => {
     const { deliveries, error } = await loadDeliveriesPage(db, { page: 1, filters: { customerId: null } });
     expect(error).toBeNull();
     expect(deliveries.map((d) => d.id)).toEqual(["o-late", "o-early"]);
+  });
+});
+
+describe("the sales page's device version: tab counts and further pages", () => {
+  const order = (id: string, status: string, customer = "c1", created = "2026-10-01T08:00:00.000000") => ({
+    id, customer_id: customer, branch_id: null, status, order_date: "2026-10-01T00:00:00.000000", created_at: created,
+    total_amount: "100", discount_amount: "0", notes: null, created_by: null, needs_invoice: 0, invoice_sent_at: null,
+    delivery_confirmed_at: null,
+  });
+  const base = {
+    customers: [
+      { id: "c1", name: "לקוח", name_for_invoice: null, phone: null, address: null, email: null },
+      { id: "c2", name: "אחר", name_for_invoice: null, phone: null, address: null, email: null },
+    ],
+    customer_branches: [],
+    users: [],
+    order_items: [],
+    products: [{ id: "p1", name: "כיסא" }, { id: "p2", name: "שולחן" }, { id: "p3", name: "ספה" }],
+    inventory: [],
+  };
+
+  it("counts like the server: open, closed (by payment), products, open deliveries — per customer too", async () => {
+    const db = createLocalSupabase(
+      fakeReader({
+        ...base,
+        orders: [order("o1", "confirmed"), order("o2", "draft", "c2"), order("o3", "delivered"), order("o4", "סופקה", "c2")],
+        payments: [{ id: "pay1", order_id: "o3", amount_total: "100", payment_status: "cleared", due_date: null }],
+      })
+    );
+    expect(await loadSalesTabCounts(db, { customerId: null, paymentStatus: "" })).toEqual({
+      orders: 2, closed: 2, inventory: 3, "price-list": 3, deliveries: 2,
+    });
+    expect(await loadSalesTabCounts(db, { customerId: "c1", paymentStatus: "" })).toMatchObject({ orders: 1, closed: 1, deliveries: 1 });
+    // Closed and unpaid: o4 only (o3 is paid in full).
+    expect((await loadSalesTabCounts(db, { customerId: null, paymentStatus: "unpaid" })).closed).toBe(1);
+  });
+
+  it("page 2 of a list as you scroll, from the device", async () => {
+    const orders = Array.from({ length: 52 }, (_, i) =>
+      order(`o${String(i).padStart(2, "0")}`, "confirmed", "c1", `2026-10-01T08:${String(i).padStart(2, "0")}:00.000000`)
+    );
+    const db = createLocalSupabase(fakeReader({ ...base, orders, payments: [] }));
+    const first = await computeLocalListPage(db, "salesDeliveries", { customerId: null }, 1);
+    const second = await computeLocalListPage(db, "salesDeliveries", { customerId: null }, 2);
+    expect(first.rows).toHaveLength(50);
+    expect(first.hasMore).toBe(true);
+    // Same day, so the newest made first: the last page holds the two oldest.
+    expect((second.rows as Array<{ id: string }>).map((r) => r.id)).toEqual(["o01", "o00"]);
+    expect(second.hasMore).toBe(false);
+  });
+});
+
+describe("the projects page's device version: tab counts and the dialog's lists", () => {
+  const db = createLocalSupabase(
+    fakeReader({
+      projects: [
+        { id: "p1", status: "active", customer_id: "c1" },
+        { id: "p2", status: "quote", customer_id: "c1" },
+        { id: "p3", status: "completed", customer_id: "c2" },
+        { id: "p4", status: "planning", customer_id: "c2" },
+      ],
+      users: [
+        { id: "u1", full_name: "משה הלר", email: null, active: 1 },
+        { id: "u2", full_name: null, email: "a@b.c", active: 1 },
+        { id: "u3", full_name: "עזב", email: null, active: 0 },
+      ],
+      customers: [
+        { id: "c1", name: " דנה ", name_for_invoice: null, phone: "050", email: "" },
+        { id: "c2", name: "", name_for_invoice: "חשבונית", phone: null, email: null },
+      ],
+    })
+  );
+
+  it("counts open projects, quotes and closed — per customer too", async () => {
+    expect(await loadProjectsTabCounts(db, null)).toEqual({ projects: 2, quotes: 1, closed: 1 });
+    expect(await loadProjectsTabCounts(db, "c2")).toEqual({ projects: 1, quotes: 0, closed: 1 });
+  });
+
+  it("customers (trimmed, invoice name as fallback), active managers, the default manager", async () => {
+    const options = await loadProjectsPickerOptions(db);
+    expect(options.customerOptions).toEqual([
+      { id: "c2", label: "חשבונית", phone: null, email: null, name_for_invoice: "חשבונית" },
+      { id: "c1", label: "דנה", phone: "050", email: null, name_for_invoice: null },
+    ]);
+    // By name, people without one last (like Postgres); labelled by their email.
+    expect(options.managerOptions).toEqual([
+      { id: "u1", label: "משה הלר" },
+      { id: "u2", label: "a@b.c" },
+    ]);
+    expect(options.defaultProjectManagerId).toBe("u1");
+    // The rows' own customers join the list.
+    expect(withListCustomers(options.customerOptions, [{ customer_id: "c9", customer_name: "חדש" }]).map((c) => c.id)).toEqual([
+      "c2", "c1", "c9",
+    ]);
   });
 });

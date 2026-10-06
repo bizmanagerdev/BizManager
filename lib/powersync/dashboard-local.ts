@@ -3,7 +3,9 @@ import { getScheduleEntries, type CalendarEntry } from "@/lib/projectSchedule";
 import { getInboxView, todaySlice } from "@/lib/reminders/worklist";
 import { getMyTasks, type DashboardTask } from "@/lib/dashboard/tasks-overview";
 import { loadDeliveriesPage, type DeliveriesFilters, type DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
-import { loadOrdersPage, type OrdersFilters } from "@/app/(app)/sales/loadOrders";
+import { loadOrdersPage, type OrdersFilters, type OrdersPaymentFilter } from "@/app/(app)/sales/loadOrders";
+import { loadSalesTabCounts, type SalesTabCounts } from "@/app/(app)/sales/loadSalesCounts";
+import type { InfinitePage } from "@/hooks/useInfiniteScroll";
 import {
   loadInventoryListPage,
   loadPriceListPage,
@@ -16,6 +18,12 @@ import { loadPhoneQueueData, type PhoneQueueData } from "@/lib/attendance/phone-
 import { loadAttendanceClassificationOptions } from "@/lib/payroll-page-loader";
 import { getPropertiesSummary, type PropertiesSummary } from "@/lib/properties";
 import { loadProjectsPage, type ProjectsFilters } from "@/app/(app)/projects/loadProjects";
+import {
+  loadProjectsPickerOptions,
+  loadProjectsTabCounts,
+  type ProjectsPickerOptions,
+  type ProjectsTabCounts,
+} from "@/app/(app)/projects/loadProjectsPageData";
 import {
   loadTaskPickerOptions,
   loadTasksBoard,
@@ -44,7 +52,9 @@ export type LocalDashboardCards = {
   };
   properties: PropertiesSummary;
   /** /projects, first page, for the given filters. */
-  projectsList: { filters: ProjectsFilters; rows: Record<string, unknown>[]; hasMore: boolean };
+  projectsList: { filters: ProjectsFilters; rows: Record<string, unknown>[]; hasMore: boolean; totalCount: number };
+  /** /projects tab counts (for the page's customer) and the new-project dialog's lists. */
+  projectsExtras: { filters: { customerId: string | null }; tabCounts: ProjectsTabCounts; options: ProjectsPickerOptions };
   /** /sales tabs, first page, for the given filters. */
   salesOrders: { filters: OrdersFilters; rows: Record<string, unknown>[]; hasMore: boolean };
   salesDeliveries: { filters: DeliveriesFilters; deliveries: DeliveryItem[]; hasMore: boolean };
@@ -53,11 +63,15 @@ export type LocalDashboardCards = {
     InventoryListPageResult,
     "items" | "movements" | "orderCustomerById" | "performerNameById" | "hasMore"
   >;
+  /** /sales tab bar counts, for the page's customer and the closed tab's payment filter. */
+  salesCounts: { filters: SalesCountsFilters; counts: SalesTabCounts };
   /** /tasks, the whole board for the given filters, and the task dialog's pickers. */
   tasksBoard: { filters: TasksFilters; items: TaskBoardItem[]; options: TaskPickerOptions };
 };
 
 export type LocalCardKind = keyof LocalDashboardCards;
+
+export type SalesCountsFilters = { customerId: string | null; paymentStatus: OrdersPaymentFilter };
 
 export type LocalCardViewer = { userId: string; role: string; locale: Locale };
 
@@ -73,10 +87,12 @@ export const LOCAL_CARD_TABLES: Record<LocalCardKind, string[]> = {
     "projects", "customers", "users", "tasks", "payments", "expenses", "project_expenses", "attendance_sessions",
     "payslips", "payroll_periods", "salary_agreements", "worker_payments", "worker_payment_allocations",
   ],
+  projectsExtras: ["projects", "users", "customers"],
   salesOrders: ["orders", "customers", "users", "customer_branches", "payments", "order_items", "products", "inventory"],
   salesDeliveries: ["orders", "customers", "customer_branches", "order_items", "products", "inventory", "payments"],
   salesPriceList: ["products", "inventory", "inventory_movements", "product_categories"],
   salesInventory: ["products", "inventory", "inventory_movements", "product_categories", "orders", "customers", "users"],
+  salesCounts: ["orders", "products", "payments", "customers", "customer_branches"],
   tasksBoard: [
     "tasks", "task_members", "users", "projects", "customers", "properties", "task_comments", "reminders", "document_links",
   ],
@@ -122,7 +138,17 @@ export async function computeLocalCard<K extends LocalCardKind>(
       const projectFilters = need<ProjectsFilters>();
       const result = await loadProjectsPage(local, { page: 1, filters: projectFilters });
       if (result.error) throw new Error(result.error);
-      return { filters: projectFilters, rows: result.rows, hasMore: result.hasMore } as LocalDashboardCards[K];
+      return {
+        filters: projectFilters,
+        rows: result.rows,
+        hasMore: result.hasMore,
+        totalCount: result.totalCount,
+      } as LocalDashboardCards[K];
+    }
+    case "projectsExtras": {
+      const { customerId } = need<{ customerId: string | null }>();
+      const [tabCounts, options] = await Promise.all([loadProjectsTabCounts(local, customerId), loadProjectsPickerOptions(local)]);
+      return { filters: { customerId }, tabCounts, options } as LocalDashboardCards[K];
     }
     case "salesOrders": {
       const orderFilters = need<OrdersFilters>();
@@ -150,6 +176,10 @@ export async function computeLocalCard<K extends LocalCardKind>(
       const { items, movements, orderCustomerById, performerNameById, hasMore } = result;
       return { filters: productFilters, items, movements, orderCustomerById, performerNameById, hasMore } as LocalDashboardCards[K];
     }
+    case "salesCounts": {
+      const countFilters = need<SalesCountsFilters>();
+      return { filters: countFilters, counts: await loadSalesTabCounts(local, countFilters) } as LocalDashboardCards[K];
+    }
     case "tasksBoard": {
       const taskFilters = need<TasksFilters>();
       const canSeeAll = role === "admin" || role === "office";
@@ -162,5 +192,37 @@ export async function computeLocalCard<K extends LocalCardKind>(
     }
     default:
       throw new Error(`Unknown dashboard card ${String(kind)}`);
+  }
+}
+
+/** The lists whose further pages the device serves as you scroll. */
+export type LocalPagedKind = "projectsList" | "salesOrders" | "salesDeliveries" | "salesPriceList" | "salesInventory";
+
+/**
+ * Page `page` (1-based) of a paged list, from the device copy — the rows the
+ * list's own "load more" (a server action) would have returned.
+ */
+export async function computeLocalListPage(
+  local: SupabaseClient,
+  kind: LocalPagedKind,
+  filters: unknown,
+  page: number
+): Promise<InfinitePage<unknown>> {
+  const read = async <R extends { error: string | null; hasMore: boolean }>(result: Promise<R>, rows: (r: R) => unknown[]) => {
+    const r = await result;
+    if (r.error) throw new Error(r.error);
+    return { rows: rows(r), hasMore: r.hasMore };
+  };
+  switch (kind) {
+    case "projectsList":
+      return read(loadProjectsPage(local, { page, filters: filters as ProjectsFilters }), (r) => r.rows);
+    case "salesOrders":
+      return read(loadOrdersPage(local, { page, filters: filters as OrdersFilters }), (r) => r.rows);
+    case "salesDeliveries":
+      return read(loadDeliveriesPage(local, { page, filters: filters as DeliveriesFilters }), (r) => r.deliveries);
+    case "salesPriceList":
+      return read(loadPriceListPage(local, { page, filters: filters as ProductsFilters }), (r) => r.products);
+    case "salesInventory":
+      return read(loadInventoryListPage(local, { page, filters: filters as ProductsFilters }), (r) => r.items);
   }
 }

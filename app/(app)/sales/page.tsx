@@ -3,8 +3,9 @@ import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
 import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import SalesDeliveriesQueue from "@/app/(app)/sales/SalesDeliveriesQueue";
-import InventoryRealtimeBadge from "@/app/(app)/sales/InventoryRealtimeBadge";
-import SalesTabsNav from "@/app/(app)/sales/SalesTabsNav";
+import SalesHeader from "@/app/(app)/sales/SalesHeader";
+import LocalSalesPage from "@/app/(app)/sales/LocalSalesPage";
+import { loadSalesTabCounts } from "@/app/(app)/sales/loadSalesCounts";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { withLoadedAt } from "@/lib/loaded-at";
@@ -14,7 +15,7 @@ import { loadPriceListPage, loadInventoryListPage } from "@/app/(app)/sales/load
 import { loadDeliveriesPage } from "@/app/(app)/sales/loadDeliveries";
 import DashboardLocalShadow from "@/components/powersync/DashboardLocalShadow";
 import type { DashboardShadowCards } from "@/lib/powersync/dashboard-shadow";
-import { LOCAL_DATA_SHADOW, localDataEnabledFor } from "@/lib/powersync/config";
+import { LOCAL_DATA_PAGES, LOCAL_DATA_SHADOW, localDataEnabledFor, localDataPageOn } from "@/lib/powersync/config";
 import { israelDateKey } from "@/lib/timezone";
 
 const SalesInventoryClient = dynamic(() => import("@/app/(app)/sales/SalesInventoryClient"), {
@@ -28,23 +29,6 @@ const PriceListClient = dynamic(() => import("@/app/(app)/sales/PriceListClient"
 });
 
 export const revalidate = 30;
-
-const CLOSED_ORDER_STATUSES = [
-  "delivered",
-  "completed",
-  "closed",
-  "cancelled",
-  "סופקה",
-  "הושלמה",
-  "סגורה",
-  "בוטלה",
-];
-
-function applyOpenOrdersFilter<TQuery extends { not: (...args: [string, string, string]) => TQuery }>(
-  query: TQuery
-) {
-  return query.not("status", "in", `(${CLOSED_ORDER_STATUSES.join(",")})`);
-}
 
 function buildDeliveriesRegionHref(
   region: string | null,
@@ -66,6 +50,7 @@ export default async function SalesPage({
 }: {
   searchParams?: Promise<{
     tab?: string;
+    data?: string;
     customer_id?: string;
     customer_name?: string;
     customer_page?: string;
@@ -122,117 +107,98 @@ export default async function SalesPage({
   // The page's reads and the "who's asking" check go out together, and the
   // tab counts alongside the tab's own list rather than before it. They run
   // under the caller's own RLS whatever their role, and a caller who isn't
-  // staff is still redirected below before anything is rendered.
+  // staff is still redirected below before anything is rendered. With the
+  // device version on for everyone (LOCAL_DATA_PAGES.sales) they wait for the
+  // check instead, and go out only for people without a device copy.
   const supabase = await createSupabaseServerClient();
   const profilePromise = requireStaffPage();
-  const countsPromise = Promise.all([
-    (() => {
-      // Tab count — only needs status/customer_id, so it counts the plain
-      // orders table rather than order_overview_view (which forces a
-      // total_paid/remaining_balance aggregation per count).
-      let query = applyOpenOrdersFilter(
-        supabase
-        .from("orders")
-        .select("id", { count: "estimated", head: true })
-      );
-      if (customerId) query = query.eq("customer_id", customerId);
-      return query;
-    })(),
-    (() => {
-      if (paymentStatusFilter) {
-        // Payment-status filter genuinely needs the view's computed
-        // total_paid/remaining_balance columns.
-        let query = supabase
-          .from("order_overview_view")
-          .select("order_id", { count: "estimated", head: true })
-          .in("status", CLOSED_ORDER_STATUSES);
-        if (customerId) query = query.eq("customer_id", customerId);
-        if (paymentStatusFilter === "paid") {
-          query = query.gt("total_paid", 0).lte("remaining_balance", 0.009);
-        } else if (paymentStatusFilter === "partial") {
-          query = query.gt("total_paid", 0).gt("remaining_balance", 0.009);
-        } else if (paymentStatusFilter === "unpaid") {
-          query = query.lte("total_paid", 0);
-        }
-        return query;
-      }
-      // No payment-status filter — only needs status/customer_id, so count
-      // the plain orders table rather than order_overview_view (which forces
-      // a total_paid/remaining_balance aggregation per count).
-      let query = supabase
-        .from("orders")
-        .select("id", { count: "estimated", head: true })
-        .in("status", CLOSED_ORDER_STATUSES);
-      if (customerId) query = query.eq("customer_id", customerId);
-      return query;
-    })(),
-    supabase.from("products").select("id", { count: "estimated", head: true }),
-    (() => {
-      let query = applyOpenOrdersFilter(
-        supabase
-        .from("delivery_overview_view")
-        .select("order_id,status", { count: "estimated", head: true })
-      );
-      if (customerId) query = query.eq("customer_id", customerId);
-      return query;
-    })(),
-  ]);
+  const startReads = () => {
+    const countsPromise = loadSalesTabCounts(supabase, { customerId, paymentStatus: paymentStatusFilter });
 
-  // The active tab's first page, stamped with when it was read: the tabs and
-  // the nav fetch this page ahead of a click, and a list shown from a copy
-  // that has aged refreshes itself (useInfiniteScroll's loadedAt).
-  const ordersPromise =
-    activeTab === "orders" || activeTab === "closed"
-      ? withLoadedAt(
-          loadOrdersPage(supabase, {
-            page: 1,
-            filters: {
-              tab: activeTab,
-              customerId,
-              q: searchQuery,
-              paymentStatus: paymentStatusFilter,
-              invoice: invoiceFilter,
-            },
-          })
-        )
-      : null;
-  const priceListPromise =
-    activeTab === "price-list"
-      ? withLoadedAt(
-          loadPriceListPage(supabase, { page: 1, filters: { q: searchQuery, category: categoryFilter } })
-        )
-      : null;
-  const inventoryPromise =
-    activeTab === "inventory"
-      ? withLoadedAt(
-          loadInventoryListPage(supabase, { page: 1, filters: { q: searchQuery, category: categoryFilter } })
-        )
-      : null;
-  const deliveriesPromise =
-    activeTab === "deliveries"
-      ? withLoadedAt(loadDeliveriesPage(supabase, { page: 1, filters: { customerId } }))
-      : null;
-  // Settled below; until then a redirect from the check mustn't leave them
-  // as unhandled rejections.
-  for (const pending of [countsPromise, ordersPromise, priceListPromise, inventoryPromise, deliveriesPromise]) {
-    pending?.catch(() => {});
-  }
+    // The active tab's first page, stamped with when it was read: the tabs and
+    // the nav fetch this page ahead of a click, and a list shown from a copy
+    // that has aged refreshes itself (useInfiniteScroll's loadedAt).
+    const ordersPromise =
+      activeTab === "orders" || activeTab === "closed"
+        ? withLoadedAt(
+            loadOrdersPage(supabase, {
+              page: 1,
+              filters: {
+                tab: activeTab,
+                customerId,
+                q: searchQuery,
+                paymentStatus: paymentStatusFilter,
+                invoice: invoiceFilter,
+              },
+            })
+          )
+        : null;
+    const priceListPromise =
+      activeTab === "price-list"
+        ? withLoadedAt(
+            loadPriceListPage(supabase, { page: 1, filters: { q: searchQuery, category: categoryFilter } })
+          )
+        : null;
+    const inventoryPromise =
+      activeTab === "inventory"
+        ? withLoadedAt(
+            loadInventoryListPage(supabase, { page: 1, filters: { q: searchQuery, category: categoryFilter } })
+          )
+        : null;
+    const deliveriesPromise =
+      activeTab === "deliveries"
+        ? withLoadedAt(loadDeliveriesPage(supabase, { page: 1, filters: { customerId } }))
+        : null;
+    // Settled below; until then a redirect from the check mustn't leave them
+    // as unhandled rejections.
+    for (const pending of [countsPromise, ordersPromise, priceListPromise, inventoryPromise, deliveriesPromise]) {
+      pending?.catch(() => {});
+    }
+    return { countsPromise, ordersPromise, priceListPromise, inventoryPromise, deliveriesPromise };
+  };
+  const earlyReads = LOCAL_DATA_PAGES.sales ? null : startReads();
 
   const { profile } = await profilePromise;
-  const [
-    { count: openOrdersCount },
-    { count: closedOrdersCount },
-    { count: productsCount },
-    { count: deliveriesCount },
-  ] = await countsPromise;
 
-  const salesTabCounts = {
-    orders: typeof openOrdersCount === "number" ? openOrdersCount : 0,
-    closed: typeof closedOrdersCount === "number" ? closedOrdersCount : 0,
-    inventory: typeof productsCount === "number" ? productsCount : 0,
-    "price-list": typeof productsCount === "number" ? productsCount : 0,
-    deliveries: typeof deliveriesCount === "number" ? deliveriesCount : 0,
-  } as const;
+  const regionLinks = [
+    { label: "הכל", value: null },
+    ...DELIVERY_REGIONS.map((r) => ({ label: r, value: r })),
+  ].map(({ label, value }) => ({
+    label,
+    value,
+    href: buildDeliveriesRegionHref(value, customerId, customerName, customerPage),
+    active: regionFilter === value,
+  }));
+
+  // The device version (LOCAL_DATA_PAGES.sales): the tab counts and the open
+  // tab's list are worked out from this person's on-device copy
+  // (LocalSalesPage). Not for searches — they read tables the device doesn't
+  // hold. ?data=server is the way back when the copy can't serve it. (The
+  // early reads, if they went out, are just not waited for.)
+  if (localDataPageOn("sales", profile) && params.data !== "server" && !searchQuery) {
+    return (
+      <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
+        <div className="space-y-4">
+          <LocalSalesPage
+            viewer={{ userId: profile.id, role: profile.role ?? "", locale: profile.locale }}
+            activeTab={activeTab}
+            customerId={customerId}
+            customerName={customerName}
+            category={categoryFilter}
+            paymentStatus={paymentStatusFilter}
+            invoice={invoiceFilter}
+            regionFilter={regionFilter}
+            regionLinks={regionLinks}
+            tabsSearchParams={params}
+            canRemind={profile.role === "admin" || profile.role === "office"}
+          />
+        </div>
+      </AppShell>
+    );
+  }
+
+  const { countsPromise, ordersPromise, priceListPromise, inventoryPromise, deliveriesPromise } = earlyReads ?? startReads();
+  const salesTabCounts = await countsPromise;
 
   let content: ReactNode = null;
   // The device-copy shadow check for the open tab (lib/powersync/dashboard-shadow.ts) —
@@ -344,16 +310,6 @@ export default async function SalesPage({
       shadowCards = { salesDeliveries: { filters: { customerId }, deliveries, hasMore } };
     }
 
-    const regionLinks = [
-      { label: "הכל", value: null },
-      ...DELIVERY_REGIONS.map((r) => ({ label: r, value: r })),
-    ].map(({ label, value }) => ({
-      label,
-      value,
-      href: buildDeliveriesRegionHref(value, customerId, customerName, customerPage),
-      active: regionFilter === value,
-    }));
-
     content = loadError ? (
       <p className="text-sm text-destructive">שגיאה בטעינת משלוחים: {loadError}</p>
     ) : (
@@ -369,28 +325,10 @@ export default async function SalesPage({
     );
   }
 
-  // Orders/closed/price-list tabs mount a 52px mobile search toolbar into the
-  // dark header (sticky at top-[60px], just under the 60px top bar); the tab bar
-  // must sit BELOW it there (top-[112px] = 60 + 52). Desktop hides that toolbar
-  // (md:hidden), and inventory/deliveries never mount it, so those stick
-  // directly under the 60px top bar.
-  const hasMobileToolbar =
-    activeTab === "orders" || activeTab === "closed" || activeTab === "price-list";
-  const tabsStickyTop = hasMobileToolbar ? "top-[112px] md:top-[60px]" : "top-[60px]";
-
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
-        <div className={`sticky ${tabsStickyTop} z-20 -mx-3 -mt-4 flex h-[52px] items-end justify-between gap-3 border-b border-border/60 bg-background px-3 md:-mx-6 md:mt-0 md:px-6 lg:-mx-8 lg:px-8`}>
-          <SalesTabsNav activeTab={activeTab} counts={salesTabCounts} searchParams={params} />
-          <div className="flex flex-wrap items-center gap-3 pb-2">
-            {customerName ? (
-              <div className="text-base font-medium sm:text-lg">לקוח: {customerName}</div>
-            ) : null}
-            {activeTab === "inventory" ? <InventoryRealtimeBadge /> : null}
-            {/* No "הזמנה חדשה" button — the app's one quick-create + carries it. */}
-          </div>
-        </div>
+        <SalesHeader activeTab={activeTab} counts={salesTabCounts} searchParams={params} customerName={customerName} />
         {content}
         {shadowCards && !searchQuery && LOCAL_DATA_SHADOW.sales && localDataEnabledFor(profile.role) ? (
           <DashboardLocalShadow
@@ -400,7 +338,7 @@ export default async function SalesPage({
               role: profile.role ?? "",
               locale: profile.locale,
               todayIso: israelDateKey(),
-              cards: shadowCards,
+              cards: { ...shadowCards, salesCounts: { filters: { customerId, paymentStatus: paymentStatusFilter }, counts: salesTabCounts } },
             }}
           />
         ) : null}

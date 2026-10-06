@@ -15,6 +15,7 @@ import { appendDictatedText } from "@/lib/dictation";
 import { formatShortDateTime } from "@/lib/date";
 import { useRevealOnScroll } from "@/hooks/useRevealOnScroll";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { useLocalListPager } from "@/components/powersync/LocalListPager";
 import { loadMoreInventory } from "@/app/(app)/sales/actions";
 import type { InventoryItem, ProductsFilters } from "@/app/(app)/sales/loadProducts";
 import { FormDialog } from "@/components/ui/form-dialog";
@@ -161,7 +162,12 @@ export default function SalesInventoryClient({
     () => ({ q: initialQuery, category: initialCategoryFilter }),
     [initialQuery, initialCategoryFilter]
   );
-  const fetchPage = useCallback((page: number) => loadMoreInventory(page, fetchFilters), [fetchFilters]);
+  // The device version of the page (LocalSalesPage) serves further pages from the device copy.
+  const localPager = useLocalListPager<InventoryItem>();
+  const fetchPage = useCallback(
+    (page: number) => (localPager ? localPager(page) : loadMoreInventory(page, fetchFilters)),
+    [fetchFilters, localPager]
+  );
   const getItemId = useCallback((item: InventoryItem) => item.productId, []);
   const {
     rows: items,

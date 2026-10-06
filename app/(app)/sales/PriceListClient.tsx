@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { useLocalListPager } from "@/components/powersync/LocalListPager";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { getOrCreateProductCategory } from "@/lib/products/productCategories";
 import { loadMorePriceList } from "@/app/(app)/sales/actions";
@@ -88,7 +89,12 @@ export default function PriceListClient({
     () => ({ q: initialQuery, category: initialCategoryFilter }),
     [initialQuery, initialCategoryFilter]
   );
-  const fetchPage = useCallback((page: number) => loadMorePriceList(page, fetchFilters), [fetchFilters]);
+  // The device version of the page (LocalSalesPage) serves further pages from the device copy.
+  const localPager = useLocalListPager<ProductRow>();
+  const fetchPage = useCallback(
+    (page: number) => (localPager ? localPager(page) : loadMorePriceList(page, fetchFilters)),
+    [fetchFilters, localPager]
+  );
   const getRowId = useCallback((product: ProductRow) => product.id, []);
   const {
     rows,

@@ -1,23 +1,24 @@
-﻿import dynamic from "next/dynamic";
+import dynamic from "next/dynamic";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import AppShell from "@/components/layout/AppShell";
 import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { loadProjectsPage } from "@/app/(app)/projects/loadProjects";
+import {
+  loadProjectsPickerOptions,
+  loadProjectsTabCounts,
+  withListCustomers,
+} from "@/app/(app)/projects/loadProjectsPageData";
 import { parseProjectsFilters } from "@/app/(app)/projects/projectsFilters";
+import LocalProjectsPage from "@/app/(app)/projects/LocalProjectsPage";
+import ProjectsCustomerHeader from "@/app/(app)/projects/ProjectsCustomerHeader";
 import DashboardLocalShadow from "@/components/powersync/DashboardLocalShadow";
-import { LOCAL_DATA_SHADOW, localDataEnabledFor } from "@/lib/powersync/config";
+import { LOCAL_DATA_PAGES, LOCAL_DATA_SHADOW, localDataEnabledFor, localDataPageOn } from "@/lib/powersync/config";
 import { israelDateKey } from "@/lib/timezone";
 
 const ProjectsClient = dynamic(() => import("@/app/(app)/projects/ProjectsClient"), {
   loading: () => <DetailPageSkeleton />,
 });
-
-type Row = Record<string, unknown>;
-
-const OPTIONS_PAGE_SIZE = 50;
-
-const CLOSED_STATUSES = ["quote", "completed"];
 
 export default async function ProjectsPage({
   searchParams,
@@ -29,6 +30,7 @@ export default async function ProjectsPage({
     status?: string;
     sort?: string;
     q?: string;
+    data?: string;
   }>;
 }) {
   const params = (await searchParams) ?? {};
@@ -47,127 +49,51 @@ export default async function ProjectsPage({
   // The page's queries and the "who's asking" check go out together. They run
   // under the caller's own RLS whatever their role, and a caller who isn't
   // staff is still redirected below before anything is rendered — the check
-  // just no longer puts its users lookup in front of every query.
+  // just no longer puts its users lookup in front of every query. With the
+  // device version on for everyone (LOCAL_DATA_PAGES.projects) they wait for
+  // the check instead, and go out only for people without a device copy.
   const supabase = await createSupabaseServerClient();
   const profilePromise = requireStaffPage();
-  const dataPromise = Promise.all([
-    loadProjectsPage(supabase, { page: 1, filters }),
-    supabase
-      .from("users")
-      .select("id,full_name,email,active")
-      .order("full_name", { ascending: true })
-      .range(0, OPTIONS_PAGE_SIZE - 1),
-    // Straight from customers: customer_overview_view would total every
-    // customer's orders, projects and payments just to name 50 of them.
-    supabase
-      .from("customers")
-      .select("id,name,name_for_invoice,phone,email")
-      .order("name", { ascending: true })
-      .range(0, OPTIONS_PAGE_SIZE - 1),
-    // Tab counts — folded into this batch so they run concurrently instead of as
-    // a second sequential round-trip wave. These only need status/customer_id,
-    // so they count the plain projects table rather than project_dashboard_view
-    // (which forces a full financials + task-progress aggregation per count).
-    (() => {
-      let q = supabase
-        .from("projects")
-        .select("id", { count: "estimated", head: true })
-        .not("status", "in", `(${CLOSED_STATUSES.join(",")})`);
-      if (customerId) q = q.eq("customer_id", customerId);
-      return q;
-    })(),
-    (() => {
-      let q = supabase
-        .from("projects")
-        .select("id", { count: "estimated", head: true })
-        .eq("status", "quote");
-      if (customerId) q = q.eq("customer_id", customerId);
-      return q;
-    })(),
-    (() => {
-      let q = supabase
-        .from("projects")
-        .select("id", { count: "estimated", head: true })
-        .eq("status", "completed");
-      if (customerId) q = q.eq("customer_id", customerId);
-      return q;
-    })(),
-  ]);
-  // Awaited right after the check; this only keeps a failure that lands first
-  // from being reported as unhandled meanwhile.
-  dataPromise.catch(() => {});
+  const startReads = () => {
+    const reads = Promise.all([
+      loadProjectsPage(supabase, { page: 1, filters }),
+      loadProjectsPickerOptions(supabase),
+      // Tab counts — in this batch so they run concurrently instead of as a
+      // second sequential round-trip wave.
+      loadProjectsTabCounts(supabase, customerId),
+    ]);
+    // Awaited right after the check; this only keeps a failure that lands
+    // first from being reported as unhandled meanwhile.
+    reads.catch(() => {});
+    return reads;
+  };
+  const earlyReads = LOCAL_DATA_PAGES.projects ? null : startReads();
 
   const { profile } = await profilePromise;
-  const [
-    projectsResult,
-    { data: users },
-    { data: customers },
-    projectsCountRes,
-    quotesCountRes,
-    closedCountRes,
-  ] = await dataPromise;
+
+  // The device version: the list, its counts and the dialog's lists are worked
+  // out from this person's on-device copy (LocalProjectsPage). Searches still
+  // go to the server. ?data=server is the way back when the copy can't serve it.
+  if (localDataPageOn("projects", profile) && params.data !== "server" && !filters.q) {
+    return (
+      <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
+        <div className="space-y-4">
+          <LocalProjectsPage
+            viewer={{ userId: profile.id, role: profile.role ?? "", locale: profile.locale }}
+            customerName={customerName}
+          />
+        </div>
+      </AppShell>
+    );
+  }
+
+  const [projectsResult, options, tabCounts] = await (earlyReads ?? startReads());
 
   const rowsWithPaymentStatus = projectsResult.rows;
   const loadError = projectsResult.error;
-
-  // Same values customer_overview_view gave: trimmed, blanks as null, and the
-  // name falling back to the invoice name, then "לקוח".
-  const trimmed = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
-  const customerOptions = ((customers ?? []) as Row[])
-    .map((row) => {
-      const id = typeof row?.id === "string" ? row.id : "";
-      const name_for_invoice = trimmed(row?.name_for_invoice);
-      const label = trimmed(row?.name) ?? name_for_invoice ?? "לקוח";
-      return { id, label, phone: trimmed(row?.phone), email: trimmed(row?.email), name_for_invoice };
-    })
-    .filter((row: { id: string; label: string }) => row.id && row.label);
-
-  const fallbackCustomers = rowsWithPaymentStatus
-    .map((row: Row) => ({
-      id: typeof row?.customer_id === "string" ? row.customer_id : "",
-      label:
-        typeof row?.customer_name === "string" && row.customer_name.trim() ? row.customer_name : "",
-      phone: null,
-      email: null,
-      name_for_invoice: null,
-    }))
-    .filter((row: { id: string; label: string }) => row.id && row.label);
-
-  const customerOptionsFinal = Array.from(
-    new Map([...customerOptions, ...fallbackCustomers].map((row) => [row.id, row])).values()
-  );
-
-  const managerOptions = ((users ?? []) as Row[])
-    .map((row) => {
-      const fullName =
-        typeof row?.full_name === "string" && row.full_name.trim() ? row.full_name.trim() : null;
-      const email = typeof row?.email === "string" && row.email.trim() ? row.email.trim() : null;
-      return {
-        id: typeof row?.id === "string" ? row.id : "",
-        label: fullName ?? email ?? "",
-        active: row?.active,
-      };
-    })
-    .filter(
-      (row: { id: string; label: string; active: unknown }) =>
-        row.id && row.label && row.active !== false
-    )
-    .map((row: { id: string; label: string }) => ({ id: row.id, label: row.label }));
-
-  // Keep only Hebrew base letters (U+05D0–U+05EA) for a robust substring match
-  // that tolerates nikud, diacritics, invisible unicode, and spacing differences.
-  const hebrewLettersOnly = (s: string) => s.replace(/[^א-ת]/g, "");
-  const defaultProjectManagerId =
-    managerOptions.find((m) => hebrewLettersOnly(m.label).includes(hebrewLettersOnly("הלר")))?.id ?? null;
-
+  const customerOptionsFinal = withListCustomers(options.customerOptions, rowsWithPaymentStatus);
   const totalCount = projectsResult.totalCount;
   const hasMore = projectsResult.hasMore;
-
-  const tabCounts = {
-    projects: typeof projectsCountRes.count === "number" ? projectsCountRes.count : 0,
-    quotes: typeof quotesCountRes.count === "number" ? quotesCountRes.count : 0,
-    closed: typeof closedCountRes.count === "number" ? closedCountRes.count : 0,
-  };
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
@@ -175,26 +101,15 @@ export default async function ProjectsPage({
         {/* The alert bar lives inside ProjectsClient, below the tabs — it has to
             sit under them, and the tabs are that component's own JSX. */}
         {customerName ? (
-          <div className="text-lg font-medium">
-            לקוח: {customerName}
-            {(() => {
-              const phone = customerId
-                ? customerOptionsFinal.find((o) => o.id === customerId)?.phone
-                : null;
-              return phone ? (
-                <a
-                  href={`tel:${phone}`}
-                  className="mr-2 text-sm font-normal text-muted-foreground hover:underline"
-                >
-                  {phone}
-                </a>
-              ) : null;
-            })()}
-          </div>
+          <ProjectsCustomerHeader
+            customerName={customerName}
+            phone={customerId ? customerOptionsFinal.find((o) => o.id === customerId)?.phone ?? null : null}
+          />
         ) : null}
 
-        {/* The device-copy shadow check for this list (lib/powersync/dashboard-shadow.ts) —
-            not for searches, which also read task comments the device doesn't hold. */}
+        {/* The device-copy shadow check for this list, its counts and the
+            dialog's lists (lib/powersync/dashboard-shadow.ts) — not for
+            searches, which still go to the server. */}
         {LOCAL_DATA_SHADOW.projects && localDataEnabledFor(profile.role) && !filters.q && !loadError ? (
           <DashboardLocalShadow
             snapshot={{
@@ -203,7 +118,10 @@ export default async function ProjectsPage({
               role: profile.role ?? "",
               locale: profile.locale,
               todayIso: israelDateKey(),
-              cards: { projectsList: { filters, rows: rowsWithPaymentStatus, hasMore } },
+              cards: {
+                projectsList: { filters, rows: rowsWithPaymentStatus, hasMore, totalCount },
+                projectsExtras: { filters: { customerId }, tabCounts, options },
+              },
             }}
           />
         ) : null}
@@ -216,10 +134,10 @@ export default async function ProjectsPage({
             initialHasMore={hasMore}
             totalCount={totalCount}
             customerOptions={customerOptionsFinal}
-            managerOptions={managerOptions}
+            managerOptions={options.managerOptions}
             currentUserId={profile.id}
             viewerRole={profile.role}
-            defaultProjectManagerId={defaultProjectManagerId ?? undefined}
+            defaultProjectManagerId={options.defaultProjectManagerId ?? undefined}
             tabCounts={tabCounts}
             initialFilters={filters}
             // When the rows were read — the nav prefetches this page ahead of a
@@ -232,4 +150,3 @@ export default async function ProjectsPage({
     </AppShell>
   );
 }
-
