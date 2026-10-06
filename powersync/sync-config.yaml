@@ -1,4 +1,4 @@
-# BizManager — PowerSync Sync Streams, foundation v1.4 (2026-10-06).
+# BizManager — PowerSync Sync Streams, foundation v1.5 (2026-10-06).
 #
 # Every stream is for admins and office only: the signed-in person's role is
 # looked up in public.users by their Supabase login id (users.id differs from
@@ -92,5 +92,3 @@ streams:
       - SELECT product_categories.* FROM product_categories, staff_gate AS bucket
       # Which documents are linked to what (the tasks board's paperclip).
       - SELECT document_links.* FROM document_links, staff_gate AS bucket
-      # Temporary: the connection check's live test row.
-      - SELECT powersync_probe.* FROM powersync_probe, staff_gate AS bucket

@@ -10,7 +10,6 @@ export type TopbarKey =
   | "notificationsLabel"
   | "attendanceLabel"
   | "salaryLabel"
-  | "connectionCheckLabel"
   | "logout"
   | "localDataTitle"
   | "localDataSynced"
@@ -42,7 +41,6 @@ export const topbarDict: Dictionary<TopbarKey> = {
     notificationsLabel: "התראות",
     attendanceLabel: "נוכחות",
     salaryLabel: "משכורת",
-    connectionCheckLabel: "בדיקת חיבור",
     logout: "התנתקות",
     localDataTitle: "נתונים במכשיר",
     localDataSynced: "מעודכן",
@@ -73,7 +71,6 @@ export const topbarDict: Dictionary<TopbarKey> = {
     notificationsLabel: "الإشعارات",
     attendanceLabel: "الحضور",
     salaryLabel: "الراتب",
-    connectionCheckLabel: "فحص الاتصال",
     logout: "تسجيل الخروج",
     localDataTitle: "البيانات على الجهاز",
     localDataSynced: "محدّثة",

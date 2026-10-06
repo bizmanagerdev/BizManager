@@ -526,9 +526,6 @@ const document_links = new Table(
   { indexes: { by_entity: ["entity_type", "entity_id"] } }
 );
 
-/** TEMPORARY: the connection check's live test row. */
-const powersync_probe = new Table({ note: text, created_at: text });
-
 export const AppSchema = new Schema({
   users,
   tasks,
@@ -558,7 +555,6 @@ export const AppSchema = new Schema({
   product_categories,
   task_comments,
   document_links,
-  powersync_probe,
 });
 
 export type LocalDatabase = (typeof AppSchema)["types"];
