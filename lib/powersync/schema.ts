@@ -511,6 +511,21 @@ const inventory_movements = new Table(
 
 const product_categories = new Table({ name: text, active: int });
 
+// The tasks board's comment and file counts. task_comments arrive only for
+// tasks the person may open (powersync/sync-config.yaml: not private, or their
+// own private task).
+
+const task_comments = new Table(
+  { task_id: text, author_id: text, body: text, body_he: text, created_at: text, updated_at: text },
+  { indexes: { by_task: ["task_id"] } }
+);
+
+/** A document linked to a task, order, project… (entity_type + entity_id). */
+const document_links = new Table(
+  { document_id: text, entity_type: text, entity_id: text, created_at: text },
+  { indexes: { by_entity: ["entity_type", "entity_id"] } }
+);
+
 /** TEMPORARY: the connection check's live test row. */
 const powersync_probe = new Table({ note: text, created_at: text });
 
@@ -541,6 +556,8 @@ export const AppSchema = new Schema({
   worker_payment_allocations,
   inventory_movements,
   product_categories,
+  task_comments,
+  document_links,
   powersync_probe,
 });
 

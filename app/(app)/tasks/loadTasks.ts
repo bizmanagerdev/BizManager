@@ -101,6 +101,8 @@ type TaskRow = {
 export type TasksBoardResult = {
   items: TaskBoardItem[];
   error: string | null;
+  /** When the board was read (ms) — the device check compares against a copy at least this fresh. */
+  loadedAt: number;
 };
 
 /**
@@ -182,7 +184,7 @@ export async function loadTasksBoard(
     // the DB; this is a belt-and-suspenders guard in case the policy isn't applied.
     .filter((t) => !t.is_private || t.private_owner_id === userId);
 
-  if (taskRows.length === 0) return { items: [], error };
+  if (taskRows.length === 0) return { items: [], error, loadedAt: Date.now() };
 
   // An Arabic-locale viewer reading a task NOT authored by an Arabic worker
   // (subject_he is only ever set when the writer's own locale was 'ar' — see
@@ -350,5 +352,5 @@ export async function loadTasksBoard(
     };
   });
 
-  return { items, error };
+  return { items, error, loadedAt: Date.now() };
 }

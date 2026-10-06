@@ -16,12 +16,13 @@ import { loadPhoneQueueData, type PhoneQueueData } from "@/lib/attendance/phone-
 import { loadAttendanceClassificationOptions } from "@/lib/payroll-page-loader";
 import { getPropertiesSummary, type PropertiesSummary } from "@/lib/properties";
 import { loadProjectsPage, type ProjectsFilters } from "@/app/(app)/projects/loadProjects";
+import { loadTasksBoard, type TaskBoardItem, type TasksFilters } from "@/app/(app)/tasks/loadTasks";
 import { israelDateKey } from "@/lib/timezone";
 import type { Locale } from "@/lib/i18n/types";
 
 // The page parts that can be worked out from the on-device copy, each with the
 // SAME loader the server uses (run through createLocalSupabase): the
-// dashboard's cards, the projects list and the sales tabs. Shared by the shadow check
+// dashboard's cards, the projects list, the sales tabs and the tasks board. Shared by the shadow check
 // (dashboard-shadow.ts) and the device version of the board
 // (components/powersync/LocalDashboardCard.tsx), so the two can't drift apart.
 
@@ -46,6 +47,8 @@ export type LocalDashboardCards = {
     InventoryListPageResult,
     "items" | "movements" | "orderCustomerById" | "performerNameById" | "hasMore"
   >;
+  /** /tasks, the whole board, for the given filters. */
+  tasksBoard: { filters: TasksFilters; items: TaskBoardItem[] };
 };
 
 export type LocalCardKind = keyof LocalDashboardCards;
@@ -68,13 +71,16 @@ export const LOCAL_CARD_TABLES: Record<LocalCardKind, string[]> = {
   salesDeliveries: ["orders", "customers", "customer_branches", "order_items", "products", "inventory", "payments"],
   salesPriceList: ["products", "inventory", "inventory_movements", "product_categories"],
   salesInventory: ["products", "inventory", "inventory_movements", "product_categories", "orders", "customers", "users"],
+  tasksBoard: [
+    "tasks", "task_members", "users", "projects", "customers", "properties", "task_comments", "reminders", "document_links",
+  ],
 };
 
 export async function computeLocalCard<K extends LocalCardKind>(
   local: SupabaseClient,
   kind: K,
   { userId, role, locale }: LocalCardViewer,
-  /** The list's filters, for the projects list and the sales tabs. */
+  /** The list's filters, for the projects list, the sales tabs and the tasks board. */
   filters?: unknown
 ): Promise<LocalDashboardCards[K]> {
   const need = <F,>(): F => {
@@ -137,6 +143,13 @@ export async function computeLocalCard<K extends LocalCardKind>(
       if (result.error) throw new Error(result.error);
       const { items, movements, orderCustomerById, performerNameById, hasMore } = result;
       return { filters: productFilters, items, movements, orderCustomerById, performerNameById, hasMore } as LocalDashboardCards[K];
+    }
+    case "tasksBoard": {
+      const taskFilters = need<TasksFilters>();
+      const canSeeAll = role === "admin" || role === "office";
+      const result = await loadTasksBoard(local, { filters: taskFilters, userId, canSeeAll, locale });
+      if (result.error) throw new Error(result.error);
+      return { filters: taskFilters, items: result.items } as LocalDashboardCards[K];
     }
     default:
       throw new Error(`Unknown dashboard card ${String(kind)}`);

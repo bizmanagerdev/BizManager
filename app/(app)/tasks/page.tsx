@@ -6,6 +6,9 @@ import { hasSectionAccess, isStaffRole } from "@/lib/auth/roleAccess";
 import { propertyDisplayName } from "@/lib/properties";
 import { t } from "@/lib/i18n/t";
 import { commonDict } from "@/lib/i18n/dictionaries/common";
+import DashboardLocalShadow from "@/components/powersync/DashboardLocalShadow";
+import { LOCAL_DATA_SHADOW, localDataEnabledFor } from "@/lib/powersync/config";
+import { israelDateKey } from "@/lib/timezone";
 import TasksPageClient from "./TasksPageClient";
 import { loadTasksBoard } from "./loadTasks";
 
@@ -156,6 +159,21 @@ export default async function TasksPage({
             initialFilters={{ q, priority: filterPriority, domain: filterDomain, linkedId: filterLinkedId, scope: filterScope }}
           />
         )}
+        {/* The device-copy shadow check of the board (lib/powersync/dashboard-shadow.ts).
+            Not for Arabic readers: their board translates task names on the
+            server as it reads them, which the device doesn't. */}
+        {!boardResult.error && profile.locale !== "ar" && LOCAL_DATA_SHADOW.tasks && localDataEnabledFor(profile.role) ? (
+          <DashboardLocalShadow
+            snapshot={{
+              renderedAt: new Date(boardResult.loadedAt).toISOString(),
+              userId: profile.id,
+              role: profile.role ?? "",
+              locale: profile.locale,
+              todayIso: israelDateKey(),
+              cards: { tasksBoard: { filters, items: boardResult.items } },
+            }}
+          />
+        ) : null}
       </div>
     </AppShell>
   );

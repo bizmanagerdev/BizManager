@@ -1,4 +1,4 @@
-# BizManager — PowerSync Sync Streams, foundation v1.3 (2026-10-06).
+# BizManager — PowerSync Sync Streams, foundation v1.4 (2026-10-06).
 #
 # Every stream is for admins and office only: the signed-in person's role is
 # looked up in public.users by their Supabase login id (users.id differs from
@@ -17,8 +17,6 @@ config:
 
 with:
   staff_gate: SELECT role FROM users WHERE auth_user_id = auth.user_id() AND active = true AND system_access = true AND (role = 'admin' OR role = 'office')
-  admin_gate: SELECT role FROM users WHERE auth_user_id = auth.user_id() AND active = true AND system_access = true AND role = 'admin'
-  office_gate: SELECT role FROM users WHERE auth_user_id = auth.user_id() AND active = true AND system_access = true AND role = 'office'
   # The signed-in staff member's own users.id.
   staff_me: SELECT id FROM users WHERE auth_user_id = auth.user_id() AND active = true AND system_access = true AND (role = 'admin' OR role = 'office')
 
@@ -42,22 +40,19 @@ streams:
         SELECT task_members.task_id || ':' || task_members.user_id AS id,
                task_members.task_id, task_members.user_id, task_members.created_at
         FROM task_members, staff_gate AS bucket
+      # Comments, exactly like their task: not private, or the person's own
+      # private task. Each comment carries a copy of its task's privacy
+      # (task_is_private, task_private_owner_id — kept up to date by triggers),
+      # because a stream can't look the task up per comment.
+      - SELECT task_comments.* FROM task_comments, staff_gate AS bucket WHERE task_comments.task_is_private = false
+      - SELECT * FROM task_comments WHERE task_is_private = true AND task_private_owner_id IN staff_me
 
-  # Open reminders the person sees in their alerts: their own, ones they made
-  # for nobody in particular, and their role's shared alerts.
+  # Every open reminder: admins and office read them all in the app too (the
+  # alerts list picks its own; the task cards' bell looks at any on the task).
   reminders:
     auto_subscribe: true
     queries:
-      - SELECT * FROM reminders WHERE status = 'pending' AND assigned_to IN staff_me
-      - SELECT * FROM reminders WHERE status = 'pending' AND assigned_to IS NULL AND created_by IN staff_me
-      - |
-        SELECT reminders.* FROM reminders, admin_gate AS bucket
-        WHERE reminders.status = 'pending'
-          AND (reminders.audience_role = 'all' OR reminders.audience_role = 'office' OR reminders.audience_role = 'admin')
-      - |
-        SELECT reminders.* FROM reminders, office_gate AS bucket
-        WHERE reminders.status = 'pending'
-          AND (reminders.audience_role = 'all' OR reminders.audience_role = 'office')
+      - SELECT reminders.* FROM reminders, staff_gate AS bucket WHERE reminders.status = 'pending'
 
   business:
     auto_subscribe: true
@@ -95,5 +90,7 @@ streams:
       # The sales tabs' stock movements and product categories.
       - SELECT inventory_movements.* FROM inventory_movements, staff_gate AS bucket
       - SELECT product_categories.* FROM product_categories, staff_gate AS bucket
+      # Which documents are linked to what (the tasks board's paperclip).
+      - SELECT document_links.* FROM document_links, staff_gate AS bucket
       # Temporary: the connection check's live test row.
       - SELECT powersync_probe.* FROM powersync_probe, staff_gate AS bucket

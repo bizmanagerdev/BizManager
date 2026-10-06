@@ -89,6 +89,8 @@ const LOCAL_TABLES = new Set([
   "worker_payment_allocations",
   "inventory_movements",
   "product_categories",
+  "task_comments",
+  "document_links",
 ]);
 
 /**
@@ -370,12 +372,21 @@ function parseSelect(text: string): SelectItem[] {
   });
 }
 
-/** Many-to-one embeds the loaders use: source table → embed key → (table, FK column). */
-const EMBEDS: Record<string, Record<string, { table: string; fkColumn: string }>> = {
+/**
+ * The embeds the loaders use: source table → embed key → target. Many-to-one
+ * (the default): `fkColumn` is on the source row and names one target row.
+ * One-to-many (`many`): `fkColumn` is on the target rows and points back at
+ * the source row's id — the embed is an array, as PostgREST returns it.
+ */
+type EmbedTarget = { table: string; fkColumn: string; many?: true };
+const EMBEDS: Record<string, Record<string, EmbedTarget>> = {
   lease_agreements: { customers: { table: "customers", fkColumn: "customer_id" } },
   project_expenses: { expenses: { table: "expenses", fkColumn: "expense_id" } },
   task_members: { users: { table: "users", fkColumn: "user_id" } },
-  tasks: { "users!tasks_assigned_user_id_fkey": { table: "users", fkColumn: "assigned_user_id" } },
+  tasks: {
+    "users!tasks_assigned_user_id_fkey": { table: "users", fkColumn: "assigned_user_id" },
+    task_members: { table: "task_members", fkColumn: "task_id", many: true },
+  },
 };
 
 // ── Sources: tables, the views the loaders read, the directory RPCs ──────────
@@ -923,7 +934,12 @@ type CountOption = { count?: "exact" | "planned" | "estimated"; head?: boolean }
 type Result = { data: unknown; error: { message: string } | null; count: number | null; status: number };
 
 /** An embed in a select list: which table, through which column, inner or not. */
-function embedSpec(table: string, key: string): { table: string; fkColumn: string; inner: boolean } | null {
+type EmbedSpec = EmbedTarget & { inner: boolean };
+
+/** One resolved embed: the embedded value for a source row (null / [] when nothing matches). */
+type ResolvedEmbed = { spec: EmbedSpec; valueFor: (row: Row) => Row | Row[] | null };
+
+function embedSpec(table: string, key: string): EmbedSpec | null {
   const direct = EMBEDS[table]?.[key];
   if (direct) return { ...direct, inner: false };
   const [name, hint] = key.split("!");
@@ -1010,24 +1026,34 @@ class LocalQuery implements PromiseLike<Result> {
     return loadTable(this.reader, name, this.filters);
   }
 
-  /** Each embed in `items`: its target rows (projected), keyed by id, after its filters. */
+  /** Each embed in `items`: its target rows (projected) for each source row, after the embed's filters. */
   private async resolveEmbeds(
     rows: Row[],
     items: SelectItem[],
     table: string,
     filtersByAlias: Map<string, Filter[]>
-  ): Promise<Map<string, { spec: { fkColumn: string; inner: boolean }; byId: Map<unknown, Row> }>> {
-    const resolved = new Map<string, { spec: { fkColumn: string; inner: boolean }; byId: Map<unknown, Row> }>();
+  ): Promise<Map<string, ResolvedEmbed>> {
+    const resolved = new Map<string, ResolvedEmbed>();
     for (const embed of items) {
       if (embed.kind !== "embed") continue;
       const spec = embedSpec(table, embed.key);
       if (!spec) throw new Error(`Embed ${table} → ${embed.key} isn't available on the device`);
-      const ids = [...new Set(rows.map((r) => r[spec.fkColumn]).filter((v): v is string => typeof v === "string"))];
-      const loaded = ids.length ? await loadTable(this.reader, spec.table, [{ kind: "in", column: "id", values: ids }]) : [];
+      // Many-to-one: the targets the rows point at. One-to-many: the targets pointing at the rows.
+      const keyColumn = spec.many ? "id" : spec.fkColumn;
+      const ids = [...new Set(rows.map((r) => r[keyColumn]).filter((v): v is string => typeof v === "string"))];
+      const lookupColumn = spec.many ? spec.fkColumn : "id";
+      const loaded = ids.length ? await loadTable(this.reader, spec.table, [{ kind: "in", column: lookupColumn, values: ids }]) : [];
       const own = filtersByAlias.get(embed.alias) ?? [];
       const targets = loaded.filter((t) => own.every((f) => evaluate(f, t) === true));
       const projected = await this.project(targets, embed.items, spec.table, new Map());
-      resolved.set(embed.alias, { spec, byId: new Map(targets.map((t, i) => [t.id, projected[i]])) });
+      if (spec.many) {
+        const byParent = new Map<unknown, Row[]>();
+        targets.forEach((t, i) => byParent.set(t[spec.fkColumn], [...(byParent.get(t[spec.fkColumn]) ?? []), projected[i]]));
+        resolved.set(embed.alias, { spec, valueFor: (row) => byParent.get(row.id) ?? [] });
+      } else {
+        const byId = new Map(targets.map((t, i) => [t.id, projected[i]]));
+        resolved.set(embed.alias, { spec, valueFor: (row) => byId.get(row[spec.fkColumn]) ?? null });
+      }
     }
     return resolved;
   }
@@ -1043,8 +1069,7 @@ class LocalQuery implements PromiseLike<Result> {
           if (!(item.column in row)) throw new Error(`Column ${table}.${item.column} isn't available on the device`);
           out[item.alias] = row[item.column];
         } else {
-          const entry = embedded.get(item.alias);
-          out[item.alias] = entry?.byId.get(row[entry.spec.fkColumn]) ?? null;
+          out[item.alias] = embedded.get(item.alias)?.valueFor(row) ?? null;
         }
       }
       return out;
@@ -1059,15 +1084,19 @@ class LocalQuery implements PromiseLike<Result> {
       }
       const all = await this.loadSource();
       let filtered = all.filter((row) => this.filters.every((f) => evaluate(f, row) === true));
-      // An inner embed keeps only rows whose embedded row exists and passes
-      // that embed's filters — before sorting, counting and paging.
+      // An inner embed keeps only rows whose embedded row exists (one-to-many:
+      // at least one) and passes that embed's filters — before sorting,
+      // counting and paging.
       const innerEmbeds = items.filter(
         (i): i is Extract<SelectItem, { kind: "embed" }> => i.kind === "embed" && embedSpec(this.source.name, i.key)?.inner === true
       );
       if (innerEmbeds.length) {
         const resolved = await this.resolveEmbeds(filtered, innerEmbeds, this.source.name, this.embedFilters);
         filtered = filtered.filter((row) =>
-          [...resolved.values()].every(({ spec, byId }) => byId.has(row[spec.fkColumn]))
+          [...resolved.values()].every(({ valueFor }) => {
+            const value = valueFor(row);
+            return Array.isArray(value) ? value.length > 0 : value !== null;
+          })
         );
       }
       const sorted = sortRows(filtered, this.orders);

@@ -5,6 +5,7 @@ import { getMyTasks } from "@/lib/dashboard/tasks-overview";
 import { loadProjectsPage } from "@/app/(app)/projects/loadProjects";
 import { loadOrdersPage } from "@/app/(app)/sales/loadOrders";
 import { loadPriceListPage } from "@/app/(app)/sales/loadProducts";
+import { loadTasksBoard } from "@/app/(app)/tasks/loadTasks";
 
 // The on-device stand-in for the Supabase client: the server's loaders run
 // against it unchanged, so it has to answer exactly like PostgREST — values
@@ -174,6 +175,27 @@ describe("select lists", () => {
     expect(missing.error?.message).toMatch(/nonexistent/);
     const notSynced = await db.from("audit_logs").select("id");
     expect(notSynced.error?.message).toMatch(/audit_logs/);
+  });
+
+  it("one-to-many: the children as a list; !inner keeps only parents with a matching child", async () => {
+    const db = createLocalSupabase(
+      fakeReader({
+        tasks: [{ id: "t1" }, { id: "t2" }, { id: "t3" }],
+        task_members: [
+          { id: "t1:me", task_id: "t1", user_id: "me" },
+          { id: "t1:u2", task_id: "t1", user_id: "u2" },
+          { id: "t2:u2", task_id: "t2", user_id: "u2" },
+        ],
+      })
+    );
+    const all = await db.from("tasks").select("id,task_members(user_id)").order("id");
+    expect(all.data).toEqual([
+      { id: "t1", task_members: [{ user_id: "me" }, { user_id: "u2" }] },
+      { id: "t2", task_members: [{ user_id: "u2" }] },
+      { id: "t3", task_members: [] },
+    ]);
+    const mine = await db.from("tasks").select("id,task_members!inner(user_id)").eq("task_members.user_id", "me");
+    expect(mine.data).toEqual([{ id: "t1", task_members: [{ user_id: "me" }] }]);
   });
 });
 
@@ -516,7 +538,7 @@ describe("the sales tabs, worked out on the device", () => {
     const db = createLocalSupabase(fakeReader(tables));
     const result = await loadOrdersPage(db, {
       page: 1,
-      filters: { tab: "orders", customerId: null, q: "", paymentStatus: "all", invoice: "all" },
+      filters: { tab: "orders", customerId: null, q: "", paymentStatus: "", invoice: "" },
     });
     expect(result.error).toBeNull();
     expect(result.rows.map((r) => r.order_id ?? r.id)).toEqual(["o1"]);
@@ -530,5 +552,75 @@ describe("the sales tabs, worked out on the device", () => {
     expect(result.products).toEqual([
       expect.objectContaining({ id: "pr1", name: "כיסא", stock: 7, purchasedAmount: 11, soldAmount: 3, unitPrice: 10 }),
     ]);
+  });
+});
+
+describe("the tasks board, worked out on the device", () => {
+  const task = (row: Row) => ({
+    subject_he: null, subject_ar: null, priority: "medium", due_date: null, due_time: null, city: null,
+    business_domain: null, project_id: null, property_id: null, customer_id: null, is_private: 0,
+    private_owner_id: null, sort_order: null, updated_at: "2026-10-01T08:00:00.000000", ...row,
+  });
+  const tables = {
+    tasks: [
+      task({ id: "t1", subject: "שלי", status: "todo", assigned_user_id: "me", sort_order: 2, created_at: "2026-10-05T10:00:00.000000", due_date: "2026-01-01" }),
+      task({ id: "t2", subject: "חבר", status: "in_progress", assigned_user_id: "u2", sort_order: 1, created_at: "2026-10-04T10:00:00.000000", property_id: "pr1", customer_id: "c1" }),
+      task({ id: "t3", subject: "של אחר", status: null, assigned_user_id: "u2", created_at: "2026-10-03T10:00:00.000000" }),
+      task({ id: "t4", subject: "סגורה", status: "done", assigned_user_id: "me", created_at: "2026-09-01T10:00:00.000000", updated_at: "2026-10-05T12:00:00.000000" }),
+      task({ id: "t5", subject: "פרטית", status: "todo", assigned_user_id: null, is_private: 1, private_owner_id: "me", created_at: "2026-10-06T10:00:00.000000" }),
+      task({ id: "t6", subject: "בוטלה", status: "cancelled", assigned_user_id: "me", created_at: "2026-10-06T11:00:00.000000" }),
+    ],
+    task_members: [{ id: "t2:me", task_id: "t2", user_id: "me" }],
+    users: [
+      { id: "me", full_name: "אני", avatar_color: "#111", role: "admin", active: 1 },
+      { id: "u2", full_name: "דנה", avatar_color: "#222", role: "worker", active: 1 },
+    ],
+    customers: [{ id: "c1", name: "לקוח", phone: "050" }],
+    properties: [{ id: "pr1", name: null, address: "רחוב 1", is_active: 1 }],
+    task_comments: [
+      { id: "cm1", task_id: "t1" },
+      { id: "cm2", task_id: "t1" },
+    ],
+    reminders: [
+      { id: "r1", task_id: "t2", remind_at: "2026-10-07T08:00:00.000000", status: "pending" },
+      { id: "r2", task_id: "t1", remind_at: "2026-10-07T08:00:00.000000", status: "done" },
+    ],
+    document_links: [
+      { id: "dl1", entity_type: "task", entity_id: "t1", document_id: "d1" },
+      { id: "dl2", entity_type: "order", entity_id: "t2", document_id: "d2" },
+    ],
+  };
+  const filters = { q: "", priority: "", domain: "", linkedId: "" };
+
+  it("mine: assigned, member or my private task; open by board order, then done", async () => {
+    const db = createLocalSupabase(fakeReader(tables));
+    const { items, error } = await loadTasksBoard(db, { filters: { ...filters, scope: "mine" }, userId: "me", canSeeAll: true });
+    expect(error).toBeNull();
+    expect(items.map((t) => t.id)).toEqual(["t2", "t1", "t5", "t4"]);
+    const [t2, t1] = items;
+    expect(t2).toMatchObject({
+      members: [
+        { id: "u2", name: "דנה", color: "#222" },
+        { id: "me", name: "אני", color: "#111" },
+      ],
+      assigned_user_name: "דנה",
+      customer_name: "לקוח",
+      customer_phone: "050",
+      property_name: "רחוב 1",
+      has_open_reminder: true,
+      comment_count: 0,
+      attachment_count: 0,
+      sort_order: 1,
+    });
+    expect(t1).toMatchObject({ comment_count: 2, attachment_count: 1, has_open_reminder: false, is_overdue: true });
+    expect(items.find((t) => t.id === "t5")?.is_private).toBe(true);
+  });
+
+  it("all: everyone's tasks; a search still works", async () => {
+    const db = createLocalSupabase(fakeReader(tables));
+    const all = await loadTasksBoard(db, { filters: { ...filters, scope: "all" }, userId: "me", canSeeAll: true });
+    expect(all.items.map((t) => t.id)).toEqual(["t2", "t1", "t5", "t3", "t4"]);
+    const search = await loadTasksBoard(db, { filters: { ...filters, q: "חבר", scope: "all" }, userId: "me", canSeeAll: true });
+    expect(search.items.map((t) => t.id)).toEqual(["t2"]);
   });
 });
