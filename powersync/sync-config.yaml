@@ -1,4 +1,4 @@
-# BizManager — PowerSync Sync Streams, foundation v1 (2026-10-06).
+# BizManager — PowerSync Sync Streams, foundation v1.1 (2026-10-06).
 #
 # Every stream is for admins and office only: the signed-in person's role is
 # looked up in public.users by their Supabase login id (users.id differs from
@@ -23,12 +23,13 @@ with:
   staff_me: SELECT id FROM users WHERE auth_user_id = auth.user_id() AND active = true AND system_access = true AND (role = 'admin' OR role = 'office')
 
 streams:
-  # Names and colours of everyone, plus what the staff screens show.
+  # Names and colours of everyone, plus what the staff screens show
+  # (notification_prefs: the alerts card hides the topics a person muted).
   people:
     auto_subscribe: true
     query: |
       SELECT users.id, users.full_name, users.email, users.phone, users.avatar_color,
-             users.role, users.active, users.system_access, users.locale
+             users.role, users.active, users.system_access, users.locale, users.notification_prefs
       FROM users, staff_gate AS bucket
 
   tasks:
@@ -77,6 +78,7 @@ streams:
         FROM inventory, staff_gate AS bucket
       - SELECT payments.* FROM payments, staff_gate AS bucket
       - SELECT phone_attendance_reports.* FROM phone_attendance_reports, staff_gate AS bucket
+      - SELECT attendance_sessions.* FROM attendance_sessions, staff_gate AS bucket
       - SELECT properties.* FROM properties, staff_gate AS bucket
       - SELECT lease_agreements.* FROM lease_agreements, staff_gate AS bucket
       # Temporary: the connection check's live test row.

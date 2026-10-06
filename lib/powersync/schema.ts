@@ -25,6 +25,7 @@ const users = new Table(
     active: int,
     system_access: int,
     locale: text,
+    notification_prefs: text,
   },
   { indexes: { by_role: ["role"] } }
 );
@@ -303,6 +304,25 @@ const phone_attendance_reports = new Table(
   { indexes: { by_user: ["user_id"], by_status: ["status"] } }
 );
 
+const attendance_sessions = new Table(
+  {
+    user_id: text,
+    clock_in: text,
+    clock_out: text,
+    worked_minutes: int,
+    notes: text,
+    business_domain: text,
+    project_id: text,
+    property_id: text,
+    labor_cost: text,
+    is_billable_to_customer: int,
+    bill_to_customer_amount: text,
+    billing_status: text,
+    notes_he: text,
+  },
+  { indexes: { by_user: ["user_id"], by_clock_in: ["clock_in"] } }
+);
+
 const properties = new Table({
   address: text,
   asset_description: text,
@@ -377,6 +397,7 @@ export const AppSchema = new Schema({
   inventory,
   payments,
   phone_attendance_reports,
+  attendance_sessions,
   properties,
   lease_agreements,
   powersync_probe,

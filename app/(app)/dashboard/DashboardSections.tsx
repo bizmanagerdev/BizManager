@@ -60,6 +60,9 @@ type CashPoint = { domainName: string; inflow: number; outflow: number };
 import { israelDateKey } from "@/lib/timezone";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import DashboardLocalShadow from "@/components/powersync/DashboardLocalShadow";
+import type { DashboardShadowSnapshot } from "@/lib/powersync/dashboard-shadow";
+import { LOCAL_DATA_SHADOW, localDataEnabledFor } from "@/lib/powersync/config";
 
 // ── Suspense fallbacks (kept close to the real layout so the swap is shift-free) ──
 
@@ -324,37 +327,55 @@ async function AttendanceQueueSlowCell({
   sparkPromise,
   optionsPromise,
   locale,
+  shadow,
 }: {
   dataPromise: Promise<PhoneQueueData | null>;
   sparkPromise: Promise<number[]>;
   optionsPromise: Promise<Awaited<ReturnType<typeof loadAttendanceClassificationOptions>> | null>;
   locale: Locale;
+  shadow: ShadowBase | null;
 }) {
   const [data, spark, options] = await Promise.all([dataPromise, sparkPromise, optionsPromise]);
   if (!data) return null;
   return (
-    <AttendanceApprovals
-      data={data}
-      spark={spark}
-      // Empty lists rather than null: the card still approves a shift whose
-      // domain needs neither (e.g. a plain office shift).
-      projectOptions={options?.projectOptions ?? []}
-      propertyOptions={options?.propertyOptions ?? []}
-      locale={locale}
-    />
+    <>
+      {shadow ? (
+        <DashboardLocalShadow snapshot={{ ...shadow, cards: { attendanceQueue: { data, spark, options } } }} />
+      ) : null}
+      <AttendanceApprovals
+        data={data}
+        spark={spark}
+        // Empty lists rather than null: the card still approves a shift whose
+        // domain needs neither (e.g. a plain office shift).
+        projectOptions={options?.projectOptions ?? []}
+        propertyOptions={options?.propertyOptions ?? []}
+        locale={locale}
+      />
+    </>
   );
 }
 
 async function PropertiesSlowCell({
   summaryPromise,
   locale,
+  shadow,
 }: {
   summaryPromise: Promise<Awaited<ReturnType<typeof getPropertiesSummary>> | null>;
   locale: Locale;
+  shadow: ShadowBase | null;
 }) {
   const summary = await summaryPromise;
-  return summary ? <PropertiesCard summary={summary} locale={locale} /> : null;
+  if (!summary) return null;
+  return (
+    <>
+      {shadow ? <DashboardLocalShadow snapshot={{ ...shadow, cards: { properties: summary } }} /> : null}
+      <PropertiesCard summary={summary} locale={locale} />
+    </>
+  );
 }
+
+/** What every shadow check needs besides the cards themselves. */
+type ShadowBase = Omit<DashboardShadowSnapshot, "cards">;
 
 async function DomainChartSlowCell({
   breakdownPromise,
@@ -407,6 +428,13 @@ export async function DashboardPanels() {
   const role = profile.role;
   const locale = profile.locale;
   const isAdminOrOffice = role === "admin" || role === "office";
+  // The device-copy shadow check (lib/powersync/dashboard-shadow.ts): the
+  // figures below are also worked out on the device and compared. Read time
+  // first, so the device only compares once its copy is at least this fresh.
+  const shadow: ShadowBase | null =
+    LOCAL_DATA_SHADOW.dashboard && localDataEnabledFor(role)
+      ? { renderedAt: new Date().toISOString(), userId: profile.id, role: role ?? "", locale, todayIso: israelDateKey() }
+      : null;
 
   // Prefs come off the profile (loaded by requireProfile) — no extra round-trip.
   // Computed before digestPromise below so its own "hidden widgets skip
@@ -555,8 +583,6 @@ export async function DashboardPanels() {
     digestPromise,
   ]);
 
-  // Let the recurring-tasks write (started above) finish before responding.
-
   // The dated alerts, grouped HERE (server) because that's pure rule knowledge;
   // the card only draws them. Its sibling does the date bucketing on the client,
   // which has to happen on the viewer's clock.
@@ -636,12 +662,13 @@ export async function DashboardPanels() {
           sparkPromise={attendanceSparkPromise}
           optionsPromise={attendanceOptionsPromise}
           locale={locale}
+          shadow={shadow}
         />
       </Suspense>
     ) : null,
     properties: show("properties") && isAdminOrOffice ? (
       <Suspense fallback={<SlowCardSkeleton />}>
-        <PropertiesSlowCell summaryPromise={propertiesPromise} locale={locale} />
+        <PropertiesSlowCell summaryPromise={propertiesPromise} locale={locale} shadow={shadow} />
       </Suspense>
     ) : null,
     domainChart: needDomainChart ? (
@@ -772,6 +799,20 @@ export async function DashboardPanels() {
           moment activity arrives. */}
       {isAdminOrOffice && show("activityDigest") && !digestPlanned ? (
         <MissedDigestCell initialItems={digestItems} locale={locale} />
+      ) : null}
+
+      {shadow ? (
+        <DashboardLocalShadow
+          snapshot={{
+            ...shadow,
+            cards: {
+              ...(show("todaySchedule") ? { todaySchedule: scheduleEntries } : {}),
+              ...(show("todayAlerts") && inboxResult ? { todayAlerts: todaySlice(inboxResult) } : {}),
+              ...(show("myTasks") ? { myTasks } : {}),
+              ...(show("deliveries") && locale !== "ar" ? { deliveries: { items: deliveriesResult, spark: deliveriesSpark } } : {}),
+            },
+          }}
+        />
       ) : null}
 
       {present.length === 0 ? (

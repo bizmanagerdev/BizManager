@@ -30,3 +30,13 @@ export const LOCAL_DATA_PAGES = {
   sales: false,
   tasks: false,
 } as const;
+
+/**
+ * Pages whose cards are also worked out from the device copy in the
+ * background and compared with the server's (nothing on screen changes) —
+ * the check that has to come out clean before a page's switch above flips.
+ * See lib/powersync/dashboard-shadow.ts.
+ */
+export const LOCAL_DATA_SHADOW = {
+  dashboard: true,
+} as const;
