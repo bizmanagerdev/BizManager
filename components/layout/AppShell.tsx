@@ -135,7 +135,7 @@ export default function AppShell({
             // Suspense boundary required because AppSidebar reads useSearchParams
             // (to carry financial filters between Flow/Reports links).
             <Suspense fallback={null}>
-              <AppSidebar items={sidebar} />
+              <AppSidebar items={sidebar} viewerRole={viewerRole} />
             </Suspense>
           )}
           <div className="flex min-w-0 flex-1 flex-col">

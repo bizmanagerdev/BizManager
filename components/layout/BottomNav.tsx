@@ -5,7 +5,7 @@ import { MoreIcon } from "@/components/ui/icons";
 import { NavLink } from "@/components/NavLink";
 import { ClientOnly } from "@/components/ClientOnly";
 import { QuickCreateMenu } from "@/components/layout/QuickCreateMenu";
-import { EXACT_MATCH_CHILDREN, FULLY_PREFETCHED_URLS, type SidebarNavItem } from "@/components/layout/nav-items";
+import { EXACT_MATCH_CHILDREN, isFullyPrefetched, type SidebarNavItem } from "@/components/layout/nav-items";
 import { cn } from "@/lib/utils";
 import {
   Sheet,
@@ -74,8 +74,8 @@ export function BottomNav({ items, moreItems = [], viewerId, viewerRole, viewerL
       end={item.url === "/"}
       // Same reasoning as the desktop sidebar: the dashboard, projects and sales tabs
       // are always mounted here, so fully prefetch them instead of leaving a
-      // dynamic route uncached (FULLY_PREFETCHED_URLS).
-      prefetch={FULLY_PREFETCHED_URLS.has(item.url) ? true : undefined}
+      // dynamic route uncached (isFullyPrefetched).
+      prefetch={isFullyPrefetched(item.url, viewerRole) ? true : undefined}
       className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-sm py-1 text-sidebar-foreground/70 transition-all duration-200 hover:bg-white/10 hover:text-white"
       activeClassName="bg-secondary text-secondary-foreground shadow-md shadow-secondary/25"
       pendingClassName="bg-white/10 opacity-70"

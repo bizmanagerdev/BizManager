@@ -8,11 +8,13 @@ import { NavLink } from "@/components/NavLink";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useNavCounts, type NavCount } from "@/lib/ui/nav-counts-store";
-import { EXACT_MATCH_CHILDREN, FULLY_PREFETCHED_URLS, type SidebarNavItem } from "@/components/layout/nav-items";
+import { EXACT_MATCH_CHILDREN, isFullyPrefetched, type SidebarNavItem } from "@/components/layout/nav-items";
 import { RAIL_WIDTH, useSidebarCollapse } from "@/components/layout/sidebar-collapse-context";
 
 interface Props {
   items: SidebarNavItem[];
+  /** Decides which pages are loaded ahead of a click (isFullyPrefetched). */
+  viewerRole?: string;
 }
 
 const linkBase =
@@ -84,11 +86,13 @@ function NavFlyout({
   navCounts,
   onEnter,
   onLeave,
+  viewerRole,
 }: {
   state: FlyoutState;
   navCounts: Record<string, NavCount>;
   onEnter: () => void;
   onLeave: () => void;
+  viewerRole?: string;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -122,9 +126,9 @@ function NavFlyout({
           to={state.item.url}
           end={state.item.url === "/"}
           onClick={onLeave}
-          // Fully warmed ahead of a click — see FULLY_PREFETCHED_URLS and the
+          // Fully warmed ahead of a click — see isFullyPrefetched and the
           // matching prefetch below in the main list.
-          prefetch={FULLY_PREFETCHED_URLS.has(state.item.url) ? true : undefined}
+          prefetch={isFullyPrefetched(state.item.url, viewerRole) ? true : undefined}
           // Standalone row: it carries the filled look itself (nothing behind it).
           className={cn(flyoutTopRow, "bg-secondary text-secondary-foreground")}
           activeClassName={linkActive}
@@ -296,7 +300,7 @@ function NavCountBadge({ badge, collapsed }: { badge: NavCount; collapsed: boole
   );
 }
 
-export function AppSidebar({ items }: Props) {
+export function AppSidebar({ items, viewerRole }: Props) {
   // Shared with the top bar's brand corner so the two stay the same width.
   const { collapsed, toggle: toggleCollapsed } = useSidebarCollapse();
   const navCounts = useNavCounts();
@@ -397,7 +401,7 @@ export function AppSidebar({ items }: Props) {
               // instead of paying a full server round-trip (user, 2026-08-31:
               // returning to the dashboard should be instant; 2026-10-05:
               // projects should open as fast as the dashboard; sales too).
-              prefetch={FULLY_PREFETCHED_URLS.has(item.url) ? true : undefined}
+              prefetch={isFullyPrefetched(item.url, viewerRole) ? true : undefined}
               className={cn(linkBase, collapsed && "justify-center px-0")}
               activeClassName={linkActive}
               pendingClassName={linkPending}
@@ -435,6 +439,7 @@ export function AppSidebar({ items }: Props) {
           navCounts={navCounts}
           onEnter={cancelClose}
           onLeave={scheduleClose}
+          viewerRole={viewerRole}
         />
       ) : null}
     </aside>

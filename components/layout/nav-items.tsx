@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { LOCAL_DATA_PAGES, localDataEnabledFor } from "@/lib/powersync/config";
 import { DEFAULT_SECTION_ACCESS, WORKER_SECTIONS, type SectionAccess } from "@/lib/auth/sections";
 import { canSeeMeetings } from "@/lib/auth/meetingsPreview";
 
@@ -130,6 +131,18 @@ export const EXACT_MATCH_CHILDREN = new Set(["/financial", "/payroll"]);
 // than a few seconds old (ProjectsClient's renderedAt, useInfiniteScroll's
 // loadedAt).
 export const FULLY_PREFETCHED_URLS = new Set(["/dashboard", "/projects", "/sales"]);
+
+/**
+ * Whether the nav fully prefetches `url` for this viewer: the pages above,
+ * plus /tasks for the people who get its device version (admins and office) —
+ * for them it's only the page's frame (the board comes from their own
+ * device), so loading it ahead costs the server next to nothing. Everyone
+ * else's /tasks is the whole board, worked out on the server: not ahead.
+ */
+export function isFullyPrefetched(url: string, viewerRole?: string | null): boolean {
+  if (FULLY_PREFETCHED_URLS.has(url)) return true;
+  return url === "/tasks" && LOCAL_DATA_PAGES.tasks && localDataEnabledFor(viewerRole);
+}
 
 const ADMIN_ONLY_URLS = new Set(["/activity", "/financial", "/settings", "/financial/loans", "/financial/reports", "/financial/bank"]);
 const ADMIN_OR_OFFICE_URLS = new Set<string>(["/meetings", "/payroll", "/payroll/attendance", "/collections", "/communications", "/checks", "/financial/statements", "/financial/taxes", "/financial/payments-calendar", "/vehicles"]);
