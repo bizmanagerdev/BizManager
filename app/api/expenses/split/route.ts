@@ -111,7 +111,7 @@ export async function POST(req: Request) {
         order_id: orderId || null,
         property_id: propertyId || null,
         notes,
-        recorded_by: user.id,
+        recorded_by: profile.id,
         // Installments already paid are recorded as paid-in-full (so they count as
         // real outflow now); the rest stay pending on their due date.
         payment_status: row.paid ? "paid" : "not_paid",

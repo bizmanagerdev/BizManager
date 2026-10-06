@@ -22,7 +22,7 @@ export async function POST(req: Request) {
   try {
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
-    const { supabase, user } = access.value;
+    const { supabase, user, profile } = access.value;
 
     // A queued offline upload carries an Idempotency-Key so a flaky-reconnect
     // replay can't create a second document + storage object.
@@ -156,7 +156,7 @@ export async function POST(req: Request) {
       title: displayName,
       file_name: displayName,
       storage_key: storagePath,
-      uploaded_by: user.id,
+      uploaded_by: profile.id,
       uploaded_at: uploadedAt,
       notes: null,
     });

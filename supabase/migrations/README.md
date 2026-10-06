@@ -52,6 +52,13 @@ npm run db:push         # apply pending migrations to the linked project
 - If a migration changes an **RPC**, the migration is the source of truth — the
   deployed function must match it (a class of bug we hit repeatedly under `db/sql/`).
 - Never put schema in `db/sql/` again — CI (`npm run db:check`) blocks it.
+- **A new table, view, function or sequence needs explicit grants.** From
+  30 October 2026 Supabase no longer grants new objects in `public` to the API
+  roles automatically, so without them the app gets "permission denied". Next to
+  the RLS policies, write e.g.
+  `grant select, insert, update, delete on public.x to authenticated, service_role;`
+  (and `grant execute on function … to authenticated` for an RPC the app calls).
+  Tables that existed before keep their grants.
 
 ## Why
 

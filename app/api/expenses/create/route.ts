@@ -156,7 +156,7 @@ export async function POST(req: Request) {
       order_id: orderId || null,
       property_id: propertyId || null,
       notes,
-      recorded_by: user.id,
+      recorded_by: profile.id,
       payment_status: paymentStatus,
       paid_amount: paidAmount,
       payment_method: (paymentStatus === "paid" || paymentStatus === "partial") ? paymentMethod : null,

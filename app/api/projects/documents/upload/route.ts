@@ -21,7 +21,7 @@ export async function POST(req: Request) {
   try {
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
-    const { supabase, user } = access.value;
+    const { supabase, user, profile } = access.value;
 
     // Idempotency-Key (sent by a queued offline upload) makes a replay a no-op.
     return withIdempotency(req, supabase, user.id, "projects/documents/upload", async () => {
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
       title: displayName,
       file_name: displayName,
       storage_key: storagePath,
-      uploaded_by: user.id,
+      uploaded_by: profile.id,
       uploaded_at: uploadedAt,
       notes: null,
     });

@@ -196,8 +196,14 @@ alter policy payments_office_full on public.payments
 alter policy payments_worker_insert_order on public.payments
   with check (((current_user_role() = 'worker'::user_role_enum) AND (order_id IS NOT NULL) AND order_is_worker_deliverable(order_id)));
 
-alter policy worker_insert_payment on public.payments
-  with check ((current_user_role() = 'worker'::user_role_enum));
+-- Dropped by 20261006090000_worker_access_fixes; only restore its form if it exists.
+do $$
+begin
+  if exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'payments' and policyname = 'worker_insert_payment') then
+    alter policy worker_insert_payment on public.payments
+      with check ((current_user_role() = 'worker'::user_role_enum));
+  end if;
+end $$;
 
 -- payroll_periods
 alter policy payroll_periods_admin_full on public.payroll_periods

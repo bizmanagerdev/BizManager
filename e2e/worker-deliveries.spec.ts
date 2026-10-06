@@ -217,6 +217,8 @@ test.describe("worker role scoping — delivery confirmation & payment", () => {
   test("a worker can save a customer's delivery/arrival instructions", async ({ page }) => {
     const worker = await createTestWorker();
     const customer = await createTestCustomer();
+    // Workers may only touch customers with an order they could deliver.
+    const order = await createTestOrder(customer.id);
     try {
       await loginWithCredentials(page, worker.email, worker.password);
       await page.waitForURL("**/dashboard");
@@ -232,7 +234,14 @@ test.describe("worker role scoping — delivery confirmation & payment", () => {
       const body = (await read.json()) as { instructions?: string | null; lat?: number | null };
       expect(body.instructions).toBe(instructions);
       expect(body.lat).toBe(32.08);
+
+      // Only the delivery location: any other customer field is refused.
+      const rename = await page.request.post("/api/customers/update", {
+        data: { id: customer.id, name: "E2E renamed by a worker" },
+      });
+      expect(rename.ok()).toBe(false);
     } finally {
+      await deleteTestOrder(order.id);
       await deleteTestCustomer(customer.id);
       await deleteTestWorker(worker);
     }

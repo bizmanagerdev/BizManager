@@ -57,7 +57,7 @@ export async function POST(req: Request) {
 
     const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
-    const { supabase, user, profile } = access.value;
+    const { supabase, profile } = access.value;
 
     const { data: rowData, error: rowError } = await supabase
       .from("card_statement_rows")
@@ -104,7 +104,7 @@ export async function POST(req: Request) {
             order_id: null,
             property_id: p.propertyId,
             notes: str(row.notes),
-            recorded_by: user.id,
+            recorded_by: profile.id,
             payment_status: "paid",
             paid_amount: null,
             payment_method: "credit_card",

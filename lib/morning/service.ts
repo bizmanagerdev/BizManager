@@ -464,7 +464,7 @@ async function createExternalDocumentLink(
     title,
     documentType,
     externalUrl,
-    userAuthId,
+    uploadedBy,
     customerId,
     orderId,
     projectId,
@@ -473,7 +473,8 @@ async function createExternalDocumentLink(
     title: string;
     documentType: string;
     externalUrl: string | null;
-    userAuthId: string;
+    /** users.id of whoever issued it — documents.uploaded_by points at users(id). */
+    uploadedBy: string;
     customerId: string;
     orderId?: string;
     projectId?: string;
@@ -493,7 +494,7 @@ async function createExternalDocumentLink(
     title,
     file_name: `${title}.pdf`,
     storage_key: null,
-    uploaded_by: userAuthId,
+    uploaded_by: uploadedBy,
     uploaded_at: uploadedAt,
     notes: externalUrl,
   });
@@ -544,7 +545,7 @@ async function persistMorningDocument(
     title,
     documentType: `morning_${type}`,
     externalUrl: result.pdfUrl ?? result.morningUrl,
-    userAuthId: actor.authUserId,
+    uploadedBy: actor.profileId,
     customerId,
     orderId,
     projectId,

@@ -36,7 +36,7 @@ export async function POST(req: Request) {
 
     const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
-    const { supabase, user } = access.value;
+    const { supabase, profile } = access.value;
 
     const { data: rowData, error: rowError } = await supabase
       .from("card_statement_rows")
@@ -93,7 +93,7 @@ export async function POST(req: Request) {
           order_id: null,
           property_id: propertyId,
           notes: typeof row.notes === "string" && row.notes.trim() ? row.notes.trim() : null,
-          recorded_by: user.id,
+          recorded_by: profile.id,
           payment_status: "paid",
           paid_amount: null,
           payment_method: "credit_card",
@@ -167,7 +167,7 @@ export async function POST(req: Request) {
         project_id: e.payload.project_id ?? null,
         property_id: e.payload.property_id ?? null,
         last_used_at: new Date().toISOString(),
-        updated_by: user.id,
+        updated_by: profile.id,
       });
     }
     if (mappingByKey.size > 0) {

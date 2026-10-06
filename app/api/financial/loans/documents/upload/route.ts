@@ -61,7 +61,7 @@ export async function POST(req: Request) {
       title: displayName,
       file_name: displayName,
       storage_key: storagePath,
-      uploaded_by: user.id,
+      uploaded_by: profile.id,
       uploaded_at: uploadedAt,
       notes: null,
     });
