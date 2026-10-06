@@ -4,8 +4,9 @@ import { useMemo, type ComponentProps } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
-import { loadLocalDataCode, useLocalCard } from "@/components/powersync/useLocalCard";
-import type { LocalCardViewer } from "@/lib/powersync/dashboard-local";
+import { useLocalCard } from "@/components/powersync/useLocalCard";
+import type { LocalCardViewer, LocalDashboardCards } from "@/lib/powersync/dashboard-local";
+import { getResult, loadLocalDataCode, localClient } from "@/lib/powersync/local-results";
 import { useLocalDatabase } from "@/lib/powersync/store";
 import { loadMoreProjects } from "./actions";
 import type { ProjectsFilters } from "./loadProjects";
@@ -59,16 +60,20 @@ export default function LocalProjectsPage({
   const { userId, role, locale } = viewer;
   const source = useMemo<ProjectsListSource>(
     () => ({
+      // Kept and kept current like the page's own list (lib/powersync/local-results.ts).
       firstPage: async (f) => {
         if (f.q || !db) return fetchProjectsFirstPageFromServer(f);
-        const [{ computeLocalCard }, { createLocalSupabase }] = await loadLocalDataCode();
-        const { rows, hasMore, totalCount } = await computeLocalCard(createLocalSupabase(db), "projectsList", { userId, role, locale }, f);
-        return { rows, hasMore, totalCount };
+        const list = (await getResult(db, {
+          kind: "projectsList",
+          viewer: { userId, role, locale },
+          filters: f,
+        })) as LocalDashboardCards["projectsList"];
+        return { rows: list.rows, hasMore: list.hasMore, totalCount: list.totalCount };
       },
       page: async (page, f) => {
         if (f.q || !db) return loadMoreProjects(page, f) as Promise<{ rows: Row[]; hasMore: boolean }>;
-        const [{ computeLocalListPage }, { createLocalSupabase }] = await loadLocalDataCode();
-        return computeLocalListPage(createLocalSupabase(db), "projectsList", f, page) as Promise<{ rows: Row[]; hasMore: boolean }>;
+        const [[{ computeLocalListPage }], local] = await Promise.all([loadLocalDataCode(), localClient(db)]);
+        return computeLocalListPage(local, "projectsList", f, page) as Promise<{ rows: Row[]; hasMore: boolean }>;
       },
     }),
     [db, userId, role, locale]

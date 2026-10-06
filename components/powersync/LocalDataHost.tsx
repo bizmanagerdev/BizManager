@@ -5,6 +5,8 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { closeLocalDatabase, openLocalDatabase } from "@/lib/powersync/database";
 import { registerLocalDataWipe } from "@/lib/powersync/store";
 import { withSentry } from "@/lib/sentry-lazy";
+import type { LocalCardViewer } from "@/lib/powersync/dashboard-local";
+import LocalPagesWarmup from "@/components/powersync/LocalPagesWarmup";
 
 // Keeps the on-device copy open for the signed-in person, in the background.
 // Renders nothing. AppShell mounts it only for people the copy is switched on
@@ -14,7 +16,9 @@ import { withSentry } from "@/lib/sentry-lazy";
 // - signed in: open this person's database and start syncing;
 // - someone else signs in on this device: wipe the previous person's copy;
 // - signed out (here or in another tab): wipe.
-export default function LocalDataHost() {
+// With the signed-in person's details (`viewer`), it also keeps their
+// device-version pages ready in the background (LocalPagesWarmup).
+export default function LocalDataHost({ viewer }: { viewer?: LocalCardViewer }) {
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
     let cancelled = false;
@@ -50,5 +54,5 @@ export default function LocalDataHost() {
     };
   }, []);
 
-  return null;
+  return viewer ? <LocalPagesWarmup viewer={viewer} /> : null;
 }

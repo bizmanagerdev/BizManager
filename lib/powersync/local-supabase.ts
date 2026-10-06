@@ -14,8 +14,16 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 type Row = Record<string, unknown>;
 type Value = unknown;
 
-/** What the local database must offer — PowerSync's `getAll`. */
-export type LocalReader = { getAll<T = Row>(sql: string, params?: unknown[]): Promise<T[]> };
+/**
+ * What the local database must offer — PowerSync's `getAll`. With
+ * `tableVersion` (a number that changes whenever the table does — see
+ * lib/powersync/local-results.ts), each table is read once and kept until it
+ * changes, instead of once per query.
+ */
+export type LocalReader = {
+  getAll<T = Row>(sql: string, params?: unknown[]): Promise<T[]>;
+  tableVersion?: (table: string) => number;
+};
 
 // ── Column types: how to give a local value back its Postgres shape ──────────
 // PowerSync delivers booleans as 1/0, numeric as text, json as text.
@@ -62,7 +70,7 @@ const JSON_COLUMNS: Record<string, readonly string[]> = {
 };
 
 /** Tables synced to the device (lib/powersync/schema.ts). */
-const LOCAL_TABLES = new Set([
+export const LOCAL_TABLES: ReadonlySet<string> = new Set([
   "users",
   "tasks",
   "task_members",
@@ -670,23 +678,54 @@ async function projectFinancials(reader: LocalReader): Promise<Row[]> {
   });
 }
 
+/** Whole tables read through a versioned reader, as of their version then. */
+const TABLE_CACHE = new WeakMap<LocalReader, Map<string, { version: number; rows: Promise<Row[]> }>>();
+
+/** Only exact matches on id / *_id / status columns are pushed into SQL (see loadTable). */
+function isPushable(filter: Filter): boolean {
+  const pushable = (column: string) => column === "id" || column === "status" || /^[a-z0-9_]+_id$/.test(column);
+  return (
+    (filter.kind === "cmp" && filter.op === "eq" && typeof filter.value === "string" && pushable(filter.column)) ||
+    (filter.kind === "in" &&
+      pushable(filter.column) &&
+      filter.values.length > 0 &&
+      filter.values.every((v) => typeof v === "string"))
+  );
+}
+
 async function loadTable(reader: LocalReader, table: string, pushdown: Filter[] = []): Promise<Row[]> {
+  // A versioned reader: the whole table, once per version, narrowed here by
+  // the same exact matches SQL would have applied. (A copy of the list — the
+  // rows themselves are shared, and nothing changes them.)
+  if (reader.tableVersion) {
+    const version = reader.tableVersion(table);
+    let tables = TABLE_CACHE.get(reader);
+    if (!tables) TABLE_CACHE.set(reader, (tables = new Map()));
+    let entry = tables.get(table);
+    if (!entry || entry.version !== version) {
+      const read = reader.getAll<Row>(`SELECT * FROM ${table}`).then((rows) => rows.map((row) => coerceRow(table, row)));
+      entry = { version, rows: read };
+      tables.set(table, entry);
+      const kept = entry;
+      read.catch(() => {
+        if (tables.get(table) === kept) tables.delete(table);
+      });
+    }
+    const rows = await entry.rows;
+    const narrowing = pushdown.filter(isPushable);
+    return narrowing.length ? rows.filter((row) => narrowing.every((f) => evaluate(f, row) === true)) : rows.slice();
+  }
+
   // Only exact matches on id / *_id / status columns are pushed into SQL —
   // plain text on both sides, so identical semantics. Every filter (these
   // included) is still evaluated on the coerced rows afterwards.
   const clauses: string[] = [];
   const params: unknown[] = [];
-  const pushable = (column: string) => column === "id" || column === "status" || /^[a-z0-9_]+_id$/.test(column);
-  for (const filter of pushdown) {
-    if (filter.kind === "cmp" && filter.op === "eq" && typeof filter.value === "string" && pushable(filter.column)) {
+  for (const filter of pushdown.filter(isPushable)) {
+    if (filter.kind === "cmp") {
       clauses.push(`${filter.column} = ?`);
       params.push(filter.value);
-    } else if (
-      filter.kind === "in" &&
-      pushable(filter.column) &&
-      filter.values.length > 0 &&
-      filter.values.every((v) => typeof v === "string")
-    ) {
+    } else if (filter.kind === "in") {
       clauses.push(`${filter.column} IN (${filter.values.map(() => "?").join(",")})`);
       params.push(...filter.values);
     }

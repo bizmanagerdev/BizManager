@@ -15,8 +15,10 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(nav.search),
 }));
 
-// One database object for the page's life, like the real store's.
-const device = vi.hoisted(() => ({ db: { get: async () => ({ n: 3 }), onChange: () => () => {} } }));
+// One database object for the page's life, like the real store's — a fresh
+// one per test (beforeEach), like a fresh sign-in: nothing kept from the last test.
+const newDb = () => ({ get: async () => ({ n: 3 }), getAll: async () => [], onChange: () => () => {} });
+const device = vi.hoisted(() => ({ db: null as unknown }));
 vi.mock("@/lib/powersync/store", () => ({
   useLocalDatabase: () => device.db,
   useLocalSyncStatus: () => ({ hasSynced: true }),
@@ -30,7 +32,7 @@ vi.mock("@/lib/powersync/dashboard-local", () => ({
   computeLocalListPage,
   LOCAL_CARD_TABLES: { projectsList: ["projects"], projectsExtras: ["projects"] },
 }));
-vi.mock("@/lib/powersync/local-supabase", () => ({ createLocalSupabase: () => ({}) }));
+vi.mock("@/lib/powersync/local-supabase", () => ({ createLocalSupabase: () => ({}), LOCAL_TABLES: new Set(["projects"]) }));
 
 const server = vi.hoisted(() => ({ firstPage: vi.fn(), loadMore: vi.fn() }));
 vi.mock("@/app/(app)/projects/projectsListCache", () => ({ fetchProjectsFirstPageFromServer: server.firstPage }));
@@ -79,6 +81,7 @@ const shown = () => screen.queryAllByRole("listitem").map((li) => li.textContent
 
 describe("LocalProjectsPage", () => {
   beforeEach(() => {
+    device.db = newDb();
     nav.replace.mockReset();
     computeLocalCard.mockReset();
     computeLocalListPage.mockReset();

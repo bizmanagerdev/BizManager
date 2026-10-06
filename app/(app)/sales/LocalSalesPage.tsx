@@ -5,7 +5,8 @@ import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { LocalListPagerProvider } from "@/components/powersync/LocalListPager";
-import { loadLocalDataCode, useLocalCard } from "@/components/powersync/useLocalCard";
+import { useLocalCard } from "@/components/powersync/useLocalCard";
+import { loadLocalDataCode, localClient } from "@/lib/powersync/local-results";
 import type {
   LocalCardViewer,
   LocalDashboardCards,
@@ -98,8 +99,8 @@ export default function LocalSalesPage({
   const fetchPage = useCallback(
     async (page: number) => {
       if (!db) throw new Error("The device copy isn't open");
-      const [{ computeLocalListPage }, { createLocalSupabase }] = await loadLocalDataCode();
-      return computeLocalListPage(createLocalSupabase(db), kind, JSON.parse(filtersKey), page);
+      const [[{ computeLocalListPage }], local] = await Promise.all([loadLocalDataCode(), localClient(db)]);
+      return computeLocalListPage(local, kind, JSON.parse(filtersKey), page);
     },
     [db, kind, filtersKey]
   );

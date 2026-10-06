@@ -3,14 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocalDatabase, useLocalSyncStatus } from "@/lib/powersync/store";
+import { peekResult, resultKey, watchResult } from "@/lib/powersync/local-results";
 import { withSentry } from "@/lib/sentry-lazy";
-import type { CommonPowerSyncDatabase } from "@powersync/web";
 import type { LocalCardKind, LocalCardViewer, LocalDashboardCards } from "@/lib/powersync/dashboard-local";
 
-// One page part worked out from the on-device copy (LOCAL_DATA_PAGES): with
-// the server's own loader (lib/powersync/dashboard-local.ts), then again
-// whenever a table it reads changes — so it updates by itself, without a page
-// refresh.
+// One page part from the on-device copy (LOCAL_DATA_PAGES), worked out with
+// the server's own loader (lib/powersync/dashboard-local.ts). Kept and kept
+// current by lib/powersync/local-results.ts: a part this device has worked out
+// before (opened earlier, or prepared in the background) shows at once, and
+// updates by itself whenever a table it reads changes.
 //
 // If this device's copy can't serve it — not downloaded yet, the sync rules
 // not deployed, or an error — the page reloads as the server version
@@ -34,30 +35,6 @@ function fallBackToServer(router: ReturnType<typeof useRouter>, page: string, hr
     );
   }
   router.replace(href);
-}
-
-/** Has the device copy got data (rules deployed)? A yes is remembered for the page load. */
-let hasPeople: Promise<boolean> | null = null;
-function deviceHasData(db: CommonPowerSyncDatabase): Promise<boolean> {
-  hasPeople ??= db
-    .get<{ n: number }>("SELECT count(*) AS n FROM users")
-    .then((row) => row.n > 0)
-    .catch(() => false)
-    .then((yes) => {
-      if (!yes) hasPeople = null;
-      return yes;
-    });
-  return hasPeople;
-}
-
-let deviceCode: Promise<[typeof import("@/lib/powersync/dashboard-local"), typeof import("@/lib/powersync/local-supabase")]> | null = null;
-/** The device-side code (the loaders and the client stand-in), loaded once for every part of the page. */
-export function loadLocalDataCode() {
-  deviceCode ??= Promise.all([import("@/lib/powersync/dashboard-local"), import("@/lib/powersync/local-supabase")]);
-  deviceCode.catch(() => {
-    deviceCode = null;
-  });
-  return deviceCode;
 }
 
 export type LocalCardResult<K extends LocalCardKind> = {
@@ -85,9 +62,19 @@ export function useLocalCard<K extends LocalCardKind>({
   const router = useRouter();
   const db = useLocalDatabase();
   const status = useLocalSyncStatus();
-  const [result, setResult] = useState<LocalCardResult<K> | null>(null);
   const ready = Boolean(db && status?.hasSynced);
   const filtersKey = JSON.stringify(filters ?? null);
+  const key = resultKey({ kind, viewer, filters });
+
+  // What this device already holds for it shows on the very first paint.
+  const [result, setResult] = useState<LocalCardResult<K> | null>(() => {
+    const kept = peekResult(db, key);
+    return kept ? { data: kept.data as LocalDashboardCards[K], filtersKey } : null;
+  });
+  // Other filters than the result held: the kept result for them, if any —
+  // otherwise the previous one for a moment (callers can narrow it).
+  const kept = result?.filtersKey === filtersKey ? null : peekResult(db, key);
+  const shown: LocalCardResult<K> | null = kept ? { data: kept.data as LocalDashboardCards[K], filtersKey } : result;
 
   // Read through a ref: a change of URL that isn't a change of filters
   // (?task=…) mustn't start the work over.
@@ -98,8 +85,9 @@ export function useLocalCard<K extends LocalCardKind>({
 
   // Not ready in time → the server version. A page that already fell back
   // this session goes straight there while the copy still isn't ready.
+  const showing = shown !== null;
   useEffect(() => {
-    if (result !== null) return;
+    if (showing) return;
     if (fellBack.has(page) && !ready) {
       router.replace(serverHrefRef.current);
       return;
@@ -109,41 +97,28 @@ export function useLocalCard<K extends LocalCardKind>({
       FALLBACK_AFTER_MS
     );
     return () => clearTimeout(timer);
-  }, [result, ready, router, page]);
+  }, [showing, ready, router, page]);
 
+  const { userId, role, locale } = viewer;
   useEffect(() => {
     if (!db || !ready) return;
-    let cancelled = false;
-    let dispose: (() => void) | null = null;
+    const cardFilters: unknown = JSON.parse(filtersKey) ?? undefined;
+    return watchResult(
+      db,
+      { kind, viewer: { userId, role, locale }, filters: cardFilters },
+      {
+        onData: (data) => setResult({ data: data as LocalDashboardCards[K], filtersKey }),
+        onError: (reason, error) => {
+          if (reason === "error") {
+            withSentry((Sentry) =>
+              Sentry.captureException(error, { tags: { area: "powersync", local_card: kind }, fingerprint: ["powersync", "local-card", kind] })
+            );
+          }
+          fallBackToServer(router, page, serverHrefRef.current, reason);
+        },
+      }
+    );
+  }, [db, ready, kind, userId, role, locale, filtersKey, router, page]);
 
-    void (async () => {
-      if (!(await deviceHasData(db))) return fallBackToServer(router, page, serverHrefRef.current, "no-data");
-      const [{ computeLocalCard, LOCAL_CARD_TABLES }, { createLocalSupabase }] = await loadLocalDataCode();
-      const local = createLocalSupabase(db);
-      const cardFilters: unknown = JSON.parse(filtersKey) ?? undefined;
-      const recompute = async () => {
-        try {
-          const data = await computeLocalCard(local, kind, viewer, cardFilters);
-          if (!cancelled) setResult({ data, filtersKey });
-        } catch (error) {
-          withSentry((Sentry) =>
-            Sentry.captureException(error, { tags: { area: "powersync", local_card: kind }, fingerprint: ["powersync", "local-card", kind] })
-          );
-          if (!cancelled) fallBackToServer(router, page, serverHrefRef.current, "error");
-        }
-      };
-      await recompute();
-      if (cancelled) return;
-      dispose = db.onChange({ onChange: () => void recompute() }, { tables: LOCAL_CARD_TABLES[kind], throttleMs: 300 });
-    })();
-
-    return () => {
-      cancelled = true;
-      dispose?.();
-    };
-    // viewer is a plain props object from the server — its fields are what matter.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [db, ready, kind, viewer.userId, viewer.role, viewer.locale, filtersKey, router, page]);
-
-  return result;
+  return shown;
 }

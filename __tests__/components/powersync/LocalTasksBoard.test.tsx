@@ -18,7 +18,7 @@ vi.mock("next/navigation", () => ({
 
 const device = vi.hoisted(() => ({
   users: 3,
-  onChange: null as null | (() => void),
+  onChange: null as null | ((event: { changedTables: string[] }) => void),
   db: null as unknown,
 }));
 vi.mock("@/lib/powersync/store", () => ({
@@ -32,7 +32,7 @@ vi.mock("@/lib/powersync/dashboard-local", () => ({
   computeLocalCard,
   LOCAL_CARD_TABLES: { tasksBoard: ["tasks"] },
 }));
-vi.mock("@/lib/powersync/local-supabase", () => ({ createLocalSupabase: () => ({}) }));
+vi.mock("@/lib/powersync/local-supabase", () => ({ createLocalSupabase: () => ({}), LOCAL_TABLES: new Set(["tasks"]) }));
 
 // The board itself is the server version's component; here it just lists what it was given.
 vi.mock("@/app/(app)/tasks/TasksPageClient", () => ({
@@ -72,7 +72,7 @@ describe("LocalTasksBoard", () => {
     device.onChange = null;
     device.db = {
       get: async () => ({ n: device.users }),
-      onChange: (handler: { onChange: () => void }) => {
+      onChange: (handler: { onChange: (event: { changedTables: string[] }) => void }) => {
         device.onChange = handler.onChange;
         return () => {};
       },
@@ -101,13 +101,17 @@ describe("LocalTasksBoard", () => {
     expect(screen.getByText("לקוח")).toBeTruthy();
     expect(computeLocalCard).toHaveBeenCalledWith(expect.anything(), "tasksBoard", viewer, allFilters);
 
-    // A save synced back: the board is worked out again, by itself.
+    // A save synced back (PowerSync names the changed table): the board is
+    // worked out again, by itself, a moment later.
     computeLocalCard.mockImplementation(async (_local, _kind, _viewer, filters) => ({
       filters,
       items: [task("t1", "high"), task("t2", "low")],
       options,
     }));
-    await act(async () => device.onChange?.());
+    await act(async () => {
+      device.onChange?.({ changedTables: ["ps_data__tasks"] });
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    });
     expect(shown()).toEqual(["t1", "t2"]);
   });
 

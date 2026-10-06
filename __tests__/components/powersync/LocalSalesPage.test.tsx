@@ -15,9 +15,9 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(nav.search),
 }));
 
-const device = vi.hoisted(() => ({
-  db: { get: async () => ({ n: 3 }), onChange: () => () => {} } as unknown,
-}));
+// A fresh device database per test (beforeEach), like a fresh sign-in: nothing kept from the last test.
+const newDb = () => ({ get: async () => ({ n: 3 }), getAll: async () => [], onChange: () => () => {} });
+const device = vi.hoisted(() => ({ db: null as unknown }));
 vi.mock("@/lib/powersync/store", () => ({
   useLocalDatabase: () => device.db,
   useLocalSyncStatus: () => ({ hasSynced: true }),
@@ -31,7 +31,7 @@ vi.mock("@/lib/powersync/dashboard-local", () => ({
   computeLocalListPage,
   LOCAL_CARD_TABLES: { salesOrders: ["orders"], salesCounts: ["orders"] },
 }));
-vi.mock("@/lib/powersync/local-supabase", () => ({ createLocalSupabase: () => ({}) }));
+vi.mock("@/lib/powersync/local-supabase", () => ({ createLocalSupabase: () => ({}), LOCAL_TABLES: new Set(["orders"]) }));
 
 // The tab bar and the list are the server version's components; here they
 // show what they were given, and the list asks for page 2 the way its
@@ -83,6 +83,7 @@ const shown = () => screen.queryAllByRole("listitem").map((li) => li.textContent
 
 describe("LocalSalesPage", () => {
   beforeEach(() => {
+    device.db = newDb();
     nav.replace.mockReset();
     computeLocalCard.mockReset();
     computeLocalListPage.mockReset();

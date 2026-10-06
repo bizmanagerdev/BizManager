@@ -782,3 +782,30 @@ describe("the projects page's device version: tab counts and the dialog's lists"
     ]);
   });
 });
+
+describe("a versioned reader: each table read once per change", () => {
+  it("reads a table once however many queries use it, again after it changes, narrowed in memory", async () => {
+    const base = fakeReader({
+      orders: [
+        { id: "o1", status: "confirmed", customer_id: "c1" },
+        { id: "o2", status: "delivered", customer_id: "c2" },
+      ],
+    });
+    const versions = new Map<string, number>();
+    const reader = { ...base, tableVersion: (table: string) => versions.get(table) ?? 0 };
+    const db = createLocalSupabase(reader);
+
+    const [all, one] = await Promise.all([
+      db.from("orders").select("id"),
+      db.from("orders").select("id").eq("customer_id", "c2"),
+    ]);
+    expect(all.data).toEqual([{ id: "o1" }, { id: "o2" }]);
+    expect(one.data).toEqual([{ id: "o2" }]);
+    await db.from("orders").select("id").eq("status", "confirmed");
+    expect(base.queries).toEqual(["SELECT * FROM orders"]);
+
+    versions.set("orders", 1);
+    await db.from("orders").select("id");
+    expect(base.queries).toEqual(["SELECT * FROM orders", "SELECT * FROM orders"]);
+  });
+});

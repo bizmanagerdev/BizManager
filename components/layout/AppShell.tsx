@@ -109,7 +109,15 @@ export default function AppShell({
         <AuthLockToasts />
         <UndoHotkeyListener />
         <ConnectionTelemetry />
-        {localDataEnabledFor(viewerRole) ? <LocalDataHost /> : null}
+        {localDataEnabledFor(viewerRole) ? (
+          <LocalDataHost
+            viewer={
+              viewerId
+                ? { userId: viewerId, role: viewerRole ?? "", locale: viewerLocale === "ar" ? "ar" : "he" }
+                : undefined
+            }
+          />
+        ) : null}
         <TopBar
           appName={appName}
           companyName={companyName}
