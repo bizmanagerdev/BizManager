@@ -6,7 +6,7 @@ import {
   buildWageDebts,
   debtTimingFor,
   debtsByAccount,
-  debtsByMonth,
+  debtsByDueMonth,
   sortDebts,
   totalDebts,
   totalDebtsByKind,
@@ -296,16 +296,41 @@ describe("totals and the report", () => {
     ]);
   });
 
-  it("by month: late, the next months, later, and no date", () => {
-    const rows = debtsByMonth(items, TODAY, 3);
-    expect(rows.map((r) => [r.key, r.amount])).toEqual([
-      ["overdue", 23431],
+  it("by due month: oldest first, late months by name, only months with money, then no date", () => {
+    const rows = debtsByDueMonth(items, TODAY, 3);
+    expect(rows.map((r) => [r.key, r.totals.open, r.totals.overdue, r.totals.count])).toEqual([
+      ["2026-09", 23431, 23431, 1],
+      ["2026-10", 1000, 0, 1],
+      ["2026-12", 2000, 0, 1],
+      ["undated", 5000, 0, 1],
+    ]);
+    expect(rows[0].label).toContain("2026");
+    expect(rows[3].label).toBe("ללא תאריך");
+    // Past the horizon, months fold into one "אחר כך" row (before ללא תאריך).
+    expect(debtsByDueMonth(items, TODAY, 2).map((r) => [r.key, r.totals.open])).toEqual([
+      ["2026-09", 23431],
       ["2026-10", 1000],
-      ["2026-11", 0],
-      ["2026-12", 2000],
-      ["later", 0],
+      ["later", 2000],
       ["undated", 5000],
     ]);
+  });
+
+  it("by due month: a series counts once per month it pays in, and the rows add up to the total", () => {
+    const series = buildExpenseDebts(
+      [
+        expenseRow({ id: "s1", expense_date: "2026-09-10", amount: 300, paid_amount: null, payment_status: "not_paid", installment_group_id: "g", installment_index: 1, installment_count: 3 }),
+        expenseRow({ id: "s2", expense_date: "2026-09-25", amount: 300, paid_amount: null, payment_status: "not_paid", installment_group_id: "g", installment_index: 2, installment_count: 3 }),
+        expenseRow({ id: "s3", expense_date: "2026-10-10", amount: 300, paid_amount: null, payment_status: "not_paid", installment_group_id: "g", installment_index: 3, installment_count: 3 }),
+      ],
+      NAMES,
+      TODAY
+    );
+    const rows = debtsByDueMonth(series, TODAY);
+    expect(rows.map((r) => [r.key, r.totals.open, r.totals.count])).toEqual([
+      ["2026-09", 600, 1],
+      ["2026-10", 300, 1],
+    ]);
+    expect(rows.reduce((s, r) => s + r.totals.open, 0)).toBe(totalDebts(series, TODAY).open);
   });
 
   it("most urgent first", () => {

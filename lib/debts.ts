@@ -577,40 +577,45 @@ export function debtsByDomain(items: DebtItem[], todayIso: string): DebtBreakdow
   return breakdown(items, todayIso, (item) => ({ key: item.kind === "wages" ? "wages" : item.businessDomain ?? "general_business", label: item.domainName }));
 }
 
-export type DebtMonthRow = { key: string; label: string; amount: number; tone: "overdue" | "month" | "later" | "undated" };
-
 /**
- * When the money falls due, month by month: what's already late, each of the
- * next `months` calendar months, everything after that, and what has no date.
+ * By the month each payment falls due, oldest first — late months included, so
+ * "late" reads as how late (August, September…) rather than one lump. Months
+ * more than `monthsAhead` ahead are one "אחר כך" row; no date is "ללא תאריך".
+ * Only months with money in them. A debt counts once in every month it has a
+ * payment in.
  */
-export function debtsByMonth(items: DebtItem[], todayIso: string, months = 6): DebtMonthRow[] {
-  const monthKeys: string[] = [];
+export function debtsByDueMonth(items: DebtItem[], todayIso: string, monthsAhead = 6): DebtBreakdownRow[] {
   const start = new Date(`${todayIso.slice(0, 7)}-01T00:00:00Z`);
-  for (let i = 0; i < months; i += 1) {
-    const d = new Date(start);
-    d.setUTCMonth(start.getUTCMonth() + i);
-    monthKeys.push(d.toISOString().slice(0, 7));
-  }
-  const lastKey = monthKeys[monthKeys.length - 1];
-  let overdue = 0;
-  let later = 0;
-  let undated = 0;
-  const byMonth = new Map<string, number>(monthKeys.map((k) => [k, 0]));
-  for (const item of items) {
-    for (const part of item.parts) {
-      if (!(part.amount > EPSILON)) continue;
-      if (!part.date) undated += part.amount;
-      else if (part.date < todayIso) overdue += part.amount;
-      else if (part.date.slice(0, 7) > lastKey) later += part.amount;
-      else byMonth.set(part.date.slice(0, 7), (byMonth.get(part.date.slice(0, 7)) ?? 0) + part.amount);
-    }
-  }
+  start.setUTCMonth(start.getUTCMonth() + monthsAhead - 1);
+  const lastKey = start.toISOString().slice(0, 7);
   const monthLabel = (key: string) =>
     new Intl.DateTimeFormat("he-IL", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${key}-01T00:00:00Z`));
-  return [
-    { key: "overdue", label: "באיחור", amount: round2(overdue), tone: "overdue" as const },
-    ...monthKeys.map((key) => ({ key, label: monthLabel(key), amount: round2(byMonth.get(key) ?? 0), tone: "month" as const })),
-    { key: "later", label: "אחר כך", amount: round2(later), tone: "later" as const },
-    { key: "undated", label: "ללא תאריך", amount: round2(undated), tone: "undated" as const },
-  ];
+
+  const rows = new Map<string, DebtBreakdownRow>();
+  for (const item of items) {
+    const seen = new Set<string>();
+    for (const part of item.parts) {
+      if (!(part.amount > EPSILON)) continue;
+      const month = part.date ? part.date.slice(0, 7) : null;
+      const key = month === null ? "undated" : month > lastKey ? "later" : month;
+      const label = key === "undated" ? "ללא תאריך" : key === "later" ? "אחר כך" : monthLabel(key);
+      const row = rows.get(key) ?? { key, label, totals: emptyDebtTotals() };
+      const timing = debtTimingFor(part.date, todayIso);
+      row.totals[timing] = round2(row.totals[timing] + part.amount);
+      row.totals.open = round2(row.totals.open + part.amount);
+      if (!seen.has(key)) {
+        row.totals.count += 1;
+        seen.add(key);
+      }
+      rows.set(key, row);
+    }
+  }
+  // Months in calendar order ("YYYY-MM" sorts as plain text), then אחר כך,
+  // then ללא תאריך ("~" sorts after every digit by code unit — not localeCompare).
+  const rank = (key: string) => (key === "undated" ? "~2" : key === "later" ? "~1" : key);
+  return [...rows.values()].sort((a, b) => {
+    const left = rank(a.key);
+    const right = rank(b.key);
+    return left < right ? -1 : left > right ? 1 : 0;
+  });
 }
