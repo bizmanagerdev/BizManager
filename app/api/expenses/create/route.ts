@@ -1,4 +1,5 @@
 import { toHebrewError } from "@/lib/error-messages";
+import { undoExpenseCreate } from "@/lib/documents/undoCreate";
 import { NextResponse } from "next/server";
 import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -194,7 +195,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (linkError) {
-        await supabase.from("expenses").delete().eq("id", createdExpenseId);
+        await undoExpenseCreate(supabase, createdExpenseId, profile.id);
         return NextResponse.json({ error: toHebrewError(linkError.message) }, { status: 400 });
       }
 

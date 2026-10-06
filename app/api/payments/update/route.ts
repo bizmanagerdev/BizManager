@@ -58,7 +58,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing due_date for check payment" }, { status: 400 });
     }
 
-    const access = await requireRouteAccess();
+    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
     const { supabase, user, profile } = access.value;
 

@@ -26,7 +26,7 @@ type CreateOrderPaymentPayload = {
 
 export async function POST(req: Request) {
   try {
-    const access = await requireRouteAccess();
+    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
     const { supabase, user, profile } = access.value;
 

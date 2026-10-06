@@ -82,7 +82,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });
     }
 
-    const access = await requireRouteAccess();
+    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
     const { supabase, user } = access.value;
 

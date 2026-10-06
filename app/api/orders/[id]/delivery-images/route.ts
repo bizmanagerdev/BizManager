@@ -5,6 +5,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { withIdempotency } from "@/lib/idempotency";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import { insertDocumentRow } from "@/lib/documents/insert";
+import { undoDocumentCreate } from "@/lib/documents/undoCreate";
 
 const BUCKET = STORAGE_BUCKET;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -88,7 +89,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
       entity_id: orderId,
     });
     if (linkError) {
-      await supabase.from("documents").delete().eq("id", documentId);
+      await undoDocumentCreate(supabase, documentId, profile.id);
       await supabase.storage.from(BUCKET).remove([storagePath]);
       return NextResponse.json({ error: toHebrewError(linkError.message) }, { status: 400 });
     }

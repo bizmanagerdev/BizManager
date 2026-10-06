@@ -26,7 +26,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "מזהה החשבון אינו תקין." }, { status: 400 });
     }
 
-    const access = await requireRouteAccess();
+    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
     const { supabase, profile } = access.value;
 

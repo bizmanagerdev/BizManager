@@ -9,6 +9,7 @@ import { parseTagIds, syncEntityTags } from "@/lib/tags";
 
 import { STORAGE_BUCKET } from "@/lib/storage";
 import { insertDocumentRow } from "@/lib/documents/insert";
+import { undoDocumentCreate } from "@/lib/documents/undoCreate";
 import { parseDateToIso } from "@/lib/financial/cardImport";
 
 const BUCKET = STORAGE_BUCKET;
@@ -168,7 +169,7 @@ export async function POST(req: Request) {
           linkedEntityId,
           linkError,
         });
-        await supabase.from("documents").delete().eq("id", documentId);
+        await undoDocumentCreate(supabase, documentId, profile.id);
         await supabase.storage.from(BUCKET).remove([storagePath]);
         return NextResponse.json({ error: toHebrewError(linkError.message) }, { status: 400 });
       }
