@@ -229,3 +229,28 @@ describe("React and the picture the script put in", () => {
     expect(pictureShowing()).toBe(true);
   });
 });
+
+describe("the off switch", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("NEXT_PUBLIC_DASHBOARD_PICTURE=off: no picture shown, none kept, and the one already kept is forgotten", async () => {
+    reset();
+    savePicture("u1", liveScreen(), "he");
+    vi.stubEnv("NEXT_PUBLIC_DASHBOARD_PICTURE", "off");
+    vi.resetModules();
+    const off = await import("@/components/dashboard/DashboardPicture");
+    const { container } = render(
+      <div data-app-screen>
+        <off.DashboardPictureFrame userId="u1" locale="he" />
+        <off.DashboardPictureKeeper userId="u1" locale="he" />
+        <div data-dashboard-board />
+      </div>
+    );
+    expect(container.querySelector("script")).toBeNull();
+    expect(document.getElementById(PICTURE_BOX_ID)).toBeNull();
+    expect(localStorage.getItem(PICTURE_KEY)).toBeNull();
+  });
+});

@@ -11,6 +11,15 @@ import type { Locale } from "@/lib/i18n/types";
 // Per person, a week at most, wiped at logout and when someone else signs in
 // on this device (like lib/powersync/stored-results.ts).
 
+/**
+ * The off switch. To turn the picture off without touching the code: in
+ * Vercel → Settings → Environment Variables, add NEXT_PUBLIC_DASHBOARD_PICTURE
+ * = off, then redeploy. Every device then opens the dashboard the normal way
+ * and forgets the picture it kept. (Remove the variable and redeploy to turn
+ * it back on.)
+ */
+export const DASHBOARD_PICTURE_ON = process.env.NEXT_PUBLIC_DASHBOARD_PICTURE !== "off";
+
 export const PICTURE_KEY = "bizh-dashboard-picture";
 export const PICTURE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 /** The picture's box, in the app's frame (outside every loading screen). */

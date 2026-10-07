@@ -4,7 +4,9 @@ import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import {
   BOARD_PENDING_SELECTOR,
+  DASHBOARD_PICTURE_ON,
   PICTURE_BOX_ID,
+  clearPicture,
   pictureScript,
   pictureShowing,
   savePicture,
@@ -22,7 +24,8 @@ import type { Locale } from "@/lib/i18n/types";
 //
 // Two parts: DashboardPictureFrame lives in the app's frame (app/(app)/
 // layout.tsx), on screen from the first moment; DashboardPictureKeeper lives
-// on the dashboard itself, hands over, and keeps the picture.
+// on the dashboard itself, hands over, and keeps the picture. Both do nothing
+// while the off switch is set (DASHBOARD_PICTURE_ON).
 
 /** The live screen is shown after this long whatever state it's in. */
 const HANDOVER_AT_MOST_MS = 5000;
@@ -38,6 +41,7 @@ export function DashboardPictureFrame({ userId, locale }: { userId: string; loca
     if (pathname !== "/dashboard" && pictureShowing()) takeDownPicture();
   }, [pathname]);
 
+  if (!DASHBOARD_PICTURE_ON) return null;
   return (
     <>
       {/* Filled by the script below before the page is drawn; React never
@@ -65,6 +69,10 @@ export function DashboardPictureFrame({ userId, locale }: { userId: string; loca
  */
 export function DashboardPictureKeeper({ userId, locale }: { userId: string; locale: Locale }) {
   useEffect(() => {
+    if (!DASHBOARD_PICTURE_ON) {
+      clearPicture(); // switched off: nothing kept on the device either
+      return;
+    }
     const screen = document.querySelector<HTMLElement>("[data-app-screen]");
     const board = document.querySelector<HTMLElement>("[data-dashboard-board]");
     if (!screen || !board) return;
