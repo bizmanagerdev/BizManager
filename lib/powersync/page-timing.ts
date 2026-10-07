@@ -15,6 +15,13 @@ import { lastNavigationStart } from "@/lib/ui/navigation-timing";
 export type TimingSource = "device" | "kept" | "stored";
 
 const REPORTS_PER_DAY = 10;
+/**
+ * A page part drawn this long after the last tap wasn't opened by it — it was
+ * drawn again later (after a save, a refresh): not a page opening.
+ */
+const OPENING_WINDOW_MS = 30_000;
+/** The page change each page part was last reported for: drawn again for the same one, it isn't reported twice. */
+const reportedFor = new Map<string, number>();
 
 function dailyKey(page: string): string {
   return `bizh-timing:${new Date().toISOString().slice(0, 10)}:${page}`;
@@ -67,6 +74,8 @@ export function reportPageTiming({
 }): void {
   if (!underDailyLimit(page)) return;
   const navStart = lastNavigationStart();
+  if (committedAt - navStart > OPENING_WINDOW_MS || reportedFor.get(page) === navStart) return;
+  reportedFor.set(page, navStart);
   const answerAt = serverAnswerAt(navStart);
   const round = (n: number) => Math.round(n);
   const extra = {

@@ -137,11 +137,13 @@ export const FULLY_PREFETCHED_URLS = new Set(["/dashboard", "/projects", "/sales
  * plus /tasks for the people who get its device version (admins and office) —
  * for them it's only the page's frame (the board comes from their own
  * device), so loading it ahead costs the server next to nothing. Everyone
- * else's /tasks is the whole board, worked out on the server: not ahead.
+ * else's /tasks is the whole board, worked out on the server: not ahead —
+ * and neither is it on a device whose copy isn't complete yet
+ * (`deviceCopyReady` false), which gets the server version too.
  */
-export function isFullyPrefetched(url: string, viewerRole?: string | null): boolean {
+export function isFullyPrefetched(url: string, viewerRole?: string | null, deviceCopyReady = true): boolean {
   if (FULLY_PREFETCHED_URLS.has(url)) return true;
-  return url === "/tasks" && LOCAL_DATA_PAGES.tasks && localDataEnabledFor(viewerRole);
+  return url === "/tasks" && deviceCopyReady && LOCAL_DATA_PAGES.tasks && localDataEnabledFor(viewerRole);
 }
 
 const ADMIN_ONLY_URLS = new Set(["/activity", "/financial", "/settings", "/financial/loans", "/financial/reports", "/financial/bank"]);

@@ -405,6 +405,15 @@ self.addEventListener("fetch", (event) => {
     const frame = isFrameRequest(url);
     event.respondWith(
       (async () => {
+        // The site's bare address — where the Android app opens. With the
+        // dashboard's frame saved (frames are kept only while someone is
+        // signed in), straight there: otherwise the server sends it on to
+        // /login and then /dashboard, two trips before anything shows.
+        if (url.pathname === "/" && !url.search) {
+          const dashboard = new URL("/dashboard", url).href;
+          if (await matchFrame(dashboard)) return Response.redirect(dashboard, 302);
+        }
+
         // A device page with a saved frame: that, at once (see above) — and
         // a fresh copy saved in the background for next time, so a frame is
         // never more than one opening old (a new version arrives on the next

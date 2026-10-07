@@ -65,8 +65,8 @@ import DashboardLocalShadow from "@/components/powersync/DashboardLocalShadow";
 import LocalDashboardCard from "@/components/powersync/LocalDashboardCard";
 import { RememberCard, RememberedCardFallback } from "@/components/dashboard/RememberedCard";
 import type { DashboardShadowSnapshot } from "@/lib/powersync/dashboard-shadow";
-import { LOCAL_DATA_SHADOW, localDataEnabledFor, localDataPageOn } from "@/lib/powersync/config";
-import { deviceCheckCookie, deviceCheckDue } from "@/lib/powersync/device-check";
+import { LOCAL_DATA_SHADOW, localDataEnabledFor } from "@/lib/powersync/config";
+import { deviceCheckCookie, deviceCheckDue, devicePageOn } from "@/lib/powersync/device-check";
 import DeviceFrameMark from "@/components/powersync/DeviceFrameMark";
 import { serverRenderedAt } from "@/lib/loaded-at";
 
@@ -515,8 +515,9 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
   // alerts, my tasks, deliveries, attendance and properties are drawn from the
   // person's on-device copy (components/powersync/LocalDashboardCard), so their
   // server queries below are skipped. ?data=server (the cards' own fallback
-  // when a device's copy isn't ready) forces the server version.
-  const localMode = localDataPageOn("dashboard", profile) && !forceServer;
+  // when a device's copy isn't ready) forces the server version, and so does
+  // a device whose copy is still incomplete (devicePageOn).
+  const localMode = !forceServer && (await devicePageOn("dashboard", profile));
   const localViewer = { userId: profile.id, role: role ?? "", locale };
   // The device-copy shadow check (lib/powersync/dashboard-shadow.ts): the
   // figures below are also worked out on the device and compared. Read time

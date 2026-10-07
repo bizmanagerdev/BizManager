@@ -62,12 +62,24 @@ async function chooseVfs(): Promise<WASQLiteVFS> {
 // 5 seconds while it lasts); everything at info and up as a breadcrumb.
 const reported = new Set<string>();
 
+/** What went wrong, readably — errors from the sync worker arrive as plain objects, not Errors. */
+function describeError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  const message = (error as { message?: unknown } | null)?.message;
+  if (typeof message === "string") return message;
+  try {
+    return (JSON.stringify(error) ?? String(error ?? "")).slice(0, 300);
+  } catch {
+    return String(error);
+  }
+}
+
 function report(message: string, error: unknown) {
   if (typeof navigator !== "undefined" && !navigator.onLine) return; // offline isn't a bug
   if (reported.has(message)) return;
   reported.add(message);
   withSentry((Sentry) =>
-    Sentry.captureException(error instanceof Error ? error : new Error(`${message}: ${String(error ?? "")}`), {
+    Sentry.captureException(error instanceof Error ? error : new Error(`${message}: ${describeError(error)}`), {
       tags: { area: "powersync" },
       fingerprint: ["powersync", message],
     })

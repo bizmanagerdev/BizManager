@@ -7,7 +7,7 @@ import SalesHeader from "@/app/(app)/sales/SalesHeader";
 import LocalSalesPage from "@/app/(app)/sales/LocalSalesPage";
 import SalesServerCheck from "@/app/(app)/sales/SalesServerCheck";
 import DeviceFrameMark from "@/components/powersync/DeviceFrameMark";
-import { deviceCheckDue } from "@/lib/powersync/device-check";
+import { deviceCheckDue, devicePageOn } from "@/lib/powersync/device-check";
 import { loadSalesTabCounts } from "@/app/(app)/sales/loadSalesCounts";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -18,7 +18,7 @@ import { loadPriceListPage, loadInventoryListPage } from "@/app/(app)/sales/load
 import { loadDeliveriesPage } from "@/app/(app)/sales/loadDeliveries";
 import DashboardLocalShadow from "@/components/powersync/DashboardLocalShadow";
 import type { DashboardShadowCards } from "@/lib/powersync/dashboard-shadow";
-import { LOCAL_DATA_PAGES, LOCAL_DATA_SHADOW, localDataEnabledFor, localDataPageOn } from "@/lib/powersync/config";
+import { LOCAL_DATA_PAGES, LOCAL_DATA_SHADOW, localDataEnabledFor } from "@/lib/powersync/config";
 import { israelDateKey } from "@/lib/timezone";
 
 const SalesInventoryClient = dynamic(() => import("@/app/(app)/sales/SalesInventoryClient"), {
@@ -176,9 +176,10 @@ export default async function SalesPage({
   // The device version (LOCAL_DATA_PAGES.sales): the tab counts and the open
   // tab's list are worked out from this person's on-device copy
   // (LocalSalesPage). Not for searches — they read tables the device doesn't
-  // hold. ?data=server is the way back when the copy can't serve it. (The
+  // hold. ?data=server is the way back when the copy can't serve it; a device
+  // whose copy is still incomplete gets the server version at once. (The
   // early reads, if they went out, are just not waited for.)
-  if (localDataPageOn("sales", profile) && params.data !== "server" && !searchQuery) {
+  if (params.data !== "server" && !searchQuery && (await devicePageOn("sales", profile))) {
     // Once a day per device, the server's own tab too — streamed after the
     // page, for the device to compare (lib/powersync/device-check.ts).
     const checkDue = LOCAL_DATA_SHADOW.sales && (await deviceCheckDue("sales"));

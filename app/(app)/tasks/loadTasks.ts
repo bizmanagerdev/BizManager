@@ -381,18 +381,22 @@ export async function loadTaskPickerOptions(supabase: SupabaseClient): Promise<T
     supabase
       .rpc("property_directory")
       .order("address", { ascending: true })
+      .order("id", { ascending: true })
       .range(0, 999),
     // Active customers for the "linked customer" picker (searchable, A–Z). The card
     // display resolves the name/phone via a direct id query, not this list.
+    // Same-name entries (there are several) in a fixed order — by id — so the
+    // device's copy of this list matches the server's.
     supabase
       .from("customers")
       .select("id,name,phone,active")
       .eq("active", true)
       .order("name", { ascending: true })
+      .order("id", { ascending: true })
       .range(0, 1999),
     // user_directory(): everyone's name, colour, role and active flag — all a
     // worker may see of other people.
-    supabase.rpc("user_directory").order("full_name", { ascending: true }).range(0, 499),
+    supabase.rpc("user_directory").order("full_name", { ascending: true }).order("id", { ascending: true }).range(0, 499),
   ]);
 
   const projects = ((projectsResult.data ?? []) as Row[])

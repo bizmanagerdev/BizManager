@@ -4,7 +4,8 @@ import { act, render, screen } from "@testing-library/react";
 
 // The device version of the tasks board: the board the device worked out, a
 // narrowed board while new filters are worked out, live updates when the copy
-// changes, and the server version when the copy can't serve it.
+// changes, and the server version when the copy can't serve it — at once
+// when the copy is known to be incomplete.
 
 // Next's router is one object for the page's life — so is this one.
 const nav = vi.hoisted(() => {
@@ -20,10 +21,11 @@ const device = vi.hoisted(() => ({
   users: 3,
   onChange: null as null | ((event: { changedTables: string[] }) => void),
   db: null as unknown,
+  status: { hasSynced: true } as { hasSynced: boolean } | null,
 }));
 vi.mock("@/lib/powersync/store", () => ({
   useLocalDatabase: () => device.db,
-  useLocalSyncStatus: () => ({ hasSynced: true }),
+  useLocalSyncStatus: () => device.status,
 }));
 vi.mock("@/lib/sentry-lazy", () => ({ withSentry: () => {} }));
 
@@ -73,6 +75,8 @@ describe("LocalTasksBoard", () => {
     nav.search = "scope=all";
     computeLocalCard.mockReset();
     device.onChange = null;
+    device.status = { hasSynced: true };
+    document.cookie = "bizh-device-pending=; path=/; max-age=0";
     device.db = {
       get: async () => ({ n: device.users }),
       onChange: (handler: { onChange: (event: { changedTables: string[] }) => void }) => {
@@ -146,6 +150,25 @@ describe("LocalTasksBoard", () => {
     await flush();
     expect(nav.replace).toHaveBeenCalledWith("/tasks?scope=all&data=server");
     expect(shown()).toEqual([]);
+  });
+
+  it("a copy that hasn't finished its first download: the server version at once — and the device remembers it", async () => {
+    device.status = { hasSynced: false };
+    render(<LocalTasksBoard viewer={viewer} filters={allFilters} canSeeAll />);
+    await flush();
+    expect(nav.replace).toHaveBeenCalledWith("/tasks?scope=all&data=server");
+    expect(computeLocalCard).not.toHaveBeenCalled();
+    // So the server sends the server version straight away until the copy is complete.
+    expect(document.cookie).toContain("bizh-device-pending=1");
+  });
+
+  it("before the copy has even opened, the device's note sends a saved frame to the server version at once", async () => {
+    document.cookie = "bizh-device-pending=1; path=/";
+    device.db = null;
+    device.status = null;
+    render(<LocalTasksBoard viewer={viewer} filters={allFilters} canSeeAll />);
+    await flush();
+    expect(nav.replace).toHaveBeenCalledWith("/tasks?scope=all&data=server");
   });
 
   it("right after the app opens, the board stored last time shows before the device database is ready", async () => {

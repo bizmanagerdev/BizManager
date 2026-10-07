@@ -55,7 +55,10 @@ export async function middleware(req: NextRequest) {
     path.startsWith("/icon") ||
     path.startsWith("/api");
 
-  if (user && path.startsWith("/login")) {
+  // Signed in, at the login page or the site's bare address (where the Android
+  // app opens): straight to the dashboard — the bare address would otherwise
+  // go to /login first, a second trip before anything shows.
+  if (user && (path === "/" || path.startsWith("/login"))) {
     const url = req.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);

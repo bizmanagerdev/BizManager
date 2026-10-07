@@ -1,5 +1,20 @@
 import { cookies } from "next/headers";
 import { israelDateKey } from "@/lib/timezone";
+import { localDataPageOn } from "./config";
+import { DEVICE_COPY_PENDING_COOKIE } from "./device-pending";
+
+/**
+ * Does this person get the device version of `page` on the device asking?
+ * Not while that device's copy is still incomplete (its cookie, from
+ * lib/powersync/device-pending.ts): the server version then, at once.
+ */
+export async function devicePageOn(
+  page: DeviceCheckPage,
+  viewer: { id: string; role: string | null | undefined }
+): Promise<boolean> {
+  if (!localDataPageOn(page, viewer)) return false;
+  return !(await cookies()).has(DEVICE_COPY_PENDING_COOKIE);
+}
 
 // Pages drawn from the device copy still compare themselves with the server's
 // version — once a day per device and page. The device says it has done

@@ -20,6 +20,11 @@ describe("isFullyPrefetched", () => {
     expect(isFullyPrefetched("/tasks", undefined)).toBe(false);
   });
 
+  it("not /tasks on a device whose copy isn't complete yet (it gets the whole board from the server)", () => {
+    expect(isFullyPrefetched("/tasks", "admin", false)).toBe(false);
+    expect(isFullyPrefetched("/dashboard", "admin", false)).toBe(true);
+  });
+
   it("nothing else", () => {
     expect(isFullyPrefetched("/customers", "admin")).toBe(false);
   });

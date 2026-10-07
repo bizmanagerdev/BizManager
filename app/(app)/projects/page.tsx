@@ -16,9 +16,9 @@ import ProjectsCustomerHeader from "@/app/(app)/projects/ProjectsCustomerHeader"
 import ProjectsServerCheck from "@/app/(app)/projects/ProjectsServerCheck";
 import DeviceFrameMark from "@/components/powersync/DeviceFrameMark";
 import { serverRenderedAt } from "@/lib/loaded-at";
-import { deviceCheckDue } from "@/lib/powersync/device-check";
+import { deviceCheckDue, devicePageOn } from "@/lib/powersync/device-check";
 import DashboardLocalShadow from "@/components/powersync/DashboardLocalShadow";
-import { LOCAL_DATA_PAGES, LOCAL_DATA_SHADOW, localDataEnabledFor, localDataPageOn } from "@/lib/powersync/config";
+import { LOCAL_DATA_PAGES, LOCAL_DATA_SHADOW, localDataEnabledFor } from "@/lib/powersync/config";
 import { israelDateKey } from "@/lib/timezone";
 
 const ProjectsClient = dynamic(() => import("@/app/(app)/projects/ProjectsClient"), {
@@ -78,8 +78,9 @@ export default async function ProjectsPage({
 
   // The device version: the list, its counts and the dialog's lists are worked
   // out from this person's on-device copy (LocalProjectsPage). Searches still
-  // go to the server. ?data=server is the way back when the copy can't serve it.
-  if (localDataPageOn("projects", profile) && params.data !== "server" && !filters.q) {
+  // go to the server. ?data=server is the way back when the copy can't serve it;
+  // a device whose copy is still incomplete gets the server version at once.
+  if (params.data !== "server" && !filters.q && (await devicePageOn("projects", profile))) {
     // Once a day per device, the server's own list too — streamed after the
     // page, for the device to compare (lib/powersync/device-check.ts).
     const checkDue = LOCAL_DATA_SHADOW.projects && (await deviceCheckDue("projects"));

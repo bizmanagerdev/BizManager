@@ -225,6 +225,34 @@ describe("service worker: the device pages' frames", () => {
     expect(await open(worker, "https://biz-h.com/tasks")).toBe(FRAME);
   });
 
+  it("the bare address (where the Android app opens) goes straight to the saved dashboard — no trip to the server", async () => {
+    const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
+    const answer = async (url: string) => {
+      let responded: Promise<Response> | undefined;
+      worker.handlers.fetch({
+        request: { method: "GET", url, mode: "navigate", headers: new Headers() },
+        preloadResponse: Promise.resolve(undefined),
+        respondWith: (promise: Promise<Response>) => (responded = promise),
+        waitUntil: () => {},
+      });
+      return responded!;
+    };
+
+    // No dashboard saved yet (or signed out — frames go at logout): the server decides.
+    expect((await answer("https://biz-h.com/")).status).toBe(200);
+    expect(worker.fetchMock).toHaveBeenCalledTimes(1);
+
+    await open(worker, "https://biz-h.com/dashboard"); // saved
+    worker.fetchMock.mockClear();
+    const res = await answer("https://biz-h.com/");
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("https://biz-h.com/dashboard");
+    expect(worker.fetchMock).not.toHaveBeenCalled();
+
+    // Anything else at that address still goes to the server.
+    expect((await answer("https://biz-h.com/?next=/sales")).status).toBe(200);
+  });
+
   it("leaves other pages, the server version and searches alone", async () => {
     const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
     await open(worker, "https://biz-h.com/tasks?data=server");

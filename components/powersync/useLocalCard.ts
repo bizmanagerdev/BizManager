@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useLocalDatabase, useLocalSyncStatus } from "@/lib/powersync/store";
 import { peekResult, resultKey, watchResult } from "@/lib/powersync/local-results";
 import { parseStoredResult, readStoredResultRaw, storedResultJson } from "@/lib/powersync/stored-results";
+import { deviceCopyPending, setDeviceCopyPending } from "@/lib/powersync/device-pending";
 import { withSentry } from "@/lib/sentry-lazy";
 import type { LocalCardKind, LocalCardViewer, LocalDashboardCards } from "@/lib/powersync/dashboard-local";
 
@@ -18,7 +19,10 @@ import type { LocalCardKind, LocalCardViewer, LocalDashboardCards } from "@/lib/
 //
 // If this device's copy can't serve it — not downloaded yet, the sync rules
 // not deployed, or an error — the page reloads as the server version
-// (`serverHref`, e.g. /dashboard?data=server), the way it worked before.
+// (`serverHref`, e.g. /dashboard?data=server), the way it worked before. A
+// copy known to be incomplete (its first download hasn't finished) goes there
+// at once, and the device remembers it so the server sends the server version
+// straight away until the copy is complete (lib/powersync/device-pending.ts).
 
 const FALLBACK_AFTER_MS = 8000;
 
@@ -26,6 +30,7 @@ const FALLBACK_AFTER_MS = 8000;
 const fellBack = new Set<string>();
 
 function fallBackToServer(router: ReturnType<typeof useRouter>, page: string, href: string, reason: string) {
+  if (reason === "not-synced") setDeviceCopyPending(true);
   if (!fellBack.has(page)) {
     fellBack.add(page);
     withSentry((Sentry) =>
@@ -116,11 +121,19 @@ export function useLocalCard<K extends LocalCardKind>({
   }, [serverHref]);
 
   // The device hasn't answered for this part in time → the server version
-  // (even with a stored copy on screen). A page that already fell back this
-  // session goes straight there while the copy still isn't ready.
+  // (even with a stored copy on screen). A copy known to be incomplete — its
+  // own status, or (before it has opened) the device's note of it — goes
+  // there at once; so does a page that already fell back this session while
+  // the copy still isn't ready.
   const answered = current !== null;
+  const statusKnown = status !== null;
+  const copyIncomplete = statusKnown && !status.hasSynced;
   useEffect(() => {
     if (answered) return;
+    if (copyIncomplete || (!statusKnown && deviceCopyPending())) {
+      fallBackToServer(router, page, serverHrefRef.current, "not-synced");
+      return;
+    }
     if (fellBack.has(page) && !ready) {
       router.replace(serverHrefRef.current);
       return;
@@ -130,7 +143,7 @@ export function useLocalCard<K extends LocalCardKind>({
       FALLBACK_AFTER_MS
     );
     return () => clearTimeout(timer);
-  }, [answered, ready, router, page]);
+  }, [answered, ready, copyIncomplete, statusKnown, router, page]);
 
   const { userId, role, locale } = viewer;
   useEffect(() => {

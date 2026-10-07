@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useNavCounts, type NavCount } from "@/lib/ui/nav-counts-store";
 import { EXACT_MATCH_CHILDREN, isFullyPrefetched, type SidebarNavItem } from "@/components/layout/nav-items";
+import { useDeviceCopyPending } from "@/components/powersync/useDeviceCopyPending";
 import { RAIL_WIDTH, useSidebarCollapse } from "@/components/layout/sidebar-collapse-context";
 
 interface Props {
@@ -87,12 +88,14 @@ function NavFlyout({
   onEnter,
   onLeave,
   viewerRole,
+  deviceCopyReady,
 }: {
   state: FlyoutState;
   navCounts: Record<string, NavCount>;
   onEnter: () => void;
   onLeave: () => void;
   viewerRole?: string;
+  deviceCopyReady: boolean;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -128,7 +131,7 @@ function NavFlyout({
           onClick={onLeave}
           // Fully warmed ahead of a click — see isFullyPrefetched and the
           // matching prefetch below in the main list.
-          prefetch={isFullyPrefetched(state.item.url, viewerRole) ? true : undefined}
+          prefetch={isFullyPrefetched(state.item.url, viewerRole, deviceCopyReady) ? true : undefined}
           // Standalone row: it carries the filled look itself (nothing behind it).
           className={cn(flyoutTopRow, "bg-secondary text-secondary-foreground")}
           activeClassName={linkActive}
@@ -301,6 +304,8 @@ function NavCountBadge({ badge, collapsed }: { badge: NavCount; collapsed: boole
 }
 
 export function AppSidebar({ items, viewerRole }: Props) {
+  // Loading /tasks ahead depends on this device's copy (isFullyPrefetched).
+  const deviceCopyReady = !useDeviceCopyPending();
   // Shared with the top bar's brand corner so the two stay the same width.
   const { collapsed, toggle: toggleCollapsed } = useSidebarCollapse();
   const navCounts = useNavCounts();
@@ -401,7 +406,7 @@ export function AppSidebar({ items, viewerRole }: Props) {
               // instead of paying a full server round-trip (user, 2026-08-31:
               // returning to the dashboard should be instant; 2026-10-05:
               // projects should open as fast as the dashboard; sales too).
-              prefetch={isFullyPrefetched(item.url, viewerRole) ? true : undefined}
+              prefetch={isFullyPrefetched(item.url, viewerRole, deviceCopyReady) ? true : undefined}
               className={cn(linkBase, collapsed && "justify-center px-0")}
               activeClassName={linkActive}
               pendingClassName={linkPending}
@@ -440,6 +445,7 @@ export function AppSidebar({ items, viewerRole }: Props) {
           onEnter={cancelClose}
           onLeave={scheduleClose}
           viewerRole={viewerRole}
+          deviceCopyReady={deviceCopyReady}
         />
       ) : null}
     </aside>

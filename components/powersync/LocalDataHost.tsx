@@ -3,13 +3,14 @@
 import { useEffect } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { closeLocalDatabase, openLocalDatabase } from "@/lib/powersync/database";
-import { registerLocalDataWipe } from "@/lib/powersync/store";
+import { registerLocalDataWipe, useLocalSyncStatus } from "@/lib/powersync/store";
 import { clearStoredResults } from "@/lib/powersync/stored-results";
 import { withSentry } from "@/lib/sentry-lazy";
 import type { LocalCardViewer } from "@/lib/powersync/dashboard-local";
 import LocalPagesWarmup from "@/components/powersync/LocalPagesWarmup";
 import { installNavigationTiming } from "@/lib/ui/navigation-timing";
 import { clearDeviceFrames, keepDeviceFramesFor } from "@/lib/powersync/device-frames";
+import { setDeviceCopyPending } from "@/lib/powersync/device-pending";
 
 // Keeps the on-device copy open for the signed-in person, in the background.
 // Renders nothing. AppShell mounts it only for people the copy is switched on
@@ -24,6 +25,9 @@ import { clearDeviceFrames, keepDeviceFramesFor } from "@/lib/powersync/device-f
 // The page results stored on the device (lib/powersync/stored-results.ts) go
 // with the copy: wiped at logout, and anyone else's dropped when this person
 // is signed in.
+// Until this device's copy has finished its first download, the server sends
+// the device pages' server version (lib/powersync/device-pending.ts); the
+// moment it has, they switch over by themselves.
 export default function LocalDataHost({ viewer }: { viewer?: LocalCardViewer }) {
   const viewerId = viewer?.userId;
   useEffect(() => {
@@ -31,6 +35,12 @@ export default function LocalDataHost({ viewer }: { viewer?: LocalCardViewer }) 
     clearStoredResults(viewerId);
     keepDeviceFramesFor(viewerId);
   }, [viewerId]);
+
+  const status = useLocalSyncStatus();
+  const copyComplete = status ? status.hasSynced : null;
+  useEffect(() => {
+    if (copyComplete !== null) setDeviceCopyPending(!copyComplete);
+  }, [copyComplete]);
 
   // From here on, page changes are timed (the device pages' timing report).
   useEffect(() => installNavigationTiming(), []);

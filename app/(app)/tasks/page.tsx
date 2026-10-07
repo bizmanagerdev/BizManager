@@ -7,9 +7,9 @@ import { hasSectionAccess, isStaffRole } from "@/lib/auth/roleAccess";
 import { t } from "@/lib/i18n/t";
 import { commonDict } from "@/lib/i18n/dictionaries/common";
 import DashboardLocalShadow from "@/components/powersync/DashboardLocalShadow";
-import { LOCAL_DATA_PAGES, LOCAL_DATA_SHADOW, localDataEnabledFor, localDataPageOn } from "@/lib/powersync/config";
+import { LOCAL_DATA_PAGES, LOCAL_DATA_SHADOW, localDataEnabledFor } from "@/lib/powersync/config";
 import { israelDateKey } from "@/lib/timezone";
-import { deviceCheckDue } from "@/lib/powersync/device-check";
+import { deviceCheckDue, devicePageOn } from "@/lib/powersync/device-check";
 import LocalTasksBoard from "./LocalTasksBoard";
 import TasksServerCheck from "./TasksServerCheck";
 import DeviceFrameMark from "@/components/powersync/DeviceFrameMark";
@@ -62,8 +62,9 @@ export default async function TasksPage({
 
   // The device version: the board and its pickers are worked out from this
   // person's on-device copy (LocalTasksBoard), so the server reads nothing for
-  // them. ?data=server is the way back when the copy can't serve it.
-  const localMode = localDataPageOn("tasks", profile) && params.data !== "server";
+  // them. ?data=server is the way back when the copy can't serve it; a device
+  // whose copy is still incomplete gets the server version at once.
+  const localMode = params.data !== "server" && (await devicePageOn("tasks", profile));
   if (localMode) {
     // Once a day per device, the server's own board too — streamed after the
     // page, for the device to compare (lib/powersync/device-check.ts).
