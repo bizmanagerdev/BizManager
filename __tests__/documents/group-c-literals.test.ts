@@ -58,7 +58,7 @@ describe("Group C literals are still WRITTEN", () => {
 
 describe("Group C literals are still READ", () => {
   it("the order page and edit-data route still match 'order_delivery_image'", () => {
-    expect(read("app/(app)/sales/orders/[id]/page.tsx")).toContain(`"order_delivery_image"`);
+    expect(read("app/(app)/sales/orders/[id]/loadOrderPageExtras.ts")).toContain(`"order_delivery_image"`);
     expect(read("app/api/orders/[id]/edit-data/route.ts")).toContain(`"order_delivery_image"`);
   });
 });

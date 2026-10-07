@@ -115,7 +115,7 @@ export default function AppShell({
           <LocalDataHost
             viewer={
               viewerId
-                ? { userId: viewerId, role: viewerRole ?? "", locale: viewerLocale === "ar" ? "ar" : "he" }
+                ? { userId: viewerId, role: viewerRole ?? "", locale: viewerLocale === "ar" ? "ar" : "he", name: userName ?? null }
                 : undefined
             }
           />

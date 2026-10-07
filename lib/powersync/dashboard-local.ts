@@ -31,6 +31,7 @@ import {
   type TaskPickerOptions,
   type TasksFilters,
 } from "@/app/(app)/tasks/loadTasks";
+import { loadOrderPageCore, type OrderPageCore } from "@/lib/orders/order-page";
 import { israelDateKey } from "@/lib/timezone";
 import type { Locale } from "@/lib/i18n/types";
 
@@ -67,6 +68,12 @@ export type LocalDashboardCards = {
   salesCounts: { filters: SalesCountsFilters; counts: SalesTabCounts };
   /** /tasks, the whole board for the given filters, and the task dialog's pickers. */
   tasksBoard: { filters: TasksFilters; items: TaskBoardItem[]; options: TaskPickerOptions };
+  /**
+   * An order's page (/sales/orders/<id>), all but what only the server reads
+   * (its documents, photos and history). `order` null: not on this device's
+   * copy (yet).
+   */
+  orderPage: OrderPageCore;
 };
 
 export type LocalCardKind = keyof LocalDashboardCards;
@@ -96,6 +103,7 @@ export const LOCAL_CARD_TABLES: Record<LocalCardKind, string[]> = {
   tasksBoard: [
     "tasks", "task_members", "users", "user_directory", "projects", "customers", "properties", "property_directory", "task_comments", "reminders", "document_links",
   ],
+  orderPage: ["orders", "order_items", "payments", "customers", "customer_branches", "products", "inventory", "users", "user_directory"],
 };
 
 export async function computeLocalCard<K extends LocalCardKind>(
@@ -189,6 +197,14 @@ export async function computeLocalCard<K extends LocalCardKind>(
       ]);
       if (result.error) throw new Error(result.error);
       return { filters: taskFilters, items: result.items, options } as LocalDashboardCards[K];
+    }
+    case "orderPage": {
+      const { id } = need<{ id: string }>();
+      const core = await loadOrderPageCore(local, id);
+      // A read the device couldn't do: the server version shows it instead.
+      const failed = Object.entries(core.errors).find(([, message]) => message);
+      if (failed) throw new Error(`${failed[0]}: ${failed[1]}`);
+      return core as LocalDashboardCards[K];
     }
     default:
       throw new Error(`Unknown dashboard card ${String(kind)}`);

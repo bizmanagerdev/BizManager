@@ -46,7 +46,7 @@ import { parseOrderComments, type OrderComment } from "@/lib/orders/comments";
 import OrderReminderDialog from "@/components/orders/OrderReminderDialog";
 import { rowNavigateProps } from "@/lib/ui/row-navigation";
 import RouteOpeningOverlay, { showRouteOpening } from "@/components/layout/RouteOpeningOverlay";
-import OrderPagePreview from "@/app/(app)/sales/orders/[id]/OrderPagePreview";
+import OrderPageOpening from "@/app/(app)/sales/orders/[id]/OrderPageOpening";
 import { orderPreviewFromRow, orderPreviewSlot } from "@/app/(app)/sales/orders/[id]/orderPreview";
 import { DataTableShell } from "@/components/ui/data-table-shell";
 import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
@@ -407,14 +407,15 @@ export default function SalesOrdersClient({
   // One swiped-open row at a time, like a native list.
   const [swipedRow, setSwipedRow] = useState<string | null>(null);
 
-  // A tapped order's page is named at once, from this row, until the page's
-  // own data arrives: over the list straight away on a phone, and as the
-  // page's loading screen everywhere.
+  // A tapped order's page shows at once: over the list straight away on a
+  // phone, and as the page's loading screen everywhere — drawn from this
+  // device's copy when it has one, else named from this row until the page's
+  // own data arrives.
   const openOrder = (row: OrderView) => {
     const preview = orderPreviewFromRow(row);
     if (!preview) return;
     orderPreviewSlot.remember(preview);
-    showRouteOpening(<OrderPagePreview preview={preview} />);
+    showRouteOpening(<OrderPageOpening id={preview.id} preview={preview} />);
   };
   const [paymentSnapshot] = useState(() => new Map<string, number>());
   // One shared reminder dialog for the whole list; a row's bell button sets its target.

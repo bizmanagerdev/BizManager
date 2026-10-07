@@ -43,6 +43,9 @@ export const LOCAL_DATA_PAGES = {
   projects: true,
   sales: true,
   tasks: true,
+  // An order's own page (/sales/orders/<id>), from 2026-10-07 — its documents,
+  // photos and history still come from the server, after the page.
+  orders: true,
 } as const;
 
 /**
@@ -80,4 +83,5 @@ export const LOCAL_DATA_SHADOW = {
   projects: true,
   sales: true,
   tasks: true,
+  orders: true,
 } as const;

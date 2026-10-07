@@ -30,14 +30,19 @@ import { setDeviceCopyPending } from "@/lib/powersync/device-pending";
 // Until this device's copy has finished its first download, the server sends
 // the device pages' server version (lib/powersync/device-pending.ts); the
 // moment it has, they switch over by themselves.
-export default function LocalDataHost({ viewer }: { viewer?: LocalCardViewer }) {
+export default function LocalDataHost({ viewer }: { viewer?: LocalCardViewer & { name?: string | null } }) {
   const viewerId = viewer?.userId;
   const viewerRole = viewer?.role;
-  // Whose the copy is, for the saves made on it (lib/tasks/device-task-saves.ts).
+  const viewerLocale = viewer?.locale ?? "he";
+  const viewerName = viewer?.name ?? null;
+  // Whose the copy is: for the saves made on it (lib/tasks/device-task-saves.ts)
+  // and the pages drawn from it before they arrive (an order's, on a tap).
   useEffect(() => {
-    setLocalViewer(viewerId && viewerRole ? { id: viewerId, role: viewerRole } : null);
+    setLocalViewer(
+      viewerId && viewerRole ? { id: viewerId, role: viewerRole, locale: viewerLocale, name: viewerName } : null
+    );
     return () => setLocalViewer(null);
-  }, [viewerId, viewerRole]);
+  }, [viewerId, viewerRole, viewerLocale, viewerName]);
   useEffect(() => {
     if (!viewerId) return;
     clearStoredResults(viewerId);

@@ -10,7 +10,8 @@ import {
 
 // Who keeps a device copy (admins, office and workers) and who gets a page's
 // device version: admins and office for every page that's switched on — all
-// four are, from 2026-10-06 — and before that the people trying it out;
+// are (the first four from 2026-10-06, an order's page from 2026-10-07) — and
+// before that the people trying it out;
 // workers only their dashboard and tasks, and only once their own switch is
 // on (after a day of comparisons). Never anyone else.
 describe("the device copy's switches", () => {

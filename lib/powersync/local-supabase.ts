@@ -796,13 +796,19 @@ const VIEWS: Record<string, SourceLoader> = {
       list.push(p);
       byOrder.set(p.order_id as string, list);
     }
+    const today = utcToday();
     return orders.map((o) => {
       const list = byOrder.get(o.id as string) ?? [];
+      const amount = (p: Row) => (typeof p.amount_total === "number" ? p.amount_total : 0);
       const collected = sumMoney(
-        list
-          .filter((p) => !["pending", "rejected"].includes(String(p.payment_status ?? "cleared")))
-          .map((p) => (typeof p.amount_total === "number" ? p.amount_total : 0))
+        list.filter((p) => !["pending", "rejected"].includes(String(p.payment_status ?? "cleared"))).map(amount)
       );
+      const pendingList = list.filter((p) => p.payment_status === "pending");
+      const dueDates = pendingList.filter((p) => p.due_date != null).map((p) => String(p.due_date));
+      // The latest payment's date (payment_date is a timestamp; the view takes its UTC date).
+      const paidAt = list
+        .map((p) => (typeof p.payment_date === "string" ? Date.parse(p.payment_date) : Number.NaN))
+        .filter((t) => !Number.isNaN(t));
       const total = typeof o.total_amount === "number" ? o.total_amount : 0;
       return {
         id: o.id,
@@ -815,8 +821,12 @@ const VIEWS: Record<string, SourceLoader> = {
         collected_amount: collected,
         remaining_balance: Math.max(sumMoney([total, -collected]), 0),
         outstanding_amount: Math.max(sumMoney([total, -collected]), 0),
+        pending_amount: sumMoney(pendingList.map(amount)),
+        overdue_amount: sumMoney(pendingList.filter((p) => p.due_date != null && String(p.due_date) <= today).map(amount)),
         payment_count: list.length,
         payment_status: collected <= 0 ? "unpaid" : collected + 0.009 >= total ? "paid" : "partial",
+        next_due_date: dueDates.length ? dueDates.sort()[0] : null,
+        last_payment_date: paidAt.length ? new Date(Math.max(...paidAt)).toISOString().slice(0, 10) : null,
       };
     });
   },
@@ -1062,7 +1072,10 @@ function logsShifts(u: Row): boolean | null {
   return String(u.pay_tracking_mode ?? "") !== "payslip";
 }
 
-const RPCS: Record<string, SourceLoader> = {
+/** A database function the device answers itself: its rows, from its arguments. */
+type RpcLoader = (reader: LocalReader, args: Record<string, unknown>) => Promise<Row[]>;
+
+const RPCS: Record<string, RpcLoader> = {
   user_directory: async (reader) =>
     (await directoryRows(reader, "user_directory", "users")).map((u) => ({
       id: u.id,
@@ -1079,6 +1092,20 @@ const RPCS: Record<string, SourceLoader> = {
       address: p.address,
       is_active: p.is_active,
     })),
+  // user_labels(p_values): the name behind each value that is someone's id —
+  // or, where this copy holds them, someone's login id (auth_user_id) — in
+  // the SQL's order: the id matches, then the login-id matches.
+  user_labels: async (reader, args) => {
+    const values = new Set((Array.isArray(args.p_values) ? args.p_values : []).filter((v): v is string => typeof v === "string"));
+    if (values.size === 0) return [];
+    const people = await directoryRows(reader, "user_directory", "users");
+    return [
+      ...people.filter((u) => values.has(String(u.id))).map((u) => ({ value: String(u.id), full_name: u.full_name ?? null })),
+      ...people
+        .filter((u) => typeof u.auth_user_id === "string" && values.has(u.auth_user_id))
+        .map((u) => ({ value: String(u.auth_user_id), full_name: u.full_name ?? null })),
+    ];
+  },
 };
 
 // ── The query builder ────────────────────────────────────────────────────────
@@ -1113,7 +1140,7 @@ class LocalQuery implements PromiseLike<Result> {
 
   constructor(
     private reader: LocalReader,
-    private source: { kind: "table" | "view" | "rpc"; name: string }
+    private source: { kind: "table" | "view" | "rpc"; name: string; args?: Record<string, unknown> }
   ) {}
 
   select(columns = "*", options: CountOption = {}) {
@@ -1172,7 +1199,7 @@ class LocalQuery implements PromiseLike<Result> {
     if (kind === "rpc") {
       const rpc = RPCS[name];
       if (!rpc) throw new Error(`RPC ${name} isn't available on the device`);
-      return rpc(this.reader, this.filters, null);
+      return rpc(this.reader, this.source.args ?? {});
     }
     if (VIEWS[name]) return VIEWS[name](this.reader, this.filters, this.columnsRead());
     if (!LOCAL_TABLES.has(name)) throw new Error(`Table ${name} isn't synced to the device`);
@@ -1288,7 +1315,7 @@ class LocalQuery implements PromiseLike<Result> {
 export function createLocalSupabase(reader: LocalReader): SupabaseClient {
   const client = {
     from: (name: string) => new LocalQuery(reader, { kind: VIEWS[name] ? "view" : "table", name }),
-    rpc: (name: string) => new LocalQuery(reader, { kind: "rpc", name }),
+    rpc: (name: string, args: Record<string, unknown> = {}) => new LocalQuery(reader, { kind: "rpc", name, args }),
   };
   return client as unknown as SupabaseClient;
 }

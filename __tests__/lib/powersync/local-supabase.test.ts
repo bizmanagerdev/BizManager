@@ -10,6 +10,7 @@ import { loadProjectsPickerOptions, loadProjectsTabCounts, withListCustomers } f
 import { computeLocalListPage } from "@/lib/powersync/dashboard-local";
 import { loadPriceListPage } from "@/app/(app)/sales/loadProducts";
 import { loadTaskPickerOptions, loadTasksBoard } from "@/app/(app)/tasks/loadTasks";
+import { loadOrderPageCore } from "@/lib/orders/order-page";
 
 // The on-device stand-in for the Supabase client: the server's loaders run
 // against it unchanged, so it has to answer exactly like PostgREST — values
@@ -246,6 +247,51 @@ describe("views and directories", () => {
       { id: "o1", total_amount: 0.3, total_paid: 0.3, payment_status: "paid" },
       { id: "o2", total_amount: 100, total_paid: 0, payment_status: "unpaid" },
     ]);
+  });
+
+  it("order_financials_view: expected and overdue money, the next due date and the last payment's (UTC) date", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-06T09:00:00Z"));
+    try {
+      const db = createLocalSupabase(
+        fakeReader({
+          orders: [{ id: "o1", total_amount: "100" }, { id: "o2", total_amount: "10" }],
+          payments: [
+            { id: "p1", order_id: "o1", amount_total: "40", payment_status: "cleared", payment_date: "2026-10-05 22:30:00Z" },
+            { id: "p2", order_id: "o1", amount_total: "25", payment_status: "pending", due_date: "2026-10-06", payment_date: "2026-10-01T08:00:00Z" },
+            { id: "p3", order_id: "o1", amount_total: "35", payment_status: "pending", due_date: "2026-11-01", payment_date: "2026-10-01T09:00:00Z" },
+          ],
+        })
+      );
+      const { data } = await db
+        .from("order_financials_view")
+        .select("id,pending_amount,overdue_amount,next_due_date,last_payment_date,remaining_balance")
+        .in("id", ["o1", "o2"]);
+      expect(data).toEqual([
+        // Due today counts as overdue (due_date <= CURRENT_DATE); 22:30 UTC is still the 5th.
+        { id: "o1", pending_amount: 60, overdue_amount: 25, next_due_date: "2026-10-06", last_payment_date: "2026-10-05", remaining_balance: 60 },
+        { id: "o2", pending_amount: 0, overdue_amount: 0, next_due_date: null, last_payment_date: null, remaining_balance: 10 },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("user_labels(p_values): the name behind each id — and each login id where the copy holds them", async () => {
+    const db = createLocalSupabase(
+      fakeReader({
+        users: [
+          { id: "u1", full_name: "דנה", role: "admin", active: 1 },
+          { id: "u2", full_name: null, role: "office", active: 1, auth_user_id: "auth-2" },
+        ],
+      })
+    );
+    const { data } = await db.rpc("user_labels", { p_values: ["u1", "auth-2", "nobody"] });
+    expect(data).toEqual([
+      { value: "u1", full_name: "דנה" },
+      { value: "auth-2", full_name: null },
+    ]);
+    expect((await db.rpc("user_labels", { p_values: [] })).data).toEqual([]);
   });
 
   it("delivery_overview_view: open orders only, city = the part before '|'", async () => {
@@ -599,6 +645,44 @@ describe("the sales tabs, worked out on the device", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("an order's page, end to end on the device copy: lines with stock, payments newest first, money, names, colours", async () => {
+    const db = createLocalSupabase(
+      fakeReader({
+        ...tables,
+        // Every column the page reads, as on a real copy.
+        orders: [
+          { ...tables.orders[0], notes: "הערה", collect_payment_on_delivery: 1, payment_terms: "eom", due_date: "2026-10-31", payment_status: "partial", requested_delivery_date: null },
+        ],
+        customers: [{ ...tables.customers[0], registration_number: "51" }],
+        users: [{ id: "u1", full_name: "מנהל", email: "a@b.c", avatar_color: "#f00" }],
+        customer_branches: [],
+        order_items: [
+          { id: "i1", order_id: "o1", product_id: "pr1", description: null, quantity_ordered: "8", quantity_delivered: "0", unit_price: "12.5", discount_amount: "0", line_total: "100", notes: null },
+          { id: "i2", order_id: "o9", product_id: "pr1", quantity_ordered: "1" },
+        ],
+        payments: [
+          { ...tables.payments[0], payment_date: "2026-10-02T08:00:00Z", created_at: "2026-10-02T08:00:00Z", recorded_by: "u1", payment_method: "cash", reference_number: null, check_number: null, account_id: null, notes: null },
+          { ...tables.payments[1], payment_date: "2026-10-03T08:00:00Z", created_at: "2026-10-03T08:00:00Z", recorded_by: "u1", payment_method: "check", reference_number: null, check_number: "77", account_id: null, notes: null },
+        ],
+      })
+    );
+    const page = await loadOrderPageCore(db, "o1");
+    expect(page.errors).toEqual({ order: null, items: null, payments: null, financials: null });
+    expect(page.order).toMatchObject({ id: "o1", collect_payment_on_delivery: true, needs_invoice: true, created_by: "u1" });
+    expect(page.items.map((i) => [i.id, i.quantity_ordered, i.unit_price])).toEqual([["i1", 8, 12.5]]);
+    expect(page.payments.map((p) => p.id)).toEqual(["p2", "p1"]);
+    expect(page.financials).toMatchObject({ total_paid: 40, pending_amount: 60, remaining_balance: 60, payment_count: 2 });
+    expect(page.customer).toMatchObject({ id: "c1", name_for_invoice: "חברה" });
+    expect(page.branch).toBeNull();
+    expect(page.products).toEqual([{ id: "pr1", name: "כיסא", sku: "S1", barcode: null, available_quantity: 6 }]);
+    expect(page.names).toEqual({ u1: "מנהל" });
+    expect(page.commentAuthorColors).toEqual({ "מנהל": "#f00", "a@b.c": "#f00" });
+
+    const missing = await loadOrderPageCore(db, "o404");
+    expect(missing.order).toBeNull();
+    expect(missing.items).toEqual([]);
   });
 
   it("the orders tab loader: open orders only, newest first", async () => {

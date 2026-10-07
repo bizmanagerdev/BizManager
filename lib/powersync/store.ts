@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import type { CommonPowerSyncDatabase } from "@powersync/web";
 import { localDataPageFor } from "./config";
+import type { Locale } from "@/lib/i18n/types";
 
 // The open on-device database and its sync status, for any component to read.
 // Deliberately free of PowerSync runtime imports: pages and the top bar read
@@ -35,11 +36,29 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener);
 }
 
-/** Who the open copy belongs to (LocalDataHost keeps it): for saves made on the device. */
-let viewer: { id: string; role: string } | null = null;
+/**
+ * Who the open copy belongs to (LocalDataHost keeps it): for saves made on the
+ * device, and for page parts drawn from it before their page has arrived (an
+ * order's page, the moment its row is tapped).
+ */
+export type LocalViewer = { id: string; role: string; locale: Locale; name: string | null };
 
-export function setLocalViewer(next: { id: string; role: string } | null) {
+let viewer: LocalViewer | null = null;
+const viewerListeners = new Set<() => void>();
+
+export function setLocalViewer(next: LocalViewer | null) {
   viewer = next;
+  for (const listener of viewerListeners) listener();
+}
+
+function subscribeViewer(listener: () => void) {
+  viewerListeners.add(listener);
+  return () => viewerListeners.delete(listener);
+}
+
+/** The person the open copy belongs to, or null (none open here, or not yet known). */
+export function useLocalViewer(): LocalViewer | null {
+  return useSyncExternalStore(subscribeViewer, () => viewer, () => null);
 }
 
 /**
