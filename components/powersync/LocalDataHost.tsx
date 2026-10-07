@@ -5,6 +5,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { closeLocalDatabase, openLocalDatabase } from "@/lib/powersync/database";
 import { registerLocalDataWipe, useLocalSyncStatus } from "@/lib/powersync/store";
 import { clearStoredResults } from "@/lib/powersync/stored-results";
+import { clearPicture } from "@/lib/dashboard/picture";
 import { withSentry } from "@/lib/sentry-lazy";
 import type { LocalCardViewer } from "@/lib/powersync/dashboard-local";
 import LocalPagesWarmup from "@/components/powersync/LocalPagesWarmup";
@@ -22,9 +23,9 @@ import { setDeviceCopyPending } from "@/lib/powersync/device-pending";
 // - signed out (here or in another tab): wipe.
 // With the signed-in person's details (`viewer`), it also keeps their
 // device-version pages ready in the background (LocalPagesWarmup).
-// The page results stored on the device (lib/powersync/stored-results.ts) go
-// with the copy: wiped at logout, and anyone else's dropped when this person
-// is signed in.
+// The page results stored on the device (lib/powersync/stored-results.ts) and
+// the dashboard's picture (lib/dashboard/picture.ts) go with the copy: wiped
+// at logout, and anyone else's dropped when this person is signed in.
 // Until this device's copy has finished its first download, the server sends
 // the device pages' server version (lib/powersync/device-pending.ts); the
 // moment it has, they switch over by themselves.
@@ -33,6 +34,7 @@ export default function LocalDataHost({ viewer }: { viewer?: LocalCardViewer }) 
   useEffect(() => {
     if (!viewerId) return;
     clearStoredResults(viewerId);
+    clearPicture(viewerId);
     keepDeviceFramesFor(viewerId);
   }, [viewerId]);
 
@@ -64,6 +66,7 @@ export default function LocalDataHost({ viewer }: { viewer?: LocalCardViewer }) 
     const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_OUT") {
         clearStoredResults();
+        clearPicture();
         void clearDeviceFrames();
         void closeLocalDatabase({ wipe: true });
       } else if (event === "SIGNED_IN" && session?.user.id) {
@@ -73,6 +76,7 @@ export default function LocalDataHost({ viewer }: { viewer?: LocalCardViewer }) 
 
     registerLocalDataWipe(() => {
       clearStoredResults();
+      clearPicture();
       return closeLocalDatabase({ wipe: true });
     });
 

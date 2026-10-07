@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { wipeLocalDataBeforeLogout } from "@/lib/powersync/store";
 import { clearRememberedCards } from "@/lib/ui/remembered-cards";
 import { clearStoredResults } from "@/lib/powersync/stored-results";
+import { clearPicture } from "@/lib/dashboard/picture";
 import { clearDeviceFrames } from "@/lib/powersync/device-frames";
 import { LocalSyncStatusLine } from "@/components/powersync/LocalSyncStatusLine";
 import { t } from "@/lib/i18n/t";
@@ -546,13 +547,14 @@ export function TopBar({
             method="post"
             onSubmit={(event) => {
               // Remove this person's on-device copy, its stored page results,
-              // the saved page frames and the remembered dashboard cards
-              // before the session ends (never holds logout up for more than a
-              // few seconds).
+              // the saved page frames, the remembered dashboard cards and the
+              // dashboard's picture before the session ends (never holds logout
+              // up for more than a few seconds).
               event.preventDefault();
               const form = event.currentTarget;
               clearRememberedCards();
               clearStoredResults();
+              clearPicture();
               void Promise.all([wipeLocalDataBeforeLogout(), clearDeviceFrames()]).then(() => form.submit());
             }}
           >

@@ -753,3 +753,18 @@ body:has(.dark-topbar-page) #page-header-toolbar {
     display: flex;
   }
 }
+
+/* The dashboard's picture (components/dashboard/DashboardPicture.tsx): while
+   the board as it last stood is on screen, the live board beneath it is
+   hidden, keeping its place. Should the app's code never take over, the live
+   board shows anyway after 6 seconds. */
+[data-picture-showing] > [data-dashboard-board] {
+  visibility: hidden;
+  animation: dashboard-picture-hold 0s linear 6s forwards;
+}
+
+@keyframes dashboard-picture-hold {
+  to {
+    visibility: visible;
+  }
+}

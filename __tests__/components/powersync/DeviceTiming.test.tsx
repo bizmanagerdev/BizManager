@@ -37,6 +37,14 @@ describe("the device pages' timing report", () => {
     expect(sentry.captureMessage).toHaveBeenCalledTimes(11);
   });
 
+  it("an opening of the dashboard says when its picture went up", () => {
+    nav.start = 0; // the page load itself
+    window.__bizhPictureAt = 120.4;
+    reportPageTiming({ page: "dashboard:myTasks", source: "stored", committedAt: 500, paintedAt: 520 });
+    delete window.__bizhPictureAt;
+    expect(sentry.captureMessage.mock.calls[0][1].extra).toMatchObject({ pictureMs: 120, totalMs: 520 });
+  });
+
   it("a part drawn again later — after a save or a refresh — isn't a page opening", () => {
     nav.start = 50_000;
     reportPageTiming({ page: "dashboard:deliveries", source: "kept", committedAt: 50_100, paintedAt: 50_150 });
