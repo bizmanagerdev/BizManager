@@ -1,7 +1,7 @@
 import { Suspense, type CSSProperties, type ReactNode } from "react";
 import { cookies } from "next/headers";
 import HeldHeight from "@/components/dashboard/HeldHeight";
-import { HELD_HEIGHTS_COOKIE, parseHeldHeights } from "@/lib/ui/held-heights";
+import { HELD_HEIGHTS_COOKIE, USUAL_HELD_HEIGHTS, parseHeldHeights } from "@/lib/ui/held-heights";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { t } from "@/lib/i18n/t";
@@ -220,7 +220,10 @@ function Cell({
     // stood on this device (--held-h, from HeldHeight's cookie), so the card
     // fills a box already the right size instead of pushing everything below
     // it down. "Empty" ignores HeldHeight's own marker.
+    // data-board-cell: a card fades in as it arrives (globals.css) instead of
+    // popping into its placeholder's box.
     <div
+      data-board-cell=""
       className={cn(
         "min-w-0 transition-transform duration-200 ease-out [&:not(:has(>:not([data-held-marker])))]:hidden xl:relative xl:hover:z-10 xl:hover:scale-[1.015]",
         fill ? CARD_FILL_CLASS : CARD_NATURAL_CLASS,
@@ -537,8 +540,10 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
   // a device whose copy is still incomplete (devicePageOn).
   const localMode = !forceServer && (await devicePageOn("dashboard", profile));
   const localViewer = { userId: profile.id, role: role ?? "", locale };
-  // How tall each card last stood on this device's phone layout (its placeholder's height).
-  const heldHeights = parseHeldHeights((await cookies()).get(HELD_HEIGHTS_COOKIE)?.value);
+  // How tall each card last stood on this device's phone layout (its
+  // placeholder's height) — each card's usual height where this device has
+  // none yet.
+  const heldHeights = { ...USUAL_HELD_HEIGHTS, ...parseHeldHeights((await cookies()).get(HELD_HEIGHTS_COOKIE)?.value) };
   // The device-copy shadow check (lib/powersync/dashboard-shadow.ts): the
   // figures below are also worked out on the device and compared. Read time
   // first, so the device only compares once its copy is at least this fresh.

@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect } from "react";
 import { useRouter } from "next/navigation";
 import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { useLocalCard } from "@/components/powersync/useLocalCard";
 import { useDevicePageTiming } from "@/components/powersync/useDevicePageTiming";
 import { useSettled } from "@/hooks/useSettled";
+import { emitNavigationContentShown } from "@/components/layout/TopNavigationProgress";
 import type { LocalCardViewer } from "@/lib/powersync/dashboard-local";
 import OrderPagePreview from "@/app/(app)/sales/orders/[id]/OrderPagePreview";
 import OrderPageView from "@/app/(app)/sales/orders/[id]/OrderPageView";
@@ -62,6 +63,13 @@ export default function LocalOrderPage({
     const timer = setTimeout(() => router.replace(serverHref), MISSING_ORDER_WAIT_MS);
     return () => clearTimeout(timer);
   }, [missing, router, serverHref]);
+
+  // On screen with its content: the top bar is done (it would otherwise run on
+  // until the server's answer for the page arrives behind it).
+  const contentOnScreen = shown !== null && !missing;
+  useLayoutEffect(() => {
+    if (contentOnScreen) emitNavigationContentShown();
+  }, [contentOnScreen]);
 
   if (!shown || missing) return preview ? <OrderPagePreview preview={preview} routeLoading /> : <DetailPageSkeleton />;
 

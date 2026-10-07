@@ -10,6 +10,26 @@ export const HELD_HEIGHTS_COOKIE = "bizh-held";
 /** Below this width the board is a plain stack of natural-height cards (DashboardSections). */
 export const HELD_HEIGHTS_MAX_WIDTH = 1280;
 
+/**
+ * Each card's usual height on a phone (the owner's board, 2026-10-07) — the
+ * placeholder's height on a device that hasn't kept its own yet, so even the
+ * very first opening lands close to right instead of 64px boxes that every
+ * card then pushes down.
+ */
+export const USUAL_HELD_HEIGHTS: Readonly<Record<string, number>> = {
+  todaySchedule: 196,
+  activityDigest: 196,
+  todayAlerts: 200,
+  myTasks: 272,
+  deliveries: 380,
+  payments: 360,
+  collections: 300,
+  attendanceQueue: 344,
+  properties: 260,
+  domainChart: 388,
+  workerShift: 160,
+};
+
 const MIN_PX = 40;
 const MAX_PX = 2000;
 const MAX_ENTRIES = 24;

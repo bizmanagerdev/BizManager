@@ -4,10 +4,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
 const NAV_START_EVENT = "app:navigation-start";
+const CONTENT_SHOWN_EVENT = "app:navigation-content-shown";
 const ACTIVITY_START_EVENT = "app:progress-activity-start";
 const ACTIVITY_END_EVENT = "app:progress-activity-end";
 const ROUTE_LOADING_SELECTOR = "[data-route-loading='true']";
-const SKELETON_APPEAR_WAIT_MS = 700;
+// After the address changes with no loading screen up, how long to wait for
+// one that mounts a moment later before calling the page loaded. Was 700 ms —
+// on a page drawn at once (from the phone's copy) the bar then ran on for
+// most of a second after the page was there (owner, 2026-10-07). A route's
+// loading screen comes in the same frame as the new address (measured on a
+// phone-size production build), so this is only a small safety margin.
+const SKELETON_APPEAR_WAIT_MS = 50;
 const MIN_VISIBLE_MS = 180;
 const FAILSAFE_MS = 12000;
 // How long the bar takes to fade out after it fills to 100%. Kept short so the
@@ -17,6 +24,16 @@ const FILL_TO_HIDE_MS = 140;
 export function emitNavigationStart() {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new Event(NAV_START_EVENT));
+}
+
+/**
+ * The page being opened is on screen with its content (drawn from the phone's
+ * copy over the list, or as the loading screen) — the bar finishes now, not
+ * when the server's answer for the page arrives behind it.
+ */
+export function emitNavigationContentShown() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(CONTENT_SHOWN_EVENT));
 }
 
 export function emitProgressActivityStart() {
@@ -125,8 +142,10 @@ export function TopNavigationProgress() {
 
     observerRef.current.observe(document.body, { childList: true, subtree: true });
 
-    // Backup: if no DOM mutation happens, still decide after window.
+    // Backup: if no DOM mutation happens, still decide after window — unless a
+    // loading screen is up, which the observer ends the bar for when it goes.
     finalizeTimerRef.current = setTimeout(() => {
+      if (hasRouteLoadingSkeleton()) return;
       disconnectObserver();
       finalizeIfIdle();
     }, SKELETON_APPEAR_WAIT_MS);
@@ -174,6 +193,15 @@ export function TopNavigationProgress() {
       finalizeIfIdle();
     }
 
+    function contentShown() {
+      if (!visibleRef.current || !pendingRouteChangeRef.current) return;
+      // The address catching up afterwards doesn't start the wait again.
+      pendingRouteChangeRef.current = false;
+      clearAllTimers();
+      disconnectObserver();
+      finalizeIfIdle();
+    }
+
     // Global link-click capture — fires startNavigation() for any same-origin
     // anchor click in the app. Previously the bar only showed on explicit
     // emitNavigationStart() calls (sidebar NavLink etc.), so pages like
@@ -217,12 +245,14 @@ export function TopNavigationProgress() {
     window.addEventListener(NAV_START_EVENT, startNavigation);
     window.addEventListener(ACTIVITY_START_EVENT, startActivity);
     window.addEventListener(ACTIVITY_END_EVENT, endActivity);
+    window.addEventListener(CONTENT_SHOWN_EVENT, contentShown);
     window.addEventListener("click", handleDocumentClick, true);
     window.addEventListener("popstate", handlePopState);
     return () => {
       window.removeEventListener(NAV_START_EVENT, startNavigation);
       window.removeEventListener(ACTIVITY_START_EVENT, startActivity);
       window.removeEventListener(ACTIVITY_END_EVENT, endActivity);
+      window.removeEventListener(CONTENT_SHOWN_EVENT, contentShown);
       window.removeEventListener("click", handleDocumentClick, true);
       window.removeEventListener("popstate", handlePopState);
       clearAllTimers();

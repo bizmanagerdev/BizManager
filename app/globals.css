@@ -753,3 +753,22 @@ body:has(.dark-topbar-page) #page-header-toolbar {
     display: flex;
   }
 }
+
+/* Dashboard cards fade in as they arrive — the placeholder's box, then the
+   card gently filling it, instead of "empty, then boom" (owner, 2026-10-07).
+   Once per card: a card that's already there and updates doesn't fade again.
+   Not the placeholders themselves (they pulse), nor the height marker. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-board-cell] > :not([data-held-marker]):not(.animate-pulse) {
+    animation: board-card-in 220ms ease-out both;
+  }
+}
+
+@keyframes board-card-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

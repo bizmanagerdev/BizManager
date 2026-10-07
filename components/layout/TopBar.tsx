@@ -112,8 +112,10 @@ export function TopBar({
   const showGlobalSearch = showSearch && viewerRole !== "worker" && !pageTitle?.hideSearch;
   const pathname = usePathname();
   // The page's own heading wins (it's the one that can carry a live subtitle);
-  // otherwise fall back to the route's name so no screen is ever nameless.
-  const fallbackTitle = titleForPath(pathname);
+  // otherwise fall back to the route's name so no screen is ever nameless —
+  // except the dashboard, whose bar shows its greeting: empty until it comes,
+  // never the word "דשבורד" in its place (owner, 2026-10-07).
+  const fallbackTitle = pathname === "/dashboard" ? null : titleForPath(pathname);
   // PHONE ONLY, except for pages that set `showOnDesktop` — today that's just the
   // dashboard (user, 2026-08-19). A phone has no sidebar to say where you are;
   // past `lg` it does, so a title in the bar repeats it. See the slot below.
@@ -343,8 +345,13 @@ export function TopBar({
           every page but the dashboard, so without this the cluster would slide
           back against the brand corner. Needed whenever the slot isn't filling
           the row: no title at all, a title that's phone-only, and NOT needed
-          when headerToolbar is present — that one is flex-1 at every width. */}
-      {headerToolbar || (headerTitle && pageTitle?.showOnDesktop) ? null : <div className="hidden flex-1 lg:block" />}
+          when headerToolbar is present — that one is flex-1 at every width.
+          No title at all (the dashboard before its greeting comes) needs it on
+          a phone too: the icons sat beside the back arrow, then jumped to the
+          far edge when the greeting arrived. */}
+      {headerToolbar || (headerTitle && pageTitle?.showOnDesktop) ? null : (
+        <div className={cn("flex-1", headerTitle ? "hidden lg:block" : null)} />
+      )}
 
       {/* A page-declared control grouped with the search/notification/avatar
           cluster at the far edge, rather than beside the back arrow (see
