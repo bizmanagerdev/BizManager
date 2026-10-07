@@ -37,7 +37,7 @@ export default async function AppGroupLayout({ children }: { children: ReactNode
       {/* The dashboard's picture: up from the very first moment of an opening,
           before the page (and its loading screen) — so it lives here, in the
           frame, not in the page (components/dashboard/DashboardPicture). */}
-      <DashboardPictureFrame userId={profile.id} />
+      <DashboardPictureFrame userId={profile.id} locale={profile.locale} />
       <AppShell
         userName={profile.full_name ?? profile.email ?? undefined}
         viewerId={profile.id}

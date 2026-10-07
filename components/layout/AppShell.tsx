@@ -93,7 +93,9 @@ export default function AppShell({
       {/* Column layout: the top bar is a FULL-WIDTH rail across the whole viewport
           (it spans over the sidebar too, and carries the brand), with the sidebar
           and the content sitting side by side underneath it. */}
-      <div className="flex min-h-screen w-full flex-col bg-transparent">
+      {/* data-app-screen: the whole screen, as the dashboard's picture keeps it
+          (components/dashboard/DashboardPicture). */}
+      <div data-app-screen className="flex min-h-screen w-full flex-col bg-transparent">
         <Suspense fallback={null}>
           <TopNavigationProgress />
         </Suspense>
