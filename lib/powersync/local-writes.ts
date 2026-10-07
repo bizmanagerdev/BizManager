@@ -1,5 +1,11 @@
 import type { AbstractPowerSyncDatabase, CrudEntry } from "@powersync/web";
 import { computeInsertSortOrder } from "@/lib/tasks/sortOrder";
+import {
+  newCustomerRow,
+  parseNewCustomerBranches,
+  parseNewCustomerContacts,
+  type NewCustomerInput,
+} from "@/lib/customers/new-customer";
 
 // Saves made on the device copy first ("instant saves"): the change is written
 // into the person's own copy — so every page drawn from it shows it at once —
@@ -144,8 +150,67 @@ export async function addCommentOnDevice(
   ]);
 }
 
+// ── Customers ────────────────────────────────────────────────────────────────
+// Created on the phone first (the + menu's customer form, the new-customer
+// form inside the project / order forms). The row is the one the server
+// makes (lib/customers/new-customer.ts); its street, tags, contacts and
+// branches ride in `_extras` and go up with it in one request — the route
+// creates them right after the customer. They show once it's there.
+
+/** A new customer on the device copy. */
+export async function createCustomerOnDevice(db: Db, customer: { id: string; input: NewCustomerInput }): Promise<void> {
+  const { input } = customer;
+  const row = { ...newCustomerRow(input), linked_user_id: input.linked_user_id };
+  const extras = {
+    street: input.street,
+    tag_ids: input.tag_ids,
+    contacts: input.contacts,
+    branches: input.branches,
+    n: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  };
+  const columns = [...Object.keys(row), "created_at", "_extras"];
+  const values = [...Object.values(row).map(sqlValue), new Date().toISOString(), JSON.stringify(extras)];
+  await db.execute(
+    `INSERT INTO customers (id, ${columns.join(", ")}) VALUES (?, ${columns.map(() => "?").join(", ")})`,
+    [customer.id, ...values]
+  );
+}
+
+function customerCreateBody(id: string, data: Record<string, unknown>): Record<string, unknown> {
+  let extras: Record<string, unknown> = {};
+  try {
+    extras = typeof data._extras === "string" && data._extras ? (JSON.parse(data._extras) as Record<string, unknown>) : {};
+  } catch {
+    extras = {};
+  }
+  const flag = (value: unknown) => value === 1 || value === true;
+  return {
+    id,
+    name: data.name ?? "",
+    name_for_invoice: data.name_for_invoice ?? null,
+    registration_number: data.registration_number ?? null,
+    phone: data.phone ?? null,
+    whatsapp: data.whatsapp ?? null,
+    email: data.email ?? null,
+    city: data.city ?? "",
+    address: typeof extras.street === "string" ? extras.street : null,
+    notes: data.notes ?? null,
+    requires_prepayment: flag(data.requires_prepayment),
+    linked_user_id: data.linked_user_id ?? null,
+    tag_ids: Array.isArray(extras.tag_ids) ? extras.tag_ids.filter((v): v is string => typeof v === "string") : [],
+    contacts: parseNewCustomerContacts(extras.contacts),
+    branches: parseNewCustomerBranches(extras.branches),
+  };
+}
+
 /** What a device save turned into on the server. */
-export type DeviceSaveKind = "task-status" | "task-delete" | "task-create" | "task-update" | "task-comment";
+export type DeviceSaveKind =
+  | "task-status"
+  | "task-delete"
+  | "task-create"
+  | "task-update"
+  | "task-comment"
+  | "customer-create";
 
 /** One queued device save, as the API route it goes through. */
 export type DeviceSaveRequest = { kind: DeviceSaveKind; url: string; body: Record<string, unknown> };
@@ -200,6 +265,11 @@ export async function requestForChange(
       url: "/api/tasks/add-comment",
       body: { id: op.id, task_id: data.task_id, message: data.body },
     };
+  }
+  if (op.table === "customers") {
+    // Only creating one is saved on the phone so far (edits still go to the server).
+    if (kind !== "PUT") return null;
+    return { kind: "customer-create", url: "/api/customers/create", body: customerCreateBody(op.id, data) };
   }
   if (op.table !== "tasks") return null;
 

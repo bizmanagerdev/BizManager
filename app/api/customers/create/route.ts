@@ -4,9 +4,12 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { syncEntityTags, parseTagIds } from "@/lib/tags";
 import { CUSTOMER_CORE_SELECT, isMissingLinkColumn, type QueryError } from "@/lib/customers/workerLink";
-import { normalizeIsraeliPhone } from "@/lib/phone";
+import { clientRowId } from "@/lib/client-row-id";
+import { newCustomerRow, parseNewCustomerBranches, parseNewCustomerContacts } from "@/lib/customers/new-customer";
 
 type CreateCustomerPayload = {
+  /** The id the app gave it (saved on the phone first) — else the database picks one. */
+  id?: unknown;
   name?: string;
   name_for_invoice?: string | null;
   registration_number?: string | null;
@@ -20,6 +23,9 @@ type CreateCustomerPayload = {
   /** The users row that is the same person as this customer (worker who buys from us). */
   linked_user_id?: string | null;
   tag_ids?: unknown;
+  /** Its contacts and branches, created right after it (the phone sends them all in one change). */
+  contacts?: unknown;
+  branches?: unknown;
 };
 
 export async function POST(req: Request) {
@@ -30,23 +36,10 @@ export async function POST(req: Request) {
 
     return await withIdempotency(req, supabase, user.id, "customers/create", async () => {
     const body = (await req.json()) as CreateCustomerPayload;
+    const clientId = clientRowId(body.id);
 
     const name = typeof body.name === "string" ? body.name.trim() : "";
-    const phone = normalizeIsraeliPhone(typeof body.phone === "string" ? body.phone.trim() : null);
-    const whatsapp = typeof body.whatsapp === "string" ? body.whatsapp.trim() : null;
-    const email = typeof body.email === "string" ? body.email.trim() : "";
     const city = typeof body.city === "string" ? body.city.trim() : "";
-    const address = typeof body.address === "string" ? body.address.trim() : "";
-    const nameForInvoice =
-      typeof body.name_for_invoice === "string" && body.name_for_invoice.trim()
-        ? body.name_for_invoice.trim()
-        : null;
-    const registrationNumber =
-      typeof body.registration_number === "string"
-        ? body.registration_number.trim()
-        : null;
-    const notes = typeof body.notes === "string" ? body.notes.trim() : null;
-    const requiresPrepayment = body.requires_prepayment === true;
     const linkedUserId =
       typeof body.linked_user_id === "string" && body.linked_user_id.trim()
         ? body.linked_user_id.trim()
@@ -58,20 +51,21 @@ export async function POST(req: Request) {
     if (!city) {
       return NextResponse.json({ error: "עיר היא שדה חובה לתיאום משלוחים." }, { status: 400 });
     }
-    const fullAddress = address ? `${city} | ${address}` : city;
-
+    // The same row the phone writes when it saves first (lib/customers/new-customer.ts).
     const baseRow = {
-      name,
-      name_for_invoice: nameForInvoice ?? name,
-      registration_number: registrationNumber,
-      phone,
-      whatsapp,
-      city,
-      email: email || null,
-      address: fullAddress || null,
-      active: true,
-      notes,
-      requires_prepayment: requiresPrepayment,
+      ...(clientId ? { id: clientId } : {}),
+      ...newCustomerRow({
+        name,
+        name_for_invoice: typeof body.name_for_invoice === "string" ? body.name_for_invoice : null,
+        registration_number: typeof body.registration_number === "string" ? body.registration_number : null,
+        phone: typeof body.phone === "string" ? body.phone : null,
+        whatsapp: typeof body.whatsapp === "string" ? body.whatsapp : null,
+        email: typeof body.email === "string" ? body.email : null,
+        city,
+        street: typeof body.address === "string" ? body.address : null,
+        notes: typeof body.notes === "string" ? body.notes : null,
+        requires_prepayment: body.requires_prepayment === true,
+      }),
     };
 
     // The worker link is best-effort: on a database that is still missing the
@@ -94,6 +88,15 @@ export async function POST(req: Request) {
     }
 
     if (error) {
+      if (clientId && error.code === "23505") {
+        // Sent again after its answer was lost: the customer it already made.
+        const { data: existing } = await supabase
+          .from("customers")
+          .select(CUSTOMER_CORE_SELECT)
+          .eq("id", clientId)
+          .maybeSingle();
+        if (existing) return NextResponse.json({ customer: existing });
+      }
       if (linkedUserId && error.code === "23505") {
         return NextResponse.json({ error: "העובד שנבחר כבר מקושר ללקוח אחר." }, { status: 400 });
       }
@@ -107,7 +110,32 @@ export async function POST(req: Request) {
       createdBy: user.id,
     });
 
-    return NextResponse.json({ customer: data });
+    // Contacts and branches sent with it. The customer itself is made either
+    // way: a contact or branch that fails is reported back, not a failed save.
+    const contacts = parseNewCustomerContacts(body.contacts);
+    const branches = parseNewCustomerBranches(body.branches);
+    const problems: string[] = [];
+    let createdContacts: Record<string, unknown>[] = [];
+    if (contacts.length > 0) {
+      const { data: rows, error: contactsError } = await supabase
+        .from("contacts")
+        .insert(contacts.map((contact) => ({ customer_id: data.id, ...contact })))
+        .select("id,customer_id,full_name,role,phone,email,whatsapp,is_primary,active,notes");
+      if (contactsError) problems.push(`אנשי קשר: ${toHebrewError(contactsError.message)}`);
+      else createdContacts = (rows ?? []) as Record<string, unknown>[];
+    }
+    if (branches.length > 0) {
+      const { error: branchesError } = await supabase
+        .from("customer_branches")
+        .insert(branches.map((branch) => ({ customer_id: data.id, ...branch })));
+      if (branchesError) problems.push(`סניפים: ${toHebrewError(branchesError.message)}`);
+    }
+
+    return NextResponse.json({
+      customer: data,
+      ...(contacts.length > 0 ? { contacts: createdContacts } : {}),
+      ...(problems.length > 0 ? { partial: problems.join(" · ") } : {}),
+    });
     });
   } catch (err: unknown) {
     const message = toHebrewError(err, "שגיאה לא ידועה");

@@ -33,6 +33,7 @@ export default function DeviceSaveNotices({ locale }: { locale: Locale }) {
       "task-create": t(tasksDict, locale, "toastErrorCreateTask"),
       "task-update": t(tasksDict, locale, "toastErrorUpdateTask"),
       "task-comment": t(tasksDict, locale, "toastErrorAddComment"),
+      "customer-create": "הלקוח לא נשמר",
     };
     const onRefused = (event: Event) => {
       const { kind, message } = (event as CustomEvent<DeviceSaveRefused>).detail;

@@ -208,6 +208,10 @@ const customers = new Table(
     delivery_lat: text,
     delivery_lng: text,
     linked_user_id: text,
+    // Local only (never synced): what a customer saved on the phone first
+    // sends with it — its street, tags, contacts and branches
+    // (lib/powersync/local-writes.ts).
+    _extras: text,
   },
   { indexes: { by_name: ["name"] } }
 );

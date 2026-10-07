@@ -18,6 +18,7 @@ import { TagPicker, fetchExistingTagIds } from "@/components/tags/TagPicker";
 import { WorkerLinkField } from "@/components/customers/WorkerLinkField";
 import { TagIcon } from "@/components/ui/icons";
 import { fetchCustomerCore } from "@/lib/customers/fetchCustomerCore";
+import { deviceCustomerSaves } from "@/lib/customers/device-customer-saves";
 import { fetchCustomerContactsDirect, fetchCustomerBranchesDirect, updateCustomerBranchDirect } from "@/lib/customers/branchesContacts";
 
 export type CustomerRecord = {
@@ -415,6 +416,54 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
     const branchesToSave = branches.filter((b) => !b._deleted);
     const missingBranchName = branchesToSave.find((b) => !b.name.trim());
     if (missingBranchName) return setError("יש למלא שם בכל סניף.");
+
+    // A new customer is saved on the phone first where the pages are drawn
+    // from it (lib/customers/device-customer-saves.ts): it's picked in the
+    // form at once, with no connection too, and goes to the server — with its
+    // contacts and branches — in the background.
+    const deviceSaves = !isEdit ? deviceCustomerSaves() : null;
+    if (deviceSaves) {
+      setSubmitting(true);
+      try {
+        const result = await deviceSaves.create({
+          name: trimName,
+          name_for_invoice: invoiceName.trim() || null,
+          registration_number: reg.trim() || null,
+          phone: trimPhone || null,
+          whatsapp: whatsapp.trim() || null,
+          email: email.trim() || null,
+          city: finalCity,
+          street: street || null,
+          notes: notes.trim() || null,
+          requires_prepayment: requiresPrepayment,
+          linked_user_id: linkedUserId || null,
+          tag_ids: tagIds,
+          contacts: visible.map((c) => ({
+            full_name: c.full_name.trim(),
+            role: c.role.trim() || null,
+            phone: c.phone.trim() || null,
+            email: c.email.trim() || null,
+            whatsapp: c.whatsapp.trim() || null,
+            notes: c.notes.trim() || null,
+            is_primary: c.active ? c.is_primary : false,
+            active: c.active,
+          })),
+          branches: branchesToSave.map((b) => ({
+            name: b.name.trim(),
+            address: b.address.trim() || null,
+            phone: b.phone.trim() || null,
+            active: b.active,
+          })),
+        });
+        invalidateCustomerSearchIndex();
+        onSaved(result);
+      } catch (e: unknown) {
+        setError(toHebrewError(e, "יצירת לקוח נכשלה."));
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
 
     setSubmitting(true);
     try {

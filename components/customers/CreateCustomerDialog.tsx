@@ -21,6 +21,7 @@ import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
 import { WorkerLinkField } from "@/components/customers/WorkerLinkField";
 import { offlineFetch } from "@/lib/offline-queue";
+import { deviceCustomerSaves } from "@/lib/customers/device-customer-saves";
 
 export type CreatedCustomer = {
   id: string;
@@ -472,6 +473,34 @@ export function CreateCustomerDialog({
 
     setSubmitting(true);
     try {
+      // Saved on the phone first where the pages are drawn from it
+      // (lib/customers/device-customer-saves.ts): instant, offline too — the
+      // customer, its contacts and branches go to the server in the background.
+      const deviceSaves = deviceCustomerSaves();
+      if (deviceSaves) {
+        const saved = await deviceSaves.create({
+          name: trimName,
+          name_for_invoice: nameForInvoice.trim() || null,
+          registration_number: regNumber.trim() || null,
+          phone: trimPhone || null,
+          whatsapp: whatsapp.trim() || null,
+          email: email.trim() || null,
+          city: finalCity,
+          street: address.trim() || null,
+          notes: notes.trim() || null,
+          requires_prepayment: requiresPrepayment,
+          linked_user_id: linkedUserId || null,
+          tag_ids: [],
+          contacts: normalized,
+          branches: preparedBranches,
+        });
+        invalidateCustomerSearchIndex();
+        onCreated(saved.customer, saved.contacts);
+        reset();
+        onOpenChange(false);
+        return;
+      }
+
       const result = await offlineFetch(
         "/api/customers/create",
         {

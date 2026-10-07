@@ -35,6 +35,7 @@ import { omitUnknownPlace } from "@/lib/ui/cities";
 import { appendDictatedText } from "@/lib/dictation";
 import { PriceVatEntry, useVatRate } from "@/components/projects/PriceVatEntry";
 import { baseFromPriceEntry, projectPriceSplit, type ProjectPriceEntry } from "@/lib/projects/vat";
+import { whenDeviceSavesSent } from "@/lib/powersync/store";
 
 type Row = Record<string, unknown>;
 type Step =
@@ -666,6 +667,9 @@ export default function NewProjectClient({
           : null,
       };
 
+      // A customer just made on the phone may still be on its way to the
+      // server — the project must not get there first.
+      if (!isEditMode) await whenDeviceSavesSent();
       const result = isEditMode
         ? await offlineFetch("/api/projects/update", { id: initialProject!.id, ...payload }, "עדכון פרויקט")
         : await offlineFetch("/api/projects/create", payload, "פרויקט חדש", { idempotent: true });

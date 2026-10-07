@@ -61,6 +61,7 @@ import {
   toPositiveInt,
 } from "./NewOrderClient.ui";
 import { AddressLink } from "@/components/ui/address-link";
+import { whenDeviceSavesSent } from "@/lib/powersync/store";
 
 type Row = Record<string, unknown>;
 
@@ -853,6 +854,9 @@ export default function NewOrderClient({
       // response and returns it for any replay of the same key).
       const idempotencyHeaders: Record<string, string> = { "content-type": "application/json" };
       if (!isEditMode) idempotencyHeaders["Idempotency-Key"] = crypto.randomUUID();
+      // A customer just made on the phone may still be on its way to the
+      // server — the order must not get there first.
+      if (!isEditMode) await whenDeviceSavesSent();
       const res = await fetch(isEditMode ? "/api/orders/update" : "/api/orders/create", {
         method: "POST",
         headers: idempotencyHeaders,

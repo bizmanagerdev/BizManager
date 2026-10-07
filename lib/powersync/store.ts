@@ -135,3 +135,21 @@ export async function wipeLocalDataBeforeLogout(timeoutMs = 3000): Promise<void>
   const run = wipe;
   await Promise.race([run().catch(() => {}), new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))]);
 }
+
+/**
+ * Wait (up to `timeoutMs`) until the saves made on the device copy have all
+ * reached the server — before a save that goes straight to the server and
+ * may point at one of them (a project or order for a customer just made on
+ * the phone, which the server would otherwise not know yet). Returns at once
+ * when nothing is waiting, or there's no copy.
+ */
+export async function whenDeviceSavesSent(timeoutMs = 8000): Promise<void> {
+  const db = readyLocalDatabase();
+  if (!db) return;
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const row = await db.getOptional<{ n: number }>("SELECT count(*) AS n FROM ps_crud").catch(() => null);
+    if (!row || !row.n) return;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+}
