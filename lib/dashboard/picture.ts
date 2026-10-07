@@ -26,6 +26,12 @@ export const PICTURE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 export const PICTURE_BOX_ID = "bizh-dashboard-picture";
 /** Set on <html> while the picture is up. */
 export const PICTURE_SHOWING_ATTR = "data-dashboard-picture";
+/**
+ * The picture's kind: a picture kept by an older version of this code (say,
+ * just the cards, without the top bar) is never shown. Raise it whenever what
+ * a picture holds changes.
+ */
+const PICTURE_FORMAT = 3;
 /** A screen bigger than this isn't kept (it would crowd the device's storage). */
 const PICTURE_MAX_CHARS = 600_000;
 
@@ -33,6 +39,8 @@ const PICTURE_MAX_CHARS = 600_000;
 export const BOARD_PENDING_SELECTOR = '[data-skeleton], [aria-busy="true"]';
 
 type Picture = {
+  /** PICTURE_FORMAT when kept. */
+  v: number;
   /** Whose (users.id). */
   u: string;
   /** When it was kept. */
@@ -77,6 +85,7 @@ export function savePicture(userId: string, screen: HTMLElement, locale: Locale)
     const html = pictureHtml(screen);
     if (html.length > PICTURE_MAX_CHARS) return;
     const picture: Picture = {
+      v: PICTURE_FORMAT,
       u: userId,
       t: Date.now(),
       h: html,
@@ -140,7 +149,7 @@ export function pictureScript(userId: string, locale: Locale): string {
     `var b=document.getElementById(${json(PICTURE_BOX_ID)});if(!b)return;` +
     `var r=localStorage.getItem(${json(PICTURE_KEY)});if(!r)return;` +
     "var p=JSON.parse(r);" +
-    `if(p.u!==${json(userId)}||!(Date.now()-p.t<${PICTURE_MAX_AGE_MS})||typeof p.h!=="string")return;` +
+    `if(p.v!==${PICTURE_FORMAT}||p.u!==${json(userId)}||!(Date.now()-p.t<${PICTURE_MAX_AGE_MS})||typeof p.h!=="string")return;` +
     "if(p.vw!==window.innerWidth||Math.abs(p.vh-window.innerHeight)>2)return;" +
     "b.innerHTML=p.h;b.style.background=p.bg;" +
     // The greeting and the date, as of now.

@@ -100,6 +100,10 @@ describe("the dashboard's picture", () => {
     expect(runScript("u1").innerHTML).toBe("");
     localStorage.setItem(PICTURE_KEY, JSON.stringify({ ...stored, t: Date.now() - 8 * 24 * 60 * 60 * 1000 }));
     expect(runScript("u1").innerHTML).toBe("");
+    // Kept by an older version (just the cards, no top bar): never shown.
+    const { v: _format, ...older } = stored;
+    localStorage.setItem(PICTURE_KEY, JSON.stringify(older));
+    expect(runScript("u1").innerHTML).toBe("");
     expect(pictureShowing()).toBe(false);
   });
 
