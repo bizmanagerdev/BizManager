@@ -10,8 +10,12 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn() }) }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() }) }));
 
-const device = vi.hoisted(() => ({ db: {} as unknown }));
-vi.mock("@/lib/powersync/store", () => ({ readyLocalDatabase: () => device.db }));
+const device = vi.hoisted(() => ({
+  db: {} as unknown,
+  /** Where saves go: the device copy (a fake database recording its writes), or null — the server. */
+  saves: null as null | { db: { execute: ReturnType<typeof vi.fn>; getOptional: ReturnType<typeof vi.fn> }; viewerId: string },
+}));
+vi.mock("@/lib/powersync/store", () => ({ readyLocalDatabase: () => device.db, readyDeviceSaves: () => device.saves }));
 
 const card = vi.hoisted(() => ({
   task: {
@@ -57,6 +61,7 @@ const serverCard = {
 describe("the task form, opened from the device copy", () => {
   beforeEach(() => {
     saves.offlineFetch.mockClear();
+    device.saves = null;
     tags.promise = new Promise((resolve) => (tags.resolve = resolve));
     vi.stubGlobal(
       "fetch",
@@ -101,7 +106,7 @@ describe("the task form, opened from the device copy", () => {
     expect(vi.mocked(fetch).mock.calls.map((c) => c[0])).toContain("/api/tasks/get");
   });
 
-  it("an edit made straight away is saved — just the edit, the tags untouched", async () => {
+  it("an edit made straight away is saved — just the edit, the tags untouched (no device saves: the server)", async () => {
     render(
       <TaskUpsertDialog
         open
@@ -125,5 +130,32 @@ describe("the task form, opened from the device copy", () => {
     expect(saves.offlineFetch).toHaveBeenCalledTimes(1);
     expect(saves.offlineFetch.mock.calls[0][0]).toBe("/api/tasks/update");
     expect(saves.offlineFetch.mock.calls[0][1]).toEqual({ id: "t1", subject: "להתקשר לספק מחר" });
+  });
+
+  it("with device saves: the edit is written on the device copy — nothing sent from the form itself", async () => {
+    const execute = vi.fn(async () => ({}));
+    device.saves = { db: { execute, getOptional: vi.fn(async () => null) }, viewerId: "u1" };
+    render(
+      <TaskUpsertDialog
+        open
+        onOpenChange={() => {}}
+        mode="edit"
+        taskId="t1"
+        users={[{ id: "u1", label: "אני" }]}
+        projects={[]}
+        properties={[]}
+        customers={[]}
+        currentUserId="u1"
+        locale="he"
+      />
+    );
+    await act(async () => {});
+    fireEvent.change(screen.getByDisplayValue("להתקשר לספק"), { target: { value: "להתקשר לספק מחר" } });
+    await act(async () => {
+      tags.resolve(["tag-a"]);
+    });
+    await waitFor(() => expect(execute).toHaveBeenCalled(), { timeout: 5000 });
+    expect(execute).toHaveBeenCalledWith("UPDATE tasks SET subject = ? WHERE id = ?", ["להתקשר לספק מחר", "t1"]);
+    expect(saves.offlineFetch).not.toHaveBeenCalled();
   });
 });

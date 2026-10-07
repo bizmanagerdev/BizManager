@@ -1,5 +1,6 @@
 "use client";
 
+import { saveTaskStatus } from "@/lib/tasks/device-task-saves";
 import { useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -10,7 +11,6 @@ import DashboardCardFooter from "@/components/dashboard/DashboardCardFooter";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { toHebrewError } from "@/lib/error-messages";
-import { offlineFetch } from "@/lib/offline-queue";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
 import { refreshAlerts } from "@/lib/ui/alerts-store";
 import { buildWeekView } from "@/lib/dashboard/week";
@@ -212,15 +212,14 @@ export default function TodayScheduleCard({
           return next;
         }),
       onCommit: async () => {
+        let onDevice = false;
         if (entry.kind === "task") {
-          const result = await offlineFetch(
-            "/api/tasks/update-status",
-            { id: entry.id, status: "done" },
-            t(dashboardDict, locale, "markTaskDoneQueued")
-          );
+          // On the device copy when there is one (lib/tasks/device-task-saves.ts).
+          const result = await saveTaskStatus(entry.id, "done", t(dashboardDict, locale, "markTaskDoneQueued"));
           if (!result.queued && !result.ok) {
             return { ok: false, error: toHebrewError(result.error, t(dashboardDict, locale, "actionFailed")) };
           }
+          onDevice = result.onDevice;
         } else {
           const res = await fetch("/api/reminders/action", {
             method: "POST",
@@ -231,7 +230,7 @@ export default function TodayScheduleCard({
           if (!res.ok) return { ok: false, error: toHebrewError(json.error, t(dashboardDict, locale, "actionFailed")) };
         }
         refreshAlerts();
-        startTransition(() => { router.refresh(); });
+        if (!onDevice) startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });

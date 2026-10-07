@@ -2,14 +2,23 @@ import type { CommonPowerSyncDatabase, PowerSyncBackendConnector, PowerSyncCrede
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { withSentry } from "@/lib/sentry-lazy";
 import { POWERSYNC_URL } from "./config";
-import { DEVICE_SAVE_REFUSED_EVENT, requestForChange, type DeviceSaveRefused, type DeviceSaveRequest } from "./local-writes";
+import {
+  DEVICE_SAVE_REFUSED_EVENT,
+  DEVICE_SAVE_SENT_EVENT,
+  requestForChange,
+  type DeviceSaveRefused,
+  type DeviceSaveRequest,
+  type DeviceSaveSent,
+} from "./local-writes";
 
 // How the device copy talks to the outside world:
 // - downloads: PowerSync checks the person's Supabase login token (its
 //   instance is set up with Supabase auth) and sends what the sync rules allow;
 // - uploads: saves made on the device copy (lib/powersync/local-writes.ts —
-//   the tasks board's moves, reorders and deletes) go through our own API
-//   routes, so permission checks, reminders and the history log keep running.
+//   tasks created, edited, moved, deleted; comments added) go through our own
+//   API routes, so permission checks, notifications, reminders and the
+//   history log keep running. Each carries an Idempotency-Key, so a change
+//   sent again after its answer was lost is never applied twice.
 
 /** Refresh a token this close to expiry before handing it over. */
 const REFRESH_WITHIN_MS = 60_000;
@@ -43,13 +52,18 @@ function announceRefusal(detail: DeviceSaveRefused) {
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(DEVICE_SAVE_REFUSED_EVENT, { detail }));
 }
 
-/** Send one change; throws RetryLater when it should be tried again. */
-async function send(request: DeviceSaveRequest): Promise<void> {
+/** Tell pages a change has reached the server (those drawn by the server refresh). */
+function announceSent(detail: DeviceSaveSent) {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(DEVICE_SAVE_SENT_EVENT, { detail }));
+}
+
+/** Send one change; throws RetryLater when it should be tried again. `key`: the change's own Idempotency-Key. */
+async function send(request: DeviceSaveRequest, key: string): Promise<void> {
   let res: Response;
   try {
     res = await fetch(request.url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Idempotency-Key": key },
       credentials: "same-origin",
       body: JSON.stringify(request.body),
     });
@@ -96,21 +110,27 @@ export class BizConnector implements PowerSyncBackendConnector {
   async uploadData(database: CommonPowerSyncDatabase): Promise<void> {
     const transaction = await database.getNextCrudTransaction();
     if (!transaction) return;
-    const currentStatus = async (id: string) =>
-      (await database.getOptional<{ status: string | null }>("SELECT status FROM tasks WHERE id = ?", [id]))?.status ?? null;
+    const currentTask = (id: string) =>
+      database.getOptional<Record<string, unknown>>(
+        "SELECT status, business_domain, project_id, property_id FROM tasks WHERE id = ?",
+        [id]
+      );
 
     for (const op of transaction.crud) {
       if (this.sent.has(op.clientId)) continue;
-      const request = await requestForChange(op, currentStatus);
+      const request = await requestForChange(op, currentTask);
       if (!request) {
         // Nothing sends this kind of change (yet): drop it rather than block the queue.
         reportDropped(null, "no route for this change", { table: op.table, op: op.op });
         continue;
       }
       try {
-        await send(request);
+        // The row's id and the change's place in this device's queue: the same
+        // change always carries the same key, two changes never share one.
+        await send(request, `ps:${op.table}:${op.id}:${op.op}:${op.clientId}`);
         this.tries.delete(op.clientId);
         this.sent.add(op.clientId);
+        announceSent({ kind: request.kind, id: op.id });
       } catch (error) {
         if (!(error instanceof RetryLater)) throw error;
         if (!error.counts) throw error;

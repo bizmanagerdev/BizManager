@@ -1,4 +1,5 @@
 "use client";
+import { saveTaskStatus } from "@/lib/tasks/device-task-saves";
 import { toHebrewError } from "@/lib/error-messages";
 
 import { useState, useTransition } from "react";
@@ -64,6 +65,13 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
           return next;
         }),
       onCommit: async () => {
+        // A task's status: on the device copy when there is one (lib/tasks/device-task-saves.ts).
+        if (url === "/api/tasks/update-status") {
+          const result = await saveTaskStatus(String(body.id), String(body.status), "עדכון סטטוס משימה");
+          if (!result.queued && !result.ok) return { ok: false, error: toHebrewError(result.error, "הפעולה נכשלה.") };
+          if (!result.onDevice) startTransition(() => { router.refresh(); });
+          return { ok: true };
+        }
         const res = await fetch(url, {
           method: "POST",
           headers: { "content-type": "application/json" },

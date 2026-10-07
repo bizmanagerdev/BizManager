@@ -131,6 +131,9 @@ export function coerceRow(table: string, row: Row): Row {
   const jsons = JSON_COLUMNS[table] ?? [];
   for (const [key, raw] of Object.entries(row)) {
     if (SYNTHETIC_ID_TABLES.has(table) && key === "id") continue;
+    // The device's own bookkeeping (a task's queued extras, lib/powersync/
+    // local-writes.ts) — not a column Postgres has, so no page ever sees it.
+    if (key.startsWith("_")) continue;
     if (raw === null || raw === undefined) {
       out[key] = null;
     } else if (booleans.includes(key)) {

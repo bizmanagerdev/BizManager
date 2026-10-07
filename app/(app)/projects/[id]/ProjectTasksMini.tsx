@@ -4,12 +4,12 @@
 // are done, a filter, one line per task, and a way to add another. The full
 // board lives on /tasks — this is the "what's left on this project" view.
 
+import { saveTaskStatus } from "@/lib/tasks/device-task-saves";
 import { useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { AddIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { offlineFetch } from "@/lib/offline-queue";
 import { toHebrewError } from "@/lib/error-messages";
 import { formatShortDate } from "@/lib/date";
 import type { AssignableUser } from "@/app/(app)/projects/[id]/ProjectTabsClient";
@@ -96,17 +96,15 @@ export default function ProjectTasksMini({
     // wait on a round trip.
     setLocalDone((prev) => ({ ...prev, [id]: next }));
     try {
-      const result = await offlineFetch(
-        "/api/tasks/update-status",
-        { id, status: next ? "done" : "todo" },
-        "עדכון סטטוס משימה"
-      );
+      // On the device copy when there is one (lib/tasks/device-task-saves.ts) —
+      // this page then refreshes once it has reached the server.
+      const result = await saveTaskStatus(id, next ? "done" : "todo", "עדכון סטטוס משימה");
       if (!result.queued && !result.ok) {
         setLocalDone((prev) => ({ ...prev, [id]: !next }));
         toast.error("שגיאה בעדכון סטטוס", { description: toHebrewError(result.error, "") });
         return;
       }
-      onChange();
+      if (!result.onDevice) onChange();
     } catch (error: unknown) {
       setLocalDone((prev) => ({ ...prev, [id]: !next }));
       toast.error("שגיאה בעדכון סטטוס", { description: toHebrewError(error, "") });

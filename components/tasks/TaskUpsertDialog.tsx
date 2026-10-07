@@ -40,6 +40,7 @@ import { taskShowsFromDate } from "@/lib/tasks/visibility";
 import { fetchExistingTagIds } from "@/components/tags/TagPicker";
 import { readyLocalDatabase } from "@/lib/powersync/store";
 import { readTaskCardFromDevice } from "@/lib/tasks/device-task-card";
+import { deviceTaskSaves } from "@/lib/tasks/device-task-saves";
 import {
   isExpenseBusinessDomain,
   mapProjectTypeToExpenseDomain,
@@ -343,6 +344,11 @@ export function TaskUpsertDialog(rawProps: Props) {
   const saveChainRef = useRef<Promise<void>>(Promise.resolve());
   // Anything saved while open → the board refreshes once, when it closes.
   const savedSomethingRef = useRef(false);
+  // Any of this open's saves went straight to the server (not the device copy):
+  // the list it came from is refreshed on close. Device saves need none — the
+  // pages drawn from the copy show them, and the others refresh once they've
+  // reached the server (components/powersync/DeviceSaveNotices).
+  const savedOnServerRef = useRef(false);
   // The card as it was when opened — to tell, on close, whether this session's
   // edits pushed it out of the list until later (see announceIfWaiting).
   const openedPayloadRef = useRef<TaskPayload | null>(null);
@@ -648,6 +654,7 @@ export function TaskUpsertDialog(rawProps: Props) {
       savedPayloadRef.current = null;
       baselinePendingRef.current = false;
       savedSomethingRef.current = false;
+      savedOnServerRef.current = false;
       setAutosaveState("idle");
       setActiveTaskId(props.taskId);
       const prefill = props.prefill?.id === props.taskId ? props.prefill : null;
@@ -734,6 +741,14 @@ export function TaskUpsertDialog(rawProps: Props) {
     if (!targetId) return;
     emitProgressActivityStart();
     try {
+      // On the device copy when there is one (instant; the server still checks
+      // it's the owner, and a refusal is shown and undone).
+      const device = deviceTaskSaves();
+      if (device) {
+        await device.update(targetId, { is_private: next });
+        props.onSaved?.();
+        return;
+      }
       const result = await offlineFetch(
         "/api/tasks/update",
         { id: targetId, is_private: next },
@@ -803,6 +818,20 @@ export function TaskUpsertDialog(rawProps: Props) {
     emitProgressActivityStart();
     try {
       const base = buildPayload();
+      // On the device copy when there is one: each task is there at once, and
+      // goes up to the server on its own (waiting for the connection if need be).
+      const device = deviceTaskSaves();
+      if (device) {
+        for (const line of subjectLines) await device.create({ ...base, subject: line });
+        if (pendingFiles.length > 0) {
+          toast.warning(t(tasksDict, props.locale, "filesNotAttachedManual"));
+          setPendingFiles([]);
+        }
+        clearDraft("task-create");
+        props.onSaved?.();
+        props.onOpenChange(false);
+        return;
+      }
       const failed: string[] = [];
       for (const line of subjectLines) {
         try {
@@ -863,6 +892,18 @@ export function TaskUpsertDialog(rawProps: Props) {
     emitProgressActivityStart();
     try {
       const payload = { ...buildPayload(), ...(override?.subject ? { subject: override.subject } : {}) };
+      // On the device copy when there is one: the task is there at once (same
+      // id once the server has it), and goes up on its own. Files to attach
+      // need the task on the server first — those still go the server's way.
+      const device = pendingFiles.length === 0 ? deviceTaskSaves() : null;
+      if (device) {
+        const created = await device.create(payload);
+        clearDraft("task-create");
+        announceIfWaiting(payload.status, payload.due_date, payload.reminders.map((r) => r.remind_at));
+        props.onSaved?.(created as unknown as Record<string, unknown>);
+        props.onOpenChange(false);
+        return;
+      }
       const result = await offlineFetch(
         "/api/tasks/create",
         payload,
@@ -922,6 +963,17 @@ export function TaskUpsertDialog(rawProps: Props) {
     if (!diff || !canSubmitRef.current) return;
     setAutosaveState("saving");
     try {
+      // On the device copy when there is one: saved the moment it's written,
+      // sent in the background (waiting for the connection if need be).
+      const device = deviceTaskSaves();
+      if (device) {
+        await device.update(targetId, diff);
+        savedPayloadRef.current = { ...base, ...diff };
+        savedSomethingRef.current = true;
+        setAutosaveState("saved");
+        return;
+      }
+      savedOnServerRef.current = true;
       const result = await offlineFetch(
         "/api/tasks/update",
         { id: targetId, ...diff },
@@ -955,6 +1007,16 @@ export function TaskUpsertDialog(rawProps: Props) {
     setAddingComment(true);
     emitProgressActivityStart();
     try {
+      // On the device copy when there is one: it's in the thread at once and
+      // goes up on its own.
+      const device = deviceTaskSaves();
+      if (device) {
+        const added = await device.addComment(targetId, newComment.trim());
+        const authorName = props.users.find((u) => u.id === added.author_id)?.label ?? null;
+        setComments((prev) => [...prev, { ...added, author_name: authorName, body_he: null } as CommentItem]);
+        setNewComment("");
+        return;
+      }
       const result = await offlineFetch(
         "/api/tasks/add-comment",
         { task_id: targetId, message: newComment.trim() },
@@ -1219,6 +1281,15 @@ export function TaskUpsertDialog(rawProps: Props) {
     setSaving(true);
     emitProgressActivityStart();
     try {
+      // On the device copy when there is one: gone at once, deleted on the
+      // server in the background.
+      const device = deviceTaskSaves();
+      if (device) {
+        await device.remove(targetId);
+        props.onSaved?.();
+        props.onOpenChange(false);
+        return;
+      }
       const result = await offlineFetch(
         "/api/tasks/delete",
         { id: targetId },
@@ -1381,7 +1452,7 @@ export function TaskUpsertDialog(rawProps: Props) {
         opened !== null && taskShowsFromDate({ status: opened.status, dueDate: opened.due_date, nextReminderAt: pendingReminderDates[0] ?? null }) !== null;
       if (saved && !wasWaiting) announceIfWaiting(saved.status, saved.due_date, pendingReminderDates);
       props.onSaved?.();
-      startTransition(() => { router.refresh(); });
+      if (savedOnServerRef.current) startTransition(() => { router.refresh(); });
     });
   }
 

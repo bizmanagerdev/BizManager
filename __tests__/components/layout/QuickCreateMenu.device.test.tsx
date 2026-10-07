@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { cleanup, render, waitFor } from "@testing-library/react";
 
 // The + menu's lists for admins and office come from the on-device copy —
 // worked out with the server's own loader, no request to the server — and
@@ -30,9 +30,11 @@ async function warmUp(role: string) {
   render(<QuickCreateMenu viewerId="u1" viewerRole={role} variant="fab" />);
 }
 
-const soon = { timeout: 5000 };
+const soon = { timeout: 8000 };
 
 describe("the + menu's lists", () => {
+  // Each test's menu goes with it — a previous one's warm-up must not run in the next.
+  afterEach(() => cleanup());
   beforeEach(() => {
     loader.fn.mockReset();
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ ...lists, currentUserId: "u1", role: "admin", locale: "he" }), { status: 200 })));

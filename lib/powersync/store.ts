@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { CommonPowerSyncDatabase } from "@powersync/web";
+import { localDataPageFor } from "./config";
 
 // The open on-device database and its sync status, for any component to read.
 // Deliberately free of PowerSync runtime imports: pages and the top bar read
@@ -32,6 +33,24 @@ function emit(next: State) {
 function subscribe(listener: () => void) {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+/** Who the open copy belongs to (LocalDataHost keeps it): for saves made on the device. */
+let viewer: { id: string; role: string } | null = null;
+
+export function setLocalViewer(next: { id: string; role: string } | null) {
+  viewer = next;
+}
+
+/**
+ * Where to save on the device copy first (lib/tasks/device-task-saves.ts):
+ * the complete copy and whose it is — for the people whose task pages are
+ * drawn from it (localDataPageFor) — else null: save on the server.
+ */
+export function readyDeviceSaves(): { db: CommonPowerSyncDatabase; viewerId: string } | null {
+  const db = readyLocalDatabase();
+  if (!db || !viewer || !localDataPageFor("tasks", viewer.role)) return null;
+  return { db, viewerId: viewer.id };
 }
 
 /**

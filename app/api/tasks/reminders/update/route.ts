@@ -10,7 +10,7 @@ export async function POST(req: Request) {
       id?: string;
       status?: string;
       remind_at?: string;
-      content?: string;
+      content?: string | null;
     };
 
     const id = typeof body.id === "string" ? body.id.trim() : "";
@@ -27,8 +27,9 @@ export async function POST(req: Request) {
     if (typeof body.remind_at === "string" && body.remind_at.trim()) {
       updates.remind_at = body.remind_at.trim();
     }
-    if (typeof body.content === "string") {
-      updates.content = body.content.trim() || null;
+    // A note emptied in the form arrives as null — cleared, like an empty string.
+    if (typeof body.content === "string" || body.content === null) {
+      updates.content = (typeof body.content === "string" ? body.content.trim() : "") || null;
     }
 
     const { data, error } = await supabase

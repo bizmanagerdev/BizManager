@@ -9,6 +9,7 @@ import { notifyTaskAssignees } from "@/lib/notifications/task-assignment";
 import { runAfterResponse } from "@/lib/after-response";
 import { translateToHebrew } from "@/lib/i18n/translateToHebrew";
 import { computeInsertSortOrder } from "@/lib/tasks/sortOrder";
+import { clientRowId } from "@/lib/client-row-id";
 
 function validateTaskLinkArgs(args: {
   businessDomain: string | null;
@@ -59,7 +60,10 @@ export async function POST(req: Request) {
       is_private?: boolean | null;
       tag_ids?: unknown;
       reminders?: Array<{ remind_at?: string | null; content?: string | null }> | null;
+      /** The id the app gave the task (a task made on the phone first), else the database picks one. */
+      id?: unknown;
     };
+    const clientId = clientRowId(body.id);
 
     const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
     const propertyId = typeof body.property_id === "string" ? body.property_id.trim() : "";
@@ -131,6 +135,7 @@ export async function POST(req: Request) {
     const { data, error } = await supabase
       .from("tasks")
       .insert({
+        ...(clientId ? { id: clientId } : {}),
         business_domain: businessDomain,
         project_id: hasProject ? projectId : null,
         property_id: hasProperty ? propertyId : null,
@@ -158,6 +163,19 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (error) {
+      // The app's own id already taken: this very task, sent again (its first
+      // answer was lost on the way) — it's done, so say so. Anyone else's row
+      // with that id simply isn't readable, and stays a refusal.
+      if (clientId && (error as { code?: string }).code === "23505") {
+        const { data: existing } = await supabase
+          .from("tasks")
+          .select(
+            "id,business_domain,project_id,property_id,customer_id,assigned_user_id,subject,description,subject_he,description_he,due_date,due_time,city,address,priority,status,created_at,updated_at,sort_order"
+          )
+          .eq("id", clientId)
+          .maybeSingle();
+        if (existing) return NextResponse.json({ task: existing });
+      }
       return NextResponse.json({ error: normalizeTaskWriteError(error.message) }, { status: 400 });
     }
     if (data?.id) {

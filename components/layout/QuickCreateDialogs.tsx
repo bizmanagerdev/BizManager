@@ -247,7 +247,9 @@ export default function QuickCreateDialogs({
         customers={data.taskCustomers}
         locale={data.locale}
         onSaved={(created) => {
-          startTransition(() => { router.refresh(); });
+          // No refresh here: the dialog refreshes after a save on the server,
+          // and a task saved on the device copy shows on the pages drawn from it
+          // (the others refresh once it's reached the server).
           const id = created && typeof created.id === "string" ? created.id : "";
           if (id) {
             toast.success(HEBREW.taskSaved, {

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { translateToHebrew } from "@/lib/i18n/translateToHebrew";
+import { clientRowId } from "@/lib/client-row-id";
 
 export async function POST(req: Request) {
   try {
@@ -11,7 +12,9 @@ export async function POST(req: Request) {
     const { supabase, user, profile } = access.value;
 
     return await withIdempotency(req, supabase, user.id, "tasks/add-comment", async () => {
-    const body = (await req.json()) as { task_id?: string; message?: string };
+    // id: the one the app gave the comment (written on the phone first), else the database picks one.
+    const body = (await req.json()) as { task_id?: string; message?: string; id?: unknown };
+    const clientId = clientRowId(body.id);
     const taskId = typeof body.task_id === "string" ? body.task_id : "";
     const message = typeof body.message === "string" ? body.message.trim() : "";
 
@@ -25,11 +28,28 @@ export async function POST(req: Request) {
 
     const { data, error } = await supabase
       .from("task_comments")
-      .insert({ task_id: taskId, author_id: profile.id, body: message, body_he: bodyHe })
+      .insert({ ...(clientId ? { id: clientId } : {}), task_id: taskId, author_id: profile.id, body: message, body_he: bodyHe })
       .select("id,author_id,body,body_he,created_at")
       .maybeSingle();
 
-    if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
+    if (error) {
+      // This very comment, sent again (its first answer was lost): it's there.
+      if (clientId && (error as { code?: string }).code === "23505") {
+        const { data: existing } = await supabase
+          .from("task_comments")
+          .select("id,author_id,body,body_he,created_at")
+          .eq("id", clientId)
+          .eq("author_id", profile.id)
+          .maybeSingle();
+        if (existing) {
+          return NextResponse.json({
+            ok: true,
+            comment: { ...existing, author_name: profile.full_name ?? profile.email ?? null },
+          });
+        }
+      }
+      return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
+    }
 
     return NextResponse.json({
       ok: true,

@@ -12,7 +12,9 @@ const device = vi.hoisted(() => ({ status: null as { hasSynced: boolean } | null
 vi.mock("@/lib/powersync/store", () => ({
   useLocalSyncStatus: () => device.status,
   registerLocalDataWipe: () => {},
+  setLocalViewer: () => {},
 }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {} }) }));
 vi.mock("@/lib/powersync/database", () => ({
   openLocalDatabase: async () => ({}),
   closeLocalDatabase: async () => {},

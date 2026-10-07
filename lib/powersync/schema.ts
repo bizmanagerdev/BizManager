@@ -60,6 +60,11 @@ const tasks = new Table(
     description_ar: text,
     sort_order: real,
     completed_at: text,
+    // Local only — never sent down by the server, so a sync clears it: what
+    // goes up with a change made on the device that isn't a column of the row
+    // (its members, tags, the reminders set while creating it). See
+    // lib/powersync/local-writes.ts.
+    _extras: text,
   },
   { indexes: { by_assignee: ["assigned_user_id"], by_status: ["status"], by_project: ["project_id"] } }
 );

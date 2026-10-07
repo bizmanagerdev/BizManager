@@ -55,7 +55,7 @@ import type { Locale } from "@/lib/i18n/types";
 import { t } from "@/lib/i18n/t";
 import { commonDict } from "@/lib/i18n/dictionaries/common";
 import { tasksDict } from "@/lib/i18n/dictionaries/tasks";
-import { useDeviceTaskSaves } from "@/components/powersync/DeviceTaskSaves";
+import { deviceTaskSaves } from "@/lib/tasks/device-task-saves";
 
 const TaskUpsertDialog = dynamic(
   () => import("@/components/tasks/TaskUpsertDialog").then((mod) => mod.TaskUpsertDialog),
@@ -1005,13 +1005,13 @@ export default function TasksPageClient(props: Props) {
     urlDomain === "logistics_projects" ? "project" : urlDomain === "property_management" ? "property" : "";
   const linkedOptions = linkedTarget === "project" ? props.projects : linkedTarget === "property" ? props.properties : [];
 
-  // Saves on the device copy when this board is drawn from it (instant: every
-  // page from the copy shows the change at once, and it goes up to the server
-  // on its own — lib/powersync/local-writes.ts); otherwise, or if the copy
-  // can't take it, straight to the server as before.
-  const deviceSaves = useDeviceTaskSaves();
+  // Saves on the device copy when there is one (instant: every page from the
+  // copy shows the change at once, and it goes up to the server on its own —
+  // lib/tasks/device-task-saves.ts); otherwise, or if the copy can't take it,
+  // straight to the server as before.
   const saveTaskMove = useCallback(
     async (id: string, status: string, sortOrder: number): Promise<OfflineFetchResult> => {
+      const deviceSaves = deviceTaskSaves();
       if (deviceSaves) {
         try {
           await deviceSaves.move(id, status, sortOrder);
@@ -1026,10 +1026,11 @@ export default function TasksPageClient(props: Props) {
         t(tasksDict, props.locale, "updateStatusOfflineLabel")
       );
     },
-    [deviceSaves, props.locale]
+    [props.locale]
   );
   const saveTaskDelete = useCallback(
     async (id: string): Promise<OfflineFetchResult> => {
+      const deviceSaves = deviceTaskSaves();
       if (deviceSaves) {
         try {
           await deviceSaves.remove(id);
@@ -1040,7 +1041,7 @@ export default function TasksPageClient(props: Props) {
       }
       return offlineFetch("/api/tasks/delete", { id }, t(tasksDict, props.locale, "deleteTaskLabel"));
     },
-    [deviceSaves, props.locale]
+    [props.locale]
   );
 
   const moveTask = useCallback(
@@ -1247,6 +1248,26 @@ export default function TasksPageClient(props: Props) {
   // creates them all, rather than one card with a paragraph for a name.
   async function quickAdd(status: string, titles: string[]) {
     if (titles.length === 0) return;
+    // On the device copy when there is one: each card is a real task at once
+    // (the server gets it in the background, waiting for a connection if need
+    // be) — the board, drawn from the copy, shows them by itself.
+    const device = deviceTaskSaves();
+    if (device) {
+      try {
+        for (const subject of titles) {
+          await device.create({
+            subject,
+            status,
+            business_domain: "general_business",
+            priority: "medium",
+            assigned_user_id: props.currentUserId,
+          });
+        }
+      } catch (error: unknown) {
+        toast.error(t(tasksDict, props.locale, "toastErrorCreateTask"), { description: toHebrewError(error, "") });
+      }
+      return;
+    }
     emitProgressActivityStart();
     try {
       let created = 0;
@@ -1867,9 +1888,13 @@ export default function TasksPageClient(props: Props) {
               ];
             });
           }
-          startTransition(() => {
-            router.refresh();
-          });
+          // Saved on the device copy, the board already shows it (drawn from
+          // the copy); saved on the server, the board reads it again.
+          if (!deviceTaskSaves()) {
+            startTransition(() => {
+              router.refresh();
+            });
+          }
         }}
       />
 

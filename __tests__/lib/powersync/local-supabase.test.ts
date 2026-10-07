@@ -51,6 +51,10 @@ function fakeReader(tables: Record<string, Row[]>): LocalReader & { queries: str
 }
 
 describe("value shapes (PowerSync → PostgREST)", () => {
+  it("the device's own bookkeeping columns never reach a page", () => {
+    expect(coerceRow("tasks", { id: "t1", subject: "x", _extras: '{"member_ids":["u1"]}' })).toEqual({ id: "t1", subject: "x" });
+  });
+
   it("turns 1/0 into booleans, numeric text into numbers, json text into objects", () => {
     expect(
       coerceRow("orders", { id: "o1", collect_payment_on_delivery: 1, needs_invoice: 0, total_amount: "120.50", notes: "x" })

@@ -2,6 +2,7 @@
 
 // Lazy-loaded "tasks" tab, extracted from ProjectTabsClient so its code only
 // downloads when the user opens the משימות tab.
+import { saveTaskStatus } from "@/lib/tasks/device-task-saves";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -334,13 +335,11 @@ export function ProjectTasksTab({
         onTaskUpdated?.(id, { status: previousStatus });
       },
       onCommit: async () => {
-        const result = await offlineFetch(
-          "/api/tasks/update-status",
-          { id, status },
-          "עדכון סטטוס משימה"
-        );
+        // On the device copy when there is one (lib/tasks/device-task-saves.ts) —
+        // this page then refreshes once it has reached the server.
+        const result = await saveTaskStatus(id, status, "עדכון סטטוס משימה");
         if (!result.queued && !result.ok) return { ok: false, error: toHebrewError(result.error, "") };
-        onChange();
+        if (!result.onDevice) onChange();
         return { ok: true };
       },
     });

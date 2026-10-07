@@ -1,4 +1,5 @@
 "use client";
+import { saveTaskStatus } from "@/lib/tasks/device-task-saves";
 import { toHebrewError } from "@/lib/error-messages";
 
 import { useMemo, useState, useTransition } from "react";
@@ -13,7 +14,6 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { formatShortDate } from "@/lib/date";
-import { offlineFetch } from "@/lib/offline-queue";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
 import type { DashboardTask } from "@/lib/dashboard/tasks-overview";
 import { t } from "@/lib/i18n/t";
@@ -114,15 +114,12 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
           return next;
         }),
       onCommit: async () => {
-        const result = await offlineFetch(
-          "/api/tasks/update-status",
-          { id, status: "done" },
-          t(dashboardDict, locale, "markTaskDoneQueued")
-        );
+        // On the device copy when there is one (lib/tasks/device-task-saves.ts).
+        const result = await saveTaskStatus(id, "done", t(dashboardDict, locale, "markTaskDoneQueued"));
         if (!result.queued && !result.ok) {
           return { ok: false, error: toHebrewError(result.error, t(dashboardDict, locale, "actionFailed")) };
         }
-        startTransition(() => { router.refresh(); });
+        if (!result.onDevice) startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });

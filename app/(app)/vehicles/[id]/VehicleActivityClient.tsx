@@ -1,5 +1,6 @@
 "use client";
 
+import { saveTaskStatus } from "@/lib/tasks/device-task-saves";
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -586,14 +587,11 @@ export default function VehicleActivityClient({
       message: nextStatus === "done" ? "המשימה סומנה כהושלמה." : "המשימה הוחזרה לביצוע.",
       patch: { status: nextStatus },
       onCommit: async () => {
-        const res = await fetch("/api/tasks/update-status", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id: t.id, status: nextStatus }),
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "עדכון הסטטוס נכשל.") };
-        refresh();
+        // On the device copy when there is one (lib/tasks/device-task-saves.ts) —
+        // this page then refreshes once it has reached the server.
+        const result = await saveTaskStatus(t.id, nextStatus, "עדכון סטטוס משימה");
+        if (!result.queued && !result.ok) return { ok: false, error: toHebrewError(result.error, "עדכון הסטטוס נכשל.") };
+        if (!result.onDevice) refresh();
         return { ok: true };
       },
     });

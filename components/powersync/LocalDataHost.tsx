@@ -3,7 +3,8 @@
 import { useEffect } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { closeLocalDatabase, openLocalDatabase } from "@/lib/powersync/database";
-import { registerLocalDataWipe, useLocalSyncStatus } from "@/lib/powersync/store";
+import { registerLocalDataWipe, setLocalViewer, useLocalSyncStatus } from "@/lib/powersync/store";
+import DeviceSaveNotices from "@/components/powersync/DeviceSaveNotices";
 import { clearStoredResults } from "@/lib/powersync/stored-results";
 import { clearPicture } from "@/lib/dashboard/picture";
 import { withSentry } from "@/lib/sentry-lazy";
@@ -31,6 +32,12 @@ import { setDeviceCopyPending } from "@/lib/powersync/device-pending";
 // moment it has, they switch over by themselves.
 export default function LocalDataHost({ viewer }: { viewer?: LocalCardViewer }) {
   const viewerId = viewer?.userId;
+  const viewerRole = viewer?.role;
+  // Whose the copy is, for the saves made on it (lib/tasks/device-task-saves.ts).
+  useEffect(() => {
+    setLocalViewer(viewerId && viewerRole ? { id: viewerId, role: viewerRole } : null);
+    return () => setLocalViewer(null);
+  }, [viewerId, viewerRole]);
   useEffect(() => {
     if (!viewerId) return;
     clearStoredResults(viewerId);
@@ -89,5 +96,10 @@ export default function LocalDataHost({ viewer }: { viewer?: LocalCardViewer }) 
     };
   }, []);
 
-  return viewer ? <LocalPagesWarmup viewer={viewer} /> : null;
+  return (
+    <>
+      <DeviceSaveNotices locale={viewer?.locale ?? "he"} />
+      {viewer ? <LocalPagesWarmup viewer={viewer} /> : null}
+    </>
+  );
 }
