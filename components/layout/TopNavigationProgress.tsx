@@ -15,7 +15,12 @@ const ROUTE_LOADING_SELECTOR = "[data-route-loading='true']";
 // loading screen comes in the same frame as the new address (measured on a
 // phone-size production build), so this is only a small safety margin.
 const SKELETON_APPEAR_WAIT_MS = 50;
-const MIN_VISIBLE_MS = 180;
+// A page move (or save) that's done within this long shows no bar at all: an
+// opening drawn at once from the phone's copy, or a page opened before, had a
+// bar flash over it that read as "the page, then the bar" (owner, 2026-10-07:
+// "when open is instant no bar"). Longer ones get the bar, which then ends the
+// moment the page is on screen — no minimum time on screen.
+const SHOW_AFTER_MS = 150;
 const FAILSAFE_MS = 12000;
 // How long the bar takes to fade out after it fills to 100%. Kept short so the
 // bar clears the moment content is ready instead of lingering.
@@ -58,11 +63,13 @@ export function TopNavigationProgress() {
   const [visible, setVisible] = useState(false);
   const [progress, setProgress] = useState(0);
 
+  // Painted (after SHOW_AFTER_MS) vs. under way (from the tap on).
   const visibleRef = useRef(false);
+  const activeRef = useRef(false);
+  const showTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRouteChangeRef = useRef(false);
   const activityCountRef = useRef(0);
   const fromRouteKeyRef = useRef("");
-  const navStartedAtRef = useRef<number>(0);
   const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const finalizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const observerRef = useRef<MutationObserver | null>(null);
@@ -96,23 +103,32 @@ export function TopNavigationProgress() {
     }
   }, []);
 
-  const hideAfterMinVisible = useCallback(() => {
-    const elapsed = Date.now() - navStartedAtRef.current;
-    const wait = Math.max(0, MIN_VISIBLE_MS - elapsed);
+  // Done: a bar that never got painted just doesn't appear; one that did
+  // fills to the end and fades.
+  const finish = useCallback(() => {
+    clearAllTimers();
+    activeRef.current = false;
+    if (showTimerRef.current) {
+      clearTimeout(showTimerRef.current);
+      showTimerRef.current = null;
+    }
+    if (!visibleRef.current) {
+      setProgress(0);
+      return;
+    }
+    setProgress(100);
     finalizeTimerRef.current = setTimeout(() => {
-      setProgress(100);
-      finalizeTimerRef.current = setTimeout(() => {
-        setVisible(false);
-        setProgress(0);
-      }, FILL_TO_HIDE_MS);
-    }, wait);
-  }, []);
+      visibleRef.current = false;
+      setVisible(false);
+      setProgress(0);
+    }, FILL_TO_HIDE_MS);
+  }, [clearAllTimers]);
 
   const finalizeIfIdle = useCallback(() => {
     if (pendingRouteChangeRef.current) return;
     if (activityCountRef.current > 0) return;
-    hideAfterMinVisible();
-  }, [hideAfterMinVisible]);
+    finish();
+  }, [finish]);
 
   const monitorSkeletonLifecycle = useCallback(() => {
     clearAllTimers();
@@ -152,23 +168,32 @@ export function TopNavigationProgress() {
 
     // Hard failsafe.
     setTimeout(() => {
-      if (!visible) return;
+      if (!activeRef.current) return;
       disconnectObserver();
       clearAllTimers();
       finalizeIfIdle();
     }, FAILSAFE_MS);
-  }, [clearAllTimers, disconnectObserver, finalizeIfIdle, visible]);
+  }, [clearAllTimers, disconnectObserver, finalizeIfIdle]);
 
   useEffect(() => {
     function ensureStarted() {
       clearAllTimers();
       disconnectObserver();
-      navStartedAtRef.current = Date.now();
-      if (!visibleRef.current) {
-        setVisible(true);
-        setProgress((prev) => (prev > 18 ? prev : 18));
-      } else {
-        setProgress((prev) => (prev > 18 ? prev : 18));
+      if (!activeRef.current) {
+        activeRef.current = true;
+        // A bar still fading out from the last one goes now; this one is
+        // painted only if it isn't done within SHOW_AFTER_MS.
+        if (visibleRef.current) {
+          visibleRef.current = false;
+          setVisible(false);
+        }
+        setProgress(18);
+        showTimerRef.current = setTimeout(() => {
+          showTimerRef.current = null;
+          if (!activeRef.current) return;
+          visibleRef.current = true;
+          setVisible(true);
+        }, SHOW_AFTER_MS);
       }
 
       progressTimerRef.current = setInterval(() => {
@@ -194,7 +219,7 @@ export function TopNavigationProgress() {
     }
 
     function contentShown() {
-      if (!visibleRef.current || !pendingRouteChangeRef.current) return;
+      if (!activeRef.current || !pendingRouteChangeRef.current) return;
       // The address catching up afterwards doesn't start the wait again.
       pendingRouteChangeRef.current = false;
       clearAllTimers();
@@ -257,21 +282,18 @@ export function TopNavigationProgress() {
       window.removeEventListener("popstate", handlePopState);
       clearAllTimers();
       disconnectObserver();
+      if (showTimerRef.current) clearTimeout(showTimerRef.current);
     };
   }, [clearAllTimers, disconnectObserver, finalizeIfIdle]);
 
   useEffect(() => {
-    visibleRef.current = visible;
-  }, [visible]);
-
-  useEffect(() => {
-    if (!visible) return;
+    if (!activeRef.current) return;
     if (!pendingRouteChangeRef.current) return;
     if (routeKey === fromRouteKeyRef.current) return;
 
     pendingRouteChangeRef.current = false;
     monitorSkeletonLifecycle();
-  }, [monitorSkeletonLifecycle, routeKey, visible]);
+  }, [monitorSkeletonLifecycle, routeKey]);
 
   if (!visible) return null;
 
