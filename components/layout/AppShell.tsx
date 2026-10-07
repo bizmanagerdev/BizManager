@@ -17,6 +17,7 @@ import SessionWatcher from "@/components/layout/SessionWatcher";
 import NotificationsRealtime from "@/components/notifications/NotificationsRealtime";
 import FontScaleSync from "@/components/layout/FontScaleSync";
 import FocusHighlighter from "@/components/layout/FocusHighlighter";
+import LayoutShiftReport from "@/components/layout/LayoutShiftReport";
 import type { SidebarNavItem } from "@/components/layout/nav-items";
 import { useNavItems } from "@/components/layout/nav-items";
 import { DEFAULT_SECTION_ACCESS, type SectionAccess } from "@/lib/auth/sections";
@@ -93,9 +94,7 @@ export default function AppShell({
       {/* Column layout: the top bar is a FULL-WIDTH rail across the whole viewport
           (it spans over the sidebar too, and carries the brand), with the sidebar
           and the content sitting side by side underneath it. */}
-      {/* data-app-screen: the whole screen, as the dashboard's picture keeps it
-          (components/dashboard/DashboardPicture). */}
-      <div data-app-screen className="flex min-h-screen w-full flex-col bg-transparent">
+      <div className="flex min-h-screen w-full flex-col bg-transparent">
         <Suspense fallback={null}>
           <TopNavigationProgress />
         </Suspense>
@@ -111,6 +110,7 @@ export default function AppShell({
         <AuthLockToasts />
         <UndoHotkeyListener />
         <ConnectionTelemetry />
+        <LayoutShiftReport />
         {localDataEnabledFor(viewerRole) ? (
           <LocalDataHost
             viewer={

@@ -47,16 +47,13 @@ export default function DashboardGreetingTitle({
   // useMemo is NOT optional: useSetPageTitle stores the node in state and lists
   // it as an effect dependency, so a fresh element every render would set state
   // on every render — an infinite loop.
-  // data-dashboard-greeting / data-greeting-text: the dashboard's picture
-  // waits for the greeting to be in the bar, and brings its own copy of it up
-  // to the hour (components/dashboard/DashboardPicture).
   const title = useMemo(
     () => (
-      <span data-dashboard-greeting="">
-        <span data-greeting-text="">{greeting}</span>
+      <>
+        {greeting}
         {name ? <span className="hidden sm:inline">, {name}</span> : null}
         <span aria-hidden> 👋</span>
-      </span>
+      </>
     ),
     [greeting, name]
   );

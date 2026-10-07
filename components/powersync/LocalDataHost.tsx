@@ -6,7 +6,6 @@ import { closeLocalDatabase, openLocalDatabase } from "@/lib/powersync/database"
 import { registerLocalDataWipe, setLocalViewer, useLocalSyncStatus } from "@/lib/powersync/store";
 import DeviceSaveNotices from "@/components/powersync/DeviceSaveNotices";
 import { clearStoredResults } from "@/lib/powersync/stored-results";
-import { clearPicture } from "@/lib/dashboard/picture";
 import { withSentry } from "@/lib/sentry-lazy";
 import type { LocalCardViewer } from "@/lib/powersync/dashboard-local";
 import LocalPagesWarmup from "@/components/powersync/LocalPagesWarmup";
@@ -46,7 +45,6 @@ export default function LocalDataHost({ viewer }: { viewer?: LocalCardViewer & {
   useEffect(() => {
     if (!viewerId) return;
     clearStoredResults(viewerId);
-    clearPicture(viewerId);
     keepDeviceFramesFor(viewerId);
   }, [viewerId]);
 
@@ -78,7 +76,6 @@ export default function LocalDataHost({ viewer }: { viewer?: LocalCardViewer & {
     const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_OUT") {
         clearStoredResults();
-        clearPicture();
         void clearDeviceFrames();
         void closeLocalDatabase({ wipe: true });
       } else if (event === "SIGNED_IN" && session?.user.id) {
@@ -88,7 +85,6 @@ export default function LocalDataHost({ viewer }: { viewer?: LocalCardViewer & {
 
     registerLocalDataWipe(() => {
       clearStoredResults();
-      clearPicture();
       return closeLocalDatabase({ wipe: true });
     });
 

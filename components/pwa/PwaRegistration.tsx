@@ -85,12 +85,25 @@ export default function PwaRegistration() {
     // chunks — e.g. a device stuck on an old bundle recovers with no manual cache clearing.
     // Guarded against reload loops; skips the first install (no prior controller) so new
     // visitors don't double-load.
+    //
+    // Never in the middle of use (owner, 2026-10-07: switching fast between pages, the app
+    // "jumps back as if it just loaded" — the new version arrives a few seconds after the
+    // app opens, and a reload then lands on whatever page the address still names, often
+    // the one being left). Only while the app is in the background: at once if it already
+    // is, else the next time it goes there. Meanwhile, moving to another page already
+    // loads the new version — Next does a full load of the destination when the server's
+    // build differs from the running one.
     const hadController = Boolean(navigator.serviceWorker.controller);
-    const onControllerChange = () => {
-      if (!hadController) return;
+    let reloadWhenHidden = false;
+    const reloadOnce = () => {
       if (sessionStorage.getItem("__sw_reloaded__")) return;
       sessionStorage.setItem("__sw_reloaded__", "1");
       window.location.reload();
+    };
+    const onControllerChange = () => {
+      if (!hadController) return;
+      if (document.visibilityState === "hidden") reloadOnce();
+      else reloadWhenHidden = true;
     };
     navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
 
@@ -112,6 +125,11 @@ export default function PwaRegistration() {
     // than the threshold. Time-gated, not every tab-switch, to avoid
     // refreshing on a quick glance at another app.
     const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden" && reloadWhenHidden) {
+        reloadWhenHidden = false;
+        reloadOnce();
+        return;
+      }
       if (document.visibilityState !== "visible") return;
       const now = Date.now();
       if (now - lastRevalidatedAtRef.current < RESUME_REVALIDATE_MS) return;

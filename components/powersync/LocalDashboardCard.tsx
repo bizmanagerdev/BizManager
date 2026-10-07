@@ -39,7 +39,8 @@ export default function LocalDashboardCard<K extends LocalCardKind>({
   const data = result?.data ?? null;
 
   if (data === null) {
-    return <Skeleton className={cn("h-16 w-full rounded-[1.125rem] xl:h-full", fillClassName)} />;
+    // As tall as this card last stood on this device (the cell's --held-h).
+    return <Skeleton className={cn("h-[var(--held-h,4rem)] w-full rounded-[1.125rem] xl:h-full", fillClassName)} />;
   }
 
   const { locale } = viewer;

@@ -1,4 +1,7 @@
-import { Suspense, type ReactNode } from "react";
+import { Suspense, type CSSProperties, type ReactNode } from "react";
+import { cookies } from "next/headers";
+import HeldHeight from "@/components/dashboard/HeldHeight";
+import { HELD_HEIGHTS_COOKIE, parseHeldHeights } from "@/lib/ui/held-heights";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { t } from "@/lib/i18n/t";
@@ -184,11 +187,14 @@ function Cell({
   fill,
   tier,
   order,
+  heldHeight,
 }: {
   item: WidgetItem;
   fill: boolean;
   tier?: "hero-fill" | "hero-header" | "secondary" | "tertiary";
   order: number;
+  /** Phone layout: how tall this card last stood on this device (lib/ui/held-heights.ts). */
+  heldHeight?: number;
 }) {
   return (
     // `empty:hidden` because a card can decide at RUNTIME that it has nothing to
@@ -209,9 +215,14 @@ function Cell({
     //
     // Desktop only: on a phone there's no pointer to hover with, and a tap that
     // leaves a card scaled reads as broken.
+    //
+    // Phone layout: the card's loading placeholder is as tall as the card last
+    // stood on this device (--held-h, from HeldHeight's cookie), so the card
+    // fills a box already the right size instead of pushing everything below
+    // it down. "Empty" ignores HeldHeight's own marker.
     <div
       className={cn(
-        "min-w-0 transition-transform duration-200 ease-out empty:hidden xl:relative xl:hover:z-10 xl:hover:scale-[1.015]",
+        "min-w-0 transition-transform duration-200 ease-out [&:not(:has(>:not([data-held-marker])))]:hidden xl:relative xl:hover:z-10 xl:hover:scale-[1.015]",
         fill ? CARD_FILL_CLASS : CARD_NATURAL_CLASS,
         tier === "hero-fill" ? HERO_EMPHASIS_FILL_CLASS : null,
         tier === "hero-header" ? HERO_EMPHASIS_HEADER_CLASS : null,
@@ -221,9 +232,16 @@ function Cell({
       // viewTransitionName pairs this cell's before and after when the board
       // repacks, so a card SLIDES to its new spot instead of jumping there —
       // see withViewTransition, which drives the updates that cause a repack.
-      style={{ order, viewTransitionName: cardTransitionName(String(item.id)) }}
+      style={
+        {
+          order,
+          viewTransitionName: cardTransitionName(String(item.id)),
+          ...(heldHeight ? { "--held-h": `${heldHeight}px` } : null),
+        } as CSSProperties
+      }
     >
       {item.node}
+      <HeldHeight id={String(item.id)} />
     </div>
   );
 }
@@ -238,7 +256,7 @@ function Cell({
  * swaps it out.
  */
 function SlowCardSkeleton() {
-  return <Skeleton className={cn("h-16 w-full rounded-[1.125rem] xl:h-full", CARD_FILL_CLASS)} />;
+  return <Skeleton className={cn("h-[var(--held-h,4rem)] w-full rounded-[1.125rem] xl:h-full", CARD_FILL_CLASS)} />;
 }
 
 /**
@@ -519,6 +537,8 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
   // a device whose copy is still incomplete (devicePageOn).
   const localMode = !forceServer && (await devicePageOn("dashboard", profile));
   const localViewer = { userId: profile.id, role: role ?? "", locale };
+  // How tall each card last stood on this device's phone layout (its placeholder's height).
+  const heldHeights = parseHeldHeights((await cookies()).get(HELD_HEIGHTS_COOKIE)?.value);
   // The device-copy shadow check (lib/powersync/dashboard-shadow.ts): the
   // figures below are also worked out on the device and compared. Read time
   // first, so the device only compares once its copy is at least this fresh.
@@ -898,8 +918,16 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
             fill
             tier={fewCards ? "hero-fill" : "hero-header"}
             order={boardOrder.get(hero.id) ?? 0}
+            heldHeight={heldHeights[String(hero.id)]}
           />
-          {shiftCard ? <Cell item={shiftCard} fill={false} order={boardOrder.get(shiftCard.id) ?? 0} /> : null}
+          {shiftCard ? (
+            <Cell
+              item={shiftCard}
+              fill={false}
+              order={boardOrder.get(shiftCard.id) ?? 0}
+              heldHeight={heldHeights[String(shiftCard.id)]}
+            />
+          ) : null}
         </div>
       ) : null}
 
@@ -914,6 +942,7 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
                   fill
                   tier={fewCards ? undefined : "secondary"}
                   order={boardOrder.get(item.id) ?? 0}
+                  heldHeight={heldHeights[String(item.id)]}
                 />
               ))}
             </div>
@@ -922,7 +951,14 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
           {hasTertiary ? (
             <div className={TERTIARY_CELL_CLASS}>
               {tertiary.map((item) => (
-                <Cell key={item.id} item={item} fill tier="tertiary" order={boardOrder.get(item.id) ?? 0} />
+                <Cell
+                  key={item.id}
+                  item={item}
+                  fill
+                  tier="tertiary"
+                  order={boardOrder.get(item.id) ?? 0}
+                  heldHeight={heldHeights[String(item.id)]}
+                />
               ))}
             </div>
           ) : null}

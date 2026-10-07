@@ -7,7 +7,6 @@ import { firstAccessiblePrefix, hasSectionAccess, isStaffRole } from "@/lib/auth
 import DashboardGreetingTitle from "@/components/dashboard/DashboardGreetingTitle";
 import { firstNameOf, greetingForHour, viewerHour } from "@/lib/dashboard/greeting";
 import { DashboardPanels, PanelsFallback } from "@/app/(app)/dashboard/DashboardSections";
-import { DashboardPictureKeeper } from "@/components/dashboard/DashboardPicture";
 
 export const revalidate = 60;
 
@@ -61,12 +60,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           a little higher... theres no real top bar now"). DASHBOARD_BOARD_CLASS's
           own height calc is trimmed by the same lg amount, so the board grows
           into the reclaimed space instead of leaving it empty at the bottom. */}
-      {/* The dashboard as it last stood on this device is on screen the
-          instant the app opens (DashboardPictureFrame, in the app's frame);
-          this hands over to the live screen as soon as it looks the same, and
-          keeps it for next time. */}
-      <DashboardPictureKeeper userId={profile.id} locale={profile.locale} />
-      <PageStack data-dashboard-board className="-mt-2 md:-mt-3 lg:-mt-4">
+      <PageStack className="-mt-2 md:-mt-3 lg:-mt-4">
         <Suspense fallback={<PanelsFallback />}>
           {/* ?data=server: the device-copy cards' fallback to the server version. */}
           <DashboardPanels forceServer={dataSource === "server"} />

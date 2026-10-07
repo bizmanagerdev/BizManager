@@ -753,16 +753,3 @@ body:has(.dark-topbar-page) #page-header-toolbar {
     display: flex;
   }
 }
-
-/* The dashboard's picture (components/dashboard/DashboardPicture.tsx): the
-   whole screen as it last stood, over everything while the live one is drawn.
-   Should the app's code never take over, it goes after 6 seconds. */
-html[data-dashboard-picture] #bizh-dashboard-picture {
-  animation: dashboard-picture-drop 0s linear 6s forwards;
-}
-
-@keyframes dashboard-picture-drop {
-  to {
-    visibility: hidden;
-  }
-}

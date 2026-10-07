@@ -10,18 +10,9 @@ import { lastNavigationStart } from "@/lib/ui/navigation-timing";
 //   afterServerMs — from that answer to the page's content on screen: the
 //              app's code loading, the device's work, drawing;
 //   computeMs — of that, the device working the content out (when it did);
-//   paintMs  — from the content being ready to it being painted;
-//   pictureMs — on an opening of the dashboard, when the picture of the board
-//              as it last stood went up (components/dashboard/DashboardPicture).
+//   paintMs  — from the content being ready to it being painted.
 
 export type TimingSource = "device" | "kept" | "stored";
-
-declare global {
-  interface Window {
-    /** When the dashboard's picture went up (lib/dashboard/picture.ts pictureScript). */
-    __bizhPictureAt?: number;
-  }
-}
 
 type TimingLoad = "full" | "navigation";
 
@@ -102,7 +93,6 @@ export function reportPageTiming({
     computeMs: computeMs === undefined ? null : round(computeMs),
     paintMs: round(paintedAt - committedAt),
     size: size ?? null,
-    pictureMs: navStart === 0 && typeof window.__bizhPictureAt === "number" ? round(window.__bizhPictureAt) : null,
   };
   withSentry((Sentry) => {
     if (!underDailyLimit(page, load)) return;
