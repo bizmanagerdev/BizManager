@@ -66,6 +66,8 @@ export async function loadProjectsPickerOptions(supabase: SupabaseClient): Promi
       .from("users")
       .select("id,full_name,email,active")
       .order("full_name", { ascending: true })
+      // Same names (or none) in one order everywhere — the device's too.
+      .order("id")
       .range(0, OPTIONS_PAGE_SIZE - 1),
     // Straight from customers: customer_overview_view would total every
     // customer's orders, projects and payments just to name 50 of them.
@@ -73,6 +75,7 @@ export async function loadProjectsPickerOptions(supabase: SupabaseClient): Promi
       .from("customers")
       .select("id,name,name_for_invoice,phone,email")
       .order("name", { ascending: true })
+      .order("id")
       .range(0, OPTIONS_PAGE_SIZE - 1),
   ]);
 
