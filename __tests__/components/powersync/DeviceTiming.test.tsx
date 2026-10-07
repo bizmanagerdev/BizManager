@@ -37,10 +37,25 @@ describe("the device pages' timing report", () => {
     expect(sentry.captureMessage).toHaveBeenCalledTimes(11);
   });
 
+  it("app openings have their own, larger allowance — trying them again and again doesn't use up the moves'", () => {
+    const today = new Date().toISOString().slice(0, 10);
+    nav.start = 0; // an opening: the page load itself
+    // The moves' ten are used up; the openings' aren't.
+    localStorage.setItem(`bizh-timing:${today}:dashboard:myTasks:navigation`, "10");
+    localStorage.setItem(`bizh-timing:${today}:dashboard:myTasks:full`, "29");
+    reportPageTiming({ page: "dashboard:myTasks", source: "stored", committedAt: 400, paintedAt: 450 });
+    expect(sentry.captureMessage).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem(`bizh-timing:${today}:dashboard:myTasks:full`)).toBe("30");
+    // Thirty openings: that's the day's.
+    localStorage.setItem(`bizh-timing:${today}:dashboard:todayAlerts:full`, "30");
+    reportPageTiming({ page: "dashboard:todayAlerts", source: "stored", committedAt: 400, paintedAt: 450 });
+    expect(sentry.captureMessage).toHaveBeenCalledTimes(1);
+  });
+
   it("an opening of the dashboard says when its picture went up", () => {
     nav.start = 0; // the page load itself
     window.__bizhPictureAt = 120.4;
-    reportPageTiming({ page: "dashboard:myTasks", source: "stored", committedAt: 500, paintedAt: 520 });
+    reportPageTiming({ page: "dashboard:deliveries", source: "stored", committedAt: 500, paintedAt: 520 });
     delete window.__bizhPictureAt;
     expect(sentry.captureMessage.mock.calls[0][1].extra).toMatchObject({ pictureMs: 120, totalMs: 520 });
   });

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import AppShell from "@/components/layout/AppShell";
 import SentryUser from "@/components/observability/SentryUser";
+import { DashboardPictureFrame } from "@/components/dashboard/DashboardPicture";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { payrollWorkerTypeAllowsSessions, payrollWorkerTypeGeneratesPayslips } from "@/lib/payroll-worker-type";
 
@@ -32,22 +33,28 @@ export default async function AppGroupLayout({ children }: { children: ReactNode
   };
 
   return (
-    <AppShell
-      userName={profile.full_name ?? profile.email ?? undefined}
-      viewerId={profile.id}
-      viewerRole={profile.role}
-      viewerLocale={profile.locale}
-      viewerSectionAccess={profile.section_access}
-      avatarColor={avatarColor}
-      initialMe={initialMe}
-    >
-      <SentryUser
-        id={profile.id}
-        email={profile.email}
-        fullName={profile.full_name}
-        role={profile.role}
-      />
-      {children}
-    </AppShell>
+    <>
+      {/* The dashboard's picture: up from the very first moment of an opening,
+          before the page (and its loading screen) — so it lives here, in the
+          frame, not in the page (components/dashboard/DashboardPicture). */}
+      <DashboardPictureFrame userId={profile.id} />
+      <AppShell
+        userName={profile.full_name ?? profile.email ?? undefined}
+        viewerId={profile.id}
+        viewerRole={profile.role}
+        viewerLocale={profile.locale}
+        viewerSectionAccess={profile.section_access}
+        avatarColor={avatarColor}
+        initialMe={initialMe}
+      >
+        <SentryUser
+          id={profile.id}
+          email={profile.email}
+          fullName={profile.full_name}
+          role={profile.role}
+        />
+        {children}
+      </AppShell>
+    </>
   );
 }

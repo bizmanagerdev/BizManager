@@ -755,16 +755,28 @@ body:has(.dark-topbar-page) #page-header-toolbar {
 }
 
 /* The dashboard's picture (components/dashboard/DashboardPicture.tsx): while
-   the board as it last stood is on screen, the live board beneath it is
-   hidden, keeping its place. Should the app's code never take over, the live
-   board shows anyway after 6 seconds. */
-[data-picture-showing] > [data-dashboard-board] {
+   the board as it last stood is on screen, what's beneath it — the page's
+   loading screen, then the live board — is hidden, keeping its place. Should
+   the app's code never take over, after 6 seconds the live board shows and
+   the picture goes. */
+html[data-dashboard-picture] [data-dashboard-board],
+html[data-dashboard-picture] [data-route-loading] {
   visibility: hidden;
   animation: dashboard-picture-hold 0s linear 6s forwards;
+}
+
+html[data-dashboard-picture] #bizh-dashboard-picture {
+  animation: dashboard-picture-drop 0s linear 6s forwards;
 }
 
 @keyframes dashboard-picture-hold {
   to {
     visibility: visible;
+  }
+}
+
+@keyframes dashboard-picture-drop {
+  to {
+    visibility: hidden;
   }
 }
