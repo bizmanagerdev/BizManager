@@ -37,6 +37,7 @@ export type QuickCreateData = QuickActionsData & {
 
 export const EMPTY_QUICK_CREATE_DATA: QuickCreateData = {
   customers: [],
+  taskCustomers: [],
   products: [],
   projects: [],
   orders: [],

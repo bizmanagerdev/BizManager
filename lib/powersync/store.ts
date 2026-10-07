@@ -34,6 +34,37 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener);
 }
 
+/**
+ * The open database once a complete copy is on the device, else null — for
+ * code outside React (hooks read useLocalDatabase / useLocalSyncStatus).
+ */
+export function readyLocalDatabase(): CommonPowerSyncDatabase | null {
+  return state.db && state.status?.hasSynced ? state.db : null;
+}
+
+/** readyLocalDatabase() as soon as there is one — or null after `timeoutMs`. */
+export function whenLocalDatabaseReady(timeoutMs: number): Promise<CommonPowerSyncDatabase | null> {
+  const now = readyLocalDatabase();
+  if (now) return Promise.resolve(now);
+  return new Promise((resolve) => {
+    const check = () => {
+      const db = readyLocalDatabase();
+      if (!db) return;
+      stop();
+      resolve(db);
+    };
+    const timer = setTimeout(() => {
+      stop();
+      resolve(null);
+    }, timeoutMs);
+    const stop = () => {
+      listeners.delete(check);
+      clearTimeout(timer);
+    };
+    listeners.add(check);
+  });
+}
+
 export function setLocalDatabase(db: CommonPowerSyncDatabase | null) {
   if (state.db === db) return;
   emit({ db, status: db ? state.status : null });

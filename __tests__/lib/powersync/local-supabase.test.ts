@@ -272,7 +272,8 @@ describe("views and directories", () => {
       })
     );
     const users = await db.rpc("user_directory").neq("role", "worker_no_access");
-    expect(users.data).toEqual([{ id: "u1", full_name: "א", avatar_color: undefined, role: "admin", active: true }]);
+    // No pay types in these rows (a worker's copy): whether someone logs shifts isn't known.
+    expect(users.data).toEqual([{ id: "u1", full_name: "א", avatar_color: undefined, role: "admin", active: true, logs_shifts: null }]);
     const props = await db.rpc("property_directory").eq("id", "pr1").maybeSingle();
     expect(props.data).toEqual({ id: "pr1", name: null, address: "רחוב 1", is_active: false });
   });
@@ -291,8 +292,8 @@ describe("views and directories", () => {
     );
     const everyone = await db.rpc("user_directory").order("full_name");
     expect(everyone.data).toEqual([
-      { id: "u1", full_name: "מנהל", avatar_color: "#123", role: "admin", active: true },
-      { id: "w1", full_name: "עובד", avatar_color: null, role: "worker", active: true },
+      { id: "u1", full_name: "מנהל", avatar_color: "#123", role: "admin", active: true, logs_shifts: null },
+      { id: "w1", full_name: "עובד", avatar_color: null, role: "worker", active: true, logs_shifts: null },
     ]);
     expect((await db.from("users").select("id,email").in("id", ["u1", "w1"])).data).toEqual([{ id: "w1", email: "w1@x" }]);
     expect((await db.rpc("property_directory")).data).toEqual([{ id: "pr1", name: "בית", address: "רחוב 1", is_active: true }]);
@@ -838,6 +839,126 @@ describe("the projects page's device version: tab counts and the dialog's lists"
     expect(withListCustomers(options.customerOptions, [{ customer_id: "c9", customer_name: "חדש" }]).map((c) => c.id)).toEqual([
       "c2", "c1", "c9",
     ]);
+  });
+});
+
+describe("the + menu's lists on the device", () => {
+  it("user_directory()'s logs_shifts follows the SQL's rule when the copy holds pay types", async () => {
+    const db = createLocalSupabase(
+      fakeReader({
+        users: [
+          { id: "w1", full_name: "קבלן", role: "worker", active: 1, payroll_worker_type: "session_only", pay_tracking_mode: null },
+          { id: "w2", full_name: "חודשי", role: "worker", active: 1, payroll_worker_type: "monthly_payslip", pay_tracking_mode: null },
+          { id: "w3", full_name: "ישן", role: "worker_no_access", active: 1, payroll_worker_type: null, pay_tracking_mode: null },
+          { id: "w4", full_name: "תלוש", role: "worker", active: 1, payroll_worker_type: null, pay_tracking_mode: "payslip" },
+          { id: "a1", full_name: "מנהל", role: "admin", active: 1, payroll_worker_type: null, pay_tracking_mode: null },
+        ],
+      })
+    );
+    const { data } = await db.rpc("user_directory").order("id");
+    expect((data as Array<{ id: string; logs_shifts: boolean }>).map((u) => [u.id, u.logs_shifts])).toEqual([
+      ["a1", false],
+      ["w1", true],
+      ["w2", false],
+      ["w3", true],
+      ["w4", false],
+    ]);
+  });
+
+  it("customer_overview_view: the display name and trimmed contact details; its totals are refused", async () => {
+    const db = createLocalSupabase(
+      fakeReader({
+        customers: [
+          { id: "c1", name: "  ", name_for_invoice: " חשבונית בע״מ ", phone: " 050 ", email: "", address: null, active: 1 },
+          { id: "c2", name: null, name_for_invoice: null, phone: null, email: "a@b", address: " רחוב ", active: 0 },
+        ],
+      })
+    );
+    const { data } = await db
+      .from("customer_overview_view")
+      .select("customer_id,customer_name,name_for_invoice,phone,email,address")
+      .order("customer_name");
+    expect(data).toEqual([
+      { customer_id: "c1", customer_name: "חשבונית בע״מ", name_for_invoice: "חשבונית בע״מ", phone: "050", email: null, address: null },
+      { customer_id: "c2", customer_name: "לקוח", name_for_invoice: null, phone: null, email: "a@b", address: "רחוב" },
+    ]);
+    const totals = await db.from("customer_overview_view").select("customer_id,total_sales");
+    expect(totals.error?.message).toMatch(/total_sales/);
+  });
+
+  it("products_with_last_used: how many order lines use each product, most-used first", async () => {
+    const db = createLocalSupabase(
+      fakeReader({
+        products: [
+          { id: "p1", name: "ב", active: 1 },
+          { id: "p2", name: "א", active: 1 },
+          { id: "p3", name: "ג", active: 1 },
+        ],
+        orders: [
+          { id: "o1", order_date: "2026-10-01" },
+          { id: "o2", order_date: "2026-10-05" },
+        ],
+        order_items: [
+          { id: "i1", order_id: "o1", product_id: "p3" },
+          { id: "i2", order_id: "o2", product_id: "p3" },
+          { id: "i3", order_id: "o2", product_id: "p1" },
+          { id: "i4", order_id: "o9", product_id: "p2" }, // its order isn't there: not counted
+        ],
+      })
+    );
+    const { data } = await db
+      .from("products_with_last_used")
+      .select("id,order_count")
+      .order("order_count", { ascending: false })
+      .order("name", { ascending: true });
+    expect(data).toEqual([
+      { id: "p3", order_count: 2 },
+      { id: "p1", order_count: 1 },
+      { id: "p2", order_count: 0 },
+    ]);
+  });
+
+  it("the + menu's own loader runs on the device copy — and, strict, a list it can't read is an error", async () => {
+    const { loadQuickActionsData } = await import("@/app/(app)/dashboard/quick-actions-data");
+    const tables = {
+      projects: [{ id: "pr1", name: "מעבר", customer_id: "c1", project_type: "moving", status: "active", start_date: "2026-10-10", updated_at: "2026-10-01T10:00:00Z" }],
+      customers: [{ id: "c1", name: "לקוח א", phone: "050", active: 1 }],
+      orders: [{ id: "o1", customer_id: "c1", order_date: "2026-10-02", status: "confirmed" }],
+      properties: [{ id: "h1", name: "בית", address: "רחוב 1", is_active: 1 }],
+      products: [{ id: "p1", name: "קרטון", sku: null, barcode: null, description: null, base_price: "10", base_cost: "4", active: 1 }],
+      order_items: [],
+      inventory: [{ id: "p1", product_id: "p1", quantity_on_hand: "5", quantity_reserved: "1" }],
+      users: [{ id: "u1", full_name: "מנהל", role: "admin", active: 1, payroll_worker_type: null, pay_tracking_mode: null }],
+      salary_agreements: [],
+      tasks: [],
+      customer_branches: [],
+      payments: [],
+    };
+    const data = await loadQuickActionsData(createLocalSupabase(fakeReader(tables)) as never, { strict: true });
+    expect(data.projects).toEqual([{ id: "pr1", type: "moving", name: "מעבר", customerId: "c1", customerName: "לקוח א", startDate: "2026-10-10" }]);
+    expect(data.customers).toEqual([{ id: "c1", name: "לקוח א", phone: "050", email: null, address: null }]);
+    expect(data.taskCustomers).toEqual([{ id: "c1", label: "לקוח א · 050" }]);
+    expect(data.properties).toEqual([{ id: "h1", name: "בית", subtitle: "" }]);
+    expect(data.products).toEqual([expect.objectContaining({ id: "p1", available_quantity: 4 })]);
+    expect(data.users).toEqual([expect.objectContaining({ id: "u1", label: "מנהל", role: "admin", logs_shifts: false })]);
+    expect(data.orders).toEqual([{ id: "o1", name: "לקוח א", subtitle: "confirmed · 02/10/26" }]);
+
+    // A table the copy can't read: strict fails (the menu then asks the
+    // server); not strict, as on the server, that one list is just empty.
+    const missing = { ...tables } as Record<string, unknown[]>;
+    delete missing.salary_agreements;
+    const fakeWithout = fakeReader(missing as never);
+    const brokenReader = {
+      ...fakeWithout,
+      getAll: async <T,>(sql: string, params?: unknown[]) => {
+        if (sql.includes("salary_agreements")) throw new Error("no such table: salary_agreements");
+        return fakeWithout.getAll<T>(sql, params);
+      },
+    };
+    await expect(loadQuickActionsData(createLocalSupabase(brokenReader) as never, { strict: true })).rejects.toThrow();
+    const lenient = await loadQuickActionsData(createLocalSupabase(brokenReader) as never);
+    expect(lenient.salaryAgreements).toEqual([]);
+    expect(lenient.projects).toHaveLength(1);
   });
 });
 

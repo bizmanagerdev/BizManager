@@ -38,6 +38,8 @@ import { buildColorIndexMap } from "@/components/dashboard/InitialsAvatar";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import { taskShowsFromDate } from "@/lib/tasks/visibility";
 import { fetchExistingTagIds } from "@/components/tags/TagPicker";
+import { readyLocalDatabase } from "@/lib/powersync/store";
+import { readTaskCardFromDevice } from "@/lib/tasks/device-task-card";
 import {
   isExpenseBusinessDomain,
   mapProjectTypeToExpenseDomain,
@@ -271,6 +273,10 @@ export function TaskUpsertDialog(rawProps: Props) {
   const [assignedUserId, setAssignedUserId] = useState("");
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const [tagIds, setTagIds] = useState<string[]>([]);
+  // A card opened from the device copy: its tags are still on their way from
+  // the server — the tag picker waits for them, so a pick can never replace
+  // tags it couldn't show.
+  const [tagsPending, setTagsPending] = useState(false);
   const [priority, setPriority] = useState<TaskPriority>("medium");
   const [status, setStatus] = useState<TaskStatus>(props.defaultStatus ?? "todo");
   // Private = visible only to the owner (the user who turns it on). Hidden from
@@ -327,6 +333,12 @@ export function TaskUpsertDialog(rawProps: Props) {
   // form becomes the baseline. (Taking a baseline any earlier would compare the
   // full card against the board's prefill and "save" the difference.)
   const baselinePendingRef = useRef(false);
+  // A card opened from the device copy gets its tags from the server a moment
+  // later; they become part of the baseline when they land, not an edit.
+  const lateTagIdsRef = useRef<string[] | null>(null);
+  // Which open the card being loaded belongs to — a late server answer for a
+  // task that's since been closed or swapped is dropped.
+  const cardRequestRef = useRef(0);
   // Saves run one at a time, in order.
   const saveChainRef = useRef<Promise<void>>(Promise.resolve());
   // Anything saved while open → the board refreshes once, when it closes.
@@ -435,9 +447,95 @@ export function TaskUpsertDialog(rawProps: Props) {
     [allowedDomains, defaultDomain]
   );
 
+  /**
+   * After a card opened from the device copy: what only the server has — the
+   * tags (into the baseline, see lateTagIdsRef), every reminder including the
+   * finished ones, the history, and comments the copy hasn't received yet
+   * (any added here meanwhile are kept). The form's fields are left alone:
+   * they may already be being edited.
+   */
+  const completeCardFromServer = useCallback(
+    async (taskId: string, request: number) => {
+      try {
+        const [loadedTagIds, res] = await Promise.all([
+          fetchExistingTagIds("task", taskId),
+          fetch("/api/tasks/get", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ id: taskId }),
+          }),
+        ]);
+        if (cardRequestRef.current !== request) return;
+        // Into the baseline, and into the form as it stands, at once — before
+        // it re-renders — so they never read as an edit, and a save that runs
+        // in between can't send "no tags". If the baseline isn't set yet, it's
+        // taken with them in it (see the effect below). Moved off "general
+        // business" meanwhile (no tags there), the form keeps none: that's an
+        // edit, saved as one.
+        const latest = latestPayloadRef.current;
+        const keepTags = !latest || latest.business_domain === "general_business";
+        const merged = keepTags ? Array.from(new Set([...loadedTagIds, ...(latest?.tag_ids ?? [])])) : latest.tag_ids;
+        if (savedPayloadRef.current && openedPayloadRef.current) {
+          savedPayloadRef.current = { ...savedPayloadRef.current, tag_ids: loadedTagIds };
+          openedPayloadRef.current = { ...openedPayloadRef.current, tag_ids: loadedTagIds };
+        } else {
+          lateTagIdsRef.current = loadedTagIds;
+        }
+        if (latest) latestPayloadRef.current = { ...latest, tag_ids: merged };
+        setTagIds((current) => (keepTags ? Array.from(new Set([...loadedTagIds, ...current])) : current));
+        setTagsPending(false);
+        const json = await res.json().catch(() => ({}));
+        if (cardRequestRef.current !== request || !res.ok || !json?.task) return;
+        setViewerIsCreator(json?.viewer_is_creator === true);
+        if (Array.isArray(json?.reminders)) setReminders(json.reminders as ReminderItem[]);
+        if (Array.isArray(json?.history)) setHistory(json.history as HistoryItem[]);
+        if (Array.isArray(json?.comments)) {
+          const fromServer = json.comments as CommentItem[];
+          setComments((current) => {
+            const known = new Set(fromServer.map((c) => c.id));
+            return [...fromServer, ...current.filter((c) => !known.has(c.id))];
+          });
+        }
+      } catch {
+        // The card already works from the device copy; these parts just stay as they are.
+      }
+    },
+    []
+  );
+
   const loadCard = useCallback(
     async (taskId: string) => {
+      const request = ++cardRequestRef.current;
+      lateTagIdsRef.current = null;
       setLoading(true);
+      // From the on-device copy when there is one: the form is filled in and
+      // editable at once, and the rest follows from the server
+      // (completeCardFromServer). Not for an Arabic reader — their task text
+      // is translated by the server as it's read.
+      const device = props.locale !== "ar" ? readyLocalDatabase() : null;
+      if (device) {
+        const card = await readTaskCardFromDevice(device, taskId, props.currentUserId ?? "").catch(() => null);
+        if (card && cardRequestRef.current === request) {
+          void fetchAttachments(taskId);
+          applyTaskFields(card.task);
+          setViewerIsCreator(card.viewerIsCreator);
+          setMemberIds(card.memberIds);
+          setTagIds([]);
+          setTagsPending(true);
+          setComments(card.comments as CommentItem[]);
+          setLegacyNotes(parseLegacyNotes(typeof card.task.notes === "string" ? card.task.notes : null));
+          setReminders(card.reminders as ReminderItem[]);
+          setHistory([]);
+          setCreatedAt(typeof card.task.created_at === "string" ? card.task.created_at : null);
+          setUpdatedAt(typeof card.task.updated_at === "string" ? card.task.updated_at : null);
+          setOpenSection(null);
+          baselinePendingRef.current = true;
+          setLoading(false);
+          void completeCardFromServer(taskId, request);
+          return;
+        }
+      }
+      setTagsPending(false);
       // Tags and attachments key off the id alone — start them now, alongside
       // the card, rather than after it.
       const tagIdsPromise = fetchExistingTagIds("task", taskId);
@@ -483,7 +581,7 @@ export function TaskUpsertDialog(rawProps: Props) {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [applyTaskFields]
+    [applyTaskFields, completeCardFromServer]
   );
 
   function resetForCreate() {
@@ -534,6 +632,7 @@ export function TaskUpsertDialog(rawProps: Props) {
     setAssignedUserId(draft?.assignedUserId ?? props.currentUserId ?? "");
     setMemberIds(Array.isArray(draft?.memberIds) ? draft.memberIds : []);
     setTagIds(props.presetTagIds ?? []);
+    setTagsPending(false);
     setPriority(draft?.priority ?? "medium");
     setStatus(props.defaultStatus ?? draft?.status ?? "todo");
     setIsPrivate(draft?.isPrivate ?? false);
@@ -1239,6 +1338,14 @@ export function TaskUpsertDialog(rawProps: Props) {
       savedPayloadRef.current = editPayload;
       openedPayloadRef.current = editPayload;
     }
+    // Tags that arrived after a card opened from the device copy: what the
+    // server holds, so part of the baseline (an edit made meanwhile still shows).
+    const lateTagIds = lateTagIdsRef.current;
+    if (lateTagIds && savedPayloadRef.current && openedPayloadRef.current) {
+      lateTagIdsRef.current = null;
+      savedPayloadRef.current = { ...savedPayloadRef.current, tag_ids: lateTagIds };
+      openedPayloadRef.current = { ...openedPayloadRef.current, tag_ids: lateTagIds };
+    }
   });
   // Save a moment after the last change. Every further change re-arms the
   // timer (pendingKey changes), so a burst of edits is one save.
@@ -1508,6 +1615,7 @@ export function TaskUpsertDialog(rawProps: Props) {
               onDomainChange={handleBusinessDomainChange}
               tagIds={tagIds}
               onTagIdsChange={setTagIds}
+              tagsReady={!tagsPending}
               showTargetPicker={showTargetPicker}
               derivedTargetType={derivedTargetType}
               projects={projects}

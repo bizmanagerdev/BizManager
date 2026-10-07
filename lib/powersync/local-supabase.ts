@@ -975,7 +975,59 @@ const VIEWS: Record<string, SourceLoader> = {
         };
       });
   },
+
+  // customer_overview_view: every customer under its display name (its name,
+  // else its invoice name, else "לקוח"), with the trimmed contact details.
+  // The totals (orders, sales, payments) aren't worked out on the device: a
+  // query that reads them is refused, and its page uses the server.
+  customer_overview_view: async (reader, _pushdown, columns) => {
+    const totals = CUSTOMER_OVERVIEW_TOTAL_COLUMNS.filter((name) => columns === null || columns.has(name));
+    if (totals.length) throw new Error(`customer_overview_view's ${totals.join(", ")} aren't worked out on the device`);
+    return (await loadTable(reader, "customers")).map((c) => ({
+      customer_id: c.id,
+      customer_name: trimOrNull(c.name) ?? trimOrNull(c.name_for_invoice) ?? "לקוח",
+      email: trimOrNull(c.email),
+      phone: trimOrNull(c.phone),
+      address: trimOrNull(c.address),
+      active: c.active ?? true,
+      notes: trimOrNull(c.notes),
+      name_for_invoice: trimOrNull(c.name_for_invoice),
+      registration_number: trimOrNull(c.registration_number),
+    }));
+  },
+
+  // products_with_last_used: each product with how many order lines use it
+  // and the last of those orders' dates (product_order_stats(), which counts
+  // every order regardless of who reads it — admins and office hold them all).
+  products_with_last_used: async (reader) => {
+    const [products, items, orders] = await Promise.all([
+      loadTable(reader, "products"),
+      loadTable(reader, "order_items"),
+      loadTable(reader, "orders"),
+    ]);
+    const orderDate = new Map(orders.map((o) => [o.id, o.order_date]));
+    const stats = new Map<Value, { count: number; last: string | null }>();
+    for (const item of items) {
+      if (item.product_id == null || !orderDate.has(item.order_id)) continue;
+      const entry = stats.get(item.product_id) ?? { count: 0, last: null };
+      entry.count += 1;
+      const date = orderDate.get(item.order_id);
+      const at = typeof date === "string" ? normalizeTimestamp(date) : null;
+      if (at && (entry.last === null || at > entry.last)) entry.last = at;
+      stats.set(item.product_id, entry);
+    }
+    return products.map((p) => {
+      const s = stats.get(p.id);
+      return { ...p, order_count: s?.count ?? 0, last_used_at: s?.last ?? null };
+    });
+  },
 };
+
+/** customer_overview_view's columns the device doesn't work out. */
+const CUSTOMER_OVERVIEW_TOTAL_COLUMNS = [
+  "orders_count", "projects_count", "total_sales", "total_paid", "open_balance", "last_order_at",
+  "last_payment_at", "expected_amount", "overdue_amount",
+];
 
 /** project_dashboard_view's columns that come from project_financials_view. */
 const PROJECT_DASHBOARD_MONEY_COLUMNS = [
@@ -993,8 +1045,21 @@ async function directoryRows(reader: LocalReader, directory: string, table: stri
   return rows.length > 0 ? rows : loadTable(reader, table);
 }
 
+/**
+ * user_directory()'s logs_shifts — the SQL's own rule (lib/payroll-worker-
+ * type.ts): a worker on sessions, or an hourly payslip; a monthly payslip
+ * doesn't; otherwise unless they're paid by payslip. Null where this copy
+ * doesn't hold the person's pay type (a worker's copy).
+ */
+function logsShifts(u: Row): boolean | null {
+  if (!("payroll_worker_type" in u) && !("pay_tracking_mode" in u)) return null;
+  if (u.role !== "worker" && u.role !== "worker_no_access") return false;
+  if (u.payroll_worker_type === "session_only" || u.payroll_worker_type === "hourly_payslip") return true;
+  if (u.payroll_worker_type === "monthly_payslip") return false;
+  return String(u.pay_tracking_mode ?? "") !== "payslip";
+}
+
 const RPCS: Record<string, SourceLoader> = {
-  // user_directory(): logs_shifts needs pay types the device doesn't hold.
   user_directory: async (reader) =>
     (await directoryRows(reader, "user_directory", "users")).map((u) => ({
       id: u.id,
@@ -1002,6 +1067,7 @@ const RPCS: Record<string, SourceLoader> = {
       avatar_color: u.avatar_color,
       role: u.role,
       active: u.active,
+      logs_shifts: logsShifts(u),
     })),
   property_directory: async (reader) =>
     (await directoryRows(reader, "property_directory", "properties")).map((p) => ({

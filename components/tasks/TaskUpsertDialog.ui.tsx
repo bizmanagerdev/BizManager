@@ -112,6 +112,7 @@ export function TaskDomainSection({
   onDomainChange,
   tagIds,
   onTagIdsChange,
+  tagsReady = true,
   showTargetPicker,
   derivedTargetType,
   projects,
@@ -130,6 +131,8 @@ export function TaskDomainSection({
   onDomainChange: (value: ExpenseBusinessDomain | "") => void;
   tagIds: string[];
   onTagIdsChange: (ids: string[]) => void;
+  /** False while the task's tags are still on their way (the picker waits for them). */
+  tagsReady?: boolean;
   showTargetPicker: boolean;
   derivedTargetType: TaskTargetType | null;
   projects: TaskOption[];
@@ -154,7 +157,7 @@ export function TaskDomainSection({
         />
       </div>
 
-      {effectiveDomain === "general_business" ? (
+      {effectiveDomain === "general_business" && tagsReady ? (
         <TagPicker value={tagIds} onChange={onTagIdsChange} />
       ) : null}
 

@@ -1,6 +1,6 @@
 // Neutral (client- and server-safe) types/constants for the quick-action data.
-// Kept out of quick-actions-data.ts (which is `server-only`) so client code can
-// import the shape + empty default without pulling server code into the bundle.
+// Kept out of quick-actions-data.ts so client code can import the shape + empty
+// default without pulling the loader into its bundle.
 //
 // The option shapes below used to live in DashboardActions.tsx, the dashboard's
 // own tile grid. That grid is gone — every create flow is behind the + menu now
@@ -42,6 +42,8 @@ export type EntityOption = {
 /** The data the quick-action create dialogs need (dropdowns / pickers). */
 export type QuickActionsData = {
   customers: Row[];
+  /** Every active customer as the task form's picker shows them ("name · phone", A–Z) — same list as the tasks board's. */
+  taskCustomers: { id: string; label: string }[];
   products: Row[];
   projects: ProjectOption[];
   orders: EntityOption[];
@@ -52,6 +54,7 @@ export type QuickActionsData = {
 
 export const EMPTY_QUICK_ACTIONS: QuickActionsData = {
   customers: [],
+  taskCustomers: [],
   products: [],
   projects: [],
   orders: [],

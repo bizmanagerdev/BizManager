@@ -244,6 +244,8 @@ export default function QuickCreateDialogs({
         users={data.users.filter((u) => u.role !== "worker_no_access")}
         projects={projectPickerOptions}
         properties={propertyOptions}
+        customers={data.taskCustomers}
+        locale={data.locale}
         onSaved={(created) => {
           startTransition(() => { router.refresh(); });
           const id = created && typeof created.id === "string" ? created.id : "";

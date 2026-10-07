@@ -32,6 +32,7 @@ import { t } from "@/lib/i18n/t";
 import { quickCreateDict } from "@/lib/i18n/dictionaries/quickCreate";
 import type { Locale } from "@/lib/i18n/types";
 import { deleteSnapshot, loadSnapshot, saveSnapshot } from "@/lib/offline-cache";
+import { readyLocalDatabase, whenLocalDatabaseReady } from "@/lib/powersync/store";
 
 // The dialogs (order wizard, project wizard, expense form…) are a big chunk of
 // JS. Nobody pays for it until the + menu is first opened.
@@ -129,10 +130,20 @@ const WORKER_ACTIONS = new Set<QuickCreateAction>(["task", "reminder", "attendan
 // when + is tapped. The "טוען..." dialog below is only left for a first ever
 // open on a device.
 let dataCache: QuickCreateData | null = null;
-/** Loaded from the server during this page load (not just the device copy). */
+/** Fresh this page load: from the server, or worked out from the on-device copy (not just the kept IndexedDB copy). */
 let dataFresh = false;
 let inFlight: Promise<QuickCreateData | null> | null = null;
 let snapshotKey: string | null = null;
+/**
+ * Admins and office: the lists come from the on-device copy (PowerSync) as
+ * soon as it's complete — worked out with the server's own loader, again on
+ * every open so they're as current as the copy — and the server is asked
+ * only when the copy can't serve them. Everyone else: the server, as before.
+ */
+let deviceViewer: { id: string; role: "admin" | "office" } | null = null;
+/** How long the idle warm-up waits for the device copy to open before asking the server. */
+const DEVICE_COPY_WAIT_MS = 10_000;
+let deviceInFlight: Promise<QuickCreateData> | null = null;
 const dataListeners = new Set<() => void>();
 
 // A device copy younger than this is good enough until the menu is opened (which
@@ -163,7 +174,39 @@ export function invalidateQuickCreateCache() {
   setQuickCreateData(null, false);
 }
 
+/** The lists from the device copy (throws when it can't serve them). */
+function loadQuickCreateDataFromDevice(
+  db: NonNullable<ReturnType<typeof readyLocalDatabase>>,
+  viewer: NonNullable<typeof deviceViewer>
+): Promise<QuickCreateData> {
+  if (!deviceInFlight) {
+    deviceInFlight = (async () => {
+      const [{ createLocalSupabase }, { loadQuickActionsData }] = await Promise.all([
+        import("@/lib/powersync/local-supabase"),
+        import("@/app/(app)/dashboard/quick-actions-data"),
+      ]);
+      const lists = await loadQuickActionsData(createLocalSupabase(db), { strict: true });
+      // Admins and office: their language is always Hebrew (Arabic is a worker's option).
+      const loaded: QuickCreateData = { ...EMPTY_QUICK_CREATE_DATA, ...lists, currentUserId: viewer.id, role: viewer.role, locale: "he" };
+      setQuickCreateData(loaded, true);
+      if (snapshotKey) void saveSnapshot(snapshotKey, { ...loaded, salaryAgreements: [] });
+      return loaded;
+    })().finally(() => {
+      deviceInFlight = null;
+    });
+  }
+  return deviceInFlight;
+}
+
 function loadQuickCreateData(): Promise<QuickCreateData | null> {
+  const db = deviceViewer ? readyLocalDatabase() : null;
+  if (db && deviceViewer) {
+    return loadQuickCreateDataFromDevice(db, deviceViewer).catch(() => loadQuickCreateDataFromServer());
+  }
+  return loadQuickCreateDataFromServer();
+}
+
+function loadQuickCreateDataFromServer(): Promise<QuickCreateData | null> {
   if (dataCache && dataFresh) return Promise.resolve(dataCache);
   if (!inFlight) {
     inFlight = fetch("/api/quick-actions/data", { cache: "no-store" })
@@ -196,10 +239,11 @@ let warmed = false;
  * admin/office, who get the money dialogs — warm the bank-accounts cache those
  * dialogs read when they open.
  */
-function warmQuickCreate(viewerId: string | undefined, privileged: boolean) {
+function warmQuickCreate(viewerId: string | undefined, viewerRole: string | undefined, privileged: boolean) {
   if (warmed) return;
   warmed = true;
   snapshotKey = viewerId ? `quick-create-data:${viewerId}` : null;
+  deviceViewer = viewerId && (viewerRole === "admin" || viewerRole === "office") ? { id: viewerId, role: viewerRole } : null;
 
   void import("@/components/layout/QuickCreateDialogs").catch(() => {});
   void import("@/components/expenses/ExpenseDialog").catch(() => {});
@@ -213,7 +257,10 @@ function warmQuickCreate(viewerId: string | undefined, privileged: boolean) {
         if (Date.now() - snapshot.savedAt < SNAPSHOT_FRESH_MS) return;
       }
     }
-    if (!dataFresh) void loadQuickCreateData();
+    // Admins and office: give the device copy a moment to open (it does
+    // right after the app starts) rather than asking the server meanwhile.
+    if (deviceViewer) await whenLocalDatabaseReady(DEVICE_COPY_WAIT_MS);
+    if (!dataFresh || deviceViewer) void loadQuickCreateData();
   })();
 
   if (privileged) {
@@ -288,14 +335,16 @@ export function QuickCreateMenu({
   const [dialogsMounted, setDialogsMounted] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => whenIdle(() => warmQuickCreate(viewerId, privileged)), [viewerId, privileged]);
+  useEffect(() => whenIdle(() => warmQuickCreate(viewerId, viewerRole, privileged)), [viewerId, viewerRole, privileged]);
 
-  // Mount the dialog host the moment the menu is opened, and make sure this
-  // page load has the server's copy of the lists (the device copy, if that's
-  // what's showing, stays on screen until it arrives).
+  // Mount the dialog host the moment the menu is opened, and make sure the
+  // lists are current: worked out again from the device copy (admins and
+  // office — a moment's work, no server), or this page load's server copy (the
+  // copy kept on the device, if that's what's showing, stays on screen until
+  // it arrives).
   const prefetch = useCallback(() => {
     setDialogsMounted(true);
-    if (!dataFresh) void loadQuickCreateData();
+    if (!dataFresh || deviceViewer) void loadQuickCreateData();
   }, []);
 
   // Other pages can open a quick-create dialog (optionally pre-dated) by firing a
