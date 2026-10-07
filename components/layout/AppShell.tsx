@@ -26,6 +26,7 @@ import { SidebarCollapseProvider } from "@/components/layout/sidebar-collapse-co
 import { PageTitleProvider } from "@/components/layout/page-title-context";
 import { PAGE_HEADER_TOOLBAR_ID } from "@/components/layout/PageHeaderToolbar";
 import { AlertBar } from "@/components/reminders/AlertBar";
+import type { RememberedAlertBar } from "@/lib/ui/alert-bar-memory";
 import { localDataEnabledFor } from "@/lib/powersync/config";
 
 // The on-device copy (PowerSync). Browser-only, and only loaded for the people
@@ -47,6 +48,8 @@ type Props = {
   avatarColor?: string | null;
   /** Server-resolved top-bar user-menu data — see the `Me` comment in TopBar. */
   initialMe?: Me;
+  /** Each section's alert strip as it last stood on this device (lib/ui/alert-bar-memory.ts). */
+  rememberedAlertBars?: Record<string, RememberedAlertBar>;
   showSearch?: boolean;
   sidebarItems?: SidebarNavItem[];
   bottomNavItems?: SidebarNavItem[];
@@ -71,6 +74,7 @@ export default function AppShell({
   viewerSectionAccess = DEFAULT_SECTION_ACCESS,
   avatarColor,
   initialMe,
+  rememberedAlertBars,
   showSearch,
   sidebarItems,
   bottomNavItems,
@@ -155,7 +159,7 @@ export default function AppShell({
                 slot in one sticky container means the toolbar doesn't need to
                 separately track AlertBar's height. */}
             <div className="sticky top-[60px] z-20 flex flex-col">
-              <AlertBar locale={viewerLocale === "ar" ? "ar" : "he"} />
+              <AlertBar locale={viewerLocale === "ar" ? "ar" : "he"} remembered={rememberedAlertBars} />
               {/* Slot for a page's own search/filter row, on the SAME surface as the
                   bar above it — the bar is the page's colour now, so a dark strip
                   here would put back exactly the separation we just removed (user,

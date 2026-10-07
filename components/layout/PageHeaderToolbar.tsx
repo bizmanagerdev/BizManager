@@ -21,6 +21,18 @@ export const PAGE_HEADER_TOOLBAR_ID = "page-header-toolbar";
 // react-hooks lint rule). Nothing ever changes, so subscribe is a no-op.
 const noopSubscribe = () => () => {};
 
+/**
+ * Holds the strip open for a toolbar that's on its way — the marker alone, for
+ * a page drawn from the device copy: its server HTML is a placeholder (the
+ * page's toolbar arrives with the page, after the copy answers), so without
+ * this the strip popped open then and pushed the page down by its height
+ * (phone layout shift on /projects, /tasks and /sales, 2026-10-07). Only on a
+ * page that WILL put a toolbar there — otherwise it's an empty strip.
+ */
+export function PageHeaderToolbarSpace() {
+  return <span hidden data-page-header-toolbar="" />;
+}
+
 export function PageHeaderToolbar({ children }: { children: ReactNode }) {
   const mounted = useSyncExternalStore(
     noopSubscribe,

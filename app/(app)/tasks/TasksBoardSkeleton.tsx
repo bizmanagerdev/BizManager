@@ -7,7 +7,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 export default function TasksBoardSkeleton() {
   return (
     <>
-      <div className="flex gap-2">
+      {/* Flush with the top like the board itself (TasksPageClient's -mt-*
+          cancels the page's padding) — or the board, arriving, jumps up by it. */}
+      <div className="-mt-4 flex gap-2 md:-mt-6 lg:-mt-8">
         {Array.from({ length: 2 }).map((_, i) => (
           <Skeleton key={i} className="h-9 w-28" />
         ))}

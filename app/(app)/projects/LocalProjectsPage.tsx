@@ -4,6 +4,7 @@ import { useMemo, type ComponentProps } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
+import { PageHeaderToolbarSpace } from "@/components/layout/PageHeaderToolbar";
 import { useLocalCard } from "@/components/powersync/useLocalCard";
 import { useDevicePageTiming } from "@/components/powersync/useDevicePageTiming";
 import type { LocalCardViewer, LocalDashboardCards } from "@/lib/powersync/dashboard-local";
@@ -81,7 +82,15 @@ export default function LocalProjectsPage({
     [db, userId, role, locale]
   );
 
-  if (!list || !extras) return <DetailPageSkeleton />;
+  // The list's search / filter row (ProjectsClient's toolbar) is held open on
+  // a phone from the first paint, before the list arrives.
+  if (!list || !extras)
+    return (
+      <>
+        <PageHeaderToolbarSpace />
+        <DetailPageSkeleton />
+      </>
+    );
 
   const { rows, hasMore, totalCount } = list.data;
   const { tabCounts, options } = extras.data;
@@ -90,6 +99,7 @@ export default function LocalProjectsPage({
 
   return (
     <>
+      <PageHeaderToolbarSpace />
       {customerName ? (
         <ProjectsCustomerHeader
           customerName={customerName}

@@ -8,8 +8,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 export default function SalesSkeleton() {
   return (
     <>
-      {/* Header row: "new order" button */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      {/* Header row: "new order" button. Flush with the top on a phone like the
+          tabs bar that replaces it (SalesHeader's -mt-4) — or the page,
+          arriving, jumps up by the padding. */}
+      <div className="-mt-4 flex flex-col gap-3 sm:flex-row sm:items-center md:mt-0">
         <Skeleton className="h-11 w-full sm:ms-auto sm:h-10 sm:w-36" />
       </div>
 

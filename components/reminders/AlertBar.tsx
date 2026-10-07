@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -20,6 +20,7 @@ import {
 import { useAlertBarAlerts, refreshAlertBarAlerts } from "@/lib/ui/alert-bar-store";
 import { notifyAlertsChanged } from "@/lib/ui/alerts-refresh";
 import type { AlertLevel, SystemAlert } from "@/lib/reminders/alert-bar";
+import { rememberAlertBar, type RememberedAlertBar } from "@/lib/ui/alert-bar-memory";
 import type { Locale } from "@/lib/i18n/types";
 
 // One shared alert strip, mounted once by AppShell — see components/layout/AppShell.tsx.
@@ -94,6 +95,28 @@ function LevelIcon({ level, className }: { level: AlertLevel; className?: string
   return <NotificationIcon className={className} />;
 }
 
+/**
+ * The strip as it last stood, until its alerts arrive: the same box as the
+ * real one (the close button sets the row's height in both of its layouts),
+ * nothing to press yet.
+ */
+function AlertBarPlaceholder({ bar, locale }: { bar: RememberedAlertBar; locale: Locale }) {
+  return (
+    <div className={cn("@container border-b", LEVEL_TONE[bar.level])} aria-hidden>
+      <div className="mx-auto flex w-full max-w-[1600px] items-center gap-1.5 px-3 py-0.5 leading-none @[45em]:px-6">
+        <LevelIcon className="h-3.5 w-3.5 shrink-0" level={bar.level} />
+        <span className="shrink-0 text-xs font-semibold">
+          {bar.count} {LEVEL_LABEL[locale][bar.level]}
+        </span>
+        <span className="flex-1" />
+        <span className="shrink-0 p-1 opacity-60">
+          <CloseIcon className="h-3.5 w-3.5" />
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function highestLevel(alerts: SystemAlert[]): AlertLevel | null {
   for (const level of LEVEL_ORDER) {
     if (alerts.some((a) => a.level === level)) return level;
@@ -127,9 +150,21 @@ function readDismissedIds(): Set<string> | null {
   }
 }
 
-export function AlertBar({ locale = "he" }: { locale?: Locale }) {
-  const { alerts: allAlerts } = useAlertBarAlerts();
+export function AlertBar({
+  locale = "he",
+  remembered,
+}: {
+  locale?: Locale;
+  /**
+   * Each section's strip as it last stood on this device (lib/ui/alert-bar-memory.ts),
+   * read by the server — drawn until the alerts arrive, so the page under it
+   * never moves when they do.
+   */
+  remembered?: Record<string, RememberedAlertBar>;
+}) {
+  const { alerts: allAlerts, error: alertsError } = useAlertBarAlerts();
   const pathname = usePathname();
+  const currentModule = pathname?.split("/").filter(Boolean)[0] ?? null;
   const [expanded, setExpanded] = useState(false);
   const [dismissedIds, setDismissedIds] = useState<Set<string> | null>(() => readDismissedIds());
   const [acting, setActing] = useState<string | null>(null);
@@ -139,15 +174,24 @@ export function AlertBar({ locale = "he" }: { locale?: Locale }) {
   // Strict module match, and ONLY this page's own module — no "+N elsewhere"
   // indicator at all (user, 2026-09-11: "who cares what's going on another page").
   // A page with nothing of its own shows nothing, never another page's alerts.
-  const primary = useMemo(() => {
-    const currentModule = pathname?.split("/").filter(Boolean)[0] ?? null;
-    return (allAlerts ?? []).filter((a) => a.module === currentModule);
-  }, [allAlerts, pathname]);
+  const primary = useMemo(
+    () => (allAlerts ?? []).filter((a) => a.module === currentModule),
+    [allAlerts, currentModule]
+  );
 
   const allIds = useMemo(() => primary.map((a) => a.id), [primary]);
 
   // Dismissed for the session unless a genuinely new alert id has shown up since.
   const isDismissed = dismissedIds !== null && allIds.every((id) => dismissedIds.has(id));
+
+  // Remember this section's strip as it stands, for the next opening's first
+  // paint (see `remembered`) — or that it has none.
+  const shownLevel = allAlerts !== null && primary.length > 0 && !isDismissed ? highestLevel(primary) : null;
+  const shownCount = shownLevel ? primary.filter((a) => a.level === shownLevel).length : 0;
+  useEffect(() => {
+    if (allAlerts === null || !currentModule) return;
+    rememberAlertBar(currentModule, shownLevel ? { level: shownLevel, count: shownCount } : null);
+  }, [allAlerts, currentModule, shownLevel, shownCount]);
 
   function dismiss() {
     const snapshot = new Set(allIds);
@@ -178,6 +222,13 @@ export function AlertBar({ locale = "he" }: { locale?: Locale }) {
       refreshAlertBarAlerts();
       notifyAlertsChanged();
     }
+  }
+
+  // The alerts aren't here yet: the strip as it last stood, so the page below
+  // doesn't move when they arrive. Not if they failed to load.
+  if (allAlerts === null) {
+    const held = currentModule && !alertsError ? remembered?.[currentModule] : undefined;
+    return held ? <AlertBarPlaceholder bar={held} locale={locale} /> : null;
   }
 
   if (primary.length === 0 || isDismissed) return null;

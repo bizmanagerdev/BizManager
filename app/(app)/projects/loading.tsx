@@ -1,12 +1,16 @@
 import AppShell from "@/components/layout/AppShell";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeaderToolbarSpace } from "@/components/layout/PageHeaderToolbar";
 
 // Streamed instantly while the page's data loads, so TTFB = time-to-shell.
 // Mirrors the projects tabs + toolbar + list to keep the swap shift-free.
 export default function ProjectsLoading() {
   return (
     <AppShell>
+      {/* The list's search / filter row: its strip held open on a phone, so
+          the page arriving doesn't push everything down. */}
+      <PageHeaderToolbarSpace />
       <div className="space-y-4" data-route-loading="true">
         <div className="flex gap-2">
           {Array.from({ length: 3 }).map((_, i) => (

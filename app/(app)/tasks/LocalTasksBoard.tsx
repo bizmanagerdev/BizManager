@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useLocalCard } from "@/components/powersync/useLocalCard";
+import { PageHeaderToolbarSpace } from "@/components/layout/PageHeaderToolbar";
 import { useDevicePageTiming } from "@/components/powersync/useDevicePageTiming";
 import type { LocalCardViewer } from "@/lib/powersync/dashboard-local";
 import { filterBoardLocally } from "@/lib/tasks/boardFilters";
@@ -47,22 +48,33 @@ export default function LocalTasksBoard({
     return filterBoardLocally(result.data.items, JSON.parse(filtersKey) as TasksFilters, result.data.filters, viewer.userId);
   }, [result, filtersKey, viewer.userId]);
 
-  if (!result || !tasks) return <TasksBoardSkeleton />;
+  // The board's search / filter row (TasksPageClient's toolbar) is held open
+  // on a phone from the first paint, before the board arrives.
+  if (!result || !tasks)
+    return (
+      <>
+        <PageHeaderToolbarSpace />
+        <TasksBoardSkeleton />
+      </>
+    );
 
   const { options } = result.data;
   // The board's saves go to the device copy first (lib/tasks/device-task-saves.ts):
   // instant, and they wait for the connection when there's none.
   return (
-    <TasksPageClient
-      tasks={tasks}
+    <>
+      <PageHeaderToolbarSpace />
+      <TasksPageClient
+        tasks={tasks}
       projects={options.projects}
       properties={options.properties}
       customers={options.customers}
       users={options.users}
       canSeeAll={canSeeAll}
-      currentUserId={viewer.userId}
-      locale={viewer.locale}
-      initialFilters={filters}
-    />
+        currentUserId={viewer.userId}
+        locale={viewer.locale}
+        initialFilters={filters}
+      />
+    </>
   );
 }

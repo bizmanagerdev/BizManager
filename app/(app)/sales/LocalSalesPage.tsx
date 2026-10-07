@@ -4,6 +4,7 @@ import { useCallback, useMemo, type ComponentProps, type ReactNode } from "react
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
+import { PageHeaderToolbarSpace } from "@/components/layout/PageHeaderToolbar";
 import { LocalListPagerProvider } from "@/components/powersync/LocalListPager";
 import { useLocalCard } from "@/components/powersync/useLocalCard";
 import { useDevicePageTiming } from "@/components/powersync/useDevicePageTiming";
@@ -109,7 +110,17 @@ export default function LocalSalesPage({
   // The tab or its filters just changed: what's here is still the previous list.
   const tabData = tab && tab.filtersKey === filtersKey ? tab.data : null;
   useDevicePageTiming(`sales:${activeTab}`, tabData ? tab : null);
-  if (!tabData || !counts) return <SalesSkeleton />;
+  // The orders and price-list tabs put a search / filter row in the phone's
+  // header strip: held open from the first paint, before the tab arrives.
+  // (Deliveries and stock have none — no empty strip for them.)
+  const toolbarSpace = kind === "salesOrders" || kind === "salesPriceList" ? <PageHeaderToolbarSpace /> : null;
+  if (!tabData || !counts)
+    return (
+      <>
+        {toolbarSpace}
+        <SalesSkeleton />
+      </>
+    );
 
   let content: ReactNode = null;
   if (kind === "salesOrders") {
@@ -171,6 +182,7 @@ export default function LocalSalesPage({
 
   return (
     <>
+      {toolbarSpace}
       <SalesHeader activeTab={activeTab} counts={counts.data.counts} searchParams={tabsSearchParams} customerName={customerName} />
       <LocalListPagerProvider fetchPage={fetchPage}>{content}</LocalListPagerProvider>
     </>

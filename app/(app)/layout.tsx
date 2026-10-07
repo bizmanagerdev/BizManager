@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { cookies } from "next/headers";
+import { ALERT_BAR_MEMORY_COOKIE, parseAlertBarMemory } from "@/lib/ui/alert-bar-memory";
 import AppShell from "@/components/layout/AppShell";
 import SentryUser from "@/components/observability/SentryUser";
 import { requireProfile } from "@/lib/auth/requireProfile";
@@ -25,6 +27,10 @@ export default async function AppGroupLayout({ children }: { children: ReactNode
   // `users` query same as avatar_color did. Computed once and threaded down
   // instead, same as avatarColor above.
   const workerType = profile.payroll_worker_type;
+  // Each section's alert strip as it last stood on this device, drawn from the
+  // first paint so the page doesn't move when the alerts arrive (no I/O — a
+  // cookie of the request).
+  const rememberedAlertBars = parseAlertBarMemory((await cookies()).get(ALERT_BAR_MEMORY_COOKIE)?.value);
   const initialMe = {
     email: profile.email,
     canTrackSessions: workerType != null && payrollWorkerTypeAllowsSessions(workerType),
@@ -40,6 +46,7 @@ export default async function AppGroupLayout({ children }: { children: ReactNode
       viewerSectionAccess={profile.section_access}
       avatarColor={avatarColor}
       initialMe={initialMe}
+      rememberedAlertBars={rememberedAlertBars}
     >
       <SentryUser
         id={profile.id}
