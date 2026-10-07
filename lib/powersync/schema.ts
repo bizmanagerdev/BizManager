@@ -547,9 +547,95 @@ const property_directory = new Table({ name: text, address: text, is_active: int
 // A project's page (sync rules v1.7, admins and office): each movement's
 // account by name, the VAT rate, and a recurring bill's rule by name.
 const accounts = new Table({ name: text });
-/** One row; id = "true" (the table's key is the boolean true). */
-const business_settings = new Table({ vat_rate: text });
-const recurring_expense_templates = new Table({ template_name: text, created_by: text });
+/**
+ * One row; id = "true" (the table's key is the boolean true). money_tables = 1:
+ * this copy has the money cards' tables below (sync rules v1.8 — see
+ * lib/powersync/money-copy.ts).
+ */
+const business_settings = new Table({ vat_rate: text, books_start_date: text, money_tables: int });
+const recurring_expense_templates = new Table({
+  template_name: text,
+  created_by: text,
+  category: text,
+  amount: text,
+  is_variable_amount: int,
+  auto_paid: int,
+  description_template: text,
+  notes_template: text,
+  business_domain: text,
+  account_id: text,
+  frequency: text,
+  interval_months: int,
+  expense_day_of_month: int,
+  expense_month_of_year: int,
+  start_date: text,
+  end_date: text,
+  created_at: text,
+  is_active: int,
+  reminder_work_days_before: int,
+});
+
+// The dashboard's money cards (sync rules v1.8): loans and their repayments,
+// card statements (the charges, and of the statement lines only which expense
+// each one is), card settlements already confirmed, the payment sources'
+// settings.
+const loans = new Table({
+  direction: text,
+  lender: text,
+  borrower: text,
+  loan_date: text,
+  loan_method: text,
+  repayment_method: text,
+  documentation: text,
+  amount: text,
+  due_date: text,
+  interest_amount: text,
+  business_domain: text,
+  counterparty_customer_id: text,
+  status: text,
+  notes: text,
+  created_by: text,
+  created_at: text,
+  updated_at: text,
+  account_id: text,
+});
+const loan_repayments = new Table(
+  {
+    loan_id: text,
+    repayment_date: text,
+    amount: text,
+    interest_amount: text,
+    method: text,
+    notes: text,
+    created_by: text,
+    created_at: text,
+    account_id: text,
+    status: text,
+    installment_index: int,
+    installment_count: int,
+  },
+  { indexes: { by_loan: ["loan_id"] } }
+);
+const card_statement_charges = new Table({
+  statement_id: text,
+  card_label: text,
+  account_id: text,
+  amount: text,
+  charge_date: text,
+  notes: text,
+});
+const card_statement_rows = new Table(
+  { expense_id: text, statement_id: text, card_label: text, category: text },
+  { indexes: { by_expense: ["expense_id"] } }
+);
+const card_settlement_confirmations = new Table({ account_id: text, settlement_date: text });
+const outflow_source_settings = new Table({
+  source_kind: text,
+  source_key: text,
+  reminder_work_days_before: int,
+  account_id: text,
+  is_active: int,
+});
 
 export const AppSchema = new Schema({
   users,
@@ -585,6 +671,12 @@ export const AppSchema = new Schema({
   accounts,
   business_settings,
   recurring_expense_templates,
+  loans,
+  loan_repayments,
+  card_statement_charges,
+  card_statement_rows,
+  card_settlement_confirmations,
+  outflow_source_settings,
 });
 
 export type LocalDatabase = (typeof AppSchema)["types"];

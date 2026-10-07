@@ -6,6 +6,9 @@ import MyTasksPanel from "@/components/dashboard/MyTasksPanel";
 import UpcomingDeliveries from "@/components/dashboard/UpcomingDeliveries";
 import AttendanceApprovals from "@/components/dashboard/AttendanceApprovals";
 import PropertiesCard from "@/components/dashboard/PropertiesCard";
+import UpcomingPayments from "@/components/dashboard/UpcomingPayments";
+import CollectionsCard from "@/components/dashboard/CollectionsCard";
+import DomainChartCard from "@/components/dashboard/DomainChartCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLocalCard } from "@/components/powersync/useLocalCard";
 import { useDevicePageTiming } from "@/components/powersync/useDevicePageTiming";
@@ -36,13 +39,14 @@ export default function LocalDashboardCard<K extends LocalCardKind>({
 }) {
   const result = useLocalCard({ kind, viewer, page: "dashboard", serverHref: "/dashboard?data=server" });
   useDevicePageTiming(`dashboard:${kind}`, result);
-  const data = result?.data ?? null;
-
-  if (data === null) {
+  // No answer yet: the placeholder. (An answer can itself be null — the money
+  // chart when nothing moved this month — and then there's no card.)
+  if (!result) {
     // As tall as this card last stood on this device (the cell's --held-h).
     return <Skeleton className={cn("h-[var(--held-h,4rem)] w-full rounded-[1.125rem] xl:h-full", fillClassName)} />;
   }
 
+  const { data } = result;
   const { locale } = viewer;
   switch (kind) {
     case "todaySchedule":
@@ -75,6 +79,14 @@ export default function LocalDashboardCard<K extends LocalCardKind>({
     }
     case "properties":
       return <PropertiesCard summary={data as LocalDashboardCards["properties"]} locale={locale} />;
+    case "payments":
+      return <UpcomingPayments summary={data as LocalDashboardCards["payments"]} locale={locale} />;
+    case "collections":
+      return <CollectionsCard summary={data as LocalDashboardCards["collections"]} locale={locale} />;
+    case "domainChart": {
+      const chart = data as LocalDashboardCards["domainChart"];
+      return chart ? <DomainChartCard {...chart} locale={locale} /> : null;
+    }
     default:
       return null;
   }

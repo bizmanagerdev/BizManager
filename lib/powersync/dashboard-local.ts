@@ -33,6 +33,20 @@ import {
 } from "@/app/(app)/tasks/loadTasks";
 import { loadOrderPageCore, type OrderPageCore } from "@/lib/orders/order-page";
 import { loadProjectPageCore, type ProjectPageCore } from "@/lib/projects/project-page";
+import { getCollectionsSummary, type CollectionsSummary } from "@/lib/collections";
+import {
+  buildDomainChartData,
+  buildPaymentsSummary,
+  getBooksStartDate,
+  loadDomainChartBreakdowns,
+  loadMoneyCardEntries,
+  loadPaymentLeadRows,
+  loadPaymentsCalendar,
+  moneyCardDates,
+  type DomainChartData,
+} from "@/lib/dashboard/money-cards";
+import type { PaymentsSummary } from "@/components/dashboard/UpcomingPayments";
+import { copyHasMoneyTables } from "@/lib/powersync/money-copy";
 import { israelDateKey } from "@/lib/timezone";
 import type { Locale } from "@/lib/i18n/types";
 
@@ -81,6 +95,11 @@ export type LocalDashboardCards = {
    * `dashboardRow` null: not on this device's copy (yet).
    */
   projectPage: ProjectPageCore;
+  /** The dashboard's money cards (lib/dashboard/money-cards.ts) — only from a copy with sync rules v1.8. */
+  payments: PaymentsSummary;
+  collections: CollectionsSummary;
+  /** null: nothing moved this month (the card isn't shown). */
+  domainChart: DomainChartData | null;
 };
 
 export type LocalCardKind = keyof LocalDashboardCards;
@@ -88,6 +107,14 @@ export type LocalCardKind = keyof LocalDashboardCards;
 export type SalesCountsFilters = { customerId: string | null; paymentStatus: OrdersPaymentFilter };
 
 export type LocalCardViewer = { userId: string; role: string; locale: Locale };
+
+/** What the money cards read: the financial engine's tables, the money views' and the cards' own. */
+const MONEY_TABLES = [
+  "payments", "expenses", "project_expenses", "worker_payments", "worker_payment_allocations", "attendance_sessions",
+  "payslips", "payroll_periods", "salary_agreements", "projects", "orders", "customers", "users", "user_directory",
+  "loans", "loan_repayments", "recurring_expense_templates", "outflow_source_settings", "card_settlement_confirmations",
+  "card_statement_charges", "card_statement_rows", "business_settings",
+];
 
 /** The device tables each card reads — it's worked out again when any changes. */
 export const LOCAL_CARD_TABLES: Record<LocalCardKind, string[]> = {
@@ -116,7 +143,89 @@ export const LOCAL_CARD_TABLES: Record<LocalCardKind, string[]> = {
     "attendance_sessions", "payments", "payslips", "payroll_periods", "salary_agreements", "worker_payments",
     "worker_payment_allocations", "accounts", "business_settings", "recurring_expense_templates",
   ],
+  payments: MONEY_TABLES,
+  collections: MONEY_TABLES,
+  domainChart: MONEY_TABLES,
 };
+
+/**
+ * The money cards' loaders treat a read that failed as "nothing there" — on
+ * the server a rare outage, on the device a table or column this copy doesn't
+ * have — and a figure would then silently leave out a loan or a card charge.
+ * So on the device every read must succeed: this hands the loaders a client
+ * that notes each failed read, and the card is then refused (the server's
+ * version shows instead) rather than drawn with a gap in it.
+ */
+function strictReads(local: SupabaseClient): { client: SupabaseClient; failures: string[] } {
+  const failures: string[] = [];
+  const watch = (query: object, source: string): object => {
+    const proxy: object = new Proxy(query, {
+      get(target, prop) {
+        const value: unknown = Reflect.get(target, prop, target);
+        if (typeof value !== "function") return value;
+        if (prop === "then") {
+          return (onFulfilled?: (result: unknown) => unknown, onRejected?: (reason: unknown) => unknown) =>
+            (value as (inspect: (result: unknown) => unknown) => Promise<unknown>)
+              .call(target, (result: unknown) => {
+                const { error, status } = (result ?? {}) as { error?: { message?: string } | null; status?: number };
+                // 4xx answers (e.g. single() finding no row) are the same on the
+                // server; only a read the device couldn't do counts.
+                if (error && (status ?? 500) >= 500) failures.push(`${source}: ${error.message ?? "failed"}`);
+                return result;
+              })
+              .then(onFulfilled, (reason: unknown) => {
+                failures.push(`${source}: ${reason instanceof Error ? reason.message : String(reason)}`);
+                if (onRejected) return onRejected(reason);
+                throw reason;
+              });
+        }
+        // The builder's own methods hand back the builder: keep watching it.
+        return (...args: unknown[]) => {
+          const next = (value as (...a: unknown[]) => unknown).apply(target, args);
+          return next === target ? proxy : next;
+        };
+      },
+    });
+    return proxy;
+  };
+  const client = {
+    from: (name: string) => watch(local.from(name) as object, name),
+    rpc: (name: string, args?: Record<string, unknown>) => watch(local.rpc(name, args) as object, `rpc ${name}`),
+  };
+  return { client: client as unknown as SupabaseClient, failures };
+}
+
+/** A money card from the device, all its reads done — or refused (see strictReads). */
+async function computeMoneyCard(local: SupabaseClient, kind: "payments" | "collections" | "domainChart"): Promise<unknown> {
+  // A copy synced before the money tables existed would read as "no loans,
+  // no card charges": not this card's to draw (lib/powersync/money-copy.ts).
+  if (!(await copyHasMoneyTables(local))) throw new Error(`${MONEY_CARD_NOT_READY} (sync rules before v1.8)`);
+  const { client, failures } = strictReads(local);
+  const todayIso = israelDateKey();
+  const dates = moneyCardDates(todayIso);
+  let card: unknown;
+  switch (kind) {
+    case "payments": {
+      const shared = await loadMoneyCardEntries(client, dates);
+      const [calendar, leadRows] = await Promise.all([loadPaymentsCalendar(client, shared), loadPaymentLeadRows(client)]);
+      card = buildPaymentsSummary(calendar, leadRows, todayIso);
+      break;
+    }
+    case "collections":
+      card = await getCollectionsSummary(client, todayIso);
+      break;
+    case "domainChart": {
+      const [shared, booksStartDate] = await Promise.all([loadMoneyCardEntries(client, dates), getBooksStartDate(client)]);
+      card = buildDomainChartData(await loadDomainChartBreakdowns(client, dates, shared.entries, booksStartDate), dates, booksStartDate);
+      break;
+    }
+  }
+  if (failures.length) throw new Error(`${kind}: a read failed on the device — ${failures[0]}`);
+  return card;
+}
+
+/** The start of the error a money card gives on a copy without the money tables (not a difference to report). */
+export const MONEY_CARD_NOT_READY = "money cards: this copy has no money tables yet";
 
 export async function computeLocalCard<K extends LocalCardKind>(
   local: SupabaseClient,
@@ -230,6 +339,10 @@ export async function computeLocalCard<K extends LocalCardKind>(
       if (failed) throw new Error(`${failed[0]}: ${failed[1]}`);
       return core as LocalDashboardCards[K];
     }
+    case "payments":
+    case "collections":
+    case "domainChart":
+      return (await computeMoneyCard(local, kind)) as LocalDashboardCards[K];
     default:
       throw new Error(`Unknown dashboard card ${String(kind)}`);
   }

@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { closeLocalDatabase, openLocalDatabase } from "@/lib/powersync/database";
-import { registerLocalDataWipe, setLocalViewer, useLocalSyncStatus } from "@/lib/powersync/store";
+import { readyLocalDatabase, registerLocalDataWipe, setLocalViewer, useLocalSyncStatus } from "@/lib/powersync/store";
 import DeviceSaveNotices from "@/components/powersync/DeviceSaveNotices";
 import { clearStoredResults } from "@/lib/powersync/stored-results";
 import { withSentry } from "@/lib/sentry-lazy";
@@ -12,6 +12,7 @@ import LocalPagesWarmup from "@/components/powersync/LocalPagesWarmup";
 import { installNavigationTiming } from "@/lib/ui/navigation-timing";
 import { clearDeviceFrames, keepDeviceFramesFor } from "@/lib/powersync/device-frames";
 import { setDeviceCopyPending } from "@/lib/powersync/device-pending";
+import { copyHasMoneyTables, setMoneyCopyReady } from "@/lib/powersync/money-copy";
 
 // Keeps the on-device copy open for the signed-in person, in the background.
 // Renders nothing. AppShell mounts it only for people the copy is switched on
@@ -53,6 +54,30 @@ export default function LocalDataHost({ viewer }: { viewer?: LocalCardViewer & {
   useEffect(() => {
     if (copyComplete !== null) setDeviceCopyPending(!copyComplete);
   }, [copyComplete]);
+
+  // Whether this copy carries the dashboard's money tables (sync rules v1.8):
+  // the board then draws its money cards from it (lib/powersync/money-copy.ts).
+  // Looked at again after every completed download, so it switches over by
+  // itself the first time they arrive.
+  const lastSynced = status?.lastSyncedAt?.getTime() ?? null;
+  const staff = viewerRole === "admin" || viewerRole === "office";
+  useEffect(() => {
+    if (!staff || !copyComplete) return;
+    const db = readyLocalDatabase();
+    if (!db) return;
+    let cancelled = false;
+    void import("@/lib/powersync/local-supabase")
+      .then(({ createLocalSupabase }) => copyHasMoneyTables(createLocalSupabase(db)))
+      .then(
+        (ready) => {
+          if (!cancelled) setMoneyCopyReady(ready);
+        },
+        () => {}
+      );
+    return () => {
+      cancelled = true;
+    };
+  }, [staff, copyComplete, lastSynced]);
 
   // From here on, page changes are timed (the device pages' timing report).
   useEffect(() => installNavigationTiming(), []);

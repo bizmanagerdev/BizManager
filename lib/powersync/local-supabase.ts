@@ -46,6 +46,8 @@ const BOOLEAN_COLUMNS: Record<string, readonly string[]> = {
   product_categories: ["active"],
   // Its one row's key is the boolean true (synced as the text "true").
   business_settings: ["id"],
+  recurring_expense_templates: ["is_variable_amount", "auto_paid", "is_active"],
+  outflow_source_settings: ["is_active"],
 };
 
 const NUMERIC_COLUMNS: Record<string, readonly string[]> = {
@@ -66,6 +68,10 @@ const NUMERIC_COLUMNS: Record<string, readonly string[]> = {
   worker_payments: ["amount"],
   inventory_movements: ["quantity"],
   business_settings: ["vat_rate"],
+  recurring_expense_templates: ["amount"],
+  loans: ["amount", "interest_amount"],
+  loan_repayments: ["amount", "interest_amount"],
+  card_statement_charges: ["amount"],
 };
 
 const JSON_COLUMNS: Record<string, readonly string[]> = {
@@ -109,6 +115,12 @@ export const LOCAL_TABLES: ReadonlySet<string> = new Set([
   "accounts",
   "business_settings",
   "recurring_expense_templates",
+  "loans",
+  "loan_repayments",
+  "card_statement_charges",
+  "card_statement_rows",
+  "card_settlement_confirmations",
+  "outflow_source_settings",
 ]);
 
 /**
@@ -916,6 +928,101 @@ const VIEWS: Record<string, SourceLoader> = {
     });
   },
   project_financials_view: (reader) => projectFinancials(reader),
+
+  // collections_view: every order and project with money still to collect
+  // (not cancelled; something to charge and something outstanding), with its
+  // money from the two views above and its customer's name and numbers — the
+  // dashboard's collections card.
+  collections_view: async (reader) => {
+    const [orders, orderMoney, projects, projectMoney, customers] = await Promise.all([
+      loadTable(reader, "orders"),
+      VIEWS.order_financials_view(reader, [], null),
+      loadTable(reader, "projects"),
+      projectFinancials(reader),
+      loadTable(reader, "customers"),
+    ]);
+    const orderMoneyById = new Map(orderMoney.map((m) => [m.order_id, m]));
+    const projectMoneyById = new Map(projectMoney.map((m) => [m.id, m]));
+    const customerById = new Map(customers.map((c) => [c.id, c]));
+    // NULLIF(TRIM(BOTH FROM x), '') — TRIM takes spaces only.
+    const trimmed = (value: unknown): string | null => {
+      if (typeof value !== "string") return null;
+      const text = value.replace(/^ +| +$/g, "");
+      return text === "" ? null : text;
+    };
+    const moneyOf = (m: Row, total: unknown) => ({
+      total_amount: num(total),
+      collected_amount: num(m.collected_amount),
+      pending_amount: num(m.pending_amount),
+      overdue_amount: num(m.overdue_amount),
+      outstanding_amount: num(m.outstanding_amount),
+      next_due_date: m.next_due_date ?? null,
+      last_payment_date: m.last_payment_date ?? null,
+    });
+    const sources: Row[] = [];
+    for (const o of orders) {
+      if ((o.status ?? "") === "cancelled") continue;
+      const money = orderMoneyById.get(o.id);
+      if (!money) continue;
+      sources.push({
+        source_type: "order",
+        source_id: o.id,
+        customer_id: o.customer_id ?? null,
+        business_domain: "sales",
+        reference_date: utcDateOf(o.order_date),
+        ...moneyOf(money, money.total_amount),
+      });
+    }
+    for (const p of projects) {
+      if ((p.status ?? "") === "cancelled") continue;
+      const money = projectMoneyById.get(p.id);
+      if (!money) continue;
+      sources.push({
+        source_type: "project",
+        source_id: p.id,
+        customer_id: p.customer_id ?? null,
+        business_domain: "logistics_projects",
+        reference_date: p.start_date ?? null,
+        ...moneyOf(money, money.customer_total_price),
+      });
+    }
+    return sources
+      .filter((s) => num(s.total_amount) > 0.009 && num(s.outstanding_amount) > 0.009)
+      .map((s) => {
+        const customer = s.customer_id ? customerById.get(s.customer_id) : undefined;
+        const total = num(s.total_amount);
+        const collected = num(s.collected_amount);
+        const collection_status =
+          total > 0 && collected + 0.009 >= total
+            ? "collected"
+            : num(s.overdue_amount) > 0.009
+              ? "overdue"
+              : num(s.pending_amount) > 0.009
+                ? "awaiting"
+                : collected > 0.009
+                  ? "partial"
+                  : "unpaid";
+        return {
+          source_type: s.source_type,
+          source_id: s.source_id,
+          collection_key: `${s.source_type}:${s.source_id}`,
+          customer_id: s.customer_id,
+          customer_name: trimmed(customer?.name) ?? trimmed(customer?.name_for_invoice) ?? "לקוח",
+          customer_phone: trimmed(customer?.phone),
+          customer_whatsapp: trimmed(customer?.whatsapp),
+          business_domain: s.business_domain,
+          reference_date: s.reference_date,
+          total_amount: s.total_amount,
+          collected_amount: s.collected_amount,
+          pending_amount: s.pending_amount,
+          overdue_amount: s.overdue_amount,
+          outstanding_amount: s.outstanding_amount,
+          next_due_date: s.next_due_date,
+          last_payment_date: s.last_payment_date,
+          collection_status,
+        };
+      });
+  },
 
   // order_overview_view: each order with its customer, branch, who made it,
   // and its money (collected = cleared or unknown payments; pending; overdue

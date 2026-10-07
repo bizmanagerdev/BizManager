@@ -50,6 +50,12 @@ export const LOCAL_DATA_PAGES = {
   // device (account names, the VAT rate, recurring bills' names, login ids).
   // Off for everyone but the people trying it out until then.
   projectPage: false,
+  // The dashboard's money cards (payments, collections, the income/expenses
+  // chart) — needs sync rules v1.8 on the device (loans, card statements,
+  // settlements…; only a copy that has them draws them, see money-copy.ts).
+  // Off for everyone but the people trying it out until the comparisons come
+  // out clean.
+  dashboardMoney: false,
 } as const;
 
 /**
@@ -89,4 +95,5 @@ export const LOCAL_DATA_SHADOW = {
   tasks: true,
   orders: true,
   projectPage: true,
+  dashboardMoney: true,
 } as const;

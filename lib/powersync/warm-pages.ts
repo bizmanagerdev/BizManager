@@ -25,6 +25,13 @@ export function usualPageViews(viewer: LocalCardViewer): ResultSpec[] {
       add("attendanceQueue");
       add("properties");
     }
+    // The money cards, where the board draws them from the device (a copy
+    // without the money tables just doesn't work them out — see money-copy.ts).
+    if (localDataPageOn("dashboardMoney", person)) {
+      add("payments");
+      add("collections");
+      add("domainChart");
+    }
   }
   if (localDataPageOn("tasks", person)) {
     add("tasksBoard", { q: "", priority: "", domain: "", linkedId: "", scope: "mine" });

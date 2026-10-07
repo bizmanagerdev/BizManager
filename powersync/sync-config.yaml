@@ -1,4 +1,9 @@
-# BizManager — PowerSync Sync Streams, v1.7 (2026-10-07): a project's page
+# BizManager — PowerSync Sync Streams, v1.8 (2026-10-07): the dashboard's
+# money cards from the device — staff also get loans and their repayments,
+# card statement charges, the card statement lines tied to an expense, card
+# settlement confirmations, the payment sources' settings, every recurring
+# bill's rule and the books start date.
+# v1.7 (2026-10-07): a project's page
 # from the device — staff also get users' login ids (who entered what), the
 # account names, the VAT rate and the recurring bills' names.
 # v1.6 (2026-10-07): workers added.
@@ -110,11 +115,51 @@ streams:
       # a recurring bill's rule by name (and who set it up). Names and the
       # rate only — no balances or other settings.
       - SELECT accounts.id, accounts.name FROM accounts, staff_gate AS bucket
-      - SELECT 'true' AS id, business_settings.vat_rate FROM business_settings, staff_gate AS bucket
+      # The VAT rate (a project's page) and the books start date (the money
+      # chart shows nothing before it). money_tables = 1 marks a copy that has
+      # the money cards' tables below — it arrives in the same complete
+      # download as they do, so a device never works the cards out from a copy
+      # that hasn't received them yet (lib/powersync/money-copy.ts).
+      - SELECT 'true' AS id, business_settings.vat_rate, business_settings.books_start_date, 1 AS money_tables FROM business_settings, staff_gate AS bucket
+      # Recurring bills: their rules — the payments card lists what's coming
+      # (and when to remind), a project's page names them.
       - |
         SELECT recurring_expense_templates.id, recurring_expense_templates.template_name,
-               recurring_expense_templates.created_by
+               recurring_expense_templates.created_by, recurring_expense_templates.category,
+               recurring_expense_templates.amount, recurring_expense_templates.is_variable_amount,
+               recurring_expense_templates.auto_paid, recurring_expense_templates.description_template,
+               recurring_expense_templates.notes_template, recurring_expense_templates.business_domain,
+               recurring_expense_templates.account_id, recurring_expense_templates.frequency,
+               recurring_expense_templates.interval_months, recurring_expense_templates.expense_day_of_month,
+               recurring_expense_templates.expense_month_of_year, recurring_expense_templates.start_date,
+               recurring_expense_templates.end_date, recurring_expense_templates.created_at,
+               recurring_expense_templates.is_active, recurring_expense_templates.reminder_work_days_before
         FROM recurring_expense_templates, staff_gate AS bucket
+      # The dashboard's money cards (payments, collections, the income /
+      # expenses chart): loans and their repayments, card statements (the
+      # charges, and of the statement lines only which expense each one is),
+      # card settlements already confirmed, and the payment sources' settings.
+      - SELECT loans.* FROM loans, staff_gate AS bucket
+      - SELECT loan_repayments.* FROM loan_repayments, staff_gate AS bucket
+      - |
+        SELECT card_statement_charges.id, card_statement_charges.statement_id, card_statement_charges.card_label,
+               card_statement_charges.account_id, card_statement_charges.amount, card_statement_charges.charge_date,
+               card_statement_charges.notes
+        FROM card_statement_charges, staff_gate AS bucket
+      - |
+        SELECT card_statement_rows.id, card_statement_rows.expense_id, card_statement_rows.statement_id,
+               card_statement_rows.card_label, card_statement_rows.category
+        FROM card_statement_rows, staff_gate AS bucket
+        WHERE card_statement_rows.expense_id IS NOT NULL
+      - |
+        SELECT card_settlement_confirmations.id, card_settlement_confirmations.account_id,
+               card_settlement_confirmations.settlement_date
+        FROM card_settlement_confirmations, staff_gate AS bucket
+      - |
+        SELECT outflow_source_settings.id, outflow_source_settings.source_kind, outflow_source_settings.source_key,
+               outflow_source_settings.reminder_work_days_before, outflow_source_settings.account_id,
+               outflow_source_settings.is_active
+        FROM outflow_source_settings, staff_gate AS bucket
 
   # ── Workers (approved 2026-10-07) ──────────────────────────────────────────
   # Exactly what the server already lets a worker read (the tables' RLS

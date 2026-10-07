@@ -12,17 +12,15 @@ import MyTasksPanel from "@/components/dashboard/MyTasksPanel";
 import UpcomingDeliveries from "@/components/dashboard/UpcomingDeliveries";
 import AttendanceApprovals from "@/components/dashboard/AttendanceApprovals";
 import WorkerShiftPanel from "@/app/(app)/dashboard/WorkerShiftPanel";
-import UpcomingPayments, { type PaymentsSummary } from "@/components/dashboard/UpcomingPayments";
+import UpcomingPayments from "@/components/dashboard/UpcomingPayments";
 import CollectionsCard from "@/components/dashboard/CollectionsCard";
 import PropertiesCard from "@/components/dashboard/PropertiesCard";
 import { getInboxView, todaySlice } from "@/lib/reminders/worklist";
 import { translateToArabic } from "@/lib/i18n/translateToHebrew";
 import { getScheduleEntries, type CalendarEntry } from "@/lib/projectSchedule";
 import { getMyTasks } from "@/lib/dashboard/tasks-overview";
-import { subtractWorkingDays, toDateOnly } from "@/lib/dashboard/week";
 import { formatToday } from "@/lib/dashboard/greeting";
 import { loadPhoneQueueData, type PhoneQueueData } from "@/lib/attendance/phone-reports";
-import { loadPaymentCalendarItems } from "@/lib/payables";
 import { getCollectionsSummary } from "@/lib/collections";
 import { getPropertiesSummary } from "@/lib/properties";
 import { loadAttendanceSpark, loadDeliveriesSpark } from "@/lib/dashboard/sparklines";
@@ -53,14 +51,22 @@ import { cn } from "@/lib/utils";
 import { loadDeliveriesPage, type DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
 import { getDigestAnchor, getMissedDigest, type AuditFeedItem } from "@/lib/audit";
 import MissedDigestCell from "@/components/dashboard/MissedDigestCard";
-import { loadDomainCashBreakdown, loadFinancialEntries, type FinancialEntry } from "@/lib/financial";
 import DomainChartCard from "@/components/dashboard/DomainChartCard";
-import { monthWindow, previousMonth, toBars, type MonthKey } from "@/lib/dashboard/domain-chart";
-import { getBooksStartDate, isMonthBeforeBooksStart } from "@/lib/settings/booksStartDate";
+import {
+  buildDomainChartData,
+  buildPaymentsSummary,
+  getBooksStartDate,
+  loadDomainChartBreakdowns,
+  loadMoneyCardEntries,
+  loadPaymentLeadRows,
+  loadPaymentsCalendar,
+  loadServerMoneyCards,
+  moneyCardDates,
+  type DomainBreakdowns,
+  type MoneyCardDates,
+  type PaymentLeadRow,
+} from "@/lib/dashboard/money-cards";
 import type { Locale } from "@/lib/i18n/types";
-
-/** One domain's cash in a window — what loadDomainCashBreakdown returns. */
-type CashPoint = { domainName: string; inflow: number; outflow: number };
 import { israelDateKey } from "@/lib/timezone";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -69,7 +75,7 @@ import LocalDashboardCard from "@/components/powersync/LocalDashboardCard";
 import { RememberCard, RememberedCardFallback } from "@/components/dashboard/RememberedCard";
 import type { DashboardShadowSnapshot } from "@/lib/powersync/dashboard-shadow";
 import { LOCAL_DATA_SHADOW, localDataEnabledFor } from "@/lib/powersync/config";
-import { deviceCheckCookie, deviceCheckDue, devicePageOn } from "@/lib/powersync/device-check";
+import { deviceCheckCookie, deviceCheckDue, devicePageOn, moneyCardsOnDevice } from "@/lib/powersync/device-check";
 import DeviceFrameMark from "@/components/powersync/DeviceFrameMark";
 import { serverRenderedAt } from "@/lib/loaded-at";
 
@@ -128,24 +134,6 @@ type WidgetItem = {
   rank: number;
   node: ReactNode;
 };
-
-/** How far ahead the payments card looks, and how many rows it will ever show. */
-const PAYMENTS_HORIZON_DAYS = 14;
-const PAYMENTS_SHOWN_LIMIT = 12;
-/** The heads-up for a payment whose own lead time was never set, in work-days. */
-const PAYMENTS_DEFAULT_LEAD_DAYS = 3;
-
-/** ISO date N days after an ISO date, without dragging in a date library. */
-function addDaysIso(iso: string, days: number): string {
-  const date = new Date(`${iso}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
-
-/** A local Date back to its YYYY-MM-DD, matching how the calendar dates items. */
-function isoDate(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
 
 /**
  * Split the board's cards into hero + secondary + tertiary, from tierCounts()
@@ -282,64 +270,24 @@ async function PaymentsSlowCell({
   todayIso,
   locale,
   rememberKey,
+  moneyCheck,
 }: {
-  paymentsPromise: Promise<Awaited<ReturnType<typeof loadPaymentCalendarItems>> | null>;
-  paymentLeadRowsPromise: Promise<{ id?: unknown; reminder_work_days_before?: unknown }[]>;
+  paymentsPromise: Promise<Awaited<ReturnType<typeof loadPaymentsCalendar>> | null>;
+  paymentLeadRowsPromise: Promise<PaymentLeadRow[]>;
   todayIso: string;
   locale: Locale;
   /** Keeps this card on the device for the next visit's placeholder. */
   rememberKey: string;
+  /** Also worked out on the device and compared (see MoneyCheck). */
+  moneyCheck: MoneyCheck | null;
 }) {
   const [paymentsResult, paymentLeadRows] = await Promise.all([paymentsPromise, paymentLeadRowsPromise]);
-
-  // The payments card, in the calendar's three questions: what's late, what's
-  // due today, what's expected over the next fortnight. Anything already paid
-  // (`posted`) is history and belongs on the calendar page, not on the board —
-  // except that a standing order (`autoPaid`) is never something "to pay", so
-  // it stays out of the late count the way it does out of the calendar's
-  // alerts.
-  const paymentLeads = new Map<string, number>();
-  for (const row of paymentLeadRows) {
-    if (typeof row.id === "string" && typeof row.reminder_work_days_before === "number") {
-      paymentLeads.set(row.id, row.reminder_work_days_before);
-    }
-  }
-
-  const paymentsTodayIso = paymentsResult?.todayIso ?? todayIso;
-  const paymentsHorizonIso = addDaysIso(paymentsTodayIso, PAYMENTS_HORIZON_DAYS);
-  const unpaidPayments = (paymentsResult?.items ?? []).filter((item) => item.stage !== "posted");
-  const latePayments = unpaidPayments.filter((item) => item.date < paymentsTodayIso && !item.autoPaid);
-  const todayPayments = unpaidPayments
-    .filter((item) => item.date === paymentsTodayIso)
-    .sort((a, b) => b.amount - a.amount);
-  // "צפוי" is NOT everything in the fortnight — it's everything whose OWN alert
-  // has opened. Each recurring bill carries `reminder_work_days_before` ("remind
-  // me N work-days before"), the same setting the reminder rule fires on, so the
-  // card and the reminder can't disagree about when a payment starts nagging. A
-  // payment with no lead set falls back to PAYMENTS_DEFAULT_LEAD_DAYS rather than
-  // never appearing.
-  const upcomingPayments = unpaidPayments
-    .filter((item) => {
-      if (item.date <= paymentsTodayIso || item.date > paymentsHorizonIso) return false;
-      const lead = item.recurringTemplateId ? paymentLeads.get(item.recurringTemplateId) : undefined;
-      const remindIso = isoDate(subtractWorkingDays(toDateOnly(item.date) ?? new Date(), lead ?? PAYMENTS_DEFAULT_LEAD_DAYS));
-      return paymentsTodayIso >= remindIso;
-    })
-    .sort((a, b) => a.date.localeCompare(b.date));
-  const sumAmounts = (items: { amount: number }[]) => items.reduce((sum, item) => sum + item.amount, 0);
-  const paymentsSummary: PaymentsSummary = {
-    today: todayPayments,
-    todayTotal: sumAmounts(todayPayments),
-    // The lists are capped; the TOTALS are not — a figure that silently stopped
-    // counting at row twelve would be a lie about what is coming.
-    upcoming: upcomingPayments.slice(0, PAYMENTS_SHOWN_LIMIT),
-    upcomingTotal: sumAmounts(upcomingPayments),
-    late: latePayments.slice(0, PAYMENTS_SHOWN_LIMIT),
-    lateCount: latePayments.length,
-    lateTotal: sumAmounts(latePayments),
-  };
+  const paymentsSummary = buildPaymentsSummary(paymentsResult, paymentLeadRows, todayIso);
   return (
     <>
+      {moneyCheck && paymentsResult ? (
+        <DashboardLocalShadow doneCookie={moneyCheck.doneCookie} snapshot={{ ...moneyCheck.base, cards: { payments: paymentsSummary } }} />
+      ) : null}
       <RememberCard rememberKey={rememberKey} kind="payments" props={{ summary: paymentsSummary, locale }} />
       <UpcomingPayments summary={paymentsSummary} locale={locale} />
     </>
@@ -350,14 +298,19 @@ async function CollectionsSlowCell({
   summaryPromise,
   locale,
   rememberKey,
+  moneyCheck,
 }: {
   summaryPromise: Promise<Awaited<ReturnType<typeof getCollectionsSummary>> | null>;
   locale: Locale;
   rememberKey: string;
+  moneyCheck: MoneyCheck | null;
 }) {
   const summary = await summaryPromise;
   return (
     <>
+      {moneyCheck && summary ? (
+        <DashboardLocalShadow doneCookie={moneyCheck.doneCookie} snapshot={{ ...moneyCheck.base, cards: { collections: summary } }} />
+      ) : null}
       <RememberCard rememberKey={rememberKey} kind="collections" props={summary ? { summary, locale } : null} />
       {summary ? <CollectionsCard summary={summary} locale={locale} /> : null}
     </>
@@ -420,6 +373,13 @@ async function PropertiesSlowCell({
 type ShadowBase = Omit<DashboardShadowSnapshot, "cards">;
 
 /**
+ * The money cards, worked out by the server, are also worked out on the device
+ * and compared (LOCAL_DATA_SHADOW.dashboardMoney) — on the server version of
+ * the board each time, on the device version once a day per device.
+ */
+type MoneyCheck = { base: ShadowBase; doneCookie?: string };
+
+/**
  * The device-drawn cards as the server reads them, for the device to compare
  * with its own — once a day per device (lib/powersync/device-check.ts). In
  * its own Suspense boundary after the board, so it never holds the board up.
@@ -433,9 +393,24 @@ async function DashboardServerCheck({
   supabase: SupabaseClient;
   base: ShadowBase;
   role: string | null;
-  show: { todaySchedule: boolean; todayAlerts: boolean; myTasks: boolean; deliveries: boolean; attendanceQueue: boolean; properties: boolean };
+  show: {
+    todaySchedule: boolean;
+    todayAlerts: boolean;
+    myTasks: boolean;
+    deliveries: boolean;
+    attendanceQueue: boolean;
+    properties: boolean;
+    /** The money cards, when the board draws them from the device. */
+    payments: boolean;
+    collections: boolean;
+    domainChart: boolean;
+  };
 }) {
   const { userId, locale, todayIso } = base;
+  const moneyPromise =
+    show.payments || show.collections || show.domainChart
+      ? loadServerMoneyCards(supabase, todayIso, show).catch(() => ({}))
+      : Promise.resolve({});
   const [inbox, schedule, myTasks, deliveries, deliveriesSpark, queue, queueSpark, queueOptions, properties] = await Promise.all([
     show.todayAlerts ? getInboxView(supabase, { userId, role }).catch(() => null) : Promise.resolve(null),
     show.todaySchedule
@@ -474,44 +449,53 @@ async function DashboardServerCheck({
         />
       ) : null}
       {properties ? <DashboardLocalShadow doneCookie={doneCookie} snapshot={{ ...base, cards: { properties } }} /> : null}
+      <Suspense fallback={null}>
+        <MoneyServerCheck moneyPromise={moneyPromise} base={base} doneCookie={doneCookie} />
+      </Suspense>
     </>
   );
 }
 
+/** The money cards' part of the daily check — after the rest, so the heavy scan never holds it up. */
+async function MoneyServerCheck({
+  moneyPromise,
+  base,
+  doneCookie,
+}: {
+  moneyPromise: Promise<Awaited<ReturnType<typeof loadServerMoneyCards>>>;
+  base: ShadowBase;
+  doneCookie: string;
+}) {
+  const cards = await moneyPromise;
+  if (Object.keys(cards).length === 0) return null;
+  return <DashboardLocalShadow doneCookie={doneCookie} snapshot={{ ...base, cards }} />;
+}
+
 async function DomainChartSlowCell({
-  breakdownPromise,
-  prevBreakdownPromise,
+  breakdownsPromise,
   booksStartDatePromise,
-  currentMonth,
-  todayIso,
+  dates,
   locale,
   rememberKey,
+  moneyCheck,
 }: {
-  breakdownPromise: Promise<CashPoint[]>;
-  prevBreakdownPromise: Promise<CashPoint[]>;
+  breakdownsPromise: Promise<{ breakdowns: DomainBreakdowns; ok: boolean }>;
   booksStartDatePromise: Promise<string | null>;
-  currentMonth: MonthKey;
-  todayIso: string;
+  dates: MoneyCardDates;
   locale: Locale;
   rememberKey: string;
+  moneyCheck: MoneyCheck | null;
 }) {
-  // Income vs expenses per business domain, for the month the card opens on.
-  const [domainBreakdown, domainPrevBreakdown, booksStartDate] = await Promise.all([
-    breakdownPromise,
-    prevBreakdownPromise,
-    booksStartDatePromise,
-  ]);
-  const domainBars = toBars(domainBreakdown, domainPrevBreakdown);
-  // The card owns its month from here on: it opens on `currentMonth` and its
-  // header's picker fetches any other month itself. The widget still only
-  // appears when THIS month has something — an empty board card is still an
-  // empty card, picker or not.
-  const cardProps =
-    domainBars.length > 0
-      ? { initialBars: domainBars, initialMonth: currentMonth, todayIso, booksStartDate, locale }
-      : null;
+  // Income vs expenses per business domain, for the month the card opens on
+  // (lib/dashboard/money-cards.ts).
+  const [{ breakdowns, ok }, booksStartDate] = await Promise.all([breakdownsPromise, booksStartDatePromise]);
+  const chart = buildDomainChartData(breakdowns, dates, booksStartDate);
+  const cardProps = chart ? { ...chart, locale } : null;
   return (
     <>
+      {moneyCheck && ok ? (
+        <DashboardLocalShadow doneCookie={moneyCheck.doneCookie} snapshot={{ ...moneyCheck.base, cards: { domainChart: chart } }} />
+      ) : null}
       <RememberCard rememberKey={rememberKey} kind="domainChart" props={cardProps} />
       {cardProps ? <DomainChartCard {...cardProps} /> : null}
     </>
@@ -588,10 +572,20 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
   // and tasks under their Israel date, so between 00:00 and 03:00 Israel time a
   // UTC "today" was still yesterday and the היום card showed the wrong day.
   const todayIso = israelDateKey();
-  const today = new Date(`${todayIso}T00:00:00Z`);
-  // The month the domain chart opens on — its picker can then walk backwards
-  // from here without a page load.
-  const currentMonth = todayIso.slice(0, 7);
+  // The money cards' month and windows (lib/dashboard/money-cards.ts).
+  const moneyDates = moneyCardDates(todayIso);
+
+  // The money cards — payments, collections, the income/expenses chart — are
+  // drawn from the device on the device version of the board when this
+  // person's copy has the money tables (LOCAL_DATA_PAGES.dashboardMoney): the
+  // server then skips their reads below.
+  const moneyOnDevice = localMode && isAdminOrOffice && (await moneyCardsOnDevice(profile));
+  // Where the server works them out, the device also does and compares (each
+  // time on the server version of the board, once a day on the device's).
+  const moneyCheck: MoneyCheck | null =
+    !moneyOnDevice && isAdminOrOffice && LOCAL_DATA_SHADOW.dashboardMoney && (shadow ?? serverCheck)
+      ? { base: (shadow ?? serverCheck) as ShadowBase, doneCookie: serverCheck ? deviceCheckCookie("dashboard") : undefined }
+      : null;
 
   // The payments card and both domain-chart bars each need their own read of
   // the SAME financial engine (loadFinancialEntries scans payments, expenses,
@@ -599,26 +593,10 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
   // three separate calls that was three near-duplicate full scans. One shared
   // scan, over the widest window any of them needs, replaces all three; each
   // then just filters/maps the same in-memory entries (cheap, no round trip).
-  const needPayments = show("payments") && isAdminOrOffice;
-  const needDomainChart = show("domainChart") && isAdminOrOffice;
-  const currentMonthWindow = monthWindow(currentMonth, todayIso);
-  const previousMonthWindow = monthWindow(previousMonth(currentMonth), todayIso);
-  const paymentsScanSince = (() => {
-    const d = new Date(today);
-    d.setMonth(d.getMonth() - 1);
-    return d.toISOString().slice(0, 10);
-  })();
-  const sharedFinancialFrom = [
-    needPayments ? paymentsScanSince : null,
-    needDomainChart ? currentMonthWindow.from : null,
-    needDomainChart ? previousMonthWindow.from : null,
-  ]
-    .filter((v): v is string => v != null)
-    .sort()[0];
-  const financialEntriesPromise: Promise<{ entries: FinancialEntry[]; referenceDate: string } | null> =
-    sharedFinancialFrom
-      ? loadFinancialEntries(supabase, { from: sharedFinancialFrom }).catch(() => null)
-      : Promise.resolve(null);
+  const needPayments = show("payments") && isAdminOrOffice && !moneyOnDevice;
+  const needDomainChart = show("domainChart") && isAdminOrOffice && !moneyOnDevice;
+  const financialEntriesPromise =
+    needPayments || needDomainChart ? loadMoneyCardEntries(supabase, moneyDates).catch(() => null) : Promise.resolve(null);
 
   // ── SLOW group (payments, collections, attendance queue, properties, the
   // domain chart) — every one of these is a multi-table scan. Kicked off here
@@ -628,23 +606,12 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
   // deliveries (the FAST group, awaited below) wait on the heaviest queries on
   // the page just because they all used to share one Promise.all.
   const paymentsPromise = needPayments
-    ? financialEntriesPromise
-        .then((shared) => loadPaymentCalendarItems(supabase, { monthsBack: 1, preloaded: shared ?? undefined }))
-        .catch(() => null)
+    ? financialEntriesPromise.then((shared) => loadPaymentsCalendar(supabase, shared)).catch(() => null)
     : Promise.resolve(null);
-  const paymentLeadRowsPromise: Promise<{ id?: unknown; reminder_work_days_before?: unknown }[]> =
-    show("payments") && isAdminOrOffice
-      ? Promise.resolve(
-          supabase
-            .from("recurring_expense_templates")
-            .select("id,reminder_work_days_before")
-            .eq("is_active", true)
-            .gt("reminder_work_days_before", 0)
-            .range(0, 999)
-            .then((r) => r.data ?? [], () => [])
-        )
-      : Promise.resolve([]);
-  const collectionsPromise = show("collections") && isAdminOrOffice
+  const paymentLeadRowsPromise: Promise<PaymentLeadRow[]> = needPayments
+    ? loadPaymentLeadRows(supabase).catch(() => [] as PaymentLeadRow[])
+    : Promise.resolve([] as PaymentLeadRow[]);
+  const collectionsPromise = show("collections") && isAdminOrOffice && !moneyOnDevice
     ? getCollectionsSummary(supabase, todayIso).catch(() => null)
     : Promise.resolve(null);
   const attendanceQueuePromise = show("attendanceQueue") && isAdminOrOffice && !localMode
@@ -662,24 +629,15 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
   // Money before the books start date (Settings → כספים) isn't real — a month
   // before it charts as empty, including the "last month" ghost bars.
   const booksStartDatePromise = needDomainChart ? getBooksStartDate(supabase) : Promise.resolve(null);
-  const domainBreakdownPromise = needDomainChart
+  const noBreakdowns: DomainBreakdowns = { current: [], previous: [] };
+  const domainBreakdownsPromise = needDomainChart
     ? Promise.all([financialEntriesPromise, booksStartDatePromise])
-        .then(([shared, booksStartDate]) =>
-          isMonthBeforeBooksStart(currentMonth, booksStartDate)
-            ? []
-            : loadDomainCashBreakdown(supabase, currentMonthWindow, shared?.entries)
-        )
-        .catch(() => [] as CashPoint[])
-    : Promise.resolve([] as CashPoint[]);
-  const domainPrevBreakdownPromise = needDomainChart
-    ? Promise.all([financialEntriesPromise, booksStartDatePromise])
-        .then(([shared, booksStartDate]) =>
-          isMonthBeforeBooksStart(previousMonth(currentMonth), booksStartDate)
-            ? []
-            : loadDomainCashBreakdown(supabase, previousMonthWindow, shared?.entries)
-        )
-        .catch(() => [] as CashPoint[])
-    : Promise.resolve([] as CashPoint[]);
+        .then(async ([shared, booksStartDate]) => ({
+          breakdowns: await loadDomainChartBreakdowns(supabase, moneyDates, shared?.entries, booksStartDate),
+          ok: true,
+        }))
+        .catch(() => ({ breakdowns: noBreakdowns, ok: false }))
+    : Promise.resolve({ breakdowns: noBreakdowns, ok: false });
 
   // ── FAST group — today's schedule, today's DATED alerts, my tasks,
   // deliveries, and the activity digest. Awaited here so these are on the
@@ -789,9 +747,13 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
           canOpenOrder={isAdminOrOffice}
         />
       ),
-    // The money cards show their last version (kept on the device) while the
-    // fresh one is worked out — see components/dashboard/RememberedCard.
-    payments: isAdminOrOffice ? (
+    // The money cards: from the device where its copy has the money tables
+    // (moneyOnDevice); otherwise worked out here, showing their last version
+    // (kept on the device) while the fresh one is — see
+    // components/dashboard/RememberedCard.
+    payments: !isAdminOrOffice ? null : moneyOnDevice ? (
+      show("payments") ? <LocalDashboardCard kind="payments" viewer={localViewer} fillClassName={CARD_FILL_CLASS} /> : null
+    ) : (
       <Suspense
         fallback={<RememberedCardFallback rememberKey={`${profile.id}:payments`} kind="payments" className={CARD_FILL_CLASS} />}
       >
@@ -801,18 +763,26 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
           todayIso={todayIso}
           locale={locale}
           rememberKey={`${profile.id}:payments`}
+          moneyCheck={moneyCheck}
         />
       </Suspense>
-    ) : null,
-    collections: show("collections") && isAdminOrOffice ? (
+    ),
+    collections: !(show("collections") && isAdminOrOffice) ? null : moneyOnDevice ? (
+      <LocalDashboardCard kind="collections" viewer={localViewer} fillClassName={CARD_FILL_CLASS} />
+    ) : (
       <Suspense
         fallback={
           <RememberedCardFallback rememberKey={`${profile.id}:collections`} kind="collections" className={CARD_FILL_CLASS} />
         }
       >
-        <CollectionsSlowCell summaryPromise={collectionsPromise} locale={locale} rememberKey={`${profile.id}:collections`} />
+        <CollectionsSlowCell
+          summaryPromise={collectionsPromise}
+          locale={locale}
+          rememberKey={`${profile.id}:collections`}
+          moneyCheck={moneyCheck}
+        />
       </Suspense>
-    ) : null,
+    ),
     attendanceQueue: !(show("attendanceQueue") && isAdminOrOffice) ? null : localMode ? (
       <LocalDashboardCard kind="attendanceQueue" viewer={localViewer} fillClassName={CARD_FILL_CLASS} />
     ) : (
@@ -833,7 +803,9 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
         <PropertiesSlowCell summaryPromise={propertiesPromise} locale={locale} shadow={shadow} />
       </Suspense>
     ),
-    domainChart: needDomainChart ? (
+    domainChart: !(show("domainChart") && isAdminOrOffice) ? null : moneyOnDevice ? (
+      <LocalDashboardCard kind="domainChart" viewer={localViewer} fillClassName={CARD_FILL_CLASS} />
+    ) : (
       <Suspense
         fallback={
           <RememberedCardFallback rememberKey={`${profile.id}:domainChart`} kind="domainChart" className={CARD_FILL_CLASS} />
@@ -841,15 +813,14 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
       >
         <DomainChartSlowCell
           rememberKey={`${profile.id}:domainChart`}
-          breakdownPromise={domainBreakdownPromise}
-          prevBreakdownPromise={domainPrevBreakdownPromise}
+          breakdownsPromise={domainBreakdownsPromise}
           booksStartDatePromise={booksStartDatePromise}
-          currentMonth={currentMonth}
-          todayIso={todayIso}
+          dates={moneyDates}
           locale={locale}
+          moneyCheck={moneyCheck}
         />
       </Suspense>
-    ) : null,
+    ),
   };
 
   const orderedWithNodes = ordered
@@ -1016,6 +987,9 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
               deliveries: show("deliveries") && locale !== "ar",
               attendanceQueue: show("attendanceQueue") && isAdminOrOffice,
               properties: show("properties") && isAdminOrOffice,
+              payments: moneyOnDevice && show("payments"),
+              collections: moneyOnDevice && show("collections"),
+              domainChart: moneyOnDevice && show("domainChart"),
             }}
           />
         </Suspense>

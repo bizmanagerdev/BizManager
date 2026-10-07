@@ -2,12 +2,24 @@ import { cookies } from "next/headers";
 import { israelDateKey } from "@/lib/timezone";
 import { localDataPageOn } from "./config";
 import { DEVICE_COPY_PENDING_COOKIE } from "./device-pending";
+import { MONEY_COPY_COOKIE } from "./money-copy";
 
 /**
  * Does this person get the device version of `page` on the device asking?
  * Not while that device's copy is still incomplete (its cookie, from
  * lib/powersync/device-pending.ts): the server version then, at once.
  */
+/**
+ * Does this person's dashboard draw its money cards from the device? Only on
+ * the device version of the board, and only where the copy is known to carry
+ * the money tables (lib/powersync/money-copy.ts) — elsewhere the server works
+ * them out, as before.
+ */
+export async function moneyCardsOnDevice(viewer: { id: string; role: string | null | undefined }): Promise<boolean> {
+  if (!localDataPageOn("dashboardMoney", viewer)) return false;
+  return (await cookies()).get(MONEY_COPY_COOKIE)?.value === "1";
+}
+
 export async function devicePageOn(
   page: DeviceCheckPage,
   viewer: { id: string; role: string | null | undefined }
