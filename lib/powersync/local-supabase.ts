@@ -44,6 +44,8 @@ const BOOLEAN_COLUMNS: Record<string, readonly string[]> = {
   project_expenses: ["included_in_base_price", "billed_to_customer"],
   salary_agreements: ["is_billable_to_customer"],
   product_categories: ["active"],
+  // Its one row's key is the boolean true (synced as the text "true").
+  business_settings: ["id"],
 };
 
 const NUMERIC_COLUMNS: Record<string, readonly string[]> = {
@@ -63,6 +65,7 @@ const NUMERIC_COLUMNS: Record<string, readonly string[]> = {
   worker_payment_allocations: ["amount"],
   worker_payments: ["amount"],
   inventory_movements: ["quantity"],
+  business_settings: ["vat_rate"],
 };
 
 const JSON_COLUMNS: Record<string, readonly string[]> = {
@@ -103,6 +106,9 @@ export const LOCAL_TABLES: ReadonlySet<string> = new Set([
   "product_categories",
   "task_comments",
   "document_links",
+  "accounts",
+  "business_settings",
+  "recurring_expense_templates",
 ]);
 
 /**
@@ -400,6 +406,7 @@ const EMBEDS: Record<string, Record<string, EmbedTarget>> = {
   lease_agreements: { customers: { table: "customers", fkColumn: "customer_id" } },
   project_expenses: { expenses: { table: "expenses", fkColumn: "expense_id" } },
   task_members: { users: { table: "users", fkColumn: "user_id" } },
+  worker_payment_allocations: { worker_payments: { table: "worker_payments", fkColumn: "worker_payment_id" } },
   tasks: {
     "users!tasks_assigned_user_id_fkey": { table: "users", fkColumn: "assigned_user_id" },
     task_members: { table: "task_members", fkColumn: "task_id", many: true },
@@ -832,6 +839,82 @@ const VIEWS: Record<string, SourceLoader> = {
   },
 
   worker_debt_items_view: (reader) => workerDebtItems(reader),
+
+  // session_effective_payment_view: each shift's payment as the worker is
+  // paid — a payslip worker's shifts take their month's payslip status (and
+  // no amounts of their own); everyone else's, the shift's own debt row. Only
+  // shifts whose worker exists (an inner join); one row per payslip of that
+  // month (a left join).
+  session_effective_payment_view: async (reader) => {
+    const [sessions, users, debt] = await Promise.all([
+      loadTable(reader, "attendance_sessions"),
+      loadTable(reader, "users"),
+      workerDebtItems(reader),
+    ]);
+    const userById = new Map(users.map((u) => [u.id, u]));
+    const sessionDebt = new Map(debt.filter((d) => d.source_type === "session").map((d) => [d.source_id, d]));
+    const payslips = groupBy(
+      debt.filter((d) => d.source_type === "payslip"),
+      (d) => `${d.user_id}:${d.period_month}`
+    );
+    const rows: Row[] = [];
+    for (const s of sessions) {
+      const u = userById.get(s.user_id);
+      if (!u) continue;
+      const month = utcDateOf(s.clock_in)?.slice(0, 7) ?? null;
+      const covered = u.pay_tracking_mode === "payslip";
+      const sd = sessionDebt.get(s.id) ?? null;
+      const monthPayslips: Array<Row | null> = (month ? payslips.get(`${s.user_id}:${month}`) : undefined) ?? [null];
+      for (const ps of monthPayslips) {
+        rows.push({
+          session_id: s.id,
+          user_id: s.user_id,
+          period_month: month,
+          is_payslip_covered: u.pay_tracking_mode == null ? null : covered,
+          payment_status: (covered ? ps?.payment_status : sd?.payment_status) ?? null,
+          paid_amount: covered ? null : sd?.paid_amount ?? null,
+          owed_amount: covered ? null : sd?.owed_amount ?? null,
+          last_payment_date: (covered ? ps?.last_payment_date : sd?.last_payment_date) ?? null,
+          due_date: (covered ? ps?.due_date : sd?.due_date) ?? null,
+        });
+      }
+    }
+    return rows;
+  },
+
+  // task_overview_view: each task with its project's and assignee's names,
+  // and whether it's overdue (due before now and not done — unknown, as in
+  // SQL, when there's no due date or status and it isn't done).
+  task_overview_view: async (reader) => {
+    const [tasks, users, projects] = await Promise.all([
+      loadTable(reader, "tasks"),
+      directoryRows(reader, "user_directory", "users"),
+      loadTable(reader, "projects"),
+    ]);
+    const userById = new Map(users.map((u) => [u.id, u]));
+    const projectById = new Map(projects.map((p) => [p.id, p]));
+    const now = Date.now();
+    return tasks.map((t) => {
+      const due = typeof t.due_date === "string" ? Date.parse(t.due_date) : Number.NaN;
+      const pastDue = Number.isNaN(due) ? null : due < now;
+      const notDone = t.status == null ? null : t.status !== "done";
+      const isOverdue = pastDue === false || notDone === false ? false : pastDue === null || notDone === null ? null : true;
+      return {
+        task_id: t.id,
+        subject: t.subject ?? null,
+        status: t.status ?? null,
+        priority: t.priority ?? null,
+        due_date: t.due_date ?? null,
+        project_id: t.project_id ?? null,
+        project_name: (t.project_id ? projectById.get(t.project_id)?.name : null) ?? null,
+        assigned_user_id: t.assigned_user_id ?? null,
+        assigned_user_name: (t.assigned_user_id ? userById.get(t.assigned_user_id)?.full_name : null) ?? null,
+        created_at: t.created_at ?? null,
+        updated_at: t.updated_at ?? null,
+        is_overdue: isOverdue,
+      };
+    });
+  },
   project_financials_view: (reader) => projectFinancials(reader),
 
   // order_overview_view: each order with its customer, branch, who made it,

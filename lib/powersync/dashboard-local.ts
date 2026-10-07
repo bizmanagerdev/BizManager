@@ -32,6 +32,7 @@ import {
   type TasksFilters,
 } from "@/app/(app)/tasks/loadTasks";
 import { loadOrderPageCore, type OrderPageCore } from "@/lib/orders/order-page";
+import { loadProjectPageCore, type ProjectPageCore } from "@/lib/projects/project-page";
 import { israelDateKey } from "@/lib/timezone";
 import type { Locale } from "@/lib/i18n/types";
 
@@ -74,6 +75,12 @@ export type LocalDashboardCards = {
    * copy (yet).
    */
   orderPage: OrderPageCore;
+  /**
+   * A project's page (/projects/<id>), all but what only the server reads
+   * (its documents and files, Morning documents, the change log, history).
+   * `dashboardRow` null: not on this device's copy (yet).
+   */
+  projectPage: ProjectPageCore;
 };
 
 export type LocalCardKind = keyof LocalDashboardCards;
@@ -104,6 +111,11 @@ export const LOCAL_CARD_TABLES: Record<LocalCardKind, string[]> = {
     "tasks", "task_members", "users", "user_directory", "projects", "customers", "properties", "property_directory", "task_comments", "reminders", "document_links",
   ],
   orderPage: ["orders", "order_items", "payments", "customers", "customer_branches", "products", "inventory", "users", "user_directory"],
+  projectPage: [
+    "projects", "customers", "customer_branches", "users", "user_directory", "tasks", "project_expenses", "expenses",
+    "attendance_sessions", "payments", "payslips", "payroll_periods", "salary_agreements", "worker_payments",
+    "worker_payment_allocations", "accounts", "business_settings", "recurring_expense_templates",
+  ],
 };
 
 export async function computeLocalCard<K extends LocalCardKind>(
@@ -202,6 +214,18 @@ export async function computeLocalCard<K extends LocalCardKind>(
       const { id } = need<{ id: string }>();
       const core = await loadOrderPageCore(local, id);
       // A read the device couldn't do: the server version shows it instead.
+      const failed = Object.entries(core.errors).find(([, message]) => message);
+      if (failed) throw new Error(`${failed[0]}: ${failed[1]}`);
+      return core as LocalDashboardCards[K];
+    }
+    case "projectPage": {
+      const { id } = need<{ id: string }>();
+      // A copy without the business settings' row doesn't have what this
+      // page needs yet (sync rules v1.7): the server version, rather than a
+      // page with the default VAT rate and unnamed accounts.
+      const { data: settings } = await local.from("business_settings").select("vat_rate").limit(1);
+      if (!Array.isArray(settings) || settings.length === 0) throw new Error("projectPage: this copy has no business settings (sync rules before v1.7)");
+      const core = await loadProjectPageCore(local, id);
       const failed = Object.entries(core.errors).find(([, message]) => message);
       if (failed) throw new Error(`${failed[0]}: ${failed[1]}`);
       return core as LocalDashboardCards[K];

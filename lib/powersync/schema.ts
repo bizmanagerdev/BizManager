@@ -28,6 +28,8 @@ const users = new Table(
     notification_prefs: text,
     pay_tracking_mode: text,
     payroll_worker_type: text,
+    /** The login id (some rows record who entered them by it). Staff copies only, from sync rules v1.7. */
+    auth_user_id: text,
   },
   { indexes: { by_role: ["role"] } }
 );
@@ -542,6 +544,13 @@ const user_directory = new Table({ full_name: text, avatar_color: text, role: te
 /** Every property's name and address — exactly what property_directory() hands anyone (workers' copy only). */
 const property_directory = new Table({ name: text, address: text, is_active: int });
 
+// A project's page (sync rules v1.7, admins and office): each movement's
+// account by name, the VAT rate, and a recurring bill's rule by name.
+const accounts = new Table({ name: text });
+/** One row; id = "true" (the table's key is the boolean true). */
+const business_settings = new Table({ vat_rate: text });
+const recurring_expense_templates = new Table({ template_name: text, created_by: text });
+
 export const AppSchema = new Schema({
   users,
   user_directory,
@@ -573,6 +582,9 @@ export const AppSchema = new Schema({
   product_categories,
   task_comments,
   document_links,
+  accounts,
+  business_settings,
+  recurring_expense_templates,
 });
 
 export type LocalDatabase = (typeof AppSchema)["types"];

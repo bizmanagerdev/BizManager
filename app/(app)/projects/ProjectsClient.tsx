@@ -39,7 +39,7 @@ import {
 import { paymentStatusClasses } from "@/lib/orders/paymentStatus";
 import { rowNavigateProps } from "@/lib/ui/row-navigation";
 import RouteOpeningOverlay, { showRouteOpening } from "@/components/layout/RouteOpeningOverlay";
-import ProjectPagePreview from "@/app/(app)/projects/[id]/ProjectPagePreview";
+import ProjectPageOpening from "@/app/(app)/projects/[id]/ProjectPageOpening";
 import { projectPreviewFromRow, rememberProjectPreview } from "@/app/(app)/projects/[id]/projectPreview";
 import { DataTableShell } from "@/components/ui/data-table-shell";
 import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
@@ -671,14 +671,15 @@ export default function ProjectsClient({
   // One swiped-open row at a time, like a native list.
   const [swipedRow, setSwipedRow] = useState<string | null>(null);
 
-  // A tapped project's page shows its header at once, from this row, until
-  // the page's own data arrives: over the list straight away on a phone, and
-  // as the page's loading screen everywhere.
+  // A tapped project's page shows at once: over the list straight away on a
+  // phone, and as the page's loading screen everywhere — drawn from this
+  // device's copy when it has one, else its header from this row until the
+  // page's own data arrives.
   const openProject = (row: ProjectRow) => {
     const preview = projectPreviewFromRow(row);
     if (!preview) return;
     rememberProjectPreview(preview);
-    showRouteOpening(<ProjectPagePreview preview={preview} />);
+    showRouteOpening(<ProjectPageOpening id={preview.id} preview={preview} />);
   };
 
   // Project create/edit now run through the shared <NewProjectClient/> wizard, so

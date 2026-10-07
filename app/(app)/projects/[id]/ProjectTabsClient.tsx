@@ -247,6 +247,7 @@ export default function ProjectTabsClient({
   projectTasks,
   projectDocuments: projectDocumentsProp,
   projectDocumentsError,
+  documentsPending = false,
   assignableUsers,
   expenses,
   expenseRecordedByNameByValue,
@@ -294,6 +295,8 @@ export default function ProjectTabsClient({
     url: string | null;
   }>;
   projectDocumentsError: string | null;
+  /** The documents (and the rows' files) are still on their way from the server. */
+  documentsPending?: boolean;
   assignableUsers: AssignableUser[];
   expenses: ExpenseListItem[];
   expenseRecordedByNameByValue: Record<string, string>;
@@ -2212,11 +2215,14 @@ export default function ProjectTabsClient({
             <div className="hidden lg:block">{financialSummarySection}</div>
           ) : null}
         <CollapsibleSection
+          // Opened or closed by whether there are documents once they're known
+          // (they can arrive after the page — then it's drawn again for them).
+          key={documentsPending ? "documents-pending" : "documents"}
           defaultOpen={projectDocuments.length > 0}
           title="מסמכים"
           icon={<DocumentIcon className="h-4 w-4 text-primary" />}
           summary={
-            <span className="text-muted-foreground">{projectDocuments.length} קבצים</span>
+            documentsPending ? null : <span className="text-muted-foreground">{projectDocuments.length} קבצים</span>
           }
           contentClassName="text-sm space-y-3"
         >
@@ -2224,7 +2230,9 @@ export default function ProjectTabsClient({
             <div className="text-sm text-destructive">שגיאה בטעינת מסמכים: {projectDocumentsError}</div>
           ) : null}
 
-          {filteredProjectDocuments.length === 0 ? (
+          {documentsPending ? (
+            <div className="h-20 animate-pulse rounded-2xl bg-muted/40" aria-busy="true" />
+          ) : filteredProjectDocuments.length === 0 ? (
             <p className="text-muted-foreground">אין מסמכים להצגה.</p>
           ) : (
             <div className="grid grid-cols-2 gap-2">

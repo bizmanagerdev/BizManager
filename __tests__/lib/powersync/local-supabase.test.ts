@@ -11,6 +11,7 @@ import { computeLocalListPage } from "@/lib/powersync/dashboard-local";
 import { loadPriceListPage } from "@/app/(app)/sales/loadProducts";
 import { loadTaskPickerOptions, loadTasksBoard } from "@/app/(app)/tasks/loadTasks";
 import { loadOrderPageCore } from "@/lib/orders/order-page";
+import { loadProjectPageCore } from "@/lib/projects/project-page";
 
 // The on-device stand-in for the Supabase client: the server's loaders run
 // against it unchanged, so it has to answer exactly like PostgREST — values
@@ -593,6 +594,94 @@ describe("the money views, worked out on the device", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("a project's page, end to end on the device copy: every read it makes, and what it puts together", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-06T09:00:00Z"));
+    try {
+      // Every column a real copy has (null when unset), as the page's reads name them.
+      const pad = (rows: Row[], columns: string) =>
+        rows.map((row) => ({ ...Object.fromEntries(columns.split(",").map((c) => [c, null])), ...row }));
+      const db = createLocalSupabase(
+        fakeReader({
+          ...tables,
+          users: pad(
+            [...tables.users.map((u) => ({ ...u, active: 1 })), { id: "boss", auth_user_id: "auth-boss", full_name: "מנהל", active: 1 }],
+            "email,role,active,payroll_worker_type,pay_tracking_mode,auth_user_id,avatar_color"
+          ),
+          projects: pad(
+            tables.projects.map((p) => (p.id === "p1" ? { ...p, notes: "קומה 3", items_to_move: '["ספה"]', branch_id: "b1", project_type: "moving" } : p)),
+            "project_type,start_date,end_date,expenses_billed_separately,project_manager_id,created_at,updated_at,notes,items_to_move,origin_address,origin_floor,origin_has_elevator,destination_address,destination_floor,destination_has_elevator,payment_terms,due_date,no_charge,branch_id"
+          ),
+          expenses: pad(
+            [
+              { id: "e1", amount: "100", recorded_by: "auth-boss", recurring_expense_template_id: "tpl1", expense_date: "2026-09-10", payment_status: "paid", paid_amount: "100" },
+              { id: "e2", amount: "50", recorded_by: "u1", expense_date: "2026-09-12", payment_status: "not_paid", paid_amount: "0" },
+            ],
+            "expense_date,payment_method,payment_status,paid_amount,category,description,business_domain,notes,account_id,recorded_by,created_at,updated_at,recurring_expense_template_id"
+          ),
+          project_expenses: pad(tables.project_expenses, "included_in_base_price,notes"),
+          attendance_sessions: pad(tables.attendance_sessions, "clock_out,billing_status,notes"),
+          payments: pad(
+            tables.payments.map((p) => ({ ...p, recorded_by: "boss" })),
+            "payment_method,reference_number,check_number,amount_including_vat,amount_before_vat,vat_rate,business_domain,order_id,property_id,requires_split,recorded_by,notes,account_id,created_at,updated_at"
+          ),
+          salary_agreements: pad(tables.salary_agreements, "salary_type,hourly_rate,monthly_salary,notes,overtime_rate,standard_daily_hours"),
+          customers: pad(tables.customers, "name_for_invoice,email,address"),
+          customer_branches: [{ id: "b1", customer_id: "c1", name: "צפון", address: "חיפה", phone: "04" }],
+          tasks: pad(
+            [
+              { id: "t1", project_id: "p1", status: "done", subject: "לארוז", due_date: "2026-10-01T08:00:00.000000", assigned_user_id: "u1" },
+              { id: "t2", project_id: "p1", status: "todo", subject: "להוביל", due_date: "2026-10-05T08:00:00.000000", assigned_user_id: "u1" },
+            ],
+            "priority,created_at,updated_at"
+          ),
+          worker_payments: tables.worker_payments.map((w, i) => ({ ...w, account_id: i === 0 ? "acc1" : null })),
+          accounts: [{ id: "acc1", name: " קופה " }],
+          business_settings: [{ id: "true", vat_rate: "0.18" }],
+          recurring_expense_templates: [{ id: "tpl1", template_name: " שכירות ", created_by: "boss" }],
+        })
+      );
+      const page = await loadProjectPageCore(db, "p1");
+      expect(page.errors).toEqual({ overview: null, projectExpenses: null, expenses: null, sessions: null, payments: null });
+      expect(page.currentVatRate).toBe(0.18);
+      expect(page.dashboardRow).toMatchObject({ id: "p1", name: "הובלה", customer_name: "לקוח", total_tasks: 2, completed_tasks: 1 });
+      expect(page.details).toMatchObject({ notes: "קומה 3", items_to_move: ["ספה"], branch_id: "b1", price_includes_vat: true });
+      expect(page.branchRow).toMatchObject({ name: "צפון" });
+      expect(page.customerRow).toMatchObject({ phone: "050" });
+      // Tasks: due before now and not done is overdue.
+      expect(page.projectTasks.map((t) => [t.task_id, t.assigned_user_name, t.is_overdue])).toEqual([
+        ["t1", "שעתי", false],
+        ["t2", "שעתי", true],
+      ]);
+      expect(page.expenses.map((e) => e.id)).toEqual(["e2", "e1"]);
+      // Entered by — one by login id, one by id.
+      expect(page.expenseRecordedByNameByValue).toMatchObject({ "auth-boss": "מנהל", boss: "מנהל", u1: "שעתי" });
+      expect(page.recurringTemplateNames).toEqual({ tpl1: "שכירות" });
+      expect(page.recurringTemplateAuthors).toEqual({ tpl1: "boss" });
+      // The shift's own debt row (an hourly worker): 50 paid of 150.50.
+      expect(page.sessionDebtById.s1).toMatchObject({ payment_status: "partial", paid_amount: 50 });
+      expect(page.wageAccountIdsBySource).toEqual({ "session:s1": ["acc1"] });
+      expect(page.monthlySalaryItems.map((m) => [m.payslip_id, m.payment_status])).toEqual([["ps1", "paid"]]);
+      expect(page.payments.map((p) => p.id)).toEqual(["pay1", "pay3", "pay2"]);
+      expect(page.paymentRecordedByNameByValue).toMatchObject({ boss: "מנהל" });
+      expect(page.accountNameById).toEqual({ acc1: "קופה" });
+      expect(page.owed).toMatchObject({ expensesOpen: 50 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("session_effective_payment_view: a payslip worker's shift takes its month's payslip status, no amounts", async () => {
+    const db = createLocalSupabase(
+      fakeReader({ ...tables, payroll_periods: [{ id: "pp1", end_date: "2026-10-31", period_month: "2026-10" }] })
+    );
+    const { data } = await db.from("session_effective_payment_view").select("*").in("session_id", ["s1", "s3"]).order("session_id");
+    expect(data).toEqual([
+      expect.objectContaining({ session_id: "s1", is_payslip_covered: false, payment_status: "partial", paid_amount: 50, owed_amount: 100.5 }),
+      expect.objectContaining({ session_id: "s3", period_month: "2026-10", is_payslip_covered: true, paid_amount: null, owed_amount: null }),
+    ]);
   });
 });
 

@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { useLocalCard } from "@/components/powersync/useLocalCard";
 import { useDevicePageTiming } from "@/components/powersync/useDevicePageTiming";
+import { useSettled } from "@/hooks/useSettled";
 import type { LocalCardViewer } from "@/lib/powersync/dashboard-local";
 import OrderPagePreview from "@/app/(app)/sales/orders/[id]/OrderPagePreview";
 import OrderPageView from "@/app/(app)/sales/orders/[id]/OrderPageView";
@@ -26,25 +27,6 @@ import type { OrderPageExtras } from "@/app/(app)/sales/orders/[id]/loadOrderPag
 
 /** How long an order missing from the copy is waited for before the server version. */
 const MISSING_ORDER_WAIT_MS = 2500;
-
-/** `promise`'s value once it has one (null until then, and if it fails). */
-function useSettled<T>(promise: PromiseLike<T> | null): T | null {
-  const [settled, setSettled] = useState<{ promise: PromiseLike<T>; value: T } | null>(null);
-  useEffect(() => {
-    if (!promise) return;
-    let live = true;
-    Promise.resolve(promise).then(
-      (value) => {
-        if (live) setSettled({ promise, value });
-      },
-      () => {}
-    );
-    return () => {
-      live = false;
-    };
-  }, [promise]);
-  return settled && settled.promise === promise ? settled.value : null;
-}
 
 export default function LocalOrderPage({
   id,
@@ -73,7 +55,7 @@ export default function LocalOrderPage({
   const shown = card && card.data.filters.id === id ? card : null;
   const missing = shown !== null && shown.data.order === null;
   useDevicePageTiming("order", missing ? null : shown, shown?.data.items.length);
-  const settledExtras = useSettled(extras);
+  const settledExtras = useSettled(extras, id);
 
   useEffect(() => {
     if (!missing) return;

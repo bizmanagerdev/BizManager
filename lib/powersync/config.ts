@@ -46,6 +46,10 @@ export const LOCAL_DATA_PAGES = {
   // An order's own page (/sales/orders/<id>), from 2026-10-07 — its documents,
   // photos and history still come from the server, after the page.
   orders: true,
+  // A project's own page (/projects/<id>) — needs sync rules v1.7 on the
+  // device (account names, the VAT rate, recurring bills' names, login ids).
+  // Off for everyone but the people trying it out until then.
+  projectPage: false,
 } as const;
 
 /**
@@ -84,4 +88,5 @@ export const LOCAL_DATA_SHADOW = {
   sales: true,
   tasks: true,
   orders: true,
+  projectPage: true,
 } as const;

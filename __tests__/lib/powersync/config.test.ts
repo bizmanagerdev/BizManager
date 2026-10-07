@@ -9,9 +9,10 @@ import {
 } from "@/lib/powersync/config";
 
 // Who keeps a device copy (admins, office and workers) and who gets a page's
-// device version: admins and office for every page that's switched on — all
-// are (the first four from 2026-10-06, an order's page from 2026-10-07) — and
-// before that the people trying it out;
+// device version: admins and office for every page that's switched on (the
+// first four from 2026-10-06, an order's page from 2026-10-07; a project's
+// page once sync rules v1.7 are live) — and before that the people trying it
+// out;
 // workers only their dashboard and tasks, and only once their own switch is
 // on (after a day of comparisons). Never anyone else.
 describe("the device copy's switches", () => {
@@ -25,10 +26,15 @@ describe("the device copy's switches", () => {
 
   it("admins and office get the device version of every page that's switched on", () => {
     for (const page of Object.keys(LOCAL_DATA_PAGES) as Array<keyof typeof LOCAL_DATA_PAGES>) {
-      expect(LOCAL_DATA_PAGES[page]).toBe(true);
-      expect(localDataPageOn(page, { id: "someone", role: "admin" })).toBe(true);
-      expect(localDataPageOn(page, { id: "someone", role: "office" })).toBe(true);
+      expect(localDataPageOn(page, { id: "someone", role: "admin" })).toBe(LOCAL_DATA_PAGES[page]);
+      expect(localDataPageOn(page, { id: "someone", role: "office" })).toBe(LOCAL_DATA_PAGES[page]);
     }
+  });
+
+  it("a page still switched off (a project's page, until sync rules v1.7 are live): only the people trying it out", () => {
+    expect(LOCAL_DATA_PAGES.projectPage).toBe(false);
+    expect(localDataPageOn("projectPage", { id: "someone", role: "admin" })).toBe(false);
+    expect(localDataPageOn("projectPage", { id: LOCAL_DATA_PREVIEW_USERS[0], role: "admin" })).toBe(true);
   });
 
   it("workers: their pages stay on the server while their switch is off — even for the people trying it out", () => {
