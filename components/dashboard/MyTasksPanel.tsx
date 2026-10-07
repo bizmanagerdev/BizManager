@@ -1,5 +1,6 @@
 "use client";
 import { saveTaskStatus } from "@/lib/tasks/device-task-saves";
+import { OPENS_HERE_ATTRIBUTE, openTaskOnClick } from "@/lib/tasks/open-task-here";
 import { toHebrewError } from "@/lib/error-messages";
 
 import { useMemo, useState, useTransition } from "react";
@@ -205,8 +206,12 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
                   {/* Covers the row. The text block below is deliberately NOT
                       positioned, so this link paints over it and takes its clicks;
                       the button is lifted back above it by `relative`. */}
+                  {/* Opens the task right here, over the board (lib/tasks/
+                      open-task-here.ts); a new-tab click still goes to it. */}
                   <Link
                     href={`/tasks/${task.id}`}
+                    onClick={openTaskOnClick(task.id)}
+                    {...{ [OPENS_HERE_ATTRIBUTE]: "" }}
                     aria-label={subject}
                     className="absolute inset-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   />

@@ -16,6 +16,7 @@ import {
   TopNavigationProgress,
   emitNavigationContentShown,
   emitNavigationStart,
+  emitProgressActivityStart,
 } from "@/components/layout/TopNavigationProgress";
 
 const bar = () => document.querySelector('[class*="z-[120]"]');
@@ -83,6 +84,44 @@ describe("the top loading bar", () => {
       skeleton.remove();
       await vi.advanceTimersByTimeAsync(200);
     });
+    expect(bar()).toBeNull();
+  });
+
+  it("back to a page the app already put back on screen: no bar (it used to wait forever)", async () => {
+    route.path = "/tasks";
+    const { rerender } = render(<TopNavigationProgress />);
+    // The app restores the dashboard from its cache, then the browser says "back".
+    route.path = "/dashboard";
+    rerender(<TopNavigationProgress />);
+    window.history.replaceState({}, "", "/dashboard");
+    act(() => {
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect(await barSeenWithin(1000)).toBe(false);
+  });
+
+  it("back where the page is still on its way: the bar runs, and ends when it arrives", async () => {
+    route.path = "/dashboard";
+    window.history.replaceState({}, "", "/dashboard");
+    const { rerender } = render(<TopNavigationProgress />);
+    window.history.replaceState({}, "", "/sales");
+    act(() => {
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    expect(bar()).not.toBeNull();
+    route.path = "/sales";
+    rerender(<TopNavigationProgress />);
+    expect(await barSeenWithin(400)).toBe(true);
+    expect(bar()).toBeNull();
+  });
+
+  it("never stays on: something that never says it's done still ends after 12 s", async () => {
+    render(<TopNavigationProgress />);
+    act(() => emitProgressActivityStart());
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(bar()).not.toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(11_500));
     expect(bar()).toBeNull();
   });
 

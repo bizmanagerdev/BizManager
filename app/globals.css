@@ -752,6 +752,13 @@ body:has(.dark-topbar-page) #page-header-toolbar {
   body:has([data-page-header-toolbar]) #page-header-toolbar {
     display: flex;
   }
+
+  /* …except while a tapped row's page is opening over its list (the row's
+     page has no strip — see RouteOpeningOverlay). After the rule above, to
+     win at the same specificity. */
+  body[data-route-opening] #page-header-toolbar {
+    display: none;
+  }
 }
 
 /* Dashboard cards fade in as they arrive — the placeholder's box, then the

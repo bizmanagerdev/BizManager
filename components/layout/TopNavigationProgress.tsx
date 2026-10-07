@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
+import { OPENS_HERE_ATTRIBUTE, taskOpenerReady } from "@/lib/tasks/open-task-here";
 
 const NAV_START_EVENT = "app:navigation-start";
 const CONTENT_SHOWN_EVENT = "app:navigation-content-shown";
@@ -67,6 +68,7 @@ export function TopNavigationProgress() {
   const visibleRef = useRef(false);
   const activeRef = useRef(false);
   const showTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const failsafeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRouteChangeRef = useRef(false);
   const activityCountRef = useRef(0);
   const fromRouteKeyRef = useRef("");
@@ -108,6 +110,10 @@ export function TopNavigationProgress() {
   const finish = useCallback(() => {
     clearAllTimers();
     activeRef.current = false;
+    if (failsafeTimerRef.current) {
+      clearTimeout(failsafeTimerRef.current);
+      failsafeTimerRef.current = null;
+    }
     if (showTimerRef.current) {
       clearTimeout(showTimerRef.current);
       showTimerRef.current = null;
@@ -160,19 +166,12 @@ export function TopNavigationProgress() {
 
     // Backup: if no DOM mutation happens, still decide after window — unless a
     // loading screen is up, which the observer ends the bar for when it goes.
+    // (The hard failsafe is ensureStarted's.)
     finalizeTimerRef.current = setTimeout(() => {
       if (hasRouteLoadingSkeleton()) return;
       disconnectObserver();
       finalizeIfIdle();
     }, SKELETON_APPEAR_WAIT_MS);
-
-    // Hard failsafe.
-    setTimeout(() => {
-      if (!activeRef.current) return;
-      disconnectObserver();
-      clearAllTimers();
-      finalizeIfIdle();
-    }, FAILSAFE_MS);
   }, [clearAllTimers, disconnectObserver, finalizeIfIdle]);
 
   useEffect(() => {
@@ -195,6 +194,19 @@ export function TopNavigationProgress() {
           setVisible(true);
         }, SHOW_AFTER_MS);
       }
+
+      // Never left on: whatever it's still waiting for after this long (a
+      // page change that had already happened, an activity that never said it
+      // ended), it's over. Restarted by every new start.
+      if (failsafeTimerRef.current) clearTimeout(failsafeTimerRef.current);
+      failsafeTimerRef.current = setTimeout(() => {
+        failsafeTimerRef.current = null;
+        if (!activeRef.current) return;
+        pendingRouteChangeRef.current = false;
+        activityCountRef.current = 0;
+        disconnectObserver();
+        finish();
+      }, FAILSAFE_MS);
 
       progressTimerRef.current = setInterval(() => {
         setProgress((prev) => (prev >= 90 ? prev : prev + 6));
@@ -250,6 +262,9 @@ export function TopNavigationProgress() {
       if (!anchor.href) return;
       if (anchor.target && anchor.target !== "_self") return;
       if (anchor.hasAttribute("download")) return;
+      // A task row that opens its task right here (lib/tasks/open-task-here.ts):
+      // no page move to show progress for.
+      if (anchor.hasAttribute(OPENS_HERE_ATTRIBUTE) && taskOpenerReady()) return;
 
       try {
         const url = new URL(anchor.href);
@@ -264,6 +279,13 @@ export function TopNavigationProgress() {
     }
 
     function handlePopState() {
+      // Back / forward: the app can have put the page back on screen already
+      // (restored from its cache) before this event arrives — nothing left to
+      // wait for, and a bar started now waited forever for a change that had
+      // already happened (owner, 2026-10-07: the bar stuck on the dashboard
+      // after coming back from a task).
+      const here = `${window.location.pathname}?${new URLSearchParams(window.location.search).toString()}`;
+      if (here === routeKeyRef.current) return;
       startNavigation();
     }
 
@@ -283,8 +305,9 @@ export function TopNavigationProgress() {
       clearAllTimers();
       disconnectObserver();
       if (showTimerRef.current) clearTimeout(showTimerRef.current);
+      if (failsafeTimerRef.current) clearTimeout(failsafeTimerRef.current);
     };
-  }, [clearAllTimers, disconnectObserver, finalizeIfIdle]);
+  }, [clearAllTimers, disconnectObserver, finalizeIfIdle, finish]);
 
   useEffect(() => {
     if (!activeRef.current) return;

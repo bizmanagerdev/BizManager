@@ -63,6 +63,7 @@ export default function QuickCreateDialogs({
   data,
   quickCreateDate,
   quickCreateAccountId,
+  taskId,
 }: {
   action: QuickCreateAction | null;
   onClose: () => void;
@@ -72,6 +73,8 @@ export default function QuickCreateDialogs({
   quickCreateDate?: string;
   /** Pre-fill the account on a new income / expense (the חשבונות page's + / −). */
   quickCreateAccountId?: string;
+  /** The task form opens this existing task instead of a new one (a dashboard row). */
+  taskId?: string;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -235,9 +238,12 @@ export default function QuickCreateDialogs({
         onOpenChange={(open) => {
           if (!open) onClose();
         }}
-        mode="create"
-        wizard
-        defaultDueDate={quickCreateDate}
+        // An existing task (a dashboard row, opened right there — filled from
+        // the device copy at once), or a new one through the wizard.
+        mode={taskId ? "edit" : "create"}
+        taskId={taskId ?? null}
+        wizard={!taskId}
+        defaultDueDate={taskId ? undefined : quickCreateDate}
         currentUserId={data.currentUserId ?? undefined}
         // Only workers with system access can be assigned a task; no-access
         // (payroll-only) workers are excluded from the pickers.
@@ -251,7 +257,7 @@ export default function QuickCreateDialogs({
           // and a task saved on the device copy shows on the pages drawn from it
           // (the others refresh once it's reached the server).
           const id = created && typeof created.id === "string" ? created.id : "";
-          if (id) {
+          if (id && !taskId) {
             toast.success(HEBREW.taskSaved, {
               action: { label: "צפייה", onClick: () => router.push(`/tasks/${id}`) },
             });

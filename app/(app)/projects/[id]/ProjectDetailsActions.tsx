@@ -61,6 +61,8 @@ type ProjectDetails = {
   id: string;
   name: string;
   customer_id: string;
+  /** The customer's name (the edit form's picker may not list them — e.g. one just created). */
+  customer_name?: string | null;
   status: string;
   project_type: string;
   agreed_base_price: number | string | null;
@@ -258,8 +260,10 @@ export default function ProjectDetailsActions({
     const sorted = [...customerOptions].sort((a, b) => a.label.localeCompare(b.label, "he"));
     const selectedMissing = editCustomerId && !sorted.some((customer) => customer.id === editCustomerId);
     if (!selectedMissing) return sorted;
-    return [{ id: editCustomerId, label: "לקוח נוכחי" }, ...sorted];
-  }, [customerOptions, editCustomerId]);
+    // The project's customer by name, not "לקוח נוכחי" (owner, 2026-10-07).
+    const label = editCustomerId === project.customer_id && project.customer_name?.trim() ? project.customer_name.trim() : "לקוח נוכחי";
+    return [{ id: editCustomerId, label }, ...sorted];
+  }, [customerOptions, editCustomerId, project.customer_id, project.customer_name]);
 
   async function deleteProjectDocument(documentId: string) {
     if (!documentId || deletingDocumentId) return;

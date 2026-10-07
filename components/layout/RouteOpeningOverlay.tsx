@@ -84,7 +84,17 @@ export default function RouteOpeningOverlay() {
   useEffect(() => {
     if (!current) return;
     const timer = setTimeout(() => setOpening(null), GIVE_UP_MS);
-    return () => clearTimeout(timer);
+    // The list's own search/filter strip folds away under the overlay now —
+    // the row's page has none, so when that page took over, everything under
+    // the bar used to jump up by the strip's height behind it (unseen, but a
+    // layout shift all the same, counted against the page once the opening
+    // took longer than a moment). Folded right after the tap instead, where
+    // nothing is counted and the overlay already covers it (globals.css).
+    document.body.setAttribute("data-route-opening", "");
+    return () => {
+      clearTimeout(timer);
+      document.body.removeAttribute("data-route-opening");
+    };
   }, [current]);
 
   if (!current) return null;

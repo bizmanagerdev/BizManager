@@ -1,6 +1,7 @@
 "use client";
 
 import { saveTaskStatus } from "@/lib/tasks/device-task-saves";
+import { OPENS_HERE_ATTRIBUTE, openTaskOnClick, taskIdFromHref } from "@/lib/tasks/open-task-here";
 import { useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -374,8 +375,13 @@ export default function TodayScheduleCard({
                         border/bg show through — the resolve button below is lifted
                         above it (via `relative`, later in DOM order) to catch its
                         own clicks instead of navigating. */}
+                    {/* A task (or a task's reminder) opens right here, over the
+                        board (lib/tasks/open-task-here.ts). */}
                     <Link
                       href={entry.href}
+                      {...(taskIdFromHref(entry.href)
+                        ? { onClick: openTaskOnClick(taskIdFromHref(entry.href) as string), [OPENS_HERE_ATTRIBUTE]: "" }
+                        : {})}
                       aria-label={entry.title}
                       className="pointer-events-auto absolute inset-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     />

@@ -33,6 +33,7 @@ import { quickCreateDict } from "@/lib/i18n/dictionaries/quickCreate";
 import type { Locale } from "@/lib/i18n/types";
 import { deleteSnapshot, loadSnapshot, saveSnapshot } from "@/lib/offline-cache";
 import { readyLocalDatabase, whenLocalDatabaseReady } from "@/lib/powersync/store";
+import { OPEN_TASK_EVENT, registerTaskOpener } from "@/lib/tasks/open-task-here";
 
 // The dialogs (order wizard, project wizard, expense form…) are a big chunk of
 // JS. Nobody pays for it until the + menu is first opened.
@@ -330,6 +331,9 @@ export function QuickCreateMenu({
   // Likewise an account (the חשבונות page's per-account + / −), so the money
   // lands on the account the user was looking at without picking it again.
   const [quickAccountId, setQuickAccountId] = useState<string | undefined>(undefined);
+  // An existing task to open in the task form (a dashboard row — see
+  // lib/tasks/open-task-here.ts), instead of a new one.
+  const [quickTaskId, setQuickTaskId] = useState<string | undefined>(undefined);
   // Once mounted, keep the dialog host mounted — remounting it would reset any
   // in-progress wizard draft state the user might reopen to.
   const [dialogsMounted, setDialogsMounted] = useState(false);
@@ -375,10 +379,29 @@ export function QuickCreateMenu({
       prefetch();
       setQuickDate(detail.dueDate);
       setQuickAccountId(detail.accountId);
+      setQuickTaskId(undefined);
       setAction(action);
     }
     window.addEventListener("bizh:quick-create", onQuickCreate);
-    return () => window.removeEventListener("bizh:quick-create", onQuickCreate);
+    // A task row asking for its task to be opened right here (cancelled, so
+    // it knows the form took it and doesn't navigate).
+    function onOpenTask(event: Event) {
+      const taskId = (event as CustomEvent<{ taskId?: string }>).detail?.taskId;
+      if (!taskId) return;
+      event.preventDefault();
+      prefetch();
+      setQuickDate(undefined);
+      setQuickAccountId(undefined);
+      setQuickTaskId(taskId);
+      setAction("task");
+    }
+    window.addEventListener(OPEN_TASK_EVENT, onOpenTask);
+    const unregister = registerTaskOpener();
+    return () => {
+      window.removeEventListener("bizh:quick-create", onQuickCreate);
+      window.removeEventListener(OPEN_TASK_EVENT, onOpenTask);
+      unregister();
+    };
   }, [variant, prefetch, privileged, viewerRole]);
 
   // On the phone the panel is a full-width sheet-like card, so a tile stretches
@@ -608,6 +631,7 @@ export function QuickCreateMenu({
           setAction(null);
           setQuickDate(undefined);
           setQuickAccountId(undefined);
+          setQuickTaskId(undefined);
         }}
         title="טוען..."
         description="מכין את הרשימות לטופס."
@@ -625,10 +649,12 @@ export function QuickCreateMenu({
             setAction(null);
             setQuickDate(undefined);
             setQuickAccountId(undefined);
+            setQuickTaskId(undefined);
           }}
           data={data ?? EMPTY_QUICK_CREATE_DATA}
           quickCreateDate={quickDate}
           quickCreateAccountId={quickAccountId}
+          taskId={quickTaskId}
         />
       ) : null}
     </>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import { MetaRow } from "@/components/ui/meta-row";
@@ -212,6 +212,15 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
   const [linkLoaded, setLinkLoaded] = useState(mode === "create" || initial?.linked_user_id !== undefined);
 
   const [error, setError] = useState<string | null>(null);
+  // A required field left empty: its message is shown under it, and the form
+  // scrolls to it and focuses it — on a phone the form is long, and the message
+  // at the bottom by the button sat far from the field (owner, 2026-10-07:
+  // "choose a city" seemed to do nothing).
+  const [missingField, setMissingField] = useState<"name" | "phone" | "city" | null>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const phoneRef = useRef<HTMLInputElement>(null);
+  const cityRef = useRef<HTMLSelectElement>(null);
+  const cityOtherRef = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -370,19 +379,31 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
     (onUseExisting ?? onSaved)(result);
   }
 
+  function showMissing(field: "name" | "phone" | "city", message: string) {
+    setError(message);
+    setMissingField(field);
+    const target =
+      field === "name" ? nameRef.current : field === "phone" ? phoneRef.current : city === "אחר" ? cityOtherRef.current : cityRef.current;
+    requestAnimationFrame(() => {
+      target?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+      target?.focus({ preventScroll: true });
+    });
+  }
+
   async function submit() {
     if (submitting) return;
     setError(null);
+    setMissingField(null);
 
     const trimName = name.trim();
     const trimPhone = phone.trim();
     const finalCity = city === "אחר" ? cityOther.trim() : city.trim();
     const street = address.trim();
 
-    if (!trimName) return setError("יש להזין שם לקוח.");
+    if (!trimName) return showMissing("name", "יש להזין שם לקוח.");
     if (!isEdit) {
-      if (!trimPhone) return setError("יש להזין מספר טלפון.");
-      if (!finalCity) return setError("יש לבחור עיר.");
+      if (!trimPhone) return showMissing("phone", "יש להזין מספר טלפון.");
+      if (!finalCity) return showMissing("city", "יש לבחור עיר.");
     }
 
     const visible = contacts.filter((c) => !c._deleted);
@@ -575,12 +596,14 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
 
       <fieldset disabled={submitting || loading} className="space-y-3">
         <Field label="שם לקוח *">
-          <Input value={name} onChange={(e) => setName(e.target.value)} />
+          <Input ref={nameRef} value={name} onChange={(e) => setName(e.target.value)} aria-invalid={missingField === "name" || undefined} />
+          {missingField === "name" && error ? <p className="text-sm text-destructive">{error}</p> : null}
         </Field>
 
         <AdaptiveGrid variant="formTwo">
           <Field label={isEdit ? "טלפון" : "טלפון *"}>
-            <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+            <Input ref={phoneRef} value={phone} onChange={(e) => setPhone(e.target.value)} aria-invalid={missingField === "phone" || undefined} />
+            {missingField === "phone" && error ? <p className="text-sm text-destructive">{error}</p> : null}
           </Field>
           <Field label="וואטסאפ">
             <Input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} />
@@ -608,19 +631,23 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
 
         <Field label={isEdit ? "עיר" : "עיר *"}>
           <NativeSelect
+            ref={cityRef}
             value={city}
             onChange={(e) => setCity(e.target.value)}
+            aria-invalid={(missingField === "city" && city !== "אחר") || undefined}
           >
             <option value="">בחר עיר...</option>
             {CITY_OPTIONS.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
           </NativeSelect>
+          {missingField === "city" && city !== "אחר" && error ? <p className="text-sm text-destructive">{error}</p> : null}
         </Field>
 
         {city === "אחר" ? (
           <Field label="עיר (הקלדה חופשית) *">
-            <Input value={cityOther} onChange={(e) => setCityOther(e.target.value)} />
+            <Input ref={cityOtherRef} value={cityOther} onChange={(e) => setCityOther(e.target.value)} aria-invalid={missingField === "city" || undefined} />
+            {missingField === "city" && error ? <p className="text-sm text-destructive">{error}</p> : null}
           </Field>
         ) : null}
 
@@ -796,7 +823,7 @@ export function CustomerForm({ mode, initial = null, initialName, onSaved, onCan
         </details>
       </fieldset>
 
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {error && !missingField ? <p className="text-sm text-destructive">{error}</p> : null}
 
       <div className="flex items-center justify-end gap-2">
         {onCancel ? (
