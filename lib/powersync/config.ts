@@ -1,7 +1,7 @@
 // PowerSync — the on-device copy of the data (plan approved 2026-10-06:
-// https://claude.ai/artifact/5jiMSB3waCTfFnyUuJnzU7). Foundation stage: the
-// device database syncs in the background for admins and office, and no page
-// reads from it yet — each page moves over behind its own switch below.
+// https://claude.ai/artifact/5jiMSB3waCTfFnyUuJnzU7). The device database
+// syncs in the background for admins, office and workers; each page reads
+// from it only behind its own switch below.
 
 /** The PowerSync instance (EU). Dev instance until go-live, then production. */
 export const POWERSYNC_URL =
@@ -10,13 +10,23 @@ export const POWERSYNC_URL =
 /** Folder the SDK's worker/.wasm files are served from (next.config.ts). */
 export const POWERSYNC_ASSETS_BASE = process.env.NEXT_PUBLIC_POWERSYNC_ASSETS ?? "/powersync";
 
-/**
- * Who gets an on-device copy. The sync rules (powersync/sync-config.yaml)
- * only hand data to active admins and office users for now; workers come with
- * the dashboard step, together with their own rules.
- */
-export function localDataEnabledFor(role: string | null | undefined): boolean {
+function isStaff(role: string | null | undefined): boolean {
   return role === "admin" || role === "office";
+}
+
+/**
+ * Workers' device copy (approved 2026-10-07): their own share of the data —
+ * their tasks and what those show, everyone's names, all customers, the open
+ * orders (powersync/sync-config.yaml, the worker_* streams). `sync`: their
+ * phones keep the copy and compare it with the server once a day per page,
+ * nothing on screen changing; `pages`: their dashboard and tasks are drawn
+ * from it — switched on only after a day of clean comparisons.
+ */
+export const LOCAL_DATA_WORKERS = { sync: true, pages: false } as const;
+
+/** Who gets an on-device copy: admins and office, and workers (LOCAL_DATA_WORKERS). */
+export function localDataEnabledFor(role: string | null | undefined): boolean {
+  return isStaff(role) || (role === "worker" && LOCAL_DATA_WORKERS.sync);
 }
 
 /**
@@ -44,10 +54,19 @@ export const LOCAL_DATA_PREVIEW_USERS: readonly string[] = [
   "2fcc692e-5bd7-41a1-b4c4-3aabfa7d580e", // the owner (admin), from 2026-10-06
 ];
 
+/** Workers' pages that have a device version (the others are staff-only pages). */
+const WORKER_DEVICE_PAGES: ReadonlySet<keyof typeof LOCAL_DATA_PAGES> = new Set(["dashboard", "tasks"]);
+
+/** Does everyone with this role get the device version of `page`? */
+export function localDataPageFor(page: keyof typeof LOCAL_DATA_PAGES, role: string | null | undefined): boolean {
+  if (role === "worker") return LOCAL_DATA_WORKERS.sync && LOCAL_DATA_WORKERS.pages && WORKER_DEVICE_PAGES.has(page);
+  return isStaff(role) && LOCAL_DATA_PAGES[page];
+}
+
 /** Does this person get the device version of `page`? */
 export function localDataPageOn(page: keyof typeof LOCAL_DATA_PAGES, viewer: { id: string; role: string | null | undefined }): boolean {
-  if (!localDataEnabledFor(viewer.role)) return false;
-  return LOCAL_DATA_PAGES[page] || LOCAL_DATA_PREVIEW_USERS.includes(viewer.id);
+  if (localDataPageFor(page, viewer.role)) return true;
+  return isStaff(viewer.role) && LOCAL_DATA_PREVIEW_USERS.includes(viewer.id);
 }
 
 /**

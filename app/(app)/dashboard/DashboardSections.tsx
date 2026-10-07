@@ -945,7 +945,9 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
 
       {shadow ? (
         <DashboardLocalShadow
-          checkMoneyViews
+          // The whole money views: staff only — a worker's server answer is
+          // his own pay rows, which his device copy doesn't hold.
+          checkMoneyViews={isAdminOrOffice}
           snapshot={{
             ...shadow,
             cards: {

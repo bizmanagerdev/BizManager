@@ -276,6 +276,28 @@ describe("views and directories", () => {
     const props = await db.rpc("property_directory").eq("id", "pr1").maybeSingle();
     expect(props.data).toEqual({ id: "pr1", name: null, address: "רחוב 1", is_active: false });
   });
+
+  it("a worker's copy: everyone's names from his directory, while `users` and `properties` hold only what he reads directly", async () => {
+    const db = createLocalSupabase(
+      fakeReader({
+        // As on the server: his own row, and no properties.
+        users: [{ id: "w1", full_name: "עובד", email: "w1@x", role: "worker", active: 1 }],
+        user_directory: [
+          { id: "u1", full_name: "מנהל", avatar_color: "#123", role: "admin", active: 1 },
+          { id: "w1", full_name: "עובד", avatar_color: null, role: "worker", active: 1 },
+        ],
+        property_directory: [{ id: "pr1", name: "בית", address: "רחוב 1", is_active: 1 }],
+      })
+    );
+    const everyone = await db.rpc("user_directory").order("full_name");
+    expect(everyone.data).toEqual([
+      { id: "u1", full_name: "מנהל", avatar_color: "#123", role: "admin", active: true },
+      { id: "w1", full_name: "עובד", avatar_color: null, role: "worker", active: true },
+    ]);
+    expect((await db.from("users").select("id,email").in("id", ["u1", "w1"])).data).toEqual([{ id: "w1", email: "w1@x" }]);
+    expect((await db.rpc("property_directory")).data).toEqual([{ id: "pr1", name: "בית", address: "רחוב 1", is_active: true }]);
+    expect((await db.from("properties").select("id")).data).toEqual([]);
+  });
 });
 
 describe("the server's own loaders, run on the device copy", () => {

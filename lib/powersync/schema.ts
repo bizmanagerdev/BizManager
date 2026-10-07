@@ -526,8 +526,21 @@ const document_links = new Table(
   { indexes: { by_entity: ["entity_type", "entity_id"] } }
 );
 
+/**
+ * Everyone's name and colour — exactly what user_directory() hands anyone.
+ * Workers' copy only (stream worker_people): their `users` holds just their
+ * own row, as on the server, so a loader reading `users` sees what it sees
+ * there. Staff read everyone from `users`.
+ */
+const user_directory = new Table({ full_name: text, avatar_color: text, role: text, active: int });
+
+/** Every property's name and address — exactly what property_directory() hands anyone (workers' copy only). */
+const property_directory = new Table({ name: text, address: text, is_active: int });
+
 export const AppSchema = new Schema({
   users,
+  user_directory,
+  property_directory,
   tasks,
   task_members,
   reminders,

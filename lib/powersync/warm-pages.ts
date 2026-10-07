@@ -19,8 +19,12 @@ export function usualPageViews(viewer: LocalCardViewer): ResultSpec[] {
     add("todayAlerts");
     add("myTasks");
     if (viewer.locale !== "ar") add("deliveries");
-    add("attendanceQueue");
-    add("properties");
+    // Staff-only cards (a worker's board is the four above; deliveries only
+    // with his deliveries section — the card just isn't opened otherwise).
+    if (viewer.role === "admin" || viewer.role === "office") {
+      add("attendanceQueue");
+      add("properties");
+    }
   }
   if (localDataPageOn("tasks", person)) {
     add("tasksBoard", { q: "", priority: "", domain: "", linkedId: "", scope: "mine" });

@@ -1,13 +1,16 @@
-# BizManager — PowerSync Sync Streams, foundation v1.5 (2026-10-06).
+# BizManager — PowerSync Sync Streams, v1.6 (2026-10-07): workers added.
 #
-# Every stream is for admins and office only: the signed-in person's role is
-# looked up in public.users by their Supabase login id (users.id differs from
-# the login id for some people). Workers get nothing until their own streams
-# are added with the dashboard step.
+# The signed-in person's role is looked up in public.users by their Supabase
+# login id (users.id differs from the login id for some people). The first
+# streams are for admins and office (staff_gate / staff_me); the worker_*
+# streams at the end are workers' own share — no more than the server's RLS
+# already lets a worker read.
 #
 # Gate pattern: `FROM <table>, staff_gate AS bucket` — the row syncs only when
 # the lookup returns a row, and all admins share one bucket (keyed by role).
-# (This PowerSync version supports neither EXISTS nor `IN ('a', 'b')` lists.)
+# (This PowerSync version supports neither EXISTS nor `IN ('a', 'b')` lists —
+# hence the chains of `!=` below.) `IN (SELECT ...)` subqueries, nested too,
+# give each person their own rows.
 #
 # Source of truth: powersync/sync-config.yaml in the repo. Paste the whole file
 # into the PowerSync dashboard (Sync Streams) and deploy.
@@ -19,6 +22,13 @@ with:
   staff_gate: SELECT role FROM users WHERE auth_user_id = auth.user_id() AND active = true AND system_access = true AND (role = 'admin' OR role = 'office')
   # The signed-in staff member's own users.id.
   staff_me: SELECT id FROM users WHERE auth_user_id = auth.user_id() AND active = true AND system_access = true AND (role = 'admin' OR role = 'office')
+  # The signed-in worker's own users.id, and a one-row gate for all workers
+  # (same conditions as current_app_user_id(): active, may sign in).
+  worker_me: SELECT id FROM users WHERE auth_user_id = auth.user_id() AND active = true AND system_access = true AND role = 'worker'
+  worker_gate: SELECT role FROM users WHERE auth_user_id = auth.user_id() AND active = true AND system_access = true AND role = 'worker'
+  # Workers whose deliveries section isn't switched off — it's on unless set
+  # to false (lib/auth/sections.ts sanitizeSectionAccess).
+  worker_deliveries_gate: SELECT role FROM users WHERE auth_user_id = auth.user_id() AND active = true AND system_access = true AND role = 'worker' AND (section_access IS NULL OR section_access ->> 'deliveries' IS NULL OR section_access ->> 'deliveries' != false)
 
 streams:
   # Names and colours of everyone, plus what the staff screens show
@@ -92,3 +102,105 @@ streams:
       - SELECT product_categories.* FROM product_categories, staff_gate AS bucket
       # Which documents are linked to what (the tasks board's paperclip).
       - SELECT document_links.* FROM document_links, staff_gate AS bucket
+
+  # ── Workers (approved 2026-10-07) ──────────────────────────────────────────
+  # Exactly what the server already lets a worker read (the tables' RLS
+  # policies), and of that only what his dashboard and tasks pages show. A
+  # worker's `users` holds just his own row, as on the server; everyone's name
+  # and colour come in `user_directory` and every property's name in
+  # `property_directory` — what user_directory() / property_directory() hand
+  # him. A task he's a member of counts only while it isn't private
+  # (task_can_access()); comments carry their task's privacy themselves.
+
+  worker_self:
+    auto_subscribe: true
+    query: |
+      SELECT users.id, users.full_name, users.email, users.phone, users.avatar_color,
+             users.role, users.active, users.system_access, users.locale, users.notification_prefs,
+             users.pay_tracking_mode, users.payroll_worker_type
+      FROM users WHERE users.id IN worker_me
+
+  worker_directory:
+    auto_subscribe: true
+    queries:
+      - |
+        SELECT "user_directory".id, "user_directory".full_name, "user_directory".avatar_color,
+               "user_directory".role, "user_directory".active
+        FROM users AS "user_directory", worker_gate AS bucket
+      - |
+        SELECT "property_directory".id, "property_directory".name, "property_directory".address,
+               "property_directory".is_active
+        FROM properties AS "property_directory", worker_gate AS bucket
+
+  worker_tasks:
+    auto_subscribe: true
+    queries:
+      # His tasks: assigned to him, or he's a member — not private; and his own private ones.
+      - SELECT * FROM tasks WHERE is_private = false AND assigned_user_id IN worker_me
+      - SELECT * FROM tasks WHERE is_private = false AND id IN (SELECT task_id FROM task_members WHERE user_id IN worker_me)
+      - SELECT * FROM tasks WHERE is_private = true AND private_owner_id IN worker_me
+      # Their members (and his own membership rows anywhere).
+      - |
+        SELECT task_members.task_id || ':' || task_members.user_id AS id,
+               task_members.task_id, task_members.user_id, task_members.created_at
+        FROM task_members WHERE task_members.user_id IN worker_me
+      - |
+        SELECT task_members.task_id || ':' || task_members.user_id AS id,
+               task_members.task_id, task_members.user_id, task_members.created_at
+        FROM task_members WHERE task_members.task_id IN (SELECT id FROM tasks WHERE is_private = false AND assigned_user_id IN worker_me)
+      - |
+        SELECT task_members.task_id || ':' || task_members.user_id AS id,
+               task_members.task_id, task_members.user_id, task_members.created_at
+        FROM task_members WHERE task_members.task_id IN (SELECT id FROM tasks WHERE is_private = false AND id IN (SELECT task_id FROM task_members WHERE user_id IN worker_me))
+      - |
+        SELECT task_members.task_id || ':' || task_members.user_id AS id,
+               task_members.task_id, task_members.user_id, task_members.created_at
+        FROM task_members WHERE task_members.task_id IN (SELECT id FROM tasks WHERE is_private = true AND private_owner_id IN worker_me)
+      # Their comments.
+      - SELECT * FROM task_comments WHERE task_is_private = false AND task_id IN (SELECT id FROM tasks WHERE assigned_user_id IN worker_me)
+      - SELECT * FROM task_comments WHERE task_is_private = false AND task_id IN (SELECT task_id FROM task_members WHERE user_id IN worker_me)
+      - SELECT * FROM task_comments WHERE task_is_private = true AND task_private_owner_id IN worker_me
+      # Open reminders: his own, ones he set, and those on his tasks.
+      - SELECT * FROM reminders WHERE status = 'pending' AND assigned_to IN worker_me
+      - SELECT * FROM reminders WHERE status = 'pending' AND created_by IN worker_me
+      - SELECT * FROM reminders WHERE status = 'pending' AND task_id IN (SELECT id FROM tasks WHERE is_private = false AND assigned_user_id IN worker_me)
+      - SELECT * FROM reminders WHERE status = 'pending' AND task_id IN (SELECT id FROM tasks WHERE is_private = false AND id IN (SELECT task_id FROM task_members WHERE user_id IN worker_me))
+      - SELECT * FROM reminders WHERE status = 'pending' AND task_id IN (SELECT id FROM tasks WHERE is_private = true AND private_owner_id IN worker_me)
+      # Documents on his tasks (the paperclip).
+      - SELECT * FROM document_links WHERE entity_type = 'task' AND entity_id IN (SELECT id FROM tasks WHERE is_private = false AND assigned_user_id IN worker_me)
+      - SELECT * FROM document_links WHERE entity_type = 'task' AND entity_id IN (SELECT id FROM tasks WHERE is_private = false AND id IN (SELECT task_id FROM task_members WHERE user_id IN worker_me))
+      - SELECT * FROM document_links WHERE entity_type = 'task' AND entity_id IN (SELECT id FROM tasks WHERE is_private = true AND private_owner_id IN worker_me)
+      # Projects he works on: his shifts', and his tasks' (worker_view_assigned_projects).
+      - SELECT * FROM projects WHERE id IN (SELECT project_id FROM attendance_sessions WHERE user_id IN worker_me)
+      - SELECT * FROM projects WHERE id IN (SELECT project_id FROM tasks WHERE is_private = false AND assigned_user_id IN worker_me)
+      - SELECT * FROM projects WHERE id IN (SELECT project_id FROM tasks WHERE is_private = true AND private_owner_id IN worker_me AND assigned_user_id IN worker_me)
+
+  worker_business:
+    auto_subscribe: true
+    queries:
+      # Every customer (the owner's call, 2026-10-07 — the server lets workers read them all).
+      - SELECT customers.* FROM customers, worker_gate AS bucket
+      # The open orders (orders_worker_select_open), and his own delivery assignments.
+      - |
+        SELECT orders.* FROM orders, worker_gate AS bucket
+        WHERE orders.status != 'delivered' AND orders.status != 'completed' AND orders.status != 'closed' AND orders.status != 'cancelled'
+          AND orders.status != 'סופקה' AND orders.status != 'הושלמה' AND orders.status != 'סגורה' AND orders.status != 'בוטלה'
+      - |
+        SELECT order_delivery_recipients.order_id || ':' || order_delivery_recipients.user_id AS id,
+               order_delivery_recipients.order_id, order_delivery_recipients.user_id,
+               order_delivery_recipients.created_at
+        FROM order_delivery_recipients WHERE order_delivery_recipients.user_id IN worker_me
+
+  # The deliveries card — only for a worker whose deliveries section isn't switched off.
+  worker_deliveries:
+    auto_subscribe: true
+    queries:
+      - SELECT customer_branches.* FROM customer_branches, worker_deliveries_gate AS bucket
+      - SELECT products.* FROM products, worker_deliveries_gate AS bucket
+      - |
+        SELECT order_items.* FROM order_items, worker_deliveries_gate AS bucket
+        WHERE order_items.order_id IN (SELECT id FROM orders WHERE status != 'delivered' AND status != 'completed' AND status != 'closed' AND status != 'cancelled'
+          AND status != 'סופקה' AND status != 'הושלמה' AND status != 'סגורה' AND status != 'בוטלה')
+      - |
+        SELECT payments.* FROM payments, worker_deliveries_gate AS bucket
+        WHERE payments.order_id IN (SELECT id FROM orders WHERE status != 'closed' AND status != 'cancelled' AND status != 'סגורה' AND status != 'בוטלה')

@@ -77,24 +77,24 @@ export type LocalCardViewer = { userId: string; role: string; locale: Locale };
 
 /** The device tables each card reads — it's worked out again when any changes. */
 export const LOCAL_CARD_TABLES: Record<LocalCardKind, string[]> = {
-  todaySchedule: ["tasks", "projects", "orders", "order_delivery_recipients", "reminders", "customers", "users"],
-  todayAlerts: ["reminders", "customers", "tasks", "users"],
+  todaySchedule: ["tasks", "projects", "orders", "order_delivery_recipients", "reminders", "customers", "users", "user_directory"],
+  todayAlerts: ["reminders", "customers", "tasks", "users", "user_directory"],
   myTasks: ["tasks", "task_members", "projects", "reminders"],
   deliveries: ["orders", "customers", "customer_branches", "order_items", "products", "inventory", "payments"],
-  attendanceQueue: ["phone_attendance_reports", "users", "attendance_sessions", "projects", "properties"],
-  properties: ["properties", "lease_agreements", "customers"],
+  attendanceQueue: ["phone_attendance_reports", "users", "user_directory", "attendance_sessions", "projects", "properties", "property_directory"],
+  properties: ["properties", "property_directory", "lease_agreements", "customers"],
   projectsList: [
-    "projects", "customers", "users", "tasks", "payments", "expenses", "project_expenses", "attendance_sessions",
+    "projects", "customers", "users", "user_directory", "tasks", "payments", "expenses", "project_expenses", "attendance_sessions",
     "payslips", "payroll_periods", "salary_agreements", "worker_payments", "worker_payment_allocations",
   ],
-  projectsExtras: ["projects", "users", "customers"],
-  salesOrders: ["orders", "customers", "users", "customer_branches", "payments", "order_items", "products", "inventory"],
+  projectsExtras: ["projects", "users", "user_directory", "customers"],
+  salesOrders: ["orders", "customers", "users", "user_directory", "customer_branches", "payments", "order_items", "products", "inventory"],
   salesDeliveries: ["orders", "customers", "customer_branches", "order_items", "products", "inventory", "payments"],
   salesPriceList: ["products", "inventory", "inventory_movements", "product_categories"],
-  salesInventory: ["products", "inventory", "inventory_movements", "product_categories", "orders", "customers", "users"],
+  salesInventory: ["products", "inventory", "inventory_movements", "product_categories", "orders", "customers", "users", "user_directory"],
   salesCounts: ["orders", "products", "payments", "customers", "customer_branches"],
   tasksBoard: [
-    "tasks", "task_members", "users", "projects", "customers", "properties", "task_comments", "reminders", "document_links",
+    "tasks", "task_members", "users", "user_directory", "projects", "customers", "properties", "property_directory", "task_comments", "reminders", "document_links",
   ],
 };
 

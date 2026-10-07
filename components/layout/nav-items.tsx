@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from "react";
-import { LOCAL_DATA_PAGES, localDataEnabledFor } from "@/lib/powersync/config";
+import { localDataPageFor } from "@/lib/powersync/config";
 import { DEFAULT_SECTION_ACCESS, WORKER_SECTIONS, type SectionAccess } from "@/lib/auth/sections";
 import { canSeeMeetings } from "@/lib/auth/meetingsPreview";
 
@@ -143,7 +143,7 @@ export const FULLY_PREFETCHED_URLS = new Set(["/dashboard", "/projects", "/sales
  */
 export function isFullyPrefetched(url: string, viewerRole?: string | null, deviceCopyReady = true): boolean {
   if (FULLY_PREFETCHED_URLS.has(url)) return true;
-  return url === "/tasks" && deviceCopyReady && LOCAL_DATA_PAGES.tasks && localDataEnabledFor(viewerRole);
+  return url === "/tasks" && deviceCopyReady && localDataPageFor("tasks", viewerRole);
 }
 
 const ADMIN_ONLY_URLS = new Set(["/activity", "/financial", "/settings", "/financial/loans", "/financial/reports", "/financial/bank"]);

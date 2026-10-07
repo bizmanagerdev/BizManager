@@ -30,6 +30,8 @@ export type LocalReader = {
 
 const BOOLEAN_COLUMNS: Record<string, readonly string[]> = {
   users: ["active", "system_access"],
+  user_directory: ["active"],
+  property_directory: ["is_active"],
   tasks: ["is_private"],
   customers: ["active", "requires_prepayment"],
   customer_branches: ["active"],
@@ -72,6 +74,8 @@ const JSON_COLUMNS: Record<string, readonly string[]> = {
 /** Tables synced to the device (lib/powersync/schema.ts). */
 export const LOCAL_TABLES: ReadonlySet<string> = new Set([
   "users",
+  "user_directory",
+  "property_directory",
   "tasks",
   "task_members",
   "reminders",
@@ -979,10 +983,20 @@ const PROJECT_DASHBOARD_MONEY_COLUMNS = [
   "pending_amount", "overdue_amount", "outstanding_amount", "next_due_date",
 ];
 
+/**
+ * A directory table when this copy has one (a worker's: everyone's names and
+ * every property, while his `users` / `properties` hold only what he may read
+ * directly), else the full table (staff).
+ */
+async function directoryRows(reader: LocalReader, directory: string, table: string): Promise<Row[]> {
+  const rows = await loadTable(reader, directory);
+  return rows.length > 0 ? rows : loadTable(reader, table);
+}
+
 const RPCS: Record<string, SourceLoader> = {
   // user_directory(): logs_shifts needs pay types the device doesn't hold.
   user_directory: async (reader) =>
-    (await loadTable(reader, "users")).map((u) => ({
+    (await directoryRows(reader, "user_directory", "users")).map((u) => ({
       id: u.id,
       full_name: u.full_name,
       avatar_color: u.avatar_color,
@@ -990,7 +1004,7 @@ const RPCS: Record<string, SourceLoader> = {
       active: u.active,
     })),
   property_directory: async (reader) =>
-    (await loadTable(reader, "properties")).map((p) => ({
+    (await directoryRows(reader, "property_directory", "properties")).map((p) => ({
       id: p.id,
       name: p.name,
       address: p.address,
