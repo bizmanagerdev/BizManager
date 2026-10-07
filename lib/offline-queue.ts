@@ -108,12 +108,25 @@ function writeFailed(entries: QueueEntry[]): void {
   emit(CONNECTION_EVENTS.changed);
 }
 
+/**
+ * Writes this page is sending right now. One with an idempotency key is kept
+ * on the device BEFORE it goes out (see offlineFetch), so it sits in the queue
+ * meanwhile — but it isn't waiting: the counts and the pending panel leave it
+ * out, and the replay skips it. If the app is closed or reloaded mid-send this
+ * is empty next time, and the entry is sent like any other.
+ */
+const sending = new Set<string>();
+
+function waiting(): QueueEntry[] {
+  return readQueue().filter((entry) => !sending.has(entry.id));
+}
+
 export function getQueue(): QueueEntry[] {
-  return readQueue();
+  return waiting();
 }
 
 export function getQueueLength(): number {
-  return readQueue().length;
+  return waiting().length;
 }
 
 export function getFailed(): QueueEntry[] {
@@ -151,7 +164,8 @@ export function removeFailed(id: string): void {
 }
 
 export function enqueue(
-  entry: Omit<QueueEntry, "id" | "queuedAt" | "attempts">
+  entry: Omit<QueueEntry, "id" | "queuedAt" | "attempts">,
+  { sending: beingSent = false }: { sending?: boolean } = {}
 ): QueueEntry {
   const full: QueueEntry = {
     ...entry,
@@ -159,6 +173,8 @@ export function enqueue(
     queuedAt: Date.now(),
     attempts: 0,
   };
+  // Marked before it's written, so nothing counts it as waiting in between.
+  if (beingSent) sending.add(full.id);
   writeQueue([...readQueue(), full]);
   return full;
 }
@@ -218,6 +234,17 @@ export async function offlineFetch(
     return { queued: true, reason: "offline" };
   }
 
+  // A write with an idempotency key is kept on the device first: if the app is
+  // closed or reloaded while it's on its way, it's still here and goes out on
+  // the next start (the key stops a duplicate if the first send did arrive).
+  // Taken off once the server has answered.
+  const kept = idempotencyKey ? enqueue({ url, body, label, idempotencyKey }, { sending: true }) : null;
+  const settle = () => {
+    if (!kept) return;
+    dequeue(kept.id);
+    sending.delete(kept.id);
+  };
+
   const controller = new AbortController();
   const slowTimer = setTimeout(() => emit(CONNECTION_EVENTS.slow, { label }), SLOW_NOTICE_MS);
   const timeoutTimer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -231,6 +258,8 @@ export async function offlineFetch(
     });
     clearTimeout(slowTimer);
     clearTimeout(timeoutTimer);
+    // Answered (refused or done): nothing to resend.
+    settle();
 
     if (!response.ok) {
       const text = await response.text().catch(() => response.statusText);
@@ -252,7 +281,12 @@ export async function offlineFetch(
     // request actually reached the server before we gave up.
     clearTimeout(slowTimer);
     clearTimeout(timeoutTimer);
-    enqueue({ url, body, label, idempotencyKey });
+    if (kept) {
+      sending.delete(kept.id);
+      emit(CONNECTION_EVENTS.changed);
+    } else {
+      enqueue({ url, body, label, idempotencyKey });
+    }
     emit(CONNECTION_EVENTS.queued, { label, reason: "slow" });
     return { queued: true, reason: "slow" };
   }
@@ -272,7 +306,7 @@ export async function processQueue(): Promise<ProcessResult> {
   let failed = 0;
 
   // Re-read the queue each iteration so we always see the freshest attempt counts.
-  for (let entry = readQueue()[0]; entry; entry = readQueue()[0]) {
+  for (let entry = waiting()[0]; entry; entry = waiting()[0]) {
     if (typeof navigator !== "undefined" && !navigator.onLine) break;
 
     try {
@@ -322,5 +356,5 @@ export async function processQueue(): Promise<ProcessResult> {
   if (processed > 0) emit(CONNECTION_EVENTS.synced, { count: processed });
   if (failed > 0) emit(CONNECTION_EVENTS.failed, { count: failed });
 
-  return { processed, failed, remaining: readQueue().length };
+  return { processed, failed, remaining: waiting().length };
 }

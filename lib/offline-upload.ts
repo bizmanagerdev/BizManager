@@ -131,8 +131,21 @@ async function clearStore(store: string): Promise<void> {
 
 // ── Public queue helpers ──────────────────────────────────────────────────────
 
+/**
+ * Uploads this page is sending right now. Each is kept on the device BEFORE it
+ * goes out (see offlineUpload), so these sit in the queue meanwhile — but they
+ * aren't waiting: the counts and the pending panel leave them out, and the
+ * replay skips them. If the app is closed or reloaded mid-send this is empty
+ * next time, and the entry is sent like any other.
+ */
+const sending = new Set<string>();
+
+async function waiting(): Promise<UploadEntry[]> {
+  return (await getAll(QUEUE_STORE)).filter((entry) => !sending.has(entry.id));
+}
+
 export async function getUploadQueueLength(): Promise<number> {
-  return (await getAll(QUEUE_STORE)).length;
+  return (await waiting()).length;
 }
 
 export async function getUploadFailedLength(): Promise<number> {
@@ -141,7 +154,7 @@ export async function getUploadFailedLength(): Promise<number> {
 
 /** The pending upload entries (for the pending-sync panel — includes the blobs). */
 export async function getUploadQueue(): Promise<UploadEntry[]> {
-  return getAll(QUEUE_STORE);
+  return waiting();
 }
 
 /** The parked failed upload entries (label + lastError + blobs for a thumbnail). */
@@ -185,6 +198,20 @@ async function enqueueUpload(
     queuedAt: Date.now(),
     attempts: 0,
   });
+}
+
+/** Keep an upload on the device before sending it; its id, or null when the device can't store it. */
+async function keepBeforeSending(entry: Omit<UploadEntry, "id" | "queuedAt" | "attempts">): Promise<string | null> {
+  if (!idbAvailable()) return null;
+  const full: UploadEntry = { ...entry, id: crypto.randomUUID(), queuedAt: Date.now(), attempts: 0 };
+  sending.add(full.id);
+  try {
+    await tx(QUEUE_STORE, "readwrite", (s) => s.put(full));
+    return full.id;
+  } catch {
+    sending.delete(full.id);
+    return null;
+  }
 }
 
 async function failUpload(entry: UploadEntry, lastError: string): Promise<void> {
@@ -284,6 +311,18 @@ export async function offlineUpload(
     return { queued: true, reason: "offline" };
   }
 
+  // Kept on the device first: if the app is closed, reloaded or loses its
+  // screen while this is on its way (a delivery confirmed on two bars of
+  // signal), it's still here and goes out on the next start — the shared
+  // idempotency key stops a duplicate if the first send did arrive. Taken off
+  // once the server has answered.
+  const keptId = await keepBeforeSending({ url, fields, parts, label, idempotencyKey });
+  const settle = async () => {
+    if (!keptId) return;
+    await del(QUEUE_STORE, keptId);
+    sending.delete(keptId);
+  };
+
   const controller = new AbortController();
   const slowTimer = setTimeout(() => emit(CONNECTION_EVENTS.slow, { label }), SLOW_NOTICE_MS);
   const timeoutTimer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
@@ -299,17 +338,26 @@ export async function offlineUpload(
     clearTimeout(timeoutTimer);
 
     if (!response.ok) {
-      return { queued: false, ok: false, status: response.status, error: await extractError(response) };
+      // A real refusal (a validation error): the person fixes it — nothing to resend.
+      const error = await extractError(response);
+      await settle();
+      return { queued: false, ok: false, status: response.status, error };
     }
     const data = await response.json().catch(() => null);
+    await settle();
     return { queued: false, ok: true, data };
   } catch {
     // Aborted by our timeout, or a network error while still nominally "online"
-    // (the classic flaky case). Queue it — the idempotency key stops a replay
-    // from creating a duplicate even if the request reached the server.
+    // (the classic flaky case). It waits in the queue — the idempotency key
+    // stops a replay from creating a duplicate even if the request reached the server.
     clearTimeout(slowTimer);
     clearTimeout(timeoutTimer);
-    await enqueueUpload({ url, fields, parts, label, idempotencyKey });
+    if (keptId) {
+      sending.delete(keptId);
+      emit(CONNECTION_EVENTS.changed);
+    } else {
+      await enqueueUpload({ url, fields, parts, label, idempotencyKey });
+    }
     emit(CONNECTION_EVENTS.queued, { label, reason: "slow" });
     return { queued: true, reason: "slow" };
   }
@@ -338,7 +386,7 @@ export async function processUploadQueue(): Promise<ProcessResult> {
   try {
     for (;;) {
       if (typeof navigator !== "undefined" && !navigator.onLine) break;
-      const queue = await getAll(QUEUE_STORE);
+      const queue = await waiting();
       const entry = queue[0];
       if (!entry) break;
 

@@ -85,10 +85,7 @@ describe("the layout shift report", () => {
     expect(title).toBe("Layout shift");
     expect(report.tags).toMatchObject({ shift_page: "/projects/[id]", shift_screen: "phone", shift_load: "full" });
     expect(report.extra.total).toBe(0.52);
-    expect(report.extra.shifts[0]).toMatchObject({
-      at: 900,
-      value: 0.42,
-      sources: [{ el: 'div.rounded-xl.border.bg-card "משימות שלי"', dy: 280, dh: 0 }],
-    });
+    expect(report.extra.shifts[0]).toBe('0.42 at 900ms: div.rounded-xl.border.bg-card "משימות שלי" ↓280px');
+    expect(report.extra.shifts[1]).toBe("0.1 at 1500ms: (nothing named)");
   });
 });

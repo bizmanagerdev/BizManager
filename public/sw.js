@@ -90,8 +90,17 @@ self.addEventListener("activate", (event) => {
           // Unsupported or refused — navigations just fetch() as before.
         }
       }
+      // The previous version's saved pages (and the code they run) stay, as an
+      // offline-only fallback: a phone that loses its connection right after an
+      // update still has its pages to open. Never served while the network
+      // answers; anything older goes.
       const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => !ALL_CACHES.includes(k)).map((k) => caches.delete(k)));
+      const previous = previousVersion(keys);
+      await Promise.all(
+        keys
+          .filter((k) => !ALL_CACHES.includes(k) && !(previous && versionOf(k) === previous))
+          .map((k) => caches.delete(k))
+      );
       await self.clients.claim();
     })()
   );
@@ -232,6 +241,95 @@ function asNavigation(response) {
 // timeout: this one is the PWA cold-launch path, and every second of it is a
 // user staring at the splash screen.
 const NAV_TIMEOUT_MS = 8000;
+// With a saved copy of the page on the device, a connection that hangs (the
+// phone thinks it's online, nothing answers — a worker in the field, 2026-10-07)
+// gets that copy after this long instead of a blank screen; the copy says
+// it's a saved one and reloads itself once the server answers.
+const SAVED_COPY_AFTER_MS = 3000;
+
+/** "v123" from "bizh-pages-v123" — null for caches that aren't the app's. */
+function versionOf(cacheName) {
+  const match = /^bizh-(?:static|pages|api|frames)-(.+)$/.exec(cacheName);
+  return match ? match[1] : null;
+}
+
+/** The most recent version before this one that still has caches (cache names come in the order they were made). */
+function previousVersion(cacheNames) {
+  let previous = null;
+  for (const name of cacheNames) {
+    const version = versionOf(name);
+    if (version && version !== V) previous = version;
+  }
+  return previous;
+}
+
+async function matchIn(cacheName, request) {
+  try {
+    return (await (await caches.open(cacheName)).match(request)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The page's saved copy, for when the network doesn't answer: this version's
+ * (its frame, then the page as last loaded), then the previous version's.
+ */
+async function savedCopyFor(request, frame) {
+  const names = [];
+  if (frame) names.push(FRAMES_CACHE);
+  names.push(PAGES_CACHE);
+  const previous = previousVersion(await caches.keys().catch(() => []));
+  if (previous) {
+    if (frame) names.push(`bizh-frames-${previous}`);
+    names.push(`bizh-pages-${previous}`);
+  }
+  for (const name of names) {
+    const hit = await matchIn(name, request);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/** Somewhere to land when this page has no saved copy: the dashboard, the login page, the start page. */
+async function savedLandingPage() {
+  const previous = previousVersion(await caches.keys().catch(() => []));
+  const kinds = ["frames", "pages", "static"];
+  const versions = previous ? [V, previous] : [V];
+  for (const path of ["/dashboard", "/login", "/"]) {
+    for (const version of versions) {
+      for (const kind of kinds) {
+        const hit = await matchIn(`bizh-${kind}-${version}`, path);
+        if (hit) return hit;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * A saved copy served because the network didn't answer, marked as such on
+ * its <html> (data-bizh-saved = when it was saved) — the page then says it's
+ * a saved copy and reloads itself once the server answers
+ * (components/layout/SavedCopyNotice).
+ */
+async function markedSaved(response) {
+  try {
+    const html = await response.clone().text();
+    const savedAt =
+      Number(response.headers.get("X-Bizh-Frame-Saved")) || Date.parse(response.headers.get("date") || "") || 0;
+    const headers = new Headers(response.headers);
+    headers.delete("content-length");
+    headers.delete("content-encoding");
+    return new Response(html.replace(/<html\b/i, `<html data-bizh-saved="${savedAt}"`), {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  } catch {
+    return response;
+  }
+}
 
 const OFFLINE_HTML = `<!doctype html>
 <html lang="he" dir="rtl">
@@ -251,7 +349,14 @@ const OFFLINE_HTML = `<!doctype html>
   <main>
     <h1>אין חיבור לאינטרנט</h1>
     <p>הנתונים נשמרים ויסונכרנו כשהחיבור יחזור.</p>
+    <p style="margin-top:1rem"><button onclick="location.reload()" style="font:inherit;padding:.5rem 1.25rem;border-radius:.75rem;border:0;background:#1D2848;color:#fff">נסה שוב</button></p>
   </main>
+  <script>
+    // Back by itself the moment the server answers.
+    setInterval(function () {
+      fetch("/api/ping", { cache: "no-store" }).then(function () { location.reload(); }, function () {});
+    }, 5000);
+  </script>
 </body>
 </html>`;
 
@@ -322,6 +427,8 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  // "Is the server answering?" — only the network can say.
+  if (url.pathname === "/api/ping") return;
 
   // 1. Next.js immutable chunks — always content-hashed, safe to cache forever
   if (url.pathname.startsWith("/_next/static/")) {
@@ -387,7 +494,9 @@ self.addEventListener("fetch", (event) => {
           putInCache(PAGES_CACHE, request, res);
           return res;
         })
-        .catch(() => matchCache(request))
+        // This version's copy only — another version's payload doesn't fit
+        // the code that's running.
+        .catch(() => matchIn(PAGES_CACHE, request))
         .then((res) => res ?? new Response("Offline", { status: 503 }))
     );
     return;
@@ -460,11 +569,14 @@ self.addEventListener("fetch", (event) => {
             return res;
           });
 
+        // With a saved copy to fall back on, a hanging connection is given
+        // less time before the copy shows (SAVED_COPY_AFTER_MS).
+        const saved = await savedCopyFor(request, frame);
         let res = null;
         try {
           res = await Promise.race([
             network,
-            new Promise((resolve) => setTimeout(() => resolve(null), NAV_TIMEOUT_MS)),
+            new Promise((resolve) => setTimeout(() => resolve(null), saved ? SAVED_COPY_AFTER_MS : NAV_TIMEOUT_MS)),
           ]);
         } catch {
           res = null; // network rejected outright — fall through to cache
@@ -475,22 +587,12 @@ self.addEventListener("fetch", (event) => {
         // warms PAGES_CACHE for the next launch, but stop waiting on it here.
         network.catch(() => {});
 
-        // A device page reloaded with no network: its saved frame (the phone
-        // fills it from its own copy) rather than an older offline snapshot.
-        if (frame) {
-          const saved = await matchFrame(request);
-          if (saved) return saved;
-        }
-
-        // Try the exact page, then dashboard, then login, then root
-        const cached =
-          (await matchCache(request)) ??
-          (await matchCache("/dashboard")) ??
-          (await matchCache("/login")) ??
-          (await matchCache("/"));
+        // This page's saved copy (a device page's frame first — the phone fills
+        // it from its own copy), else somewhere to land; marked as a saved copy.
         // Entries cached before putInCache learned to reject redirects can still
-        // carry the flag, so this goes through asNavigation() too.
-        if (cached) return asNavigation(cached);
+        // carry the flag, so those go through asNavigation() instead.
+        const fallback = saved ?? (await savedLandingPage());
+        if (fallback) return fallback.redirected ? asNavigation(fallback) : markedSaved(fallback);
         return new Response(OFFLINE_HTML, {
           headers: { "Content-Type": "text/html; charset=utf-8" },
         });

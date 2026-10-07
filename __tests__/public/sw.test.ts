@@ -93,9 +93,12 @@ describe("service worker navigation preload", () => {
 // in the background only when it's old. Pages with their data in them, the
 // server version (?data=server) and searches are never saved.
 
-function loadWorkerWithCaches(network: () => Response) {
+function loadWorkerWithCaches(network: () => Response | Promise<Response>, saved: Record<string, Record<string, string>> = {}) {
   const handlers: Record<string, (event: unknown) => void> = {};
   const stores = new Map<string, Map<string, Response>>();
+  for (const [name, pages] of Object.entries(saved)) {
+    stores.set(name, new Map(Object.entries(pages).map(([url, html]) => [url, new Response(html, { status: 200 })])));
+  }
   const keyOf = (request: { url: string } | string) => (typeof request === "string" ? request : request.url);
   const caches = {
     open: async (name: string) => {
@@ -124,10 +127,10 @@ function loadWorkerWithCaches(network: () => Response) {
   };
   vm.runInContext(
     SW_SOURCE,
-    vm.createContext({ self, caches, fetch: fetchMock, Response, URL, Date, setTimeout, clearTimeout, Promise })
+    vm.createContext({ self, caches, fetch: fetchMock, Response, Headers, URL, Date, setTimeout, clearTimeout, Promise })
   );
   const frames = () => stores.get("bizh-frames-test") ?? new Map<string, Response>();
-  return { handlers, fetchMock, frames };
+  return { handlers, fetchMock, frames, stores };
 }
 
 async function open(worker: { handlers: Record<string, (event: unknown) => void> }, url: string) {
@@ -259,5 +262,79 @@ describe("service worker: the device pages' frames", () => {
     await open(worker, "https://biz-h.com/projects?q=דנה");
     await open(worker, "https://biz-h.com/customers");
     expect(worker.frames().size).toBe(0);
+  });
+});
+
+// When the network doesn't answer: a page with a saved copy gets it after 3
+// seconds (not a blank 8), marked as a saved copy; the previous version's saved
+// pages survive an update for exactly this; "is the server back?" always goes
+// to the network; and the offline page tries again by itself.
+
+describe("service worker: when the connection hangs or drops", () => {
+  const PAGE = "<html><body>המשלוחים שלי</body></html>";
+
+  it("a hanging connection: the page's saved copy after 3 seconds, marked as such", async () => {
+    vi.useFakeTimers();
+    try {
+      const worker = loadWorkerWithCaches(() => new Promise<Response>(() => {}), {
+        "bizh-pages-test": { "https://biz-h.com/deliveries": PAGE },
+      });
+      const opened = open(worker, "https://biz-h.com/deliveries");
+      await vi.advanceTimersByTimeAsync(2900);
+      let text: string | null = null;
+      void opened.then((t) => (text = t));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(text).toBeNull(); // still waiting for the server
+      await vi.advanceTimersByTimeAsync(200);
+      expect(text).toMatch(/^<html data-bizh-saved="\d+"><body>המשלוחים שלי/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("no saved copy: waits the full 8 seconds, then the offline page — which tries again by itself", async () => {
+    vi.useFakeTimers();
+    try {
+      const worker = loadWorkerWithCaches(() => new Promise<Response>(() => {}));
+      let text: string | null = null;
+      void open(worker, "https://biz-h.com/reports").then((t) => (text = t));
+      await vi.advanceTimersByTimeAsync(3500);
+      expect(text).toBeNull();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(text).toContain("אין חיבור לאינטרנט");
+      expect(text).toContain('fetch("/api/ping"');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("after an update: the previous version's saved pages stay (offline only); older ones go", async () => {
+    const worker = loadWorkerWithCaches(
+      () => {
+        throw new TypeError("Failed to fetch");
+      },
+      {
+        "bizh-pages-v1": { "https://biz-h.com/deliveries": "<html><body>v1</body></html>" },
+        "bizh-pages-v2": { "https://biz-h.com/deliveries": PAGE },
+        "bizh-static-v2": {},
+        "bizh-pages-test": {},
+      }
+    );
+    let activated: Promise<unknown> | undefined;
+    worker.handlers.activate({ waitUntil: (promise: Promise<unknown>) => (activated = promise) });
+    await activated;
+    expect([...worker.stores.keys()].sort()).toEqual(["bizh-pages-test", "bizh-pages-v2", "bizh-static-v2"]);
+    // No network, nothing saved by this version yet: the previous version's copy.
+    expect(await open(worker, "https://biz-h.com/deliveries")).toMatch(/^<html data-bizh-saved="\d+"><body>המשלוחים שלי/);
+  });
+
+  it("“is the server back?” is never answered from the device", () => {
+    const worker = loadWorkerWithCaches(() => new Response(null, { status: 204 }));
+    const respondWith = vi.fn();
+    worker.handlers.fetch({
+      request: { method: "GET", url: "https://biz-h.com/api/ping", mode: "cors", headers: new Headers() },
+      respondWith,
+    });
+    expect(respondWith).not.toHaveBeenCalled();
   });
 });

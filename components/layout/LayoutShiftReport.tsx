@@ -47,6 +47,17 @@ function describe(node: Node | null): string {
   return `${node.tagName.toLowerCase()}${id}${classes}${data}${text ? ` "${text}"` : ""}`;
 }
 
+/**
+ * One shift as a line of text — Sentry drops anything nested deeper than a
+ * few levels, so what moved has to arrive flat: "0.42 at 900ms: div.card "…" ↓280px".
+ */
+function shiftLine(s: Shift, start: number): string {
+  const moved = s.sources
+    .map((src) => `${src.el} ${src.dy >= 0 ? "↓" : "↑"}${Math.abs(src.dy)}px${src.dh ? ` ${src.dh > 0 ? "+" : "−"}${Math.abs(src.dh)}px tall` : ""}`)
+    .join(" | ");
+  return `${Math.round(s.value * 1000) / 1000} at ${Math.round(s.at - start)}ms: ${moved || "(nothing named)"}`;
+}
+
 /** /projects/3f2a…/export → /projects/[id]/export */
 function pageKey(pathname: string): string {
   return pathname.replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "/[id]");
@@ -117,7 +128,7 @@ export default function LayoutShiftReport() {
             total: Math.round(total * 1000) / 1000,
             count: mine.length,
             width,
-            shifts: biggest.map((s) => ({ ...s, at: Math.round(s.at - start), value: Math.round(s.value * 1000) / 1000 })),
+            shifts: biggest.map((s) => shiftLine(s, start)),
           },
         })
       );

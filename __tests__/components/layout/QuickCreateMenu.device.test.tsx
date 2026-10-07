@@ -8,6 +8,12 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/dashboard", useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }));
 vi.mock("@/lib/offline-cache", () => ({ loadSnapshot: async () => null, saveSnapshot: async () => {}, deleteSnapshot: async () => {} }));
+// The warm-up also loads the app's three biggest dialogs ahead of time; this
+// test doesn't open them, and loading them for real (after every module reset)
+// is what made it miss its wait when the whole suite runs at once.
+vi.mock("@/components/layout/QuickCreateDialogs", () => ({ default: () => null }));
+vi.mock("@/components/expenses/ExpenseDialog", () => ({ ExpenseDialog: () => null }));
+vi.mock("@/components/tasks/TaskUpsertDialog", () => ({ default: () => null, TaskUpsertDialog: () => null }));
 
 const device = vi.hoisted(() => ({ db: { name: "device" } as unknown }));
 vi.mock("@/lib/powersync/store", () => ({

@@ -8,6 +8,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { DesktopQuickCreateFab } from "@/components/layout/DesktopQuickCreateFab";
 import { TopNavigationProgress } from "@/components/layout/TopNavigationProgress";
 import OfflineBanner from "@/components/layout/OfflineBanner";
+import SavedCopyNotice from "@/components/layout/SavedCopyNotice";
 import ConnectionToasts from "@/components/layout/ConnectionToasts";
 import AuthLockToasts from "@/components/layout/AuthLockToasts";
 import UndoHotkeyListener from "@/components/layout/UndoHotkeyListener";
@@ -132,6 +133,7 @@ export default function AppShell({
           showSearch={showSearch}
         />
         <OfflineBanner />
+        <SavedCopyNotice />
         <div className="flex min-w-0 flex-1">
           {sidebar.length > 0 && (
             // Suspense boundary required because AppSidebar reads useSearchParams
