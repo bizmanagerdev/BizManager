@@ -9,6 +9,9 @@ import { computeDueDate, normalizePaymentTerms } from "@/lib/paymentTerms";
 
 export const PROJECT_TYPES: ReadonlySet<string> = new Set(["logistics", "construction", "moving", "other", "home"]);
 
+/** A project's statuses (project_status_enum), in the status picker's order. */
+export const PROJECT_STATUSES: readonly string[] = ["quote", "planned", "active", "on_hold", "completed", "cancelled"];
+
 export type ProjectRowFields = {
   customer_id: string;
   branch_id: string | null;

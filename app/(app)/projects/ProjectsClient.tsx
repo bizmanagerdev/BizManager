@@ -70,7 +70,7 @@ import LogCommunicationButton from "@/components/communications/LogCommunication
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import NewProjectClient, { type ProjectCustomerOption, type InitialProject } from "@/app/(app)/projects/NewProjectClient";
 import { whenDeviceSavesSent } from "@/lib/powersync/store";
-import { PROJECT_NOT_SENT_YET, deviceProjectForEdit } from "@/lib/projects/device-project-saves";
+import { PROJECT_NOT_SENT_YET, deviceProjectForEdit, deviceProjectSaves } from "@/lib/projects/device-project-saves";
 import { EditButton } from "@/components/ui/icon-button";
 import { offlineFetch } from "@/lib/offline-queue";
 import { registerReversibleCreate } from "@/lib/undo-engine";
@@ -943,6 +943,25 @@ export default function ProjectsClient({
 
     setApproveQuoteSubmitting(true);
     try {
+      // On the page's device version: approved on the phone first
+      // (lib/projects/device-project-saves.ts) — it leaves the quotes at once,
+      // with no signal too, and goes up through the same route.
+      const device = listSource ? deviceProjectSaves("projects") : null;
+      if (device && (await device.change(approveQuoteId, { kind: "approve-quote", agreed_base_price: agreed }))) {
+        setProjects((prev) =>
+          prev.map((row) =>
+            getString(row, "id") === approveQuoteId
+              ? { ...row, status: "planned", agreed_base_price: agreed, actual_price: agreed }
+              : row
+          )
+        );
+        setApproveQuoteOpen(false);
+        setApproveQuoteId("");
+        setApproveQuoteName("");
+        setApproveQuotePrice("");
+        return;
+      }
+
       const res = await fetch("/api/projects/approve-quote", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1242,6 +1261,7 @@ export default function ProjectsClient({
                         status={currentStatus}
                         canEdit
                         variant="badge"
+                        devicePage={listSource ? "projects" : undefined}
                         onChanged={(next) =>
                           setProjects((prev) =>
                             prev.map((r) => (getRowId(r) === id ? { ...r, status: next } : r))
@@ -1462,6 +1482,7 @@ export default function ProjectsClient({
                             canEdit
                             variant="badge"
                             badgeClassName={CARD_BADGE}
+                            devicePage={listSource ? "projects" : undefined}
                             onChanged={(next) =>
                               setProjects((prev) =>
                                 prev.map((r) => (getRowId(r) === id ? { ...r, status: next } : r))

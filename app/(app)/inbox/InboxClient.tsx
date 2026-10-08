@@ -7,6 +7,7 @@ import { CashIcon, CheckIcon, CheckboxCheckedIcon, ChevronLeftIcon, ClockIcon, C
 import { toast } from "sonner";
 import { toHebrewError } from "@/lib/error-messages";
 import { refreshAlerts } from "@/lib/ui/alerts-store";
+import { reminderActionOnDevice } from "@/lib/reminders/device-reminder-saves";
 import { Button } from "@/components/ui/button";
 import PushSubscribeButton from "@/components/notifications/PushSubscribeButton";
 import ReminderFormDialog, { type ReminderFormValue } from "@/components/reminders/ReminderFormDialog";
@@ -186,6 +187,10 @@ export default function InboxClient({
           return next;
         }),
       onCommit: async () => {
+        // On the phone first when it can (lib/reminders/device-reminder-saves.ts):
+        // it stays hidden here, and this page reloads once the action reaches the
+        // server (DeviceSaveNotices).
+        if (await reminderActionOnDevice(id, action, snoozeUntil)) return { ok: true };
         const res = await fetch("/api/reminders/action", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

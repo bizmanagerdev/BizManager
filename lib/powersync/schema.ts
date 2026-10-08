@@ -116,6 +116,10 @@ const reminders = new Table(
     invoice_id: text,
     vehicle_id: text,
     expense_id: text,
+    // Local only (never synced): an action taken on the phone first (done,
+    // snoozed, dismissed…) — what goes up to the action route
+    // (lib/powersync/local-writes.ts).
+    _extras: text,
   },
   { indexes: { by_assignee: ["assigned_to"], by_task: ["task_id"], by_remind_at: ["remind_at"] } }
 );
@@ -149,6 +153,11 @@ const projects = new Table(
     destination_has_elevator: int,
     branch_id: text,
     completed_at: text,
+    // Local only (never synced): a change made on the phone first that goes up
+    // through its own route — its status, a quote approved, its agreed price
+    // (lib/powersync/local-writes.ts). An edit in the project form goes up as
+    // the whole row instead.
+    _extras: text,
   },
   { indexes: { by_customer: ["customer_id"], by_manager: ["project_manager_id"] } }
 );

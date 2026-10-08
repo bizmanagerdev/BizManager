@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/icons";
 import { useAlertBarAlerts, refreshAlertBarAlerts } from "@/lib/ui/alert-bar-store";
 import { notifyAlertsChanged } from "@/lib/ui/alerts-refresh";
+import { reminderActionOnDevice } from "@/lib/reminders/device-reminder-saves";
 import type { AlertLevel, SystemAlert } from "@/lib/reminders/alert-bar";
 import { rememberAlertBar, type RememberedAlertBar } from "@/lib/ui/alert-bar-memory";
 import type { Locale } from "@/lib/i18n/types";
@@ -169,14 +170,18 @@ export function AlertBar({
   const [dismissedIds, setDismissedIds] = useState<Set<string> | null>(() => readDismissedIds());
   const [acting, setActing] = useState<string | null>(null);
   const [snoozeOpenId, setSnoozeOpenId] = useState<string | null>(null);
+  // Alerts acted on here on the phone first (lib/reminders/device-reminder-saves.ts):
+  // off the strip at once, though the server's list still has them until the
+  // action reaches it (then the strip refreshes without them).
+  const [actedIds, setActedIds] = useState<ReadonlySet<string>>(() => new Set());
   const s = STRINGS[locale];
 
   // Strict module match, and ONLY this page's own module — no "+N elsewhere"
   // indicator at all (user, 2026-09-11: "who cares what's going on another page").
   // A page with nothing of its own shows nothing, never another page's alerts.
   const primary = useMemo(
-    () => (allAlerts ?? []).filter((a) => a.module === currentModule),
-    [allAlerts, currentModule]
+    () => (allAlerts ?? []).filter((a) => a.module === currentModule && !actedIds.has(a.id)),
+    [allAlerts, currentModule, actedIds]
   );
 
   const allIds = useMemo(() => primary.map((a) => a.id), [primary]);
@@ -208,8 +213,14 @@ export function AlertBar({
     setActing(alert.id);
     setSnoozeOpenId(null);
     try {
+      const onDevice = await Promise.all(alert.reminderIds.map((id) => reminderActionOnDevice(id, action, snoozeUntil)));
+      if (onDevice.some(Boolean)) {
+        // Ones no longer on the server's list are done with.
+        const listed = new Set((allAlerts ?? []).map((a) => a.id));
+        setActedIds((prev) => new Set([...prev].filter((id) => listed.has(id))).add(alert.id));
+      }
       await Promise.all(
-        alert.reminderIds.map((id) =>
+        alert.reminderIds.filter((_, i) => !onDevice[i]).map((id) =>
           fetch("/api/reminders/action", {
             method: "POST",
             headers: { "Content-Type": "application/json" },

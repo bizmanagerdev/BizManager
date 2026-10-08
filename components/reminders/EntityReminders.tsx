@@ -9,6 +9,8 @@ import { EditButton } from "@/components/ui/icon-button";
 import { fetchEntityReminders } from "@/lib/reminders/fetchEntityReminders";
 import { scheduleDeferredDelete } from "@/lib/undo-engine";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import { reminderActionOnDevice } from "@/lib/reminders/device-reminder-saves";
+import { DEVICE_SAVE_SENT_EVENT, type DeviceSaveSent } from "@/lib/powersync/local-writes";
 
 // Shows ALL open reminders attached to one entity (order / project / customer /
 // task…) with inline add / edit / done / cancel. Drop it on any details page:
@@ -97,12 +99,24 @@ export default function EntityReminders({
     return () => window.removeEventListener("focus", onFocus);
   }, [load]);
 
+  // A reminder acted on from the phone first has reached the server: the list as it now stands.
+  useEffect(() => {
+    const onSent = (event: Event) => {
+      if ((event as CustomEvent<DeviceSaveSent>).detail?.kind === "reminder-action") void load();
+    };
+    window.addEventListener(DEVICE_SAVE_SENT_EVENT, onSent);
+    return () => window.removeEventListener(DEVICE_SAVE_SENT_EVENT, onSent);
+  }, [load]);
+
   function act(id: string, action: "done" | "dismiss") {
     scheduleDeferredDelete({
       scope: "reminder",
       id,
       message: action === "done" ? "סומן כבוצע" : "התזכורת בוטלה",
       onCommit: async () => {
+        // On the phone first when it can (lib/reminders/device-reminder-saves.ts):
+        // it stays off this list, which reloads once the action reaches the server.
+        if (await reminderActionOnDevice(id, action)) return { ok: true };
         const res = await fetch("/api/reminders/action", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

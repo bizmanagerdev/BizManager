@@ -13,7 +13,8 @@ import {
   type DeviceSaveRefused,
   type DeviceSaveSent,
 } from "@/lib/powersync/local-writes";
-import { resyncAlerts } from "@/lib/ui/alerts-refresh";
+import { notifyAlertsChanged, resyncAlerts } from "@/lib/ui/alerts-refresh";
+import { refreshAlerts } from "@/lib/ui/alerts-store";
 import { loadDraft, saveDraft } from "@/lib/offline-queue";
 
 // What the saves made on the device copy (lib/powersync/local-writes.ts) tell
@@ -57,8 +58,12 @@ export default function DeviceSaveNotices({ locale }: { locale: Locale }) {
       "customer-create": "הלקוח לא נשמר",
       "project-create": "הפרויקט לא נשמר",
       "project-update": "השינויים בפרויקט לא נשמרו",
+      "project-status": "סטטוס הפרויקט לא עודכן",
+      "project-approve-quote": "אישור הצעת המחיר לא נשמר",
+      "project-price": "מחיר הבסיס לא עודכן",
       "order-create": "ההזמנה לא נשמרה",
       "order-update": "השינויים בהזמנה לא נשמרו",
+      "reminder-action": "ההתראה לא עודכנה",
     };
     const onRefused = (event: Event) => {
       const { kind, message, restore } = (event as CustomEvent<DeviceSaveRefused>).detail;
@@ -70,8 +75,14 @@ export default function DeviceSaveNotices({ locale }: { locale: Locale }) {
     };
     let timer: ReturnType<typeof setTimeout> | undefined;
     const onSent = (event: Event) => {
+      const kind = (event as CustomEvent<DeviceSaveSent>).detail?.kind ?? "";
       // A project priced (or marked ללא חיוב) resolves the "closed unbilled" alert.
-      if ((event as CustomEvent<DeviceSaveSent>).detail?.kind.startsWith("project-")) void resyncAlerts();
+      if (kind.startsWith("project-")) void resyncAlerts();
+      // A reminder acted on: the bell, the alert strip and the badges, which the server counts.
+      if (kind === "reminder-action") {
+        refreshAlerts();
+        notifyAlertsChanged();
+      }
       if (document.querySelector("[data-device-page]")) return;
       clearTimeout(timer);
       timer = setTimeout(() => router.refresh(), REFRESH_AFTER_MS);

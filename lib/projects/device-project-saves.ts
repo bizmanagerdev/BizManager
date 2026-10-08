@@ -1,5 +1,11 @@
 import { readyDeviceSaves } from "@/lib/powersync/store";
-import { createProjectOnDevice, deviceProjectBody, updateProjectOnDevice } from "@/lib/powersync/local-writes";
+import {
+  changeProjectOnDevice,
+  createProjectOnDevice,
+  deviceProjectBody,
+  updateProjectOnDevice,
+  type ProjectChange,
+} from "@/lib/powersync/local-writes";
 import { projectRowFrom, type ProjectRowFields } from "@/lib/projects/project-input";
 import { normalizeVatRate } from "@/lib/settings/vat";
 
@@ -21,6 +27,12 @@ export type DeviceProjectSaves = {
    * when the phone doesn't have the project: save on the server.
    */
   update: (id: string, fields: Record<string, unknown>) => Promise<{ row: ProjectRowFields } | null>;
+  /**
+   * Its status changed, its quote approved, its agreed price set — sent on
+   * through that change's own route. False when the phone doesn't have the
+   * project: save on the server.
+   */
+  change: (id: string, change: ProjectChange) => Promise<boolean>;
 };
 
 function rowOrThrow(fields: Record<string, unknown>): ProjectRowFields {
@@ -73,6 +85,7 @@ export function deviceProjectSaves(page: "projects" | "projectPage" = "projects"
       await updateProjectOnDevice(db, { id, row, vatRate });
       return { row };
     },
+    change: (id, change) => changeProjectOnDevice(db, id, change),
   };
 }
 

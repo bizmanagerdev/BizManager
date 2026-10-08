@@ -2,26 +2,24 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { visibleAudienceRoles } from "@/lib/reminders/worklist";
+import { isReminderAction, reminderActionUpdates } from "@/lib/reminders/reminder-action";
 
 // Reminders/Alerts unification — Phase 4: worklist actions.
 // Any authenticated user can act on a reminder that belongs to them (assigned or
-// created) or is aimed at one of their role buckets. Actions:
-//   done    -> close it (manual + system alike)
-//   dismiss -> manual: cancel; system: snooze to tomorrow (re-appears daily
-//              until the underlying issue is resolved by the sync job)
-//   snooze  -> hide until a caller-provided timestamp
-//   reopen  -> back to the active worklist
+// created) or is aimed at one of their role buckets. What each action does to
+// the row: lib/reminders/reminder-action.ts (shared with the phone, which acts
+// on its own copy first and sends the action here).
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as {
       id?: string;
-      action?: "done" | "dismiss" | "snooze" | "reopen";
-      snooze_until?: string;
+      action?: unknown;
+      snooze_until?: unknown;
     };
     const id = typeof body.id === "string" ? body.id.trim() : "";
     const action = body.action;
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
-    if (!action || !["done", "dismiss", "snooze", "reopen"].includes(action)) {
+    if (!isReminderAction(action)) {
       return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     }
 
@@ -45,37 +43,9 @@ export async function POST(req: Request) {
       (typeof row.audience_role === "string" && visibleAudienceRoles(profile.role).includes(row.audience_role));
     if (!canAct) return NextResponse.json({ error: "אין הרשאה לפעולה זו." }, { status: 403 });
 
-    const nowIso = new Date().toISOString();
-    const isSystem = row.source === "system";
-    const updates: Record<string, unknown> = { updated_by: profile.id, updated_at: nowIso };
-
-    if (action === "done") {
-      updates.status = isSystem ? "auto_resolved" : "done";
-      updates.resolved_at = nowIso;
-    } else if (action === "reopen") {
-      updates.status = "pending";
-      updates.snoozed_until = null;
-    } else if (action === "snooze") {
-      const until = typeof body.snooze_until === "string" ? new Date(body.snooze_until) : null;
-      if (!until || Number.isNaN(until.getTime()) || until.getTime() <= Date.now()) {
-        return NextResponse.json({ error: "מועד דחייה לא תקין." }, { status: 400 });
-      }
-      updates.snoozed_until = until.toISOString();
-      updates.snoozed_by = profile.id;
-    } else if (action === "dismiss") {
-      if (isSystem) {
-        // Clear it for today; the hourly sync re-opens it tomorrow if the issue
-        // still exists. Tomorrow ~06:00 Israel ≈ 04:00 UTC.
-        const t = new Date();
-        t.setUTCHours(4, 0, 0, 0);
-        if (t.getTime() <= Date.now()) t.setUTCDate(t.getUTCDate() + 1);
-        updates.snoozed_until = t.toISOString();
-        updates.snoozed_by = profile.id;
-      } else {
-        updates.status = "cancelled";
-        updates.resolved_at = nowIso;
-      }
-    }
+    const result = reminderActionUpdates(row, action, { snoozeUntil: body.snooze_until, userId: profile.id });
+    if ("error" in result) return NextResponse.json({ error: result.error }, { status: 400 });
+    const { updates } = result;
 
     const { data, error } = await supabase.from("reminders").update(updates).eq("id", id).select("id");
     if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });

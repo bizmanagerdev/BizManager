@@ -7,6 +7,7 @@ import {
   type NewCustomerInput,
 } from "@/lib/customers/new-customer";
 import { PROJECT_ROW_COLUMNS, type ProjectRowFields } from "@/lib/projects/project-input";
+import { isReminderAction, reminderActionUpdates, type ReminderAction } from "@/lib/reminders/reminder-action";
 
 // Saves made on the device copy first ("instant saves"): the change is written
 // into the person's own copy — so every page drawn from it shows it at once —
@@ -20,10 +21,11 @@ import { PROJECT_ROW_COLUMNS, type ProjectRowFields } from "@/lib/projects/proje
 // Tasks: created (the + menu, the board's quick add, the task form), edited in
 // the task form (its fields, members and tags), moved / reordered / marked
 // done anywhere, deleted; and comments added. Customers and projects: created,
-// and projects edited (their forms). Orders: created and edited (the order
-// form — written by lib/orders/device-order-writes.ts, sent from here). A new
-// row gets its id here (the routes accept it), so it's the same row once the
-// server has it.
+// and projects edited (their forms), their status changed, a quote approved, a
+// price set. Orders: created and edited (the order form — written by
+// lib/orders/device-order-writes.ts, sent from here). Reminders: done,
+// snoozed, dismissed, reopened. A new row gets its id here (the routes accept
+// it), so it's the same row once the server has it.
 //
 // What isn't a column of the row — a task's members, tags and the reminders
 // set while creating it — rides in the row's local-only `_extras` column
@@ -244,6 +246,125 @@ export function deviceProjectBody(id: string, data: Record<string, unknown>): Re
   };
 }
 
+/**
+ * A project change that goes up through its own route, not as the whole row:
+ * its status (the status picker), a quote approved, its agreed price (the
+ * project page). Only what it changes is sent — nothing else on the row as
+ * this phone last saw it goes with it.
+ */
+export type ProjectChange =
+  | { kind: "status"; status: string }
+  | { kind: "approve-quote"; agreed_base_price: number }
+  | { kind: "agreed-price"; agreed_base_price: number | null };
+
+/** The columns a project change sets, as its route sets them. */
+function projectChangeColumns(change: ProjectChange): Record<string, unknown> {
+  if (change.kind === "status") return { status: change.status };
+  if (change.kind === "approve-quote") {
+    return { status: "planned", agreed_base_price: change.agreed_base_price, actual_price: change.agreed_base_price };
+  }
+  const price = change.agreed_base_price ?? 0;
+  return { agreed_base_price: price, actual_price: price };
+}
+
+/** A project change on the device copy; false when the phone doesn't have the project (save on the server). */
+export async function changeProjectOnDevice(db: Db, id: string, change: ProjectChange): Promise<boolean> {
+  const stored = await db.getOptional<{ id: string }>("SELECT id FROM projects WHERE id = ?", [id]);
+  if (!stored) return false;
+  const columns = {
+    ...projectChangeColumns(change),
+    updated_at: new Date().toISOString(),
+    _extras: JSON.stringify({ change, n: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }),
+  };
+  await db.execute(`UPDATE projects SET ${Object.keys(columns).map((column) => `${column} = ?`).join(", ")} WHERE id = ?`, [
+    ...Object.values(columns),
+    id,
+  ]);
+  return true;
+}
+
+/** A project change, as its `_extras` holds it. */
+function projectChangeOf(value: unknown): ProjectChange | null {
+  if (typeof value !== "string" || !value) return null;
+  try {
+    const change = (JSON.parse(value) as { change?: { kind?: unknown; status?: unknown; agreed_base_price?: unknown } }).change;
+    if (!change) return null;
+    const price = change.agreed_base_price;
+    if (change.kind === "status" && typeof change.status === "string") return { kind: "status", status: change.status };
+    if (change.kind === "approve-quote" && typeof price === "number") return { kind: "approve-quote", agreed_base_price: price };
+    if (change.kind === "agreed-price" && (typeof price === "number" || price === null)) {
+      return { kind: "agreed-price", agreed_base_price: price };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function projectChangeRequest(id: string, change: ProjectChange): DeviceSaveRequest {
+  if (change.kind === "status") {
+    return { kind: "project-status", url: "/api/projects/update-status", body: { id, status: change.status } };
+  }
+  if (change.kind === "approve-quote") {
+    return {
+      kind: "project-approve-quote",
+      url: "/api/projects/approve-quote",
+      body: { id, agreed_base_price: change.agreed_base_price },
+    };
+  }
+  return {
+    kind: "project-price",
+    url: "/api/projects/update-agreed-base-price",
+    body: { project_id: id, agreed_base_price: change.agreed_base_price },
+  };
+}
+
+// ── Reminders ────────────────────────────────────────────────────────────────
+// Done, snoozed, dismissed or reopened on the phone first (the dashboard's
+// today list, the alert strip, the inbox, a project's / order's reminders):
+// the row changes as the action route changes it (lib/reminders/reminder-action.ts),
+// so the lists drawn from the copy drop it at once; the action itself rides in
+// `_extras` and goes up to the same route.
+
+/** A reminder acted on, on the device copy; false when the phone can't do it (do it on the server). */
+export async function actOnReminderOnDevice(
+  db: Db,
+  act: { id: string; action: ReminderAction; snoozeUntil?: string; userId: string }
+): Promise<boolean> {
+  const row = await db.getOptional<{ source: string | null }>("SELECT source FROM reminders WHERE id = ?", [act.id]);
+  if (!row) return false;
+  const result = reminderActionUpdates(row, act.action, { snoozeUntil: act.snoozeUntil, userId: act.userId });
+  // An action the server would refuse (a snooze time already past): it says why.
+  if ("error" in result) return false;
+  const columns = {
+    ...result.updates,
+    _extras: JSON.stringify({
+      action: act.action,
+      ...(act.action === "snooze" ? { snooze_until: act.snoozeUntil } : {}),
+      n: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    }),
+  };
+  await db.execute(`UPDATE reminders SET ${Object.keys(columns).map((column) => `${column} = ?`).join(", ")} WHERE id = ?`, [
+    ...Object.values(columns),
+    act.id,
+  ]);
+  return true;
+}
+
+/** A reminder's action, as its `_extras` holds it. */
+function reminderActOf(value: unknown): { action: ReminderAction; snooze_until?: string } | null {
+  if (typeof value !== "string" || !value) return null;
+  try {
+    const parsed = JSON.parse(value) as { action?: unknown; snooze_until?: unknown };
+    if (!isReminderAction(parsed.action)) return null;
+    return typeof parsed.snooze_until === "string"
+      ? { action: parsed.action, snooze_until: parsed.snooze_until }
+      : { action: parsed.action };
+  } catch {
+    return null;
+  }
+}
+
 function customerCreateBody(id: string, data: Record<string, unknown>): Record<string, unknown> {
   let extras: Record<string, unknown> = {};
   try {
@@ -281,8 +402,12 @@ export type DeviceSaveKind =
   | "customer-create"
   | "project-create"
   | "project-update"
+  | "project-status"
+  | "project-approve-quote"
+  | "project-price"
   | "order-create"
-  | "order-update";
+  | "order-update"
+  | "reminder-action";
 
 /** One queued device save, as the API route it goes through. */
 export type DeviceSaveRequest = { kind: DeviceSaveKind; url: string; body: Record<string, unknown> };
@@ -386,10 +511,19 @@ export async function requestForChange(
     if (kind === "PATCH") return { kind: "order-update", url: "/api/orders/update", body: { ...sent.body, order_id: op.id } };
     return null;
   }
+  if (op.table === "reminders") {
+    if (kind !== "PATCH") return null;
+    const act = reminderActOf(data._extras);
+    return act ? { kind: "reminder-action", url: "/api/reminders/action", body: { id: op.id, ...act } } : null;
+  }
   if (op.table === "projects") {
     if (kind === "PUT") return { kind: "project-create", url: "/api/projects/create", body: deviceProjectBody(op.id, data) };
     if (kind !== "PATCH") return null;
-    // Only the columns that changed are in the change: the route wants them all.
+    // Its status, a quote approved, its price: through that change's own route.
+    const change = projectChangeOf(data._extras);
+    if (change) return projectChangeRequest(op.id, change);
+    // An edit in the project form. Only the columns that changed are in the
+    // change: the route wants them all.
     const row = await current(op.id, "projects");
     return row ? { kind: "project-update", url: "/api/projects/update", body: deviceProjectBody(op.id, row) } : null;
   }

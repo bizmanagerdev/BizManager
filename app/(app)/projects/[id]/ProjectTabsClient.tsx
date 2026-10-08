@@ -49,6 +49,7 @@ import { computeSourceCollection } from "@/lib/collections";
 import { paymentTermsLabel } from "@/lib/paymentTerms";
 import { applyProjectVatToBase } from "@/lib/projects/vat";
 import { offlineFetch } from "@/lib/offline-queue";
+import { deviceProjectSaves } from "@/lib/projects/device-project-saves";
 import { offlineUpload } from "@/lib/offline-upload";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredAction, scheduleDeferredDelete, scheduleDeferredEdit } from "@/lib/undo-engine";
@@ -1101,6 +1102,12 @@ export default function ProjectTabsClient({
       onApplyOptimistic: () => setAgreedBasePriceUi(next),
       onRevert: () => setAgreedBasePriceUi(previous),
       onCommit: async () => {
+        // On the phone first (lib/projects/device-project-saves.ts): the page
+        // drawn from it shows it by itself; the alerts resync once it's sent.
+        const device = deviceProjectSaves("projectPage");
+        if (device && (await device.change(overview.id, { kind: "agreed-price", agreed_base_price: next }))) {
+          return { ok: true };
+        }
         const result = await offlineFetch(
           "/api/projects/update-agreed-base-price",
           { project_id: overview.id, agreed_base_price: next },

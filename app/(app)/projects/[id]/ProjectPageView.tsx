@@ -360,7 +360,14 @@ export default function ProjectPageView({
     <StatActionCard
       icon={<ClipboardIcon className="h-5 w-5" />}
       label="סטטוס הפרויקט"
-      value={<ProjectStatusPicker projectId={id} status={status} canEdit={viewer.role === "admin" || viewer.role === "office"} />}
+      value={
+        <ProjectStatusPicker
+          projectId={id}
+          status={status}
+          canEdit={viewer.role === "admin" || viewer.role === "office"}
+          devicePage="projectPage"
+        />
+      }
       details={[
         {
           label: "תאריכים",

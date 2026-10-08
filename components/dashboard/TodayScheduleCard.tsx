@@ -1,6 +1,7 @@
 "use client";
 
 import { saveTaskStatus } from "@/lib/tasks/device-task-saves";
+import { reminderActionOnDevice } from "@/lib/reminders/device-reminder-saves";
 import { OPENS_HERE_ATTRIBUTE, openTaskOnClick, taskIdFromHref } from "@/lib/tasks/open-task-here";
 import { useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
@@ -222,13 +223,17 @@ export default function TodayScheduleCard({
           }
           onDevice = result.onDevice;
         } else {
-          const res = await fetch("/api/reminders/action", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: entry.id, action: "done" }),
-          });
-          const json = (await res.json().catch(() => ({}))) as { error?: string };
-          if (!res.ok) return { ok: false, error: toHebrewError(json.error, t(dashboardDict, locale, "actionFailed")) };
+          // On the device copy too when there is one (lib/reminders/device-reminder-saves.ts).
+          onDevice = await reminderActionOnDevice(entry.id, "done");
+          if (!onDevice) {
+            const res = await fetch("/api/reminders/action", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: entry.id, action: "done" }),
+            });
+            const json = (await res.json().catch(() => ({}))) as { error?: string };
+            if (!res.ok) return { ok: false, error: toHebrewError(json.error, t(dashboardDict, locale, "actionFailed")) };
+          }
         }
         refreshAlerts();
         if (!onDevice) startTransition(() => { router.refresh(); });

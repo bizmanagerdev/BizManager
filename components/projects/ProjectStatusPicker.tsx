@@ -14,15 +14,18 @@ import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import { toHebrewError } from "@/lib/error-messages";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
+import { PROJECT_STATUSES } from "@/lib/projects/project-input";
+import { deviceProjectSaves } from "@/lib/projects/device-project-saves";
 
 // The project's status — as the סטטוס הפרויקט card's headline ("text" variant,
 // the project detail page) or as the status badge itself ("badge" variant, the
-// projects list) — and the control that changes it. Posts to the status-only
-// endpoint; the detail page refreshes the route afterward (`onChanged` unset),
-// the list instead patches its own row locally via `onChanged` since a full
-// router.refresh() there would fight the list's own infinite-scroll state.
-
-const STATUS_OPTIONS = ["quote", "planned", "active", "on_hold", "completed", "cancelled"];
+// projects list) — and the control that changes it. Saved on the phone first
+// where `devicePage` can be drawn from the device copy (it shows there at once,
+// with no signal too, and goes up through /api/projects/update-status);
+// otherwise written to the server: the detail page refreshes the route
+// afterward (`onChanged` unset), the list instead patches its own row locally
+// via `onChanged` since a full router.refresh() there would fight the list's
+// own infinite-scroll state.
 
 export function ProjectStatusPicker({
   projectId,
@@ -31,6 +34,7 @@ export function ProjectStatusPicker({
   variant = "text",
   badgeClassName,
   onChanged,
+  devicePage,
 }: {
   projectId: string;
   status: string;
@@ -40,6 +44,8 @@ export function ProjectStatusPicker({
   badgeClassName?: string;
   /** Called after a successful save instead of the default router.refresh(). */
   onChanged?: (nextStatus: string) => void;
+  /** The page it's on, when that page can be drawn from the device copy: the save is made there first. */
+  devicePage?: "projects" | "projectPage";
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -64,10 +70,17 @@ export function ProjectStatusPicker({
       onApplyOptimistic: () => setValue(next),
       onRevert: () => setValue(previous),
       onCommit: async () => {
+        // On the phone first (lib/projects/device-project-saves.ts): a page
+        // drawn from it shows it by itself, no refresh.
+        const device = devicePage ? deviceProjectSaves(devicePage) : null;
+        if (device && (await device.change(projectId, { kind: "status", status: next }))) {
+          onChanged?.(next);
+          return { ok: true };
+        }
         // RLS on `projects` already scopes this write (admin/office only — no
         // worker UPDATE policy exists), same as the old route's RLS-bound client.
         // `status` is a Postgres enum (project_status_enum), so an invalid value
-        // is rejected by the database itself, not just the STATUS_OPTIONS list.
+        // is rejected by the database itself, not just the PROJECT_STATUSES list.
         const { error } = await createSupabaseBrowserClient()
           .from("projects")
           .update({ status: next })
@@ -101,7 +114,7 @@ export function ProjectStatusPicker({
         )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
-        {STATUS_OPTIONS.map((option) => (
+        {PROJECT_STATUSES.map((option) => (
           <DropdownMenuItem key={option} onClick={() => select(option)}>
             {getProjectStatusLabel(option)}
           </DropdownMenuItem>
