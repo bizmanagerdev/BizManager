@@ -9,9 +9,11 @@ import { useRoutePreview } from "@/hooks/useRoutePreview";
 // when it has one (ProjectPageOpening); otherwise, opened from the projects
 // list, that project's header (what the row knew); from anywhere else — or on
 // a full page load, where nothing was remembered — the plain skeleton.
-export default function ProjectPageLoading() {
+// `id`: for the projects list's own loading screen, which the router can show
+// on the way to a project (it has no [id] param of its own).
+export default function ProjectPageLoading({ id: idProp }: { id?: string } = {}) {
   const params = useParams<{ id: string }>();
-  const id = typeof params?.id === "string" ? params.id : "";
+  const id = idProp ?? (typeof params?.id === "string" ? params.id : "");
   const preview = useRoutePreview(projectPreviewSlot, id);
 
   return <ProjectPageOpening id={id} preview={preview} routeLoading />;

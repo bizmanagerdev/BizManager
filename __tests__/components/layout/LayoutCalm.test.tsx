@@ -88,4 +88,39 @@ describe("the layout shift report", () => {
     expect(report.extra.shifts[0]).toBe('0.42 at 900ms: div.rounded-xl.border.bg-card "משימות שלי" ↓280px');
     expect(report.extra.shifts[1]).toBe("0.1 at 1500ms: (nothing named)");
   });
+
+  it("later in the visit too: a burst that adds up is reported, a small one isn't", async () => {
+    const { default: LayoutShiftReport } = await import("@/components/layout/LayoutShiftReport");
+    // Opened 10 s in (a move from another page).
+    nav.pathname = "/sales";
+    nav.start = 10_000;
+    render(<LayoutShiftReport />);
+    await act(async () => vi.advanceTimersByTime(8000)); // a calm opening: nothing
+    expect(sentry.captureMessage).not.toHaveBeenCalled();
+
+    const list = document.createElement("div");
+    list.className = "space-y-2";
+    list.textContent = "עטרת מלכות";
+    const rect = (y: number) => ({ y, height: 100 }) as DOMRectReadOnly;
+    // 10 s after it opened: the list jumps twice within a moment (one burst), then quiet.
+    act(() =>
+      feed({
+        getEntries: () => [
+          { startTime: 20_000, value: 0.04, hadRecentInput: false, sources: [{ node: list, previousRect: rect(150), currentRect: rect(260) }] },
+          { startTime: 20_300, value: 0.03, hadRecentInput: false, sources: [] },
+        ],
+      })
+    );
+    await act(async () => vi.advanceTimersByTime(1000));
+    expect(sentry.captureMessage).toHaveBeenCalledTimes(1);
+    const [, report] = sentry.captureMessage.mock.calls[0];
+    expect(report.tags).toMatchObject({ shift_page: "/sales", shift_load: "later" });
+    expect(report.extra).toMatchObject({ total: 0.07, count: 2, sinceOpenMs: 10_000 });
+    expect(report.extra.shifts[0]).toBe('0.04 at 10000ms: div.space-y-2 "עטרת מלכות" ↓110px');
+
+    // A small one later: not worth a report.
+    act(() => feed({ getEntries: () => [{ startTime: 40_000, value: 0.02, hadRecentInput: false, sources: [] }] }));
+    await act(async () => vi.advanceTimersByTime(1000));
+    expect(sentry.captureMessage).toHaveBeenCalledTimes(1);
+  });
 });

@@ -12,12 +12,23 @@ import { installNavigationTiming, lastNavigationStart } from "@/lib/ui/navigatio
 // (taps, typing) are added up, and when they're noticeable the biggest ones
 // go to Sentry ("Layout shift") with what moved: which element, how far down,
 // how much it grew. At most REPORTS_PER_DAY a day per page per device.
+//
+// Later in the visit too (owner, 2026-10-08: Speed Insights still saw jumps
+// on the phone sales page that this never reported — it counts the whole
+// visit, this only the opening): after the first seconds, shifts are grouped
+// in bursts as Speed Insights' score groups them — a burst ends after a
+// second of quiet, or five seconds in — and a noticeable burst is reported
+// as well (shift_load "later", with how long after the page opened).
 
 /** How long after a page opens its shifts count as its loading. */
 const WINDOW_MS = 8000;
 /** Below this total the page loaded calmly (Google's "good" is 0.1). */
 const REPORT_ABOVE = 0.05;
 const REPORTS_PER_DAY = 5;
+/** A later burst ends after this much quiet… */
+const BURST_GAP_MS = 1000;
+/** …or this long after it started (the score's own session window). */
+const BURST_MAX_MS = 5000;
 
 type Shift = { at: number; value: number; sources: { el: string; dy: number; dh: number }[] };
 
@@ -75,6 +86,64 @@ function underDailyLimit(page: string): boolean {
   }
 }
 
+/** The page on screen, and when it opened (performance time). */
+let current = { page: "", start: 0 };
+/** The shifts of the burst under way, after the page's opening. */
+let burst: Shift[] = [];
+let burstTimer: ReturnType<typeof setTimeout> | undefined;
+
+function report(
+  page: string,
+  load: "full" | "navigation" | "later",
+  mine: Shift[],
+  start: number,
+  extra: Record<string, unknown> = {}
+) {
+  const total = mine.reduce((sum, s) => sum + s.value, 0);
+  const biggest = [...mine].sort((a, b) => b.value - a.value).slice(0, 5);
+  const width = window.innerWidth;
+  withSentry((Sentry) =>
+    Sentry.captureMessage("Layout shift", {
+      level: "info",
+      tags: {
+        area: "layout",
+        shift_page: page,
+        shift_screen: width < 768 ? "phone" : width < 1280 ? "tablet" : "desktop",
+        shift_load: load,
+      },
+      extra: {
+        total: Math.round(total * 1000) / 1000,
+        count: mine.length,
+        width,
+        shifts: biggest.map((s) => shiftLine(s, start)),
+        ...extra,
+      },
+    })
+  );
+}
+
+/** The burst under way is over: report it when it's noticeable. */
+function endBurst() {
+  clearTimeout(burstTimer);
+  const mine = burst;
+  burst = [];
+  if (mine.length === 0 || !current.page) return;
+  const total = mine.reduce((sum, s) => sum + s.value, 0);
+  if (total < REPORT_ABOVE || !underDailyLimit(`${current.page}:later`)) return;
+  report(current.page, "later", mine, current.start, { sinceOpenMs: Math.round(mine[0].at - current.start) });
+}
+
+/** A shift after the page's opening joins the burst under way, or starts one. */
+function noteLater(shift: Shift) {
+  if (!current.page || shift.at < current.start + WINDOW_MS) return; // the opening's own report covers it
+  const first = burst[0];
+  const last = burst[burst.length - 1];
+  if (first && (shift.at - last.at > BURST_GAP_MS || shift.at - first.at > BURST_MAX_MS)) endBurst();
+  burst.push(shift);
+  clearTimeout(burstTimer);
+  burstTimer = setTimeout(endBurst, BURST_GAP_MS);
+}
+
 let observing = false;
 
 function observe() {
@@ -84,7 +153,7 @@ function observe() {
   new PerformanceObserver((list) => {
     for (const entry of list.getEntries() as LayoutShiftEntry[]) {
       if (entry.hadRecentInput) continue;
-      shifts.push({
+      const shift: Shift = {
         at: entry.startTime,
         value: entry.value,
         sources: (entry.sources ?? []).slice(0, 3).map((s) => ({
@@ -92,8 +161,10 @@ function observe() {
           dy: Math.round(s.currentRect.y - s.previousRect.y),
           dh: Math.round(s.currentRect.height - s.previousRect.height),
         })),
-      });
+      };
+      shifts.push(shift);
       if (shifts.length > 200) shifts.splice(0, shifts.length - 200);
+      noteLater(shift);
     }
   }).observe({ type: "layout-shift", buffered: true });
 }
@@ -109,29 +180,16 @@ export default function LayoutShiftReport() {
     if (!pathname) return;
     const start = lastNavigationStart();
     const page = pageKey(pathname);
+    // A burst from the page being left belongs to it — but not the shifts of
+    // this page's own opening (counted in its report below).
+    burst = burst.filter((s) => s.at < start);
+    endBurst();
+    current = { page, start };
     const timer = setTimeout(() => {
       const mine = shifts.filter((s) => s.at >= start && s.at < start + WINDOW_MS);
       const total = mine.reduce((sum, s) => sum + s.value, 0);
       if (total < REPORT_ABOVE || !underDailyLimit(page)) return;
-      const biggest = [...mine].sort((a, b) => b.value - a.value).slice(0, 5);
-      const width = window.innerWidth;
-      withSentry((Sentry) =>
-        Sentry.captureMessage("Layout shift", {
-          level: "info",
-          tags: {
-            area: "layout",
-            shift_page: page,
-            shift_screen: width < 768 ? "phone" : width < 1280 ? "tablet" : "desktop",
-            shift_load: start === 0 ? "full" : "navigation",
-          },
-          extra: {
-            total: Math.round(total * 1000) / 1000,
-            count: mine.length,
-            width,
-            shifts: biggest.map((s) => shiftLine(s, start)),
-          },
-        })
-      );
+      report(page, start === 0 ? "full" : "navigation", mine, start);
     }, WINDOW_MS);
     return () => clearTimeout(timer);
   }, [pathname]);

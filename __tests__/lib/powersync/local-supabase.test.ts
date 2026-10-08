@@ -923,6 +923,34 @@ describe("same-day rows keep one order", () => {
     expect(error).toBeNull();
     expect(deliveries.map((d) => d.id)).toEqual(["o-late", "o-early"]);
   });
+
+  it("deliveries: an order's lines by name, not as stored; a free-text line by its own name", async () => {
+    const db = createLocalSupabase(
+      fakeReader({
+        orders: [
+          {
+            id: "o1", customer_id: "c1", branch_id: null, status: "confirmed", order_date: "2026-10-08T00:00:00.000000",
+            created_at: "2026-10-08T06:00:00.000000", total_amount: "800", notes: null,
+          },
+        ],
+        customers: [{ id: "c1", name: "לקוח", name_for_invoice: null, phone: null, address: null }],
+        customer_branches: [],
+        // Stored product first — the server's copy may hold them the other way round.
+        order_items: [
+          { id: "l1", order_id: "o1", product_id: "p1", description: null, quantity_ordered: "2", quantity_delivered: "0", notes: null },
+          { id: "l2", order_id: "o1", product_id: null, description: "הובלה", quantity_ordered: "1", quantity_delivered: "0", notes: null },
+        ],
+        products: [{ id: "p1", name: "מטאטא", sku: null }],
+        inventory: [],
+        payments: [],
+      })
+    );
+    const { deliveries } = await loadDeliveriesPage(db, { page: 1, filters: { customerId: null } });
+    expect(deliveries[0].items.map((item) => [item.name, item.quantity])).toEqual([
+      ["הובלה", 1],
+      ["מטאטא", 2],
+    ]);
+  });
 });
 
 describe("the sales page's device version: tab counts and further pages", () => {

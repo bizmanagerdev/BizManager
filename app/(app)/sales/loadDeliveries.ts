@@ -187,7 +187,7 @@ export async function loadDeliveriesPage(
       (async () => {
         const { data: itemRows } = await supabase
           .from("order_items")
-          .select("order_id,product_id,quantity_ordered,quantity_delivered,notes")
+          .select("order_id,product_id,description,quantity_ordered,quantity_delivered,notes")
           .in("order_id", orderIds);
 
         const productIds = Array.from(
@@ -233,7 +233,8 @@ export async function loadDeliveriesPage(
           // handed over" and the driver sees exactly what's still owed.
           const list = itemsByOrder.get(orderId) ?? [];
           list.push({
-            name: productNameById.get(productId) || "מוצר",
+            // A free-text line (no product) by its own name.
+            name: productNameById.get(productId) || getString(row, "description") || "מוצר",
             quantity: getNumber(row, "quantity_ordered") ?? 0,
             delivered: getNumber(row, "quantity_delivered") ?? 0,
             notes: getString(row, "notes"),
@@ -243,7 +244,12 @@ export async function loadDeliveriesPage(
           if (available !== undefined && available < 0) outOfStockOrderIds.add(orderId);
         }
         for (const delivery of deliveries) {
-          delivery.items = itemsByOrder.get(delivery.id) ?? [];
+          // In a fixed order — by name, then the larger quantity first — not
+          // as the database happens to return them: the same on the server
+          // and on the phone (whose copy keeps its rows in another order).
+          delivery.items = (itemsByOrder.get(delivery.id) ?? []).sort(
+            (a, b) => a.name.localeCompare(b.name, "he") || b.quantity - a.quantity
+          );
           delivery.outOfStock = outOfStockOrderIds.has(delivery.id);
         }
       })(),
