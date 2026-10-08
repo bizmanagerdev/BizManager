@@ -24,7 +24,8 @@ function newId(): string {
 }
 
 export function deviceCustomerSaves(): DeviceCustomerSaves | null {
-  const ready = readyDeviceSaves();
+  // Staff only (sales pages are): workers don't create customers.
+  const ready = readyDeviceSaves("sales");
   if (!ready) return null;
   const { db } = ready;
   return {

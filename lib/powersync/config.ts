@@ -20,9 +20,12 @@ function isStaff(role: string | null | undefined): boolean {
  * orders (powersync/sync-config.yaml, the worker_* streams). `sync`: their
  * phones keep the copy and compare it with the server once a day per page,
  * nothing on screen changing; `pages`: their dashboard and tasks are drawn
- * from it — switched on only after a day of clean comparisons.
+ * from it (and their task saves made on it first) — on from 2026-10-08, after
+ * a day of clean comparisons (the owner's call). Except for workers reading
+ * Arabic: the server translates task names as they read them, the phone
+ * can't — their pages stay on the server (the owner's call, same day).
  */
-export const LOCAL_DATA_WORKERS = { sync: true, pages: false } as const;
+export const LOCAL_DATA_WORKERS = { sync: true, pages: true } as const;
 
 /** Who gets an on-device copy: admins and office, and workers (LOCAL_DATA_WORKERS). */
 export function localDataEnabledFor(role: string | null | undefined): boolean {
@@ -48,8 +51,9 @@ export const LOCAL_DATA_PAGES = {
   orders: true,
   // A project's own page (/projects/<id>) — needs sync rules v1.7 on the
   // device (account names, the VAT rate, recurring bills' names, login ids).
-  // Off for everyone but the people trying it out until then.
-  projectPage: false,
+  // On for every admin and office user from 2026-10-08 (the owner's call,
+  // after its daily comparisons on the owner's phone came out clean).
+  projectPage: true,
   // The dashboard's money cards (payments, collections, the income/expenses
   // chart) — needs sync rules v1.8 on the device (loans, card statements,
   // settlements…; only a copy that has them draws them, see money-copy.ts).
@@ -70,15 +74,30 @@ export const LOCAL_DATA_PREVIEW_USERS: readonly string[] = [
 /** Workers' pages that have a device version (the others are staff-only pages). */
 const WORKER_DEVICE_PAGES: ReadonlySet<keyof typeof LOCAL_DATA_PAGES> = new Set(["dashboard", "tasks"]);
 
-/** Does everyone with this role get the device version of `page`? */
-export function localDataPageFor(page: keyof typeof LOCAL_DATA_PAGES, role: string | null | undefined): boolean {
-  if (role === "worker") return LOCAL_DATA_WORKERS.sync && LOCAL_DATA_WORKERS.pages && WORKER_DEVICE_PAGES.has(page);
+/**
+ * Does everyone with this role (and, for a worker, this locale) get the device
+ * version of `page`? A worker's locale has to be known — a worker reading
+ * Arabic stays on the server (LOCAL_DATA_WORKERS).
+ */
+export function localDataPageFor(
+  page: keyof typeof LOCAL_DATA_PAGES,
+  role: string | null | undefined,
+  locale?: string | null
+): boolean {
+  if (role === "worker") {
+    return (
+      LOCAL_DATA_WORKERS.sync && LOCAL_DATA_WORKERS.pages && WORKER_DEVICE_PAGES.has(page) && Boolean(locale) && locale !== "ar"
+    );
+  }
   return isStaff(role) && LOCAL_DATA_PAGES[page];
 }
 
 /** Does this person get the device version of `page`? */
-export function localDataPageOn(page: keyof typeof LOCAL_DATA_PAGES, viewer: { id: string; role: string | null | undefined }): boolean {
-  if (localDataPageFor(page, viewer.role)) return true;
+export function localDataPageOn(
+  page: keyof typeof LOCAL_DATA_PAGES,
+  viewer: { id: string; role: string | null | undefined; locale?: string | null }
+): boolean {
+  if (localDataPageFor(page, viewer.role, viewer.locale)) return true;
   return isStaff(viewer.role) && LOCAL_DATA_PREVIEW_USERS.includes(viewer.id);
 }
 

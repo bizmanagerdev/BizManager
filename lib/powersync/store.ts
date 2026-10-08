@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { CommonPowerSyncDatabase } from "@powersync/web";
-import { localDataPageFor, localDataPageOn, type LOCAL_DATA_PAGES } from "./config";
+import { localDataPageOn, type LOCAL_DATA_PAGES } from "./config";
 import type { Locale } from "@/lib/i18n/types";
 
 // The open on-device database and its sync status, for any component to read.
@@ -75,7 +75,7 @@ export function readyDeviceSaves(
 ): { db: CommonPowerSyncDatabase; viewerId: string } | null {
   const db = readyLocalDatabase();
   if (!db || !viewer) return null;
-  if (page === "tasks" ? !localDataPageFor("tasks", viewer.role) : !localDataPageOn(page, viewer)) return null;
+  if (!localDataPageOn(page, viewer)) return null;
   return { db, viewerId: viewer.id };
 }
 

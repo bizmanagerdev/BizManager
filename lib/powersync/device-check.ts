@@ -22,7 +22,7 @@ export async function moneyCardsOnDevice(viewer: { id: string; role: string | nu
 
 export async function devicePageOn(
   page: DeviceCheckPage,
-  viewer: { id: string; role: string | null | undefined }
+  viewer: { id: string; role: string | null | undefined; locale?: string | null }
 ): Promise<boolean> {
   if (!localDataPageOn(page, viewer)) return false;
   return !(await cookies()).has(DEVICE_COPY_PENDING_COOKIE);
