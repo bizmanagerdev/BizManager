@@ -4,25 +4,10 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { tryAutoIssueReceiptForPayment } from "@/lib/morning/service";
 import { runAfterResponse } from "@/lib/after-response";
-import { buildPaymentInsert, PAYMENT_SELECT } from "@/lib/payments";
-import {
-  derivePaymentStatus,
-  normalizePaymentEntries,
-  splitPaymentAmounts,
-} from "@/lib/orders/paymentStatus";
-
-type CreateOrderPaymentPayload = {
-  order_id?: string;
-  payment_date?: string | null;
-  amount_total?: number | string;
-  payment_method?: string;
-  due_date?: string | null;
-  reference_number?: string;
-  check_number?: string;
-  notes?: string;
-  entry_type?: string;
-  account_id?: string | null;
-};
+import { PAYMENT_SELECT } from "@/lib/payments";
+import { derivePaymentStatus, splitPaymentAmounts } from "@/lib/orders/paymentStatus";
+import { orderPaymentFrom, type OrderPaymentBody } from "@/lib/orders/order-payment-input";
+import { clientRowId } from "@/lib/client-row-id";
 
 export async function POST(req: Request) {
   try {
@@ -31,30 +16,13 @@ export async function POST(req: Request) {
     const { supabase, user, profile } = access.value;
 
     return await withIdempotency(req, supabase, user.id, "orders/payments/create", async () => {
-    const body = (await req.json()) as CreateOrderPaymentPayload;
-    const orderId = typeof body.order_id === "string" ? body.order_id : "";
-    const [payment] = normalizePaymentEntries([body]);
-    const entryType = body.entry_type === "refund" ? "refund" : "payment";
-    const dueDate = typeof body.due_date === "string" && body.due_date.trim() ? body.due_date.trim() : null;
-
-    if (!orderId) {
-      return NextResponse.json({ error: "חסר מזהה הזמנה." }, { status: 400 });
-    }
-    if (
-      !payment ||
-        !Number.isFinite(payment.amount_total) ||
-        payment.amount_total <= 0 ||
-        !payment.payment_date ||
-        !payment.payment_method
-    ) {
-      return NextResponse.json(
-        { error: "יש להזין סכום, תאריך ואמצעי תשלום." },
-        { status: 400 }
-      );
-    }
-    if (payment.payment_method === "check" && !dueDate) {
-      return NextResponse.json({ error: "יש להזין תאריך פירעון לצ'ק" }, { status: 400 });
-    }
+    const body = (await req.json()) as OrderPaymentBody;
+    // The row — built the same way the phone builds it (lib/orders/order-payment-input.ts).
+    const built = orderPaymentFrom(body, user.id);
+    if ("error" in built) return NextResponse.json({ error: built.error }, { status: 400 });
+    const { orderId, entryType, row } = built;
+    // A payment saved on the phone first comes with the app's own id (lib/powersync/local-writes.ts).
+    const clientId = clientRowId(body.id);
 
     const { data: order, error: orderError } = await supabase
       .from("orders")
@@ -65,28 +33,30 @@ export async function POST(req: Request) {
     if (orderError) return NextResponse.json({ error: toHebrewError(orderError.message) }, { status: 400 });
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
 
-    const signedAmount = entryType === "refund" ? payment.amount_total * -1 : payment.amount_total;
-    const notePrefix = entryType === "refund" ? "Refund" : "";
-
     const { data: createdPayment, error: paymentError } = await supabase
       .from("payments")
-      .insert({
-        ...buildPaymentInsert({
-          amountTotal: signedAmount,
-          businessDomain: "sales",
-          orderId,
-          paymentDate: payment.payment_date!,
-          paymentMethod: payment.payment_method!,
-          dueDate: dueDate,
-          referenceNumber: payment.reference_number,
-          checkNumber: payment.payment_method === "check" ? payment.check_number : null,
-          notes: payment.notes ? (notePrefix ? `${notePrefix}: ${payment.notes}` : payment.notes) : notePrefix || null,
-          recordedBy: user.id,
-          accountId: typeof body.account_id === "string" && body.account_id.trim() ? body.account_id.trim() : null,
-        }),
-      })
+      .insert({ ...(clientId ? { id: clientId } : {}), ...row })
       .select(PAYMENT_SELECT)
       .maybeSingle();
+
+    if (paymentError && clientId && paymentError.code === "23505") {
+      // Sent again after its answer was lost: the payment it already made (its
+      // receipt was issued the first time).
+      const [{ data: existing }, { data: rows }] = await Promise.all([
+        supabase.from("payments").select(PAYMENT_SELECT).eq("id", clientId).maybeSingle(),
+        supabase.from("payments").select("amount_total,payment_status,due_date").eq("order_id", orderId),
+      ]);
+      if (existing) {
+        const { collected } = splitPaymentAmounts(rows ?? []);
+        const total = typeof order.total_amount === "number" ? order.total_amount : Number(order.total_amount ?? 0);
+        return NextResponse.json({
+          payment: existing,
+          payment_status: derivePaymentStatus(total, collected),
+          total_paid: collected,
+          remaining_balance: Math.max(total - collected, 0),
+        });
+      }
+    }
 
     if (paymentError) {
       const message =

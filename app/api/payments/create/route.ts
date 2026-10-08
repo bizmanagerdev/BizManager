@@ -5,37 +5,12 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { tryAutoIssueReceiptForPayment } from "@/lib/morning/service";
 import { runAfterResponse } from "@/lib/after-response";
-import { buildPaymentInsert, PAYMENT_SELECT } from "@/lib/payments";
+import { PAYMENT_SELECT } from "@/lib/payments";
 import { getCurrentVatRate } from "@/lib/settings/vat";
 import { parseTagIds, syncEntityTags } from "@/lib/tags";
-import {
-  isExpenseBusinessDomain,
-  mapProjectTypeToExpenseDomain,
-  type ExpenseBusinessDomain,
-} from "@/lib/expenses";
-
-type CreatePaymentPayload = {
-  business_domain?: string;
-  project_id?: string;
-  order_id?: string;
-  property_id?: string;
-  payment_date?: string | null;
-  due_date?: string | null;
-  amount_total?: number | string;
-  requires_split?: boolean;
-  payment_method?: string;
-  reference_number?: string;
-  check_number?: string;
-  notes?: string;
-  account_id?: string | null;
-  tag_ids?: unknown;
-};
-
-function toNumber(value: unknown) {
-  if (typeof value === "number") return value;
-  if (typeof value === "string") return Number(value);
-  return NaN;
-}
+import { mapProjectTypeToExpenseDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
+import { paymentFieldsFrom, paymentRowFrom, type PaymentBody } from "@/lib/payments/payment-input";
+import { clientRowId } from "@/lib/client-row-id";
 
 export async function POST(req: Request) {
   try {
@@ -44,43 +19,15 @@ export async function POST(req: Request) {
     const { supabase, user, profile } = access.value;
 
     return await withIdempotency(req, supabase, user.id, "payments/create", async () => {
-    const body = (await req.json()) as CreatePaymentPayload;
-    const paymentDate = typeof body.payment_date === "string" ? body.payment_date : null;
-    const dueDate = typeof body.due_date === "string" ? body.due_date : null;
-    const paymentMethod =
-      typeof body.payment_method === "string" ? body.payment_method.trim() : "";
-    const referenceNumber =
-      typeof body.reference_number === "string" ? body.reference_number.trim() : null;
-    const checkNumberInput =
-      typeof body.check_number === "string" ? body.check_number.trim() || null : null;
-    const notes = typeof body.notes === "string" ? body.notes.trim() : null;
-    const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
-    const orderId = typeof body.order_id === "string" ? body.order_id.trim() : "";
-    const propertyId = typeof body.property_id === "string" ? body.property_id.trim() : "";
-    const amountNumber = toNumber(body.amount_total);
-    const requiresSplit = body.requires_split === true;
+    const body = (await req.json()) as PaymentBody;
+    // Read and checked the same way the phone does (lib/payments/payment-input.ts).
+    const fields = paymentFieldsFrom(body);
+    if ("error" in fields) return NextResponse.json({ error: fields.error }, { status: 400 });
+    const { projectId, orderId, propertyId, requiresSplit } = fields;
+    // A payment saved on the phone first comes with the app's own id (lib/powersync/local-writes.ts).
+    const clientId = clientRowId(body.id);
 
-    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
-      return NextResponse.json({ error: "Missing or invalid amount_total" }, { status: 400 });
-    }
-    if (!paymentDate || !paymentMethod) {
-      return NextResponse.json({ error: "Missing payment_date or payment_method" }, { status: 400 });
-    }
-    if (paymentMethod === "check" && !dueDate) {
-      return NextResponse.json({ error: "Missing due_date for check payment" }, { status: 400 });
-    }
-
-    const linkedIds = [projectId, orderId, propertyId].filter(Boolean);
-    if (linkedIds.length > 1) {
-      return NextResponse.json(
-        { error: "Only one of project_id, order_id, or property_id can be provided" },
-        { status: 400 }
-      );
-    }
-
-    let businessDomain: ExpenseBusinessDomain | null = isExpenseBusinessDomain(body.business_domain)
-      ? body.business_domain
-      : null;
+    let businessDomain: ExpenseBusinessDomain | null = fields.businessDomain;
 
     if (projectId) {
       const { data: project, error } = await supabase
@@ -135,28 +82,19 @@ export async function POST(req: Request) {
 
     const { data, error } = await supabase
       .from("payments")
-      .insert(
-        buildPaymentInsert({
-          amountTotal: amountNumber,
-          businessDomain,
-          paymentDate,
-          paymentMethod,
-          projectId: projectId || null,
-          orderId: orderId || null,
-          propertyId: propertyId || null,
-          referenceNumber,
-          checkNumber: paymentMethod === "check" ? checkNumberInput : null,
-          notes,
-          dueDate,
-          requiresSplit,
-          vatRate,
-          recordedBy: user.id,
-          accountId: typeof body.account_id === "string" && body.account_id.trim() ? body.account_id.trim() : null,
-        })
-      )
+      .insert({
+        ...(clientId ? { id: clientId } : {}),
+        ...paymentRowFrom(fields, { businessDomain, vatRate, recordedBy: user.id }),
+      })
       .select(PAYMENT_SELECT)
       .maybeSingle();
 
+    if (error && clientId && error.code === "23505") {
+      // Sent again after its answer was lost: the payment it already made (its
+      // history line, receipt and tags were done the first time).
+      const { data: existing } = await supabase.from("payments").select(PAYMENT_SELECT).eq("id", clientId).maybeSingle();
+      if (existing) return NextResponse.json({ payment: existing });
+    }
     if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
     if (data?.id) {
       logAuditEventAfterResponse({

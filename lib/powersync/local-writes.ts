@@ -24,8 +24,9 @@ import { isReminderAction, reminderActionUpdates, type ReminderAction } from "@/
 // and projects edited (their forms), their status changed, a quote approved, a
 // price set. Orders: created and edited (the order form — written by
 // lib/orders/device-order-writes.ts, sent from here). Reminders: done,
-// snoozed, dismissed, reopened. A new row gets its id here (the routes accept
-// it), so it's the same row once the server has it.
+// snoozed, dismissed, reopened. Payments: added to an order or a project, and
+// marked collected. A new row gets its id here (the routes accept it), so it's
+// the same row once the server has it.
 //
 // What isn't a column of the row — a task's members, tags and the reminders
 // set while creating it — rides in the row's local-only `_extras` column
@@ -365,6 +366,75 @@ function reminderActOf(value: unknown): { action: ReminderAction; snooze_until?:
   }
 }
 
+// ── Payments ─────────────────────────────────────────────────────────────────
+// Added on the phone first (an order's payment form, a project's income form)
+// and marked collected (an order's payment row): the row is the one the server
+// makes (lib/orders/order-payment-input.ts, lib/payments/payment-input.ts), so
+// the order's paid status, the project's money and the dashboard show it at
+// once. The form's request rides in `_extras` and goes up to the same route —
+// the Morning receipt is issued there, when it arrives. An order's own lines
+// and payments, written with the order, carry no `_extras`: its request takes
+// them (isCarriedChange).
+
+/** The route a payment made on the phone goes up through. */
+export type PaymentRoute = "order-payment" | "project-payment" | "mark-collected";
+
+const PAYMENT_ROUTES: Record<PaymentRoute, { kind: DeviceSaveKind; url: string }> = {
+  "order-payment": { kind: "order-payment", url: "/api/orders/payments/create" },
+  "project-payment": { kind: "project-payment", url: "/api/payments/create" },
+  "mark-collected": { kind: "payment-collected", url: "/api/payments/mark-collected" },
+};
+
+const nonce = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+/** A new payment on the device copy: its row, and the form's request to send. */
+export async function addPaymentOnDevice(
+  db: Db,
+  payment: { id: string; row: Record<string, unknown>; route: "order-payment" | "project-payment"; body: Record<string, unknown> }
+): Promise<void> {
+  const now = new Date().toISOString();
+  const columns = [...Object.keys(payment.row), "created_at", "updated_at", "_extras"];
+  await db.execute(
+    `INSERT INTO payments (id, ${columns.join(", ")}) VALUES (?, ${columns.map(() => "?").join(", ")})`,
+    [
+      payment.id,
+      ...Object.values(payment.row).map(sqlValue),
+      now,
+      now,
+      JSON.stringify({ route: payment.route, body: payment.body, n: nonce() }),
+    ]
+  );
+}
+
+/** A payment marked collected (or back to waiting); false when the phone doesn't have it. */
+export async function markPaymentCollectedOnDevice(db: Db, id: string, collected: boolean): Promise<boolean> {
+  const stored = await db.getOptional<{ id: string }>("SELECT id FROM payments WHERE id = ?", [id]);
+  if (!stored) return false;
+  const now = new Date().toISOString();
+  // cleared_at as the database's trigger sets it.
+  await db.execute("UPDATE payments SET payment_status = ?, cleared_at = ?, updated_at = ?, _extras = ? WHERE id = ?", [
+    collected ? "cleared" : "pending",
+    collected ? now : null,
+    now,
+    JSON.stringify({ route: "mark-collected", body: { id, collected }, n: nonce() }),
+    id,
+  ]);
+  return true;
+}
+
+/** A payment's change, as its `_extras` holds it. */
+function paymentExtras(value: unknown): { route: PaymentRoute; body: Record<string, unknown> } | null {
+  if (typeof value !== "string" || !value) return null;
+  try {
+    const parsed = JSON.parse(value) as { route?: unknown; body?: unknown };
+    if (typeof parsed.route !== "string" || !(parsed.route in PAYMENT_ROUTES)) return null;
+    if (!parsed.body || typeof parsed.body !== "object") return null;
+    return { route: parsed.route as PaymentRoute, body: parsed.body as Record<string, unknown> };
+  } catch {
+    return null;
+  }
+}
+
 function customerCreateBody(id: string, data: Record<string, unknown>): Record<string, unknown> {
   let extras: Record<string, unknown> = {};
   try {
@@ -407,6 +477,9 @@ export type DeviceSaveKind =
   | "project-price"
   | "order-create"
   | "order-update"
+  | "order-payment"
+  | "project-payment"
+  | "payment-collected"
   | "reminder-action";
 
 /** One queued device save, as the API route it goes through. */
@@ -468,10 +541,12 @@ export function restoreForChange(op: Pick<CrudEntry, "table" | "op" | "opData">)
  * Changes that go up inside another one, so nothing sends them on their own:
  * an order's lines, payments and stock, written with the order on the phone
  * (lib/orders/device-order-writes.ts) — its request carries them, and the
- * server's own come back at the next sync.
+ * server's own come back at the next sync. A payment made or marked collected
+ * by itself carries its own request (`_extras`) and goes up on its own.
  */
-export function isCarriedChange(op: Pick<CrudEntry, "table">): boolean {
-  return op.table === "order_items" || op.table === "payments" || op.table === "inventory";
+export function isCarriedChange(op: Pick<CrudEntry, "table" | "opData">): boolean {
+  if (op.table === "payments") return !op.opData?._extras;
+  return op.table === "order_items" || op.table === "inventory";
 }
 
 /**
@@ -509,6 +584,14 @@ export async function requestForChange(
     if (!sent) return null;
     if (kind === "PUT") return { kind: "order-create", url: "/api/orders/create", body: { ...sent.body, id: op.id } };
     if (kind === "PATCH") return { kind: "order-update", url: "/api/orders/update", body: { ...sent.body, order_id: op.id } };
+    return null;
+  }
+  if (op.table === "payments") {
+    const sent = paymentExtras(data._extras);
+    if (!sent) return null;
+    const { kind: saveKind, url } = PAYMENT_ROUTES[sent.route];
+    if (kind === "PUT" && sent.route !== "mark-collected") return { kind: saveKind, url, body: { ...sent.body, id: op.id } };
+    if (kind === "PATCH" && sent.route === "mark-collected") return { kind: saveKind, url, body: sent.body };
     return null;
   }
   if (op.table === "reminders") {

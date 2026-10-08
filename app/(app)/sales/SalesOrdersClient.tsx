@@ -986,6 +986,7 @@ export default function SalesOrdersClient({
                               orderId={row.id}
                               totalAmount={row.totalAmount}
                               paidAmount={row.totalPaid}
+                              devicePage={fromDevice ? "sales" : undefined}
                             />
                           ) : null}
                         </div>
@@ -1036,6 +1037,7 @@ export default function SalesOrdersClient({
                                     totalAmount={row.totalAmount}
                                     paidAmount={row.totalPaid}
                                     buttonClassName="!bg-transparent"
+                                    devicePage={fromDevice ? "sales" : undefined}
                                   />
                                 ),
                               },

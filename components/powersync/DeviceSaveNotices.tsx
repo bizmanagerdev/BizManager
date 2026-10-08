@@ -63,6 +63,9 @@ export default function DeviceSaveNotices({ locale }: { locale: Locale }) {
       "project-price": "מחיר הבסיס לא עודכן",
       "order-create": "ההזמנה לא נשמרה",
       "order-update": "השינויים בהזמנה לא נשמרו",
+      "order-payment": "התשלום להזמנה לא נשמר",
+      "project-payment": "ההכנסה לפרויקט לא נשמרה",
+      "payment-collected": "סימון הגבייה לא נשמר",
       "reminder-action": "ההתראה לא עודכנה",
     };
     const onRefused = (event: Event) => {

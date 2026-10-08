@@ -454,6 +454,7 @@ export default function OrderPageView({
                     totalAmount={totalAmount}
                     paidAmount={totalPaid}
                     buttonClassName={FULL_SECONDARY_TRIGGER_CLASSES}
+                    devicePage="orders"
                   />
                 ) : null
               }
@@ -618,7 +619,7 @@ export default function OrderPageView({
                 title="תשלומים"
                 aside={
                   canManagePayments && !needsPaymentAction && !needsPricingAction ? (
-                    <OrderPaymentDialog orderId={id} totalAmount={totalAmount} paidAmount={totalPaid} />
+                    <OrderPaymentDialog orderId={id} totalAmount={totalAmount} paidAmount={totalPaid} devicePage="orders" />
                   ) : (
                     <span className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-xs text-muted-foreground">
                       {payments.length} רשומות

@@ -22,6 +22,7 @@ import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
 import { offlineFetch } from "@/lib/offline-queue";
+import { devicePaymentSaves } from "@/lib/payments/device-payment-saves";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { nextMonthTenth, parseInstallments, splitCardInstallments } from "@/lib/payments";
@@ -437,6 +438,11 @@ export function OrderPaymentActionsClient({
     );
     setCollectingId(paymentId);
     try {
+      // On the phone first (lib/payments/device-payment-saves.ts): the order's
+      // paid status follows at once, and the page drawn from the phone redraws
+      // by itself — no refresh.
+      const device = devicePaymentSaves("orders");
+      if (device && (await device.markCollected(paymentId, collected))) return;
       const result = await offlineFetch(
         "/api/payments/mark-collected",
         { id: paymentId, collected },

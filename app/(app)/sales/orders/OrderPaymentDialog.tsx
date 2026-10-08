@@ -2,6 +2,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 
 import { useMemo, useState, useTransition } from "react";
+import { devicePaymentSaves } from "@/lib/payments/device-payment-saves";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -52,6 +53,7 @@ export default function OrderPaymentDialog({
   paidAmount,
   onCreated,
   buttonClassName,
+  devicePage,
 }: {
   orderId: string;
   totalAmount: number;
@@ -62,6 +64,8 @@ export default function OrderPaymentDialog({
     totalPaid: number;
   }) => void;
   buttonClassName?: string;
+  /** The page it's on, when that page can be drawn from the device copy: the payment is saved there first. */
+  devicePage?: "orders" | "sales";
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -153,26 +157,43 @@ export default function OrderPaymentDialog({
       ? splitCardInstallments({ amount: amountNumber, paymentDate, count: installmentCount, notes })
       : [{ amount: amountNumber, paymentDate, dueDate: "", notes: notes.trim() || null }];
 
+    const bodyFor = (part: (typeof parts)[number]) => ({
+      order_id: orderId,
+      entry_type: entryType,
+      amount_total: part.amount,
+      payment_date: part.paymentDate,
+      payment_method: paymentMethod,
+      account_id: accountId || undefined,
+      // A card payment lands with the month's deposit — the 10th of the next
+      // month (lib/card-settlements.ts). A refund leaves on its own day.
+      due_date: isCardIncome ? part.dueDate || nextMonthTenth(part.paymentDate) || undefined : dueDate.trim() || undefined,
+      reference_number: referenceNumber.trim() || undefined,
+      check_number: paymentMethod === "check" && checkNumber.trim() ? checkNumber.trim() : undefined,
+      notes: part.notes || undefined,
+    });
+
     setSubmitting(true);
     try {
+      // Saved on the phone first (lib/payments/device-payment-saves.ts): the
+      // order's paid status and balance show it at once, offline too; it goes
+      // to the server in the background, where the Morning receipt is issued.
+      // A check's photos need the server.
+      const device = devicePage && checkPhotoFiles.length === 0 ? devicePaymentSaves(devicePage) : null;
+      if (device) {
+        const [first, ...rest] = parts;
+        if (await device.addOrderPayment(bodyFor(first))) {
+          for (const part of rest) await device.addOrderPayment(bodyFor(part));
+          onCreated?.({ payment: null, paymentStatus: preview.nextStatus, totalPaid: preview.nextPaid });
+          resetForm();
+          return;
+        }
+      }
+
       let result: Awaited<ReturnType<typeof offlineFetch>> | null = null;
       for (const [i, part] of parts.entries()) {
         result = await offlineFetch(
           "/api/orders/payments/create",
-          {
-            order_id: orderId,
-            entry_type: entryType,
-            amount_total: part.amount,
-            payment_date: part.paymentDate,
-            payment_method: paymentMethod,
-            account_id: accountId || undefined,
-            // A card payment lands with the month's deposit — the 10th of the next
-            // month (lib/card-settlements.ts). A refund leaves on its own day.
-            due_date: isCardIncome ? part.dueDate || nextMonthTenth(part.paymentDate) || undefined : dueDate.trim() || undefined,
-            reference_number: referenceNumber.trim() || undefined,
-            check_number: paymentMethod === "check" && checkNumber.trim() ? checkNumber.trim() : undefined,
-            notes: part.notes || undefined,
-          },
+          bodyFor(part),
           entryType === "refund" ? "החזר להזמנה" : "תשלום להזמנה",
           { idempotent: true }
         );

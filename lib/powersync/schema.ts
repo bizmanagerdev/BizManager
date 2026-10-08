@@ -303,6 +303,10 @@ const payments = new Table(
     vat_amount: text,
     account_id: text,
     cleared_at: text,
+    // Local only (never synced): a payment added or marked collected on the
+    // phone first — the request it goes up with (lib/powersync/local-writes.ts).
+    // An order's own payments, written with the order, have none.
+    _extras: text,
   },
   { indexes: { by_order: ["order_id"], by_project: ["project_id"], by_due: ["due_date"] } }
 );

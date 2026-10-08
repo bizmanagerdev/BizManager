@@ -24,6 +24,8 @@ import { runTogether, uploadTogether } from "@/lib/upload-together";
 import { appendDictatedText } from "@/lib/dictation";
 import { mapProjectTypeToExpenseDomain } from "@/lib/expenses";
 import { registerReversibleCreate } from "@/lib/undo-engine";
+import { devicePaymentSaves, PAYMENT_NOT_SENT_YET } from "@/lib/payments/device-payment-saves";
+import { whenDeviceSavesSent } from "@/lib/powersync/store";
 import { parseInstallments, splitCardInstallments, type FinancialAttachment, type PaymentRow } from "@/lib/payments";
 import { CardInstallmentsField } from "@/components/financial/CardInstallmentsField";
 import {
@@ -181,53 +183,72 @@ export function AddIncomeDialog({
 
     setSubmitting(true);
     try {
-      const res = await fetch(isEditing ? "/api/payments/update" : "/api/payments/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(bodyFor(firstPart, editingPayment?.id ?? undefined)),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        toast.error(isEditing ? "שגיאה בעדכון ההכנסה" : "שגיאה בהוספת ההכנסה", {
-          description: toHebrewError(json?.error, ""),
-        });
-        return;
-      }
-      const savedPayment = (json?.payment as PaymentRow | undefined) ?? editingPayment;
-      if (!savedPayment?.id) {
-        toast.error(isEditing ? "שגיאה בעדכון ההכנסה" : "שגיאה בהוספת ההכנסה", {
-          description: "Missing payment id",
-        });
-        return;
-      }
+      // A new income with no files: saved on the phone first
+      // (lib/payments/device-payment-saves.ts) — the project's money shows it
+      // at once, offline too; it goes to the server in the background, where
+      // the Morning receipt is issued. Files need the server.
+      const device = !isEditing && attachmentFiles.length === 0 ? devicePaymentSaves("projectPage") : null;
+      const onDevice = device ? await device.addProjectPayment(bodyFor(firstPart)) : null;
 
-      // The other installments, as new payments on the project — sent together
-      // (a few at a time), since none depends on another.
-      const added = await runTogether(
-        moreParts,
-        async (part) => {
-          const res = await fetch("/api/payments/create", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(bodyFor(part)),
-          });
-          const json = await res.json().catch(() => ({}));
-          return { ok: res.ok, json };
-        },
-        4
-      );
-      const addedIds = added
-        .map(({ ok, json }) => (ok ? (json?.payment as PaymentRow | undefined)?.id : undefined))
-        .filter((id): id is string => Boolean(id));
-      const failedAdd = added.find(({ ok }) => !ok);
-      if (failedAdd) {
-        // The first payment is saved plus whichever of the rest went in — say
-        // how many, so the others aren't entered twice.
-        toast.error(`נרשמו ${1 + added.filter(({ ok }) => ok).length} מתוך ${moreParts.length + 1} תשלומים`, {
-          description: toHebrewError(failedAdd.json?.error, "רישום שאר התשלומים נכשל."),
+      let savedPayment: PaymentRow | null = onDevice;
+      const addedIds: string[] = [];
+      if (onDevice) {
+        for (const part of moreParts) {
+          const added = await device!.addProjectPayment(bodyFor(part));
+          if (added) addedIds.push(added.id);
+        }
+      } else {
+        const res = await fetch(isEditing ? "/api/payments/update" : "/api/payments/create", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(bodyFor(firstPart, editingPayment?.id ?? undefined)),
         });
+        const json = await res.json();
+        if (!res.ok) {
+          toast.error(isEditing ? "שגיאה בעדכון ההכנסה" : "שגיאה בהוספת ההכנסה", {
+            description: toHebrewError(json?.error, ""),
+          });
+          return;
+        }
+        savedPayment = (json?.payment as PaymentRow | undefined) ?? editingPayment;
+        if (!savedPayment?.id) {
+          toast.error(isEditing ? "שגיאה בעדכון ההכנסה" : "שגיאה בהוספת ההכנסה", {
+            description: "Missing payment id",
+          });
+          return;
+        }
+
+        // The other installments, as new payments on the project — sent together
+        // (a few at a time), since none depends on another.
+        const added = await runTogether(
+          moreParts,
+          async (part) => {
+            const res = await fetch("/api/payments/create", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(bodyFor(part)),
+            });
+            const json = await res.json().catch(() => ({}));
+            return { ok: res.ok, json };
+          },
+          4
+        );
+        addedIds.push(
+          ...added
+            .map(({ ok, json }) => (ok ? (json?.payment as PaymentRow | undefined)?.id : undefined))
+            .filter((id): id is string => Boolean(id))
+        );
+        const failedAdd = added.find(({ ok }) => !ok);
+        if (failedAdd) {
+          // The first payment is saved plus whichever of the rest went in — say
+          // how many, so the others aren't entered twice.
+          toast.error(`נרשמו ${1 + added.filter(({ ok }) => ok).length} מתוך ${moreParts.length + 1} תשלומים`, {
+            description: toHebrewError(failedAdd.json?.error, "רישום שאר התשלומים נכשל."),
+          });
+        }
+        if (moreParts.length > 0) startTransition(() => { router.refresh(); });
       }
-      if (moreParts.length > 0) startTransition(() => { router.refresh(); });
+      if (!savedPayment) return;
 
       let paymentWithAttachment = savedPayment;
       // All files go up together (lib/upload-together.ts), not one by one.
@@ -253,6 +274,8 @@ export function AddIncomeDialog({
           id: paymentId,
           message: "ההכנסה נוספה",
           onUndo: async () => {
+            // Made on the phone: it has to reach the server before it can be deleted there.
+            if (onDevice && !(await whenDeviceSavesSent())) return { ok: false, error: PAYMENT_NOT_SENT_YET };
             for (const id of [paymentId, ...addedIds]) {
               const res = await fetch("/api/payments/delete", {
                 method: "POST",
