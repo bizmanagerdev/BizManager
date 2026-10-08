@@ -16,7 +16,7 @@ import { join } from "node:path";
 //                          not a display bug, and nothing at runtime would fail
 //                          loudly enough to catch it.
 //   order_delivery_image — compared by literal on the order page and in the
-//                          order edit-data route.
+//                          order edit-data loader (lib/orders/order-edit-data.ts).
 //   project_photo        — rendered as its own kind on the project page.
 //   morning_<id>         — minted by the external Morning integration.
 //
@@ -57,9 +57,10 @@ describe("Group C literals are still WRITTEN", () => {
 });
 
 describe("Group C literals are still READ", () => {
-  it("the order page and edit-data route still match 'order_delivery_image'", () => {
+  it("the order page and the order edit loader still match 'order_delivery_image'", () => {
     expect(read("app/(app)/sales/orders/[id]/loadOrderPageExtras.ts")).toContain(`"order_delivery_image"`);
-    expect(read("app/api/orders/[id]/edit-data/route.ts")).toContain(`"order_delivery_image"`);
+    // The edit-data route's loader (shared with the edit page and the phone).
+    expect(read("lib/orders/order-edit-data.ts")).toContain(`"order_delivery_image"`);
   });
 });
 

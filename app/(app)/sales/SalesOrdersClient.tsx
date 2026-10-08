@@ -60,6 +60,9 @@ import { computeSourceCollection } from "@/lib/collections";
 const OrderConfirmDialog = dynamic(() => import("@/app/(app)/sales/orders/OrderConfirmDialog"), {
   loading: () => null,
 });
+const OrderEditDialog = dynamic(() => import("@/app/(app)/sales/orders/OrderEditDialog"), {
+  loading: () => null,
+});
 
 type PaymentStatusFilter = "all" | "paid" | "partial" | "unpaid";
 
@@ -410,6 +413,8 @@ export default function SalesOrdersClient({
   const [query, setQuery] = useState(initialQuery);
   // One swiped-open row at a time, like a native list.
   const [swipedRow, setSwipedRow] = useState<string | null>(null);
+  // The device version edits an order right here (its form read from the phone's copy).
+  const [editOrderId, setEditOrderId] = useState<string | null>(null);
 
   // A tapped order's page shows at once: over the list straight away on a
   // phone, and as the page's loading screen everywhere — drawn from this
@@ -1042,6 +1047,12 @@ export default function SalesOrdersClient({
                         icon: <EditIcon className="h-5 w-5" />,
                         className: "bg-secondary-2",
                         onSelect: () => {
+                          // The page's device version: the order form opens right
+                          // here, from the phone's copy — at once, with no signal too.
+                          if (fromDevice) {
+                            setEditOrderId(row.id);
+                            return;
+                          }
                           emitNavigationStart();
                           router.push(`/sales/orders/${row.id}/edit`);
                         },
@@ -1217,6 +1228,18 @@ export default function SalesOrdersClient({
           open={reminderTarget !== null}
           onOpenChange={(next) => {
             if (!next) setReminderTarget(null);
+          }}
+        />
+      ) : null}
+
+      {editOrderId ? (
+        <OrderEditDialog
+          key={editOrderId}
+          orderId={editOrderId}
+          hideTrigger
+          open
+          onOpenChange={(next) => {
+            if (!next) setEditOrderId(null);
           }}
         />
       ) : null}

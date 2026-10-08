@@ -1,5 +1,7 @@
 import { readyDeviceSaves } from "@/lib/powersync/store";
+import { localClient } from "@/lib/powersync/local-results";
 import { createOrderOnDevice, updateOrderOnDevice } from "@/lib/orders/device-order-writes";
+import { loadOrderEditData, type OrderEditData } from "@/lib/orders/order-edit-data";
 
 // Saving an order on the phone first (lib/orders/device-order-writes.ts):
 // created or edited, it's on every page drawn from the device copy — the
@@ -32,6 +34,23 @@ export function deviceOrderSaves(): DeviceOrderSaves | null {
     },
     update: (id, body) => updateOrderOnDevice(db, { id, body, updatedBy: viewerId }),
   };
+}
+
+/**
+ * What the order form needs to edit an order, read from the phone's copy with
+ * the server's own loader (lib/orders/order-edit-data.ts) — at once, with no
+ * signal too. Null when the phone can't serve it (no copy, or not this order
+ * yet): read it from the server.
+ */
+export async function deviceOrderEditData(id: string): Promise<OrderEditData | null> {
+  const ready = readyDeviceSaves("sales");
+  if (!ready) return null;
+  try {
+    const result = await loadOrderEditData(await localClient(ready.db), id, { deliveryImages: false });
+    return result.ok ? result.data : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Undo of an order made on the phone that hasn't reached the server yet (no connection). */

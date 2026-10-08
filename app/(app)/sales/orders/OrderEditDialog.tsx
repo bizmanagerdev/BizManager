@@ -21,6 +21,7 @@ import {
 import { cn } from "@/lib/utils";
 import LoadingDots from "@/app/(app)/sales/orders/LoadingDots";
 import NewOrderClient from "@/app/(app)/sales/orders/new/NewOrderClient";
+import { deviceOrderEditData } from "@/lib/orders/device-order-saves";
 
 const OrderConfirmDialog = dynamic(() => import("@/app/(app)/sales/orders/OrderConfirmDialog"), {
   loading: () => null,
@@ -116,6 +117,13 @@ export default function OrderEditDialog({
       setLoading(true);
       setError(null);
       try {
+        // From the phone's copy when it has the order: at once, and with no
+        // signal too (lib/orders/device-order-saves.ts — the server's own loader).
+        const onDevice = await deviceOrderEditData(orderId);
+        if (onDevice) {
+          if (!cancelled) setData(onDevice as EditPayload);
+          return;
+        }
         const res = await fetch(`/api/orders/${orderId}/edit-data`, { cache: "no-store" });
         const json = (await res.json().catch(() => ({}))) as EditPayload & { error?: string };
         if (!res.ok) {
