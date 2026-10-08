@@ -4,10 +4,12 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState, useTransition } from "react";
-import { CashIcon, CheckIcon, ChevronDownIcon, LocationIcon, PhoneIcon, WazeIcon } from "@/components/ui/icons";
+import { CashIcon, CheckIcon, ChevronDownIcon, LocationIcon, PhoneIcon, WarehouseIcon, WazeIcon } from "@/components/ui/icons";
+import { Button } from "@/components/ui/button";
 import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
 import PickingListDialog from "@/app/(app)/sales/PickingListDialog";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
+import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AddressLink } from "@/components/ui/address-link";
 import { ContactLink, ContactTapZone } from "@/components/ui/contact-link";
@@ -178,6 +180,7 @@ export default function SalesDeliveriesQueue({
   customerId = null,
   canOpenOrder = true,
   loadedAt,
+  regionsInHeaderStrip = false,
 }: {
   initialDeliveries: DeliveryItem[];
   initialHasMore?: boolean;
@@ -195,6 +198,12 @@ export default function SalesDeliveriesQueue({
   /** When the server read these rows — an aged copy refreshes itself
    *  (useInfiniteScroll's loadedAt). */
   loadedAt?: number;
+  /**
+   * On a phone, the region pills (and the picking list) ride in the header
+   * strip under the top bar — on the sales page, where every tab has one, so
+   * switching tabs never moves the tabs or the list.
+   */
+  regionsInHeaderStrip?: boolean;
 }) {
   // Fetch-from-DB-as-you-scroll: accumulate delivery pages, then group region →
   // city → customer over everything loaded so far (no "next page" button).
@@ -282,8 +291,42 @@ export default function SalesDeliveriesQueue({
         />
       ) : null}
 
-      {/* Region filter tabs */}
-      <div className="flex flex-wrap items-center gap-2">
+      {regionsInHeaderStrip ? (
+        <PageHeaderToolbar>
+          {/* One line that scrolls sideways rather than wrapping, so the strip
+              is as tall as every other tab's. */}
+          <div className="mx-auto flex w-full max-w-md items-center gap-2 overflow-x-auto">
+            {regionLinks.map(({ label, href, active }) => (
+              <Link
+                key={label}
+                href={href}
+                onClick={() => emitNavigationStart()}
+                className={[
+                  "shrink-0 rounded-full border px-3 py-1 text-sm transition-colors",
+                  active
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
+                ].join(" ")}
+              >
+                {label}
+              </Link>
+            ))}
+            {/* Its icon only here — with the label it no longer fit beside the pills. */}
+            <div className="shrink-0">
+              <PickingListDialog
+                trigger={
+                  <Button type="button" variant="secondary" size="icon" className="h-8 w-8" aria-label="רשימת ליקוט" title="רשימת ליקוט">
+                    <WarehouseIcon className="h-4 w-4" />
+                  </Button>
+                }
+              />
+            </div>
+          </div>
+        </PageHeaderToolbar>
+      ) : null}
+
+      {/* Region filter tabs (on the sales page's phone layout: in the strip above) */}
+      <div className={regionsInHeaderStrip ? "hidden flex-wrap items-center gap-2 md:flex" : "flex flex-wrap items-center gap-2"}>
         {regionLinks.map(({ label, href, active }) => (
           <Link
             key={label}

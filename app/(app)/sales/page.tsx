@@ -344,6 +344,7 @@ export default async function SalesPage({
         totalCount={totalCount}
         customerId={customerId}
         loadedAt={loadedAt}
+        regionsInHeaderStrip
       />
     );
   }

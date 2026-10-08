@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { PageHeaderToolbarSpace } from "@/components/layout/PageHeaderToolbar";
+import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { LocalListPagerProvider } from "@/components/powersync/LocalListPager";
 import { useLocalCard } from "@/components/powersync/useLocalCard";
 import { useDevicePageTiming } from "@/components/powersync/useDevicePageTiming";
@@ -37,6 +38,35 @@ const PriceListClient = dynamic(() => import("./PriceListClient"), { loading: ()
 // server version (?data=server).
 
 type TabFilters = OrdersFilters | ProductsFilters | DeliveriesFilters;
+
+type TabCounts = LocalDashboardCards["salesCounts"]["counts"];
+
+/**
+ * The tab's own title in the phone's top bar while it loads — the one it sets
+ * once it's on screen (SalesOrdersClient, SalesInventoryClient, …) — so a tab
+ * switch doesn't blink the title to "מכירות" and back (it moved the title).
+ * Not for deliveries in one region: its count is worked out from the list.
+ */
+function LoadingTabTitle({ tab, counts, regionFilter }: { tab: SalesTab; counts: TabCounts; regionFilter: string | null }) {
+  const [title, subtitle] =
+    tab === "orders"
+      ? ["הזמנות", `${counts.orders} הזמנות`]
+      : tab === "closed"
+        ? ["הזמנות סגורות", `${counts.closed} הזמנות`]
+        : tab === "inventory"
+          ? ["מלאי", `${counts.inventory} מוצרים`]
+          : tab === "price-list"
+            ? ["מחירון", `${counts["price-list"]} מוצרים`]
+            : regionFilter
+              ? [null, undefined]
+              : ["משלוחים", `${counts.deliveries} משלוחים`];
+  return title ? <SetTitle title={title} subtitle={subtitle} /> : null;
+}
+
+function SetTitle({ title, subtitle }: { title: string; subtitle?: string }) {
+  useSetPageTitle(title, subtitle);
+  return null;
+}
 
 function tabCard(
   activeTab: SalesTab,
@@ -110,14 +140,15 @@ export default function LocalSalesPage({
   // The tab or its filters just changed: what's here is still the previous list.
   const tabData = tab && tab.filtersKey === filtersKey ? tab.data : null;
   useDevicePageTiming(`sales:${activeTab}`, tabData ? tab : null);
-  // The orders and price-list tabs put a search / filter row in the phone's
-  // header strip: held open from the first paint, before the tab arrives.
-  // (Deliveries and stock have none — no empty strip for them.)
-  const toolbarSpace = kind === "salesOrders" || kind === "salesPriceList" ? <PageHeaderToolbarSpace /> : null;
+  // Every tab puts its search / filters in the phone's header strip — the
+  // same strip on each, so switching tabs never moves the tabs or the list
+  // (owner, 2026-10-08) — held open from the first paint, before the tab arrives.
+  const toolbarSpace = <PageHeaderToolbarSpace />;
   if (!tabData || !counts)
     return (
       <>
         {toolbarSpace}
+        {counts ? <LoadingTabTitle tab={activeTab} counts={counts.data.counts} regionFilter={regionFilter} /> : null}
         <SalesSkeleton />
       </>
     );
@@ -177,6 +208,7 @@ export default function LocalSalesPage({
         regionLinks={regionLinks}
         totalCount={counts.data.counts.deliveries}
         customerId={customerId}
+        regionsInHeaderStrip
       />
     );
   }

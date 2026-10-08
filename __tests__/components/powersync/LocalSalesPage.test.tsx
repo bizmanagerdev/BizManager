@@ -141,4 +141,16 @@ describe("LocalSalesPage", () => {
     await act(async () => finishStock({ filters: { q: "", category: "" }, items: [{ productId: "p1" }], movements: [], orderCustomerById: {}, performerNameById: {}, hasMore: false }));
     expect(await screen.findByText("stock: p1")).toBeTruthy();
   });
+
+  // Every tab has its search / filters in the phone's header strip (owner,
+  // 2026-10-08: switching between a tab with one and a tab without moved the
+  // tabs and the list ~55 px), and the strip is held open while a tab loads.
+  it("every tab holds the phone's header strip open, before it arrives too", () => {
+    computeLocalCard.mockImplementation(() => new Promise(() => {}));
+    for (const tab of ["orders", "closed", "inventory", "price-list", "deliveries"] as const) {
+      const { container, unmount } = render(<LocalSalesPage {...props} activeTab={tab} tabsSearchParams={{ tab }} />);
+      expect(container.querySelector("[data-page-header-toolbar]"), tab).not.toBeNull();
+      unmount();
+    }
+  });
 });

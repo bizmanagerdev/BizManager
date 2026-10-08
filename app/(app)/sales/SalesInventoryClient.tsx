@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AddProductIcon } from "@/components/ui/icons";
+import { AddProductIcon, SearchIcon } from "@/components/ui/icons";
+import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
@@ -524,6 +525,22 @@ export default function SalesInventoryClient({
   useSetPageTitle("מלאי", `${totalCount ?? initialItems.length} מוצרים`);
   return (
     <div className="space-y-4">
+      {/* Mobile: the search rides in the phone's header strip, like every other
+          sales tab's — so switching tabs never moves the tabs or the list
+          (owner, 2026-10-08: the page jumped on tab switches). */}
+      <PageHeaderToolbar>
+        <div className="mx-auto flex w-full max-w-md items-center justify-center gap-2">
+          <div className="relative w-full min-w-0">
+            <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="חיפוש מוצר לפי שם או מק״ט"
+              className="h-10 w-full rounded-xl ps-9"
+            />
+          </div>
+        </div>
+      </PageHeaderToolbar>
       <Card>
         <CardHeader className="pb-2">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -532,7 +549,7 @@ export default function SalesInventoryClient({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="חיפוש מוצר לפי שם או מק״ט"
-              className="h-10 sm:max-w-xs"
+              className="hidden h-10 sm:max-w-xs md:flex"
             />
           </div>
         </CardHeader>
