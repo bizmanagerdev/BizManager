@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { CommonPowerSyncDatabase } from "@powersync/web";
-import { localDataPageFor } from "./config";
+import { localDataPageFor, localDataPageOn, type LOCAL_DATA_PAGES } from "./config";
 import type { Locale } from "@/lib/i18n/types";
 
 // The open on-device database and its sync status, for any component to read.
@@ -64,11 +64,18 @@ export function useLocalViewer(): LocalViewer | null {
 /**
  * Where to save on the device copy first (lib/tasks/device-task-saves.ts):
  * the complete copy and whose it is — for the people whose task pages are
- * drawn from it (localDataPageFor) — else null: save on the server.
+ * drawn from it (localDataPageFor) — else null: save on the server. `page`:
+ * the pages that show the save — a project saved on the phone, for people
+ * whose project pages are drawn from it (localDataPageOn, so the people
+ * trying a page out too); the page drawn by the server would only show it
+ * once it's there.
  */
-export function readyDeviceSaves(): { db: CommonPowerSyncDatabase; viewerId: string } | null {
+export function readyDeviceSaves(
+  page: keyof typeof LOCAL_DATA_PAGES = "tasks"
+): { db: CommonPowerSyncDatabase; viewerId: string } | null {
   const db = readyLocalDatabase();
-  if (!db || !viewer || !localDataPageFor("tasks", viewer.role)) return null;
+  if (!db || !viewer) return null;
+  if (page === "tasks" ? !localDataPageFor("tasks", viewer.role) : !localDataPageOn(page, viewer)) return null;
   return { db, viewerId: viewer.id };
 }
 
@@ -140,16 +147,21 @@ export async function wipeLocalDataBeforeLogout(timeoutMs = 3000): Promise<void>
  * Wait (up to `timeoutMs`) until the saves made on the device copy have all
  * reached the server — before a save that goes straight to the server and
  * may point at one of them (a project or order for a customer just made on
- * the phone, which the server would otherwise not know yet). Returns at once
- * when nothing is waiting, or there's no copy.
+ * the phone, which the server would otherwise not know yet; undoing a project
+ * just made on the phone). Returns at once when nothing is waiting, or there's
+ * no copy — true: nothing is waiting; false: some still are (no connection, or
+ * not sent in time).
  */
-export async function whenDeviceSavesSent(timeoutMs = 8000): Promise<void> {
+export async function whenDeviceSavesSent(timeoutMs = 8000): Promise<boolean> {
   const db = readyLocalDatabase();
-  if (!db) return;
+  if (!db) return true;
   const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
+  for (;;) {
     const row = await db.getOptional<{ n: number }>("SELECT count(*) AS n FROM ps_crud").catch(() => null);
-    if (!row || !row.n) return;
+    if (!row || !row.n) return true;
+    // No connection: nothing will go now — don't keep the person waiting.
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return false;
+    if (Date.now() - started >= timeoutMs) return false;
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
 }

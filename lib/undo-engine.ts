@@ -195,10 +195,27 @@ export function undoKey(key: string): boolean {
   clearTimeout(entry.timer);
   finish(key);
   toast.dismiss(key);
-  if (entry.kind === "deferred") entry.onRevert();
-  else void entry.onUndo();
+  if (entry.kind === "deferred") {
+    entry.onRevert();
+    toast(`${entry.message} בוטל.`, { duration: 2000 });
+  } else {
+    // A create is undone by deleting it: say it's undone only once that
+    // worked — a delete that failed (no connection, a project made on the
+    // phone that hasn't reached the server yet) says why instead.
+    let undone: Promise<ActionResult> | void;
+    try {
+      undone = entry.onUndo();
+    } catch (e) {
+      undone = Promise.reject(e);
+    }
+    void Promise.resolve(undone)
+      .catch((e): ActionResult => ({ ok: false, error: e instanceof Error ? e.message : String(e) }))
+      .then((result) => {
+        if (result && !result.ok) toast.error(toHebrewError(result.error, "הביטול נכשל."));
+        else toast(`${entry.message} בוטל.`, { duration: 2000 });
+      });
+  }
   notify();
-  toast(`${entry.message} בוטל.`, { duration: 2000 });
   return true;
 }
 

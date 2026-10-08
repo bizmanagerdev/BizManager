@@ -37,7 +37,8 @@ export function useOfflineRows<T>(
   liveRows: T[]
 ): { rows: T[]; offline: boolean; savedAt: number | null } {
   const online = useOnline();
-  const [snapshot, setSnapshot] = useState<{ data: T[]; savedAt: number } | null>(null);
+  // Which list it's a copy of: switching to another tab offline must not show this one.
+  const [snapshot, setSnapshot] = useState<{ key: string; data: T[]; savedAt: number } | null>(null);
 
   // Persist whenever we have live rows online, so the newest full list is ready
   // for the next time there's no signal.
@@ -51,7 +52,7 @@ export function useOfflineRows<T>(
     if (!key || online) return;
     let cancelled = false;
     void loadSnapshot<T[]>(key).then((s) => {
-      if (!cancelled && s) setSnapshot(s);
+      if (!cancelled && s) setSnapshot({ key, data: s.data, savedAt: s.savedAt });
     });
     return () => {
       cancelled = true;
@@ -62,7 +63,10 @@ export function useOfflineRows<T>(
   // Offline, prefer the snapshot when it's fuller than whatever SSR left us with
   // (a cached page only carries its first page of rows).
   const usingSnapshot =
-    offline && snapshot != null && (liveRows.length === 0 || snapshot.data.length > liveRows.length);
+    offline &&
+    snapshot != null &&
+    snapshot.key === key &&
+    (liveRows.length === 0 || snapshot.data.length > liveRows.length);
 
   return {
     rows: usingSnapshot ? snapshot!.data : liveRows,

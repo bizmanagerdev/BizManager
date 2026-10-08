@@ -6,6 +6,7 @@ import {
   parseNewCustomerContacts,
   type NewCustomerInput,
 } from "@/lib/customers/new-customer";
+import { PROJECT_ROW_COLUMNS, type ProjectRowFields } from "@/lib/projects/project-input";
 
 // Saves made on the device copy first ("instant saves"): the change is written
 // into the person's own copy — so every page drawn from it shows it at once —
@@ -18,8 +19,11 @@ import {
 //
 // Tasks: created (the + menu, the board's quick add, the task form), edited in
 // the task form (its fields, members and tags), moved / reordered / marked
-// done anywhere, deleted; and comments added. A new task or comment gets its
-// id here (the routes accept it), so it's the same row once the server has it.
+// done anywhere, deleted; and comments added. Customers and projects: created,
+// and projects edited (their forms). Orders: created and edited (the order
+// form — written by lib/orders/device-order-writes.ts, sent from here). A new
+// row gets its id here (the routes accept it), so it's the same row once the
+// server has it.
 //
 // What isn't a column of the row — a task's members, tags and the reminders
 // set while creating it — rides in the row's local-only `_extras` column
@@ -176,6 +180,70 @@ export async function createCustomerOnDevice(db: Db, customer: { id: string; inp
   );
 }
 
+// ── Projects ─────────────────────────────────────────────────────────────────
+// Created and edited on the phone first (the project form; a project page's
+// edit form). The row is the one the server makes (lib/projects/project-input.ts);
+// an edit goes up as the whole row as it stands on the phone — the update
+// route takes the full record — so its branch, terms and due date go with it.
+
+function projectValues(row: ProjectRowFields): unknown[] {
+  return PROJECT_ROW_COLUMNS.map((column) =>
+    column === "items_to_move" ? (row.items_to_move ? JSON.stringify(row.items_to_move) : null) : sqlValue(row[column])
+  );
+}
+
+/** A new project on the device copy. `vatRate`: the rate it freezes, as this copy knows it (the server's is kept). */
+export async function createProjectOnDevice(
+  db: Db,
+  project: { id: string; row: ProjectRowFields; vatRate: number | null }
+): Promise<void> {
+  const now = new Date().toISOString();
+  const columns = [...PROJECT_ROW_COLUMNS, "vat_rate", "created_at", "updated_at"];
+  await db.execute(
+    `INSERT INTO projects (id, ${columns.join(", ")}) VALUES (?, ${columns.map(() => "?").join(", ")})`,
+    [project.id, ...projectValues(project.row), project.vatRate, now, now]
+  );
+}
+
+/** A project edited: its whole row (as the update route takes it). */
+export async function updateProjectOnDevice(
+  db: Db,
+  project: { id: string; row: ProjectRowFields; vatRate: number | null }
+): Promise<void> {
+  const columns = [...PROJECT_ROW_COLUMNS, "vat_rate", "updated_at"];
+  await db.execute(`UPDATE projects SET ${columns.map((column) => `${column} = ?`).join(", ")} WHERE id = ?`, [
+    ...projectValues(project.row),
+    project.vatRate,
+    new Date().toISOString(),
+    project.id,
+  ]);
+}
+
+/** A project's row on the device, in the routes' shape. */
+export function deviceProjectBody(id: string, data: Record<string, unknown>): Record<string, unknown> {
+  const flag = (value: unknown) => value === 1 || value === true;
+  const flagOrNull = (value: unknown) => (value === null || value === undefined ? null : flag(value));
+  let items: unknown = null;
+  if (typeof data.items_to_move === "string" && data.items_to_move) {
+    try {
+      items = JSON.parse(data.items_to_move);
+    } catch {
+      items = null;
+    }
+  }
+  const body: Record<string, unknown> = { id };
+  for (const column of PROJECT_ROW_COLUMNS) body[column] = data[column] ?? null;
+  return {
+    ...body,
+    price_includes_vat: flag(data.price_includes_vat),
+    no_charge: flag(data.no_charge),
+    expenses_billed_separately: flag(data.expenses_billed_separately),
+    items_to_move: Array.isArray(items) ? items : null,
+    origin_has_elevator: flagOrNull(data.origin_has_elevator),
+    destination_has_elevator: flagOrNull(data.destination_has_elevator),
+  };
+}
+
 function customerCreateBody(id: string, data: Record<string, unknown>): Record<string, unknown> {
   let extras: Record<string, unknown> = {};
   try {
@@ -210,13 +278,17 @@ export type DeviceSaveKind =
   | "task-create"
   | "task-update"
   | "task-comment"
-  | "customer-create";
+  | "customer-create"
+  | "project-create"
+  | "project-update"
+  | "order-create"
+  | "order-update";
 
 /** One queued device save, as the API route it goes through. */
 export type DeviceSaveRequest = { kind: DeviceSaveKind; url: string; body: Record<string, unknown> };
 
 /** The row as it stands on the device now (what a change that didn't record a column needs). */
-export type CurrentTaskRow = (id: string) => Promise<Record<string, unknown> | null>;
+export type CurrentRow = (id: string, table: "tasks" | "projects") => Promise<Record<string, unknown> | null>;
 
 function parseExtras(value: unknown): TaskExtras {
   if (typeof value !== "string" || !value) return {};
@@ -243,15 +315,50 @@ function taskFieldsOf(data: Record<string, unknown>): Partial<Record<keyof TaskF
   return out;
 }
 
+/** An order's change, as its `_extras` holds it: the route body, and the form to put back if it's refused. */
+function orderExtras(value: unknown): { body: Record<string, unknown>; restore: OrderRestore | null } | null {
+  if (typeof value !== "string" || !value) return null;
+  try {
+    const parsed = JSON.parse(value) as { body?: unknown; restore?: unknown };
+    if (!parsed.body || typeof parsed.body !== "object") return null;
+    const restore = parsed.restore as OrderRestore | null | undefined;
+    return {
+      body: parsed.body as Record<string, unknown>,
+      restore: restore && typeof restore.key === "string" ? restore : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** The order form as it stood when an order was saved on the phone (its draft, under its key). */
+export type OrderRestore = { key: string; draft: unknown };
+
+/** The order form to put back if the server refuses this change (a new order). */
+export function restoreForChange(op: Pick<CrudEntry, "table" | "op" | "opData">): OrderRestore | null {
+  return op.table === "orders" && op.op === "PUT" ? orderExtras(op.opData?._extras)?.restore ?? null : null;
+}
+
+/**
+ * Changes that go up inside another one, so nothing sends them on their own:
+ * an order's lines, payments and stock, written with the order on the phone
+ * (lib/orders/device-order-writes.ts) — its request carries them, and the
+ * server's own come back at the next sync.
+ */
+export function isCarriedChange(op: Pick<CrudEntry, "table">): boolean {
+  return op.table === "order_items" || op.table === "payments" || op.table === "inventory";
+}
+
 /**
  * The API call for one queued change, or null for a change nothing sends
- * (it's dropped and reported). `current` reads the task as it stands on the
- * device — for what the route wants that the change didn't record (the
- * status, for a reorder; the whole link, when part of it changed).
+ * (it's dropped and reported). `current` reads the row as it stands on the
+ * device — for what the route wants that the change didn't record (a task's
+ * status, for a reorder; its whole link, when part of it changed; a project's
+ * whole record, for an edit).
  */
 export async function requestForChange(
   op: Pick<CrudEntry, "table" | "op" | "id" | "opData">,
-  current: CurrentTaskRow
+  current: CurrentRow
 ): Promise<DeviceSaveRequest | null> {
   // UpdateType's values, compared as text so this file doesn't pull the SDK
   // into the page (the page only uses the writes above).
@@ -271,6 +378,21 @@ export async function requestForChange(
     if (kind !== "PUT") return null;
     return { kind: "customer-create", url: "/api/customers/create", body: customerCreateBody(op.id, data) };
   }
+  if (op.table === "orders") {
+    // The request the order form used to send, as it stood (lib/orders/device-order-writes.ts).
+    const sent = orderExtras(data._extras);
+    if (!sent) return null;
+    if (kind === "PUT") return { kind: "order-create", url: "/api/orders/create", body: { ...sent.body, id: op.id } };
+    if (kind === "PATCH") return { kind: "order-update", url: "/api/orders/update", body: { ...sent.body, order_id: op.id } };
+    return null;
+  }
+  if (op.table === "projects") {
+    if (kind === "PUT") return { kind: "project-create", url: "/api/projects/create", body: deviceProjectBody(op.id, data) };
+    if (kind !== "PATCH") return null;
+    // Only the columns that changed are in the change: the route wants them all.
+    const row = await current(op.id, "projects");
+    return row ? { kind: "project-update", url: "/api/projects/update", body: deviceProjectBody(op.id, row) } : null;
+  }
   if (op.table !== "tasks") return null;
 
   if (kind === "DELETE") return { kind: "task-delete", url: "/api/tasks/delete", body: { id: op.id } };
@@ -289,7 +411,7 @@ export async function requestForChange(
   if (!hasExtras && fieldNames.every((name) => name === "status")) {
     const sortOrder = data.sort_order === null || data.sort_order === undefined ? null : Number(data.sort_order);
     if (fieldNames.length === 0 && sortOrder === null) return null; // nothing the server keeps
-    const status = typeof data.status === "string" ? data.status : ((await current(op.id))?.status as string | null | undefined);
+    const status = typeof data.status === "string" ? data.status : ((await current(op.id, "tasks"))?.status as string | null | undefined);
     return {
       kind: "task-status",
       url: "/api/tasks/update-status",
@@ -305,7 +427,7 @@ export async function requestForChange(
   // together by the server: a change to any of them goes up with all three.
   const body: Record<string, unknown> = { id: op.id, ...fields };
   if (LINK_COLUMNS.some((column) => column in fields)) {
-    const row = await current(op.id);
+    const row = await current(op.id, "tasks");
     for (const column of LINK_COLUMNS) if (!(column in body)) body[column] = row?.[column] ?? null;
   }
   if (extras.member_ids) body.member_ids = extras.member_ids;
@@ -315,7 +437,12 @@ export async function requestForChange(
 
 /** The event pages listen for when the server refused a device save. */
 export const DEVICE_SAVE_REFUSED_EVENT = "bizh:device-save-refused";
-export type DeviceSaveRefused = { kind: DeviceSaveKind; message: string };
+export type DeviceSaveRefused = {
+  kind: DeviceSaveKind;
+  message: string;
+  /** A new order refused: the form as it stood, to put back as its draft. */
+  restore?: OrderRestore | null;
+};
 
 /** The event fired when a device save has reached the server (pages drawn by the server can refresh). */
 export const DEVICE_SAVE_SENT_EVENT = "bizh:device-save-sent";

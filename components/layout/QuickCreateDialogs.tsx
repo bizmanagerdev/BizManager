@@ -26,6 +26,9 @@ import NewProjectClient, {
   mapProjectCustomer,
   type ProjectCustomerOption,
 } from "@/app/(app)/projects/NewProjectClient";
+import { whenDeviceSavesSent } from "@/lib/powersync/store";
+import { PROJECT_NOT_SENT_YET } from "@/lib/projects/device-project-saves";
+import { ORDER_NOT_SENT_YET } from "@/lib/orders/device-order-saves";
 import { HEBREW } from "@/app/(app)/dashboard/DashboardActions.constants";
 import { AdaptivePageDialog } from "@/components/layout/page-layout";
 import {
@@ -338,6 +341,8 @@ export default function QuickCreateDialogs({
                   message: HEBREW.orderSaved,
                   view: { label: "צפייה", onClick: () => router.push(`/sales/orders/${orderId}`) },
                   onUndo: async () => {
+                    // Made on the phone: it has to reach the server before it can be deleted there.
+                    if (!(await whenDeviceSavesSent())) return { ok: false, error: ORDER_NOT_SENT_YET };
                     const result = await offlineFetch("/api/orders/delete", { order_id: orderId }, "מחיקת הזמנה");
                     startTransition(() => { router.refresh(); });
                     if (!result.queued) {
@@ -399,6 +404,8 @@ export default function QuickCreateDialogs({
                   message: HEBREW.projectSaved,
                   view: { label: "צפייה", onClick: () => router.push(`/projects/${projectId}`) },
                   onUndo: async () => {
+                    // Made on the phone: it has to reach the server before it can be deleted there.
+                    if (!(await whenDeviceSavesSent())) return { ok: false, error: PROJECT_NOT_SENT_YET };
                     const res = await fetch("/api/projects/delete", {
                       method: "POST",
                       headers: { "content-type": "application/json" },

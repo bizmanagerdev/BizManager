@@ -5,8 +5,11 @@ import { POWERSYNC_URL } from "./config";
 import {
   DEVICE_SAVE_REFUSED_EVENT,
   DEVICE_SAVE_SENT_EVENT,
+  isCarriedChange,
   requestForChange,
+  restoreForChange,
   type DeviceSaveRefused,
+  type OrderRestore,
   type DeviceSaveRequest,
   type DeviceSaveSent,
 } from "./local-writes";
@@ -15,7 +18,8 @@ import {
 // - downloads: PowerSync checks the person's Supabase login token (its
 //   instance is set up with Supabase auth) and sends what the sync rules allow;
 // - uploads: saves made on the device copy (lib/powersync/local-writes.ts —
-//   tasks created, edited, moved, deleted; comments added) go through our own
+//   tasks created, edited, moved, deleted; comments added; customers,
+//   projects and orders created, projects and orders edited) go through our own
 //   API routes, so permission checks, notifications, reminders and the
 //   history log keep running. Each carries an Idempotency-Key, so a change
 //   sent again after its answer was lost is never applied twice.
@@ -57,8 +61,12 @@ function announceSent(detail: DeviceSaveSent) {
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(DEVICE_SAVE_SENT_EVENT, { detail }));
 }
 
-/** Send one change; throws RetryLater when it should be tried again. `key`: the change's own Idempotency-Key. */
-async function send(request: DeviceSaveRequest, key: string): Promise<void> {
+/**
+ * Send one change; throws RetryLater when it should be tried again. `key`: the
+ * change's own Idempotency-Key. `restore`: a new order's form, put back as its
+ * draft if it's refused.
+ */
+async function send(request: DeviceSaveRequest, key: string, restore: OrderRestore | null): Promise<void> {
   let res: Response;
   try {
     res = await fetch(request.url, {
@@ -82,7 +90,7 @@ async function send(request: DeviceSaveRequest, key: string): Promise<void> {
   // server's version at the next sync — and say why.
   const body = (await res.json().catch(() => ({}))) as { error?: unknown };
   const message = typeof body.error === "string" ? body.error : `HTTP ${res.status}`;
-  announceRefusal({ kind: request.kind, message });
+  announceRefusal({ kind: request.kind, message, ...(restore ? { restore } : {}) });
   reportDropped(request, "refused", { status: res.status, message });
 }
 
@@ -110,15 +118,19 @@ export class BizConnector implements PowerSyncBackendConnector {
   async uploadData(database: CommonPowerSyncDatabase): Promise<void> {
     const transaction = await database.getNextCrudTransaction();
     if (!transaction) return;
-    const currentTask = (id: string) =>
+    const currentRow = (id: string, table: "tasks" | "projects") =>
       database.getOptional<Record<string, unknown>>(
-        "SELECT status, business_domain, project_id, property_id FROM tasks WHERE id = ?",
+        table === "projects"
+          ? "SELECT * FROM projects WHERE id = ?"
+          : "SELECT status, business_domain, project_id, property_id FROM tasks WHERE id = ?",
         [id]
       );
 
     for (const op of transaction.crud) {
       if (this.sent.has(op.clientId)) continue;
-      const request = await requestForChange(op, currentTask);
+      // Written with an order on the phone: its request carries them.
+      if (isCarriedChange(op)) continue;
+      const request = await requestForChange(op, currentRow);
       if (!request) {
         // Nothing sends this kind of change (yet): drop it rather than block the queue.
         reportDropped(null, "no route for this change", { table: op.table, op: op.op });
@@ -127,7 +139,7 @@ export class BizConnector implements PowerSyncBackendConnector {
       try {
         // The row's id and the change's place in this device's queue: the same
         // change always carries the same key, two changes never share one.
-        await send(request, `ps:${op.table}:${op.id}:${op.op}:${op.clientId}`);
+        await send(request, `ps:${op.table}:${op.id}:${op.op}:${op.clientId}`, restoreForChange(op));
         this.tries.delete(op.clientId);
         this.sent.add(op.clientId);
         announceSent({ kind: request.kind, id: op.id });
@@ -139,7 +151,8 @@ export class BizConnector implements PowerSyncBackendConnector {
         // PowerSync calls uploadData again shortly — the same change, from here.
         if (tries < MAX_TRIES) throw error;
         this.tries.delete(op.clientId);
-        announceRefusal({ kind: request.kind, message: error.message });
+        const restore = restoreForChange(op);
+        announceRefusal({ kind: request.kind, message: error.message, ...(restore ? { restore } : {}) });
         reportDropped(request, "kept failing", { tries, last: error.message });
       }
     }

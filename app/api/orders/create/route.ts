@@ -16,17 +16,8 @@ import {
   splitPaymentAmounts,
 } from "@/lib/orders/paymentStatus";
 import { computeDueDate, normalizePaymentTerms } from "@/lib/paymentTerms";
-
-type CreateOrderItemPayload = {
-  product_id?: string;
-  /** Free-text name for an off-catalog ("custom") line — no product_id. */
-  description?: string | null;
-  quantity_ordered?: number | string;
-  quantity_delivered?: number | string;
-  unit_price?: number | string;
-  discount_amount?: number | string;
-  notes?: string | null;
-};
+import { clientRowId } from "@/lib/client-row-id";
+import { findInvalidOrderItem, normalizeOrderItems, orderTotals, toNonNegativeInt } from "@/lib/orders/order-input";
 
 type CreateOrderPayload = {
   customer_id?: string;
@@ -43,6 +34,8 @@ type CreateOrderPayload = {
   collect_payment_on_delivery?: boolean | null;
   notes?: string | null;
   payments?: {
+    /** The app's own id for the payment (an order saved on the phone first). */
+    id?: string;
     amount_total?: number | string;
     payment_date?: string | null;
     payment_method?: string | null;
@@ -52,29 +45,10 @@ type CreateOrderPayload = {
     check_number?: string | null;
     notes?: string | null;
   }[];
-  items?: CreateOrderItemPayload[];
+  items?: unknown[];
+  /** The app's own id for it, when the phone saved it first (lib/orders/device-order-saves.ts). */
+  id?: string;
 };
-
-function toNumber(value: unknown) {
-  if (typeof value === "number") return value;
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : NaN;
-  }
-  return NaN;
-}
-
-function toNonNegativeInt(value: unknown) {
-  const parsed = toNumber(value);
-  if (!Number.isFinite(parsed)) return NaN;
-  return Math.max(0, Math.round(parsed));
-}
-
-function toPositiveInt(value: unknown) {
-  const parsed = toNumber(value);
-  if (!Number.isFinite(parsed)) return NaN;
-  return Math.max(1, Math.round(parsed));
-}
 
 export async function POST(req: Request) {
   try {
@@ -100,36 +74,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "אחד התשלומים אינו תקין." }, { status: 400 });
     }
 
-    const normalizedItems = items.map((item) => {
-      const base = {
-        product_id: typeof item.product_id === "string" ? item.product_id : "",
-        description: typeof item.description === "string" ? item.description.trim() : "",
-        quantity_ordered: toPositiveInt(item.quantity_ordered),
-        unit_price: toNonNegativeInt(item.unit_price),
-        discount_amount: toNonNegativeInt(item.discount_amount ?? 0),
-        notes: typeof item.notes === "string" ? item.notes.trim() : null,
-      };
-      if (item.quantity_delivered !== undefined && item.quantity_delivered !== null) {
-        return { ...base, quantity_delivered: toNonNegativeInt(item.quantity_delivered) };
-      }
-      return base;
-    });
-
-    // A line is valid as either a catalog product OR an off-catalog custom line
-    // (a description with no product_id).
-    const invalidItem = normalizedItems.find(
-      (item) =>
-        (!item.product_id && !item.description) ||
-        !Number.isFinite(item.quantity_ordered) ||
-        item.quantity_ordered <= 0 ||
-        !Number.isFinite(item.unit_price) ||
-        item.unit_price < 0 ||
-        !Number.isFinite(item.discount_amount) ||
-        item.discount_amount < 0
-    );
-    if (invalidItem) {
+    // The same lines and totals the phone works out when it saves first (lib/orders/order-input.ts).
+    const normalizedItems = normalizeOrderItems(items);
+    if (findInvalidOrderItem(normalizedItems)) {
       return NextResponse.json({ error: "אחד הפריטים בהזמנה אינו תקין." }, { status: 400 });
     }
+    const clientId = clientRowId(body.id);
+    // The payments' own ids from the phone, by position (normalizePaymentEntries keeps every entry).
+    const paymentIds = (Array.isArray(body.payments) ? body.payments : []).map((payment) => clientRowId(payment?.id));
 
     const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
@@ -139,13 +91,9 @@ export async function POST(req: Request) {
     // Idempotency-Key returns the original cached response instead of creating a
     // second order + duplicate stock reservation + duplicate auto-invoice.
     return await withIdempotency(req, supabase, user.id, "orders/create", async () => {
-    const subtotal = normalizedItems.reduce(
-      (sum, item) => sum + item.quantity_ordered * item.unit_price - item.discount_amount,
-      0
-    );
-    // Floor at 0: a discount larger than the goods must never yield a negative
+    // Floored at 0: a discount larger than the goods must never yield a negative
     // total — derivePaymentStatus would otherwise read a negative total as שולם.
-    const totalAmount = Math.max(0, subtotal - discountAmount);
+    const { subtotal, totalAmount } = orderTotals(normalizedItems, discountAmount);
 
     // Payment terms + the resulting due date are set inline at INSERT (passed to
     // the RPC) so a brand-new order is a single write — no follow-up UPDATE that
@@ -202,9 +150,26 @@ export async function POST(req: Request) {
       p_needs_invoice: needsInvoice,
       p_requested_delivery_date: requestedDeliveryDate,
       p_branch_id: branchId,
+      ...(clientId ? { p_order_id: clientId } : {}),
     });
 
     if (error) {
+      if (clientId && error.code === "23505") {
+        // Sent again after its answer was lost: the order it already made.
+        const [{ data: existing }, { data: existingPayments }] = await Promise.all([
+          supabase.from("orders").select("id,payment_status").eq("id", clientId).maybeSingle(),
+          supabase.from("payments").select("id,amount_total,payment_status").eq("order_id", clientId),
+        ]);
+        if (existing) {
+          const paid = splitPaymentAmounts((existingPayments ?? []) as Parameters<typeof splitPaymentAmounts>[0]).collected;
+          return NextResponse.json({
+            order_id: clientId,
+            payment_status: (existing as { payment_status?: string }).payment_status ?? paymentStatus,
+            total_paid: paid,
+            payment_ids: (existingPayments ?? []).map((row) => (row as { id: string }).id),
+          });
+        }
+      }
       const missingRpc =
         error.message.includes("create_sales_order") || error.message.includes("function");
       if (missingRpc) {
@@ -227,7 +192,7 @@ export async function POST(req: Request) {
     if (paymentInserts.length > 0) {
       const { data: insertedPaymentRows, error: paymentsInsertError } = await supabase
         .from("payments")
-        .insert(paymentInserts.map((row) => ({ ...row, order_id: orderId })))
+        .insert(paymentInserts.map((row, i) => ({ ...(paymentIds[i] ? { id: paymentIds[i] } : {}), ...row, order_id: orderId })))
         .select("id");
 
       if (paymentsInsertError) {

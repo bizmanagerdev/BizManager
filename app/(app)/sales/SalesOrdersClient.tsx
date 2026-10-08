@@ -382,6 +382,7 @@ export default function SalesOrdersClient({
   view = "open",
   tabLabel = "הזמנות",
   loadedAt,
+  fromDevice = false,
 }: {
   orders: Row[];
   initialHasMore?: boolean;
@@ -400,6 +401,9 @@ export default function SalesOrdersClient({
   /** When the server read these rows — an aged copy refreshes itself
    *  (useInfiniteScroll's loadedAt). */
   loadedAt?: number;
+  /** The page's device version (LocalSalesPage): the rows come from the phone's
+   *  copy, current with no signal too — no older saved list over them. */
+  fromDevice?: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -470,7 +474,7 @@ export default function SalesOrdersClient({
   // and searched with no signal. Scoped views (a customer's orders, the closed
   // tab) aren't cached — only the main orders list is the "always available" one.
   const offlineCacheKey =
-    !customerId && !showPaymentStatusFilter ? "orders-list-main" : null;
+    !fromDevice && !customerId && !showPaymentStatusFilter ? "orders-list-main" : null;
   const { rows: sourceOrders, offline, savedAt } = useOfflineRows<Row>(
     offlineCacheKey,
     accumulatedOrders

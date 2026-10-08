@@ -36,6 +36,8 @@ import { appendDictatedText } from "@/lib/dictation";
 import { PriceVatEntry, useVatRate } from "@/components/projects/PriceVatEntry";
 import { baseFromPriceEntry, projectPriceSplit, type ProjectPriceEntry } from "@/lib/projects/vat";
 import { whenDeviceSavesSent } from "@/lib/powersync/store";
+import { deviceProjectSaves } from "@/lib/projects/device-project-saves";
+import type { ProjectRowFields } from "@/lib/projects/project-input";
 
 type Row = Record<string, unknown>;
 type Step =
@@ -614,6 +616,29 @@ export default function NewProjectClient({
     setCustomerTab("existing");
   }
 
+  /**
+   * A project saved on the phone, as the projects list shows it until it's
+   * drawn again from the copy (an instant later). An edit carries only what
+   * the form changed: the list keeps the rest of the row (its totals).
+   */
+  function deviceListRow(id: string, row: ProjectRowFields): Row {
+    const customerName =
+      (selectedCustomer?.id === row.customer_id ? selectedCustomer?.name : null) ??
+      customers.find((customer) => customer.id === row.customer_id)?.name ??
+      null;
+    const now = new Date().toISOString();
+    return {
+      id,
+      ...row,
+      customer_name: customerName,
+      project_manager_name: managers.find((manager) => manager.id === row.project_manager_id)?.label ?? null,
+      updated_at: now,
+      ...(isEditMode
+        ? {}
+        : { created_at: now, total_expenses: 0, gross_profit: row.actual_price, total_tasks: 0, completed_tasks: 0, open_tasks: 0 }),
+    };
+  }
+
   async function submit() {
     if (submitting) return;
     setError(null);
@@ -666,6 +691,24 @@ export default function NewProjectClient({
           ? elevatorToBool(destination.hasElevator)
           : null,
       };
+
+      // Saved on the phone first (lib/projects/device-project-saves.ts): the
+      // form closes at once and the project is on the device's pages, with no
+      // connection too — unless files are attached: they go up with it, which
+      // needs it on the server first.
+      const device = attachmentFiles.length === 0 ? deviceProjectSaves() : null;
+      const onDevice = !device
+        ? null
+        : isEditMode
+          ? await device
+              .update(initialProject!.id, payload)
+              .then((saved) => (saved ? { id: initialProject!.id, row: saved.row } : null))
+          : await device.create(payload);
+      if (onDevice) {
+        if (canDraft) clearDraft(draftKey!);
+        onSubmitted(deviceListRow(onDevice.id, onDevice.row));
+        return;
+      }
 
       // A customer just made on the phone may still be on its way to the
       // server — the project must not get there first.

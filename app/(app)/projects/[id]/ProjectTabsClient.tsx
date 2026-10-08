@@ -145,6 +145,10 @@ export type ProjectOverview = {
   destination_address: string | null;
   destination_floor: string | null;
   destination_has_elevator: boolean | null;
+  /** Not on the page's tabs — the edit form sends them back as they are. */
+  branch_id?: string | null;
+  payment_terms?: string | null;
+  due_date?: string | null;
   created_at: string;
   updated_at: string;
 };

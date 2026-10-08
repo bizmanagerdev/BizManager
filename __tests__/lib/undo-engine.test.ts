@@ -135,6 +135,27 @@ describe("registerReversibleCreate — the toast's action/view buttons", () => {
     expect(onView).toHaveBeenCalledTimes(1);
   });
 
+  it("an undo that fails says why — not that it's undone", async () => {
+    registerReversibleCreate({
+      scope: "project",
+      id: "p-1",
+      message: "הפרויקט נשמר",
+      onUndo: async () => ({ ok: false, error: "הפרויקט עוד לא הגיע לשרת" }),
+    });
+    undoKey("project:create:p-1");
+    await vi.runAllTimersAsync();
+    expect(toastError).toHaveBeenCalledWith("הפרויקט עוד לא הגיע לשרת");
+    expect(toastFn).not.toHaveBeenCalledWith("הפרויקט נשמר בוטל.", expect.anything());
+  });
+
+  it("an undo that worked says so once it has", async () => {
+    registerReversibleCreate({ scope: "project", id: "p-2", message: "הפרויקט נשמר", onUndo: async () => ({ ok: true }) });
+    undoKey("project:create:p-2");
+    await vi.runAllTimersAsync();
+    expect(toastFn).toHaveBeenCalledWith("הפרויקט נשמר בוטל.", { duration: 2000 });
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
   it("undo replays onUndo exactly once even if clicked twice", () => {
     const onUndo = vi.fn();
     registerReversibleCreate({ scope: "customer", id: "new-4", message: "נוצר", onUndo });

@@ -69,6 +69,8 @@ import AddReminderButton from "@/components/reminders/AddReminderButton";
 import LogCommunicationButton from "@/components/communications/LogCommunicationButton";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import NewProjectClient, { type ProjectCustomerOption, type InitialProject } from "@/app/(app)/projects/NewProjectClient";
+import { whenDeviceSavesSent } from "@/lib/powersync/store";
+import { PROJECT_NOT_SENT_YET, deviceProjectForEdit } from "@/lib/projects/device-project-saves";
 import { EditButton } from "@/components/ui/icon-button";
 import { offlineFetch } from "@/lib/offline-queue";
 import { registerReversibleCreate } from "@/lib/undo-engine";
@@ -566,8 +568,10 @@ export default function ProjectsClient({
 
   // Offline readability: cache the canonical (main-tab, unscoped) projects list so
   // it can be opened and searched with no signal. Scoped/other-tab views aren't.
+  // Not on the page's device version: its lists come from the phone's copy,
+  // current and complete with no signal too — an older saved list would hide them.
   const customerScoped = Boolean(searchParams.get("customer_id"));
-  const offlineCacheKey = activeTab === "projects" && !customerScoped ? "projects-list-main" : null;
+  const offlineCacheKey = !listSource && activeTab === "projects" && !customerScoped ? "projects-list-main" : null;
   const { rows: sourceProjects, offline, savedAt } = useOfflineRows<ProjectRow>(
     offlineCacheKey,
     projects
@@ -889,6 +893,14 @@ export default function ProjectsClient({
     if (!id) return;
     setEditLoadingId(id);
     try {
+      // The page's device version reads it from the phone's copy: at once,
+      // and with no signal too.
+      const onDevice = listSource ? await deviceProjectForEdit(id) : null;
+      if (onDevice) {
+        setEditProject({ ...row, ...onDevice });
+        setEditOpen(true);
+        return;
+      }
       const res = await fetch(`/api/projects/edit-context?id=${encodeURIComponent(id)}`);
       const data = (await res.json().catch(() => ({}))) as { project?: ProjectRow; error?: string };
       if (!res.ok || !data.project) {
@@ -1652,6 +1664,8 @@ export default function ProjectsClient({
                     id,
                     message,
                     onUndo: async () => {
+                      // Made on the phone: it has to reach the server before it can be deleted there.
+                      if (!(await whenDeviceSavesSent())) return { ok: false, error: PROJECT_NOT_SENT_YET };
                       const result = await offlineFetch("/api/projects/delete", { id }, "מחיקת פרויקט");
                       if (!result.queued && !result.ok) {
                         return { ok: false, error: toHebrewError(result.error, "ביטול נכשל.") };
@@ -1709,7 +1723,8 @@ export default function ProjectsClient({
                 const id = getString(project, "id");
                 if (id) {
                   setProjects((prev) =>
-                    prev.map((row) => ((getString(row, "id") ?? "") === id ? (project as ProjectRow) : row))
+                    // Over the row it had: an edit saved on the phone carries only the form's fields.
+                    prev.map((row) => ((getString(row, "id") ?? "") === id ? ({ ...row, ...project } as ProjectRow) : row))
                   );
                 }
                 setEditOpen(false);

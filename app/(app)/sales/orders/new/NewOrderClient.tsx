@@ -62,6 +62,7 @@ import {
 } from "./NewOrderClient.ui";
 import { AddressLink } from "@/components/ui/address-link";
 import { whenDeviceSavesSent } from "@/lib/powersync/store";
+import { ORDER_NOT_SENT_YET, deviceOrderSaves } from "@/lib/orders/device-order-saves";
 
 type Row = Record<string, unknown>;
 
@@ -849,95 +850,118 @@ export default function NewOrderClient({
 
     setSubmitting(true);
     try {
-      // Idempotency-Key: lets the server dedupe a network retry of a create so a
-      // flaky connection can't produce two orders (the server caches the first
-      // response and returns it for any replay of the same key).
-      const idempotencyHeaders: Record<string, string> = { "content-type": "application/json" };
-      if (!isEditMode) idempotencyHeaders["Idempotency-Key"] = crypto.randomUUID();
-      // A customer just made on the phone may still be on its way to the
-      // server — the order must not get there first.
-      if (!isEditMode) await whenDeviceSavesSent();
-      const res = await fetch(isEditMode ? "/api/orders/update" : "/api/orders/create", {
-        method: "POST",
-        headers: idempotencyHeaders,
-        body: JSON.stringify({
-          order_id: initialOrder?.id,
-          customer_id: customerId,
-          branch_id: branchId || null,
-          order_date: orderDate,
-          status: orderStatus,
-          payment_status: paymentStatus,
-          payment_terms: paymentTerms,
-          collect_payment_on_delivery: collectOnDelivery,
-          due_date: dueDate || null,
-          requested_delivery_date: requestedDeliveryDate || null,
-          discount_amount: Number.isFinite(orderDiscountNumber) ? orderDiscountNumber : 0,
-          needs_invoice: needsInvoice,
-          notes: notes.trim() || null,
-          payments: expandedPayments.map((payment) => ({
-            amount_total: Number(payment.amount_total || 0),
-            payment_date: payment.payment_date,
-            payment_method: payment.payment_method,
-            account_id: payment.account_id || null,
-            // A card payment lands with the month's deposit — the 10th of the
-            // next month (lib/card-settlements.ts).
-            due_date:
-              payment.payment_method === "credit_card"
-                ? nextMonthTenth(payment.payment_date) || null
-                : payment.due_date.trim() || null,
-            reference_number: payment.reference_number.trim() || null,
-            check_number:
-              payment.payment_method === "check" && payment.check_number.trim()
-                ? payment.check_number.trim()
-                : null,
-            notes: payment.notes.trim() || null,
-          })),
-          items: lines.map((line) => {
-            const isCustom = line.product_id.startsWith("custom:");
-            return {
-              // Custom lines send no product_id; their name rides in `description`.
-              product_id: isCustom ? "" : line.product_id,
-              description: isCustom ? line.product_name.trim() : "",
-              quantity_ordered: line.quantity_ordered,
-              unit_price: line.unit_price,
-              discount_amount: line.discount_amount,
-              notes: line.notes.trim() || null,
-            };
-          }),
-          // Note-only edits to already-saved payments (only the ones that changed).
-          existing_payment_notes: initialPayments
-            .filter((payment) => (existingPaymentNotes[payment.id] ?? "") !== (payment.notes ?? ""))
-            .map((payment) => ({ id: payment.id, notes: existingPaymentNotes[payment.id]?.trim() || null })),
+      const requestBody: Record<string, unknown> = {
+        order_id: initialOrder?.id,
+        customer_id: customerId,
+        branch_id: branchId || null,
+        order_date: orderDate,
+        status: orderStatus,
+        payment_status: paymentStatus,
+        payment_terms: paymentTerms,
+        collect_payment_on_delivery: collectOnDelivery,
+        due_date: dueDate || null,
+        requested_delivery_date: requestedDeliveryDate || null,
+        discount_amount: Number.isFinite(orderDiscountNumber) ? orderDiscountNumber : 0,
+        needs_invoice: needsInvoice,
+        notes: notes.trim() || null,
+        payments: expandedPayments.map((payment) => ({
+          amount_total: Number(payment.amount_total || 0),
+          payment_date: payment.payment_date,
+          payment_method: payment.payment_method,
+          account_id: payment.account_id || null,
+          // A card payment lands with the month's deposit — the 10th of the
+          // next month (lib/card-settlements.ts).
+          due_date:
+            payment.payment_method === "credit_card"
+              ? nextMonthTenth(payment.payment_date) || null
+              : payment.due_date.trim() || null,
+          reference_number: payment.reference_number.trim() || null,
+          check_number:
+            payment.payment_method === "check" && payment.check_number.trim()
+              ? payment.check_number.trim()
+              : null,
+          notes: payment.notes.trim() || null,
+        })),
+        items: lines.map((line) => {
+          const isCustom = line.product_id.startsWith("custom:");
+          return {
+            // Custom lines send no product_id; their name rides in `description`.
+            product_id: isCustom ? "" : line.product_id,
+            description: isCustom ? line.product_name.trim() : "",
+            quantity_ordered: line.quantity_ordered,
+            unit_price: line.unit_price,
+            discount_amount: line.discount_amount,
+            notes: line.notes.trim() || null,
+          };
         }),
-      });
-
-      const json = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        order_id?: string;
-        payment_ids?: string[];
+        // Note-only edits to already-saved payments (only the ones that changed).
+        existing_payment_notes: initialPayments
+          .filter((payment) => (existingPaymentNotes[payment.id] ?? "") !== (payment.notes ?? ""))
+          .map((payment) => ({ id: payment.id, notes: existingPaymentNotes[payment.id]?.trim() || null })),
       };
 
-      if (!res.ok || !json.order_id) {
-        setSubmitError(toHebrewError(json.error, (isEditMode ? "עדכון ההזמנה נכשל." : "יצירת ההזמנה נכשלה.")));
-        return;
+      // Saved on the phone first (lib/orders/device-order-saves.ts): the form
+      // closes at once and the order is on the device's pages, with no
+      // connection too — unless a check comes with photos: they go up with
+      // its payment, which needs the order on the server first.
+      const withCheckPhotos = expandedPayments.some(
+        (payment) => payment.payment_method === "check" && payment.check_photo_files.length > 0
+      );
+      const device = withCheckPhotos ? null : deviceOrderSaves();
+      let savedOrderId: string | null = null;
+      if (device) {
+        if (isEditMode) {
+          if (await device.update(initialOrder!.id, requestBody)) savedOrderId = initialOrder!.id;
+        } else {
+          // The form as it stands (its autosaved draft) comes back if the server refuses the order.
+          savedOrderId = await device.create(requestBody, canDraft ? { key: draftKey!, draft: loadDraft(draftKey!) } : null);
+        }
       }
 
-      const insertedPaymentIds = Array.isArray(json.payment_ids) ? json.payment_ids : [];
-      // Every check's photos go up in one shared pool, not check after check.
-      await uploadCheckPhotosForPayments(
-        expandedPayments.flatMap((payment, i) => {
-          const paymentId = insertedPaymentIds[i];
-          return paymentId && payment.payment_method === "check" && payment.check_photo_files.length > 0
-            ? [{ paymentId, files: payment.check_photo_files }]
-            : [];
-        })
-      );
+      if (!savedOrderId) {
+        // Idempotency-Key: lets the server dedupe a network retry of a create so a
+        // flaky connection can't produce two orders (the server caches the first
+        // response and returns it for any replay of the same key).
+        const idempotencyHeaders: Record<string, string> = { "content-type": "application/json" };
+        if (!isEditMode) idempotencyHeaders["Idempotency-Key"] = crypto.randomUUID();
+        // A customer just made on the phone may still be on its way to the
+        // server — the order must not get there first.
+        if (!isEditMode) await whenDeviceSavesSent();
+        const res = await fetch(isEditMode ? "/api/orders/update" : "/api/orders/create", {
+          method: "POST",
+          headers: idempotencyHeaders,
+          body: JSON.stringify(requestBody),
+        });
+
+        const json = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          order_id?: string;
+          payment_ids?: string[];
+        };
+
+        if (!res.ok || !json.order_id) {
+          setSubmitError(toHebrewError(json.error, (isEditMode ? "עדכון ההזמנה נכשל." : "יצירת ההזמנה נכשלה.")));
+          return;
+        }
+
+        const insertedPaymentIds = Array.isArray(json.payment_ids) ? json.payment_ids : [];
+        // Every check's photos go up in one shared pool, not check after check.
+        await uploadCheckPhotosForPayments(
+          expandedPayments.flatMap((payment, i) => {
+            const paymentId = insertedPaymentIds[i];
+            return paymentId && payment.payment_method === "check" && payment.check_photo_files.length > 0
+              ? [{ paymentId, files: payment.check_photo_files }]
+              : [];
+          })
+        );
+        savedOrderId = json.order_id;
+      }
 
       if (canDraft) clearDraft(draftKey!);
       // Backorders are allowed by design (no hard block here) — just a heads-up
       // that the order was saved with a shortfall, without naming which line.
       if (hasStockShortfall) toast.warning("שימו לב: קיים חוסר במלאי בהזמנה זו.");
-      const newOrderId = json.order_id;
+      const newOrderId = savedOrderId;
       if (embedded) {
         onSubmitted?.(newOrderId);
         startTransition(() => {
@@ -960,6 +984,8 @@ export default function NewOrderClient({
           id: newOrderId,
           message: "ההזמנה נוצרה",
           onUndo: async () => {
+            // Made on the phone: it has to reach the server before it can be deleted there.
+            if (!(await whenDeviceSavesSent())) return { ok: false, error: ORDER_NOT_SENT_YET };
             const delRes = await fetch("/api/orders/delete", {
               method: "POST",
               headers: { "content-type": "application/json" },

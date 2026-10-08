@@ -20,22 +20,10 @@ import {
 import { computeDueDate, normalizePaymentTerms } from "@/lib/paymentTerms";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import { insertDocumentRow } from "@/lib/documents/insert";
+import { findInvalidOrderItem, normalizeOrderItems, orderTotals, toNonNegativeInt } from "@/lib/orders/order-input";
 
 const BUCKET = STORAGE_BUCKET;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
-
-type OrderItemPayload = {
-  product_id?: string;
-  /** Free-text name for an off-catalog ("custom") line — no product_id. */
-  description?: string | null;
-  quantity_ordered?: number | string;
-  /** Sent by the אישור אספקה flow (partial delivery); omitted by normal edits so
-   *  the RPC preserves prior delivered progress. */
-  quantity_delivered?: number | string;
-  unit_price?: number | string;
-  discount_amount?: number | string;
-  notes?: string | null;
-};
 
 type UpdateOrderPayload = {
   order_id?: string;
@@ -75,34 +63,13 @@ type UpdateOrderPayload = {
   }[];
   // Note-only edits to already-saved payments (the wizard's existing-payments editor).
   existing_payment_notes?: { id?: string; notes?: string | null }[];
-  items?: OrderItemPayload[];
+  items?: unknown[];
 };
 
 type UploadedDocument = {
   documentId: string;
   storagePath: string;
 };
-
-function toNumber(value: unknown) {
-  if (typeof value === "number") return value;
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : NaN;
-  }
-  return NaN;
-}
-
-function toNonNegativeInt(value: unknown) {
-  const parsed = toNumber(value);
-  if (!Number.isFinite(parsed)) return NaN;
-  return Math.max(0, Math.round(parsed));
-}
-
-function toPositiveInt(value: unknown) {
-  const parsed = toNumber(value);
-  if (!Number.isFinite(parsed)) return NaN;
-  return Math.max(1, Math.round(parsed));
-}
 
 function safeExtensionFromFilename(name: string) {
   const base = name.split(/[/\\]/).pop() ?? "";
@@ -201,48 +168,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "התמונה גדולה מדי (עד 20MB)." }, { status: 413 });
     }
 
-    const normalizedItems = items.map((item) => {
-      const base = {
-        product_id: typeof item.product_id === "string" ? item.product_id : "",
-        description: typeof item.description === "string" ? item.description.trim() : "",
-        quantity_ordered: toPositiveInt(item.quantity_ordered),
-        unit_price: toNonNegativeInt(item.unit_price),
-        discount_amount: toNonNegativeInt(item.discount_amount ?? 0),
-        notes: typeof item.notes === "string" ? item.notes.trim() : null,
-      };
-      // Only forward quantity_delivered when the caller actually sent it — its
-      // absence tells the RPC to keep the line's prior delivered amount.
-      if (item.quantity_delivered !== undefined && item.quantity_delivered !== null) {
-        return { ...base, quantity_delivered: toNonNegativeInt(item.quantity_delivered) };
-      }
-      return base;
-    });
-
-    // A line is valid as either a catalog product OR an off-catalog custom line
-    // (a description with no product_id).
-    const invalidItem = normalizedItems.find(
-      (item) =>
-        (!item.product_id && !item.description) ||
-        !Number.isFinite(item.quantity_ordered) ||
-        item.quantity_ordered <= 0 ||
-        !Number.isFinite(item.unit_price) ||
-        item.unit_price < 0 ||
-        !Number.isFinite(item.discount_amount) ||
-        item.discount_amount < 0
-    );
-    if (invalidItem) {
+    // The same lines the phone works out when it saves an edit first (lib/orders/order-input.ts):
+    // quantity_delivered only when the caller sent it — its absence tells the
+    // RPC to keep the line's prior delivered amount.
+    const normalizedItems = normalizeOrderItems(items);
+    if (findInvalidOrderItem(normalizedItems)) {
       return NextResponse.json({ error: "אחד הפריטים בהזמנה אינו תקין." }, { status: 400 });
     }
 
     const uploadedDocuments: UploadedDocument[] = [];
 
-    const subtotal = normalizedItems.reduce(
-      (sum, item) => sum + item.quantity_ordered * item.unit_price - item.discount_amount,
-      0
-    );
-    // Floor at 0 so a discount larger than the goods can't create a negative total
+    // Floored at 0 so a discount larger than the goods can't create a negative total
     // that derivePaymentStatus would then read as fully שולם.
-    const totalAmount = Math.max(0, subtotal - discountAmount);
+    const { subtotal, totalAmount } = orderTotals(normalizedItems, discountAmount);
 
     const { data: existingPayments, error: existingPaymentsError } = await supabase
       .from("payments")

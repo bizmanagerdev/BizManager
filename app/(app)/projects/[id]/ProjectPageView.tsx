@@ -155,6 +155,11 @@ export default function ProjectPageView({
         typeof details?.destination_has_elevator === "boolean" ? details.destination_has_elevator : null,
       price_includes_vat: details?.price_includes_vat === true,
       no_charge: details?.no_charge === true,
+      // Not shown in the edit form, but sent back with it (the update route
+      // takes the whole record — without them it cleared them).
+      branch_id: typeof details?.branch_id === "string" ? details.branch_id : null,
+      payment_terms: typeof details?.payment_terms === "string" ? details.payment_terms : null,
+      due_date: typeof details?.due_date === "string" ? details.due_date.slice(0, 10) : null,
       vat_rate:
         typeof details?.vat_rate === "number"
           ? details.vat_rate

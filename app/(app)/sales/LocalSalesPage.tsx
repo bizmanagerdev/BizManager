@@ -138,6 +138,7 @@ export default function LocalSalesPage({
         customerId={customerId}
         totalCount={activeTab === "closed" ? counts.data.counts.closed : counts.data.counts.orders}
         canRemind={canRemind}
+        fromDevice
       />
     );
   } else if (kind === "salesPriceList") {

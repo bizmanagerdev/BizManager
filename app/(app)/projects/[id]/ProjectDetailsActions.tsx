@@ -22,6 +22,8 @@ import {
 import { NativeSelect } from "@/components/ui/native-select";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { offlineFetch } from "@/lib/offline-queue";
+import { deviceProjectSaves } from "@/lib/projects/device-project-saves";
+import { keptProjectFields } from "@/lib/projects/project-input";
 import { offlineUpload } from "@/lib/offline-upload";
 import { Button } from "@/components/ui/button";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
@@ -83,6 +85,10 @@ type ProjectDetails = {
   destination_address?: string | null;
   destination_floor?: string | null;
   destination_has_elevator?: boolean | null;
+  /** Not in the edit form: sent back as they are (the update route takes the whole record). */
+  branch_id?: string | null;
+  payment_terms?: string | null;
+  due_date?: string | null;
 };
 
 type ProjectDocument = {
@@ -310,33 +316,43 @@ export default function ProjectDetailsActions({
 
     setEditSubmitting(true);
     try {
-      const result = await offlineFetch(
-        "/api/projects/update",
-        {
-          id: project.id,
-          customer_id: editCustomerId,
-          name: editName.trim(),
-          project_type: editProjectType,
-          status: editStatus,
-          agreed_base_price: editNoCharge ? 0 : agreed,
-          actual_price: editNoCharge ? 0 : agreed,
-          price_includes_vat: editPriceIncludesVat,
-          no_charge: editNoCharge,
-          expenses_billed_separately: editExpensesSeparately,
-          project_manager_id: editProjectManagerId || null,
-          start_date: editStartDate || null,
-          end_date: editEndDate || null,
-          notes: editNotes.trim() || null,
-          items_to_move: textToItemsToMove(editItemsToMove),
-          origin_address: editOrigin.address.trim() || null,
-          origin_floor: editOrigin.floor.trim() || null,
-          origin_has_elevator: elevatorToBool(editOrigin.hasElevator),
-          destination_address: editDestination.address.trim() || null,
-          destination_floor: editDestination.floor.trim() || null,
-          destination_has_elevator: elevatorToBool(editDestination.hasElevator),
-        },
-        "עדכון פרויקט"
-      );
+      const fields = {
+        customer_id: editCustomerId,
+        name: editName.trim(),
+        project_type: editProjectType,
+        status: editStatus,
+        agreed_base_price: editNoCharge ? 0 : agreed,
+        actual_price: editNoCharge ? 0 : agreed,
+        price_includes_vat: editPriceIncludesVat,
+        no_charge: editNoCharge,
+        expenses_billed_separately: editExpensesSeparately,
+        project_manager_id: editProjectManagerId || null,
+        start_date: editStartDate || null,
+        end_date: editEndDate || null,
+        notes: editNotes.trim() || null,
+        items_to_move: textToItemsToMove(editItemsToMove),
+        origin_address: editOrigin.address.trim() || null,
+        origin_floor: editOrigin.floor.trim() || null,
+        origin_has_elevator: elevatorToBool(editOrigin.hasElevator),
+        destination_address: editDestination.address.trim() || null,
+        destination_floor: editDestination.floor.trim() || null,
+        destination_has_elevator: elevatorToBool(editDestination.hasElevator),
+        // Not in this form, but sent back as they are (the update route takes
+        // the whole record — it used to clear them); a moved start moves the
+        // due date by the project's terms.
+        ...keptProjectFields(project, editStartDate || null),
+      };
+
+      // Saved on the phone first when this page is drawn from it
+      // (lib/projects/device-project-saves.ts): the page shows it at once, with
+      // no connection too. Attached files need the server.
+      const device = attachmentFiles.length === 0 ? deviceProjectSaves("projectPage") : null;
+      if (device && (await device.update(project.id, fields))) {
+        setEditOpen(false);
+        return;
+      }
+
+      const result = await offlineFetch("/api/projects/update", { id: project.id, ...fields }, "עדכון פרויקט");
 
       if (!result.queued) {
         const json = result.ok ? (result.data as { project?: unknown } | null) : null;

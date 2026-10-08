@@ -175,6 +175,9 @@ const orders = new Table(
     requested_delivery_date: text,
     branch_id: text,
     closed_at: text,
+    // Local only (never synced): what an order saved on the phone first sends
+    // — the request the form used to send (lib/orders/device-order-writes.ts).
+    _extras: text,
   },
   { indexes: { by_customer: ["customer_id"], by_status: ["status"] } }
 );
