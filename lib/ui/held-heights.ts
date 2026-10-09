@@ -27,7 +27,7 @@ export const USUAL_HELD_HEIGHTS: Readonly<Record<string, number>> = {
   attendanceQueue: 344,
   properties: 260,
   domainChart: 388,
-  workerShift: 160,
+  workerShift: 180,
 };
 
 const MIN_PX = 40;

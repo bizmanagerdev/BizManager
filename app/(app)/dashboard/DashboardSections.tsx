@@ -862,7 +862,11 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
           id: "workerShift",
           rank: -0.5,
           node: (
-            <Suspense fallback={null}>
+            // Its placeholder holds the clock's height (the cell's --held-h): a
+            // null fallback left the cell empty — hidden — so the clock pushed
+            // every card under it down by its height when it came (a worker's
+            // phone, 2026-10-09: 180 px at half a second).
+            <Suspense fallback={<Skeleton className="h-[var(--held-h,4rem)] w-full rounded-[1.125rem]" />}>
               <WorkerShiftPanel userId={profile.id} locale={locale} />
             </Suspense>
           ),
