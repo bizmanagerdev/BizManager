@@ -4,6 +4,7 @@ import { translateToArabic } from "@/lib/i18n/translateToHebrew";
 import type { Locale } from "@/lib/i18n/types";
 import { propertyDisplayName } from "@/lib/properties";
 import { earliestReminderByTask, isTaskWaitingForLater } from "@/lib/tasks/visibility";
+import { snoozedTasks } from "@/lib/tasks/snooze";
 import { israelDateKey } from "@/lib/timezone";
 
 type Row = Record<string, unknown>;
@@ -41,6 +42,8 @@ export type TaskBoardItem = {
   is_private: boolean;
   /** Board position within its status column — drag-reorder persists here. */
   sort_order: number | null;
+  /** When it comes back, if the viewer snoozed it ("לטיפול בהמשך") — only a search shows it until then. */
+  snoozed_until: string | null;
 };
 
 export type TasksFilters = {
@@ -214,7 +217,7 @@ export async function loadTasksBoard(
   const propertyIds = uniqueIds(taskRows as unknown as Row[], "property_id");
   const customerIds = uniqueIds(taskRows as unknown as Row[], "customer_id");
 
-  const [projectsRes, propertiesRes, customersRes, membersRes, usersRes, commentsRes, remindersRes, attachmentsRes] =
+  const [projectsRes, propertiesRes, customersRes, membersRes, usersRes, commentsRes, remindersRes, attachmentsRes, snoozed] =
     await Promise.all([
     projectIds.length
       ? supabase.from("project_dashboard_view").select("id,name").in("id", projectIds)
@@ -231,11 +234,14 @@ export async function loadTasksBoard(
     // their ids aren't known before this round.
     supabase.rpc("user_directory"),
     supabase.from("task_comments").select("task_id").in("task_id", taskIds).range(0, 9999),
+    // Open reminders (the card's bell) and done ones: a far-off task its
+    // reminder brought onto the board stays there once the reminder is done
+    // (owner, 2026-10-09 — it used to go back into hiding).
     supabase
       .from("reminders")
-      .select("task_id,remind_at")
+      .select("task_id,remind_at,status")
       .in("task_id", taskIds)
-      .eq("status", "pending")
+      .in("status", ["pending", "done"])
       .range(0, 9999),
     // Attachments are documents linked polymorphically, not a task column — so
     // the card's paperclip comes from document_links, same shape the card's
@@ -248,6 +254,8 @@ export async function loadTasksBoard(
       .in("entity_id", taskIds)
       .range(0, 9999)
       .then((r) => r, () => ({ data: [] as Row[] })),
+    // The viewer's own snoozed tasks (lib/tasks/snooze.ts).
+    snoozedTasks(supabase, userId),
   ]);
 
   const memberRows = (membersRes.data ?? []) as Row[];
@@ -286,7 +294,9 @@ export async function loadTasksBoard(
     commentCountByTask.set(taskId, (commentCountByTask.get(taskId) ?? 0) + 1);
   }
 
-  const nextReminderByTask = earliestReminderByTask((remindersRes.data ?? []) as Row[]);
+  const reminderRows = (remindersRes.data ?? []) as Row[];
+  const nextReminderByTask = earliestReminderByTask(reminderRows.filter((r) => getString(r, "status") === "pending"));
+  const firstReminderByTask = earliestReminderByTask(reminderRows);
 
   const attachmentCountByTask = new Map<string, number>();
   for (const row of (attachmentsRes.data ?? []) as Row[]) {
@@ -302,15 +312,17 @@ export async function loadTasksBoard(
     // A far-future to-do waits off the board until its reminder, or until 30
     // days before it's due (lib/tasks/visibility.ts). A search still finds it —
     // looking for a task by name means you want it, whenever it's due.
+    // Nor does a task the viewer snoozed ("לטיפול בהמשך") show before it's back.
     .filter(
       (row) =>
         Boolean(q) ||
-        !isTaskWaitingForLater({
-          status: row.status,
-          dueDate: row.due_date,
-          nextReminderAt: nextReminderByTask.get(row.id),
-          now,
-        })
+        (!snoozed.has(row.id) &&
+          !isTaskWaitingForLater({
+            status: row.status,
+            dueDate: row.due_date,
+            nextReminderAt: firstReminderByTask.get(row.id),
+            now,
+          }))
     )
     .map((row) => {
     const assigneeId = row.assigned_user_id;
@@ -352,6 +364,7 @@ export async function loadTasksBoard(
       is_overdue: isOpen && row.due_date !== null && row.due_date.slice(0, 10) < todayIso,
       is_private: Boolean(row.is_private),
       sort_order: row.sort_order,
+      snoozed_until: snoozed.get(row.id) ?? null,
     };
   });
 

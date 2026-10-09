@@ -173,6 +173,38 @@ export async function deleteCommentOnDevice(db: Db, id: string): Promise<void> {
   await db.execute("DELETE FROM task_comments WHERE id = ?", [id]);
 }
 
+/**
+ * "לטיפול בהמשך": the person's snooze of a task, until a time (a new one, or a
+ * new time for theirs) — or, with `until` null, the task back now. One row per
+ * task and person, as on the server (lib/tasks/snooze.ts).
+ */
+export async function snoozeTaskOnDevice(
+  db: Db,
+  snooze: { taskId: string; userId: string; until: string | null }
+): Promise<void> {
+  if (snooze.until === null) {
+    await db.execute("DELETE FROM task_snoozes WHERE task_id = ? AND user_id = ?", [snooze.taskId, snooze.userId]);
+    return;
+  }
+  const now = new Date().toISOString();
+  const existing = await db.getOptional<{ id: string }>("SELECT id FROM task_snoozes WHERE task_id = ? AND user_id = ?", [
+    snooze.taskId,
+    snooze.userId,
+  ]);
+  if (existing) {
+    await db.execute("UPDATE task_snoozes SET until = ?, notified_at = NULL, updated_at = ? WHERE id = ?", [
+      snooze.until,
+      now,
+      existing.id,
+    ]);
+    return;
+  }
+  await db.execute(
+    "INSERT INTO task_snoozes (id, task_id, user_id, until, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+    [crypto.randomUUID(), snooze.taskId, snooze.userId, snooze.until, now, now]
+  );
+}
+
 // ── Customers ────────────────────────────────────────────────────────────────
 // Created on the phone first (the + menu's customer form, the new-customer
 // form inside the project / order forms). The row is the one the server
@@ -487,6 +519,7 @@ export type DeviceSaveKind =
   | "task-comment"
   | "task-comment-edit"
   | "task-comment-delete"
+  | "task-snooze"
   | "customer-create"
   | "project-create"
   | "project-update"
@@ -597,6 +630,16 @@ export async function requestForChange(
       return { kind: "task-comment-edit", url: "/api/tasks/edit-comment", body: { id: op.id, message: data.body } };
     }
     return { kind: "task-comment-delete", url: "/api/tasks/delete-comment", body: { id: op.id } };
+  }
+  if (op.table === "task_snoozes") {
+    // A new snooze carries its task; a changed one only its new time; a
+    // removed one nothing (the route then works by the row's id).
+    if (kind === "PUT") return { kind: "task-snooze", url: "/api/tasks/snooze", body: { id: op.id, task_id: data.task_id, until: data.until } };
+    if (kind === "PATCH") {
+      if (typeof data.until !== "string") return null;
+      return { kind: "task-snooze", url: "/api/tasks/snooze", body: { id: op.id, until: data.until } };
+    }
+    return { kind: "task-snooze", url: "/api/tasks/snooze", body: { id: op.id, until: null } };
   }
   if (op.table === "customers") {
     // Only creating one is saved on the phone so far (edits still go to the server).

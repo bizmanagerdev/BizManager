@@ -189,7 +189,21 @@ export type TasksKey =
   | "saveCommentButton"
   | "commentEditedWord"
   | "toastErrorEditComment"
-  | "toastErrorDeleteComment";
+  | "toastErrorDeleteComment"
+  | "snoozeLabel"
+  | "snoozeTomorrow"
+  | "snoozeWeek"
+  | "snoozeMonth"
+  | "snoozeTwoMonths"
+  | "snoozePickDate"
+  | "snoozeDateTitle"
+  | "snoozeConfirm"
+  | "snoozeBackNow"
+  | "snoozedUntilPrefix"
+  | "snoozedToastPrefix"
+  | "snoozeBackToast"
+  | "snoozeOfflineLabel"
+  | "toastErrorSnooze";
 
 export const tasksDict: Dictionary<TasksKey> = {
   he: {
@@ -380,6 +394,20 @@ export const tasksDict: Dictionary<TasksKey> = {
     commentEditedWord: "נערך",
     toastErrorEditComment: "שגיאה בעריכת תגובה",
     toastErrorDeleteComment: "שגיאה במחיקת תגובה",
+    snoozeLabel: "לטיפול בהמשך",
+    snoozeTomorrow: "מחר",
+    snoozeWeek: "בעוד שבוע",
+    snoozeMonth: "בעוד חודש",
+    snoozeTwoMonths: "בעוד חודשיים",
+    snoozePickDate: "תאריך אחר…",
+    snoozeDateTitle: "מתי לחזור למשימה?",
+    snoozeConfirm: "דחייה",
+    snoozeBackNow: "החזרה לרשימה עכשיו",
+    snoozedUntilPrefix: "חוזרת ב־",
+    snoozedToastPrefix: "המשימה תחזור ב־",
+    snoozeBackToast: "המשימה חזרה לרשימה",
+    snoozeOfflineLabel: "דחיית משימה",
+    toastErrorSnooze: "הדחייה לא נשמרה",
     sectionHistory: "היסטוריה",
     createdAtLabel: "נוצר",
     updatedAtLabel: "עודכן",
@@ -571,6 +599,20 @@ export const tasksDict: Dictionary<TasksKey> = {
     commentEditedWord: "مُعدَّل",
     toastErrorEditComment: "خطأ في تعديل التعليق",
     toastErrorDeleteComment: "خطأ في حذف التعليق",
+    snoozeLabel: "للمعالجة لاحقاً",
+    snoozeTomorrow: "غداً",
+    snoozeWeek: "بعد أسبوع",
+    snoozeMonth: "بعد شهر",
+    snoozeTwoMonths: "بعد شهرين",
+    snoozePickDate: "تاريخ آخر…",
+    snoozeDateTitle: "متى تعود المهمة؟",
+    snoozeConfirm: "تأجيل",
+    snoozeBackNow: "إعادة إلى القائمة الآن",
+    snoozedUntilPrefix: "تعود في ",
+    snoozedToastPrefix: "ستعود المهمة في ",
+    snoozeBackToast: "عادت المهمة إلى القائمة",
+    snoozeOfflineLabel: "تأجيل مهمة",
+    toastErrorSnooze: "لم يتم حفظ التأجيل",
     sectionHistory: "السجل",
     createdAtLabel: "أُنشئ",
     updatedAtLabel: "آخر تحديث",

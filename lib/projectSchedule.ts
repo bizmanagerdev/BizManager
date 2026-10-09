@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { snoozedTasks } from "@/lib/tasks/snooze";
 import { getOpenReminders, actionTypeLabel } from "@/lib/communications";
 import { getOrderStatusLabel } from "@/lib/ui/status-colors";
 
@@ -158,18 +159,21 @@ export async function getScheduleEntries(
     { data: projectRows, error: projectsError },
     { data: deliveryOrderRows, error: deliveriesError },
     reminders,
+    snoozed,
   ] = await Promise.all([
     tasksQuery,
     projectsQuery,
     deliveriesPromise,
     getOpenReminders(supabase, { scope, userId, limit: 500 }),
+    // My own snoozed tasks are off my schedule until they're back (lib/tasks/snooze.ts).
+    scope === "mine" ? snoozedTasks(supabase, userId) : Promise.resolve(new Map<string, string>()),
   ]);
 
   if (tasksError) throw tasksError;
   if (projectsError) throw projectsError;
   if (deliveriesError) throw deliveriesError;
 
-  const tasks = (taskRows ?? []) as Row[];
+  const tasks = ((taskRows ?? []) as Row[]).filter((row) => !snoozed.has(getString(row, "id") ?? ""));
   const projects = (projectRows ?? []) as Row[];
   const deliveryOrders = (deliveryOrderRows ?? []) as Row[];
 

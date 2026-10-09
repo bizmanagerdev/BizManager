@@ -130,6 +130,21 @@ describe("device saves", () => {
     ).toEqual({ kind: "task-comment", url: "/api/tasks/add-comment", body: { id: "c-1", task_id: "t1", message: "בוצע" } });
   });
 
+  it("a snooze made, moved or removed on the phone goes up to the snooze route", async () => {
+    const none = async () => null;
+    expect(
+      await requestForChange({ table: "task_snoozes", op: "PUT", id: "s1", opData: { task_id: "t1", user_id: "u1", until: "2026-11-01T06:00:00.000Z" } } as never, none)
+    ).toEqual({ kind: "task-snooze", url: "/api/tasks/snooze", body: { id: "s1", task_id: "t1", until: "2026-11-01T06:00:00.000Z" } });
+    expect(
+      await requestForChange({ table: "task_snoozes", op: "PATCH", id: "s1", opData: { until: "2026-12-01T06:00:00.000Z", updated_at: "x" } } as never, none)
+    ).toEqual({ kind: "task-snooze", url: "/api/tasks/snooze", body: { id: "s1", until: "2026-12-01T06:00:00.000Z" } });
+    expect(await requestForChange({ table: "task_snoozes", op: "DELETE", id: "s1", opData: undefined } as never, none)).toEqual({
+      kind: "task-snooze",
+      url: "/api/tasks/snooze",
+      body: { id: "s1", until: null },
+    });
+  });
+
   it("a comment edited or deleted on the phone goes up to its own route", async () => {
     expect(
       await requestForChange(

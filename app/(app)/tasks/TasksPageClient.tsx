@@ -25,6 +25,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { computeInsertSortOrder } from "@/lib/tasks/sortOrder";
 import { isTaskWaitingForLater } from "@/lib/tasks/visibility";
+import { boardColumnOrderKey } from "@/lib/tasks/board-order";
 import { filterBoardLocally } from "@/lib/tasks/boardFilters";
 import { AddIcon, AttachIcon, BuildingIcon, CheckboxCheckedIcon, CheckboxUncheckedIcon, ClockIcon, CloseIcon, CommentIcon, DragIcon, FilterIcon, LockIcon, NotificationIcon, ProjectIcon, RecurringIcon, SearchIcon, UserIcon, WazeIcon, ZoomInIcon, ZoomOutIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
@@ -56,7 +57,8 @@ import type { Locale } from "@/lib/i18n/types";
 import { t } from "@/lib/i18n/t";
 import { commonDict } from "@/lib/i18n/dictionaries/common";
 import { tasksDict } from "@/lib/i18n/dictionaries/tasks";
-import { deviceTaskSaves } from "@/lib/tasks/device-task-saves";
+import { deviceTaskSaves, saveTaskSnooze } from "@/lib/tasks/device-task-saves";
+import { TaskSnoozeButton } from "@/components/tasks/TaskSnoozeButton";
 import { israelDateKey } from "@/lib/timezone";
 
 const TaskUpsertDialog = dynamic(
@@ -204,6 +206,7 @@ function buildOptimisticTask(fields: {
     is_overdue: status !== "done" && status !== "cancelled" && dueDate !== null && dueDate.slice(0, 10) < todayIso,
     is_private: fields.is_private === true,
     sort_order: fields.sort_order,
+    snoozed_until: null,
   };
 }
 
@@ -218,6 +221,7 @@ const TaskCard = memo(function TaskCard({
   task,
   onOpen,
   onToggleDone,
+  onSnooze,
   onContextMenu,
   colorIndexById,
   longPress,
@@ -227,6 +231,8 @@ const TaskCard = memo(function TaskCard({
   task: TaskBoardItem;
   onOpen: (id: string) => void;
   onToggleDone: (id: string, done: boolean) => void;
+  /** "לטיפול בהמשך": put it away until `until` (null: back now). */
+  onSnooze: (id: string, until: string | null) => void;
   onContextMenu: (id: string, x: number, y: number) => void;
   colorIndexById: Map<string, number>;
   /** Phones: hold a card to open its menu (there's no right-click and no drag). */
@@ -335,6 +341,16 @@ const TaskCard = memo(function TaskCard({
             <CheckboxUncheckedIcon className="h-[1.15em] w-[1.15em]" />
           )}
         </button>
+        {/* "לטיפול בהמשך" beside the checkbox (owner, 2026-10-09). */}
+        {!isDone ? (
+          <TaskSnoozeButton
+            snoozedUntil={task.snoozed_until}
+            onSnooze={(until) => onSnooze(task.id, until)}
+            locale={locale}
+            className="mt-[0.15em] group-hover:scale-110"
+            iconClassName="h-[1.15em] w-[1.15em]"
+          />
+        ) : null}
         <div className={`min-w-0 flex-1 font-medium leading-snug ${isDone ? "text-muted-foreground line-through" : ""}`}>
           {displaySubject}
         </div>
@@ -437,6 +453,7 @@ function BoardColumn({
   tasks,
   onOpen,
   onToggleDone,
+  onSnooze,
   onContextMenu,
   onQuickAdd,
   colorIndexById,
@@ -449,6 +466,7 @@ function BoardColumn({
   tasks: TaskBoardItem[];
   onOpen: (id: string) => void;
   onToggleDone: (id: string, done: boolean) => void;
+  onSnooze: (id: string, until: string | null) => void;
   onContextMenu: (id: string, x: number, y: number) => void;
   /** One title per line — the box doubles as a list. */
   onQuickAdd: (status: string, titles: string[]) => Promise<void>;
@@ -602,6 +620,7 @@ function BoardColumn({
               task={task}
               onOpen={onOpen}
               onToggleDone={onToggleDone}
+              onSnooze={onSnooze}
               onContextMenu={onContextMenu}
               colorIndexById={colorIndexById}
               longPress={longPress}
@@ -685,7 +704,7 @@ export default function TasksPageClient(props: Props) {
   );
 
   // Per-user column order, drag-reorderable, persisted per device in localStorage.
-  const storageKey = `tasks-board-order:${props.currentUserId}`;
+  const storageKey = boardColumnOrderKey(props.currentUserId ?? "");
   const [columnOrder, setColumnOrder] = useState<string[]>([...BOARD_STATUSES]);
   useEffect(() => {
     try {
@@ -1207,6 +1226,37 @@ export default function TasksPageClient(props: Props) {
     [tasks, props.locale, moveTask]
   );
 
+  // "לטיפול בהמשך": off the board at once (a search keeps showing it, lit),
+  // saved when the undo window closes — on the device copy when there is one.
+  const snoozeTask = useCallback(
+    (id: string, until: string | null) => {
+      const previous = tasks;
+      const searching = Boolean(urlQ);
+      scheduleDeferredAction({
+        key: `task:snooze:${id}`,
+        message: until
+          ? `${t(tasksDict, props.locale, "snoozedToastPrefix")}${formatShortDate(until)}`
+          : t(tasksDict, props.locale, "snoozeBackToast"),
+        onApplyOptimistic: () =>
+          setTasks((prev) =>
+            until && !searching
+              ? prev.filter((task) => task.id !== id)
+              : prev.map((task) => (task.id === id ? { ...task, snoozed_until: until } : task))
+          ),
+        onRevert: () => setTasks(previous),
+        onCommit: async () => {
+          const result = await saveTaskSnooze(id, until, t(tasksDict, props.locale, "snoozeOfflineLabel"));
+          if (!result.queued && !result.ok) {
+            return { ok: false, error: `${t(tasksDict, props.locale, "toastErrorSnooze")}: ${toHebrewError(result.error, "")}` };
+          }
+          if (!result.onDevice) startTransition(() => { router.refresh(); });
+          return { ok: true };
+        },
+      });
+    },
+    [tasks, urlQ, props.locale, router]
+  );
+
   const openMenu = useCallback(
     (id: string, x: number, y: number) => {
       setMenu({ id, x, y });
@@ -1676,6 +1726,7 @@ export default function TasksPageClient(props: Props) {
                   tasks={tasksByStatus.get(status) ?? []}
                   onOpen={openCard}
                   onToggleDone={toggleDone}
+                  onSnooze={snoozeTask}
                   onContextMenu={openMenu}
                   onQuickAdd={quickAdd}
                   colorIndexById={colorIndexById}

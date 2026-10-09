@@ -547,6 +547,16 @@ const task_comments = new Table(
   { indexes: { by_task: ["task_id"] } }
 );
 
+/**
+ * "לטיפול בהמשך": the person's own snoozed tasks (sync rules v1.9 — each
+ * person gets only their own rows). A task with a row whose `until` is still
+ * ahead is off that person's board, dashboard and today list (lib/tasks/snooze.ts).
+ */
+const task_snoozes = new Table(
+  { task_id: text, user_id: text, until: text, notified_at: text, created_at: text, updated_at: text },
+  { indexes: { by_user: ["user_id"], by_task: ["task_id"] } }
+);
+
 /** A document linked to a task, order, project… (entity_type + entity_id). */
 const document_links = new Table(
   { document_id: text, entity_type: text, entity_id: text, created_at: text },
@@ -687,6 +697,7 @@ export const AppSchema = new Schema({
   inventory_movements,
   product_categories,
   task_comments,
+  task_snoozes,
   document_links,
   accounts,
   business_settings,

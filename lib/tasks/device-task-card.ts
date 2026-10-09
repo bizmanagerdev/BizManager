@@ -7,6 +7,8 @@ import type { CommonPowerSyncDatabase } from "@powersync/web";
 // task's tags, its finished reminders, its history — still comes from the
 // server a moment later.
 
+import { snoozedTasks } from "@/lib/tasks/snooze";
+
 type Row = Record<string, unknown>;
 
 export type DeviceTaskCard = {
@@ -23,6 +25,8 @@ export type DeviceTaskCard = {
     assigned_to_name: string | null;
   }[];
   viewerIsCreator: boolean;
+  /** When it comes back, if the viewer snoozed it ("לטיפול בהמשך"). */
+  snoozedUntil: string | null;
 };
 
 const str = (row: Row | null | undefined, key: string): string | null => {
@@ -93,5 +97,6 @@ export async function readTaskCardFromDevice(
       assigned_to_name: nameOf(str(r, "assigned_to")),
     })),
     viewerIsCreator: Boolean(owner) && owner === viewerId,
+    snoozedUntil: (await snoozedTasks(local, viewerId)).get(taskId) ?? null,
   };
 }

@@ -1,9 +1,11 @@
 "use client";
-import { saveTaskStatus } from "@/lib/tasks/device-task-saves";
+import { saveTaskSnooze, saveTaskStatus } from "@/lib/tasks/device-task-saves";
+import { TaskSnoozeButton } from "@/components/tasks/TaskSnoozeButton";
+import { tasksDict } from "@/lib/i18n/dictionaries/tasks";
 import { OPENS_HERE_ATTRIBUTE, openTaskOnClick } from "@/lib/tasks/open-task-here";
 import { toHebrewError } from "@/lib/error-messages";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChecklistIcon, CheckboxUncheckedIcon } from "@/components/ui/icons";
@@ -22,6 +24,13 @@ import { t } from "@/lib/i18n/t";
 import { dashboardDict } from "@/lib/i18n/dictionaries/dashboard";
 import type { Locale } from "@/lib/i18n/types";
 import { israelDateKey } from "@/lib/timezone";
+import { readBoardColumnOrder, sortLikeBoard } from "@/lib/tasks/board-order";
+import { useLocalViewer } from "@/lib/powersync/store";
+
+// This device's board list order for the person — read after hydration (the
+// server can't know it), as a string so the snapshot is stable.
+const noSubscribe = () => () => {};
+const DEFAULT_ORDER = JSON.stringify(readBoardColumnOrder(null));
 
 type TabKey = "all" | "today" | "overdue" | "in_progress";
 
@@ -67,14 +76,28 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [doneIds, setDoneIds] = useState<Set<string>>(() => new Set());
+  // Put away with the clock ("לטיפול בהמשך") — off the list at once.
+  const [snoozedIds, setSnoozedIds] = useState<Set<string>>(() => new Set());
   const [tab, setTab] = useState<TabKey>("all");
   const TABS = tabs(locale);
   const PRIORITY = priorityMeta(locale);
   const STATUS_LABEL = statusLabel(locale);
 
+  // In the board's order: its lists as arranged there, each top to bottom
+  // (owner, 2026-10-09: "the same order as there").
+  const viewerId = useLocalViewer()?.id ?? null;
+  const columnOrder = useSyncExternalStore(
+    noSubscribe,
+    () => JSON.stringify(readBoardColumnOrder(viewerId)),
+    () => DEFAULT_ORDER
+  );
   const tasks = useMemo(
-    () => initialTasks.filter((task) => !doneIds.has(task.id)),
-    [initialTasks, doneIds]
+    () =>
+      sortLikeBoard(
+        initialTasks.filter((task) => !doneIds.has(task.id) && !snoozedIds.has(task.id)),
+        JSON.parse(columnOrder) as string[]
+      ),
+    [initialTasks, doneIds, snoozedIds, columnOrder]
   );
 
   const today = israelDateKey();
@@ -117,6 +140,31 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
         const result = await saveTaskStatus(id, "done", t(dashboardDict, locale, "markTaskDoneQueued"));
         if (!result.queued && !result.ok) {
           return { ok: false, error: toHebrewError(result.error, t(dashboardDict, locale, "actionFailed")) };
+        }
+        if (!result.onDevice) startTransition(() => { router.refresh(); });
+        return { ok: true };
+      },
+    });
+  }
+
+  function snooze(id: string, until: string | null) {
+    if (!until) return; // a task on this list isn't snoozed
+    const forget = () =>
+      setSnoozedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    scheduleDeferredAction({
+      key: `dashboard-task:snooze:${id}`,
+      message: `${t(tasksDict, locale, "snoozedToastPrefix")}${formatShortDate(until)}`,
+      onApplyOptimistic: () => setSnoozedIds((prev) => new Set(prev).add(id)),
+      onRevert: forget,
+      onCommit: async () => {
+        // On the device copy when there is one (lib/tasks/device-task-saves.ts).
+        const result = await saveTaskSnooze(id, until, t(tasksDict, locale, "snoozeOfflineLabel"));
+        if (!result.queued && !result.ok) {
+          return { ok: false, error: toHebrewError(result.error, t(tasksDict, locale, "toastErrorSnooze")) };
         }
         if (!result.onDevice) startTransition(() => { router.refresh(); });
         return { ok: true };
@@ -234,6 +282,13 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
                     >
                       <CheckboxUncheckedIcon className="h-4 w-4" />
                     </button>
+                    {/* "לטיפול בהמשך" beside it, as on the board (owner, 2026-10-09). */}
+                    <TaskSnoozeButton
+                      snoozedUntil={null}
+                      onSnooze={(until) => snooze(task.id, until)}
+                      locale={locale}
+                      className="relative mt-0.5"
+                    />
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-medium leading-snug">{subject}</div>
                       {priority || dueLabel(task) || task.project_name ? (

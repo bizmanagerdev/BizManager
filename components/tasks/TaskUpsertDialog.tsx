@@ -40,7 +40,8 @@ import { taskShowsFromDate } from "@/lib/tasks/visibility";
 import { fetchExistingTagIds } from "@/components/tags/TagPicker";
 import { readyLocalDatabase, useLocalViewer } from "@/lib/powersync/store";
 import { readTaskCardFromDevice } from "@/lib/tasks/device-task-card";
-import { deviceTaskSaves } from "@/lib/tasks/device-task-saves";
+import { deviceTaskSaves, saveTaskSnooze } from "@/lib/tasks/device-task-saves";
+import { TaskSnoozeButton } from "@/components/tasks/TaskSnoozeButton";
 import {
   isExpenseBusinessDomain,
   mapProjectTypeToExpenseDomain,
@@ -296,6 +297,8 @@ export function TaskUpsertDialog(rawProps: Props) {
   const [newComment, setNewComment] = useState("");
   const [addingComment, setAddingComment] = useState(false);
   const [commentToDelete, setCommentToDelete] = useState<CommentItem | null>(null);
+  // "לטיפול בהמשך": when this task comes back, if the viewer snoozed it.
+  const [snoozedUntil, setSnoozedUntil] = useState<string | null>(null);
   // Who's looking, for which comments they may change — from the page when it
   // says, else from the signed-in person the app shell keeps.
   const localViewer = useLocalViewer();
@@ -499,6 +502,7 @@ export function TaskUpsertDialog(rawProps: Props) {
         const json = await res.json().catch(() => ({}));
         if (cardRequestRef.current !== request || !res.ok || !json?.task) return;
         setViewerIsCreator(json?.viewer_is_creator === true);
+        if ("snoozed_until" in json) setSnoozedUntil(typeof json.snoozed_until === "string" ? json.snoozed_until : null);
         if (Array.isArray(json?.reminders)) setReminders(json.reminders as ReminderItem[]);
         if (Array.isArray(json?.history)) setHistory(json.history as HistoryItem[]);
         if (Array.isArray(json?.comments)) {
@@ -531,6 +535,7 @@ export function TaskUpsertDialog(rawProps: Props) {
           void fetchAttachments(taskId);
           applyTaskFields(card.task);
           setViewerIsCreator(card.viewerIsCreator);
+          setSnoozedUntil(card.snoozedUntil);
           setMemberIds(card.memberIds);
           setTagIds([]);
           setTagsPending(true);
@@ -571,6 +576,7 @@ export function TaskUpsertDialog(rawProps: Props) {
 
         applyTaskFields(task);
         setViewerIsCreator(json?.viewer_is_creator === true);
+        setSnoozedUntil(typeof json?.snoozed_until === "string" ? json.snoozed_until : null);
 
         const membersRaw = Array.isArray(json?.members) ? (json.members as Array<{ id?: unknown }>) : [];
         setMemberIds(membersRaw.map((m) => (typeof m.id === "string" ? m.id : "")).filter(Boolean));
@@ -606,6 +612,7 @@ export function TaskUpsertDialog(rawProps: Props) {
 
     setActiveTaskId(null);
     setComments([]);
+    setSnoozedUntil(null);
     setLegacyNotes([]);
     setReminders([]);
     setPendingReminders([]);
@@ -1005,6 +1012,31 @@ export function TaskUpsertDialog(rawProps: Props) {
     const run = saveChainRef.current.then(saveChangesOnce);
     saveChainRef.current = run.catch(() => {});
     return run;
+  }
+
+  /** "לטיפול בהמשך" from inside the task: saved at once (the lists drop it by themselves). */
+  async function snoozeFromDialog(until: string | null) {
+    const targetId = activeTaskId ?? props.taskId;
+    if (!targetId) return;
+    const before = snoozedUntil;
+    setSnoozedUntil(until);
+    try {
+      const result = await saveTaskSnooze(targetId, until, t(tasksDict, props.locale, "snoozeOfflineLabel"));
+      if (!result.queued && !result.ok) {
+        setSnoozedUntil(before);
+        toast.error(t(tasksDict, props.locale, "toastErrorSnooze"), { description: toHebrewError(result.error, "") });
+        return;
+      }
+      toast.success(
+        until
+          ? `${t(tasksDict, props.locale, "snoozedToastPrefix")}${formatShortDate(until)}`
+          : t(tasksDict, props.locale, "snoozeBackToast")
+      );
+      if (!result.onDevice) startTransition(() => { router.refresh(); });
+    } catch (error: unknown) {
+      setSnoozedUntil(before);
+      toast.error(t(tasksDict, props.locale, "toastErrorSnooze"), { description: getErrorMessage(error) });
+    }
   }
 
   /** The table's own rule (task_comments_update / _delete): its author, or office/admin. */
@@ -1617,6 +1649,15 @@ export function TaskUpsertDialog(rawProps: Props) {
                   <UncheckedIcon className="h-5 w-5" />
                 )}
               </button>
+            ) : null}
+            {/* "לטיפול בהמשך" beside the checkbox, as on the card (owner, 2026-10-09). */}
+            {isEditing && status !== "done" ? (
+              <TaskSnoozeButton
+                snoozedUntil={snoozedUntil}
+                onSnooze={(until) => void snoozeFromDialog(until)}
+                locale={props.locale}
+                iconClassName="h-5 w-5"
+              />
             ) : null}
             {/* A textarea, not an input: <input> silently strips newlines, so
                 pasting or dictating a list would collapse into one long name and

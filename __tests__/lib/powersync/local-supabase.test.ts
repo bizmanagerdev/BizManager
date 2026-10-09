@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { coerceRow, createLocalSupabase, normalizeTimestamp, type LocalReader } from "@/lib/powersync/local-supabase";
 import { getPropertiesSummary } from "@/lib/properties";
 import { getMyTasks } from "@/lib/dashboard/tasks-overview";
@@ -397,7 +397,7 @@ describe("the server's own loaders, run on the device copy", () => {
           { id: "t2", subject: "חבר", status: "in_progress", assigned_user_id: "other", project_id: null, created_at: "2026-10-06T10:00:00.000000", due_date: "2026-10-01T00:00:00.000000" },
           { id: "t3", subject: "סגורה", status: "done", assigned_user_id: "me", project_id: null, created_at: "2026-10-06T11:00:00.000000", due_date: null },
           { id: "t4", subject: "של אחר", status: "todo", assigned_user_id: "other", project_id: null, created_at: "2026-10-06T12:00:00.000000", due_date: null },
-        ].map((t) => ({ subject_he: null, subject_ar: null, priority: "medium", ...t })),
+        ].map((t) => ({ subject_he: null, subject_ar: null, priority: "medium", sort_order: null, ...t })),
         projects: [{ id: "p1", name: "פרויקט" }],
         reminders: [],
       })
@@ -406,6 +406,81 @@ describe("the server's own loaders, run on the device copy", () => {
     expect(tasks.map((t) => [t.id, t.project_name, t.overdue])).toEqual([
       ["t2", null, true],
       ["t1", "פרויקט", false],
+    ]);
+  });
+});
+
+describe("tasks that wait: a done reminder keeps a far-off task up; a snooze hides it for its person", () => {
+  afterEach(() => vi.useRealTimers());
+  // A far-off to-do (due in ~3 months), mine.
+  const farTask = { id: "t9", subject: "רחוק", status: "todo", assigned_user_id: "me", project_id: null, created_at: "2026-10-01T10:00:00.000000", due_date: "2027-01-15", subject_he: null, subject_ar: null, priority: "medium", sort_order: null };
+
+  it("its reminder came and was marked done: it stays on the list (it used to hide again)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-09T09:00:00Z"));
+    const db = createLocalSupabase(
+      fakeReader({
+        task_members: [],
+        tasks: [farTask],
+        projects: [],
+        reminders: [{ id: "r1", task_id: "t9", remind_at: "2026-10-05T07:00:00.000000Z", status: "done" }],
+        task_snoozes: [],
+      })
+    );
+    expect((await getMyTasks(db, "me", "he")).map((t) => t.id)).toEqual(["t9"]);
+  });
+
+  it("no reminder yet and far off: still waiting", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-09T09:00:00Z"));
+    const db = createLocalSupabase(fakeReader({ task_members: [], tasks: [farTask], projects: [], reminders: [], task_snoozes: [] }));
+    expect(await getMyTasks(db, "me", "he")).toEqual([]);
+  });
+
+  it("snoozed by me until a day still ahead: off my list; back once that day comes", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-09T09:00:00Z"));
+    const near = { ...farTask, id: "t8", due_date: "2026-10-10" };
+    const tables = {
+      task_members: [],
+      tasks: [near],
+      projects: [],
+      reminders: [],
+      task_snoozes: [
+        { id: "s1", task_id: "t8", user_id: "me", until: "2026-10-20T05:00:00.000Z", notified_at: null, created_at: "x", updated_at: "x" },
+        // Someone else's snooze of a task of mine changes nothing for me.
+        { id: "s2", task_id: "t8", user_id: "other", until: "2026-12-01T06:00:00.000Z", notified_at: null, created_at: "x", updated_at: "x" },
+      ],
+    };
+    expect(await getMyTasks(createLocalSupabase(fakeReader(tables)), "me", "he")).toEqual([]);
+    vi.setSystemTime(new Date("2026-10-20T06:00:00Z"));
+    expect((await getMyTasks(createLocalSupabase(fakeReader(tables)), "me", "he")).map((t) => t.id)).toEqual(["t8"]);
+  });
+});
+
+describe("open reminders: a snoozed one is due when its snooze ends", () => {
+  afterEach(() => vi.useRealTimers());
+  it("snoozed till tomorrow: listed for tomorrow (today's schedule used to keep it on today); an ended snooze changes nothing", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-09T09:00:00Z"));
+    const reminder = (id: string, remind_at: string, snoozed_until: string | null) => ({
+      id, remind_at, snoozed_until, status: "pending", assigned_to: "me", created_by: "me", content: null, action_type: "call",
+      category: "task", customer_id: null, project_id: null, order_id: null, property_id: null, payment_id: null,
+      communication_log_id: null, task_id: null, created_at: "x", updated_at: "x",
+    });
+    const db = createLocalSupabase(
+      fakeReader({
+        reminders: [
+          reminder("r1", "2026-10-09T06:00:00.000Z", "2026-10-10T05:00:00.000Z"),
+          reminder("r2", "2026-10-09T07:00:00.000Z", "2026-10-09T08:00:00.000Z"),
+        ],
+      })
+    );
+    const { getOpenReminders } = await import("@/lib/communications");
+    const reminders = await getOpenReminders(db, { scope: "mine", userId: "me" });
+    expect(reminders.map((r) => [r.id, new Date(r.remind_at).toISOString()])).toEqual([
+      ["r2", "2026-10-09T07:00:00.000Z"],
+      ["r1", "2026-10-10T05:00:00.000Z"],
     ]);
   });
 });

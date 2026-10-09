@@ -21,6 +21,8 @@ import { POST as createTask } from "@/app/api/tasks/create/route";
 import { POST as addComment } from "@/app/api/tasks/add-comment/route";
 import { POST as editComment } from "@/app/api/tasks/edit-comment/route";
 import { POST as deleteComment } from "@/app/api/tasks/delete-comment/route";
+import { POST as snoozeTask } from "@/app/api/tasks/snooze/route";
+import { POST as updateTaskReminder } from "@/app/api/tasks/reminders/update/route";
 import { POST as updateReminder } from "@/app/api/tasks/reminders/update/route";
 
 type Resp = { data: unknown; error: unknown };
@@ -32,7 +34,7 @@ function makeSupabase(answer: (table: string, calls: Call[]) => Resp) {
   const from = (table: string) => {
     const mine: Call[] = [];
     const builder: Record<string, unknown> = {};
-    for (const method of ["select", "insert", "update", "delete", "eq", "or", "order", "limit", "in"]) {
+    for (const method of ["select", "insert", "update", "upsert", "delete", "eq", "or", "order", "limit", "in"]) {
       builder[method] = (...args: unknown[]) => {
         const call = { table, method, args };
         mine.push(call);
@@ -162,5 +164,50 @@ describe("POST /api/tasks/reminders/update", () => {
     grant(supabase);
     await post(updateReminder, { id: "r1", content: null });
     expect(calls.find((c) => c.method === "update")?.args[0]).toMatchObject({ content: null });
+  });
+});
+
+describe("POST /api/tasks/snooze (\"לטיפול בהמשך\")", () => {
+  const later = () => new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+
+  it("snoozes the task for the signed-in person only — one row per task and person", async () => {
+    const { supabase, calls } = makeSupabase(() => ({ data: { id: ID, task_id: "t1", until: "x" }, error: null }));
+    grant(supabase);
+    const until = later();
+    expect((await post(snoozeTask, { task_id: "t1", until, id: ID })).status).toBe(200);
+    const upsert = calls.find((c) => c.method === "upsert");
+    expect(upsert?.args[0]).toMatchObject({ id: ID, task_id: "t1", user_id: "prof-1", until, notified_at: null });
+    expect(upsert?.args[1]).toEqual({ onConflict: "task_id,user_id" });
+  });
+
+  it("back now: the person's row goes; by task, or by the row's id (the phone's queue)", async () => {
+    const byTask = makeSupabase(() => ({ data: null, error: null }));
+    grant(byTask.supabase);
+    expect((await post(snoozeTask, { task_id: "t1", until: null })).status).toBe(200);
+    expect(byTask.calls.map((c) => [c.method, c.args[0]])).toEqual(
+      expect.arrayContaining([["delete", undefined], ["eq", "user_id"], ["eq", "task_id"]])
+    );
+
+    const byId = makeSupabase(() => ({ data: null, error: null }));
+    grant(byId.supabase);
+    expect((await post(snoozeTask, { id: ID, until: null })).status).toBe(200);
+    expect(byId.calls).toContainEqual({ table: "task_snoozes", method: "eq", args: ["id", ID] });
+  });
+
+  it("a time already past, or years away, is refused", async () => {
+    const { supabase } = makeSupabase(() => ({ data: null, error: null }));
+    grant(supabase);
+    expect((await post(snoozeTask, { task_id: "t1", until: "2020-01-01T08:00:00Z" })).status).toBe(400);
+    expect((await post(snoozeTask, { task_id: "t1", until: "2099-01-01T08:00:00Z" })).status).toBe(400);
+  });
+});
+
+describe("a task reminder moved later pushes again", () => {
+  it("clears notified_at when its new time is still ahead", async () => {
+    const { supabase, calls } = makeSupabase(() => ({ data: [{ id: "r1" }], error: null }));
+    grant(supabase);
+    const at = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    await post(updateTaskReminder, { id: "r1", remind_at: at });
+    expect(calls.find((c) => c.method === "update")?.args[0]).toMatchObject({ remind_at: at, notified_at: null });
   });
 });

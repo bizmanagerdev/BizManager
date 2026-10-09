@@ -5,6 +5,7 @@ import { deliverPush } from "@/lib/notifications/deliver";
 import { reminderBucket } from "@/lib/notifications/categories";
 import { sanitizeNotificationPrefs } from "@/lib/notifications/prefs";
 import { ownAudienceRoles } from "@/lib/reminders/worklist";
+import { announceReturnedSnoozes } from "@/lib/tasks/snooze-push";
 
 // Reminders/Alerts unification — Phase 3: the deliver cron (every ~5 min).
 // Pushes due reminders — manual ones AND system issue reminders — honoring
@@ -253,6 +254,10 @@ export async function GET(req: Request) {
     defers.map((d) => supabase.from("reminders").update({ next_ping_at: d.next_ping_at }).eq("id", d.id))
   );
 
+  // Snoozed tasks that are back ("לטיפול בהמשך") ping whoever snoozed them —
+  // in the day window only, like the reminders above.
+  const snoozes = inWindow ? await announceReturnedSnoozes(supabase, now) : { sent: 0, failed: 0 };
+
   return NextResponse.json({
     ok: true,
     inWindow,
@@ -261,5 +266,6 @@ export async function GET(req: Request) {
     deferred: defers.length,
     sent,
     failed,
+    snoozes,
   });
 }

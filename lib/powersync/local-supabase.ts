@@ -112,6 +112,7 @@ export const LOCAL_TABLES: ReadonlySet<string> = new Set([
   "inventory_movements",
   "product_categories",
   "task_comments",
+  "task_snoozes",
   "document_links",
   "accounts",
   "business_settings",

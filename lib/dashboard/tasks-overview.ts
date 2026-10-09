@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { translateToArabic } from "@/lib/i18n/translateToHebrew";
 import type { Locale } from "@/lib/i18n/types";
 import { earliestReminderByTask, isTaskWaitingForLater } from "@/lib/tasks/visibility";
+import { snoozedTasks } from "@/lib/tasks/snooze";
 import { israelDateKey } from "@/lib/timezone";
 
 type Row = Record<string, unknown>;
@@ -18,6 +19,8 @@ export type DashboardTask = {
   due_date: string | null;
   priority: string | null;
   status: string | null;
+  /** Its place in its board list — the dashboard lists them as the board does (lib/tasks/board-order.ts). */
+  sort_order: number | null;
   project_name: string | null;
   overdue: boolean;
 };
@@ -60,10 +63,10 @@ export async function getMyTasks(
 
   let tasksQuery = supabase
     .from("tasks")
-    .select("id,subject,subject_he,subject_ar,due_date,priority,status,project_id")
+    .select("id,subject,subject_he,subject_ar,due_date,priority,status,project_id,sort_order")
     .in("status", OPEN_TASK_STATUSES)
-    // Newest tasks first, so a task just added from the dashboard lands at the top
-    // of "המשימות שלי" rather than being buried at the end.
+    // The newest when there are more than the cap; the panel then lists them
+    // in the board's order (sortLikeBoard).
     .order("created_at", { ascending: false })
     .range(0, 299);
   tasksQuery =
@@ -102,9 +105,10 @@ export async function getMyTasks(
     ),
   ];
   const taskIds = rows.map((r) => getString(r, "id")).filter((v): v is string => Boolean(v));
-  // Pending reminders decide when a far-future to-do comes back on — fetched
-  // alongside the project names, not after them.
-  const [projectsRes, remindersRes] = await Promise.all([
+  // Reminders decide when a far-future to-do comes back on — open ones, and
+  // done ones (it stays once one came) — fetched alongside the project names
+  // and the person's snoozes, not after them.
+  const [projectsRes, remindersRes, snoozed] = await Promise.all([
     projectIds.length
       ? supabase.from("projects").select("id,name").in("id", projectIds)
       : Promise.resolve({ data: [] as Row[] }),
@@ -113,9 +117,10 @@ export async function getMyTasks(
           .from("reminders")
           .select("task_id,remind_at")
           .in("task_id", taskIds)
-          .eq("status", "pending")
+          .in("status", ["pending", "done"])
           .range(0, 9999)
       : Promise.resolve({ data: [] as Row[] }),
+    snoozedTasks(supabase, userId),
   ]);
   const projectNameById = new Map(
     ((projectsRes.data ?? []) as Row[])
@@ -125,10 +130,12 @@ export async function getMyTasks(
   const nextReminderByTask = earliestReminderByTask((remindersRes.data ?? []) as Row[]);
   const now = new Date();
 
-  // Same rule as the board: a far-future to-do waits until its reminder, or
-  // until 30 days before it's due (lib/tasks/visibility.ts).
+  // Same rules as the board: a far-future to-do waits until its reminder, or
+  // until 30 days before it's due (lib/tasks/visibility.ts); a task this
+  // person snoozed waits until it's back (lib/tasks/snooze.ts).
   const visibleRows = rows.filter(
     (t) =>
+      !snoozed.has(getString(t, "id") ?? "") &&
       !isTaskWaitingForLater({
         status: getString(t, "status"),
         dueDate: getString(t, "due_date"),
@@ -148,6 +155,7 @@ export async function getMyTasks(
       due_date: due,
       priority: getString(t, "priority"),
       status: getString(t, "status"),
+      sort_order: typeof t.sort_order === "number" ? t.sort_order : t.sort_order == null ? null : Number(t.sort_order),
       project_name: projectId ? projectNameById.get(projectId) ?? null : null,
       overdue: due !== null && due.slice(0, 10) < today,
     };

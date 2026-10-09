@@ -118,9 +118,9 @@ const MONEY_TABLES = [
 
 /** The device tables each card reads — it's worked out again when any changes. */
 export const LOCAL_CARD_TABLES: Record<LocalCardKind, string[]> = {
-  todaySchedule: ["tasks", "projects", "orders", "order_delivery_recipients", "reminders", "customers", "users", "user_directory"],
+  todaySchedule: ["tasks", "projects", "orders", "order_delivery_recipients", "reminders", "customers", "users", "user_directory", "task_snoozes"],
   todayAlerts: ["reminders", "customers", "tasks", "users", "user_directory"],
-  myTasks: ["tasks", "task_members", "projects", "reminders"],
+  myTasks: ["tasks", "task_members", "projects", "reminders", "task_snoozes"],
   deliveries: ["orders", "customers", "customer_branches", "order_items", "products", "inventory", "payments"],
   attendanceQueue: ["phone_attendance_reports", "users", "user_directory", "attendance_sessions", "projects", "properties", "property_directory"],
   properties: ["properties", "property_directory", "lease_agreements", "customers"],
@@ -136,6 +136,7 @@ export const LOCAL_CARD_TABLES: Record<LocalCardKind, string[]> = {
   salesCounts: ["orders", "products", "payments", "customers", "customer_branches"],
   tasksBoard: [
     "tasks", "task_members", "users", "user_directory", "projects", "customers", "properties", "property_directory", "task_comments", "reminders", "document_links",
+    "task_snoozes",
   ],
   orderPage: ["orders", "order_items", "payments", "customers", "customer_branches", "products", "inventory", "users", "user_directory"],
   projectPage: [

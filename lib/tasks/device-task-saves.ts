@@ -4,6 +4,7 @@ import {
   addCommentOnDevice,
   deleteCommentOnDevice,
   editCommentOnDevice,
+  snoozeTaskOnDevice,
   createTaskOnDevice,
   deleteTaskOnDevice,
   moveTaskOnDevice,
@@ -114,6 +115,28 @@ export function deviceTaskSaves(): DeviceTaskSaves | null {
     },
     editComment: (id, body) => editCommentOnDevice(db, id, body),
     deleteComment: (id) => deleteCommentOnDevice(db, id),
+  };
+}
+
+/**
+ * "לטיפול בהמשך" from anywhere (the board's card, the task itself, the
+ * dashboard): the person's snooze of a task until a time, or the task back
+ * now (until null) — on the device copy when there is one (the lists drawn
+ * from it update by themselves), else the route.
+ */
+export async function saveTaskSnooze(
+  taskId: string,
+  until: string | null,
+  offlineLabel: string
+): Promise<OfflineFetchResult & { onDevice: boolean }> {
+  const ready = readyDeviceSaves();
+  if (ready) {
+    await snoozeTaskOnDevice(ready.db, { taskId, userId: ready.viewerId, until });
+    return { queued: false, ok: true, data: null, onDevice: true };
+  }
+  return {
+    ...(await offlineFetch("/api/tasks/snooze", { task_id: taskId, until }, offlineLabel, { idempotent: true })),
+    onDevice: false,
   };
 }
 

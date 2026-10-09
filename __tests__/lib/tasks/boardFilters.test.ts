@@ -36,6 +36,7 @@ function task(overrides: Partial<TaskBoardItem>): TaskBoardItem {
     is_overdue: false,
     is_private: false,
     sort_order: null,
+    snoozed_until: null,
     ...overrides,
   };
 }

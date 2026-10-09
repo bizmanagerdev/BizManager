@@ -1,6 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { snoozedTasks } from "@/lib/tasks/snooze";
 import { getEntityAuditTrail, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import { translateToArabic } from "@/lib/i18n/translateToHebrew";
 import { runAfterResponse } from "@/lib/after-response";
@@ -140,9 +141,18 @@ export async function POST(req: Request) {
     const owner = str(task as Row, "private_owner_id");
     const viewerIsCreator = Boolean(owner) && owner === profile.id;
 
-    const history = await historyPromise;
+    const [history, snoozed] = await Promise.all([historyPromise, snoozedTasks(supabase, profile.id)]);
 
-    return NextResponse.json({ task, members, comments, reminders, history, viewer_is_creator: viewerIsCreator });
+    return NextResponse.json({
+      task,
+      members,
+      comments,
+      reminders,
+      history,
+      viewer_is_creator: viewerIsCreator,
+      // When it comes back, if the viewer snoozed it ("לטיפול בהמשך").
+      snoozed_until: snoozed.get(id) ?? null,
+    });
   } catch (err: unknown) {
     const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
