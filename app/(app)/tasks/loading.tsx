@@ -9,7 +9,7 @@ export default function TasksLoading() {
       {/* The board's search / filter row: its strip held open on a phone, so
           the board arriving doesn't push everything down. */}
       <PageHeaderToolbarSpace />
-      <div className="space-y-4" data-route-loading="true">
+      <div data-route-loading="true">
         <TasksBoardSkeleton />
       </div>
     </AppShell>
