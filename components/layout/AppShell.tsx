@@ -19,6 +19,7 @@ import NotificationsRealtime from "@/components/notifications/NotificationsRealt
 import FontScaleSync from "@/components/layout/FontScaleSync";
 import FocusHighlighter from "@/components/layout/FocusHighlighter";
 import LayoutShiftReport from "@/components/layout/LayoutShiftReport";
+import StickyHeaderHeight, { STICKY_HEADER_ID } from "@/components/layout/StickyHeaderHeight";
 import type { SidebarNavItem } from "@/components/layout/nav-items";
 import { useNavItems } from "@/components/layout/nav-items";
 import { DEFAULT_SECTION_ACCESS, type SectionAccess } from "@/lib/auth/sections";
@@ -158,7 +159,10 @@ export default function AppShell({
                 when empty, 1-2 lines, or expanded) — wrapping it with the toolbar
                 slot in one sticky container means the toolbar doesn't need to
                 separately track AlertBar's height. */}
-            <div className="sticky top-[60px] z-20 flex flex-col">
+            {/* Its live height is published as --page-sticky-h, for what sticks
+                under it (StickyHeaderHeight). */}
+            <div id={STICKY_HEADER_ID} className="sticky top-[60px] z-20 flex flex-col">
+              <StickyHeaderHeight />
               <AlertBar locale={viewerLocale === "ar" ? "ar" : "he"} remembered={rememberedAlertBars} />
               {/* Slot for a page's own search/filter row, on the SAME surface as the
                   bar above it — the bar is the page's colour now, so a dark strip
