@@ -177,14 +177,14 @@ describe("the dashboard's money cards from the device", () => {
     expect(payments.upcoming.map((i) => [i.id, i.date, i.amount])).toEqual([["recur_proj:tpl1:2026-10", "2026-10-12", 1200]]);
     expect(payments.today).toEqual([]);
 
-    // Collections: today's check from the project; the order's 600 six days
-    // late, and the project's 1,000 due today counts as due.
+    // Collections, by /collections' own rule: today's check from the project;
+    // the project's unpaid 3,000 (the 1,000 check due today and the 2,000
+    // nobody has registered) late since it started on the 1st; the order's
+    // overdue check not late at all — an open order never is.
     expect(collections.today.map((p) => [p.id, p.amount, p.customer_name])).toEqual([["pay5", 1000, 'חברת בע"מ']]);
-    expect(collections.late.map((d) => [d.customerName, d.amount, d.daysLate])).toEqual([
-      ["משה כהן", 600, 6],
-      ['חברת בע"מ', 1000, 0],
-    ]);
-    expect(collections.lateTotal).toBe(1600);
+    expect(collections.late.map((d) => [d.customerName, d.amount, d.daysLate])).toEqual([['חברת בע"מ', 3000, 6]]);
+    expect(collections.lateTotal).toBe(3000);
+    expect(collections.upcoming).toEqual([]);
 
     // The chart: October's money in and out per business domain, September's
     // as the ghost bars. The card sale (2nd) counts when the card company
@@ -211,5 +211,37 @@ describe("the dashboard's money cards from the device", () => {
     const local = createLocalSupabase(fakeReader(copy(), { failOn: "loans" }));
     await expect(computeLocalCard(local, "payments", viewer)).rejects.toThrow(/a read failed on the device — loans/);
     await expect(computeLocalCard(local, "domainChart", viewer)).rejects.toThrow(/a read failed on the device — loans/);
+  });
+});
+
+describe("the dashboard's collections card", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-07T09:00:00Z"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("holds the orders nobody has registered a payment for, as /collections does (it used to miss them)", async () => {
+    const local = createLocalSupabase(
+      fakeReader(
+        copy({
+          orders: [
+            // Delivered on the 1st, nothing paid or registered: late since.
+            { id: "o9", customer_id: "c1", order_date: "2026-10-01", status: "delivered", total_amount: "800", payment_status: "unpaid", created_at: "2026-10-01T08:00:00Z" },
+            // Delivered, to be paid at the end of next month: expected.
+            { id: "o10", customer_id: "c2", order_date: "2026-10-05", status: "delivered", total_amount: "500", payment_status: "unpaid", due_date: "2026-11-30", created_at: "2026-10-05T08:00:00Z" },
+            // Still open (a draft): not chased yet.
+            { id: "o11", customer_id: "c2", order_date: "2026-09-01", status: "draft", total_amount: "700", payment_status: "unpaid", created_at: "2026-09-01T08:00:00Z" },
+          ],
+          projects: [],
+          payments: [],
+        })
+      )
+    );
+    const card = await computeLocalCard(local, "collections", viewer);
+    expect(card.late.map((d) => [d.customerName, d.amount, d.daysLate, d.sources])).toEqual([["משה כהן", 800, 6, 1]]);
+    expect(card.upcoming.map((d) => [d.customerName, d.amount])).toEqual([['חברת בע"מ', 500]]);
   });
 });

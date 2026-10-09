@@ -1165,33 +1165,21 @@ export type CollectionsSummary = {
   upcomingTotal: number;
 };
 
-/** Whole days between two ISO dates, or 0 when either is missing/unparseable. */
-function daysBetween(fromIso: string | null, toIso: string): number {
-  if (!fromIso) return 0;
-  const from = Date.parse(fromIso);
-  const to = Date.parse(toIso);
-  if (!Number.isFinite(from) || !Number.isFinite(to)) return 0;
-  return Math.max(0, Math.round((to - from) / 86_400_000));
-}
-
 /**
- * The גבייה card's data, in ONE query.
+ * The גבייה card's data: the same debts as the /collections page, by the same
+ * rule (computeSourceCollection — late once the payment term's due date has
+ * passed, expected while it's still ahead), grouped by customer.
  *
- * Deliberately NOT getCollectionsData(): that walks every open receivable, pages
- * through the whole view and then resolves each source's payment term to an
- * effective due date — the right thing for the /collections worklist, far too
- * much for a card showing five rows. This reads only the sources that actually
- * have money late or dated, caps them, and groups by customer.
- *
- * The trade: days-late here comes from the view's `next_due_date` rather than
- * from the payment term, so a source whose term moved the date can read a few
- * days off. The card sorts by it and prints it as "45 יום"; the page is where
- * you go for the exact figure.
+ * It used to read only sources with a payment record already late or dated,
+ * so an order nobody had registered a payment against — most of them — never
+ * reached the card (2026-10-09: 2 of 51 open debts showed). What it still
+ * leaves to the page: what each debt is for, the payments to mark collected,
+ * the last contact, and loans and rent.
  */
 export async function getCollectionsSummary(
   supabase: SupabaseClient,
   todayIso?: string,
-  { limit = 200 }: { limit?: number } = {}
+  { limit = 500 }: { limit?: number } = {}
 ): Promise<CollectionsSummary> {
   const today = todayIso ?? israelDateKey();
   const empty: CollectionsSummary = {
@@ -1210,32 +1198,33 @@ export async function getCollectionsSummary(
     supabase
       .from("collections_view")
       .select(
-        "source_id,customer_id,customer_name,customer_phone,customer_whatsapp,overdue_amount,pending_amount,outstanding_amount,next_due_date"
+        "source_type,source_id,customer_id,customer_name,customer_phone,customer_whatsapp,reference_date,total_amount,collected_amount,overdue_amount,pending_amount,outstanding_amount,next_due_date"
       )
-      .or("overdue_amount.gt.0.009,pending_amount.gt.0.009")
+      .or("overdue_amount.gt.0.009,pending_amount.gt.0.009,outstanding_amount.gt.0.009")
       .order("overdue_amount", { ascending: false })
+      // A total order: the server and the phone keep the same rows at the cap.
+      .order("source_id", { ascending: true })
       .range(0, limit - 1),
   ]);
 
   if (sourcesResult.error) return { ...empty, today: dueToday, todayTotal: sum(dueToday) };
+  const rows = (sourcesResult.data ?? []) as Row[];
+  const isProject = (row: Row) => str(row, "source_type") === "project";
 
-  // Group by customer: one row per person to chase, not per invoice.
+  // Each debt's due date and term, as the page reads them.
+  const [orderDueById, projectDueById] = await Promise.all([
+    fetchOrderDueDates(supabase, rows.filter((row) => !isProject(row)).map((row) => str(row, "source_id") ?? "")),
+    fetchProjectDueDates(supabase, rows.filter(isProject).map((row) => str(row, "source_id") ?? "")),
+  ]);
+
+  // Group by customer: one row per person to chase, not per invoice. A debt
+  // can be partly late and partly expected; each part counts on its own side,
+  // as on the page.
   const lateBy = new Map<string, CollectionsDebtor>();
   const soonBy = new Map<string, CollectionsDebtor>();
-
-  for (const row of (sourcesResult.data ?? []) as Row[]) {
-    const overdue = toNum(row.overdue_amount);
-    const pending = toNum(row.pending_amount);
-    const customerId = str(row, "customer_id");
-    const key = customerId ?? str(row, "customer_name") ?? str(row, "source_id") ?? "";
-    if (!key) continue;
-
-    const into = overdue > 0.009 ? lateBy : pending > 0.009 ? soonBy : null;
-    if (!into) continue;
-
-    const existing = into.get(key);
-    const debtor: CollectionsDebtor = existing ?? {
-      customerId,
+  const add = (into: Map<string, CollectionsDebtor>, key: string, row: Row, amount: number, daysLate: number) => {
+    const debtor: CollectionsDebtor = into.get(key) ?? {
+      customerId: str(row, "customer_id"),
       customerName: str(row, "customer_name") ?? "לקוח",
       customerPhone: str(row, "customer_phone"),
       customerWhatsapp: str(row, "customer_whatsapp"),
@@ -1243,18 +1232,42 @@ export async function getCollectionsSummary(
       daysLate: 0,
       sources: 0,
     };
-    debtor.amount += overdue > 0.009 ? overdue : pending;
+    debtor.amount += amount;
     debtor.sources += 1;
-    if (overdue > 0.009) {
-      debtor.daysLate = Math.max(debtor.daysLate, daysBetween(str(row, "next_due_date"), today));
-    }
+    debtor.daysLate = Math.max(debtor.daysLate, daysLate);
     into.set(key, debtor);
+  };
+
+  for (const row of rows) {
+    const key = str(row, "customer_id") ?? str(row, "customer_name") ?? str(row, "source_id") ?? "";
+    if (!key) continue;
+    const sourceId = str(row, "source_id") ?? "";
+    const term = isProject(row) ? projectDueById.get(sourceId) : orderDueById.get(sourceId);
+    const sm = computeSourceCollection({
+      total: toNum(row.total_amount),
+      collected: toNum(row.collected_amount),
+      pending: toNum(row.pending_amount),
+      overdue: toNum(row.overdue_amount),
+      outstanding: toNum(row.outstanding_amount),
+      nextDueDate: str(row, "next_due_date"),
+      referenceDate: str(row, "reference_date"),
+      dueDate: term?.dueDate ?? null,
+      blockOverdue: !isProject(row) && isOpenOrderStatus(term?.status),
+      today,
+    });
+    if (sm.late > 0.009) add(lateBy, key, row, sm.late, sm.daysLate);
+    if (sm.expected > 0.009) add(soonBy, key, row, sm.expected, 0);
   }
 
   // Worst first on both sides: the oldest debt is the one that stops being
-  // collectable, and the nearest expected payment is the one to watch.
-  const late = [...lateBy.values()].sort((a, b) => b.daysLate - a.daysLate || b.amount - a.amount);
-  const upcoming = [...soonBy.values()].sort((a, b) => b.amount - a.amount);
+  // collectable, and the nearest expected payment is the one to watch. Ties
+  // by name, then key, so the server and the phone list them the same way.
+  // Plain code-point order: localeCompare follows the device's language.
+  const text = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  const byName = (a: CollectionsDebtor, b: CollectionsDebtor) =>
+    text(a.customerName, b.customerName) || text(a.customerId ?? "", b.customerId ?? "");
+  const late = [...lateBy.values()].sort((a, b) => b.daysLate - a.daysLate || b.amount - a.amount || byName(a, b));
+  const upcoming = [...soonBy.values()].sort((a, b) => b.amount - a.amount || byName(a, b));
 
   return {
     today: dueToday,
