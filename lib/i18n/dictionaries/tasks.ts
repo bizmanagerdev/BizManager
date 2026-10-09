@@ -180,7 +180,16 @@ export type TasksKey =
   | "noCommentsLabel"
   | "unknownUserWord"
   | "commentPlaceholder"
-  | "addCommentButton";
+  | "addCommentButton"
+  | "commentActionsLabel"
+  | "editCommentLabel"
+  | "deleteCommentLabel"
+  | "deleteCommentConfirmTitle"
+  | "deleteCommentConfirmDescription"
+  | "saveCommentButton"
+  | "commentEditedWord"
+  | "toastErrorEditComment"
+  | "toastErrorDeleteComment";
 
 export const tasksDict: Dictionary<TasksKey> = {
   he: {
@@ -362,6 +371,15 @@ export const tasksDict: Dictionary<TasksKey> = {
     unknownUserWord: "משתמש",
     commentPlaceholder: "כתבו תגובה...",
     addCommentButton: "הוספת תגובה",
+    commentActionsLabel: "פעולות לתגובה",
+    editCommentLabel: "עריכת תגובה",
+    deleteCommentLabel: "מחיקת תגובה",
+    deleteCommentConfirmTitle: "למחוק את התגובה?",
+    deleteCommentConfirmDescription: "התגובה תימחק מהמשימה לכל מי שרואה אותה.",
+    saveCommentButton: "שמירה",
+    commentEditedWord: "נערך",
+    toastErrorEditComment: "שגיאה בעריכת תגובה",
+    toastErrorDeleteComment: "שגיאה במחיקת תגובה",
     sectionHistory: "היסטוריה",
     createdAtLabel: "נוצר",
     updatedAtLabel: "עודכן",
@@ -544,6 +562,15 @@ export const tasksDict: Dictionary<TasksKey> = {
     unknownUserWord: "مستخدم",
     commentPlaceholder: "اكتب تعليقاً...",
     addCommentButton: "إضافة تعليق",
+    commentActionsLabel: "إجراءات التعليق",
+    editCommentLabel: "تعديل التعليق",
+    deleteCommentLabel: "حذف التعليق",
+    deleteCommentConfirmTitle: "حذف التعليق؟",
+    deleteCommentConfirmDescription: "سيُحذف التعليق من المهمة لكل من يراها.",
+    saveCommentButton: "حفظ",
+    commentEditedWord: "مُعدَّل",
+    toastErrorEditComment: "خطأ في تعديل التعليق",
+    toastErrorDeleteComment: "خطأ في حذف التعليق",
     sectionHistory: "السجل",
     createdAtLabel: "أُنشئ",
     updatedAtLabel: "آخر تحديث",

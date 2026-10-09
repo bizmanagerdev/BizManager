@@ -2,6 +2,8 @@ import { readyDeviceSaves } from "@/lib/powersync/store";
 import { offlineFetch, type OfflineFetchResult } from "@/lib/offline-queue";
 import {
   addCommentOnDevice,
+  deleteCommentOnDevice,
+  editCommentOnDevice,
   createTaskOnDevice,
   deleteTaskOnDevice,
   moveTaskOnDevice,
@@ -55,6 +57,8 @@ export type DeviceTaskSaves = {
   move: (id: string, status: string, sortOrder: number) => Promise<void>;
   remove: (id: string) => Promise<void>;
   addComment: (taskId: string, body: string) => Promise<{ id: string; author_id: string; body: string; created_at: string }>;
+  editComment: (id: string, body: string) => Promise<void>;
+  deleteComment: (id: string) => Promise<void>;
 };
 
 export function deviceTaskSaves(): DeviceTaskSaves | null {
@@ -108,6 +112,8 @@ export function deviceTaskSaves(): DeviceTaskSaves | null {
       await addCommentOnDevice(db, comment);
       return { id: comment.id, author_id: viewerId, body, created_at: new Date().toISOString() };
     },
+    editComment: (id, body) => editCommentOnDevice(db, id, body),
+    deleteComment: (id) => deleteCommentOnDevice(db, id),
   };
 }
 

@@ -157,6 +157,22 @@ export async function addCommentOnDevice(
   ]);
 }
 
+/** A comment's text changed (its author's, or office/admin's — the server's rule decides). */
+export async function editCommentOnDevice(db: Db, id: string, body: string): Promise<void> {
+  // body_he: the old Hebrew copy no longer says the same thing; the server
+  // makes a new one for an Arabic writer.
+  await db.execute("UPDATE task_comments SET body = ?, body_he = NULL, updated_at = ? WHERE id = ?", [
+    body,
+    new Date().toISOString(),
+    id,
+  ]);
+}
+
+/** A comment deleted. */
+export async function deleteCommentOnDevice(db: Db, id: string): Promise<void> {
+  await db.execute("DELETE FROM task_comments WHERE id = ?", [id]);
+}
+
 // ── Customers ────────────────────────────────────────────────────────────────
 // Created on the phone first (the + menu's customer form, the new-customer
 // form inside the project / order forms). The row is the one the server
@@ -469,6 +485,8 @@ export type DeviceSaveKind =
   | "task-create"
   | "task-update"
   | "task-comment"
+  | "task-comment-edit"
+  | "task-comment-delete"
   | "customer-create"
   | "project-create"
   | "project-update"
@@ -566,12 +584,19 @@ export async function requestForChange(
   const data = op.opData ?? {};
 
   if (op.table === "task_comments") {
-    if (kind !== "PUT") return null;
-    return {
-      kind: "task-comment",
-      url: "/api/tasks/add-comment",
-      body: { id: op.id, task_id: data.task_id, message: data.body },
-    };
+    if (kind === "PUT") {
+      return {
+        kind: "task-comment",
+        url: "/api/tasks/add-comment",
+        body: { id: op.id, task_id: data.task_id, message: data.body },
+      };
+    }
+    if (kind === "PATCH") {
+      // Only its text is changed on the phone (editCommentOnDevice).
+      if (typeof data.body !== "string") return null;
+      return { kind: "task-comment-edit", url: "/api/tasks/edit-comment", body: { id: op.id, message: data.body } };
+    }
+    return { kind: "task-comment-delete", url: "/api/tasks/delete-comment", body: { id: op.id } };
   }
   if (op.table === "customers") {
     // Only creating one is saved on the phone so far (edits still go to the server).

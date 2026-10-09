@@ -12,7 +12,7 @@ type Row = Record<string, unknown>;
 export type DeviceTaskCard = {
   task: Row;
   memberIds: string[];
-  comments: { id: string; author_id: string | null; author_name: string | null; body: string; body_he: string | null; created_at: string }[];
+  comments: { id: string; author_id: string | null; author_name: string | null; body: string; body_he: string | null; created_at: string; updated_at: string | null }[];
   reminders: {
     id: string;
     remind_at: string;
@@ -81,6 +81,7 @@ export async function readTaskCardFromDevice(
       body: str(r, "body") ?? "",
       body_he: str(r, "body_he"),
       created_at: str(r, "created_at") ?? "",
+      updated_at: str(r, "updated_at"),
     })),
     reminders: ((remindersRes.data ?? []) as Row[]).map((r) => ({
       id: str(r, "id") ?? "",

@@ -38,7 +38,7 @@ import { buildColorIndexMap } from "@/components/dashboard/InitialsAvatar";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import { taskShowsFromDate } from "@/lib/tasks/visibility";
 import { fetchExistingTagIds } from "@/components/tags/TagPicker";
-import { readyLocalDatabase } from "@/lib/powersync/store";
+import { readyLocalDatabase, useLocalViewer } from "@/lib/powersync/store";
 import { readTaskCardFromDevice } from "@/lib/tasks/device-task-card";
 import { deviceTaskSaves } from "@/lib/tasks/device-task-saves";
 import {
@@ -295,6 +295,12 @@ export function TaskUpsertDialog(rawProps: Props) {
   const [legacyNotes, setLegacyNotes] = useState<LegacyNote[]>([]);
   const [newComment, setNewComment] = useState("");
   const [addingComment, setAddingComment] = useState(false);
+  const [commentToDelete, setCommentToDelete] = useState<CommentItem | null>(null);
+  // Who's looking, for which comments they may change — from the page when it
+  // says, else from the signed-in person the app shell keeps.
+  const localViewer = useLocalViewer();
+  const viewerId = props.currentUserId || localViewer?.id || "";
+  const viewerRoleNow = props.viewerRole ?? localViewer?.role ?? "";
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [createdAt, setCreatedAt] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
@@ -999,6 +1005,81 @@ export function TaskUpsertDialog(rawProps: Props) {
     const run = saveChainRef.current.then(saveChangesOnce);
     saveChainRef.current = run.catch(() => {});
     return run;
+  }
+
+  /** The table's own rule (task_comments_update / _delete): its author, or office/admin. */
+  function canChangeComment(comment: CommentItem) {
+    return (Boolean(viewerId) && comment.author_id === viewerId) || viewerRoleNow === "admin" || viewerRoleNow === "office";
+  }
+
+  async function editComment(comment: CommentItem, body: string): Promise<boolean> {
+    const edited: CommentItem = { ...comment, body, body_he: null, updated_at: new Date().toISOString() };
+    emitProgressActivityStart();
+    try {
+      // On the device copy when there is one: changed in the thread at once,
+      // and goes up on its own (lib/powersync/local-writes.ts).
+      const device = deviceTaskSaves();
+      if (device) {
+        await device.editComment(comment.id, body);
+        setComments((prev) => prev.map((c) => (c.id === comment.id ? edited : c)));
+        return true;
+      }
+      const result = await offlineFetch(
+        "/api/tasks/edit-comment",
+        { id: comment.id, message: body },
+        t(tasksDict, props.locale, "editCommentLabel"),
+        { idempotent: true }
+      );
+      if (!result.queued && !result.ok) {
+        toast.error(t(tasksDict, props.locale, "toastErrorEditComment"), { description: toHebrewError(result.error, "") });
+        return false;
+      }
+      const saved =
+        !result.queued && result.data && typeof result.data === "object" && "comment" in result.data
+          ? ((result.data as { comment?: Partial<CommentItem> | null }).comment ?? null)
+          : null;
+      setComments((prev) =>
+        prev.map((c) => (c.id === comment.id ? { ...edited, ...(saved ?? {}), author_name: c.author_name } : c))
+      );
+      return true;
+    } catch (error: unknown) {
+      toast.error(t(tasksDict, props.locale, "toastErrorEditComment"), { description: getErrorMessage(error) });
+      return false;
+    } finally {
+      emitProgressActivityEnd();
+    }
+  }
+
+  async function performDeleteComment() {
+    const target = commentToDelete;
+    if (!target) return;
+    setCommentToDelete(null);
+    const before = comments;
+    // Gone from the thread at once; back if the server refuses.
+    setComments((prev) => prev.filter((c) => c.id !== target.id));
+    emitProgressActivityStart();
+    try {
+      const device = deviceTaskSaves();
+      if (device) {
+        await device.deleteComment(target.id);
+        return;
+      }
+      const result = await offlineFetch(
+        "/api/tasks/delete-comment",
+        { id: target.id },
+        t(tasksDict, props.locale, "deleteCommentLabel"),
+        { idempotent: true }
+      );
+      if (!result.queued && !result.ok) {
+        setComments(before);
+        toast.error(t(tasksDict, props.locale, "toastErrorDeleteComment"), { description: toHebrewError(result.error, "") });
+      }
+    } catch (error: unknown) {
+      setComments(before);
+      toast.error(t(tasksDict, props.locale, "toastErrorDeleteComment"), { description: getErrorMessage(error) });
+    } finally {
+      emitProgressActivityEnd();
+    }
   }
 
   async function addComment() {
@@ -1855,6 +1936,9 @@ export function TaskUpsertDialog(rawProps: Props) {
                 setNewComment={setNewComment}
                 addingComment={addingComment}
                 onAddComment={() => void addComment()}
+                canChangeComment={canChangeComment}
+                onEditComment={editComment}
+                onDeleteComment={setCommentToDelete}
                 colorIndexById={colorIndexById}
                 chosenColorById={chosenColorById}
                 locale={props.locale}
@@ -1996,6 +2080,18 @@ export function TaskUpsertDialog(rawProps: Props) {
         setConfirmDeleteOpen(false);
         void deleteTask();
       }}
+    />
+
+    <ConfirmDialog
+      open={commentToDelete !== null}
+      onOpenChange={(open) => {
+        if (!open) setCommentToDelete(null);
+      }}
+      title={t(tasksDict, props.locale, "deleteCommentConfirmTitle")}
+      description={t(tasksDict, props.locale, "deleteCommentConfirmDescription")}
+      confirmLabel={t(commonDict, props.locale, "delete")}
+      destructive
+      onConfirm={() => void performDeleteComment()}
     />
 
     <ConfirmDialog

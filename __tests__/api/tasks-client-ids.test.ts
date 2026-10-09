@@ -19,6 +19,8 @@ vi.mock("@/lib/i18n/translateToHebrew", () => ({ translateToHebrew: vi.fn(async 
 
 import { POST as createTask } from "@/app/api/tasks/create/route";
 import { POST as addComment } from "@/app/api/tasks/add-comment/route";
+import { POST as editComment } from "@/app/api/tasks/edit-comment/route";
+import { POST as deleteComment } from "@/app/api/tasks/delete-comment/route";
 import { POST as updateReminder } from "@/app/api/tasks/reminders/update/route";
 
 type Resp = { data: unknown; error: unknown };
@@ -118,6 +120,41 @@ describe("POST /api/tasks/add-comment with the app's id", () => {
     expect((await res.json()).comment).toMatchObject({ id: ID, author_name: "אני" });
   });
 });
+
+describe("POST /api/tasks/edit-comment and delete-comment", () => {
+  it("changes only the text; someone else's comment (the table's rule hides it) is not found", async () => {
+    const ok = makeSupabase(() => ({ data: { id: ID, body: "בוצע, ונבדק" }, error: null }));
+    grant(ok.supabase);
+    expect((await post(editComment, { id: ID, message: "  בוצע, ונבדק " })).status).toBe(200);
+    expect(ok.calls.find((c) => c.method === "update")?.args[0]).toEqual({ body: "בוצע, ונבדק", body_he: null });
+
+    const refused = makeSupabase(() => ({ data: null, error: null }));
+    grant(refused.supabase);
+    expect((await post(editComment, { id: ID, message: "x" })).status).toBe(404);
+    expect((await post(editComment, { id: ID, message: "   " })).status).toBe(400);
+  });
+
+  it("deletes; already gone is done; one this person may see but not delete is refused", async () => {
+    const gone = makeSupabase((_t, mine) => (mine.some((c) => c.method === "delete") ? { data: [{ id: ID }], error: null } : { data: null, error: null }));
+    grant(gone.supabase);
+    expect((await post(deleteComment, { id: ID })).status).toBe(200);
+
+    const repeat = makeSupabase(() => ({ data: mineIsEmpty(), error: null }));
+    grant(repeat.supabase);
+    expect((await post(deleteComment, { id: ID })).status).toBe(200);
+
+    const notTheirs = makeSupabase((_t, mine) =>
+      mine.some((c) => c.method === "delete") ? { data: [], error: null } : { data: { id: ID }, error: null }
+    );
+    grant(notTheirs.supabase);
+    expect((await post(deleteComment, { id: ID })).status).toBe(403);
+  });
+});
+
+/** Nothing matched: the delete's empty list, the look-up's null. */
+function mineIsEmpty() {
+  return null;
+}
 
 describe("POST /api/tasks/reminders/update", () => {
   it("a note emptied in the form (sent as null) is cleared", async () => {

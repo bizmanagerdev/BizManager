@@ -124,6 +124,7 @@ export async function POST(req: Request) {
       body: str(r, "body") ?? "",
       body_he: str(r, "body_he"),
       created_at: str(r, "created_at") ?? "",
+      updated_at: str(r, "updated_at"),
     }));
     const reminders = reminderRows.map((r) => ({
       id: str(r, "id") ?? "",

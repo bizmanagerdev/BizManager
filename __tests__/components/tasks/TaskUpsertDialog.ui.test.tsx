@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   TaskCommentsPanel,
   TaskDatesSection,
@@ -13,6 +13,40 @@ import {
   type CommentItem,
   type HistoryItem,
 } from "@/components/tasks/TaskUpsertDialog.ui";
+
+// The comment's ⋮ menu as a plain stand-in: an open Radix menu stalls jsdom's
+// timers for half a minute (fine in a browser), and these tests are about what
+// the comment does, not the menu.
+vi.mock("@/components/ui/dropdown-menu", async () => {
+  const React = await import("react");
+  type Children = { children?: React.ReactNode };
+  const Menu = React.createContext<{ open: boolean; setOpen: (open: boolean) => void }>({ open: false, setOpen: () => {} });
+  return {
+    DropdownMenu: ({ children }: Children) => {
+      const [open, setOpen] = React.useState(false);
+      return <Menu.Provider value={{ open, setOpen }}>{children}</Menu.Provider>;
+    },
+    DropdownMenuTrigger: ({ children }: Children) => {
+      const { open, setOpen } = React.useContext(Menu);
+      return React.cloneElement(children as React.ReactElement<{ onClick?: () => void }>, { onClick: () => setOpen(!open) });
+    },
+    DropdownMenuContent: ({ children }: Children) => (React.useContext(Menu).open ? <div role="menu">{children}</div> : null),
+    DropdownMenuItem: ({ children, onClick }: Children & { onClick?: () => void }) => {
+      const { setOpen } = React.useContext(Menu);
+      return (
+        <div
+          role="menuitem"
+          onClick={() => {
+            onClick?.();
+            setOpen(false);
+          }}
+        >
+          {children}
+        </div>
+      );
+    },
+  };
+});
 
 // Scoped to the sections that are self-contained (no next/navigation, no
 // Radix Popper, no ProjectPicker/TagPicker/DomainSelect/SearchableSelect
@@ -167,6 +201,9 @@ describe("TaskCommentsPanel", () => {
     setNewComment: vi.fn(),
     addingComment: false,
     onAddComment: vi.fn(),
+    canChangeComment: () => false,
+    onEditComment: vi.fn(async () => true),
+    onDeleteComment: vi.fn(),
     colorIndexById: new Map<string, number>(),
     chosenColorById: new Map<string, string>(),
     locale: "he" as const,
@@ -196,6 +233,62 @@ describe("TaskCommentsPanel", () => {
   it("disables the add-comment button until there's real text", () => {
     render(<TaskCommentsPanel {...baseProps} comments={[]} />);
     expect(screen.getByRole("button", { name: "הוספת תגובה" })).toBeDisabled();
+  });
+
+  const mine: CommentItem = { id: "c1", author_id: "me", author_name: "אני", body: "שלי", created_at: "2026-10-09T08:00:00Z" };
+  const theirs: CommentItem = { id: "c2", author_id: "other", author_name: "אחר", body: "שלו", created_at: "2026-10-09T08:05:00Z" };
+
+  /** The comment's ⋮ menu, opened. */
+  function openMenu(index = 0) {
+    fireEvent.click(screen.getAllByRole("button", { name: "פעולות לתגובה" })[index]);
+  }
+
+  it("offers edit and delete, behind the corner menu, only on the comments this person may change", () => {
+    render(
+      <TaskCommentsPanel {...baseProps} comments={[mine, theirs]} canChangeComment={(c) => c.author_id === "me"} />
+    );
+    expect(screen.getAllByRole("button", { name: "פעולות לתגובה" })).toHaveLength(1);
+    expect(screen.queryByRole("menuitem", { name: "עריכת תגובה" })).not.toBeInTheDocument();
+    openMenu();
+    expect(screen.getByRole("menuitem", { name: "עריכת תגובה" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "מחיקת תגובה" })).toBeInTheDocument();
+  });
+
+  it("edits a comment in place and closes the box once it's saved", async () => {
+    const onEditComment = vi.fn(async () => true);
+    render(<TaskCommentsPanel {...baseProps} comments={[mine]} canChangeComment={() => true} onEditComment={onEditComment} />);
+    openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "עריכת תגובה" }));
+    fireEvent.change(screen.getByDisplayValue("שלי"), { target: { value: "  שלי, מתוקן  " } });
+    fireEvent.click(screen.getByRole("button", { name: "שמירה" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "שמירה" })).not.toBeInTheDocument());
+    expect(onEditComment).toHaveBeenCalledWith(mine, "שלי, מתוקן");
+  });
+
+  it("keeps the box open when the edit wasn't saved", async () => {
+    const onEditComment = vi.fn(async () => false);
+    render(<TaskCommentsPanel {...baseProps} comments={[mine]} canChangeComment={() => true} onEditComment={onEditComment} />);
+    openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "עריכת תגובה" }));
+    fireEvent.change(screen.getByDisplayValue("שלי"), { target: { value: "חדש" } });
+    fireEvent.click(screen.getByRole("button", { name: "שמירה" }));
+    await waitFor(() => expect(onEditComment).toHaveBeenCalled());
+    expect(screen.getByDisplayValue("חדש")).toBeInTheDocument();
+  });
+
+  it("hands the comment to delete to the dialog's confirm", () => {
+    const onDeleteComment = vi.fn();
+    render(<TaskCommentsPanel {...baseProps} comments={[mine]} canChangeComment={() => true} onDeleteComment={onDeleteComment} />);
+    openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "מחיקת תגובה" }));
+    expect(onDeleteComment).toHaveBeenCalledWith(mine);
+  });
+
+  it("marks a comment changed after it was written, not one just written", () => {
+    const edited: CommentItem = { ...theirs, updated_at: "2026-10-09 09:00:00+00" };
+    const fresh: CommentItem = { ...mine, updated_at: "2026-10-09T08:00:00.5Z" };
+    render(<TaskCommentsPanel {...baseProps} comments={[fresh, edited]} />);
+    expect(screen.getAllByText(/נערך/)).toHaveLength(1);
   });
 });
 

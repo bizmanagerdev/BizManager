@@ -15,7 +15,11 @@ const device = vi.hoisted(() => ({
   /** Where saves go: the device copy (a fake database recording its writes), or null — the server. */
   saves: null as null | { db: { execute: ReturnType<typeof vi.fn>; getOptional: ReturnType<typeof vi.fn> }; viewerId: string },
 }));
-vi.mock("@/lib/powersync/store", () => ({ readyLocalDatabase: () => device.db, readyDeviceSaves: () => device.saves }));
+vi.mock("@/lib/powersync/store", () => ({
+  readyLocalDatabase: () => device.db,
+  readyDeviceSaves: () => device.saves,
+  useLocalViewer: () => null,
+}));
 
 const card = vi.hoisted(() => ({
   task: {

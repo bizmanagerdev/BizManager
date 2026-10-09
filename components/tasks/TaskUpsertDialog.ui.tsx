@@ -2,11 +2,13 @@
 
 // Presentational section components for TaskUpsertDialog. These hold no business
 // logic and no data fetching — they render props and call back. The dialog owns
-// all state; this file just shrinks its render. (Logic lives in
+// all state (but a comment's open edit box); this file just shrinks its render. (Logic lives in
 // TaskUpsertDialog.helpers.ts; the orchestrator is TaskUpsertDialog.tsx.)
 
+import { useState } from "react";
 import Image from "next/image";
-import { AddIcon, AttachIcon, CheckIcon, ClockIcon, CloseIcon, LocationIcon, NotificationIcon } from "@/components/ui/icons";
+import { AddIcon, AttachIcon, CheckIcon, ClockIcon, CloseIcon, DeleteIcon, EditIcon, LocationIcon, MoreIcon, NotificationIcon } from "@/components/ui/icons";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
@@ -54,7 +56,26 @@ export type CommentItem = {
   /** Hebrew translation, auto-filled when authored by a locale=ar worker. */
   body_he?: string | null;
   created_at: string;
+  /** Set by the database on every edit (as on insert, where it equals created_at). */
+  updated_at?: string | null;
 };
+
+/** A stored timestamp as ms — the server's ISO text, or Postgres's own ("2026-10-09 09:00:00+00"). */
+function timeOf(value: string | null | undefined): number {
+  if (!value) return Number.NaN;
+  const iso = value
+    .trim()
+    .replace(" ", "T")
+    .replace(/([+-]\d{2})$/, "$1:00")
+    .replace(/([+-]\d{2})(\d{2})$/, "$1:$2");
+  return Date.parse(iso);
+}
+
+/** Changed after it was written — a minute's grace for the insert's own stamp. */
+function wasEdited(comment: CommentItem): boolean {
+  const gap = timeOf(comment.updated_at) - timeOf(comment.created_at);
+  return Number.isFinite(gap) && gap > 60_000;
+}
 export type ReminderItem = {
   id: string;
   remind_at: string;
@@ -792,6 +813,9 @@ export function TaskCommentsPanel({
   setNewComment,
   addingComment,
   onAddComment,
+  canChangeComment,
+  onEditComment,
+  onDeleteComment,
   colorIndexById,
   chosenColorById,
   locale,
@@ -802,10 +826,35 @@ export function TaskCommentsPanel({
   setNewComment: (value: string) => void;
   addingComment: boolean;
   onAddComment: () => void;
+  /** Its author's, or anyone's for office/admin — the table's own rule. */
+  canChangeComment: (comment: CommentItem) => boolean;
+  /** Saves the new text; false when it wasn't saved (the edit stays open). */
+  onEditComment: (comment: CommentItem, body: string) => Promise<boolean>;
+  /** Asks first (the dialog's confirm), then deletes. */
+  onDeleteComment: (comment: CommentItem) => void;
   colorIndexById: Map<string, number>;
   chosenColorById: Map<string, string>;
   locale: Locale;
 }) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  async function saveEdit(comment: CommentItem) {
+    const body = editDraft.trim();
+    if (!body || savingEdit) return;
+    if (body === comment.body) {
+      setEditingId(null);
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      if (await onEditComment(comment, body)) setEditingId(null);
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
   return (
       <section className="space-y-2">
         {comments.length === 0 && legacyNotes.length === 0 ? (
@@ -828,15 +877,99 @@ export function TaskCommentsPanel({
               <div key={comment.id} className="flex gap-2">
                 <InitialsAvatar name={comment.author_name} color={comment.author_id ? chosenColorById.get(comment.author_id) : undefined} colorKey={comment.author_id} colorIndex={comment.author_id ? colorIndexById.get(comment.author_id) : undefined} size="sm" />
                 <div className="min-w-0 flex-1 rounded-md border bg-muted/20 px-3 py-2">
-                  <div className="flex flex-wrap items-baseline gap-x-2">
-                    <span className="text-sm font-medium">{comment.author_name ?? t(tasksDict, locale, "unknownUserWord")}</span>
-                    <span className="text-[11px] text-muted-foreground">
-                      {formatShortDateTime(comment.created_at)}
-                    </span>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                      <span className="text-sm font-medium">{comment.author_name ?? t(tasksDict, locale, "unknownUserWord")}</span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {formatShortDateTime(comment.created_at)}
+                        {wasEdited(comment) ? ` · ${t(tasksDict, locale, "commentEditedWord")}` : ""}
+                      </span>
+                    </div>
+                    {/* Edit / delete behind the corner's ⋮ (owner, 2026-10-09: not
+                        straight on the comment). It stays while the comment is
+                        being edited: a menu whose button is gone mid-close
+                        leaves Radix's page lock behind. */}
+                    {canChangeComment(comment) ? (
+                      <DropdownMenu modal={false}>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="-me-2 -mt-1 h-7 w-7 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+                            aria-label={t(tasksDict, locale, "commentActionsLabel")}
+                            title={t(tasksDict, locale, "commentActionsLabel")}
+                          >
+                            <MoreIcon className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="end"
+                          className="w-36"
+                          // Picking "edit": the cursor stays in the edit box
+                          // rather than going back to the ⋮.
+                          onCloseAutoFocus={(event) => {
+                            if (editingId !== comment.id) return;
+                            event.preventDefault();
+                            document.getElementById(`comment-edit-${comment.id}`)?.focus();
+                          }}
+                        >
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setEditingId(comment.id);
+                              setEditDraft(comment.body);
+                            }}
+                          >
+                            <EditIcon className="me-2 h-4 w-4" />
+                            {t(tasksDict, locale, "editCommentLabel")}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => onDeleteComment(comment)}
+                            className="text-destructive focus:text-destructive"
+                          >
+                            <DeleteIcon className="me-2 h-4 w-4" />
+                            {t(tasksDict, locale, "deleteCommentLabel")}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : null}
                   </div>
-                  <div className="mt-0.5 whitespace-pre-wrap text-sm">
-                    {preferHe(comment.body, comment.body_he, locale)}
-                  </div>
+                  {editingId === comment.id ? (
+                    <div className="mt-2 space-y-2">
+                      <div className="relative">
+                        <Textarea
+                          id={`comment-edit-${comment.id}`}
+                          value={editDraft}
+                          onChange={(e) => setEditDraft(e.target.value)}
+                          className="min-h-16 pe-11"
+                          disabled={savingEdit}
+                          autoFocus
+                        />
+                        <DictateButton
+                          onTranscript={(text) => setEditDraft((prev) => appendDictatedText(prev, text))}
+                          disabled={savingEdit}
+                          className="absolute bottom-1 end-1 h-8 w-8"
+                        />
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <Button type="button" size="sm" variant="secondary" disabled={savingEdit} onClick={() => setEditingId(null)}>
+                          {t(tasksDict, locale, "cancelEditLabel")}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={savingEdit || !editDraft.trim()}
+                          onClick={() => void saveEdit(comment)}
+                        >
+                          {savingEdit ? t(tasksDict, locale, "savingEllipsis") : t(tasksDict, locale, "saveCommentButton")}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-0.5 whitespace-pre-wrap text-sm">
+                      {preferHe(comment.body, comment.body_he, locale)}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

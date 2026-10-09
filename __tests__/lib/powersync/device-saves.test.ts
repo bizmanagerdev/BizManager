@@ -130,6 +130,18 @@ describe("device saves", () => {
     ).toEqual({ kind: "task-comment", url: "/api/tasks/add-comment", body: { id: "c-1", task_id: "t1", message: "בוצע" } });
   });
 
+  it("a comment edited or deleted on the phone goes up to its own route", async () => {
+    expect(
+      await requestForChange(
+        { table: "task_comments", op: "PATCH", id: "c-1", opData: { body: "בוצע, ונבדק", body_he: null, updated_at: "x" } } as never,
+        async () => null
+      )
+    ).toEqual({ kind: "task-comment-edit", url: "/api/tasks/edit-comment", body: { id: "c-1", message: "בוצע, ונבדק" } });
+    expect(
+      await requestForChange({ table: "task_comments", op: "DELETE", id: "c-1", opData: undefined } as never, async () => null)
+    ).toEqual({ kind: "task-comment-delete", url: "/api/tasks/delete-comment", body: { id: "c-1" } });
+  });
+
   it("each change carries its own Idempotency-Key — the same one when it's sent again", async () => {
     fetchMock.mockResolvedValueOnce(new Response("{}", { status: 503 })).mockResolvedValueOnce(new Response("{}", { status: 200 }));
     const connector = new BizConnector();

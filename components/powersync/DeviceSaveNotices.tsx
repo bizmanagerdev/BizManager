@@ -55,6 +55,8 @@ export default function DeviceSaveNotices({ locale }: { locale: Locale }) {
       "task-create": t(tasksDict, locale, "toastErrorCreateTask"),
       "task-update": t(tasksDict, locale, "toastErrorUpdateTask"),
       "task-comment": t(tasksDict, locale, "toastErrorAddComment"),
+      "task-comment-edit": t(tasksDict, locale, "toastErrorEditComment"),
+      "task-comment-delete": t(tasksDict, locale, "toastErrorDeleteComment"),
       "customer-create": "הלקוח לא נשמר",
       "project-create": "הפרויקט לא נשמר",
       "project-update": "השינויים בפרויקט לא נשמרו",

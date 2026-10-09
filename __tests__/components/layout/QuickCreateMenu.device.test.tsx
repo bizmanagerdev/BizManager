@@ -19,6 +19,7 @@ const device = vi.hoisted(() => ({ db: { name: "device" } as unknown }));
 vi.mock("@/lib/powersync/store", () => ({
   readyLocalDatabase: () => device.db,
   whenLocalDatabaseReady: async () => device.db,
+  useLocalViewer: () => null,
 }));
 vi.mock("@/lib/powersync/local-supabase", () => ({ createLocalSupabase: (db: unknown) => ({ local: db }) }));
 const loader = vi.hoisted(() => ({ fn: vi.fn() }));
