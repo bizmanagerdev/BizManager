@@ -4,7 +4,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState, useTransition } from "react";
-import { CashIcon, CheckIcon, ChevronDownIcon, LocationIcon, PhoneIcon, WarehouseIcon, WazeIcon } from "@/components/ui/icons";
+import { CashIcon, CheckIcon, ChevronDownIcon, CommentIcon, LocationIcon, PhoneIcon, WarehouseIcon, WazeIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
 import PickingListDialog from "@/app/(app)/sales/PickingListDialog";
@@ -27,6 +27,7 @@ import {
   PREPAYMENT_ROW_CLASSES,
 } from "@/lib/orders/prepayment";
 import { combinedCustomerName, type DeliveryItem, type DeliveryOrderItem } from "@/app/(app)/sales/loadDeliveries";
+import { parseOrderComments } from "@/lib/orders/comments";
 import { pinFrom, wazeLinkForPin, type DeliveryPin } from "@/lib/delivery-location";
 import { dueUrgencyChipClass, formatShortDate, getDueUrgency } from "@/lib/date";
 import { DeliveryLocationDialog } from "@/components/orders/DeliveryLocationDialog";
@@ -157,6 +158,33 @@ function RequestedDeliveryDateBadge({ date }: { date: string | null }) {
     >
       תאריך למשלוח: {formatShortDate(date)}
     </span>
+  );
+}
+
+/**
+ * The order's comments (its notes log, lib/orders/comments.ts) — what the
+ * driver must know at the door ("call before", "leave at the side gate").
+ * Each one with who wrote it and when, oldest first, as on the order's page.
+ */
+function DeliveryComments({ notes, className = "" }: { notes: string | null; className?: string }) {
+  const comments = parseOrderComments(notes);
+  if (comments.length === 0) return null;
+  return (
+    <ul className={`space-y-1.5 ${className}`}>
+      {comments.map((comment, index) => (
+        <li key={index} className="flex items-start gap-1.5 text-sm">
+          <CommentIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <div className="min-w-0">
+            <p className="whitespace-pre-wrap break-words">{comment.body}</p>
+            {comment.author_name || comment.created_at ? (
+              <p className="text-[11px] text-muted-foreground">
+                {[comment.author_name, comment.created_at].filter(Boolean).join(" · ")}
+              </p>
+            ) : null}
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -497,6 +525,7 @@ export default function SalesDeliveriesQueue({
                                     );
                                   })()}
                                 </div>
+                                <DeliveryComments notes={delivery.notes} className="mt-2" />
                               </td>
                               <td className="px-4 py-3">
                                 <div className="space-y-1">
@@ -711,7 +740,6 @@ export default function SalesDeliveriesQueue({
                                       <div
                                         key={delivery.id}
                                         data-focus-id={delivery.id}
-                                        title={delivery.notes ?? undefined}
                                         {...(canOpenOrder ? rowNavigateProps(router, `/sales/orders/${delivery.id}`) : {})}
                                         className={`relative border-t border-border/60 ${canOpenOrder ? "cursor-pointer" : ""} ${
                                           unpaidPrepayment ? PREPAYMENT_ROW_CLASSES : ""
@@ -809,6 +837,10 @@ export default function SalesDeliveriesQueue({
                                           </div>
                                           );
                                         })()}
+
+                                        {/* The order's comments, under what's on the load
+                                            (nothing at all when it has none). */}
+                                        <DeliveryComments notes={delivery.notes} className="p-3" />
 
                                         {/* The delivery itself is the primary act — the whole
                                             block is now a tap target to the order, so this row
