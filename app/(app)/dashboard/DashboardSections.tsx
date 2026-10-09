@@ -430,7 +430,9 @@ async function DashboardServerCheck({
   return (
     <>
       <DashboardLocalShadow
-        checkMoneyViews
+        // The whole project-money views: staff only — a worker's copy holds no
+        // expenses or pay, so for a worker it could only ever "differ".
+        checkMoneyViews={role === "admin" || role === "office"}
         doneCookie={doneCookie}
         snapshot={{
           ...base,

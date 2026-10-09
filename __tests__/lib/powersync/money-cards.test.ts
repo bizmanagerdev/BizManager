@@ -166,12 +166,12 @@ describe("the dashboard's money cards from the device", () => {
       computeLocalCard(local, "domainChart", viewer),
     ]);
 
-    // Payments: the rent unpaid since the 3rd and last month's electricity are
-    // late; this month's electricity (the 12th) is expected — its heads-up, 5
-    // work-days before, opened on the 5th.
+    // Payments: last month's electricity and the rent unpaid since the 3rd are
+    // late (oldest first); this month's electricity (the 12th) is expected —
+    // its heads-up, 5 work-days before, opened on the 5th.
     expect(payments.late.map((i) => [i.id, i.date, i.amount])).toEqual([
-      ["expense:e-late", "2026-10-03", 2500],
       ["recur_proj:tpl1:2026-09", "2026-09-12", 1200],
+      ["expense:e-late", "2026-10-03", 2500],
     ]);
     expect(payments.lateTotal).toBe(3700);
     expect(payments.upcoming.map((i) => [i.id, i.date, i.amount])).toEqual([["recur_proj:tpl1:2026-10", "2026-10-12", 1200]]);

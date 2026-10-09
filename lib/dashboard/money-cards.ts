@@ -105,11 +105,17 @@ export function buildPaymentsSummary(
 
   const paymentsTodayIso = calendar?.todayIso ?? todayIso;
   const paymentsHorizonIso = addDaysIso(paymentsTodayIso, PAYMENTS_HORIZON_DAYS);
+  // Every list in one fixed order — by date, then by id (unique) — so two
+  // items on the same day always come out the same way round, whatever order
+  // they were read in (the server and the phone read in different orders; the
+  // lists are capped, so an unfixed order could even show different rows).
+  const byDate = (a: { date: string; id: string }, b: { date: string; id: string }) =>
+    a.date.localeCompare(b.date) || a.id.localeCompare(b.id);
   const unpaidPayments = (calendar?.items ?? []).filter((item) => item.stage !== "posted");
-  const latePayments = unpaidPayments.filter((item) => item.date < paymentsTodayIso && !item.autoPaid);
+  const latePayments = unpaidPayments.filter((item) => item.date < paymentsTodayIso && !item.autoPaid).sort(byDate);
   const todayPayments = unpaidPayments
     .filter((item) => item.date === paymentsTodayIso)
-    .sort((a, b) => b.amount - a.amount);
+    .sort((a, b) => b.amount - a.amount || a.id.localeCompare(b.id));
   // "צפוי" is NOT everything in the fortnight — it's everything whose OWN alert
   // has opened. Each recurring bill carries `reminder_work_days_before` ("remind
   // me N work-days before"), the same setting the reminder rule fires on, so the
@@ -123,7 +129,7 @@ export function buildPaymentsSummary(
       const remindIso = isoDate(subtractWorkingDays(toDateOnly(item.date) ?? new Date(), lead ?? PAYMENTS_DEFAULT_LEAD_DAYS));
       return paymentsTodayIso >= remindIso;
     })
-    .sort((a, b) => a.date.localeCompare(b.date));
+    .sort(byDate);
   const sumAmounts = (items: { amount: number }[]) => items.reduce((sum, item) => sum + item.amount, 0);
   return {
     today: todayPayments,
