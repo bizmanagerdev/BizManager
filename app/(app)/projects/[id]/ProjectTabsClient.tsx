@@ -35,6 +35,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ClientOnly } from "@/components/ClientOnly";
+import { ProjectBodySkeleton } from "@/app/(app)/projects/[id]/ProjectPageSkeleton";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -1705,9 +1706,8 @@ export default function ProjectTabsClient({
   );
 
   return (
-    <ClientOnly
-      fallback={<div className="text-muted-foreground text-base">טוען…</div>}
-    >
+    // Until it's on the client: the page's own frame, not a "טוען…" line.
+    <ClientOnly fallback={<ProjectBodySkeleton />}>
       {/* Head row, like the order page's stat row: who the project is for, where
           its money stands, and what the job actually is. The third card only
           exists when there's a route / items / notes to show — without it the

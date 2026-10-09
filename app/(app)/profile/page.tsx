@@ -1,7 +1,6 @@
 import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
 import { Card, CardContent } from "@/components/ui/card";
-import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import {
   buildMonthlyHoursSummary,
@@ -27,12 +26,14 @@ import {
   PAYSLIP_ITEMS_TABLE,
   type PayslipItemRow,
 } from "@/lib/payroll-bonuses";
+import ProfileSkeleton from "./ProfileSkeleton";
 
 // ~1,600 lines (full profile/attendance/payroll-summary UI). Lazy-loaded so a
 // visitor doesn't download it before actually landing on this tab — same
-// pattern as SalaryCenterClient/FinancialPageClient/ProjectTabsClient.
+// pattern as SalaryCenterClient/FinancialPageClient/ProjectTabsClient. While its
+// code loads, the page's own shape — the same one loading.tsx shows.
 const ProfileClient = dynamic(() => import("@/app/(app)/profile/ProfileClient"), {
-  loading: () => <DetailPageSkeleton />,
+  loading: () => <ProfileSkeleton />,
 });
 
 type Row = Record<string, unknown>;

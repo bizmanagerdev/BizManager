@@ -2,16 +2,18 @@ import dynamic from "next/dynamic";
 import { notFound } from "next/navigation";
 import { BuildingIcon, TrendDownIcon, TrendUpIcon } from "@/components/ui/icons";
 import AppShell from "@/components/layout/AppShell";
-import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageStack } from "@/components/layout/page-layout";
 import { formatCurrency, type SalaryAgreementRow } from "@/lib/payroll";
 import { fetchProperty, fetchPropertyActivity, propertyDisplayName } from "@/lib/properties";
 import type { PropertyStaffUser } from "./PropertyDetailClient";
+import { PropertyDetailBodySkeleton } from "./PropertyPageSkeleton";
 
+// While its code loads: the loading screen's own body (the heading and the
+// figure cards above it are already the page's), so nothing swaps in between.
 const PropertyDetailClient = dynamic(() => import("./PropertyDetailClient"), {
-  loading: () => <DetailPageSkeleton />,
+  loading: () => <PropertyDetailBodySkeleton />,
 });
 
 export const revalidate = 30;

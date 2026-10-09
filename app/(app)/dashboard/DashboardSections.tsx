@@ -81,41 +81,62 @@ import { serverRenderedAt } from "@/lib/loaded-at";
 
 // ── Suspense fallbacks (kept close to the real layout so the swap is shift-free) ──
 
-export function PanelsFallback() {
-  // Roughly the shape of a typical board — tall narrow hero, a wider rest
-  // column beside it holding secondary over tertiary — so the swap to real
-  // data doesn't shift the page under the reader. Exact counts don't matter
-  // for a skeleton; the eye reads the shape.
+// The board a device that hasn't kept its own draws while loading: the usual
+// back-office board, in the registry's order, at USUAL_HELD_HEIGHTS.
+const USUAL_BOARD = ["todaySchedule", "todayAlerts", "myTasks", "payments", "collections", "deliveries", "attendanceQueue", "properties", "domainChart"];
+
+/**
+ * The board's placeholder (the page's loading screen and its Suspense
+ * fallback). `heldRaw`: the held-heights cookie (lib/ui/held-heights.ts) —
+ * this device's board as it last stood on its phone layout, its cards in the
+ * board's running order, each at its height.
+ */
+export function PanelsFallback({ heldRaw }: { heldRaw?: string }) {
+  // Below xl the board is one column of cards, each its own content's height
+  // (see board-flush in globals.css): so a box per card the board last had on
+  // this device, in its order, each as tall as that card stood — the board
+  // arrives into boxes already its shape (owner, 2026-10-09: six short boxes
+  // where a phone's board is ~11 cards of 180–388px). A device that has kept
+  // none: the usual board at its usual heights.
   //
-  // The xl: heights below are desktop-only and stay exactly as tuned — the
-  // board is viewport-locked there (DASHBOARD_BOARD_CLASS's xl:h-[calc(...)]),
-  // so every cell is stretched to fill its slot regardless of the skeleton's
-  // own height and this shape can't cause a shift. Below xl there is no such
-  // grid: DASHBOARD_BOARD_CLASS degrades to a plain flex-col stack and every
-  // card is its own natural content height (see board-flush in globals.css),
-  // so a skeleton that commits to h-56/h-40/h-32 here almost never matches the
-  // real card that replaces it — usually overshooting it, so the page visibly
-  // SHRINKS once data lands. The smaller bare heights below are a closer,
-  // still-generic guess at a phone card's real height, chosen so the more
-  // common miss is the page growing (adding content below the fold) rather
-  // than shrinking (content the reader was looking at jumping away).
+  // At xl the board is viewport-locked (DASHBOARD_BOARD_CLASS's
+  // xl:h-[calc(...)]) — every cell stretches to its slot whatever the
+  // placeholder's own height — so only the shape counts there: the hero
+  // column, the rest column with the secondary row over the tertiary one
+  // (tierCounts, as the board splits them).
+  const held = parseHeldHeights(heldRaw);
+  const kept = Object.keys(held);
+  const ids = kept.length > 0 ? kept : USUAL_BOARD;
+  const height = (id: string) => held[id] ?? USUAL_HELD_HEIGHTS[id];
+  const [hero, ...afterHero] = ids;
+  // The worker's clock sits under "היום", in the hero's column.
+  const shift = afterHero[0] === "workerShift" ? afterHero.shift() : undefined;
+  const { secondary, tertiary } = tierCounts(afterHero.length);
+  const box = (id: string, fill: boolean) => (
+    <div
+      key={id}
+      className={cn("min-w-0", fill ? CARD_FILL_CLASS : CARD_NATURAL_CLASS)}
+      style={{ "--held-h": `${height(id) ?? 64}px` } as CSSProperties}
+    >
+      <Skeleton className={cn("h-[var(--held-h)] w-full rounded-[1.125rem]", fill && "xl:h-full")} />
+    </div>
+  );
   return (
-    <div className={cn(DASHBOARD_BOARD_CLASS, BOARD_GRID_CLASS)}>
+    <div className={cn(DASHBOARD_BOARD_CLASS, secondary > 0 ? BOARD_GRID_CLASS : HERO_ONLY_CLASS)}>
       <div className={HERO_CELL_CLASS}>
-        <Skeleton className={cn("h-28 w-full rounded-[1.125rem] xl:h-56", CARD_FILL_CLASS)} />
+        {box(hero, true)}
+        {shift ? box(shift, false) : null}
       </div>
-      <div className={REST_COLUMN_BOTH_CLASS}>
-        <div className={SECONDARY_CELL_CLASS}>
-          {[0, 1].map((i) => (
-            <Skeleton key={i} className={cn("h-20 w-full rounded-[1.125rem] xl:h-40", CARD_FILL_CLASS)} />
-          ))}
+      {secondary > 0 ? (
+        <div className={tertiary > 0 ? REST_COLUMN_BOTH_CLASS : REST_COLUMN_SECONDARY_ONLY_CLASS}>
+          <div className={SECONDARY_CELL_CLASS}>{afterHero.slice(0, secondary).map((id) => box(id, true))}</div>
+          {tertiary > 0 ? (
+            <div className={TERTIARY_CELL_CLASS}>
+              {afterHero.slice(secondary, secondary + tertiary).map((id) => box(id, true))}
+            </div>
+          ) : null}
         </div>
-        <div className={TERTIARY_CELL_CLASS}>
-          {[0, 1, 2].map((i) => (
-            <Skeleton key={i} className={cn("h-16 w-full rounded-[1.125rem] xl:h-32", CARD_FILL_CLASS)} />
-          ))}
-        </div>
-      </div>
+      ) : null}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
+import OrderPageSkeleton from "@/app/(app)/sales/orders/[id]/OrderPageSkeleton";
 import { localDataPageOn } from "@/lib/powersync/config";
 import { useLocalDatabase, useLocalSyncStatus, useLocalViewer } from "@/lib/powersync/store";
 import LocalOrderPage from "@/app/(app)/sales/orders/[id]/LocalOrderPage";
@@ -11,7 +11,7 @@ import type { OrderPreview } from "@/app/(app)/sales/orders/[id]/orderPreview";
 // orders list the moment a row is tapped, and as the page's loading screen.
 // With a complete copy of the data on this device, the page itself, drawn from
 // it (LocalOrderPage); otherwise the order named from its list row
-// (OrderPagePreview), or grey blocks.
+// (OrderPagePreview), or the page's frame with blanks (OrderPageSkeleton).
 export default function OrderPageOpening({
   id,
   preview,
@@ -35,5 +35,5 @@ export default function OrderPageOpening({
       />
     );
   }
-  return preview ? <OrderPagePreview preview={preview} routeLoading={routeLoading} /> : <DetailPageSkeleton />;
+  return preview ? <OrderPagePreview preview={preview} routeLoading={routeLoading} /> : <OrderPageSkeleton routeLoading={routeLoading} />;
 }

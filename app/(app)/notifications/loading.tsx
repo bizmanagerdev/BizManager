@@ -1,29 +1,23 @@
 import AppShell from "@/components/layout/AppShell";
-import { Card } from "@/components/ui/card";
 import { PageStack } from "@/components/layout/page-layout";
-import { Skeleton } from "@/components/ui/skeleton";
+import { NotificationIcon } from "@/components/ui/icons";
+import NotificationsSkeleton from "./NotificationsSkeleton";
 
 // Streamed instantly while the notification history loads, so TTFB =
-// time-to-shell. Mirrors the header + notification list to keep the swap
-// shift-free.
+// time-to-shell. The page's own heading (its words are known) over the
+// history's shape (NotificationsSkeleton) to keep the swap shift-free.
 export default function NotificationsLoading() {
   return (
     <AppShell>
       <PageStack data-route-loading="true">
-        <div className="space-y-2">
-          <Skeleton className="h-7 w-40" />
-          <Skeleton className="h-4 w-64" />
+        <div>
+          <h1 className="flex items-center gap-2 text-2xl font-semibold">
+            <NotificationIcon className="h-6 w-6" />
+            התראות
+          </h1>
+          <p className="text-sm text-muted-foreground">כל ההתראות שקיבלת — נקראו ושלא נקראו.</p>
         </div>
-        <div className="space-y-3">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <Card key={i} className="p-4">
-              <div className="space-y-2">
-                <Skeleton className="h-4 w-48" />
-                <Skeleton className="h-3 w-32" />
-              </div>
-            </Card>
-          ))}
-        </div>
+        <NotificationsSkeleton />
       </PageStack>
     </AppShell>
   );

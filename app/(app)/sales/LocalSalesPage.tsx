@@ -3,7 +3,6 @@
 import { useCallback, useMemo, type ComponentProps, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
-import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { PageHeaderToolbarSpace } from "@/components/layout/PageHeaderToolbar";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { LocalListPagerProvider } from "@/components/powersync/LocalListPager";
@@ -22,11 +21,12 @@ import type { OrdersFilters, OrdersInvoiceFilter, OrdersPaymentFilter } from "./
 import type { ProductsFilters } from "./loadProducts";
 import SalesDeliveriesQueue from "./SalesDeliveriesQueue";
 import SalesHeader, { type SalesTab } from "./SalesHeader";
-import SalesSkeleton from "./SalesSkeleton";
+import SalesSkeleton, { SalesStripSkeleton, SalesTabSkeleton } from "./SalesSkeleton";
 
-const SalesInventoryClient = dynamic(() => import("./SalesInventoryClient"), { loading: () => <DetailPageSkeleton /> });
-const SalesOrdersClient = dynamic(() => import("./SalesOrdersClient"), { loading: () => <DetailPageSkeleton /> });
-const PriceListClient = dynamic(() => import("./PriceListClient"), { loading: () => <DetailPageSkeleton /> });
+// While a tab's code loads: that tab's own placeholder, under the tab bar.
+const SalesInventoryClient = dynamic(() => import("./SalesInventoryClient"), { loading: () => <SalesTabSkeleton tab="inventory" /> });
+const SalesOrdersClient = dynamic(() => import("./SalesOrdersClient"), { loading: () => <SalesTabSkeleton tab="orders" /> });
+const PriceListClient = dynamic(() => import("./PriceListClient"), { loading: () => <SalesTabSkeleton tab="price-list" /> });
 
 // The /sales page drawn from the on-device copy (LOCAL_DATA_PAGES.sales): the
 // tab counts and the open tab's list, worked out with the server's own
@@ -144,12 +144,21 @@ export default function LocalSalesPage({
   // same strip on each, so switching tabs never moves the tabs or the list
   // (owner, 2026-10-08) — held open from the first paint, before the tab arrives.
   const toolbarSpace = <PageHeaderToolbarSpace />;
+  // Not worked out yet: the tab bar (the real one once the counts are in) and
+  // the open tab's placeholder.
   if (!tabData || !counts)
     return (
       <>
-        {toolbarSpace}
-        {counts ? <LoadingTabTitle tab={activeTab} counts={counts.data.counts} regionFilter={regionFilter} /> : null}
-        <SalesSkeleton />
+        <SalesStripSkeleton tab={activeTab} />
+        {counts ? (
+          <>
+            <LoadingTabTitle tab={activeTab} counts={counts.data.counts} regionFilter={regionFilter} />
+            <SalesHeader activeTab={activeTab} counts={counts.data.counts} searchParams={tabsSearchParams} customerName={customerName} />
+            <SalesTabSkeleton tab={activeTab} />
+          </>
+        ) : (
+          <SalesSkeleton tab={activeTab} />
+        )}
       </>
     );
 

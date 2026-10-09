@@ -3,14 +3,15 @@
 import nextDynamic from "next/dynamic";
 import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
-import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { isOpenAIConfigured } from "@/lib/openai/config";
 import type { MerchantMemory } from "@/lib/financial/cardImport";
 import { propertyDisplayName } from "@/lib/properties";
+import ImportSkeleton from "./ImportSkeleton";
 
+// The same placeholder as loading.tsx while the client's code loads.
 const CardImportClient = nextDynamic(() => import("./CardImportClient"), {
-  loading: () => <DetailPageSkeleton />,
+  loading: () => <ImportSkeleton smartExtractEnabled={isOpenAIConfigured()} />,
 });
 
 export const dynamic = "force-dynamic";

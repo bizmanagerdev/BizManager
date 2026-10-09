@@ -3,15 +3,15 @@
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { HeaderActionsPlaceholder } from "@/components/layout/HeaderActionsMenu";
 import OrderPageHeading from "@/app/(app)/sales/orders/[id]/OrderPageHeading";
+import OrderPageSkeleton from "@/app/(app)/sales/orders/[id]/OrderPageSkeleton";
 import type { OrderPreview } from "@/app/(app)/sales/orders/[id]/orderPreview";
 
 // An order page before its data arrives: named like the page — "הזמנה" and
-// the customer in the phone's top bar, the same heading on desktop — over grey
-// blocks where the status, customer and payment cards and the items will be.
-// Laid out like the page (same stack, same gaps), so when the page lands the
-// heading doesn't move and the blocks fill in. Rendered over the list the
-// moment a row is tapped (RouteOpeningOverlay) and as the page's loading
-// screen (OrderPageLoading).
+// the customer in the phone's top bar, the same heading on desktop — over the
+// page's own frame with blanks where the figures will be (OrderPageSkeleton),
+// so when the page lands the heading doesn't move and the blanks fill in.
+// Rendered over the list the moment a row is tapped (RouteOpeningOverlay) and
+// as the page's loading screen (OrderPageLoading).
 
 // The page's ⋮ (OrderHeaderMenu), held in place until it arrives — one
 // element, so the bar's title isn't re-set on every render.
@@ -40,21 +40,16 @@ export default function OrderPagePreview({
   useSetPageTitle("הזמנה", preview.customerDisplayName, HEADER_MENU_PLACEHOLDER);
 
   return (
-    <div className="space-y-3" data-route-loading={routeLoading ? "true" : undefined} aria-busy="true">
-      <OrderPageHeading
-        customerId={preview.customerId}
-        customerName={preview.customerName}
-        customerDisplayName={preview.customerDisplayName}
-        actions={<ActionsSkeleton />}
-      />
-      <div className="space-y-3" aria-hidden>
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="h-48 animate-pulse rounded-xl border bg-muted/40" />
-          ))}
-        </div>
-        <div className="h-80 animate-pulse rounded-xl border bg-muted/40" />
-      </div>
-    </div>
+    <OrderPageSkeleton
+      routeLoading={routeLoading}
+      heading={
+        <OrderPageHeading
+          customerId={preview.customerId}
+          customerName={preview.customerName}
+          customerDisplayName={preview.customerDisplayName}
+          actions={<ActionsSkeleton />}
+        />
+      }
+    />
   );
 }

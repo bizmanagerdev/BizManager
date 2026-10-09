@@ -2,15 +2,16 @@ import dynamic from "next/dynamic";
 import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { Card, CardContent } from "@/components/ui/card";
-import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { requireProfile, type UserRole } from "@/lib/auth/requireProfile";
 import { loadPayrollPageData } from "@/lib/payroll-page-loader";
+import PayrollSkeleton from "./PayrollSkeleton";
 
 // This client component is ~5,600 lines (the whole salary/attendance engine).
 // Lazy-loaded so a visitor doesn't download it before actually opening the
-// page — same pattern already used for ProjectTabsClient.
+// page — same pattern already used for ProjectTabsClient. While its code loads,
+// the salary center's own shape — the same one loading.tsx shows.
 const SalaryCenterClient = dynamic(() => import("@/app/(app)/payroll/SalaryCenterClient"), {
-  loading: () => <DetailPageSkeleton />,
+  loading: () => <PayrollSkeleton />,
 });
 
 export default async function PayrollPage({

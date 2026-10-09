@@ -1,7 +1,6 @@
 import dynamic from "next/dynamic";
 import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
-import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
@@ -13,9 +12,17 @@ import {
   getUserPresenceRoster,
   resolveActorFilterValues,
 } from "@/lib/audit";
+import ActivitySkeleton, { ActivityStripSkeleton } from "./ActivitySkeleton";
 
+// The same placeholder as loading.tsx while the client's code loads, so the
+// page doesn't pass through a second, different one.
 const ActivityClient = dynamic(() => import("./ActivityClient"), {
-  loading: () => <DetailPageSkeleton />,
+  loading: () => (
+    <>
+      <ActivityStripSkeleton />
+      <ActivitySkeleton />
+    </>
+  ),
 });
 
 export const revalidate = 30;

@@ -1,7 +1,7 @@
 import { Suspense, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
-import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
+import { SalesTabSkeleton } from "@/app/(app)/sales/SalesSkeleton";
 import SalesDeliveriesQueue from "@/app/(app)/sales/SalesDeliveriesQueue";
 import SalesHeader from "@/app/(app)/sales/SalesHeader";
 import LocalSalesPage from "@/app/(app)/sales/LocalSalesPage";
@@ -21,14 +21,15 @@ import type { DashboardShadowCards } from "@/lib/powersync/dashboard-shadow";
 import { LOCAL_DATA_PAGES, LOCAL_DATA_SHADOW, localDataEnabledFor } from "@/lib/powersync/config";
 import { israelDateKey } from "@/lib/timezone";
 
+// While a tab's code loads: that tab's own placeholder, under the tab bar.
 const SalesInventoryClient = dynamic(() => import("@/app/(app)/sales/SalesInventoryClient"), {
-  loading: () => <DetailPageSkeleton />,
+  loading: () => <SalesTabSkeleton tab="inventory" />,
 });
 const SalesOrdersClient = dynamic(() => import("@/app/(app)/sales/SalesOrdersClient"), {
-  loading: () => <DetailPageSkeleton />,
+  loading: () => <SalesTabSkeleton tab="orders" />,
 });
 const PriceListClient = dynamic(() => import("@/app/(app)/sales/PriceListClient"), {
-  loading: () => <DetailPageSkeleton />,
+  loading: () => <SalesTabSkeleton tab="price-list" />,
 });
 
 export const revalidate = 30;

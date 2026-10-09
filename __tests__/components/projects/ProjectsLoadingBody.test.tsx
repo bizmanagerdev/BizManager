@@ -14,6 +14,9 @@ vi.mock("next/navigation", () => ({ usePathname: () => nav.pathname }));
 vi.mock("@/app/(app)/projects/[id]/ProjectPageLoading", () => ({
   default: ({ id }: { id?: string }) => <div data-testid="project-loading">{id}</div>,
 }));
+vi.mock("@/app/(app)/projects/[id]/export/ProjectExportSkeleton", () => ({
+  default: () => <div data-testid="export-loading" />,
+}));
 
 import ProjectsLoadingBody from "@/app/(app)/projects/ProjectsLoadingBody";
 
@@ -38,8 +41,16 @@ describe("the projects loading screen", () => {
     expect(container.querySelector("[data-page-header-toolbar]")).toBeNull();
   });
 
-  it("elsewhere under /projects: the skeleton without the strip", () => {
+  it("on the way to a project's work sheet: the sheet's shape, no strip", () => {
     nav.pathname = `/projects/${ID}/export`;
+    const { container, queryByTestId } = render(<ProjectsLoadingBody list={<div data-testid="list" />} />);
+    expect(queryByTestId("export-loading")).not.toBeNull();
+    expect(queryByTestId("list")).toBeNull();
+    expect(container.querySelector("[data-page-header-toolbar]")).toBeNull();
+  });
+
+  it("elsewhere under /projects: the skeleton without the strip", () => {
+    nav.pathname = "/projects/not-a-project";
     const { container, queryByTestId } = render(<ProjectsLoadingBody list={<div data-testid="list" />} />);
     expect(queryByTestId("list")).not.toBeNull();
     expect(container.querySelector("[data-page-header-toolbar]")).toBeNull();

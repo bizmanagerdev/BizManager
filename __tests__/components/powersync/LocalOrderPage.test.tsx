@@ -54,7 +54,7 @@ vi.mock("@/app/(app)/sales/orders/[id]/OrderPageView", () => ({
 vi.mock("@/app/(app)/sales/orders/[id]/OrderPagePreview", () => ({
   default: ({ preview }: { preview: { customerName: string } }) => <span>preview of {preview.customerName}</span>,
 }));
-vi.mock("@/components/layout/DetailPageSkeleton", () => ({ DetailPageSkeleton: () => <span>grey blocks</span> }));
+vi.mock("@/app/(app)/sales/orders/[id]/OrderPageSkeleton", () => ({ default: () => <span>grey blocks</span> }));
 
 import LocalOrderPage from "@/app/(app)/sales/orders/[id]/LocalOrderPage";
 import OrderPageOpening from "@/app/(app)/sales/orders/[id]/OrderPageOpening";

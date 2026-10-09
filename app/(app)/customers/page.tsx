@@ -1,11 +1,18 @@
 import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
-import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { loadCustomersPage, type CustomerFilterMode } from "@/app/(app)/customers/loadCustomers";
+import CustomersSkeleton, { CustomersStripSkeleton } from "@/app/(app)/customers/CustomersSkeleton";
 
+// While the list's code loads: the same placeholder as the loading screen, strip
+// included, so the strip doesn't fold away and reopen in between.
 const CustomersClient = dynamic(() => import("@/app/(app)/customers/CustomersClient"), {
-  loading: () => <DetailPageSkeleton />,
+  loading: () => (
+    <>
+      <CustomersStripSkeleton />
+      <CustomersSkeleton />
+    </>
+  ),
 });
 
 function parseFilterMode(value: string | undefined): CustomerFilterMode {

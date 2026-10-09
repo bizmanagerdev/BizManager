@@ -3,14 +3,15 @@
 import nextDynamic from "next/dynamic";
 import { notFound, redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
-import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import { propertyDisplayName } from "@/lib/properties";
 import type { StatementRowView } from "./StatementDetailClient";
+import StatementDetailSkeleton from "./StatementDetailSkeleton";
 
+// The same placeholder as loading.tsx while the client's code loads.
 const StatementDetailClient = nextDynamic(() => import("./StatementDetailClient"), {
-  loading: () => <DetailPageSkeleton />,
+  loading: () => <StatementDetailSkeleton />,
 });
 
 export const dynamic = "force-dynamic";

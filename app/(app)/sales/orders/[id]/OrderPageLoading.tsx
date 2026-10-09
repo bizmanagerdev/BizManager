@@ -9,9 +9,11 @@ import { useRoutePreview } from "@/hooks/useRoutePreview";
 // when it has one (OrderPageOpening); otherwise, opened from the orders list,
 // the order named from its row; from anywhere else — or on a full page load,
 // where nothing was remembered — the plain skeleton.
-export default function OrderPageLoading() {
+// `id`: for the sales page's own loading screen, which the router can show on
+// the way to an order (it has no [id] param of its own).
+export default function OrderPageLoading({ id: idProp }: { id?: string } = {}) {
   const params = useParams<{ id: string }>();
-  const id = typeof params?.id === "string" ? params.id : "";
+  const id = idProp ?? (typeof params?.id === "string" ? params.id : "");
   const preview = useRoutePreview(orderPreviewSlot, id);
 
   return <OrderPageOpening id={id} preview={preview} routeLoading />;

@@ -5,16 +5,17 @@ import { UserIcon } from "@/components/ui/icons";
 import AppShell from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { requireProfile, type UserRole } from "@/lib/auth/requireProfile";
 import { loadPayrollPageData } from "@/lib/payroll-page-loader";
 import { getCustomerOpenBalance } from "@/lib/customers/openBalance";
 import { isMissingLinkColumn } from "@/lib/customers/workerLink";
 import { buildCounterpartyBalance, getCustomerLoanPositions } from "@/lib/customers/counterpartyBalance";
+import WorkerPageSkeleton from "./WorkerPageSkeleton";
 
 // Lazy-loaded — see payroll/page.tsx for why (SalaryCenterClient is ~5,600 lines).
+// While its code loads, the worker page's own frame, as in loading.tsx.
 const SalaryCenterClient = dynamic(() => import("@/app/(app)/payroll/SalaryCenterClient"), {
-  loading: () => <DetailPageSkeleton />,
+  loading: () => <WorkerPageSkeleton />,
 });
 
 function formatCurrency(value: number) {

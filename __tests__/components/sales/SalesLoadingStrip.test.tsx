@@ -7,7 +7,7 @@ import { cleanup, render } from "@testing-library/react";
 // the way to a new order or an order's edit page, which have no strip.
 
 const nav = vi.hoisted(() => ({ pathname: "/sales" }));
-vi.mock("next/navigation", () => ({ usePathname: () => nav.pathname }));
+vi.mock("next/navigation", () => ({ usePathname: () => nav.pathname, useSearchParams: () => new URLSearchParams() }));
 
 import SalesLoadingStrip from "@/app/(app)/sales/SalesLoadingStrip";
 

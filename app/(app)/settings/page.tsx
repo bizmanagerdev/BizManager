@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import SettingsTabs from "@/app/(app)/settings/SettingsTabs";
+import SettingsSkeleton from "@/app/(app)/settings/SettingsSkeleton";
 import { loadMorningSettings, type MorningSettings } from "@/lib/morning/settings";
 import { getCurrentVatRate } from "@/lib/settings/vat";
 import { getBooksStartDate } from "@/lib/settings/booksStartDate";
@@ -116,8 +117,9 @@ export default async function SettingsPage() {
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       {/* SettingsTabs reads ?tab= via useSearchParams (to deep-link e.g.
-          ?tab=finance) — Next requires a Suspense boundary around that. */}
-      <Suspense fallback={null}>
+          ?tab=finance) — Next requires a Suspense boundary around that. Its
+          fallback is the page's own shape, the same as loading.tsx's. */}
+      <Suspense fallback={<SettingsSkeleton />}>
         <SettingsTabs
           isAdmin={isAdmin}
           users={users}

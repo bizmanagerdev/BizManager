@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect } from "react";
 import { useRouter } from "next/navigation";
-import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
+import ProjectPageSkeleton from "@/app/(app)/projects/[id]/ProjectPageSkeleton";
 import { useLocalCard } from "@/components/powersync/useLocalCard";
 import { useDevicePageTiming } from "@/components/powersync/useDevicePageTiming";
 import { useSettled } from "@/hooks/useSettled";
@@ -98,7 +98,7 @@ export default function LocalProjectPage({
     if (contentOnScreen) emitNavigationContentShown();
   }, [contentOnScreen]);
 
-  if (!shown || missing) return preview ? <ProjectPagePreview preview={preview} routeLoading /> : <DetailPageSkeleton />;
+  if (!shown || missing) return preview ? <ProjectPagePreview preview={preview} routeLoading /> : <ProjectPageSkeleton routeLoading />;
 
   return <ProjectPageView id={id} core={shown.data} extras={settledExtras} viewer={{ role, ledgerPrefs }} />;
 }

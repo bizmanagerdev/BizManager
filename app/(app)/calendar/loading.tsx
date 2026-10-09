@@ -1,15 +1,16 @@
 import AppShell from "@/components/layout/AppShell";
-import { Skeleton } from "@/components/ui/skeleton";
+import CalendarSkeleton from "./CalendarSkeleton";
 
 // Streamed instantly while this month's schedule entries load, so TTFB =
-// time-to-shell. The real page is a full-screen month grid — a single
-// pulsing block stands in rather than reproducing every cell.
+// time-to-shell. The calendar's own frame (CalendarSkeleton): this month's
+// grid already drawn — dates, Hebrew dates, holidays, today — the phone's
+// selected-day row and, from lg, the day panel beside it; only the items are
+// blanks, so nothing moves when they land.
 export default function CalendarLoading() {
   return (
     <AppShell>
-      <div className="space-y-4" data-route-loading="true">
-        <Skeleton className="h-7 w-40" />
-        <div className="h-[70vh] w-full animate-pulse rounded-2xl border bg-muted/40" />
+      <div className="space-y-5" data-route-loading="true">
+        <CalendarSkeleton />
       </div>
     </AppShell>
   );

@@ -8,6 +8,7 @@ import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import ProjectMobileHeader from "@/app/(app)/projects/[id]/ProjectMobileHeader";
 import ProjectPageHeading, { projectTypeLabel } from "@/app/(app)/projects/[id]/ProjectPageHeading";
 import ProjectRemindersSection from "@/app/(app)/projects/[id]/ProjectRemindersSection";
+import { ProjectBodySkeleton } from "@/app/(app)/projects/[id]/ProjectPageSkeleton";
 import type { ProjectShareData } from "@/app/(app)/projects/[id]/ProjectShareActions";
 import { ArrowLeftIcon, ClipboardIcon, DeliveryIcon, HistoryIcon, HomeIcon, LocationIcon, NoteIcon } from "@/components/ui/icons";
 import { AddressLink } from "@/components/ui/address-link";
@@ -41,27 +42,9 @@ import { useSettled } from "@/hooks/useSettled";
 // documents and history hold their place, and the rows' attachments, Morning
 // documents and "entered by" lines fill in when they arrive).
 
-function ProjectTabsSkeleton() {
-  return (
-    <div className="space-y-4">
-      <div className="grid h-14 grid-cols-3 gap-2">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="animate-pulse rounded-2xl border bg-card/95" />
-        ))}
-      </div>
-      <div className="animate-pulse space-y-3">
-        <div className="h-40 rounded-xl border bg-muted/40" />
-        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-          <div className="h-80 rounded-xl border bg-muted/40" />
-          <div className="h-80 rounded-xl border bg-muted/40" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
+// While its code loads: the page's own frame under the heading.
 const ProjectTabsClient = dynamic(() => import("@/app/(app)/projects/[id]/ProjectTabsClient"), {
-  loading: () => <ProjectTabsSkeleton />,
+  loading: () => <ProjectBodySkeleton />,
 });
 
 type Row = Record<string, unknown>;

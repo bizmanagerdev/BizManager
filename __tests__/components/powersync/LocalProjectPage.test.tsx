@@ -50,7 +50,7 @@ vi.mock("@/app/(app)/projects/[id]/ProjectPageView", () => ({
 vi.mock("@/app/(app)/projects/[id]/ProjectPagePreview", () => ({
   default: ({ preview }: { preview: { name: string } }) => <span>preview of {preview.name}</span>,
 }));
-vi.mock("@/components/layout/DetailPageSkeleton", () => ({ DetailPageSkeleton: () => <span>grey blocks</span> }));
+vi.mock("@/app/(app)/projects/[id]/ProjectPageSkeleton", () => ({ default: () => <span>grey blocks</span> }));
 
 import LocalProjectPage from "@/app/(app)/projects/[id]/LocalProjectPage";
 import ProjectPageOpening from "@/app/(app)/projects/[id]/ProjectPageOpening";

@@ -1,6 +1,6 @@
 "use client";
 
-import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
+import ProjectPageSkeleton from "@/app/(app)/projects/[id]/ProjectPageSkeleton";
 import { localDataPageOn } from "@/lib/powersync/config";
 import { DEFAULT_LEDGER_PREFS } from "@/lib/projectLedgerPrefs";
 import { useLocalDatabase, useLocalSyncStatus, useLocalViewer } from "@/lib/powersync/store";
@@ -41,5 +41,5 @@ export default function ProjectPageOpening({
       />
     );
   }
-  return preview ? <ProjectPagePreview preview={preview} routeLoading={routeLoading} /> : <DetailPageSkeleton />;
+  return preview ? <ProjectPagePreview preview={preview} routeLoading={routeLoading} /> : <ProjectPageSkeleton routeLoading={routeLoading} />;
 }

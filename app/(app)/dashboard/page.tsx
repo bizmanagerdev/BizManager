@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { Suspense } from "react";
 import AppShell from "@/components/layout/AppShell";
 import { PageStack } from "@/components/layout/page-layout";
@@ -7,6 +8,7 @@ import { firstAccessiblePrefix, hasSectionAccess, isStaffRole } from "@/lib/auth
 import DashboardGreetingTitle from "@/components/dashboard/DashboardGreetingTitle";
 import { firstNameOf, greetingForHour, viewerHour } from "@/lib/dashboard/greeting";
 import { DashboardPanels, PanelsFallback } from "@/app/(app)/dashboard/DashboardSections";
+import { HELD_HEIGHTS_COOKIE } from "@/lib/ui/held-heights";
 
 export const revalidate = 60;
 
@@ -20,7 +22,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // shorter one everywhere else. That also drops this page's heaviest fetch: the
   // picker data (customers / products / projects / orders / workers) is now
   // loaded on demand by the menu itself, once, when it's first opened.
-  const [{ profile }, { data: dataSource }] = await Promise.all([requireProfile(), searchParams]);
+  const [{ profile }, { data: dataSource }, cookieStore] = await Promise.all([requireProfile(), searchParams, cookies()]);
 
   // A worker without the dashboard section would otherwise land here right
   // after login (middleware's post-login redirect is unconditionally
@@ -61,7 +63,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           own height calc is trimmed by the same lg amount, so the board grows
           into the reclaimed space instead of leaving it empty at the bottom. */}
       <PageStack className="-mt-2 md:-mt-3 lg:-mt-4">
-        <Suspense fallback={<PanelsFallback />}>
+        {/* The board's placeholder: this device's board as it last stood (the
+            held-heights cookie) — the same one the loading screen drew. */}
+        <Suspense fallback={<PanelsFallback heldRaw={cookieStore.get(HELD_HEIGHTS_COOKIE)?.value} />}>
           {/* ?data=server: the device-copy cards' fallback to the server version. */}
           <DashboardPanels forceServer={dataSource === "server"} />
         </Suspense>

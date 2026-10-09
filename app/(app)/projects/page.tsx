@@ -3,7 +3,7 @@ import dynamic from "next/dynamic";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import AppShell from "@/components/layout/AppShell";
-import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
+import ProjectsListSkeleton from "@/app/(app)/projects/ProjectsListSkeleton";
 import { loadProjectsPage } from "@/app/(app)/projects/loadProjects";
 import {
   loadProjectsPickerOptions,
@@ -22,7 +22,7 @@ import { LOCAL_DATA_PAGES, LOCAL_DATA_SHADOW, localDataEnabledFor } from "@/lib/
 import { israelDateKey } from "@/lib/timezone";
 
 const ProjectsClient = dynamic(() => import("@/app/(app)/projects/ProjectsClient"), {
-  loading: () => <DetailPageSkeleton />,
+  loading: () => <ProjectsListSkeleton />,
 });
 
 export default async function ProjectsPage({

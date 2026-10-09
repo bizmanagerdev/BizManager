@@ -2,7 +2,7 @@ import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
 import type { UserProfile } from "@/lib/auth/requireProfile";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
+import { CashFlowSkeleton, ReportsSkeleton } from "@/app/(app)/financial/FinancialSkeleton";
 import {
   cashFlowCustomerId,
   flowViewData,
@@ -43,8 +43,13 @@ function getString(row: Row | null | undefined, key: string) {
 // This client component is ~2,400 lines (the whole cash-flow ledger UI).
 // Lazy-loaded so a visitor doesn't download it before actually opening the
 // page — same pattern already used for ProjectTabsClient/SalaryCenterClient.
+// While its code loads, each view shows its own placeholder — the same one as
+// its loading.tsx — so the page never swaps one placeholder for another.
 const FinancialPageClient = dynamic(() => import("@/app/(app)/financial/FinancialPageClient"), {
-  loading: () => <DetailPageSkeleton />,
+  loading: () => <CashFlowSkeleton />,
+});
+const FinancialReportsClient = dynamic(() => import("@/app/(app)/financial/FinancialPageClient"), {
+  loading: () => <ReportsSkeleton />,
 });
 
 export default async function CashFlowPageContent({
@@ -198,9 +203,11 @@ export default async function CashFlowPageContent({
       .filter((row) => row.id && row.label);
   }
 
+  const PageClient = view === "reports" ? FinancialReportsClient : FinancialPageClient;
+
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
-      <FinancialPageClient
+      <PageClient
         key={JSON.stringify({
           customerId,
           customerPage,

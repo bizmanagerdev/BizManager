@@ -38,6 +38,7 @@ vi.mock("@/lib/powersync/local-supabase", () => ({ createLocalSupabase: () => ({
 // fetch-as-you-scroll does.
 vi.mock("@/app/(app)/sales/SalesHeader", () => ({
   default: (props: { counts: { closed: number } }) => <div>closed: {props.counts.closed}</div>,
+  SalesHeaderSkeleton: () => null,
 }));
 vi.mock("@/app/(app)/sales/SalesDeliveriesQueue", () => ({ default: () => null }));
 vi.mock("@/app/(app)/sales/PriceListClient", () => ({

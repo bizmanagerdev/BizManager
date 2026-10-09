@@ -59,8 +59,15 @@ function serialize(heights: Record<string, number>): string {
     .join(";");
 }
 
-/** Remember card `id`'s height on this device (phone layout only; rounded, so tiny changes don't rewrite the cookie). */
-export function rememberHeldHeight(id: string, px: number): void {
+/**
+ * Remember card `id`'s height on this device (phone layout only; rounded, so
+ * tiny changes don't rewrite the cookie). `board`: the cards on the board right
+ * now, in its running order — the cookie then keeps exactly those, in that
+ * order, so the board's loading placeholder (PanelsFallback) draws the same
+ * cards in the same order, each at its height. A card with no height kept yet
+ * joins when its own comes in.
+ */
+export function rememberHeldHeight(id: string, px: number, board?: readonly string[]): void {
   if (typeof document === "undefined" || window.innerWidth >= HELD_HEIGHTS_MAX_WIDTH) return;
   const rounded = Math.round(px / 4) * 4;
   if (rounded < MIN_PX || rounded > MAX_PX || !/^[A-Za-z0-9_-]+$/.test(id)) return;
@@ -68,9 +75,16 @@ export function rememberHeldHeight(id: string, px: number): void {
     .split("; ")
     .find((c) => c.startsWith(`${HELD_HEIGHTS_COOKIE}=`))
     ?.slice(HELD_HEIGHTS_COOKIE.length + 1);
-  const heights = parseHeldHeights(current);
-  if (heights[id] === rounded) return;
-  delete heights[id];
-  heights[id] = rounded;
-  document.cookie = `${HELD_HEIGHTS_COOKIE}=${encodeURIComponent(serialize(heights))}; path=/; max-age=${60 * 60 * 24 * 60}; samesite=lax`;
+  const kept = parseHeldHeights(current);
+  const heights = { ...kept };
+  if (heights[id] !== rounded) {
+    delete heights[id];
+    heights[id] = rounded;
+  }
+  const next = board?.includes(id)
+    ? Object.fromEntries(board.flatMap((card) => (heights[card] ? [[card, heights[card]]] : [])))
+    : heights;
+  const value = serialize(next);
+  if (value === serialize(kept)) return;
+  document.cookie = `${HELD_HEIGHTS_COOKIE}=${encodeURIComponent(value)}; path=/; max-age=${60 * 60 * 24 * 60}; samesite=lax`;
 }

@@ -8,6 +8,7 @@ import { DeliveryIcon, InventoryIcon, OrderIcon, SuccessIcon, TagIcon } from "@/
 import type { IconComponent } from "@/components/ui/icons";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { CountBadge } from "@/components/ui/count-badge";
+import { CountSkeleton } from "@/components/layout/loading-skeletons";
 
 type SalesTab = "orders" | "closed" | "inventory" | "price-list" | "deliveries";
 
@@ -127,6 +128,28 @@ export default function SalesTabsNav({
             <span className="hidden sm:inline">{tab.label}</span>
             {count !== null ? <CountBadge count={count} active={isActive} /> : null}
           </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The same tab row while the page loads (SalesSkeleton): the tabs' icons and
+ * names, the open one underlined, a placeholder where each count will be.
+ */
+export function SalesTabsNavSkeleton({ activeTab }: { activeTab: SalesTab }) {
+  return (
+    <div dir="rtl" className={LIST_CLASSES}>
+      {tabs.map((tab) => {
+        const Icon = tab.icon;
+        return (
+          <span key={tab.id} className={triggerClassName(tab.id === activeTab)}>
+            <Icon className="h-4 w-4 shrink-0" />
+            <span className="sm:hidden">{tab.shortLabel ?? tab.label}</span>
+            <span className="hidden sm:inline">{tab.label}</span>
+            {tab.id !== "inventory" && tab.id !== "price-list" ? <CountSkeleton /> : null}
+          </span>
         );
       })}
     </div>

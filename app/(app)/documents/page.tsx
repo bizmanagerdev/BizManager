@@ -1,6 +1,5 @@
 import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
-import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { resolveUserColorsForValues, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import { isExpenseBusinessDomain, mapProjectTypeToExpenseDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
@@ -13,11 +12,13 @@ import type {
 
 import { STORAGE_BUCKET } from "@/lib/storage";
 import { buildDocumentDisplayName, inferFileKind } from "@/lib/documents";
+import DocumentsSkeleton from "@/app/(app)/documents/DocumentsSkeleton";
 
 // ~1,000 lines. Lazy-loaded so a visitor doesn't download it before actually
 // landing on this route — same pattern as SalaryCenterClient/ProfileClient.
+// Meanwhile the same placeholder as loading.tsx, not a second, different one.
 const DocumentsArchiveClient = dynamic(() => import("@/app/(app)/documents/DocumentsArchiveClient"), {
-  loading: () => <DetailPageSkeleton />,
+  loading: () => <DocumentsSkeleton />,
 });
 
 type Row = Record<string, unknown>;

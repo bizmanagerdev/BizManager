@@ -1,30 +1,16 @@
 import AppShell from "@/components/layout/AppShell";
-import { Card } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import ActivitySkeleton, { ActivityStripSkeleton } from "./ActivitySkeleton";
 
 // Streamed instantly while the audit feed + presence roster load, so TTFB =
-// time-to-shell. Mirrors the filter row + feed list to keep the swap
-// shift-free.
+// time-to-shell. The page's own shape (ActivitySkeleton) — the users card, the
+// filter row, the feed's table / cards — with the phone strip held open with
+// its live indicator and filter button, so nothing moves when the page arrives.
 export default function ActivityLoading() {
   return (
     <AppShell>
+      <ActivityStripSkeleton />
       <div className="space-y-4" data-route-loading="true">
-        <Skeleton className="h-16 w-full rounded-2xl" />
-        <div className="flex flex-wrap gap-2">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-10 w-32" />
-          ))}
-        </div>
-        <div className="space-y-3">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <Card key={i} className="p-4">
-              <div className="flex items-center justify-between gap-4">
-                <Skeleton className="h-4 w-48" />
-                <Skeleton className="h-3 w-20" />
-              </div>
-            </Card>
-          ))}
-        </div>
+        <ActivitySkeleton />
       </div>
     </AppShell>
   );

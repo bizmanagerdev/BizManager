@@ -3,15 +3,16 @@
 import nextDynamic from "next/dynamic";
 import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
-import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { loadAccountsOverview } from "@/lib/accounts";
 import { fetchLoans } from "@/lib/loans";
 import type { MerchantMemory } from "@/lib/financial/cardImport";
 import { propertyDisplayName } from "@/lib/properties";
+import BankSkeleton from "./BankSkeleton";
 
+// The same placeholder as loading.tsx while the client's code loads.
 const BankClient = nextDynamic(() => import("./BankClient"), {
-  loading: () => <DetailPageSkeleton />,
+  loading: () => <BankSkeleton />,
 });
 
 export const dynamic = "force-dynamic";

@@ -3,7 +3,7 @@
 import { useMemo, type ComponentProps } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
-import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
+import ProjectsListSkeleton, { ProjectsStripSkeleton } from "./ProjectsListSkeleton";
 import { PageHeaderToolbarSpace } from "@/components/layout/PageHeaderToolbar";
 import { useLocalCard } from "@/components/powersync/useLocalCard";
 import { useDevicePageTiming } from "@/components/powersync/useDevicePageTiming";
@@ -18,7 +18,7 @@ import { parseProjectsFilters } from "./projectsFilters";
 import { fetchProjectsFirstPageFromServer } from "./projectsListCache";
 import { ProjectsListSourceProvider, type ProjectsListSource } from "./ProjectsListSource";
 
-const ProjectsClient = dynamic(() => import("./ProjectsClient"), { loading: () => <DetailPageSkeleton /> });
+const ProjectsClient = dynamic(() => import("./ProjectsClient"), { loading: () => <ProjectsListSkeleton /> });
 
 // The /projects page drawn from the on-device copy (LOCAL_DATA_PAGES.projects):
 // the list (first page, and the next ones as it scrolls), the tab counts and
@@ -87,8 +87,8 @@ export default function LocalProjectsPage({
   if (!list || !extras)
     return (
       <>
-        <PageHeaderToolbarSpace />
-        <DetailPageSkeleton />
+        <ProjectsStripSkeleton />
+        <ProjectsListSkeleton />
       </>
     );
 
