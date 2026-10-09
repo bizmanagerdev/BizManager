@@ -722,6 +722,7 @@ function EditCheckDialog({
           onCheckNumberChange={setCheckNumber}
           photoFiles={photoFiles}
           onPhotoFilesChange={setPhotoFiles}
+          existingPhotoUrls={check.photo_url ? [check.photo_url] : []}
         />
 
         <AccountSelect value={accountId} onChange={setAccountId} onLoaded={setAccountsList} />

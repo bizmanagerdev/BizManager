@@ -2,10 +2,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getEntityAuditTrail, getLatestAuditByRecordIds, type AuditFeedItem } from "@/lib/audit";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import type { MorningLocalDocument } from "@/lib/morning/types";
+import type { FinancialAttachment } from "@/lib/payments";
 import type { DeliveryImage } from "@/app/(app)/sales/orders/[id]/DeliveryImagesCard";
 
 // The parts of an order's page only the server can read: its Morning
-// documents, its delivery photos (signed links), when each payment was entered
+// documents, its delivery photos and its payments' files — a check's photo —
+// (signed links), when each payment was entered
 // by whom from the change log (for payments whose recorded_by names nobody),
 // and — for admins — its history. The order itself is in
 // lib/orders/order-page.ts, which the device copy can read too.
@@ -16,6 +18,8 @@ export type OrderPageExtras = {
   /** The order's documents and its payments' (each once), newest first. */
   morningDocuments: MorningLocalDocument[];
   deliveryImages: DeliveryImage[];
+  /** The files attached to each payment (a check's photo), by payment id. */
+  paymentFiles: Record<string, FinancialAttachment[]>;
   /** The change log's latest entry for each payment, by payment id. */
   paymentAudit: Record<string, { action: string; actorName: string; createdAt: string | null }>;
   /** The order's history — null when this person doesn't see it (admins only). */
@@ -50,6 +54,7 @@ export function loadOrderPageExtras(supabase: SupabaseClient, input: ExtrasInput
     return {
       morningDocuments: [],
       deliveryImages: [],
+      paymentFiles: {},
       paymentAudit: {},
       activity: [],
       errors: { deliveryLinks: message, orderDocuments: message, paymentDocuments: null },
@@ -131,6 +136,56 @@ async function readOrderPageExtras(
       url: signedUrlByKey.get(d.storageKey) ?? null,
     }));
   });
+  // The payments' files (a check's photo, uploaded with the payment): the links
+  // with their documents in one request, then every file signed in ONE storage
+  // call.
+  const paymentFilesRead = paymentIds.then(async (ids) => {
+    const byPayment: Record<string, FinancialAttachment[]> = {};
+    if (ids.length === 0) return byPayment;
+    const { data: links } = await supabase
+      .from("document_links")
+      .select("entity_id,created_at,document:documents(id,file_name,storage_key,uploaded_at,document_type)")
+      .eq("entity_type", "payment")
+      .in("entity_id", ids);
+    const files = ((links ?? []) as Row[])
+      .map((link) => {
+        const embedded = Array.isArray(link.document) ? link.document[0] : link.document;
+        const document = embedded && typeof embedded === "object" ? (embedded as Row) : null;
+        const paymentId = getString(link, "entity_id");
+        const documentId = document ? getString(document, "id") : null;
+        const storageKey = document ? getString(document, "storage_key") : null;
+        if (!paymentId || !document || !documentId || !storageKey) return null;
+        return {
+          paymentId,
+          storageKey,
+          file: {
+            document_id: documentId,
+            file_name: getString(document, "file_name"),
+            uploaded_at: getString(document, "uploaded_at") ?? getString(link, "created_at"),
+            document_type: getString(document, "document_type"),
+            url: null as string | null,
+          },
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => Boolean(row))
+      // The first photo first.
+      .sort((a, b) => (a.file.uploaded_at ?? "").localeCompare(b.file.uploaded_at ?? "") || a.file.document_id.localeCompare(b.file.document_id));
+    if (files.length === 0) return byPayment;
+    const { data: signedList } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrls(
+      uniqueStrings(files.map((f) => f.storageKey)),
+      60 * 60
+    );
+    const signedUrlByKey = new Map<string, string>();
+    (signedList ?? []).forEach((entry) => {
+      if (entry && typeof entry.path === "string" && typeof entry.signedUrl === "string") {
+        signedUrlByKey.set(entry.path, entry.signedUrl);
+      }
+    });
+    for (const { paymentId, storageKey, file } of files) {
+      (byPayment[paymentId] ??= []).push({ ...file, url: signedUrlByKey.get(storageKey) ?? null });
+    }
+    return byPayment;
+  });
   // This order's own change history plus payments recorded against it — admin
   // only, mirroring /activity access.
   const activityRead = withActivity.then((show) =>
@@ -142,12 +197,13 @@ async function readOrderPageExtras(
       : null
   );
 
-  const [orderDocuments, paymentDocuments, paymentAudit, deliveryLinks, deliveryImages, activity] = await Promise.all([
+  const [orderDocuments, paymentDocuments, paymentAudit, deliveryLinks, deliveryImages, paymentFiles, activity] = await Promise.all([
     orderDocumentsRead,
     paymentDocumentsRead,
     paymentAuditRead,
     deliveryLinksRead,
     deliveryImagesRead,
+    paymentFilesRead,
     activityRead,
   ]);
 
@@ -163,6 +219,7 @@ async function readOrderPageExtras(
   return {
     morningDocuments,
     deliveryImages,
+    paymentFiles,
     paymentAudit: Object.fromEntries(
       Object.entries(paymentAudit.byRecordId).map(([paymentId, entry]) => [
         paymentId,

@@ -9,6 +9,9 @@ type CheckDetailsFieldsProps = {
   onCheckNumberChange: (value: string) => void;
   photoFiles: File[];
   onPhotoFilesChange: (files: File[]) => void;
+  /** The photos the check already has (signed links) — shown before the
+   *  upload buttons, so editing a check shows what's on file. */
+  existingPhotoUrls?: string[];
   disabled?: boolean;
   layout?: "stacked" | "grid";
 };
@@ -18,6 +21,7 @@ export function CheckDetailsFields({
   onCheckNumberChange,
   photoFiles,
   onPhotoFilesChange,
+  existingPhotoUrls = [],
   disabled = false,
   layout = "grid",
 }: CheckDetailsFieldsProps) {
@@ -36,6 +40,19 @@ export function CheckDetailsFields({
       <div className="space-y-1">
         <label className="text-sm font-medium">צילום צ&apos;ק</label>
         <div className="flex flex-wrap items-center gap-2">
+          {existingPhotoUrls.map((url, index) => (
+            <a
+              key={url}
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              title="צילום הצ׳ק"
+              className="block shrink-0 overflow-hidden rounded-md border border-border/70"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- a signed storage link, not a static asset */}
+              <img src={url} alt={existingPhotoUrls.length > 1 ? `צילום הצ׳ק ${index + 1}` : "צילום הצ׳ק"} className="h-12 w-16 object-cover" />
+            </a>
+          ))}
           <FileUploadActions
             files={photoFiles}
             onFilesSelected={onPhotoFilesChange}

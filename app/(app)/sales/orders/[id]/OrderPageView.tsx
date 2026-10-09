@@ -251,6 +251,7 @@ export default function OrderPageView({
         paymentAuditById: extras?.paymentAudit ?? NO_PAYMENT_AUDIT,
       }),
       morningDocuments: morningDocuments.filter((d) => d.payment_id === paymentId),
+      files: extras ? (extras.paymentFiles[paymentId] ?? []) : null,
     };
   });
 

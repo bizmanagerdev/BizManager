@@ -23,6 +23,7 @@
 // also owns persisting the choice — this component only renders it.
 
 import { Fragment, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   AttachIcon,
   BankIcon,
@@ -85,6 +86,10 @@ export type Movement = {
   /** Label/value pairs shown when the row is opened. */
   extras: { label: string; value: string }[];
   attachments: FinancialAttachment[];
+  /** What its files are called ("קובץ" when not given) — "צילום הצ׳ק" for a check. */
+  fileLabel?: string;
+  /** Where it lives elsewhere — a check's place on the checks page. */
+  link?: { label: string; href: string } | null;
   busy?: boolean;
   onEdit?: () => void;
   onDelete?: () => void;
@@ -147,7 +152,7 @@ function AmountCell({ movement, side }: { movement: Movement; side: "in" | "out"
   );
 }
 
-function Attachments({ attachments }: { attachments: FinancialAttachment[] }) {
+function Attachments({ attachments, label = "קובץ" }: { attachments: FinancialAttachment[]; label?: string }) {
   const withUrl = attachments.filter((attachment) => attachment.url);
   if (withUrl.length === 0) return <span className="text-muted-foreground">—</span>;
   return (
@@ -158,11 +163,11 @@ function Attachments({ attachments }: { attachments: FinancialAttachment[] }) {
           href={attachment.url ?? "#"}
           target="_blank"
           rel="noreferrer"
-          title={attachment.file_name ?? "קובץ"}
+          title={attachment.file_name ?? label}
           className="inline-flex items-center gap-1 rounded-md border border-border/60 px-1.5 py-0.5 text-[0.6875rem] text-secondary hover:bg-accent"
         >
           <AttachIcon className="h-3 w-3" />
-          {withUrl.length > 1 ? `קובץ ${index + 1}` : "קובץ"}
+          {withUrl.length > 1 ? `${label} ${index + 1}` : label}
         </a>
       ))}
     </div>
@@ -224,7 +229,15 @@ function movementNameRepeatsCategory(movement: Movement) {
 }
 
 function hasDetails(movement: Movement) {
-  return movement.extras.length > 0 || hasAttachment(movement);
+  return movement.extras.length > 0 || hasAttachment(movement) || Boolean(movement.link);
+}
+
+function MovementLink({ link }: { link: { label: string; href: string } }) {
+  return (
+    <Link href={link.href} className="whitespace-nowrap text-xs font-medium text-secondary hover:underline">
+      {link.label} ←
+    </Link>
+  );
 }
 
 /** Inline hint that the row has a file — expand it to open the file itself.
@@ -237,7 +250,7 @@ function AttachmentHint() {
 function Details({ movement }: { movement: Movement }) {
   const hasExtras = movement.extras.length > 0;
   const hasFiles = movement.attachments.some((attachment) => attachment.url);
-  if (!hasExtras && !hasFiles) return null;
+  if (!hasExtras && !hasFiles && !movement.link) return null;
   return (
     <div className="space-y-2">
       {hasExtras ? (
@@ -250,7 +263,12 @@ function Details({ movement }: { movement: Movement }) {
           ))}
         </dl>
       ) : null}
-      {hasFiles ? <Attachments attachments={movement.attachments} /> : null}
+      {hasFiles || movement.link ? (
+        <div className="flex flex-wrap items-center gap-3">
+          {hasFiles ? <Attachments attachments={movement.attachments} label={movement.fileLabel} /> : null}
+          {movement.link ? <MovementLink link={movement.link} /> : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -307,10 +325,15 @@ function ExpandedCard({ movement }: { movement: Movement }) {
         </dl>
       ) : null}
 
-      {recordedBy || files.length > 0 ? (
+      {recordedBy || files.length > 0 || movement.link ? (
         <div className="flex flex-wrap items-center justify-between gap-2 text-muted-foreground">
           <span className="min-w-0">{recordedBy ?? ""}</span>
-          {files.length > 0 ? <Attachments attachments={movement.attachments} /> : null}
+          {files.length > 0 || movement.link ? (
+            <div className="flex flex-wrap items-center gap-3">
+              {files.length > 0 ? <Attachments attachments={movement.attachments} label={movement.fileLabel} /> : null}
+              {movement.link ? <MovementLink link={movement.link} /> : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

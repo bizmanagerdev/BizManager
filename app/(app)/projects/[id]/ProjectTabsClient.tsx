@@ -1385,6 +1385,13 @@ export default function ProjectTabsClient({
         hint: paymentHint,
         extras,
         attachments: Array.isArray(payment.attachments) ? payment.attachments : [],
+        // A check: its photo by name, and its place on the checks page (admins
+        // and office — the page is theirs) — it was a dead end.
+        fileLabel: payment.payment_method === "check" ? "צילום הצ׳ק" : undefined,
+        link:
+          payment.payment_method === "check" && (viewerRole === "admin" || viewerRole === "office")
+            ? { label: "לצ׳ק בדף הצ׳קים", href: `/checks?focus=${encodeURIComponent(payment.id)}` }
+            : null,
         onEdit: () => {
           setEditingPayment(payment);
           setAddIncomeOpen(true);
@@ -1528,6 +1535,7 @@ export default function ProjectTabsClient({
     usersById,
     accountNameById,
     wageAccountIdsBySource,
+    viewerRole,
   ]);
 
   // תנועות group-by/sort-by — same debounced-save-to-a-jsonb-column shape as

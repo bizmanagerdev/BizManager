@@ -3,8 +3,12 @@ import { toHebrewError } from "@/lib/error-messages";
 import { toast } from "sonner";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { AttachIcon } from "@/components/ui/icons";
+import { isImageDocument } from "@/lib/documents";
 import { NativeSelect } from "@/components/ui/native-select";
 import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
@@ -28,6 +32,7 @@ import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { nextMonthTenth, parseInstallments, splitCardInstallments } from "@/lib/payments";
 import { CardInstallmentsField } from "@/components/financial/CardInstallmentsField";
 import type { MorningLocalDocument } from "@/lib/morning/types";
+import type { FinancialAttachment } from "@/lib/payments";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 
 export type PaymentItem = {
@@ -43,6 +48,9 @@ export type PaymentItem = {
   notes: string | null;
   insertedByLabel: string | null;
   morningDocuments: MorningLocalDocument[];
+  /** Its files — a check's photo. Null while they're still on their way (the
+   *  phone's page gets them from the server after it shows). */
+  files?: FinancialAttachment[] | null;
 };
 
 type Props = {
@@ -73,6 +81,60 @@ function formatDate(value: string | null) {
   } catch {
     return value;
   }
+}
+
+/**
+ * A payment's photo — a check's — and, for a check, the way to it on the
+ * checks page (owner, 2026-10-05: it was a dead end: no photo, no link). A
+ * check's line keeps its height while the photos are still on their way, so
+ * the rows under it don't move when they arrive.
+ */
+function PaymentFilesLine({ payment, checksLink }: { payment: PaymentItem; checksLink: boolean }) {
+  const isCheck = payment.payment_method === "check";
+  const pending = payment.files === null;
+  const files = (payment.files ?? []).filter((file) => file.url);
+  const link = isCheck && checksLink && Boolean(payment.id);
+  if (!link && files.length === 0 && !(isCheck && pending)) return null;
+  return (
+    <div className={`mt-2 flex flex-wrap items-center gap-2 ${isCheck ? "min-h-12" : ""}`}>
+      {pending ? <Skeleton className="h-12 w-16 rounded-md" /> : null}
+      {files.map((file) =>
+        isImageDocument(file) ? (
+          <a
+            key={file.document_id}
+            href={file.url ?? "#"}
+            target="_blank"
+            rel="noreferrer"
+            title={isCheck ? "צילום הצ׳ק" : (file.file_name ?? "קובץ")}
+            className="block shrink-0 overflow-hidden rounded-md border border-border/70"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element -- a signed storage link, not a static asset */}
+            <img src={file.url ?? ""} alt={isCheck ? "צילום הצ׳ק" : (file.file_name ?? "קובץ")} className="h-12 w-16 object-cover" loading="lazy" />
+          </a>
+        ) : (
+          <a
+            key={file.document_id}
+            href={file.url ?? "#"}
+            target="_blank"
+            rel="noreferrer"
+            title={file.file_name ?? "קובץ"}
+            className="inline-flex items-center gap-1 rounded-md border border-border/60 px-1.5 py-0.5 text-[0.6875rem] text-secondary hover:bg-accent"
+          >
+            <AttachIcon className="h-3 w-3" />
+            קובץ
+          </a>
+        )
+      )}
+      {link ? (
+        <Link
+          href={`/checks?focus=${encodeURIComponent(payment.id)}`}
+          className="whitespace-nowrap text-xs font-medium text-secondary hover:underline"
+        >
+          לצ׳ק בדף הצ׳קים ←
+        </Link>
+      ) : null}
+    </div>
+  );
 }
 
 // Exported so the account register (app/(app)/financial/bank/BankClient.tsx)
@@ -330,6 +392,9 @@ export function EditPaymentDialog({
               onCheckNumberChange={setCheckNumber}
               photoFiles={checkPhotoFiles}
               onPhotoFilesChange={setCheckPhotoFiles}
+              existingPhotoUrls={(payment.files ?? [])
+                .filter((file) => file.url && isImageDocument(file))
+                .map((file) => file.url as string)}
               disabled={submitting}
             />
           ) : null}
@@ -508,6 +573,7 @@ export function OrderPaymentActionsClient({
                       : ""}
                     {payment.due_date ? ` • פירעון: ${formatDate(payment.due_date)}` : ""}
                   </div>
+                  <PaymentFilesLine payment={payment} checksLink={canManage} />
                   {payment.notes ? (
                     <div className="mt-1 text-muted-foreground">הערות: {payment.notes}</div>
                   ) : null}
