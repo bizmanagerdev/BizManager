@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { omitUnknownPlace } from "@/lib/ui/cities";
+import { getOrderStatusLabel } from "@/lib/ui/status-colors";
 import { Badge } from "@/components/ui/badge";
 import { DateInput } from "@/components/ui/date-input";
 import AccountSelect from "@/components/financial/AccountSelect";
@@ -2097,7 +2098,12 @@ export default function NewOrderClient({
         <>
           <StepHeading title="מה סטטוס ההזמנה?" />
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {ORDER_STATUS_OPTIONS.map((option) => (
+            {/* An order already in another status (an old one, edited) keeps
+                it on offer, so editing never changes it unasked. */}
+            {(ORDER_STATUS_OPTIONS.some((o) => o.value === orderStatus) || !orderStatus
+              ? ORDER_STATUS_OPTIONS
+              : [...ORDER_STATUS_OPTIONS, { value: orderStatus, label: getOrderStatusLabel(orderStatus) }]
+            ).map((option) => (
               <OptionRow
                 key={option.value}
                 label={option.label}
@@ -2251,7 +2257,7 @@ export default function NewOrderClient({
               editDisabled={actionLocked}
             >
                 <SummaryRow label="תאריך הזמנה" value={orderDate} />
-                <SummaryRow label="סטטוס הזמנה" value={ORDER_STATUS_OPTIONS.find((o) => o.value === orderStatus)?.label ?? orderStatus} />
+                <SummaryRow label="סטטוס הזמנה" value={ORDER_STATUS_OPTIONS.find((o) => o.value === orderStatus)?.label ?? getOrderStatusLabel(orderStatus)} />
                 {requestedDeliveryDate ? <SummaryRow label="תאריך אספקה מבוקש" value={requestedDeliveryDate} /> : null}
                 {notes.trim() ? <SummaryRow label="הערות" value={notes.trim()} /> : null}
             </SummarySection>

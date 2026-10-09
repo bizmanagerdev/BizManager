@@ -125,17 +125,16 @@ export function mapCustomerSearchResult(row: Record<string, unknown>): CustomerO
   };
 }
 
-export const ORDER_STATUS_OPTIONS = [
+/**
+ * The statuses an order is given by hand: open, or delivered (owner,
+ * 2026-10-09: "an order that's open — like a draft — and then it's delivered.
+ * That's it"; the orders hold just those, and one old "closed"). A partial
+ * delivery is set by the delivery confirmation itself, not chosen here.
+ */
+export const ORDER_STATUS_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
   { value: "draft", label: "פתוח" },
-  { value: "confirmed", label: "מאושר" },
-  { value: "processing", label: "בטיפול" },
-  { value: "out_for_delivery", label: "במשלוח" },
-  { value: "partially_delivered", label: "סופק חלקית" },
   { value: "delivered", label: "סופק" },
-  { value: "completed", label: "הושלם" },
-  { value: "closed", label: "סגור" },
-  { value: "cancelled", label: "בוטל" },
-] as const;
+];
 
 export const STEP_LABEL: Record<Step, string> = {
   customer: "לקוח",
