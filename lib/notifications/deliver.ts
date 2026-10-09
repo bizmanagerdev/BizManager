@@ -11,6 +11,12 @@ export type DeliverOptions = {
    * Mute + push_paused are still honored (those are explicit "no").
    */
   alwaysPush?: boolean;
+  /**
+   * One bell entry per tag: a recipient who already has a notification with
+   * this payload's tag gets the push again but no second row (the nightly
+   * review pings each run of the night; the bell held one row per run).
+   */
+  inAppOncePerTag?: boolean;
 };
 
 // Per-recipient preference filtering:
@@ -48,6 +54,18 @@ async function partitionByPrefs(
   }
 }
 
+/** The recipients who have no notification with this tag yet (all of them, if that can't be read). */
+async function withoutTag(supabase: SupabaseClient, authIds: string[], tag: string): Promise<string[]> {
+  try {
+    const { data, error } = await supabase.from("notifications").select("user_id").eq("tag", tag).in("user_id", authIds);
+    if (error || !data) return authIds;
+    const have = new Set((data as Array<{ user_id?: string | null }>).map((row) => row.user_id));
+    return authIds.filter((id) => !have.has(id));
+  } catch {
+    return authIds;
+  }
+}
+
 // One place that both RECORDS an in-app notification (for the bell's read/unread
 // history) and sends the push, honoring each recipient's mute/pause prefs.
 // Callers pass AUTH uids + a mute bucket (see lib/notifications/categories.ts).
@@ -61,7 +79,8 @@ export async function deliverPush(
   const ids = [...new Set(authIds)].filter(Boolean);
   if (ids.length === 0) return { sent: 0, failed: 0 };
 
-  const { inApp, push } = await partitionByPrefs(supabase, ids, category, opts);
+  const { inApp: inAppAll, push } = await partitionByPrefs(supabase, ids, category, opts);
+  const inApp = opts.inAppOncePerTag && payload.tag ? await withoutTag(supabase, inAppAll, payload.tag) : inAppAll;
 
   if (inApp.length > 0) {
     try {

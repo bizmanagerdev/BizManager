@@ -16,6 +16,12 @@ import { getNightlyConfig, recipientsForAudience } from "@/lib/notifications/ale
 // This is deliberately exempt from the owner-first delivery rules: it's an
 // opted-in nightly ritual for the back office, so it pings regardless of each
 // user's delivery mode.
+//
+// One alert per NIGHT, and only the latest one open (owner, 2026-10-09: they
+// piled up — one per night, never closed, and ~6 bell rows a night): a run
+// after midnight belongs to the night that began that evening, an earlier
+// night's alert still open is closed when a new night starts, and the bell
+// gets one row per night however many times the night pings.
 
 function israelHour(d: Date): number {
   const s = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Jerusalem", hour: "2-digit", hour12: false }).format(d);
@@ -50,8 +56,29 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, skipped: "outside-window", hour });
   }
 
-  const date = israelDate(now);
+  // The night's date: the day that's ending. In a window that wraps past
+  // midnight (23 → 1), 00:xx still belongs to the evening before.
+  const afterMidnight = cfg.startHour > cfg.endHour && hour < cfg.endHour;
+  const date = israelDate(afterMidnight ? new Date(now.getTime() - 12 * 3600_000) : now);
   const nowIso = now.toISOString();
+  const dedupe = `nightly_review:${date}`;
+
+  // Earlier nights' alerts are stale once a new night starts — close them, as
+  // the reminders engine closes a rule's keys that no longer apply, and mark
+  // their bell rows read.
+  await supabase
+    .from("reminders")
+    .update({ status: "auto_resolved", resolved_at: nowIso, updated_at: nowIso })
+    .eq("source", "system")
+    .eq("category", "nightly_review")
+    .eq("status", "pending")
+    .neq("dedupe_key", dedupe);
+  await supabase
+    .from("notifications")
+    .update({ read_at: nowIso })
+    .eq("category", "nightly")
+    .is("read_at", null)
+    .neq("tag", `nightly-review-${date}`);
 
   // Active that day = scheduled to be running today. start_date has begun, and
   // the end_date hasn't passed (null end_date = ongoing).
@@ -72,7 +99,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, skipped: "no-active-projects", date });
   }
 
-  const dedupe = `nightly_review:${date}`;
   const names = projects
     .slice(0, 3)
     .map((p) => (typeof p.name === "string" && p.name ? p.name : "פרויקט"))
@@ -135,8 +161,9 @@ export async function GET(req: Request) {
       },
       "nightly",
       // The nightly ritual is opted-in by design — it isn't an automatic finding,
-      // so it isn't subject to the per-user delivery mode.
-      { alwaysPush: true }
+      // so it isn't subject to the per-user delivery mode. The phone pings each
+      // run until it's marked done; the bell keeps one row for the night.
+      { alwaysPush: true, inAppOncePerTag: true }
     );
     sent = res.sent;
     failed = res.failed;
