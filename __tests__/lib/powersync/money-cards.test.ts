@@ -244,4 +244,25 @@ describe("the dashboard's collections card", () => {
     expect(card.late.map((d) => [d.customerName, d.amount, d.daysLate, d.sources])).toEqual([["משה כהן", 800, 6, 1]]);
     expect(card.upcoming.map((d) => [d.customerName, d.amount])).toEqual([['חברת בע"מ', 500]]);
   });
+
+  it("holds the loans we gave, as /collections does: one past its date is late", async () => {
+    const local = createLocalSupabase(
+      fakeReader(
+        copy({
+          orders: [],
+          projects: [],
+          payments: [],
+          loans: [
+            // Lent on 1 Aug, due 30 Aug, nothing repaid: 38 days late.
+            { id: "l1", direction: "given", borrower: "שמעון", loan_date: "2026-08-01", amount: "5000", due_date: "2026-08-30", interest_amount: "0", business_domain: "general_business", counterparty_customer_id: "c1", status: "active", created_at: "2026-08-01T08:00:00Z" },
+            // A loan we took: never on the collections list.
+            { id: "l2", direction: "taken", lender: "בנק", loan_date: "2026-08-01", amount: "9000", due_date: "2026-09-01", interest_amount: "0", business_domain: "general_business", status: "active", created_at: "2026-08-01T08:00:00Z" },
+          ],
+        })
+      )
+    );
+    const card = await computeLocalCard(local, "collections", viewer);
+    expect(card.late.map((d) => [d.customerName, d.amount, d.daysLate])).toEqual([["משה כהן", 5000, 38]]);
+    expect(card.lateTotal).toBe(5000);
+  });
 });

@@ -1172,9 +1172,10 @@ export type CollectionsSummary = {
  *
  * It used to read only sources with a payment record already late or dated,
  * so an order nobody had registered a payment against — most of them — never
- * reached the card (2026-10-09: 2 of 51 open debts showed). What it still
- * leaves to the page: what each debt is for, the payments to mark collected,
- * the last contact, and loans and rent.
+ * reached the card (2026-10-09: 2 of 51 open debts showed). Loans we gave and
+ * rent are in it too, built as the page builds them (owner: "exactly like the
+ * page"). What it leaves to the page: what each debt is for, the payments to
+ * mark collected, and the last contact.
  */
 export async function getCollectionsSummary(
   supabase: SupabaseClient,
@@ -1193,7 +1194,7 @@ export async function getCollectionsSummary(
     upcomingTotal: 0,
   };
 
-  const [dueToday, sourcesResult] = await Promise.all([
+  const [dueToday, sourcesResult, loanRows, rentRows] = await Promise.all([
     getPaymentsDueToday(supabase, today).catch(() => [] as PaymentDueToday[]),
     supabase
       .from("collections_view")
@@ -1205,6 +1206,8 @@ export async function getCollectionsSummary(
       // A total order: the server and the phone keep the same rows at the cap.
       .order("source_id", { ascending: true })
       .range(0, limit - 1),
+    buildLoanSourceRows(supabase, today).catch(() => [] as CollectionSourceRow[]),
+    buildRentSourceRows(supabase, today).catch(() => [] as CollectionSourceRow[]),
   ]);
 
   if (sourcesResult.error) return { ...empty, today: dueToday, todayTotal: sum(dueToday) };
@@ -1222,16 +1225,9 @@ export async function getCollectionsSummary(
   // as on the page.
   const lateBy = new Map<string, CollectionsDebtor>();
   const soonBy = new Map<string, CollectionsDebtor>();
-  const add = (into: Map<string, CollectionsDebtor>, key: string, row: Row, amount: number, daysLate: number) => {
-    const debtor: CollectionsDebtor = into.get(key) ?? {
-      customerId: str(row, "customer_id"),
-      customerName: str(row, "customer_name") ?? "לקוח",
-      customerPhone: str(row, "customer_phone"),
-      customerWhatsapp: str(row, "customer_whatsapp"),
-      amount: 0,
-      daysLate: 0,
-      sources: 0,
-    };
+  type Who = Pick<CollectionsDebtor, "customerId" | "customerName" | "customerPhone" | "customerWhatsapp">;
+  const add = (into: Map<string, CollectionsDebtor>, key: string, who: Who, amount: number, daysLate: number) => {
+    const debtor: CollectionsDebtor = into.get(key) ?? { ...who, amount: 0, daysLate: 0, sources: 0 };
     debtor.amount += amount;
     debtor.sources += 1;
     debtor.daysLate = Math.max(debtor.daysLate, daysLate);
@@ -1241,6 +1237,12 @@ export async function getCollectionsSummary(
   for (const row of rows) {
     const key = str(row, "customer_id") ?? str(row, "customer_name") ?? str(row, "source_id") ?? "";
     if (!key) continue;
+    const who: Who = {
+      customerId: str(row, "customer_id"),
+      customerName: str(row, "customer_name") ?? "לקוח",
+      customerPhone: str(row, "customer_phone"),
+      customerWhatsapp: str(row, "customer_whatsapp"),
+    };
     const sourceId = str(row, "source_id") ?? "";
     const term = isProject(row) ? projectDueById.get(sourceId) : orderDueById.get(sourceId);
     const sm = computeSourceCollection({
@@ -1255,8 +1257,24 @@ export async function getCollectionsSummary(
       blockOverdue: !isProject(row) && isOpenOrderStatus(term?.status),
       today,
     });
-    if (sm.late > 0.009) add(lateBy, key, row, sm.late, sm.daysLate);
-    if (sm.expected > 0.009) add(soonBy, key, row, sm.expected, 0);
+    if (sm.late > 0.009) add(lateBy, key, who, sm.late, sm.daysLate);
+    if (sm.expected > 0.009) add(soonBy, key, who, sm.expected, 0);
+  }
+
+  // Loans we gave and rent: already worked out (late / expected) by the
+  // page's own builders.
+  for (const row of [...loanRows, ...rentRows]) {
+    const key = row.customer_id ?? row.customer_name;
+    if (!key) continue;
+    const who: Who = {
+      customerId: row.customer_id,
+      // Trimmed, as the debts view trims it (a customer's own name can carry spaces).
+      customerName: row.customer_name.trim() || "לקוח",
+      customerPhone: row.customer_phone,
+      customerWhatsapp: row.customer_whatsapp,
+    };
+    if (row.overdue_amount > 0.009) add(lateBy, key, who, row.overdue_amount, row.days_late);
+    if (row.pending_amount > 0.009) add(soonBy, key, who, row.pending_amount, 0);
   }
 
   // Worst first on both sides: the oldest debt is the one that stops being
