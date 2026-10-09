@@ -90,9 +90,10 @@ export default function PwaRegistration() {
     // "jumps back as if it just loaded" — the new version arrives a few seconds after the
     // app opens, and a reload then lands on whatever page the address still names, often
     // the one being left). Only while the app is in the background: at once if it already
-    // is, else the next time it goes there. Meanwhile, moving to another page already
-    // loads the new version — Next does a full load of the destination when the server's
-    // build differs from the running one.
+    // is, else the next time it goes there. Meanwhile the running version keeps working:
+    // Vercel's Skew Protection answers its page moves and refreshes from its own
+    // deployment, and the new version arrives on the next opening — its page saved and
+    // its code fetched in the background by the service worker (public/sw.js).
     const hadController = Boolean(navigator.serviceWorker.controller);
     let reloadWhenHidden = false;
     const reloadOnce = () => {

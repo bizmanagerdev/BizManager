@@ -58,6 +58,10 @@ export default function RootLayout({
     // so the server-rendered attribute can never match the client.
     <html lang="he" dir="rtl" suppressHydrationWarning>
       <head>
+        {/* Which build this page is: the service worker reads it off a saved
+            page (public/sw.js — whether to fetch its code ahead, whether to
+            carry it into a new version's saved pages). */}
+        <meta name="bizh-build" content={process.env.NEXT_PUBLIC_BUILD_ID ?? ""} />
         {/* Self-heal a stale service-worker cache serving an old page whose JS chunk
             references no longer exist on the server (confirmed live 2026-09-14: a
             worker's connection dropped mid-navigation during a burst of deploys,

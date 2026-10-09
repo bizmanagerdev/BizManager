@@ -108,12 +108,21 @@ function loadWorkerWithCaches(network: () => Response | Promise<Response>, saved
         put: async (request: { url: string }, response: Response) => void store.set(keyOf(request), response),
         match: async (request: { url: string }) => store.get(keyOf(request))?.clone(),
         delete: async (request: { url: string }) => store.delete(keyOf(request)),
+        keys: async () => [...store.keys()],
         add: async () => {},
       };
     },
+    has: async (name: string) => stores.has(name),
     keys: async () => [...stores.keys()],
     delete: async (name: string) => stores.delete(name),
-    match: async () => undefined,
+    // Every cache, as the browser's caches.match() looks.
+    match: async (request: { url: string } | string) => {
+      for (const store of stores.values()) {
+        const hit = store.get(keyOf(request));
+        if (hit) return hit.clone();
+      }
+      return undefined;
+    },
   };
   const fetchMock = vi.fn(async () => network());
   const self = {
@@ -336,5 +345,98 @@ describe("service worker: when the connection hangs or drops", () => {
       respondWith,
     });
     expect(respondWith).not.toHaveBeenCalled();
+  });
+});
+
+// After a deploy: code files are kept by their path (the ?dpl= deployment tag
+// changes every deploy, the file doesn't); a newer build's page saved in the
+// background has its code fetched ahead; a file still used outlives the next
+// purge; and a new version starts with the saved pages that are already its
+// build (owner, 2026-10-09: the first opening after a deploy took 6–11 s).
+
+describe("service worker: code files and saved pages across deploys", () => {
+  async function asset(worker: ReturnType<typeof loadWorkerWithCaches>, url: string) {
+    let responded: Promise<Response> | undefined;
+    worker.handlers.fetch({
+      request: { method: "GET", url, mode: "no-cors", headers: new Headers() },
+      respondWith: (promise: Promise<Response>) => (responded = promise),
+    });
+    return (await responded!).text();
+  }
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("keeps a code file by its path: the next deploy's address for the same file comes from the phone", async () => {
+    const worker = loadWorkerWithCaches(() => new Response("chunk", { status: 200 }));
+    await asset(worker, "https://biz-h.com/_next/static/chunks/a1.js?dpl=dpl_1");
+    await settle();
+    expect(worker.stores.get("bizh-static-test")?.has("https://biz-h.com/_next/static/chunks/a1.js")).toBe(true);
+    worker.fetchMock.mockClear();
+    expect(await asset(worker, "https://biz-h.com/_next/static/chunks/a1.js?dpl=dpl_2")).toBe("chunk");
+    expect(worker.fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("a file found in an earlier version's cache is kept in this version's too", async () => {
+    const worker = loadWorkerWithCaches(() => new Response("network", { status: 200 }), {
+      "bizh-static-v1": { "https://biz-h.com/_next/static/chunks/b2.js": "old chunk" },
+    });
+    expect(await asset(worker, "https://biz-h.com/_next/static/chunks/b2.js?dpl=dpl_5")).toBe("old chunk");
+    await settle();
+    expect(worker.stores.get("bizh-static-test")?.has("https://biz-h.com/_next/static/chunks/b2.js")).toBe(true);
+    expect(worker.fetchMock).not.toHaveBeenCalled();
+  });
+
+  const page = (build: string) =>
+    `<html><head><meta name="bizh-build" content="${build}"/><script src="/_next/static/chunks/n1.js?dpl=dpl_9" async></script></head>` +
+    `<body><span hidden data-device-page="tasks"></span><script>self.__next_f.push([1,"1:I[\\"/_next/static/chunks/n2.js?dpl=dpl_9\\",[]]"])</script></body></html>`;
+
+  async function openTwice(build: string) {
+    let body = page("test");
+    const worker = loadWorkerWithCaches(() => new Response(body, { status: 200 }));
+    await open(worker, "https://biz-h.com/tasks"); // saved (this build)
+    body = page(build); // what the server sends now
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.now() + 60_000));
+    try {
+      worker.fetchMock.mockClear();
+      await open(worker, "https://biz-h.com/tasks"); // the saved page at once; refreshed behind it
+    } finally {
+      vi.useRealTimers();
+    }
+    return worker;
+  }
+
+  it("a newer build's page saved in the background: its code is fetched now, for the next opening", async () => {
+    const worker = await openTwice("newer");
+    const fetched = (worker.fetchMock.mock.calls as unknown as Array<[string | { url: string }]>).map(([request]) =>
+      typeof request === "string" ? request : request.url
+    );
+    expect(fetched).toContain("https://biz-h.com/_next/static/chunks/n1.js?dpl=dpl_9");
+    expect(fetched).toContain("https://biz-h.com/_next/static/chunks/n2.js?dpl=dpl_9");
+    const statics = worker.stores.get("bizh-static-test");
+    expect(statics?.has("https://biz-h.com/_next/static/chunks/n1.js")).toBe(true);
+    expect(statics?.has("https://biz-h.com/_next/static/chunks/n2.js")).toBe(true);
+    expect(worker.frames().get("https://biz-h.com/tasks")?.headers.get("X-Bizh-Build")).toBe("newer");
+  });
+
+  it("the same build saved again: nothing fetched ahead", async () => {
+    const worker = await openTwice("test");
+    expect(worker.fetchMock).toHaveBeenCalledTimes(1); // just the page
+  });
+
+  it("a new version starts with the previous version's saved pages of its own build — never another build's", async () => {
+    const worker = loadWorkerWithCaches(() => new Response("network", { status: 200 }), { "bizh-pages-v2": {} });
+    const saved = (build: string) =>
+      new Response(FRAME, { status: 200, headers: { "Content-Type": "text/html", "X-Bizh-Build": build } });
+    worker.stores.set(
+      "bizh-frames-v2",
+      new Map([
+        ["https://biz-h.com/dashboard", saved("test")],
+        ["https://biz-h.com/tasks", saved("v2")],
+      ])
+    );
+    let activated: Promise<unknown> | undefined;
+    worker.handlers.activate({ waitUntil: (promise: Promise<unknown>) => (activated = promise) });
+    await activated;
+    expect([...worker.frames().keys()]).toEqual(["https://biz-h.com/dashboard"]);
   });
 });

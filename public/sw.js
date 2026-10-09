@@ -96,6 +96,7 @@ self.addEventListener("activate", (event) => {
       // answers; anything older goes.
       const keys = await caches.keys();
       const previous = previousVersion(keys);
+      await carryFramesOver(previous);
       await Promise.all(
         keys
           .filter((k) => !ALL_CACHES.includes(k) && !(previous && versionOf(k) === previous))
@@ -216,6 +217,106 @@ async function matchCache(request) {
     return (await caches.match(request)) ?? null;
   } catch {
     return null;
+  }
+}
+
+// ── Code files across deploys ────────────────────────────────────────────────
+// With Vercel's Skew Protection every /_next/static address carries the
+// deployment's id (?dpl=…), which changes on every deploy — keyed on the full
+// address, each deploy downloaded every file again, the unchanged ones too.
+// A file's name is its content hash, so its path alone is the key; the fetch
+// keeps the ?dpl= so a miss still reaches the deployment that has the file.
+function staticKey(url) {
+  return url.origin + url.pathname;
+}
+
+/**
+ * A code file from this version's cache, else from an earlier version's (or
+ * an entry saved under its full address before) — then kept in this
+ * version's too, so a file still in use outlives the next deploy's purge.
+ */
+async function cachedStatic(key, request) {
+  const own = await matchIn(STATIC_CACHE, key);
+  if (own) return own;
+  const earlier = (await matchCache(key)) ?? (await matchCache(request));
+  if (earlier) putInCache(STATIC_CACHE, key, earlier);
+  return earlier;
+}
+
+/** The build a page is (its <meta name="bizh-build">, app/layout.tsx), or null. */
+function buildOf(html) {
+  const match = /<meta name="bizh-build" content="([^"]*)"/.exec(html);
+  return match && match[1] ? match[1] : null;
+}
+
+const AHEAD_MAX_FILES = 150;
+const AHEAD_AT_ONCE = 4;
+const CODE_FILE = /\.(?:js|css|woff2?|ttf|png|svg|jpg|webp|ico|json)$/;
+
+/**
+ * A newer build's page, saved for the next opening: the code it loads is
+ * fetched now, so that opening finds it on the phone instead of downloading
+ * it cold (half of the slow "first opening after a deploy"). Not on data
+ * saver; best effort — whatever isn't fetched loads as before.
+ */
+async function fetchAhead(html) {
+  try {
+    const connection = self.navigator && self.navigator.connection;
+    if (connection && connection.saveData) return;
+    const files = new Map();
+    // In attributes, and in the page's inline data where quotes are escaped
+    // (\"/_next/static/…\") — the backslash ends the address.
+    for (const match of html.matchAll(/\/_next\/static\/[^"'\s\\)<>]+/g)) {
+      const url = new URL(match[0].replace(/&amp;/g, "&"), self.location.origin);
+      if (!CODE_FILE.test(url.pathname)) continue;
+      files.set(staticKey(url), url.href);
+      if (files.size >= AHEAD_MAX_FILES) break;
+    }
+    const missing = [];
+    for (const [key, href] of files) {
+      if (!(await matchCache(key))) missing.push([key, href]);
+    }
+    const cache = await caches.open(STATIC_CACHE);
+    let next = 0;
+    const worker = async () => {
+      while (next < missing.length) {
+        const [key, href] = missing[next++];
+        try {
+          const res = await fetch(href);
+          if (res.ok) await cache.put(key, res);
+        } catch {
+          // Loads when the page asks for it.
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: AHEAD_AT_ONCE }, worker));
+  } catch {
+    // Nothing fetched ahead — the next opening downloads it, as before.
+  }
+}
+
+/**
+ * A new version starts with the previous version's saved pages that are
+ * already ITS build (the background refresh saved them there after the
+ * deploy), so the opening after an update is still instant — and the
+ * address "/" still goes straight to the dashboard. Never another build's
+ * page: it would register its own (older) worker again.
+ */
+async function carryFramesOver(previous) {
+  if (!previous) return;
+  try {
+    const name = `bizh-frames-${previous}`;
+    if (!(await caches.has(name))) return;
+    const from = await caches.open(name);
+    const to = await caches.open(FRAMES_CACHE);
+    for (const request of await from.keys()) {
+      const response = await from.match(request);
+      if (response && response.headers.get("X-Bizh-Build") === V && !(await to.match(request))) {
+        await to.put(request, response);
+      }
+    }
+  } catch {
+    // Not carried — the first opening after the update waits for the server.
   }
 }
 
@@ -393,8 +494,10 @@ async function matchFrame(request) {
   }
 }
 
-// `response` must be a copy nobody else reads.
-async function saveFrame(request, response) {
+// `response` must be a copy nobody else reads. `ahead`: a page of a newer build
+// than this worker's (a deploy since) has its code fetched now (fetchAhead) —
+// only from the background refresh, never while the page itself is loading it.
+async function saveFrame(request, response, { ahead = false } = {}) {
   try {
     const cache = await caches.open(FRAMES_CACHE);
     if (!response || !response.ok || response.redirected || response.type === "opaqueredirect") {
@@ -406,15 +509,14 @@ async function saveFrame(request, response) {
       await cache.delete(request);
       return;
     }
-    await cache.put(
-      request,
-      new Response(html, {
-        headers: {
-          "Content-Type": response.headers.get("Content-Type") || "text/html; charset=utf-8",
-          "X-Bizh-Frame-Saved": String(Date.now()),
-        },
-      })
-    );
+    const build = buildOf(html);
+    const headers = {
+      "Content-Type": response.headers.get("Content-Type") || "text/html; charset=utf-8",
+      "X-Bizh-Frame-Saved": String(Date.now()),
+    };
+    if (build) headers["X-Bizh-Build"] = build;
+    await cache.put(request, new Response(html, { headers }));
+    if (ahead && build && build !== V) await fetchAhead(html);
   } catch {
     // Not saved — the next open just waits for the server, as before.
   }
@@ -431,13 +533,15 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname === "/api/ping") return;
 
   // 1. Next.js immutable chunks — always content-hashed, safe to cache forever
+  // (keyed on the path, without the deployment's ?dpl= — staticKey above).
   if (url.pathname.startsWith("/_next/static/")) {
+    const key = staticKey(url);
     event.respondWith(
-      matchCache(request).then(
+      cachedStatic(key, request).then(
         (cached) =>
           cached ??
           fetch(request).then((res) => {
-            putInCache(STATIC_CACHE, request, res);
+            putInCache(STATIC_CACHE, key, res);
             return res;
           })
       )
@@ -538,7 +642,7 @@ self.addEventListener("fetch", (event) => {
               Promise.resolve(event.preloadResponse)
                 .catch(() => undefined)
                 .then((res) => res || fetch(request))
-                .then((res) => saveFrame(request, res))
+                .then((res) => saveFrame(request, res, { ahead: true }))
                 .catch(() => {})
             );
             return saved;
