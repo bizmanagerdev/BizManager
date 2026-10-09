@@ -269,7 +269,7 @@ describe("views and directories", () => {
         .select("id,pending_amount,overdue_amount,next_due_date,last_payment_date,remaining_balance")
         .in("id", ["o1", "o2"]);
       expect(data).toEqual([
-        // Due today counts as overdue (due_date <= CURRENT_DATE); 22:30 UTC is still the 5th.
+        // Due today counts as overdue (due_date <= israel_today()); last_payment_date is the UTC date of 22:30 UTC, still the 5th.
         { id: "o1", pending_amount: 60, overdue_amount: 25, next_due_date: "2026-10-06", last_payment_date: "2026-10-05", remaining_balance: 60 },
         { id: "o2", pending_amount: 0, overdue_amount: 0, next_due_date: null, last_payment_date: null, remaining_balance: 10 },
       ]);
@@ -411,8 +411,8 @@ describe("the server's own loaders, run on the device copy", () => {
 });
 
 describe("the money views, worked out on the device", () => {
-  // One worked example, every figure by hand. "Today" is 2026-10-06 (UTC —
-  // the database's CURRENT_DATE).
+  // One worked example, every figure by hand. "Today" is 2026-10-06 (Israel's
+  // date — the views' israel_today()).
   const tables = {
     users: [
       { id: "u1", full_name: "שעתי", pay_tracking_mode: "session" },
@@ -731,6 +731,29 @@ describe("the sales tabs, worked out on the device", () => {
         created_by_name: "מנהל",
         needs_invoice: true,
       });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("'due by today' is Israel's today, like the views' israel_today(): 01:30 on the 7th already counts the 7th", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    // 22:30 UTC on the 6th = 01:30 on the 7th in Israel (summer time).
+    vi.setSystemTime(new Date("2026-10-06T22:30:00Z"));
+    try {
+      const db = createLocalSupabase(
+        fakeReader({
+          ...tables,
+          payments: [
+            { id: "p1", order_id: "o1", amount_total: "40", payment_status: "pending", due_date: "2026-10-07" },
+            { id: "p2", order_id: "o1", amount_total: "60", payment_status: "pending", due_date: "2026-10-08" },
+          ],
+        })
+      );
+      const overview = await db.from("order_overview_view").select("order_id,overdue_amount").eq("order_id", "o1").maybeSingle();
+      expect(overview.data).toEqual({ order_id: "o1", overdue_amount: 40 });
+      const financials = await db.from("order_financials_view").select("id,overdue_amount").in("id", ["o1"]);
+      expect(financials.data).toEqual([{ id: "o1", overdue_amount: 40 }]);
     } finally {
       vi.useRealTimers();
     }

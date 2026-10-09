@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { israelDateKey } from "@/lib/timezone";
 
 // The server's data loaders, run against the on-device copy: a stand-in for
 // the Supabase client that answers `.from(...).select(...).eq(...)…` and the
@@ -472,8 +473,9 @@ const num = (value: unknown): number => (typeof value === "number" && Number.isF
 const clean = (value: number): number => Math.round(value * 1e6) / 1e6;
 /** numeric(12,2): rounds half away from zero, like Postgres. */
 const numeric2 = (value: number): number => (Math.sign(value) * Math.round(Math.abs(value) * 100)) / 100;
-/** Postgres's CURRENT_DATE here: the database runs on UTC. */
-const utcToday = (): string => new Date().toISOString().slice(0, 10);
+// "Today" in the views is public.israel_today() — Israel's date — so here it is
+// israelDateKey(). A timestamp's date (`::date` in a view) is still taken on
+// the database's own clock, UTC: utcDateOf.
 const utcDateOf = (timestamp: unknown): string | null => (typeof timestamp === "string" ? timestamp.slice(0, 10) : null);
 const pad2 = (n: number): string => String(n).padStart(2, "0");
 
@@ -509,7 +511,7 @@ async function workerDebtItems(reader: LocalReader): Promise<Row[]> {
     loadTable(reader, "worker_payment_allocations"),
     loadTable(reader, "worker_payments"),
   ]);
-  const today = utcToday();
+  const today = israelDateKey();
   const trackingMode = new Map(users.map((u) => [u.id, u.pay_tracking_mode]));
   const periodById = new Map(periods.map((p) => [p.id, p]));
   const agreementsByUser = groupBy(agreements, (a) => a.user_id);
@@ -617,7 +619,7 @@ async function projectFinancials(reader: LocalReader): Promise<Row[]> {
     loadTable(reader, "payments"),
     workerDebtItems(reader),
   ]);
-  const today = utcToday();
+  const today = israelDateKey();
   const expenseAmount = new Map(expenses.map((e) => [e.id, num(e.amount)]));
   const linksByProject = groupBy(projectExpenses, (pe) => pe.project_id);
   const sessionsByProject = groupBy(
@@ -815,7 +817,7 @@ const VIEWS: Record<string, SourceLoader> = {
       list.push(p);
       byOrder.set(p.order_id as string, list);
     }
-    const today = utcToday();
+    const today = israelDateKey();
     return orders.map((o) => {
       const list = byOrder.get(o.id as string) ?? [];
       const amount = (p: Row) => (typeof p.amount_total === "number" ? p.amount_total : 0);
@@ -1035,7 +1037,7 @@ const VIEWS: Record<string, SourceLoader> = {
       loadTable(reader, "customer_branches"),
       loadTable(reader, "payments"),
     ]);
-    const today = utcToday();
+    const today = israelDateKey();
     const customerById = new Map(customers.map((c) => [c.id, c]));
     const userById = new Map(users.map((u) => [u.id, u]));
     const branchById = new Map(branches.map((b) => [b.id, b]));

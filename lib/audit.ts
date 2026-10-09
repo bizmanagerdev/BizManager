@@ -4,6 +4,7 @@ import { formatMoney } from "@/lib/money";
 import { ORDER_NOTES_SEPARATOR } from "@/lib/orders/comments";
 import { getSalaryTypeLabel } from "@/lib/payroll";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { israelDateKey, israelWallClockToUtc } from "@/lib/timezone";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type AuditLogPrimitive = string | number | boolean | null;
@@ -2678,12 +2679,13 @@ export async function getAuditFeedPaginated(
   };
 }
 
-// Count of audit rows recorded since local midnight — the "N פעולות היום" the
-// activity header shows. A head-only count query, so it's cheap. Returns 0 on
-// error rather than throwing; the subtitle just shows "0 פעולות היום".
+// Count of audit rows recorded since midnight in Israel — the "N פעולות היום"
+// the activity header shows (the server's own midnight is UTC's, two or three
+// hours later). A head-only count query, so it's cheap. Returns 0 on error
+// rather than throwing; the subtitle just shows "0 פעולות היום".
 export async function getAuditActionsTodayCount(supabase: SupabaseClient): Promise<number> {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
+  const [year, month, day] = israelDateKey().split("-").map(Number);
+  const start = israelWallClockToUtc(year, month, day, 0, 0);
   const { count, error } = await supabase
     .from("audit_logs")
     .select("id", { count: "exact", head: true })

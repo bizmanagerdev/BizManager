@@ -1,10 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   buildAuditFeedItem,
   buildDetails,
   buildFocusHref,
   buildHref,
   buildParentKey,
+  getAuditActionsTodayCount,
   invalidateAuditFlagCache,
   logAuditEvent,
   resolvePrivateTaskIds,
@@ -582,5 +584,33 @@ describe("resolveUserDisplayNamesForValues — names through user_labels()", () 
     const map = await resolveUserDisplayNamesForValues(database as never, ["", ""]);
     expect(database.rpc).not.toHaveBeenCalled();
     expect(map).toEqual({});
+  });
+});
+
+describe("getAuditActionsTodayCount — 'actions today' starts at midnight in Israel", () => {
+  function countingClient() {
+    const gte = vi.fn(async () => ({ count: 3, error: null }));
+    const client = { from: vi.fn(() => ({ select: vi.fn(() => ({ gte })) })) };
+    return { client: client as unknown as SupabaseClient, gte };
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("summer: at 02:00 on 8 Oct it counts from 00:00 Israel (21:00Z on the 7th), not from the server's UTC midnight", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-07T23:00:00Z"));
+    const { client, gte } = countingClient();
+    expect(await getAuditActionsTodayCount(client)).toBe(3);
+    expect(gte).toHaveBeenCalledWith("created_at", "2026-10-07T21:00:00.000Z");
+  });
+
+  it("winter: Israel's midnight is 22:00Z the day before", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-01-15T10:00:00Z"));
+    const { client, gte } = countingClient();
+    await getAuditActionsTodayCount(client);
+    expect(gte).toHaveBeenCalledWith("created_at", "2026-01-14T22:00:00.000Z");
   });
 });
