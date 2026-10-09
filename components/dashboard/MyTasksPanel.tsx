@@ -13,6 +13,7 @@ import DashboardCardFooter from "@/components/dashboard/DashboardCardFooter";
 import QuietCard from "@/components/dashboard/QuietCard";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
+import { CountBadge } from "@/components/ui/count-badge";
 import { cn } from "@/lib/utils";
 import { formatShortDate } from "@/lib/date";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
@@ -174,13 +175,15 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
             type="button"
             onClick={() => setTab(tab_.key)}
             className={cn(
-              "whitespace-nowrap rounded-lg px-2 py-1 text-xs font-medium transition-colors",
+              "inline-flex items-center gap-1 whitespace-nowrap rounded-lg px-2 py-1 text-xs font-medium transition-colors",
               tab === tab_.key
                 ? "bg-secondary/15 text-foreground ring-1 ring-secondary/40"
                 : "bg-muted text-muted-foreground hover:bg-secondary/10"
             )}
           >
-            {tab_.label} {counts[tab_.key]}
+            {tab_.label}
+            {/* An unselected chip is bg-muted itself, so its count is a white pill. */}
+            <CountBadge count={counts[tab_.key]} active={tab === tab_.key} className={tab === tab_.key ? undefined : "bg-background"} />
           </button>
         ))}
       </div>

@@ -37,7 +37,7 @@ const TRIGGER_CLASSES: Record<TabsVariant, string> = {
 const COUNT_BADGE_CLASSES: Record<TabsVariant, string> = {
   pill: "ms-1 inline-flex min-w-4 items-center justify-center rounded-full bg-background/60 px-1 text-[10px] font-semibold leading-4 text-muted-foreground group-data-[state=active]:bg-primary-foreground/20 group-data-[state=active]:text-primary-foreground",
   underline:
-    "ms-1 inline-flex min-w-4 items-center justify-center rounded-full bg-muted px-1 text-[10px] font-semibold leading-4 text-muted-foreground group-data-[state=active]:bg-primary group-data-[state=active]:text-primary-foreground",
+    "inline-flex min-w-4 items-center justify-center rounded-full bg-muted px-1 text-[10px] font-semibold leading-4 text-muted-foreground group-data-[state=active]:bg-primary group-data-[state=active]:text-primary-foreground",
 };
 
 export const TabsList = React.forwardRef<

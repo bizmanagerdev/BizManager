@@ -7,6 +7,7 @@ import { PrefetchKind } from "next/dist/client/components/router-reducer/router-
 import { DeliveryIcon, InventoryIcon, OrderIcon, SuccessIcon, TagIcon } from "@/components/ui/icons";
 import type { IconComponent } from "@/components/ui/icons";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
+import { CountBadge } from "@/components/ui/count-badge";
 
 type SalesTab = "orders" | "closed" | "inventory" | "price-list" | "deliveries";
 
@@ -124,15 +125,7 @@ export default function SalesTabsNav({
             <Icon className="h-4 w-4 shrink-0" />
             <span className="sm:hidden">{tab.shortLabel ?? tab.label}</span>
             <span className="hidden sm:inline">{tab.label}</span>
-            {count !== null ? (
-              <span
-                className={`inline-flex min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold leading-4 ${
-                  isActive ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                }`}
-              >
-                {count}
-              </span>
-            ) : null}
+            {count !== null ? <CountBadge count={count} active={isActive} /> : null}
           </Link>
         );
       })}

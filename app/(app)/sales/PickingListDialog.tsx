@@ -2,6 +2,7 @@
 
 import { cloneElement, useCallback, useMemo, useState, type ReactElement } from "react";
 import { Button } from "@/components/ui/button";
+import { CountBadge } from "@/components/ui/count-badge";
 import { ViewDialog } from "@/components/ui/view-dialog";
 import { SpinnerIcon, WarehouseIcon } from "@/components/ui/icons";
 import { toHebrewError } from "@/lib/error-messages";
@@ -144,13 +145,15 @@ export default function PickingListDialog({
                     type="button"
                     onClick={() => toggleCity(city)}
                     className={[
-                      "rounded-full border px-3 py-1 text-sm transition-colors",
+                      "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors",
                       active
                         ? "border-primary bg-primary text-primary-foreground"
                         : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
                     ].join(" ")}
                   >
-                    {city} ({count})
+                    {city}
+                    {/* A selected chip is already bg-primary, so its count is a light tint. */}
+                    <CountBadge count={count} className={active ? "bg-primary-foreground/20 text-primary-foreground" : undefined} />
                   </button>
                 );
               })}

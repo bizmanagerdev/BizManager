@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/payroll";
 import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
+import { CountBadge } from "@/components/ui/count-badge";
 import type { CollectionsDebtor, CollectionsSummary } from "@/lib/collections";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
 import { t } from "@/lib/i18n/t";
@@ -183,7 +184,8 @@ export default function CollectionsCard({ summary, locale }: { summary: Collecti
                     )}
                   >
                     <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
-                    {t(dashboardDict, locale, "lateLabel")} {summary.lateCount}
+                    {t(dashboardDict, locale, "lateLabel")}
+                    <CountBadge count={summary.lateCount} active={tab === "late"} />
                     <span className="tabular-nums">· {formatCurrency(summary.lateTotal)}</span>
                   </button>
                 ) : null}
@@ -201,7 +203,8 @@ export default function CollectionsCard({ summary, locale }: { summary: Collecti
                     )}
                   >
                     <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
-                    {t(dashboardDict, locale, "stageScheduled")} {summary.upcomingCount}
+                    {t(dashboardDict, locale, "stageScheduled")}
+                    <CountBadge count={summary.upcomingCount} active={tab === "upcoming"} className={tab === "upcoming" ? undefined : "bg-background"} />
                     <span className="tabular-nums">· {formatCurrency(summary.upcomingTotal)}</span>
                   </button>
                 ) : null}

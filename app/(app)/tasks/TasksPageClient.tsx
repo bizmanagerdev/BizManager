@@ -41,6 +41,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedLines, parseTaskLines } from "@/components/tasks/taskLines.helpers";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { CountBadge } from "@/components/ui/count-badge";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { InitialsAvatar, buildColorIndexMap } from "@/components/dashboard/InitialsAvatar";
@@ -567,9 +568,8 @@ function BoardColumn({
             <DragIcon className="h-4 w-4" />
           </button>
           {getTaskStatusLabel(status, locale)}
-          <span className="shrink-0 rounded-full bg-background px-1.5 text-xs font-normal text-muted-foreground">
-            {tasks.length}
-          </span>
+          {/* The list sits on bg-muted, so its count takes the card colour. */}
+          <CountBadge count={tasks.length} className="bg-background" />
         </div>
         {/* Always-visible add at the top of the list. */}
         <button

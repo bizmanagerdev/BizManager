@@ -10,6 +10,7 @@ import QuietCard from "@/components/dashboard/QuietCard";
 import { formatShortDate } from "@/lib/date";
 import { formatCurrency } from "@/lib/payroll";
 import { cn } from "@/lib/utils";
+import { CountBadge } from "@/components/ui/count-badge";
 import type { PaymentCalendarItem } from "@/lib/payables";
 import { t } from "@/lib/i18n/t";
 import { dashboardDict } from "@/lib/i18n/dictionaries/dashboard";
@@ -219,7 +220,8 @@ export default function UpcomingPayments({ summary, locale }: { summary: Payment
                     )}
                   >
                     <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
-                    {t(dashboardDict, locale, "lateLabel")} {lateCount}
+                    {t(dashboardDict, locale, "lateLabel")}
+                    <CountBadge count={lateCount} active={tab === "late"} />
                     <span className="tabular-nums">· {formatCurrency(lateTotal)}</span>
                   </button>
                 ) : null}
@@ -237,7 +239,8 @@ export default function UpcomingPayments({ summary, locale }: { summary: Payment
                     )}
                   >
                     <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
-                    {t(dashboardDict, locale, "stageScheduled")} {upcoming.length}
+                    {t(dashboardDict, locale, "stageScheduled")}
+                    <CountBadge count={upcoming.length} active={tab === "upcoming"} className={tab === "upcoming" ? undefined : "bg-background"} />
                     <span className="tabular-nums">· {formatCurrency(upcomingTotal)}</span>
                   </button>
                 ) : null}

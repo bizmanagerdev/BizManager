@@ -11,6 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import DashboardCardHeader from "@/components/dashboard/DashboardCardHeader";
 import DashboardCardFooter from "@/components/dashboard/DashboardCardFooter";
 import { Badge } from "@/components/ui/badge";
+import { CountBadge } from "@/components/ui/count-badge";
 import { cn } from "@/lib/utils";
 import { toHebrewError } from "@/lib/error-messages";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
@@ -493,7 +494,7 @@ function FilterPill({
       )}
     >
       <span>{label}</span>
-      <span className="font-bold">{count}</span>
+      <CountBadge count={count} active={active} />
     </button>
   );
 }
