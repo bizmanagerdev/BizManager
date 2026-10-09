@@ -2,6 +2,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getBusinessDomainLabel, isExpenseBusinessDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
 import { computeInsertSortOrder } from "@/lib/tasks/sortOrder";
+import { israelDateKey } from "@/lib/timezone";
 
 type TemplateRow = {
   id: string;
@@ -84,7 +85,7 @@ function getEnsureRecurringCache() {
 }
 
 function ensureCacheKey(date: Date) {
-  return date.toISOString().slice(0, 10);
+  return israelDateKey(date);
 }
 
 async function runEnsureRecurringTasksForDate(
@@ -92,9 +93,11 @@ async function runEnsureRecurringTasksForDate(
   options?: { today?: Date }
 ): Promise<EnsureRecurringResult> {
   const today = options?.today ?? new Date();
-  const year = today.getUTCFullYear();
-  const monthIndex = today.getUTCMonth();
-  const todayIso = today.toISOString().slice(0, 10);
+  // Israel's calendar: a month's tasks appear at Israeli midnight on their
+  // create day, not two or three hours later when UTC's day turns over.
+  const todayIso = israelDateKey(today);
+  const year = Number(todayIso.slice(0, 4));
+  const monthIndex = Number(todayIso.slice(5, 7)) - 1;
   const monthKey = buildMonthKey(year, monthIndex);
   const monthLabel = new Intl.DateTimeFormat("he-IL", { month: "long", year: "numeric", timeZone: "UTC" }).format(
     new Date(Date.UTC(year, monthIndex, 1))

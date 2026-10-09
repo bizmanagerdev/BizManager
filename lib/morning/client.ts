@@ -1,6 +1,7 @@
 import { findMorningClientCandidatesForCustomerRecord, type LocalCustomerForMatching } from "@/lib/morning/matching";
 import { resolveMorningConfig, type MorningConfig } from "@/lib/morning/config";
 import { MorningClient, MorningClientMatchCandidate, MorningCreateDocumentPayload, MorningDocumentResult } from "@/lib/morning/types";
+import { israelDateKey } from "@/lib/timezone";
 
 type MorningCustomerRow = LocalCustomerForMatching & {
   address?: string | null;
@@ -366,15 +367,11 @@ function mapPaymentLines(payments: MorningCreateDocumentPayload["payments"], cur
   }));
 }
 
-function todayIsoDate() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 export async function createMorningDocument(payload: MorningCreateDocumentPayload) {
   const currency = payload.currency ?? "ILS";
   const body: Record<string, unknown> = {
     type: payload.type,
-    date: payload.date ?? todayIsoDate(),
+    date: payload.date ?? israelDateKey(),
     lang: "he",
     currency,
     // 0 = let the business default decide VAT handling. Line-level vatType overrides this per row.

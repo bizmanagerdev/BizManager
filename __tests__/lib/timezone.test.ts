@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import {
   israelDateKey,
   israelLocalValueToDate,
@@ -148,6 +148,97 @@ describe("israelDateKey — today, for the business", () => {
     for (const timeZone of AWAY) {
       expect(onDeviceIn(timeZone, () => israelDateKey(evening))).toBe("2026-09-22");
     }
+  });
+});
+
+/**
+ * The bug these lock down: forms defaulted "today" to the UTC date, which is
+ * still YESTERDAY from Israeli midnight until 02:00 (winter) or 03:00 (summer).
+ * A project opened at 02:00 on 8 October 2026 came up dated the 7th.
+ */
+describe("israelDateKey — around midnight in Israel", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("the night it was caught: 02:00 on 8 Oct (summer time) is the 8th, where UTC still said the 7th", () => {
+    const at = new Date("2026-10-07T23:00:00Z");
+    expect(israelDateKey(at)).toBe("2026-10-08");
+    expect(at.toISOString().slice(0, 10)).toBe("2026-10-07");
+  });
+
+  it("winter (IST, +2): the day turns at 22:00Z", () => {
+    expect(israelDateKey(new Date("2026-01-14T21:59:59Z"))).toBe("2026-01-14");
+    expect(israelDateKey(new Date("2026-01-14T22:00:00Z"))).toBe("2026-01-15");
+  });
+
+  it("summer (IDT, +3): the day turns at 21:00Z", () => {
+    expect(israelDateKey(new Date("2026-07-14T20:59:59Z"))).toBe("2026-07-14");
+    expect(israelDateKey(new Date("2026-07-14T21:00:00Z"))).toBe("2026-07-15");
+  });
+
+  it("is already tomorrow for the whole stretch between Israeli and UTC midnight", () => {
+    // Every quarter hour from Israel's midnight until UTC's, in both seasons:
+    // the stretch where the old UTC date was a day behind.
+    const stretches = [
+      { from: "2026-01-14T22:00:00Z", to: "2026-01-15T00:00:00Z", israel: "2026-01-15", utc: "2026-01-14" },
+      { from: "2026-07-14T21:00:00Z", to: "2026-07-15T00:00:00Z", israel: "2026-07-15", utc: "2026-07-14" },
+    ];
+    for (const { from, to, israel, utc } of stretches) {
+      for (let t = Date.parse(from); t < Date.parse(to); t += 15 * 60_000) {
+        expect(israelDateKey(new Date(t))).toBe(israel);
+        expect(new Date(t).toISOString().slice(0, 10)).toBe(utc);
+      }
+    }
+  });
+
+  it("spring forward (Fri 27 Mar 2026, 02:00 → 03:00): that night starts on +2, the next on +3", () => {
+    // Midnight going INTO the 27th is still winter time…
+    expect(israelDateKey(new Date("2026-03-26T21:59:59Z"))).toBe("2026-03-26");
+    expect(israelDateKey(new Date("2026-03-26T22:00:00Z"))).toBe("2026-03-27");
+    // …and the missing hour itself belongs to the 27th.
+    expect(israelDateKey(new Date("2026-03-27T00:30:00Z"))).toBe("2026-03-27");
+    // Midnight going into the 28th is already summer time.
+    expect(israelDateKey(new Date("2026-03-27T20:59:59Z"))).toBe("2026-03-27");
+    expect(israelDateKey(new Date("2026-03-27T21:00:00Z"))).toBe("2026-03-28");
+  });
+
+  it("fall back (Sun 25 Oct 2026, 02:00 → 01:00): that night starts on +3, the next on +2", () => {
+    expect(israelDateKey(new Date("2026-10-24T20:59:59Z"))).toBe("2026-10-24");
+    expect(israelDateKey(new Date("2026-10-24T21:00:00Z"))).toBe("2026-10-25");
+    // 01:30 happens twice that night — both are the 25th.
+    expect(israelDateKey(new Date("2026-10-24T22:30:00Z"))).toBe("2026-10-25");
+    expect(israelDateKey(new Date("2026-10-24T23:30:00Z"))).toBe("2026-10-25");
+    // The next midnight is back on winter time.
+    expect(israelDateKey(new Date("2026-10-25T21:59:59Z"))).toBe("2026-10-25");
+    expect(israelDateKey(new Date("2026-10-25T22:00:00Z"))).toBe("2026-10-26");
+  });
+
+  it("rolls the month and the year with it", () => {
+    expect(israelDateKey(new Date("2026-12-31T21:59:59Z"))).toBe("2026-12-31");
+    expect(israelDateKey(new Date("2026-12-31T22:00:00Z"))).toBe("2027-01-01");
+    expect(israelDateKey(new Date("2026-04-30T21:00:00Z"))).toBe("2026-05-01");
+  });
+
+  it("gives the same answer whatever time zone the device (or server) is set to", () => {
+    const midnights = [
+      { at: "2026-01-14T22:00:00Z", israel: "2026-01-15" },
+      { at: "2026-07-14T21:00:00Z", israel: "2026-07-15" },
+      { at: "2026-10-07T23:00:00Z", israel: "2026-10-08" },
+    ];
+    for (const timeZone of [...AWAY, "Asia/Jerusalem"]) {
+      for (const { at, israel } of midnights) {
+        expect(onDeviceIn(timeZone, () => israelDateKey(new Date(at)))).toBe(israel);
+      }
+    }
+  });
+
+  it("with no argument reads the clock — the form defaults call it that way", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-07T23:00:00Z"));
+    expect(israelDateKey()).toBe("2026-10-08");
+    vi.setSystemTime(new Date("2026-01-14T22:30:00Z"));
+    expect(israelDateKey()).toBe("2026-01-15");
   });
 });
 

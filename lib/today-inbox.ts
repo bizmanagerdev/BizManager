@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getOpenReminders, type Reminder } from "@/lib/communications";
 import { getPaymentsDueToday, type PaymentDueToday } from "@/lib/collections";
 import type { UserProfile } from "@/lib/auth/requireProfile";
+import { israelDateKey } from "@/lib/timezone";
 
 type Row = Record<string, unknown>;
 
@@ -40,7 +41,7 @@ export async function getTodayInboxData(
   supabase: SupabaseClient,
   profile: Pick<UserProfile, "id" | "role">
 ): Promise<TodayInboxData> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = israelDateKey();
   const canSeeAll = profile.role === "admin" || profile.role === "office";
 
   const [tasksRes, reminders, payments] = await Promise.all([

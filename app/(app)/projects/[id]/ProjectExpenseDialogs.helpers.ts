@@ -7,6 +7,7 @@ import {
 } from "@/lib/expenses";
 import type { FinancialAttachment } from "@/lib/payments";
 import { isImageDocument } from "@/lib/documents";
+import { israelDateKey } from "@/lib/timezone";
 
 // Pure formatting/getter/date helpers + the upload call, lifted out of
 // ProjectExpenseDialogs so the dialog file holds form state + JSX only. Kept
@@ -81,7 +82,7 @@ export function dateOnly(value: string | null | undefined) {
 }
 
 export function projectDateOrToday(projectStartDate: string | null | undefined) {
-  return dateOnly(projectStartDate) || new Date().toISOString().slice(0, 10);
+  return dateOnly(projectStartDate) || israelDateKey();
 }
 
 export function projectLocalDateTime(projectStartDate: string | null | undefined, offsetMinutes = 0) {

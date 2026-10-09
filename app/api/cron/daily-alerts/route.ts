@@ -3,6 +3,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { deliverPush } from "@/lib/notifications/deliver";
 import { usersToAuthMap } from "@/lib/notifications/identity";
 import type { AlertRow, AlertSchedule } from "@/lib/notifications/types";
+import { israelDateKey } from "@/lib/timezone";
+import { addDaysToIso } from "@/lib/financial/utils";
 
 type Row = Record<string, unknown>;
 
@@ -75,15 +77,12 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, hour: currentHour, skipped: true, reason: "no alerts due this hour" });
   }
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayIso = today.toISOString().slice(0, 10);
-  const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
-  const tomorrowIso = tomorrow.toISOString().slice(0, 10);
-  const in7Days = new Date(today); in7Days.setDate(today.getDate() + 7);
-  const in7DaysIso = in7Days.toISOString().slice(0, 10);
-  const in3Days = new Date(today); in3Days.setDate(today.getDate() + 3);
-  const in3DaysIso = in3Days.toISOString().slice(0, 10);
+  // Israel's calendar, like the send hour above — an alert set for 01:00 means
+  // the Israeli day that has just begun, not UTC's (still yesterday).
+  const todayIso = israelDateKey();
+  const tomorrowIso = addDaysToIso(todayIso, 1);
+  const in7DaysIso = addDaysToIso(todayIso, 7);
+  const in3DaysIso = addDaysToIso(todayIso, 3);
   const INACTIVE = '("quote","done","completed","cancelled","canceled","archived","closed")';
 
   type PushNote = { title: string; body: string; url: string; tag: string; recipients: string[] };

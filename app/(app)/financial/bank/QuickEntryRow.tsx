@@ -45,6 +45,7 @@ import { useSidebarCollapse } from "@/components/layout/sidebar-collapse-context
 import { cn } from "@/lib/utils";
 import type { Account } from "@/lib/accounts";
 import { registerReversibleCreate } from "@/lib/undo-engine";
+import { israelDateKey } from "@/lib/timezone";
 
 // No reactive source — this only answers "are we on the client yet" (same
 // pattern as DesktopQuickCreateFab, for the same reason below).
@@ -57,14 +58,6 @@ const subscribeClient = () => () => {};
 // a ? next to the bar").
 const HINT_STORAGE_KEY = "bizh:quickEntryHintSessions";
 const HINT_MAX_SESSIONS = 3;
-
-/** Today in the local calendar — a night-time entry mustn't slip a day (UTC would). */
-function todayIso() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
-    now.getDate()
-  ).padStart(2, "0")}`;
-}
 
 export default function QuickEntryRow({
   account,
@@ -93,7 +86,7 @@ export default function QuickEntryRow({
   // hydration mismatch; the bar appears on the client re-render, same as
   // DesktopQuickCreateFab.
   const onClient = useSyncExternalStore(subscribeClient, () => true, () => false);
-  const [date, setDate] = useState(todayIso());
+  const [date, setDate] = useState(israelDateKey());
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [businessDomain, setBusinessDomain] = useState("");

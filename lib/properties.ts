@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchAllPaged } from "@/lib/supabase/paginate";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import type { WorkSessionRow } from "@/lib/payroll";
+import { israelDateKey } from "@/lib/timezone";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Properties (נכסים) — a real estate asset with a lease history and its own
@@ -300,7 +301,7 @@ export function propertyHasRoomLayout(type: string | null): boolean {
  */
 export function pickCurrentLease(leases: LeaseAgreement[]): LeaseAgreement | null {
   if (leases.length === 0) return null;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = israelDateKey();
   const sorted = [...leases].sort((a, b) => (b.startDate ?? "").localeCompare(a.startDate ?? ""));
   const openActive = sorted.find(
     (lease) => lease.status === "active" && (!lease.endDate || lease.endDate >= today)
@@ -756,7 +757,7 @@ export async function getPropertiesSummary(
   supabase: SupabaseClient,
   todayIso?: string
 ): Promise<PropertiesSummary> {
-  const today = todayIso ?? new Date().toISOString().slice(0, 10);
+  const today = todayIso ?? israelDateKey();
   const horizon = new Date(today);
   horizon.setDate(horizon.getDate() + 60);
   const horizonIso = horizon.toISOString().slice(0, 10);

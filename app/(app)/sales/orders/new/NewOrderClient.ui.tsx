@@ -1,5 +1,6 @@
 import { PAYMENT_TERMS_OPTIONS } from "@/lib/paymentTerms";
 import { omitUnknownPlace } from "@/lib/ui/cities";
+import { israelDateKey } from "@/lib/timezone";
 
 // Pure helpers and option constants, lifted out of NewOrderClient so the
 // component file holds wizard state + orchestration only. No component state
@@ -76,7 +77,7 @@ export function formatCurrency(value: number) {
 }
 
 export function getTodayDate() {
-  return new Date().toISOString().slice(0, 10);
+  return israelDateKey();
 }
 
 export function extractCityFromAddress(address: string | null) {

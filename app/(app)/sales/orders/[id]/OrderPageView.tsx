@@ -29,6 +29,7 @@ import { paymentTermsLabel } from "@/lib/paymentTerms";
 import { formatRelativeDateLabel, formatShortDate, formatShortDateTime } from "@/lib/date";
 import type { OrderPageCore } from "@/lib/orders/order-page";
 import type { OrderPageExtras } from "@/app/(app)/sales/orders/[id]/loadOrderPageExtras";
+import { israelDateKey } from "@/lib/timezone";
 
 // An order's page, from what was read for it: the order itself
 // (lib/orders/order-page.ts — from the server, or from the device copy) and
@@ -228,7 +229,7 @@ export default function OrderPageView({
     referenceDate: orderDate,
     dueDate: orderDueDate,
     blockOverdue: isOpenOrderStatus(getString(order ?? {}, "status")),
-    today: new Date().toISOString().slice(0, 10),
+    today: israelDateKey(),
   }).status;
   const canManagePayments = viewer.role === "admin" || viewer.role === "office";
 

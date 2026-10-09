@@ -24,6 +24,8 @@ import { formatShortDate } from "@/lib/date";
 import { checkStatusClasses, checkStatusLabel, type CheckRow } from "@/lib/checks";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete, scheduleDeferredEdit } from "@/lib/undo-engine";
+import { israelDateKey } from "@/lib/timezone";
+import { addDaysToIso } from "@/lib/financial/utils";
 
 type Props = { checks: CheckRow[] };
 
@@ -36,16 +38,6 @@ function formatCurrency(value: number) {
     currency: "ILS",
     maximumFractionDigits: 0,
   }).format(value);
-}
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function weekFromNowIso() {
-  const d = new Date();
-  d.setDate(d.getDate() + 7);
-  return d.toISOString().slice(0, 10);
 }
 
 function SummaryCard({
@@ -102,8 +94,8 @@ export default function ChecksClient({ checks: checksProp }: Props) {
     setFocusDismissed(false);
   }, [focusId]);
 
-  const today = todayIso();
-  const weekEnd = weekFromNowIso();
+  const today = israelDateKey();
+  const weekEnd = addDaysToIso(today, 7);
 
   const totals = useMemo(() => {
     const acc = { openCount: 0, openSum: 0, weekSum: 0, overdueSum: 0, clearedSum: 0 };

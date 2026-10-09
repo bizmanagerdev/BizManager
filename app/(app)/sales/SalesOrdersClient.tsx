@@ -56,6 +56,7 @@ import {
   derivePaymentStatus,
 } from "@/lib/orders/paymentStatus";
 import { computeSourceCollection } from "@/lib/collections";
+import { israelDateKey } from "@/lib/timezone";
 
 const OrderConfirmDialog = dynamic(() => import("@/app/(app)/sales/orders/OrderConfirmDialog"), {
   loading: () => null,
@@ -621,7 +622,7 @@ export default function SalesOrdersClient({
   }, [offline, query, sourceOrders, apiSearchRows]);
 
   const orderRows = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = israelDateKey();
     const mappedOrders = effectiveOrders.map<OrderView | null>((row) => {
       const id = getString(row, ["order_id", "id"]);
       const customerId = getString(row, ["customer_id"]);

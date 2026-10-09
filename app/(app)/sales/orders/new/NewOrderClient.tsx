@@ -236,7 +236,7 @@ export default function NewOrderClient({
     }
   }, [step, embedded, bodyRef]);
   const [orderDate, setOrderDate] = useState(
-    initialOrder?.order_date ?? restoredDraft?.orderDate ?? new Date().toISOString().slice(0, 10)
+    initialOrder?.order_date ?? restoredDraft?.orderDate ?? getTodayDate()
   );
   const [orderStatus, setOrderStatus] = useState(
     initialStatusOverride ?? initialOrder?.status ?? restoredDraft?.orderStatus ?? "draft"
@@ -248,7 +248,7 @@ export default function NewOrderClient({
   const [dueDate, setDueDate] = useState(
     initialOrder?.due_date ??
       restoredDraft?.dueDate ??
-      computeDueDate(initialOrder?.order_date ?? new Date().toISOString().slice(0, 10), initialPaymentTerms) ??
+      computeDueDate(initialOrder?.order_date ?? getTodayDate(), initialPaymentTerms) ??
       ""
   );
   // No default and no computed fallback (unlike dueDate) — blank means "no

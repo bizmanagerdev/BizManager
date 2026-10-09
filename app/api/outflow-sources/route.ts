@@ -3,6 +3,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { loadOutflowSources } from "@/lib/outflow-sources";
 import { loadInflowSources } from "@/lib/inflow-sources";
+import { israelDateKey } from "@/lib/timezone";
 
 // The rows of "מקורות נוספים" (salaries / loan instalments / card charges with
 // their settings). Fetched by the תשלומים קבועים tab when it opens, so the
@@ -14,7 +15,7 @@ export async function GET() {
     const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
     const { supabase } = access.value;
-    const todayIso = new Date().toISOString().slice(0, 10);
+    const todayIso = israelDateKey();
     // Both halves of "what happens every month". Incoming is additive: if it
     // fails, the list is still the list it was.
     const [outgoing, incoming] = await Promise.all([

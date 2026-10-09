@@ -16,6 +16,7 @@ import { fetchDocumentCategories } from "@/lib/documents/categories";
 import { supersededDocumentIds } from "@/lib/documents/expiry";
 import { UNLINKED_MONEY_GRACE_DAYS } from "@/lib/documents/moneyLink";
 import type { OutflowSourceKind } from "@/lib/outflow-source-settings";
+import { israelDateKey } from "@/lib/timezone";
 
 // ---------------------------------------------------------------------------
 // Reminders/Alerts unification — Phase 2: the system-rule engine.
@@ -1289,13 +1290,17 @@ export const SYSTEM_RULES: SystemRule[] = [
 // --- the reconcile engine --------------------------------------------------
 
 function buildContext(now: Date): RuleContext {
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
+  // Israel's day, held as a local midnight because the rules do their date
+  // math with local getters (the server's clock is UTC — between Israeli
+  // midnight and 02:00/03:00 its own date is still yesterday's).
+  const todayIso = israelDateKey(now);
+  const [year, month, day] = todayIso.split("-").map(Number);
+  const today = new Date(year, month - 1, day);
   return {
     today,
     nowIso: now.toISOString(),
-    todayIso: today.toISOString().slice(0, 10),
-    nearHorizonIso: addWorkingDays(today, 3).toISOString().slice(0, 10),
+    todayIso,
+    nearHorizonIso: isoOf(addWorkingDays(today, 3)),
   };
 }
 

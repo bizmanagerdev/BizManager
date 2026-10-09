@@ -1,6 +1,7 @@
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import type { StatusColor } from "@/lib/ui/status-colors";
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
+import { israelDateKey } from "@/lib/timezone";
 
 export type PaymentStatus = "unpaid" | "partial" | "paid";
 
@@ -222,7 +223,7 @@ export function isCollectedPayment(status: string | null | undefined): boolean {
 }
 
 function todayIso(today: Date) {
-  return today.toISOString().slice(0, 10);
+  return israelDateKey(today);
 }
 
 export function splitPaymentAmounts(

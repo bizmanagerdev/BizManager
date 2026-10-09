@@ -70,6 +70,7 @@ import { shouldShowSessionHours, shouldShowSessionPrice, type PayrollWorkerType 
 import type { UserRole } from "@/lib/auth/requireProfile";
 import { isImageDocument } from "@/lib/documents";
 import { uploadTogether } from "@/lib/upload-together";
+import { israelDateKey } from "@/lib/timezone";
 
 type PaymentStatus = "paid" | "partial" | "not_paid";
 type PaymentChoice = "none" | "paid" | "partial";
@@ -288,14 +289,6 @@ function paymentStatusLabel(s: PaymentStatus) {
   return "לא שולם";
 }
 
-function todayIso() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 function toIso(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "" : date.toISOString();
@@ -408,7 +401,7 @@ export function ExpenseDialog({
   const [orderId, setOrderId] = useState("");
   const [propertyId, setPropertyId] = useState("");
   const [amount, setAmount] = useState("");
-  const [expenseDate, setExpenseDate] = useState(todayIso());
+  const [expenseDate, setExpenseDate] = useState(israelDateKey());
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>("paid");
   const [paidAmount, setPaidAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
@@ -577,7 +570,7 @@ export function ExpenseDialog({
   const sessionPriceRequired = selectedWorkerType === "session_only";
   const sessionDateOnly = useMemo(() => {
     const match = /^(\d{4}-\d{2}-\d{2})/.exec(clockIn);
-    return match ? match[1] : new Date().toISOString().slice(0, 10);
+    return match ? match[1] : israelDateKey();
   }, [clockIn]);
   const sessionDuration = useMemo(() => durationHours(clockIn, clockOut), [clockIn, clockOut]);
   const sessionWorkedMinutes = useMemo(() => {
@@ -615,7 +608,7 @@ export function ExpenseDialog({
       // from the start date when present, else the current month). The chosen date
       // drives day-of-month + start_date on save (create-day = expense-day).
       const day = Number(t.expense_day_of_month) || 1;
-      const baseYm = t.start_date && /^\d{4}-\d{2}/.test(t.start_date) ? t.start_date.slice(0, 7) : todayIso().slice(0, 7);
+      const baseYm = t.start_date && /^\d{4}-\d{2}/.test(t.start_date) ? t.start_date.slice(0, 7) : israelDateKey().slice(0, 7);
       const [by, bm] = baseYm.split("-").map(Number);
       const lastDay = new Date(by, bm, 0).getDate();
       const clampedDay = Math.min(Math.max(1, day), lastDay);
@@ -651,7 +644,7 @@ export function ExpenseDialog({
     } else if (editingExpense) {
       const raw = editingExpense.amount;
       setAmount(typeof raw === "number" ? String(raw) : raw ?? "");
-      setExpenseDate(editingExpense.expense_date || todayIso());
+      setExpenseDate(editingExpense.expense_date || israelDateKey());
       setPaymentStatus(normalizePaymentStatus(editingExpense.payment_status));
       const rawPaid = editingExpense.paid_amount;
       setPaidAmount(rawPaid != null ? String(rawPaid) : "");
@@ -719,7 +712,7 @@ export function ExpenseDialog({
       setWorkerAccountId("");
       // Non-session fields default (this row is a session, not a plain expense).
       setAmount("");
-      setExpenseDate(dateOnlyOf(s.clock_in) || todayIso());
+      setExpenseDate(dateOnlyOf(s.clock_in) || israelDateKey());
       setPaymentStatus("paid");
       setPaidAmount("");
       setPaymentMethod("");
@@ -733,7 +726,7 @@ export function ExpenseDialog({
       setTagIds([]);
     } else {
       setAmount("");
-      setExpenseDate(defaultDate || todayIso());
+      setExpenseDate(defaultDate || israelDateKey());
       setPaymentStatus("paid");
       setPaidAmount("");
       setPaymentMethod("");
@@ -1106,7 +1099,7 @@ export function ExpenseDialog({
   // The generator (generate_recurring_expenses_for_date) then materializes a
   // not_paid expense each period; the account/domain/link carry through.
   async function submitRecurring(amountNumber: number) {
-    const startDate = expenseDate || todayIso();
+    const startDate = expenseDate || israelDateKey();
     const day = Number(startDate.slice(8, 10)) || 1;
     const monthOfYear =
       recurFrequency === "yearly"
@@ -1873,7 +1866,7 @@ export function ExpenseDialog({
                 onClick: () => {
                   setIsRecurring(true);
                   setInstallmentsMode(false);
-                  if (!recurMonth) setRecurMonth(String(Number((expenseDate || todayIso()).slice(5, 7)) || 1));
+                  if (!recurMonth) setRecurMonth(String(Number((expenseDate || israelDateKey()).slice(5, 7)) || 1));
                   expressAdvance();
                 },
               })}
@@ -1896,7 +1889,7 @@ export function ExpenseDialog({
                     setRecurFrequency(c.frequency);
                     setRecurInterval(c.interval);
                     if (c.frequency === "yearly" && !recurMonth) {
-                      setRecurMonth(String(Number((expenseDate || todayIso()).slice(5, 7)) || 1));
+                      setRecurMonth(String(Number((expenseDate || israelDateKey()).slice(5, 7)) || 1));
                     }
                     expressAdvance();
                   },
@@ -1974,16 +1967,16 @@ export function ExpenseDialog({
                 <MetaRow
                   as="span"
                   className="inline-flex font-medium text-foreground"
-                  items={occurrenceMonths(expenseDate || todayIso(), recurInterval)}
+                  items={occurrenceMonths(expenseDate || israelDateKey(), recurInterval)}
                 />
               </p>
             ) : null}
             <p className="mt-2 text-xs text-muted-foreground">
               {recurFrequency === "yearly"
-                ? `ייווצר בכל שנה ב-${Number((expenseDate || todayIso()).slice(8, 10)) || 1}/${MONTH_OPTIONS.find((m) => m.value === (recurMonth || String(Number((expenseDate || todayIso()).slice(5, 7)))))?.label ?? ""}.`
+                ? `ייווצר בכל שנה ב-${Number((expenseDate || israelDateKey()).slice(8, 10)) || 1}/${MONTH_OPTIONS.find((m) => m.value === (recurMonth || String(Number((expenseDate || israelDateKey()).slice(5, 7)))))?.label ?? ""}.`
                 : recurInterval > 1
-                  ? `ייווצר כל ${recurInterval} חודשים ביום ${Number((expenseDate || todayIso()).slice(8, 10)) || 1}.`
-                  : `ייווצר בכל חודש ביום ${Number((expenseDate || todayIso()).slice(8, 10)) || 1}.`}
+                  ? `ייווצר כל ${recurInterval} חודשים ביום ${Number((expenseDate || israelDateKey()).slice(8, 10)) || 1}.`
+                  : `ייווצר בכל חודש ביום ${Number((expenseDate || israelDateKey()).slice(8, 10)) || 1}.`}
             </p>
           </>
         );
@@ -2065,7 +2058,7 @@ export function ExpenseDialog({
                 selected: installmentsMode,
                 onClick: () => {
                   const total = Number(amount);
-                  setInstallmentRows(buildInstallmentRows(Number.isFinite(total) && total > 0 ? total : 0, expenseDate || todayIso(), 2));
+                  setInstallmentRows(buildInstallmentRows(Number.isFinite(total) && total > 0 ? total : 0, expenseDate || israelDateKey(), 2));
                   setInstallmentsMode(true);
                   expressAdvance();
                 },
@@ -2079,7 +2072,7 @@ export function ExpenseDialog({
             {expTitle("לכמה תשלומים לפרוס?")}
             <InstallmentFields
               total={Number(amount) || 0}
-              startDate={expenseDate || todayIso()}
+              startDate={expenseDate || israelDateKey()}
               rows={installmentRows}
               onChange={setInstallmentRows}
             />
@@ -2424,8 +2417,8 @@ export function ExpenseDialog({
                 [
                   "מתי",
                   recurFrequency === "yearly"
-                    ? `${Number((expenseDate || todayIso()).slice(8, 10)) || 1}/${MONTH_OPTIONS.find((m) => m.value === (recurMonth || String(Number((expenseDate || todayIso()).slice(5, 7)))))?.label ?? ""}`
-                    : `יום ${Number((expenseDate || todayIso()).slice(8, 10)) || 1} בכל חודש`,
+                    ? `${Number((expenseDate || israelDateKey()).slice(8, 10)) || 1}/${MONTH_OPTIONS.find((m) => m.value === (recurMonth || String(Number((expenseDate || israelDateKey()).slice(5, 7)))))?.label ?? ""}`
+                    : `יום ${Number((expenseDate || israelDateKey()).slice(8, 10)) || 1} בכל חודש`,
                 ],
                 ...(recurEndDate ? ([["עד", recurEndDate]] as Array<[string, string]>) : []),
               ]
@@ -2972,7 +2965,7 @@ export function ExpenseDialog({
                           setIsRecurring(opt.key);
                           if (opt.key) {
                             setInstallmentsMode(false);
-                            if (!recurMonth) setRecurMonth(String(Number((expenseDate || todayIso()).slice(5, 7)) || 1));
+                            if (!recurMonth) setRecurMonth(String(Number((expenseDate || israelDateKey()).slice(5, 7)) || 1));
                           }
                         }}
                         className={cn(
@@ -3012,7 +3005,7 @@ export function ExpenseDialog({
                           setRecurFrequency(c.frequency);
                           setRecurInterval(c.interval);
                           if (c.frequency === "yearly" && !recurMonth) {
-                            setRecurMonth(String(Number((expenseDate || todayIso()).slice(5, 7)) || 1));
+                            setRecurMonth(String(Number((expenseDate || israelDateKey()).slice(5, 7)) || 1));
                           }
                         }}
                       >
@@ -3048,7 +3041,7 @@ export function ExpenseDialog({
                       <MetaRow
                         as="span"
                         className="inline-flex font-medium text-foreground"
-                        items={occurrenceMonths(expenseDate || todayIso(), recurInterval)}
+                        items={occurrenceMonths(expenseDate || israelDateKey(), recurInterval)}
                       />
                       <div className="mt-0.5">שנה את התאריך שלמעלה כדי להזיז את חודשי החיוב.</div>
                     </div>
@@ -3171,7 +3164,7 @@ export function ExpenseDialog({
                   ) : null}
                   <p className="text-xs text-muted-foreground">
                     {(() => {
-                      const day = Number((expenseDate || todayIso()).slice(8, 10)) || 1;
+                      const day = Number((expenseDate || israelDateKey()).slice(8, 10)) || 1;
                       const when =
                         recurFrequency === "yearly"
                           ? `בכל שנה ב-${day}/${MONTH_OPTIONS.find((m) => m.value === recurMonth)?.label ?? ""}`
@@ -3215,7 +3208,7 @@ export function ExpenseDialog({
                         setInstallmentRows(
                           buildInstallmentRows(
                             Number.isFinite(total) && total > 0 ? total : 0,
-                            expenseDate || new Date().toISOString().slice(0, 10),
+                            expenseDate || israelDateKey(),
                             2
                           )
                         );
@@ -3231,7 +3224,7 @@ export function ExpenseDialog({
               {installmentsMode ? (
                 <InstallmentFields
                   total={Number(amount) || 0}
-                  startDate={expenseDate || new Date().toISOString().slice(0, 10)}
+                  startDate={expenseDate || israelDateKey()}
                   rows={installmentRows}
                   onChange={setInstallmentRows}
                 />

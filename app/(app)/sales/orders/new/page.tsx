@@ -3,6 +3,7 @@ import AppShell from "@/components/layout/AppShell";
 import { DetailPageSkeleton } from "@/components/layout/DetailPageSkeleton";
 import { requireStaffPage } from "@/lib/auth/roleAccess";
 import { attachProductStock } from "@/lib/orders/productStock";
+import { israelDateKey } from "@/lib/timezone";
 
 const NewOrderClient = dynamic(() => import("@/app/(app)/sales/orders/new/NewOrderClient"), {
   loading: () => <DetailPageSkeleton />,
@@ -80,7 +81,7 @@ export default async function NewSalesOrderPage({
         id: duplicateOrderId,
         customer_id: getString(sourceOrder as Row, "customer_id") ?? "",
         branch_id: getString(sourceOrder as Row, "branch_id"),
-        order_date: new Date().toISOString().slice(0, 10),
+        order_date: israelDateKey(),
         status: "draft",
         payment_status: "unpaid",
         payment_terms: getString(sourceOrder as Row, "payment_terms"),

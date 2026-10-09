@@ -12,6 +12,7 @@ import type { Account } from "@/lib/accounts";
 import { toHebrewError } from "@/lib/error-messages";
 import type { PaymentCalendarItem } from "@/lib/payables";
 import { fmtIls } from "./calendar.helpers";
+import { israelDateKey } from "@/lib/timezone";
 
 // Only what the dialog reads — so a list that isn't the calendar (the חובות page)
 // can open it for an expense without inventing a whole calendar item.
@@ -37,7 +38,7 @@ export default function MarkPaidDialog({
   const [method, setMethod] = useState("");
   const [accountId, setAccountId] = useState("");
   const [accountsList, setAccountsList] = useState<Account[]>([]);
-  const [paidDate, setPaidDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [paidDate, setPaidDate] = useState(() => israelDateKey());
   const [payAmount, setPayAmount] = useState("");
 
   const open = Boolean(item);

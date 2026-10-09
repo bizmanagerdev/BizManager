@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { formatShortDate } from "@/lib/date";
 import type { UserOption } from "@/components/tasks/TaskUpsertDialog";
+import { israelDateKey } from "@/lib/timezone";
 
 const TaskUpsertDialog = dynamic(
   () => import("@/components/tasks/TaskUpsertDialog").then((mod) => mod.TaskUpsertDialog),
@@ -53,7 +54,7 @@ export default function CustomerTasksSection({
   const [editId, setEditId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = israelDateKey();
   // A single-option list so the dialog's customer picker shows this customer.
   const customerOptions = [
     { id: customerId, label: customerPhone ? `${customerName} · ${customerPhone}` : customerName },

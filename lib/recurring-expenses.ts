@@ -1,5 +1,6 @@
 import { toHebrewError } from "@/lib/error-messages";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { israelDateKey } from "@/lib/timezone";
 
 type EnsureRecurringExpensesResult = {
   ok: boolean;
@@ -40,7 +41,7 @@ function getEnsureRecurringExpensesCache() {
 const ENSURE_TTL_MS = 60_000;
 
 function ensureCacheKey(date: Date) {
-  return `${date.toISOString().slice(0, 10)}:${Math.floor(Date.now() / ENSURE_TTL_MS)}`;
+  return `${israelDateKey(date)}:${Math.floor(Date.now() / ENSURE_TTL_MS)}`;
 }
 
 async function runEnsureRecurringExpensesForDate(
@@ -48,7 +49,7 @@ async function runEnsureRecurringExpensesForDate(
   options?: { today?: Date }
 ): Promise<EnsureRecurringExpensesResult> {
   const today = options?.today ?? new Date();
-  const todayIso = today.toISOString().slice(0, 10);
+  const todayIso = israelDateKey(today);
 
   const { data, error } = await supabase.rpc("generate_recurring_expenses_for_date", {
     p_today: todayIso,

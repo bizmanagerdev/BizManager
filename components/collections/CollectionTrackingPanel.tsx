@@ -30,6 +30,7 @@ import { offlineFetch } from "@/lib/offline-queue";
 import { EditButton } from "@/components/ui/icon-button";
 import { registerReversibleCreate, scheduleDeferredAction, scheduleDeferredDelete } from "@/lib/undo-engine";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
+import { israelDateKey } from "@/lib/timezone";
 
 // A call/reminder here can be about anything (delivery, an order, a question) —
 // not only collection — so the user tags it with a topic.
@@ -65,12 +66,8 @@ type Props = {
   collapsibleForms?: boolean;
 };
 
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function isOverdue(remindAt: string) {
-  return remindAt.slice(0, 10) < todayIso();
+  return remindAt.slice(0, 10) < israelDateKey();
 }
 
 export default function CollectionTrackingPanel({

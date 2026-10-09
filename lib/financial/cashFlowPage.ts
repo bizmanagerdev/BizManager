@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getFinancialPageData, type FinancialEntry, type FinancialPageData } from "@/lib/financial";
 import { loadProjectedOutflowEntries } from "@/lib/payables";
+import { israelDateKey } from "@/lib/timezone";
 
 // The /financial and /financial/reports data, shared by the page
 // (CashFlowPageContent) and GET /api/financial/entries, so the rows the
@@ -61,7 +62,7 @@ export function cashFlowCustomerId(searchParams: CashFlowSearchParams) {
  *  exist; never fails (no projections rather than no page). */
 export function loadCashFlowProjections(supabase: SupabaseClient): Promise<FinancialEntry[]> {
   return loadProjectedOutflowEntries(supabase, {
-    referenceDate: new Date().toISOString().slice(0, 10),
+    referenceDate: israelDateKey(),
     months: 6,
   }).catch(() => []);
 }

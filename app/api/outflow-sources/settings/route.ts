@@ -9,6 +9,7 @@ import {
   SETTLEMENT_SOURCE,
   type CardPaymentAccountRow,
 } from "@/lib/card-settlements";
+import { israelDateKey } from "@/lib/timezone";
 
 // Per-source planning settings for the payments board ("מקורות נוספים" on the
 // תשלומים קבועים tab): how many WORK days before a salary / loan instalment /
@@ -51,7 +52,7 @@ async function arrivedDepositDays(supabase: Parameters<typeof loadSettlementConf
         dueDate: typeof r.due_date === "string" ? r.due_date : null,
         amount: Number(r.amount_total) || 0,
       }));
-    return depositDaysToConfirm({ payments, confirmations, todayIso: new Date().toISOString().slice(0, 10) });
+    return depositDaysToConfirm({ payments, confirmations, todayIso: israelDateKey() });
   } catch {
     return [];
   }

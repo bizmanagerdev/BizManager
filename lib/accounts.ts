@@ -13,6 +13,7 @@ import { buildFocusHref } from "@/lib/audit";
 import { getBusinessDomainLabel } from "@/lib/expenses";
 import { propertyDisplayName } from "@/lib/properties";
 import { withSentry } from "@/lib/sentry-lazy";
+import { israelDateKey } from "@/lib/timezone";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Accounts layer (חשבונות) — real money containers with a running balance.
@@ -807,7 +808,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
   // ordinary expense. A guessed rate was never the real figure, and a single
   // global rate also rewrote the amount of every PAST batch whenever it was
   // edited. ───────────────────────────────────────────────
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = israelDateKey();
   for (const g of growthBatches.values()) {
     const b = buckets.get(g.accountId)!;
     // Arrived only once someone confirms the deposit on צפי תזרים — not merely

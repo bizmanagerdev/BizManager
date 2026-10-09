@@ -11,6 +11,7 @@ import {
   type MonthKey,
 } from "@/lib/dashboard/domain-chart";
 import { getBooksStartDate, isMonthBeforeBooksStart } from "@/lib/settings/booksStartDate";
+import { israelDateKey } from "@/lib/timezone";
 
 export type DomainChartResult = { ok: true; bars: DomainBar[] } | { ok: false; error: string };
 
@@ -30,10 +31,9 @@ export async function loadDomainChartMonth(month: MonthKey): Promise<DomainChart
     return { ok: false, error: "אין הרשאה לצפות בנתונים אלה." };
   }
 
-  // The viewer's "today" isn't knowable here (the server runs UTC), but it only
-  // matters for the current month, where a few hours either way changes nothing
-  // in a chart of posted cash.
-  const todayIso = new Date().toISOString().slice(0, 10);
+  // Israel's today, as the first render and the phone's copy of this card use
+  // (the server's own clock is UTC, a day behind in Israel's small hours).
+  const todayIso = israelDateKey();
 
   try {
     // Both months share one financial-entry scan — the previous month's window

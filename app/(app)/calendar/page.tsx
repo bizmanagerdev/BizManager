@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import CalendarSection from "@/app/(app)/calendar/CalendarSection";
 import { calendarDict } from "@/lib/i18n/dictionaries/calendar";
 import { t } from "@/lib/i18n/t";
+import { israelDateKey } from "@/lib/timezone";
 
 export const revalidate = 60;
 
@@ -18,7 +19,7 @@ export default async function CalendarPage() {
   if (!isStaffRole(profile.role) && !hasSectionAccess(profile.role, profile.section_access, "calendar")) {
     redirect("/no-access");
   }
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = israelDateKey();
   const canSeeAll = profile.role === "admin" || profile.role === "office";
 
   const safeSchedule = (p: Promise<CalendarEntry[]>) =>

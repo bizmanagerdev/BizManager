@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { translateToArabic } from "@/lib/i18n/translateToHebrew";
 import type { Locale } from "@/lib/i18n/types";
 import { earliestReminderByTask, isTaskWaitingForLater } from "@/lib/tasks/visibility";
+import { israelDateKey } from "@/lib/timezone";
 
 type Row = Record<string, unknown>;
 
@@ -43,7 +44,7 @@ export async function getMyTasks(
   userId: string,
   locale: Locale = "he"
 ): Promise<DashboardTask[]> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = israelDateKey();
 
   // Tasks I own (assigned_user_id) or that I was added to as a member.
   const { data: memberRows } = await supabase
@@ -163,7 +164,7 @@ export async function countMyOverdueTasks(
   supabase: SupabaseClient,
   userId: string
 ): Promise<number> {
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = israelDateKey();
 
   const { data: memberRows } = await supabase
     .from("task_members")

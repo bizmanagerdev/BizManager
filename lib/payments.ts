@@ -1,6 +1,7 @@
 import type { ExpenseBusinessDomain } from "@/lib/expenses";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { getPaymentStatusColor, getPaymentStatusLabel } from "@/lib/ui/status-colors";
+import { israelDateKey } from "@/lib/timezone";
 
 export type FinancialAttachment = {
   document_id: string;
@@ -190,7 +191,7 @@ function defaultPaymentStatusForMethod(
   // Compare against today so that paymentDate == dueDate (both set to a future date) is
   // correctly treated as pending, not cleared.
   if (dueDate) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = israelDateKey();
     if (dueDate > today) return "pending";
   }
   return "cleared";

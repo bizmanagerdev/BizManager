@@ -10,6 +10,7 @@ import { loadAccounts, type Account } from "@/lib/accounts";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { describeDevice } from "@/lib/notifications/devices";
 import type { ConnectedDevice } from "@/components/notifications/ConnectedDevicesCard";
+import { israelDateKey } from "@/lib/timezone";
 
 type Row = Record<string, unknown>;
 
@@ -125,7 +126,7 @@ export default async function SettingsPage() {
           morningSettings={morningSettings}
           vatRate={vatRate}
           booksStartDate={booksStartDate}
-          todayIso={new Date().toISOString().slice(0, 10)}
+          todayIso={israelDateKey()}
           auditLoggingEnabled={auditLoggingEnabled}
           accounts={accounts}
         />

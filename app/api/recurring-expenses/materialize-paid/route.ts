@@ -2,6 +2,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { israelDateKey } from "@/lib/timezone";
 
 // Mark an UPCOMING recurring occurrence (a calendar forecast that has no expense
 // row yet) as paid. It materializes the concrete expense for that period from the
@@ -40,7 +41,7 @@ export async function POST(req: Request) {
     const rawMethod = typeof body.payment_method === "string" ? body.payment_method.trim() : "";
     const paymentMethod = rawMethod && PAYMENT_METHODS.has(rawMethod) ? rawMethod : null;
     const rawPaidDate = typeof body.paid_date === "string" ? body.paid_date.trim() : "";
-    const paidDate = /^\d{4}-\d{2}-\d{2}$/.test(rawPaidDate) ? rawPaidDate : new Date().toISOString().slice(0, 10);
+    const paidDate = /^\d{4}-\d{2}-\d{2}$/.test(rawPaidDate) ? rawPaidDate : israelDateKey();
 
     const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;

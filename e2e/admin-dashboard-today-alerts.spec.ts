@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { loginAs } from "./fixtures";
 import { createTestPayment, deleteTestPayment } from "./db";
+import { israelDateKey } from "@/lib/timezone";
 
 // TodayAlertsCard ("התראות") is deliberately narrow: todaySlice (lib/reminders/
 // worklist.ts) only folds THREE system rule keys onto it — check_deposit_due,
@@ -24,7 +25,7 @@ import { createTestPayment, deleteTestPayment } from "./db";
 test.describe("admin — dashboard alerts card", () => {
   test("a check due for deposit shows as a today alert and links to the checks page", async ({ page }) => {
     test.setTimeout(60_000);
-    const todayIso = new Date().toISOString().slice(0, 10);
+    const todayIso = israelDateKey();
     const payment = await createTestPayment({ dueDate: todayIso, amount: 777 });
     try {
       await loginAs(page, "admin");

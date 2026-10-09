@@ -24,6 +24,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { scheduleRentPayments } from "../actions";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { scheduleDeferredEdit } from "@/lib/undo-engine";
+import { israelDateKey } from "@/lib/timezone";
 
 function monthLabel(dateStr: string | null): string {
   if (!dateStr) return "—";
@@ -74,7 +75,7 @@ export default function RentScheduleSection({
   );
   const defaultFirstMonth = lastScheduled
     ? stepMonthly(lastScheduled, 1)
-    : currentLease?.startDate ?? new Date().toISOString().slice(0, 10);
+    : currentLease?.startDate ?? israelDateKey();
 
   const [generatorOpen, setGeneratorOpen] = useState(false);
   const [genForm, setGenForm] = useState({

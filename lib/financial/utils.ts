@@ -1,5 +1,6 @@
 import { isExpenseBusinessDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
 import type { FinancialEntry, FinancialEntryType, FinancialSourceKind } from "./types";
+import { israelDateKey } from "@/lib/timezone";
 
 export function toNumber(value: number | string | null | undefined) {
   if (typeof value === "number") {
@@ -74,7 +75,7 @@ export function normalizePaymentStatus(status: string | null | undefined) {
 }
 
 export function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return israelDateKey();
 }
 
 export function uniqueStrings(values: Array<string | null | undefined>) {

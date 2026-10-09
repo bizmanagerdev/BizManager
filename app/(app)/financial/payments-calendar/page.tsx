@@ -10,6 +10,7 @@ import { loadAccounts, type Account } from "@/lib/accounts";
 import { propertyDisplayName } from "@/lib/properties";
 import type { RecurringExpenseTemplateItem } from "@/app/(app)/financial/RecurringExpensesManager";
 import PaymentsHubClient from "./PaymentsHubClient";
+import { israelDateKey } from "@/lib/timezone";
 
 export const revalidate = 0;
 
@@ -82,7 +83,7 @@ export default async function PaymentsCalendarPage() {
       : null;
 
   let items: PaymentCalendarItem[] = [];
-  let todayIso = new Date().toISOString().slice(0, 10);
+  let todayIso = israelDateKey();
   let error: string | null = null;
   try {
     // One ledger read feeds both directions — the outgoing loader adds its

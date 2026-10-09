@@ -4,6 +4,7 @@ import { translateToArabic } from "@/lib/i18n/translateToHebrew";
 import type { Locale } from "@/lib/i18n/types";
 import { propertyDisplayName } from "@/lib/properties";
 import { earliestReminderByTask, isTaskWaitingForLater } from "@/lib/tasks/visibility";
+import { israelDateKey } from "@/lib/timezone";
 
 type Row = Record<string, unknown>;
 
@@ -294,7 +295,7 @@ export async function loadTasksBoard(
     attachmentCountByTask.set(taskId, (attachmentCountByTask.get(taskId) ?? 0) + 1);
   }
 
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = israelDateKey();
 
   const now = new Date();
   const items: TaskBoardItem[] = taskRows

@@ -14,6 +14,7 @@ import { actionTypeLabel } from "@/lib/communications";
 import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import type { TodayInboxData } from "@/lib/today-inbox";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
+import { israelDateKey } from "@/lib/timezone";
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("he-IL", {
@@ -21,10 +22,6 @@ function formatCurrency(value: number) {
     currency: "ILS",
     maximumFractionDigits: 0,
   }).format(value);
-}
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
 }
 
 // One unified "today" digest: my open tasks due, my reminders due, and (for
@@ -44,7 +41,7 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
 
   if (total === 0) return null;
 
-  const today = todayIso();
+  const today = israelDateKey();
 
   function act(
     id: string,

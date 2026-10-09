@@ -1,6 +1,7 @@
 "use client";
 
 import type { LoanStatus } from "@/lib/loans";
+import { israelDateKey } from "@/lib/timezone";
 
 // Small presentational helpers shared by the loans page and the installment-plan
 // section, so both render money, dates and form fields identically.
@@ -45,7 +46,7 @@ export function formatDate(value: string | null) {
 }
 
 export function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return israelDateKey();
 }
 
 export function StatBox({

@@ -23,6 +23,7 @@ import { CardInstallmentsField } from "@/components/financial/CardInstallmentsFi
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
 import { offlineFetch } from "@/lib/offline-queue";
+import { israelDateKey } from "@/lib/timezone";
 
 type CreatedPayment = {
   id?: string;
@@ -41,10 +42,6 @@ function formatCurrency(value: number) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(value);
-}
-
-function getTodayDate() {
-  return new Date().toISOString().slice(0, 10);
 }
 
 export default function OrderPaymentDialog({
@@ -76,7 +73,7 @@ export default function OrderPaymentDialog({
     paidAmount > totalAmount ? "refund" : "payment"
   );
   const [amount, setAmount] = useState("");
-  const [paymentDate, setPaymentDate] = useState(getTodayDate());
+  const [paymentDate, setPaymentDate] = useState(israelDateKey());
   const [paymentMethod, setPaymentMethod] = useState("");
   const [accountId, setAccountId] = useState("");
   const [accountsList, setAccountsList] = useState<Account[]>([]);
@@ -139,7 +136,7 @@ export default function OrderPaymentDialog({
     function resetForm() {
       setAmount("");
       setEntryType(preview.nextRefund > 0 ? "refund" : "payment");
-      setPaymentDate(getTodayDate());
+      setPaymentDate(israelDateKey());
       setPaymentMethod("");
       setAccountId("");
       setDueDate("");

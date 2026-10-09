@@ -5,6 +5,7 @@ import { findProjectIdsMatchingContent } from "@/lib/search/findMatchingChildIds
 import { projectTypesMatching } from "@/lib/search/projectTypeLabels";
 import { toHebrewError } from "@/lib/error-messages";
 import { attachOwedToRows, loadProjectOwed, type ProjectOwed } from "@/lib/projects/owed";
+import { israelDateKey } from "@/lib/timezone";
 
 type Row = Record<string, unknown>;
 
@@ -339,7 +340,7 @@ async function enrichProjectRows(supabase: SupabaseClient, rows: Row[], inline: 
             nextDueDate: typeof financialRow?.next_due_date === "string" ? financialRow.next_due_date : null,
             referenceDate: typeof row?.start_date === "string" ? row.start_date : null,
             dueDate: dueDateByProjectId.get(projectId) ?? null,
-            today: new Date().toISOString().slice(0, 10),
+            today: israelDateKey(),
           });
 
     return {

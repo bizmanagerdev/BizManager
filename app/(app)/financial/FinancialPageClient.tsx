@@ -74,6 +74,7 @@ import { CardInstallmentsField } from "@/components/financial/CardInstallmentsFi
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { scheduleDeferredDelete, scheduleDeferredEdit, registerReversibleCreate } from "@/lib/undo-engine";
+import { israelDateKey } from "@/lib/timezone";
 
 const ExpenseDialog = dynamic(
   () => import("@/components/expenses/ExpenseDialog").then((mod) => mod.ExpenseDialog),
@@ -192,10 +193,6 @@ function entryMatchesQuery(entry: FinancialEntry, q: string): boolean {
   );
 }
 
-function todayIsoDate() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function createIncomeFormState(): IncomeCreateFormState {
   return {
     businessDomain: "",
@@ -203,7 +200,7 @@ function createIncomeFormState(): IncomeCreateFormState {
     orderId: "",
     propertyId: "",
     amount: "",
-    paymentDate: todayIsoDate(),
+    paymentDate: israelDateKey(),
     dueDate: "",
     paymentMethod: "bank_transfer",
     accountId: "",
@@ -711,7 +708,7 @@ export default function FinancialPageClient({
   const [markPaidMethod, setMarkPaidMethod] = useState<string>("");
   const [markPaidAccountId, setMarkPaidAccountId] = useState<string>("");
   const [markPaidAccountsList, setMarkPaidAccountsList] = useState<Account[]>([]);
-  const [markPaidDate, setMarkPaidDate] = useState<string>(todayIsoDate());
+  const [markPaidDate, setMarkPaidDate] = useState<string>(israelDateKey());
   // The real figure for a row that still carries a variable bill's ESTIMATE.
   const [markPaidAmount, setMarkPaidAmount] = useState<string>("");
   const [expenseCreateOpen, setExpenseCreateOpen] = useState(false);
@@ -767,7 +764,7 @@ export default function FinancialPageClient({
     setMarkPaidAmount(entry.expenseVariableEstimate ? String(entry.amount) : "");
     // Default the pay date to the scheduled date if it's already due, else today.
     const scheduled = entry.recordedDate;
-    setMarkPaidDate(scheduled && scheduled <= data.todayIso ? scheduled : todayIsoDate());
+    setMarkPaidDate(scheduled && scheduled <= data.todayIso ? scheduled : israelDateKey());
     setMarkPaidExpense(entry);
   };
 

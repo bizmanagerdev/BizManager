@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { sendPushToAll } from "@/lib/push";
+import { israelDateKey } from "@/lib/timezone";
+import { addDaysToIso } from "@/lib/financial/utils";
 
 type Row = Record<string, unknown>;
 
@@ -35,15 +37,9 @@ export async function POST() {
     return NextResponse.json({ error: "SUPABASE_SERVICE_ROLE_KEY not configured" }, { status: 500 });
   }
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayIso = today.toISOString().slice(0, 10);
-  const in3Days = new Date(today);
-  in3Days.setDate(in3Days.getDate() + 3);
-  const in3DaysIso = in3Days.toISOString().slice(0, 10);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowIso = tomorrow.toISOString().slice(0, 10);
+  const todayIso = israelDateKey();
+  const in3DaysIso = addDaysToIso(todayIso, 3);
+  const tomorrowIso = addDaysToIso(todayIso, 1);
 
   const notifications: { title: string; body: string; url: string; tag: string }[] = [];
 

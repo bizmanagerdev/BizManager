@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchAllPaged } from "@/lib/supabase/paginate";
 import { getCollectionActivityByCustomer } from "@/lib/communications";
 import { fetchLoans, overdueInstallments } from "@/lib/loans";
+import { israelDateKey } from "@/lib/timezone";
 
 // Data for the גבייה (collections) worklist. Reads collections_view — one row per
 // open receivable source (order / project) that still has money not yet collected
@@ -628,7 +629,7 @@ export async function getCollectionsData(
     amountsOnly?: boolean;
   } = {}
 ): Promise<CollectionsData> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = israelDateKey();
   // Open loans we gave out and pending/overdue rent don't read collections_view
   // — started now so they load alongside it instead of after it.
   const loanRowsPromise = buildLoanSourceRows(supabase, today).catch(() => [] as CollectionSourceRow[]);
@@ -861,7 +862,7 @@ export async function getCustomerReceivables(
 
   // Reuse the title-enrichment helper (project name / order item summary) by
   // shaping minimal CollectionSourceRow objects.
-  const today = new Date().toISOString().slice(0, 10);
+  const today = israelDateKey();
   const rawRows = data as Row[];
   const [orderDueById, projectDueById] = await Promise.all([
     fetchOrderDueDates(
@@ -970,7 +971,7 @@ async function attachPendingPayments(
   supabase: SupabaseClient,
   rows: CollectionSourceRow[]
 ): Promise<void> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = israelDateKey();
   const orderIds = rows.filter((r) => r.source_type === "order").map((r) => r.source_id).filter(Boolean);
   const projectIds = rows.filter((r) => r.source_type === "project").map((r) => r.source_id).filter(Boolean);
   const byKey = new Map<string, ReceivablePendingPayment[]>();
@@ -1042,7 +1043,7 @@ export async function getPaymentsDueToday(
   supabase: SupabaseClient,
   todayIso?: string
 ): Promise<PaymentDueToday[]> {
-  const today = todayIso ?? new Date().toISOString().slice(0, 10);
+  const today = todayIso ?? israelDateKey();
   const { data, error } = await supabase
     .from("payments")
     .select("id,amount_total,due_date,payment_method,check_number,order_id,project_id")
@@ -1192,7 +1193,7 @@ export async function getCollectionsSummary(
   todayIso?: string,
   { limit = 200 }: { limit?: number } = {}
 ): Promise<CollectionsSummary> {
-  const today = todayIso ?? new Date().toISOString().slice(0, 10);
+  const today = todayIso ?? israelDateKey();
   const empty: CollectionsSummary = {
     today: [],
     todayTotal: 0,

@@ -104,6 +104,7 @@ import {
   sessionPaymentStatus,
   toNumber,
 } from "./ProjectTabsClient.helpers";
+import { israelDateKey } from "@/lib/timezone";
 
 // Heavy financial-entry dialogs are lazy-loaded — their code only downloads when
 // the user opens "add expense" / "add income", keeping the initial bundle smaller.
@@ -842,7 +843,7 @@ export default function ProjectTabsClient({
           nextDueDate: null,
           referenceDate: typeof overview.start_date === "string" ? overview.start_date : null,
           dueDate,
-          today: new Date().toISOString().slice(0, 10),
+          today: israelDateKey(),
         });
   const collectionStatus = collectionComputed?.status ?? null;
   // Same day-count the collection_overdue reminder already states (both read

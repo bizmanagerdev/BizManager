@@ -20,6 +20,7 @@ import type { DashboardTask } from "@/lib/dashboard/tasks-overview";
 import { t } from "@/lib/i18n/t";
 import { dashboardDict } from "@/lib/i18n/dictionaries/dashboard";
 import type { Locale } from "@/lib/i18n/types";
+import { israelDateKey } from "@/lib/timezone";
 
 type TabKey = "all" | "today" | "overdue" | "in_progress";
 
@@ -51,10 +52,6 @@ function statusLabel(locale: Locale): Record<string, string> {
   };
 }
 
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 // Bidirectional: subject_he is only ever set when the AUTHOR's own locale was
 // 'ar' (see app/api/tasks/create) — so its presence means the original is
 // already Arabic. subject_ar is the reverse: a Hebrew-authored task's title,
@@ -79,7 +76,7 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
     [initialTasks, doneIds]
   );
 
-  const today = todayIso();
+  const today = israelDateKey();
   const counts = useMemo(
     () => ({
       all: tasks.length,

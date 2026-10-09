@@ -12,6 +12,7 @@ import {
   validateInstallments,
   type InstallmentRow,
 } from "@/components/expenses/InstallmentFields";
+import { israelDateKey } from "@/lib/timezone";
 
 function fmtIls(value: number) {
   return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 }).format(value);
@@ -31,7 +32,7 @@ export function SplitPaymentDialog({ open, onOpenChange, sourceItem, onSaved }: 
   const [rows, setRows] = useState<InstallmentRow[]>([]);
 
   const total = sourceItem?.amount ?? 0;
-  const startDate = sourceItem?.date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10);
+  const startDate = sourceItem?.date?.slice(0, 10) ?? israelDateKey();
 
   useEffect(() => {
     if (!open || !sourceItem) return;

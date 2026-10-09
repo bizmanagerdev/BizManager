@@ -16,6 +16,7 @@ import { DomainSelect } from "@/components/financial/DomainSelect";
 import { toHebrewError } from "@/lib/error-messages";
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
 import { registerReversibleAction } from "@/lib/undo-engine";
+import { israelDateKey } from "@/lib/timezone";
 
 type SourceOption = { id: string; label: string };
 
@@ -39,14 +40,6 @@ type SideState = {
 
 function createSideState(): SideState {
   return { businessDomain: "", projectId: "", orderId: "", propertyId: "" };
-}
-
-function todayIso() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
 }
 
 /** Returns the source id required for the side's domain, or "" if none is required. */
@@ -156,7 +149,7 @@ export function TransferDialog({
   const [splitAmounts, setSplitAmounts] = useState(false);
   const [expenseAmount, setExpenseAmount] = useState("");
   const [incomeAmount, setIncomeAmount] = useState("");
-  const [date, setDate] = useState(todayIso());
+  const [date, setDate] = useState(israelDateKey());
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("credit_card");
   const [dueDate, setDueDate] = useState("");
   const [description, setDescription] = useState("");
@@ -171,7 +164,7 @@ export function TransferDialog({
     setSplitAmounts(false);
     setExpenseAmount("");
     setIncomeAmount("");
-    setDate(todayIso());
+    setDate(israelDateKey());
     setPaymentMethod("credit_card");
     setDueDate("");
     setDescription("");

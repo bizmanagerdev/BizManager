@@ -1,6 +1,7 @@
 import type { FinancialAttachment } from "@/lib/payments";
 import { offlineUpload } from "@/lib/offline-upload";
 import { isImageDocument } from "@/lib/documents";
+import { israelDateKey } from "@/lib/timezone";
 
 // Pure date / number / formatting helpers + the attachment upload util, lifted
 // out of DashboardActions so the component file holds UI + state, not utilities.
@@ -13,11 +14,7 @@ export function getString(row: Row, key: string) {
 }
 
 export function getTodayDate() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return israelDateKey();
 }
 
 export function normalizeDateOnly(value: string | null | undefined) {

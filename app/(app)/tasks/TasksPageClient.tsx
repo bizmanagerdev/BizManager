@@ -56,6 +56,7 @@ import { t } from "@/lib/i18n/t";
 import { commonDict } from "@/lib/i18n/dictionaries/common";
 import { tasksDict } from "@/lib/i18n/dictionaries/tasks";
 import { deviceTaskSaves } from "@/lib/tasks/device-task-saves";
+import { israelDateKey } from "@/lib/timezone";
 
 const TaskUpsertDialog = dynamic(
   () => import("@/components/tasks/TaskUpsertDialog").then((mod) => mod.TaskUpsertDialog),
@@ -174,7 +175,7 @@ function buildOptimisticTask(fields: {
 }): TaskBoardItem {
   const dueDate = fields.due_date ?? null;
   const status = fields.status;
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = israelDateKey();
   return {
     id: fields.id,
     subject: fields.subject,

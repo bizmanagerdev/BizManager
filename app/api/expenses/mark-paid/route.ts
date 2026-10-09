@@ -2,6 +2,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { logAuditEventAfterResponse } from "@/lib/audit-after";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { israelDateKey } from "@/lib/timezone";
 
 // Lightweight confirmation that an expense was actually paid. Unlike
 // /api/expenses/update (which rewrites the whole row), this only flips
@@ -46,7 +47,7 @@ export async function POST(req: Request) {
     const rawPaidDate = typeof body.paid_date === "string" ? body.paid_date.trim() : "";
     const paidDate = /^\d{4}-\d{2}-\d{2}$/.test(rawPaidDate)
       ? rawPaidDate
-      : new Date().toISOString().slice(0, 10);
+      : israelDateKey();
     const rawAmount = typeof body.amount === "number" ? body.amount
       : typeof body.amount === "string" && body.amount.trim() ? Number(body.amount) : NaN;
     // When given, the row's amount becomes the real one and it reads as fully paid.

@@ -19,6 +19,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
 import type { TaxToPay } from "@/lib/financial/taxes";
 import { registerReversibleCreate } from "@/lib/undo-engine";
+import { israelDateKey } from "@/lib/timezone";
 
 function formatIls(amount: number) {
   return new Intl.NumberFormat("he-IL", {
@@ -33,11 +34,6 @@ function formatDate(iso: string) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   return new Intl.DateTimeFormat("he-IL", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
-}
-
-function todayIso() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
 function StatBox({ label, value, tone }: { label: string; value: string; tone?: "owed" | "in" | "out" }) {
@@ -62,7 +58,7 @@ export default function TaxesClient({ data }: { data: TaxToPay }) {
   const [, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState("");
-  const [date, setDate] = useState(todayIso());
+  const [date, setDate] = useState(israelDateKey());
   const [method, setMethod] = useState("bank_transfer");
   const [accountId, setAccountId] = useState("");
   const [accountsList, setAccountsList] = useState<Account[]>([]);
@@ -74,7 +70,7 @@ export default function TaxesClient({ data }: { data: TaxToPay }) {
   function openDialog() {
     // Default the amount to what's currently owed — the usual case.
     setAmount(data.owed > 0 ? String(Math.round(data.owed * 100) / 100) : "");
-    setDate(todayIso());
+    setDate(israelDateKey());
     setMethod("bank_transfer");
     setNotes("");
     setOpen(true);

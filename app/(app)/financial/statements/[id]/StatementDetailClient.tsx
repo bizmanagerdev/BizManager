@@ -25,6 +25,7 @@ import { CheckIcon, LinkIcon } from "@/components/ui/icons";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { resolveSplit, type SplitPartDraft } from "@/lib/financial/statementSplit";
 import { StatementRowSplit, emptySplitPart } from "./StatementRowSplit";
+import { israelDateKey } from "@/lib/timezone";
 
 type Option = { id: string; name: string };
 
@@ -223,7 +224,7 @@ export default function StatementDetailClient({
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? "";
   const propertyName = (id: string) => properties.find((p) => p.id === id)?.name ?? "";
 
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = israelDateKey();
 
   // Cards (by stable card identity, NOT the freely-editable category — see
   // the card_label migration) whose income total is built from the rows

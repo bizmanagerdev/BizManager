@@ -9,6 +9,7 @@ import { getBusinessDomainLabel } from "@/lib/expenses";
 import { normalizePaymentMethodValue } from "@/lib/orders/paymentStatus";
 import type { CollectionCustomerGroup } from "@/lib/collections";
 import type { Reminder } from "@/lib/communications";
+import { israelDateKey } from "@/lib/timezone";
 
 export type View = "debtors" | "reminders" | "activity";
 export type FilterKey = "all" | "overdue" | "uncontacted";
@@ -57,7 +58,7 @@ export function formatDate(value: string | null) {
 }
 
 export function todayIso(today: Date = new Date()) {
-  return today.toISOString().slice(0, 10);
+  return israelDateKey(today);
 }
 
 export function daysSince(dateIso: string | null, now: Date = new Date()): number | null {

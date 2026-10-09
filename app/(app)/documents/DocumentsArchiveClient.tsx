@@ -98,6 +98,7 @@ import {
   prefsStore,
   viewModeStore,
 } from "@/app/(app)/documents/DocumentsArchiveClient.prefs";
+import { addDaysToIso } from "@/lib/financial/utils";
 
 const FIELD_LABEL = "text-xs text-[rgb(var(--primary-6))]";
 
@@ -352,9 +353,7 @@ export default function DocumentsArchiveClient({
   // needs a person is spotted while browsing rather than in a separate mode.
   const attentionReason = useCallback(
     (doc: DocumentArchiveItem): string | null => {
-      const soon = new Date();
-      soon.setDate(soon.getDate() + 30);
-      const soonIso = soon.toISOString().slice(0, 10);
+      const soonIso = addDaysToIso(israelDateKey(), 30);
       if (isUnlinkedMoneyDocument(doc.document_type, doc.entity_types, moneyCodes)) {
         return "מסמך כספי שאינו משויך לתנועה";
       }

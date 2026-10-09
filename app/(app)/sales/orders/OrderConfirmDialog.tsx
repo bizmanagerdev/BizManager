@@ -32,6 +32,7 @@ import { parseInstallments, splitCardInstallments } from "@/lib/payments";
 import { CardInstallmentsField } from "@/components/financial/CardInstallmentsField";
 import { formatRelativeDateLabel, formatShortDate } from "@/lib/date";
 import { appendOrderComment, formatOrderCommentTimestamp } from "@/lib/orders/comments";
+import { israelDateKey } from "@/lib/timezone";
 
 type OrderItem = {
   product_id: string;
@@ -111,10 +112,6 @@ function paidAmountClass(status: string) {
     : "font-semibold text-destructive-soft-foreground";
 }
 
-function getTodayDate() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 // Wizard step headings — eyebrow ("שלב N · <eyebrow>") + the big question title.
 const STEP_META: Record<string, { eyebrow: string; title: string; description?: string }> = {
   items: {
@@ -177,7 +174,7 @@ export default function OrderConfirmDialog({
   const [data, setData] = useState<EditPayload | null>(null);
   const [lines, setLines] = useState<ConfirmLine[]>([]);
   const [paymentAmount, setPaymentAmount] = useState("");
-  const [paymentDate, setPaymentDate] = useState(getTodayDate());
+  const [paymentDate, setPaymentDate] = useState(israelDateKey());
   const [paymentMethod, setPaymentMethod] = useState("");
   // Card only: saved as this many payments, a month apart.
   const [installments, setInstallments] = useState("1");
@@ -187,7 +184,7 @@ export default function OrderConfirmDialog({
   const [referenceNumber, setReferenceNumber] = useState("");
   const [paymentNotes, setPaymentNotes] = useState("");
   const [recordRefund, setRecordRefund] = useState(true);
-  const [refundDate, setRefundDate] = useState(getTodayDate());
+  const [refundDate, setRefundDate] = useState(israelDateKey());
   const [refundMethod, setRefundMethod] = useState("");
   const [refundReferenceNumber, setRefundReferenceNumber] = useState("");
   const [refundNotes, setRefundNotes] = useState("");
@@ -228,7 +225,7 @@ export default function OrderConfirmDialog({
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   }
-  const [deliveryDate, setDeliveryDate] = useState(getTodayDate());
+  const [deliveryDate, setDeliveryDate] = useState(israelDateKey());
   const [deliveryImages, setDeliveryImages] = useState<File[]>([]);
   const [productQuery, setProductQuery] = useState("");
   const [productResults, setProductResults] = useState<ProductSearchResult[]>([]);
@@ -302,12 +299,12 @@ export default function OrderConfirmDialog({
       }))
     );
     setPaymentAmount("");
-    setPaymentDate(getTodayDate());
+    setPaymentDate(israelDateKey());
     setPaymentMethod("");
     setReferenceNumber("");
     setPaymentNotes("");
     setRecordRefund(true);
-    setRefundDate(getTodayDate());
+    setRefundDate(israelDateKey());
     setRefundMethod("");
     setRefundReferenceNumber("");
     setRefundNotes("");
@@ -317,7 +314,7 @@ export default function OrderConfirmDialog({
     // Seeding it from data.initialOrder.notes (which is the attributed comment log)
     // and writing it back on confirm used to overwrite the whole thread.
     setDeliveryNotes("");
-    setDeliveryDate(getTodayDate());
+    setDeliveryDate(israelDateKey());
     setDeliveryImages([]);
     setProductQuery("");
     setProductResults([]);
@@ -564,7 +561,7 @@ export default function OrderConfirmDialog({
         order_date: data.initialOrder.order_date,
         status: finalStatus,
         payment_status: finalPaymentStatus,
-        delivery_date: deliveryDate || getTodayDate(),
+        delivery_date: deliveryDate || israelDateKey(),
         discount_amount: data.initialOrder.discount_amount,
         notes: mergedNotes,
         items: deliveryLines.map(({ line, finalDelivered }) => ({

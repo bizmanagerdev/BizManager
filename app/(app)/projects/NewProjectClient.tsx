@@ -38,6 +38,7 @@ import { baseFromPriceEntry, projectPriceSplit, type ProjectPriceEntry } from "@
 import { whenDeviceSavesSent } from "@/lib/powersync/store";
 import { deviceProjectSaves } from "@/lib/projects/device-project-saves";
 import type { ProjectRowFields } from "@/lib/projects/project-input";
+import { israelDateKey } from "@/lib/timezone";
 
 type Row = Record<string, unknown>;
 type Step =
@@ -174,10 +175,6 @@ function termsLabelFor(value: string) {
 
 function isMovingProjectType(value: string) {
   return value === "moving";
-}
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
 }
 
 function extractCityFromAddress(address: string | null) {
@@ -422,10 +419,10 @@ export default function NewProjectClient({
   );
   const [managerQuery, setManagerQuery] = useState("");
   const [startDate, setStartDate] = useState(
-    initialProject?.start_date ?? defaultStartDate ?? restoredDraft?.startDate ?? todayIso()
+    initialProject?.start_date ?? defaultStartDate ?? restoredDraft?.startDate ?? israelDateKey()
   );
   const [endDate, setEndDate] = useState(
-    initialProject?.end_date ?? restoredDraft?.endDate ?? (isEditMode ? "" : todayIso())
+    initialProject?.end_date ?? restoredDraft?.endDate ?? (isEditMode ? "" : israelDateKey())
   );
   const [paymentTerms, setPaymentTerms] = useState(
     initialProject?.payment_terms ?? restoredDraft?.paymentTerms ?? "immediate"
@@ -433,7 +430,7 @@ export default function NewProjectClient({
   const [dueDate, setDueDate] = useState(
     initialDue ??
       restoredDraft?.dueDate ??
-      computeDueDate(initialProject?.start_date ?? restoredDraft?.startDate ?? todayIso(), initialProject?.payment_terms ?? restoredDraft?.paymentTerms ?? "immediate") ??
+      computeDueDate(initialProject?.start_date ?? restoredDraft?.startDate ?? israelDateKey(), initialProject?.payment_terms ?? restoredDraft?.paymentTerms ?? "immediate") ??
       ""
   );
   const [notes, setNotes] = useState(initialProject?.notes ?? restoredDraft?.notes ?? "");

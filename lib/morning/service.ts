@@ -22,6 +22,7 @@ import {
   type MorningDocumentLine,
   type MorningPaymentLine,
 } from "@/lib/morning/types";
+import { israelDateKey } from "@/lib/timezone";
 
 type DbRow = Record<string, unknown>;
 
@@ -717,7 +718,7 @@ export async function issueMorningReceiptForPayment(
   const orderId = getString(payment, ["order_id"]) ?? undefined;
   const projectId = getString(payment, ["project_id"]) ?? undefined;
   const paymentDate =
-    getString(payment, ["payment_date"]) ?? new Date().toISOString().slice(0, 10);
+    getString(payment, ["payment_date"]) ?? israelDateKey();
   const paymentMethodCode = mapBizPaymentMethodToMorning(getString(payment, ["payment_method"]));
   const referenceNumber = getString(payment, ["reference_number"]);
 
