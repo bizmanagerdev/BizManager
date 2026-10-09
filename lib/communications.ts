@@ -199,7 +199,27 @@ export async function getCustomerActivity(
   return { logs, reminders };
 }
 
-/** Open (pending) reminders across all customers, soonest first. Powers the תזכורות view. */
+/** A stored timestamp as ms — the server's ISO text, or the copy's "2026-10-09 09:00:00+00". */
+function instantOf(value: string | null): number {
+  if (!value) return Number.NaN;
+  return Date.parse(value.trim().replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00"));
+}
+
+/**
+ * When a reminder is due as people see it: a snooze still ahead moves it to
+ * the snooze's end (owner, 2026-10-09: today's schedule ignored snoozes — a
+ * reminder snoozed till tomorrow stayed on today).
+ */
+function dueAt(remindAt: string | null, snoozedUntil: string | null, now: number): string {
+  const snoozed = instantOf(snoozedUntil);
+  if (snoozedUntil && Number.isFinite(snoozed) && snoozed > now) {
+    const at = instantOf(remindAt);
+    if (!Number.isFinite(at) || snoozed > at) return snoozedUntil;
+  }
+  return remindAt ?? "";
+}
+
+/** Open (pending) reminders across all customers, soonest first (a snoozed one at its snooze's end). Powers the תזכורות view. */
 export async function getOpenReminders(
   supabase: SupabaseClient,
   options?: { limit?: number; scope?: "mine" | "all"; userId?: string }
@@ -207,7 +227,7 @@ export async function getOpenReminders(
   const limit = options?.limit ?? 200;
   let query = supabase
     .from("reminders")
-    .select(REMINDER_SELECT)
+    .select(`${REMINDER_SELECT},snoozed_until`)
     .eq("status", "pending");
 
   // "Mine" = reminders I'm in charge of (assigned_to). Creating a reminder
@@ -253,14 +273,15 @@ export async function getOpenReminders(
     if (id) taskById.set(id, str(row, "subject") ?? "משימה");
   }
 
-  return rows.map((r) => {
+  const now = Date.now();
+  const reminders = rows.map((r) => {
     const cust = customerById.get(str(r, "customer_id") ?? "");
     return {
       id: str(r, "id") ?? "",
       customer_id: str(r, "customer_id"),
       project_id: str(r, "project_id"),
       assigned_to: str(r, "assigned_to"),
-      remind_at: str(r, "remind_at") ?? "",
+      remind_at: dueAt(str(r, "remind_at"), str(r, "snoozed_until"), now),
       content: str(r, "content"),
       action_type: str(r, "action_type") ?? "call",
       status: str(r, "status") ?? "pending",
@@ -279,6 +300,10 @@ export async function getOpenReminders(
       task_subject: taskById.get(str(r, "task_id") ?? "") ?? null,
     };
   });
+  // Soonest first by when they're due now (a snooze moved some), then by id.
+  return reminders.sort(
+    (a, b) => (instantOf(a.remind_at) || 0) - (instantOf(b.remind_at) || 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  );
 }
 
 export type CommunicationLogWithCustomer = CommunicationLog & {

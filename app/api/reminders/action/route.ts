@@ -1,6 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { pingAgainAt } from "@/lib/reminders/ping-again";
 import { visibleAudienceRoles } from "@/lib/reminders/worklist";
 import { isReminderAction, reminderActionUpdates } from "@/lib/reminders/reminder-action";
 
@@ -45,7 +46,9 @@ export async function POST(req: Request) {
 
     const result = reminderActionUpdates(row, action, { snoozeUntil: body.snooze_until, userId: profile.id });
     if ("error" in result) return NextResponse.json({ error: result.error }, { status: 400 });
-    const { updates } = result;
+    // Snoozed: it pushes again when the snooze ends (the phone's copy has no
+    // notified_at, so this stays out of the shared reminderActionUpdates).
+    const updates = action === "snooze" ? { ...result.updates, ...pingAgainAt(result.updates.snoozed_until) } : result.updates;
 
     const { data, error } = await supabase.from("reminders").update(updates).eq("id", id).select("id");
     if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });

@@ -1,6 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { pingAgainAt } from "@/lib/reminders/ping-again";
 
 // Update a task reminder: mark done / cancelled / pending, reschedule, or edit
 // the note. Available to anyone who can access the task (RLS enforces it).
@@ -26,6 +27,8 @@ export async function POST(req: Request) {
     }
     if (typeof body.remind_at === "string" && body.remind_at.trim()) {
       updates.remind_at = body.remind_at.trim();
+      // Moved to a later time: it pushes again then.
+      Object.assign(updates, pingAgainAt(updates.remind_at));
     }
     // A note emptied in the form arrives as null — cleared, like an empty string.
     if (typeof body.content === "string" || body.content === null) {
