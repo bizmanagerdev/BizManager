@@ -282,7 +282,9 @@ function DeliveriesSkeleton() {
               <Skeleton className="h-3 w-14" />
             </div>
             {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+              <div key={i} className="relative overflow-hidden rounded-2xl border border-border bg-card ps-1.5 shadow-sm">
+                {/* The city's colour strip down the start edge. */}
+                <span aria-hidden className="absolute inset-y-0 start-0 w-1.5 bg-muted" />
                 <div className="flex items-start gap-3 p-3">
                   <Skeleton className="h-11 w-10 shrink-0 rounded-xl" />
                   <div className="min-w-0 flex-1 space-y-1.5">
@@ -304,9 +306,10 @@ function DeliveriesSkeleton() {
                     <Skeleton className="h-6 w-16 rounded-full" />
                     <Skeleton className="h-6 w-14 rounded-full" />
                   </div>
-                  <div className="flex items-center gap-2 p-3">
-                    <Skeleton className="h-9 flex-1 rounded-xl" />
-                    <Skeleton className="h-9 w-9 rounded-xl" />
+                  {/* "שליחה לנהג" and "סמן כסופק", side by side in the end corner. */}
+                  <div className="flex items-center justify-end gap-2 p-3">
+                    <Skeleton className="h-[38px] w-[130px] rounded-xl" />
+                    <Skeleton className="h-[38px] w-[123px] rounded-xl" />
                   </div>
                 </div>
               </div>

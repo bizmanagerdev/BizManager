@@ -31,6 +31,7 @@ import { parseOrderComments } from "@/lib/orders/comments";
 import { pinFrom, wazeLinkForPin, type DeliveryPin } from "@/lib/delivery-location";
 import { dueUrgencyChipClass, formatShortDate, getDueUrgency } from "@/lib/date";
 import { DeliveryLocationDialog } from "@/components/orders/DeliveryLocationDialog";
+import { cityColour } from "@/lib/deliveries/city-colours";
 import { rowNavigateProps } from "@/lib/ui/row-navigation";
 import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
 
@@ -457,7 +458,14 @@ export default function SalesDeliveriesQueue({
                                   />
                                 ) : null}
                               </td>
-                              <td className="whitespace-nowrap px-4 py-3">{city}</td>
+                              <td className="whitespace-nowrap px-4 py-3">
+                                <span className="inline-flex items-center gap-1.5">
+                                  {/* The city's colour (lib/deliveries/city-colours.ts) — just the
+                                      dot here: at a desk nobody is driving the run. */}
+                                  <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: cityColour(city) }} />
+                                  {city}
+                                </span>
+                              </td>
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-2">
                                   {groupPin ? (
@@ -558,9 +566,9 @@ export default function SalesDeliveriesQueue({
                                 <div className="flex items-center gap-2">
                                   <DeliveryShareActions
                                     delivery={delivery}
-                                    label=""
-                                    variant="ghost"
-                                    className="h-9 w-9 shrink-0 p-0"
+                                    label="שליחה לנהג"
+                                    variant="outline"
+                                    className="shrink-0 gap-1.5"
                                   />
                                   <OrderConfirmDialog
                                     orderId={delivery.id}
@@ -602,8 +610,8 @@ export default function SalesDeliveriesQueue({
                     {cities.map(([city, customerGroups]) => (
                       <div key={city} className="space-y-2">
                         <div className="flex items-center justify-between gap-2 px-1">
-                          <h3 className="flex min-w-0 items-center gap-1.5 text-base font-bold">
-                            <LocationIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <h3 className="flex min-w-0 items-center gap-2 text-base font-bold">
+                            <span aria-hidden className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: cityColour(city) }} />
                             <span>{city}</span>
                           </h3>
                           <span className="shrink-0 text-xs text-muted-foreground">
@@ -620,17 +628,11 @@ export default function SalesDeliveriesQueue({
 
                               return (
                                 <li key={customerKey}>
-                                  <div className="relative overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-                                    {/* Pinned beside the name/address heading — the card's
-                                        first (and usually only) order. A second order on the
-                                        same stop keeps its own share icon further down, since
-                                        this corner can only speak for one delivery. */}
-                                    <DeliveryShareActions
-                                      delivery={group.orders[0]}
-                                      label=""
-                                      variant="ghost"
-                                      className="absolute end-2 top-2 z-10 h-8 w-8 shrink-0 p-0"
-                                    />
+                                  <div className="relative overflow-hidden rounded-2xl border border-border bg-card ps-1.5 shadow-sm">
+                                    {/* The city's colour down the start edge — fixed per city
+                                        (lib/deliveries/city-colours.ts), so a driver sees where
+                                        one city's stops end. */}
+                                    <span aria-hidden className="absolute inset-y-0 start-0 w-1.5" style={{ backgroundColor: cityColour(city) }} />
                                     {/* WHERE leads — on a delivery run the address is what
                                         you act on; the customer is how you confirm it. Waze
                                         sits opposite as the one navigation affordance. */}
@@ -657,7 +659,7 @@ export default function SalesDeliveriesQueue({
                                           <WazeIcon className="h-4 w-4" />
                                         </AddressLink>
                                       ) : null}
-                                      <div className="min-w-0 flex-1 pe-9">
+                                      <div className="min-w-0 flex-1">
                                         <div className="text-sm font-bold leading-snug">
                                           {group.address || combinedCustomerName(group)}
                                         </div>
@@ -732,7 +734,7 @@ export default function SalesDeliveriesQueue({
 
                                     {/* One ruled block per order, same zone rhythm as the
                                         orders list: money, then contents, then actions. */}
-                                    {group.orders.map((delivery, orderIndex) => {
+                                    {group.orders.map((delivery) => {
                                       const unpaidPrepayment =
                                         delivery.requiresPrepayment && delivery.paymentStatus !== "paid";
                                       const partiallyDelivered = delivery.status === "partially_delivered";
@@ -745,21 +747,8 @@ export default function SalesDeliveriesQueue({
                                           unpaidPrepayment ? PREPAYMENT_ROW_CLASSES : ""
                                         }`}
                                       >
-                                        {/* Order 0's share already sits up by the name/address
-                                            heading — only a second+ order on the same stop needs
-                                            its own corner, since the heading one can't speak for
-                                            it. Sibling of the divided rows, not a member (no
-                                            divide-y border of its own). */}
-                                        {orderIndex > 0 ? (
-                                          <DeliveryShareActions
-                                            delivery={delivery}
-                                            label=""
-                                            variant="ghost"
-                                            className="absolute end-2 top-2 z-10 h-8 w-8 shrink-0 p-0"
-                                          />
-                                        ) : null}
                                         <div className="divide-y divide-border/60">
-                                        <div className={`flex flex-wrap items-center gap-x-2 gap-y-1.5 p-3 ${orderIndex > 0 ? "pe-12" : ""}`}>
+                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 p-3">
                                           <span className="text-sm font-bold">
                                             {formatCurrency(delivery.totalAmount)}
                                           </span>
@@ -842,16 +831,23 @@ export default function SalesDeliveriesQueue({
                                             (nothing at all when it has none). */}
                                         <DeliveryComments notes={delivery.notes} className="p-3" />
 
-                                        {/* The delivery itself is the primary act — the whole
-                                            block is now a tap target to the order, so this row
-                                            is just the one filled action, pinned to the bottom-left
-                                            corner (ms-auto) to mirror the share icon's top-left. */}
+                                        {/* The delivery's two acts, side by side in the bottom
+                                            corner: send it to the driver (a labelled button —
+                                            owner, 2026-10-10: the bare share icon in the card's
+                                            corner was easy to miss) and the filled primary one.
+                                            Each order on a stop has its own pair. */}
                                         <div className="flex items-center gap-2 p-3">
+                                          <DeliveryShareActions
+                                            delivery={delivery}
+                                            label="שליחה לנהג"
+                                            variant="outline"
+                                            className="ms-auto gap-1.5"
+                                          />
                                           <OrderConfirmDialog
                                             orderId={delivery.id}
                                             customerName={delivery.customerName}
                                             buttonVariant="default"
-                                            buttonClassName="ms-auto gap-1.5"
+                                            buttonClassName="gap-1.5"
                                             buttonLabel={
                                               <>
                                                 <CheckIcon className="h-4 w-4" />
