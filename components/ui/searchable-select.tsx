@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { CheckIcon, ChevronDownIcon, SearchIcon } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
@@ -27,6 +27,12 @@ export type SearchableSelectOption = {
  * The menu is rendered through a Radix Popover, so it is never clipped by an
  * ancestor's `overflow` (e.g. a scrollable dialog body), flips when there isn't
  * room below, and nests correctly inside a Radix Dialog (focus + dismissal).
+ *
+ * Works from the keyboard (owner, 2026-10-09 — the account picker didn't): down
+ * or Enter on the closed field opens it, typing a letter there opens it
+ * searching for it, up/down move through the rows (the search box keeps the
+ * focus), Enter picks the highlighted row — the top match while searching —
+ * and Escape closes. Focus then returns to the field, so Tab goes on.
  */
 export function SearchableSelect({
   options,
@@ -58,6 +64,9 @@ export function SearchableSelect({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  // The highlighted row (keyboard), an index into `rows` below.
+  const [active, setActive] = useState(0);
+  const listId = useId();
   const searchRef = useRef<HTMLInputElement>(null);
   const listCleanup = useRef<(() => void) | null>(null);
 
@@ -100,10 +109,65 @@ export function SearchableSelect({
     );
   }, [options, query]);
 
+  // Every row in the list, in order: the "none" row (when shown), then the matches.
+  const rows = useMemo(
+    () => [...(emptyOptionLabel && !query.trim() ? [""] : []), ...filtered.map((option) => option.value)],
+    [emptyOptionLabel, query, filtered]
+  );
+  const rowId = (index: number) => `${listId}-row-${index}`;
+
   function pick(next: string) {
     onChange(next);
     setQuery("");
     setOpen(false);
+  }
+
+  function openWith(nextQuery: string) {
+    setQuery(nextQuery);
+    // The current choice highlighted on open; the top match when searching.
+    const current = nextQuery ? -1 : rows.indexOf(value);
+    setActive(current >= 0 ? current : 0);
+    setOpen(true);
+  }
+
+  function moveTo(index: number) {
+    if (rows.length === 0) return;
+    const next = (index + rows.length) % rows.length;
+    setActive(next);
+    document.getElementById(rowId(next))?.scrollIntoView({ block: "nearest" });
+  }
+
+  // While open: arrows move the highlight, Enter picks it (wherever the focus
+  // is inside the menu — the search box keeps it while typing).
+  function onMenuKeyDown(event: KeyboardEvent) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveTo(active + 1);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveTo(active - 1);
+    } else if (event.key === "Home" && !showSearch) {
+      event.preventDefault();
+      moveTo(0);
+    } else if (event.key === "End" && !showSearch) {
+      event.preventDefault();
+      moveTo(rows.length - 1);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      if (rows[active] !== undefined) pick(rows[active]);
+    }
+  }
+
+  // The closed field: down opens it; a typed letter opens it searching for that letter.
+  function onTriggerKeyDown(event: KeyboardEvent) {
+    if (disabled || open) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      openWith("");
+    } else if (showSearch && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey && event.key !== " ") {
+      event.preventDefault();
+      openWith(event.key);
+    }
   }
 
   const triggerLabel = selected?.label ?? emptyOptionLabel ?? placeholder;
@@ -113,8 +177,11 @@ export function SearchableSelect({
     <Popover.Root
       open={open}
       onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) setQuery("");
+        if (next) openWith("");
+        else {
+          setOpen(false);
+          setQuery("");
+        }
       }}
     >
       <Popover.Trigger asChild>
@@ -122,6 +189,8 @@ export function SearchableSelect({
           type="button"
           disabled={disabled}
           aria-label={ariaLabel}
+          aria-haspopup="listbox"
+          onKeyDown={onTriggerKeyDown}
           className={cn(
             "flex min-h-11 w-full items-center justify-between gap-2 rounded-xl border border-input bg-background/80 px-4 py-2 text-right text-sm shadow-sm transition-all duration-200 focus-visible:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
             className
@@ -156,6 +225,7 @@ export function SearchableSelect({
               searchRef.current.focus();
             }
           }}
+          onKeyDown={onMenuKeyDown}
           className="z-[60] flex flex-col overflow-hidden rounded-xl border bg-background shadow-lg"
         >
           {showSearch ? (
@@ -163,22 +233,39 @@ export function SearchableSelect({
               <Input
                 ref={searchRef}
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setActive(0); // the top match, ready for Enter
+                }}
                 placeholder={searchPlaceholder}
+                role="combobox"
+                aria-expanded
+                aria-controls={listId}
+                aria-activedescendant={rows.length > 0 ? rowId(active) : undefined}
                 className="pe-9"
               />
               <SearchIcon className="pointer-events-none absolute end-5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             </div>
           ) : null}
 
-          <div ref={listRef} className={cn("overflow-auto overscroll-contain p-1", maxHeightClassName)}>
+          <div
+            ref={listRef}
+            id={listId}
+            role="listbox"
+            className={cn("overflow-auto overscroll-contain p-1", maxHeightClassName)}
+          >
             {emptyOptionLabel && !query.trim() ? (
               <button
                 type="button"
+                id={rowId(0)}
+                role="option"
+                aria-selected={value === ""}
                 onClick={() => pick("")}
+                onMouseMove={() => setActive(0)}
                 className={cn(
                   "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-sm hover:bg-muted",
-                  value === "" && "bg-primary/5"
+                  value === "" && "bg-primary/5",
+                  active === 0 && "bg-muted"
                 )}
               >
                 {value === "" ? (
@@ -193,30 +280,38 @@ export function SearchableSelect({
             {filtered.length === 0 ? (
               <div className="px-3 py-2 text-sm text-muted-foreground">{noResultsLabel}</div>
             ) : (
-              filtered.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => pick(option.value)}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-sm hover:bg-muted",
-                    value === option.value && "bg-primary/5"
-                  )}
-                >
-                  {value === option.value ? (
-                    <CheckIcon className="h-4 w-4 shrink-0 text-primary" />
-                  ) : (
-                    <span className="w-4 shrink-0" />
-                  )}
-                  {option.icon ? <span className="shrink-0 text-muted-foreground">{option.icon}</span> : null}
-                  <span className="min-w-0 flex-1">
-                    <span className="block font-medium">{option.label}</span>
-                    {option.hint ? (
-                      <span className="block text-xs text-muted-foreground">{option.hint}</span>
-                    ) : null}
-                  </span>
-                </button>
-              ))
+              filtered.map((option, index) => {
+                const row = index + rows.length - filtered.length;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    id={rowId(row)}
+                    role="option"
+                    aria-selected={value === option.value}
+                    onClick={() => pick(option.value)}
+                    onMouseMove={() => setActive(row)}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-sm hover:bg-muted",
+                      value === option.value && "bg-primary/5",
+                      active === row && "bg-muted"
+                    )}
+                  >
+                    {value === option.value ? (
+                      <CheckIcon className="h-4 w-4 shrink-0 text-primary" />
+                    ) : (
+                      <span className="w-4 shrink-0" />
+                    )}
+                    {option.icon ? <span className="shrink-0 text-muted-foreground">{option.icon}</span> : null}
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-medium">{option.label}</span>
+                      {option.hint ? (
+                        <span className="block text-xs text-muted-foreground">{option.hint}</span>
+                      ) : null}
+                    </span>
+                  </button>
+                );
+              })
             )}
           </div>
         </Popover.Content>

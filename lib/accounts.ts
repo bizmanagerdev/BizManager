@@ -77,19 +77,34 @@ export function accountKindForMethod(method: string | null | undefined): Account
   return null;
 }
 
+/** The business's own bank account — where a bank transfer lands unless someone picks another. */
+export const BUSINESS_BANK_ACCOUNT_NAME = "מזרחי עסקי";
+
+function isBankTransfer(method: string | null | undefined): boolean {
+  const raw = (method ?? "").trim().toLowerCase();
+  return raw === "bank_transfer" || raw === "bank transfer" || raw.includes("העברה");
+}
+
 /**
  * Auto-select rule (product decision: "default to the single bank/cash"): if the
  * method maps to a kind that has EXACTLY ONE active account, return that account's
- * id; otherwise "" (ambiguous or unknown → let the user pick). Pure, client-safe.
+ * id. A bank transfer with several bank accounts goes to the business account
+ * (BUSINESS_BANK_ACCOUNT_NAME — owner, 2026-10-09). Otherwise "" (ambiguous or
+ * unknown → let the user pick). Pure, client-safe.
  */
 export function defaultAccountForMethod(
-  accounts: Array<Pick<Account, "id" | "kind" | "isActive">>,
+  accounts: Array<Pick<Account, "id" | "kind" | "isActive"> & { name?: string }>,
   method: string | null | undefined
 ): string {
   const kind = accountKindForMethod(method);
   if (!kind) return "";
   const matches = accounts.filter((a) => a.isActive && a.kind === kind);
-  return matches.length === 1 ? matches[0].id : "";
+  if (matches.length === 1) return matches[0].id;
+  if (isBankTransfer(method)) {
+    const business = matches.find((a) => a.name?.trim() === BUSINESS_BANK_ACCOUNT_NAME);
+    if (business) return business.id;
+  }
+  return "";
 }
 
 export type AccountBalance = Account & {

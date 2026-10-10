@@ -43,6 +43,18 @@ describe("defaultAccountForMethod", () => {
   it("returns '' when nothing matches", () => {
     expect(defaultAccountForMethod(accounts, "credit_card")).toBe("");
   });
+  it("a bank transfer with several bank accounts goes to the business account (מזרחי עסקי) — a check doesn't", () => {
+    const named = [
+      { id: "home", name: "מזרחי בית", kind: "bank" as const, isActive: true },
+      { id: "business", name: "מזרחי עסקי", kind: "bank" as const, isActive: true },
+      { id: "cash1", name: "מזומן", kind: "cash" as const, isActive: true },
+    ];
+    expect(defaultAccountForMethod(named, "bank_transfer")).toBe("business");
+    expect(defaultAccountForMethod(named, "העברה בנקאית")).toBe("business");
+    expect(defaultAccountForMethod(named, "check")).toBe("");
+    // Not there (renamed, closed): the person picks, as before.
+    expect(defaultAccountForMethod([...named.filter((a) => a.id !== "business"), ...accounts], "bank_transfer")).toBe("");
+  });
 });
 
 describe("getAccountKindLabel", () => {
