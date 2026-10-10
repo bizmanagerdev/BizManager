@@ -45,7 +45,9 @@ export const Input = React.forwardRef<
       inputMode={resolvedInputMode}
       onChange={handleChange}
       className={cn(
-        "flex h-11 w-full rounded-xl border border-input bg-background/80 px-4 py-2 text-base shadow-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+        // Placeholders a shade lighter than labels and values (owner, 2026-10-09: a hint
+        // like "אם שונה משם הלקוח" read as if something had been typed).
+        "flex h-11 w-full rounded-xl border border-input bg-background/80 px-4 py-2 text-base shadow-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground/55 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
         className
       )}
       ref={ref}
