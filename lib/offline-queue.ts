@@ -27,12 +27,34 @@ export const CONNECTION_EVENTS = {
   queued: "biz:conn-queued",   // a write was saved locally to send later
   synced: "biz:conn-synced",   // queued actions were successfully sent
   failed: "biz:conn-failed",   // queued actions permanently failed
+  settled: "biz:conn-settled", // a write that was slow got its answer (or was given up on)
   changed: "biz:queue-changed", // queue/failed counts changed (same-tab refresh)
 } as const;
 
 function emit(name: string, detail?: unknown): void {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new CustomEvent(name, { detail }));
+}
+
+/**
+ * The "connection is slow" notice for one write: `slow` once it has taken
+ * `afterMs`, and `settled` when it ends — answered, refused or given up on —
+ * if the notice went out. Returns the ending. The notice is a loading toast,
+ * which never times out on its own: without `settled`, a slow save that then
+ * went through left "שומר..." on screen for good.
+ */
+export function slowNotice(label: string | undefined, afterMs: number = SLOW_NOTICE_MS): () => void {
+  let shown = false;
+  const timer = setTimeout(() => {
+    shown = true;
+    emit(CONNECTION_EVENTS.slow, { label });
+  }, afterMs);
+  return () => {
+    clearTimeout(timer);
+    if (!shown) return;
+    shown = false;
+    emit(CONNECTION_EVENTS.settled, { label });
+  };
 }
 
 // ── Draft helpers ─────────────────────────────────────────────────────────────
@@ -246,7 +268,7 @@ export async function offlineFetch(
   };
 
   const controller = new AbortController();
-  const slowTimer = setTimeout(() => emit(CONNECTION_EVENTS.slow, { label }), SLOW_NOTICE_MS);
+  const endSlow = slowNotice(label);
   const timeoutTimer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
@@ -256,7 +278,7 @@ export async function offlineFetch(
       body: JSON.stringify(body),
       signal: controller.signal,
     });
-    clearTimeout(slowTimer);
+    endSlow();
     clearTimeout(timeoutTimer);
     // Answered (refused or done): nothing to resend.
     settle();
@@ -279,7 +301,7 @@ export async function offlineFetch(
     // it's "online" (the classic flaky-connection case). Queue it — the
     // idempotency key keeps a replay from creating a duplicate even if the
     // request actually reached the server before we gave up.
-    clearTimeout(slowTimer);
+    endSlow();
     clearTimeout(timeoutTimer);
     if (kept) {
       sending.delete(kept.id);

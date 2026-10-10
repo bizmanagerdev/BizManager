@@ -19,17 +19,25 @@ export default function ConnectionToasts() {
   const [, startTransition] = useTransition();
 
   useEffect(() => {
+    // The slow writes still waiting. One "שומר..." notice stands for all of
+    // them and goes when the last one ends (settled) — a loading toast never
+    // times out by itself, so nothing else would take it away.
+    let slowPending = 0;
     const onSlow = (e: Event) => {
       const { label } = ((e as CustomEvent).detail ?? {}) as ConnDetail;
+      slowPending += 1;
       toast.loading(label ? `החיבור איטי — שומר את ${label}...` : "החיבור איטי — שומר...", {
         id: "conn-slow",
-        duration: 8000,
       });
+    };
+
+    const onSettled = () => {
+      slowPending = Math.max(0, slowPending - 1);
+      if (slowPending === 0) toast.dismiss("conn-slow");
     };
 
     const onQueued = (e: Event) => {
       const { label } = ((e as CustomEvent).detail ?? {}) as ConnDetail;
-      toast.dismiss("conn-slow");
       toast.info(
         label
           ? `${label} נשמר במכשיר — יישלח אוטומטית כשיחזור החיבור`
@@ -40,7 +48,6 @@ export default function ConnectionToasts() {
 
     const onSynced = (e: Event) => {
       const { count = 0 } = ((e as CustomEvent).detail ?? {}) as ConnDetail;
-      toast.dismiss("conn-slow");
       toast.success(count > 1 ? `${count} פעולות נשלחו ונשמרו בשרת` : "הפעולה נשלחה ונשמרה בשרת", {
         id: "conn-synced",
       });
@@ -57,12 +64,14 @@ export default function ConnectionToasts() {
     };
 
     window.addEventListener(CONNECTION_EVENTS.slow, onSlow);
+    window.addEventListener(CONNECTION_EVENTS.settled, onSettled);
     window.addEventListener(CONNECTION_EVENTS.queued, onQueued);
     window.addEventListener(CONNECTION_EVENTS.synced, onSynced);
     window.addEventListener(CONNECTION_EVENTS.failed, onFailed);
 
     return () => {
       window.removeEventListener(CONNECTION_EVENTS.slow, onSlow);
+      window.removeEventListener(CONNECTION_EVENTS.settled, onSettled);
       window.removeEventListener(CONNECTION_EVENTS.queued, onQueued);
       window.removeEventListener(CONNECTION_EVENTS.synced, onSynced);
       window.removeEventListener(CONNECTION_EVENTS.failed, onFailed);

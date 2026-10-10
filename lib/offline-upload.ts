@@ -1,5 +1,5 @@
 import { toHebrewError } from "@/lib/error-messages";
-import { CONNECTION_EVENTS } from "@/lib/offline-queue";
+import { CONNECTION_EVENTS, slowNotice } from "@/lib/offline-queue";
 
 // ── Offline file-upload queue ─────────────────────────────────────────────────
 // The JSON write queue (lib/offline-queue.ts) can't hold binary, so photo/file
@@ -324,7 +324,7 @@ export async function offlineUpload(
   };
 
   const controller = new AbortController();
-  const slowTimer = setTimeout(() => emit(CONNECTION_EVENTS.slow, { label }), SLOW_NOTICE_MS);
+  const endSlow = slowNotice(label, SLOW_NOTICE_MS);
   const timeoutTimer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
 
   try {
@@ -334,7 +334,7 @@ export async function offlineUpload(
       body: buildForm(fields, parts),
       signal: controller.signal,
     });
-    clearTimeout(slowTimer);
+    endSlow();
     clearTimeout(timeoutTimer);
 
     if (!response.ok) {
@@ -350,7 +350,7 @@ export async function offlineUpload(
     // Aborted by our timeout, or a network error while still nominally "online"
     // (the classic flaky case). It waits in the queue — the idempotency key
     // stops a replay from creating a duplicate even if the request reached the server.
-    clearTimeout(slowTimer);
+    endSlow();
     clearTimeout(timeoutTimer);
     if (keptId) {
       sending.delete(keptId);
