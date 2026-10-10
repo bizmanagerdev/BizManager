@@ -45,6 +45,7 @@ import {
 } from "@/components/projects/MovingAddressFields";
 import DeleteProjectButton from "@/app/(app)/projects/DeleteProjectButton";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { formatShortDateTime } from "@/lib/date";
 import {
   printProjectSheet,
   projectShareHref,
@@ -129,17 +130,9 @@ function toNumber(value: unknown) {
   return null;
 }
 
+// dd/mm/yy hh:mm in Israel time, like the rest of the app.
 function formatDateTime(value: string | null) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat("he-IL", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+  return value ? formatShortDateTime(value) : null;
 }
 
 async function uploadProjectDocument(projectId: string, file: File) {

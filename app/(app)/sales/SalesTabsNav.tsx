@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PrefetchKind } from "next/dist/client/components/router-reducer/router-reducer-types";
@@ -70,6 +70,24 @@ function triggerClassName(isActive: boolean) {
 const LIST_CLASSES =
   "flex min-w-0 items-center gap-2 overflow-x-auto overflow-y-hidden text-muted-foreground sm:gap-3";
 
+/**
+ * On a phone only three of the five tabs fit; the row now scrolls to the open
+ * one (it stayed at the start, so on מחירון or משלוחים the underlined tab was
+ * off the edge). Before paint, and the row only — never the page.
+ */
+function useOpenTabInView(listRef: RefObject<HTMLDivElement | null>, activeTab: SalesTab) {
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const open = list?.querySelector<HTMLElement>("[data-open-tab]");
+    if (!list || !open) return;
+    const row = list.getBoundingClientRect();
+    const tab = open.getBoundingClientRect();
+    const margin = 8;
+    if (tab.left < row.left) list.scrollLeft -= row.left - tab.left + margin;
+    else if (tab.right > row.right) list.scrollLeft += tab.right - row.right + margin;
+  }, [listRef, activeTab]);
+}
+
 export default function SalesTabsNav({
   activeTab,
   counts,
@@ -80,6 +98,8 @@ export default function SalesTabsNav({
   searchParams: SalesTabsSearchParams;
 }) {
   const router = useRouter();
+  const listRef = useRef<HTMLDivElement>(null);
+  useOpenTabInView(listRef, activeTab);
   // One string (hrefs never contain a space), so the effect below re-runs when
   // the set of tabs changes rather than on every render.
   const otherTabHrefs = tabs
@@ -108,7 +128,7 @@ export default function SalesTabsNav({
   }, [router, otherTabHrefs]);
 
   return (
-    <div dir="rtl" className={LIST_CLASSES}>
+    <div ref={listRef} dir="rtl" className={LIST_CLASSES}>
       {tabs.map((tab) => {
         const isActive = tab.id === activeTab;
         const count = getCount(tab, counts);
@@ -120,6 +140,7 @@ export default function SalesTabsNav({
             // Prefetched by hand above — see there for why not here.
             prefetch={false}
             aria-current={isActive ? "page" : undefined}
+            data-open-tab={isActive ? "" : undefined}
             className={triggerClassName(isActive)}
             onClick={() => emitNavigationStart()}
           >
@@ -139,12 +160,15 @@ export default function SalesTabsNav({
  * names, the open one underlined, a placeholder where each count will be.
  */
 export function SalesTabsNavSkeleton({ activeTab }: { activeTab: SalesTab }) {
+  // Scrolled the same way, so the row doesn't move when the page arrives.
+  const listRef = useRef<HTMLDivElement>(null);
+  useOpenTabInView(listRef, activeTab);
   return (
-    <div dir="rtl" className={LIST_CLASSES}>
+    <div ref={listRef} dir="rtl" className={LIST_CLASSES}>
       {tabs.map((tab) => {
         const Icon = tab.icon;
         return (
-          <span key={tab.id} className={triggerClassName(tab.id === activeTab)}>
+          <span key={tab.id} data-open-tab={tab.id === activeTab ? "" : undefined} className={triggerClassName(tab.id === activeTab)}>
             <Icon className="h-4 w-4 shrink-0" />
             <span className="sm:hidden">{tab.shortLabel ?? tab.label}</span>
             <span className="hidden sm:inline">{tab.label}</span>

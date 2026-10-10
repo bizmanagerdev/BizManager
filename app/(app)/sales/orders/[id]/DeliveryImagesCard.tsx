@@ -295,7 +295,9 @@ export default function DeliveryImagesCard({
       {!needsDeliveryAction ? (
         <OrderConfirmDialog
           orderId={orderId}
-          buttonLabel="אספקת הזמנה"
+          // Already delivered, it opens the same screen to correct what was
+          // handed over — "אספקת הזמנה" read as if it hadn't been yet.
+          buttonLabel={deliveryConfirmedAt ? "עדכון אספקה" : "אספקת הזמנה"}
           buttonClassName={FULL_SECONDARY_TRIGGER_CLASSES}
           authorName={authorName}
         />

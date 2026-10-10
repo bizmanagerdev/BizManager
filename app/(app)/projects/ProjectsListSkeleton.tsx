@@ -62,8 +62,8 @@ export default function ProjectsListSkeleton() {
             <Triggers />
           </TabsList>
         </div>
-        <TabsList variant="underline" className="justify-start md:hidden">
-          <Triggers className="!text-sm" />
+        <TabsList variant="underline" className="justify-start gap-1 md:hidden">
+          <Triggers className="px-1.5 !text-sm" />
         </TabsList>
       </Tabs>
 

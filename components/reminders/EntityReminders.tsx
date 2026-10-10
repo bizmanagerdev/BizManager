@@ -11,6 +11,7 @@ import { scheduleDeferredDelete } from "@/lib/undo-engine";
 import { useUndoOverlay } from "@/hooks/useUndoOverlay";
 import { reminderActionOnDevice } from "@/lib/reminders/device-reminder-saves";
 import { DEVICE_SAVE_SENT_EVENT, type DeviceSaveSent } from "@/lib/powersync/local-writes";
+import { formatShortDateTime } from "@/lib/date";
 
 // Shows ALL open reminders attached to one entity (order / project / customer /
 // task…) with inline add / edit / done / cancel. Drop it on any details page:
@@ -28,16 +29,10 @@ type ReminderRow = {
   notifiedAt: string | null;
 };
 
+// dd/mm/yy hh:mm in Israel time, like the rest of the app (the browser's
+// he-IL format wrote "30.08, 03:10", in the browser's own time zone).
 function fmt(iso: string): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return new Intl.DateTimeFormat("he-IL", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(d);
+  return formatShortDateTime(iso, "");
 }
 
 export default function EntityReminders({

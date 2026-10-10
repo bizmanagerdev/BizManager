@@ -34,6 +34,7 @@ import { CardInstallmentsField } from "@/components/financial/CardInstallmentsFi
 import type { MorningLocalDocument } from "@/lib/morning/types";
 import type { FinancialAttachment } from "@/lib/payments";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
+import { formatShortDate } from "@/lib/date";
 
 export type PaymentItem = {
   id: string;
@@ -70,17 +71,10 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
+// dd/mm/yy in Israel time, like every other date on the order page (the
+// browser's he-IL format wrote 25.10.26, and in its own time zone).
 function formatDate(value: string | null) {
-  if (!value) return "";
-  try {
-    return new Date(value).toLocaleDateString("he-IL", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "2-digit",
-    });
-  } catch {
-    return value;
-  }
+  return formatShortDate(value, "");
 }
 
 /**
@@ -547,38 +541,21 @@ export function OrderPaymentActionsClient({
               key={payment.id || `payment-${index}`}
               className="rounded-xl border border-border/70 bg-background/70 p-3 text-sm"
             >
+              {/* The amount line shares its row with the buttons; the details run
+                  the card's full width under it (beside the buttons they were
+                  squeezed to a narrow column on a phone). */}
               <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={`font-medium ${isRefund ? "text-warning-soft-foreground" : ""}`}>
-                      {isRefund
-                        ? `החזר ${formatCurrency(Math.abs(payment.amount_total))}`
-                        : formatCurrency(payment.amount_total)}
+                <div className="flex min-h-8 min-w-0 flex-1 flex-wrap items-center gap-2">
+                  <span className={`font-medium ${isRefund ? "text-warning-soft-foreground" : ""}`}>
+                    {isRefund
+                      ? `החזר ${formatCurrency(Math.abs(payment.amount_total))}`
+                      : formatCurrency(payment.amount_total)}
+                  </span>
+                  <span className="text-muted-foreground">{formatDate(payment.payment_date)}</span>
+                  {collectionChip ? (
+                    <span className={`rounded-full border px-2 py-0.5 text-[11px] ${collectionChip.classes}`}>
+                      {collectionChip.label}
                     </span>
-                    <span className="text-muted-foreground">{formatDate(payment.payment_date)}</span>
-                    {collectionChip ? (
-                      <span className={`rounded-full border px-2 py-0.5 text-[11px] ${collectionChip.classes}`}>
-                        {collectionChip.label}
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="mt-1 text-muted-foreground">
-                    {isRefund ? "אמצעי החזר" : "אמצעי"}:{" "}
-                    {paymentMethodLabel(payment.payment_method)}
-                    {payment.reference_number
-                      ? ` • אסמכתא: ${payment.reference_number}`
-                      : ""}
-                    {payment.payment_method === "check" && payment.check_number
-                      ? ` • מס' צ'ק: ${payment.check_number}`
-                      : ""}
-                    {payment.due_date ? ` • פירעון: ${formatDate(payment.due_date)}` : ""}
-                  </div>
-                  <PaymentFilesLine payment={payment} checksLink={canManage} />
-                  {payment.notes ? (
-                    <div className="mt-1 text-muted-foreground">הערות: {payment.notes}</div>
-                  ) : null}
-                  {payment.insertedByLabel ? (
-                    <div className="mt-1 text-muted-foreground">{payment.insertedByLabel}</div>
                   ) : null}
                 </div>
 
@@ -629,6 +606,24 @@ export function OrderPaymentActionsClient({
                   </div>
                 ) : null}
               </div>
+              <div className="mt-1 text-muted-foreground">
+                {isRefund ? "אמצעי החזר" : "אמצעי"}:{" "}
+                {paymentMethodLabel(payment.payment_method)}
+                {payment.reference_number
+                  ? ` • אסמכתא: ${payment.reference_number}`
+                  : ""}
+                {payment.payment_method === "check" && payment.check_number
+                  ? ` • מס' צ'ק: ${payment.check_number}`
+                  : ""}
+                {payment.due_date ? ` • פירעון: ${formatDate(payment.due_date)}` : ""}
+              </div>
+              <PaymentFilesLine payment={payment} checksLink={canManage} />
+              {payment.notes ? (
+                <div className="mt-1 text-muted-foreground">הערות: {payment.notes}</div>
+              ) : null}
+              {payment.insertedByLabel ? (
+                <div className="mt-1 text-muted-foreground">{payment.insertedByLabel}</div>
+              ) : null}
 
               {deleteError && isDeleting ? (
                 <div className="mt-2 text-xs text-destructive">{deleteError}</div>

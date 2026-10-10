@@ -74,6 +74,7 @@ import { PROJECT_NOT_SENT_YET, deviceProjectForEdit, deviceProjectSaves } from "
 import { EditButton } from "@/components/ui/icon-button";
 import { offlineFetch } from "@/lib/offline-queue";
 import { registerReversibleCreate } from "@/lib/undo-engine";
+import { formatShortDate } from "@/lib/date";
 
 type ProjectRow = Record<string, unknown>;
 type Option = { id: string; label: string; phone?: string | null; whatsapp?: string | null; email?: string | null; name_for_invoice?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> };
@@ -199,28 +200,12 @@ function formatIls(amount: number) {
   }).format(amount);
 }
 
+// dd/mm/yy in Israel time, like every other date in the app (the browser's
+// he-IL format wrote 17.09.26, and in the browser's own time zone).
 function formatDate(value: string | null) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-  return new Intl.DateTimeFormat("he-IL", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(date);
+  return formatShortDate(value);
 }
-
-/** Compact 22.06.26 form — the mobile card's footer has no room for a 4-digit year. */
-function formatDateShort(value: string | null) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-  return new Intl.DateTimeFormat("he-IL", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "2-digit",
-  }).format(date);
-}
+const formatDateShort = formatDate;
 
 // Badges on the mobile card sit as a caption above the title, so they're dialled
 // down from the standalone badge: tighter padding, smaller text, medium weight.
@@ -1059,14 +1044,16 @@ export default function ProjectsClient({
         {/* On the LIGHT page surface, not inside the dark header. It portals away
             above, so these tabs are the first thing under it — the requested order
             — without adding a third navy row to an already heavy header. */}
-        <TabsList variant="underline" className="justify-start md:hidden">
-          <TabsTrigger value="quotes" count={quoteCount} className="!text-sm">
+        {/* Tighter than the desktop row, so all three fit a phone's width (at
+            the default spacing "סגורים" and its count were cut at the edge). */}
+        <TabsList variant="underline" className="justify-start gap-1 md:hidden">
+          <TabsTrigger value="quotes" count={quoteCount} className="px-1.5 !text-sm">
             <DocumentIcon className="h-4 w-4" />הצעות
           </TabsTrigger>
-          <TabsTrigger value="projects" count={projectCount} className="!text-sm">
+          <TabsTrigger value="projects" count={projectCount} className="px-1.5 !text-sm">
             <ProjectIcon className="h-4 w-4" />פרויקטים
           </TabsTrigger>
-          <TabsTrigger value="closed" count={closedCount} className="!text-sm">
+          <TabsTrigger value="closed" count={closedCount} className="px-1.5 !text-sm">
             <SuccessIcon className="h-4 w-4" />סגורים
           </TabsTrigger>
         </TabsList>

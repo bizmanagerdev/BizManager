@@ -30,6 +30,7 @@ import {
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import type { TaskOption, TaskPriority, TaskStatus, UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { getTaskPriorityLabel, getTaskStatusLabel } from "@/lib/ui/status-colors";
+import { formatShortDate } from "@/lib/date";
 
 type TemplateItem = {
   id: string;
@@ -407,7 +408,7 @@ export default function RecurringTasksClient(props: Props) {
                       <div>
                         טווח:{" "}
                         <span className="text-foreground">
-                          {template.start_date || "ללא התחלה"} | {template.end_date || "ללא סוף"}
+                          {formatShortDate(template.start_date, "ללא התחלה")} | {formatShortDate(template.end_date, "ללא סוף")}
                         </span>
                       </div>
                     </div>

@@ -61,6 +61,13 @@ import { deviceTaskSaves, saveTaskSnooze } from "@/lib/tasks/device-task-saves";
 import { TaskSnoozeButton } from "@/components/tasks/TaskSnoozeButton";
 import { israelDateKey } from "@/lib/timezone";
 
+// The card's checkbox and clock are 1.15em glyphs side by side — on a phone a
+// 17 px target each, easy to miss or to tick done instead of snoozing. Each
+// one's touch area reaches further up and down, and half-way into the gap
+// between them (so the two never overlap), without changing how they look.
+const CARD_ICON_HIT =
+  "relative before:absolute before:-inset-x-[0.25em] before:-inset-y-[0.55em] before:content-['']";
+
 const TaskUpsertDialog = dynamic(
   () => import("@/components/tasks/TaskUpsertDialog").then((mod) => mod.TaskUpsertDialog),
   { loading: () => null }
@@ -333,7 +340,7 @@ const TaskCard = memo(function TaskCard({
             e.stopPropagation();
             onToggleDone(task.id, !isDone);
           }}
-          className="mt-[0.15em] shrink-0 text-muted-foreground transition duration-150 hover:text-success group-hover:scale-110"
+          className={`mt-[0.15em] shrink-0 text-muted-foreground transition duration-150 hover:text-success group-hover:scale-110 ${CARD_ICON_HIT}`}
         >
           {isDone ? (
             <CheckboxCheckedIcon className="h-[1.15em] w-[1.15em] text-success" />
@@ -347,7 +354,7 @@ const TaskCard = memo(function TaskCard({
             snoozedUntil={task.snoozed_until}
             onSnooze={(until) => onSnooze(task.id, until)}
             locale={locale}
-            className="mt-[0.15em] group-hover:scale-110"
+            className={`mt-[0.15em] group-hover:scale-110 ${CARD_ICON_HIT}`}
             iconClassName="h-[1.15em] w-[1.15em]"
           />
         ) : null}
