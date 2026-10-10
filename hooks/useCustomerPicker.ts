@@ -35,11 +35,15 @@ export type CustomerPickerOption = {
 export function useCustomerPicker<T extends CustomerPickerOption>({
   initial,
   preselectedId = "",
+  startListCollapsed = false,
   mapSearchResult,
 }: {
   /** The caller's own already-mapped starting list (server-seeded). */
   initial: T[];
   preselectedId?: string;
+  /** Start with the results list folded away (an edit's one open form shows the
+   *  chosen customer; the list opens when the search box is used). */
+  startListCollapsed?: boolean;
   /** The caller's own mapper from a raw search-index entry to its option shape
    *  (`mapCustomerSearchResult` / `mapProjectCustomer`) — kept per-caller since
    *  the two option shapes aren't identical (only one carries `requiresPrepayment`). */
@@ -51,7 +55,7 @@ export function useCustomerPicker<T extends CustomerPickerOption>({
   const [editingCustomer, setEditingCustomer] = useState(false);
   // Mobile master→detail: after a customer is picked the results list collapses
   // so the detail/edit card isn't buried under a long list (lg shows both).
-  const [mobileListCollapsed, setMobileListCollapsed] = useState(false);
+  const [mobileListCollapsed, setMobileListCollapsed] = useState(startListCollapsed);
   // Held independently of the search results, so searching again doesn't drop
   // the current selection out of view.
   const [pickedCustomer, setPickedCustomer] = useState<T | null>(

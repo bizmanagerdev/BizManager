@@ -10,7 +10,7 @@
 // content, and what "next" means. Anything visual that a wizard wants to differ
 // on is a prop here, never a re-implementation in the wizard.
 
-import { Fragment, useRef, type ReactNode, type Ref } from "react";
+import { Fragment, useRef, type KeyboardEvent, type ReactNode, type Ref } from "react";
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import {
@@ -257,9 +257,11 @@ export type StepWizardProps<TStep extends string | number> = {
   /**
    * "steps" draws the numbered, clickable stepper — right when the steps have
    * names worth showing. "bar" draws "3 / 12" and a progress bar instead, for
-   * flows with too many steps to name in a row on a phone.
+   * flows with too many steps to name in a row on a phone. "none" draws
+   * neither: one open form (an order's or a project's edit — every step's
+   * fields at once, owner 2026-10-09: "edit forms one form").
    */
-  progressVariant?: "steps" | "bar";
+  progressVariant?: "steps" | "bar" | "none";
 
   /** Optional heading rendered above the step bar (dialog title, usually). */
   title?: ReactNode;
@@ -288,6 +290,15 @@ export type StepWizardProps<TStep extends string | number> = {
   isLastStep?: boolean;
   /** Wraps body+footer in a form so Enter in a field advances the wizard. */
   submitOnEnter?: boolean;
+  /**
+   * Enter in a text field moves on (onNext) — like submitOnEnter, but without a
+   * <form>, for wizards whose steps hold a form of their own (the inline
+   * new-customer form): a form inside a form is invalid. Skipped where Enter
+   * already means something: a field of a form inside the step (it submits
+   * that), a picker's search (role=combobox — Enter picks there), a field
+   * marked data-no-enter-next (a list's search box), a multi-line field.
+   */
+  nextOnEnter?: boolean;
 
   /** Shown in the action bar, before the buttons. */
   error?: string;
@@ -328,6 +339,7 @@ export function StepWizard<TStep extends string | number>({
   nextDisabled = false,
   isLastStep = false,
   submitOnEnter = false,
+  nextOnEnter = false,
   error,
   note,
   footerStart,
@@ -360,7 +372,7 @@ export function StepWizard<TStep extends string | number>({
   const headerContent = (
     <div className="min-w-0 flex-1 space-y-2">
       {title}
-      {progressVariant === "steps" ? (
+      {progressVariant === "none" ? null : progressVariant === "steps" ? (
         <WizardStepper
           steps={steps}
           current={current}
@@ -482,9 +494,23 @@ export function StepWizard<TStep extends string | number>({
     </div>
   );
 
+  // nextOnEnter: Enter in a plain text field moves on (see the prop). Events
+  // from portaled menus reach here through React too — a picker's own search
+  // is role=combobox and handles its Enter itself.
+  function onEnter(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Enter" || event.defaultPrevented || event.shiftKey || event.nativeEvent.isComposing) return;
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (["checkbox", "radio", "button", "submit", "reset", "file", "range", "color"].includes(target.type)) return;
+    if (target.closest("form, [data-no-enter-next]") || target.getAttribute("role") === "combobox") return;
+    event.preventDefault();
+    if (!nextDisabled) onNext();
+  }
+
   return (
     <div
       ref={rootRef}
+      onKeyDown={nextOnEnter ? onEnter : undefined}
       className={cn(
         inDialog ? "flex min-h-0 flex-1 flex-col" : "flex flex-col gap-5 pb-28 md:pb-0",
         className

@@ -92,7 +92,30 @@ export function OptionRow({
  *  stepper right above already names the current step, so the eyebrow just
  *  repeated it a second time; dropped (user report, 2026-08-25: "this is
  *  duplicate ... remove the eyebrow"). Same removal in ExpenseDialog itself. */
-export function StepHeading({ title, sub }: { title: string; sub?: string }) {
+export function StepHeading({
+  title,
+  sub,
+  compact = false,
+  className,
+}: {
+  title: string;
+  sub?: string;
+  /** One open form (an edit — every step at once): a section's label over its
+   *  fields, under a rule, instead of the step's big centred question. */
+  compact?: boolean;
+  /** compact only — e.g. the first section drops its rule and top margin. */
+  className?: string;
+}) {
+  if (compact) {
+    // Its own margins: a section can sit in a display:contents fieldset, where
+    // the body's space-y doesn't reach it.
+    return (
+      <div className={cn("mb-3 mt-4 border-t border-border pt-4", className)}>
+        <h2 className="text-base font-semibold leading-tight">{title}</h2>
+        {sub ? <p className="mt-0.5 text-sm text-muted-foreground">{sub}</p> : null}
+      </div>
+    );
+  }
   return (
     <>
       <h2 className="text-center text-xl font-semibold leading-tight tracking-tight">{title}</h2>

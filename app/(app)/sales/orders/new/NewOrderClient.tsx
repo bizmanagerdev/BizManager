@@ -63,6 +63,7 @@ import {
 } from "./NewOrderClient.ui";
 import { AddressLink } from "@/components/ui/address-link";
 import { whenDeviceSavesSent } from "@/lib/powersync/store";
+import { formatShortDate } from "@/lib/date";
 import { ORDER_NOT_SENT_YET, deviceOrderSaves } from "@/lib/orders/device-order-saves";
 
 type Row = Record<string, unknown>;
@@ -205,6 +206,9 @@ export default function NewOrderClient({
   const searchParams = useSearchParams();
   const prefillHandled = useRef(false);
   const isEditMode = mode === "edit" && initialOrder !== null;
+  // An edit is one open form — every step's fields at once, Save always there
+  // (owner, 2026-10-09: "edit forms one form"); a new order goes step by step.
+  const oneForm = isEditMode;
   const cancelHref = isEditMode ? `/sales/orders/${initialOrder.id}` : "/sales";
 
   // Restore an in-progress create draft (offline / app-left / reload). Loaded
@@ -368,6 +372,7 @@ export default function NewOrderClient({
   } = useCustomerPicker<CustomerOption>({
     initial: initialCustomerOptions,
     preselectedId: initialOrder?.customer_id ?? restoredDraft?.customerId ?? "",
+    startListCollapsed: oneForm,
     mapSearchResult: (entry) => mapCustomerSearchResult(entry as Record<string, unknown>),
   });
 
@@ -1039,9 +1044,40 @@ export default function NewOrderClient({
     advanceTo,
   } = useStepFlow<Step>({ stepId: step, setStepId: setStep, steps: stepIds, isSatisfied });
 
+  // The current step's fields — or, in one form, every step's (the summary
+  // aside: the whole order is already on screen).
+  const show = (id: Step) => (oneForm ? id !== "summary" && stepIds.includes(id) : step === id);
+  // A pick moves a step form on; in one form it just sets the field.
+  const advance = (id: Step) => {
+    if (!oneForm) advanceTo(id);
+  };
+
+  // Changed? (closing then asks first.) A new order: once past its first step.
+  // An edit: once a field differs from what the order had.
+  const formSnapshot = oneForm
+    ? JSON.stringify([
+        customerId,
+        branchId,
+        orderDate,
+        orderStatus,
+        paymentTerms,
+        dueDate,
+        requestedDeliveryDate,
+        orderDiscount,
+        orderDiscountMode,
+        needsInvoice,
+        collectOnDelivery,
+        notes,
+        lines,
+        newPayments,
+        existingPaymentNotes,
+      ])
+    : "";
+  const [initialSnapshot] = useState(formSnapshot);
+  const dirty = oneForm ? formSnapshot !== initialSnapshot : stepIndex(step) > 0;
   useEffect(() => {
-    onDirtyChange?.(stepIndex(step) > 0);
-  }, [step, stepIndex, onDirtyChange]);
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
   // While the inline create/edit customer form is open the user must save or cancel
   // before they can advance — otherwise the in-progress customer edit would be abandoned.
@@ -1073,12 +1109,14 @@ export default function NewOrderClient({
     setEditingCustomer(false);
   }
 
-  const nextDisabled = isLastStep
-    ? submitting
-    : actionLocked || customerFormOpen || !isSatisfied(step);
+  const nextDisabled = oneForm
+    ? actionLocked || customerFormOpen || !customerId || lines.length === 0
+    : isLastStep
+      ? submitting
+      : actionLocked || customerFormOpen || !isSatisfied(step);
   // Only the final action is spelled out here — the wizard labels the
   // intermediate steps from the step list itself.
-  const nextLabel = isLastStep
+  const nextLabel = oneForm || isLastStep
     ? submitting
       ? isEditMode
         ? "שומר..."
@@ -1135,7 +1173,8 @@ export default function NewOrderClient({
         title={
           dialogTitle ? <WizardTitle title={dialogTitle} description={dialogDescription ?? dialogTitle} /> : undefined
         }
-        progressVariant="bar"
+        progressVariant={oneForm ? "none" : "bar"}
+        showStepCounter={!oneForm}
         steps={wizardSteps}
         current={step}
         canClickStep={canClickStep}
@@ -1147,12 +1186,16 @@ export default function NewOrderClient({
         // / OrderEditDialog) — the grab-bar affordance for its swipe-to-dismiss.
         grabber={embedded}
         closeDisabled={actionLocked}
-        onBack={stepIndex(step) > 0 ? goBack : undefined}
+        onBack={!oneForm && stepIndex(step) > 0 ? goBack : undefined}
         backDisabled={actionLocked}
-        onNext={goNext}
+        onNext={oneForm ? () => void submitOrder() : goNext}
         nextLabel={nextLabel}
         nextDisabled={nextDisabled}
-        isLastStep={isLastStep}
+        isLastStep={oneForm || isLastStep}
+        // Enter in a field moves a new order on, like the Next button.
+        nextOnEnter={!oneForm}
+        // One form has no summary step to show a refusal in — it shows by Save.
+        error={oneForm ? (submitError ?? undefined) : undefined}
         footerStart={
           embedded ? undefined : (
             <Button type="button" variant="secondary" asChild disabled={actionLocked} className="me-auto" onClick={handleCancel}>
@@ -1183,9 +1226,9 @@ export default function NewOrderClient({
       {productSearchError ? <p className="text-sm text-destructive">שגיאת חיפוש מוצרים: {productSearchError}</p> : null}
 
       {/* --------------------------------------------------------------- CUSTOMER */}
-      {step === "customer" ? (
+      {show("customer") ? (
         <div className="space-y-4">
-          <StepHeading title="איזה לקוח?" />
+          <StepHeading compact={oneForm} title="איזה לקוח?" className="mt-0 border-t-0 pt-0" />
           <div className="inline-flex rounded-2xl border border-border/60 bg-background/70 p-1 shadow-sm">
             <button
               type="button"
@@ -1258,14 +1301,15 @@ export default function NewOrderClient({
                       onFocus={() => setMobileListCollapsed(false)}
                       placeholder="חיפוש..."
                       aria-label="חיפוש לקוח"
+                      data-no-enter-next
                       className="pe-9"
                     />
                   </div>
                   {customerSearchLoading ? (
-                    <p className={cn("text-xs text-muted-foreground", mobileListCollapsed && "hidden lg:block")}>מחפש לקוחות...</p>
+                    <p className={cn("text-xs text-muted-foreground", mobileListCollapsed && (oneForm ? "hidden" : "hidden lg:block"))}>מחפש לקוחות...</p>
                   ) : null}
 
-                  <div className={cn("space-y-2 pe-1 lg:max-h-[24rem] lg:overflow-auto", mobileListCollapsed && "hidden lg:block")}>
+                  <div className={cn("space-y-2 pe-1 lg:max-h-[24rem] lg:overflow-auto", mobileListCollapsed && (oneForm ? "hidden" : "hidden lg:block"))}>
                     {filteredCustomers.map((customer) => {
                       const isSelected = customer.id === customerId;
                       return (
@@ -1282,7 +1326,8 @@ export default function NewOrderClient({
                             // takes its place. No programmatic scroll — that was the
                             // source of the jumpy/broken behavior; the page just gets
                             // short on its own. lg keeps both columns visible (no collapse).
-                            if (typeof window !== "undefined" && window.innerWidth < 1024) {
+                            // One form folds it on every screen: the chosen customer is what's shown.
+                            if (oneForm || (typeof window !== "undefined" && window.innerWidth < 1024)) {
                               setMobileListCollapsed(true);
                             }
                           }}
@@ -1452,9 +1497,9 @@ export default function NewOrderClient({
       ) : null}
 
       {/* ------------------------------------------------------------------ BRANCH */}
-      {step === "branch" ? (
+      {show("branch") ? (
         <div className="space-y-4">
-          <StepHeading title="לאיזה סניף?" sub={`ל${selectedCustomer?.name ?? "הלקוח"} יש סניפים — לאיזה מהם ההזמנה?`} />
+          <StepHeading compact={oneForm} title="לאיזה סניף?" sub={`ל${selectedCustomer?.name ?? "הלקוח"} יש סניפים — לאיזה מהם ההזמנה?`} />
           <div className="space-y-2">
             <OptionRow
               label="ראשי"
@@ -1462,7 +1507,7 @@ export default function NewOrderClient({
               selected={branchId === ""}
               onClick={() => {
                 setBranchId("");
-                advanceTo("items");
+                advance("items");
               }}
             />
             {(selectedCustomer?.branches ?? []).map((branch) => (
@@ -1473,7 +1518,7 @@ export default function NewOrderClient({
                 selected={branchId === branch.id}
                 onClick={() => {
                   setBranchId(branch.id);
-                  advanceTo("items");
+                  advance("items");
                 }}
               />
             ))}
@@ -1482,9 +1527,9 @@ export default function NewOrderClient({
       ) : null}
 
       {/* ------------------------------------------------------------------ ITEMS */}
-      {step === "items" ? (
+      {show("items") ? (
         <div className="space-y-4">
-        <StepHeading title="אילו מוצרים?" />
+        <StepHeading compact={oneForm} title="אילו מוצרים?" />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_24rem]">
           {/* Product picker — deliberately NOT wrapped in a Card. The products
               are cards themselves, and a card-in-a-card cost ~70px of width on a
@@ -1497,12 +1542,21 @@ export default function NewOrderClient({
                   onChange={(e) => setProductQuery(e.target.value)}
                   placeholder="חיפוש..."
                   aria-label="חיפוש מוצר"
+                  data-no-enter-next
                   className="pe-9"
                 />
               </div>
               {productSearchLoading ? <p className="text-xs text-muted-foreground">מחפש מוצרים...</p> : null}
 
-              <div className="lg:max-h-[28rem] lg:overflow-auto">
+              {/* One form: the catalog scrolls in its own box on a phone too, so the
+                  sections after it aren't a long scroll away. */}
+              <div
+                className={
+                  oneForm
+                    ? "max-h-[22rem] overflow-auto overscroll-contain lg:max-h-[28rem]"
+                    : "lg:max-h-[28rem] lg:overflow-auto"
+                }
+              >
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {filteredProducts.map((product) => {
                     const selected = selectedLineByProductId.get(product.id);
@@ -1562,7 +1616,8 @@ export default function NewOrderClient({
           </div>
 
           {/* Order items cart — fills its grid cell so its height matches the product picker; the product column stays its natural size and the cart scrolls once it reaches that height */}
-          <div className={cn(lines.length > 0 && "lg:relative")}>
+          {/* One form on a phone: the order's own lines first, the catalog under them. */}
+          <div className={cn(lines.length > 0 && "lg:relative", oneForm && "order-first lg:order-none")}>
             <div className={cn(lines.length > 0 && "lg:absolute lg:inset-0")}>
             {/* Above the cart card, not inside it — adding a free line is an
                 action on the cart, not one of its rows. */}
@@ -1832,16 +1887,16 @@ export default function NewOrderClient({
       ) : null}
 
       {/* ---------------------------------------------------------------- INVOICE */}
-      {step === "invoice" ? (
+      {show("invoice") ? (
         <>
-          <StepHeading title="צריך חשבונית?" />
+          <StepHeading compact={oneForm} title="צריך חשבונית?" />
           <div className="grid grid-cols-2 gap-2">
             <OptionRow
               label="צריך חשבונית"
               selected={needsInvoice}
               onClick={() => {
                 setNeedsInvoice(true);
-                advanceTo("collection");
+                advance("collection");
               }}
             />
             <OptionRow
@@ -1849,21 +1904,22 @@ export default function NewOrderClient({
               selected={!needsInvoice}
               onClick={() => {
                 setNeedsInvoice(false);
-                advanceTo("collection");
+                advance("collection");
               }}
             />
           </div>
         </>
-      ) : step === "collection" ? (
+      ) : null}
+      {show("collection") ? (
         <>
-          <StepHeading title="איך נגבה התשלום?" />
+          <StepHeading compact={oneForm} title="איך נגבה התשלום?" />
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <OptionRow
               label="תשלום למשרד"
               selected={!collectOnDelivery}
               onClick={() => {
                 setCollectOnDelivery(false);
-                advanceTo("paymentTerms");
+                advance("paymentTerms");
               }}
             />
             <OptionRow
@@ -1871,14 +1927,15 @@ export default function NewOrderClient({
               selected={collectOnDelivery}
               onClick={() => {
                 setCollectOnDelivery(true);
-                advanceTo("paymentTerms");
+                advance("paymentTerms");
               }}
             />
           </div>
         </>
-      ) : step === "paymentTerms" ? (
+      ) : null}
+      {show("paymentTerms") ? (
         <>
-          <StepHeading title="מהי צורת התשלום?" />
+          <StepHeading compact={oneForm} title="מהי צורת התשלום?" />
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {PAYMENT_TERMS_OPTIONS.map((option) => (
               <OptionRow
@@ -1887,20 +1944,22 @@ export default function NewOrderClient({
                 selected={paymentTerms === option.value}
                 onClick={() => {
                   applyPaymentTerms(option.value);
-                  advanceTo(option.value === "immediate" ? "payments" : "dueDate");
+                  advance(option.value === "immediate" ? "payments" : "dueDate");
                 }}
               />
             ))}
           </div>
         </>
-      ) : step === "dueDate" ? (
+      ) : null}
+      {show("dueDate") ? (
         <>
-          <StepHeading title="תאריך פירעון?" />
+          <StepHeading compact={oneForm} title="תאריך פירעון?" />
           <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} placeholder="מחושב מצורת התשלום" />
         </>
-      ) : step === "payments" ? (
+      ) : null}
+      {show("payments") ? (
         <>
-          <StepHeading title="תשלומים" sub="אפשר לפצל לכמה תשלומים ובכמה אמצעים שונים" />
+          <StepHeading compact={oneForm} title="תשלומים" sub="אפשר לפצל לכמה תשלומים ובכמה אמצעים שונים" />
           <div className="space-y-4">
             <div className="flex justify-end">
               <Button type="button" variant="secondary" size="sm" onClick={addPaymentDraft} disabled={actionLocked}>
@@ -1916,7 +1975,7 @@ export default function NewOrderClient({
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
                       <div>
                         <div className="text-xs text-muted-foreground">תאריך</div>
-                        <div>{payment.payment_date || "-"}</div>
+                        <div>{formatShortDate(payment.payment_date)}</div>
                       </div>
                       <div>
                         <div className="text-xs text-muted-foreground">אמצעי</div>
@@ -2089,14 +2148,16 @@ export default function NewOrderClient({
             ) : null}
           </div>
         </>
-      ) : step === "orderDate" ? (
+      ) : null}
+      {show("orderDate") ? (
         <>
-          <StepHeading title="מתי בוצעה ההזמנה?" />
+          <StepHeading compact={oneForm} title="מתי בוצעה ההזמנה?" />
           <DateInput value={orderDate} onChange={(e) => applyOrderDate(e.target.value)} placeholder="בחר תאריך הזמנה" />
         </>
-      ) : step === "orderStatus" ? (
+      ) : null}
+      {show("orderStatus") ? (
         <>
-          <StepHeading title="מה סטטוס ההזמנה?" />
+          <StepHeading compact={oneForm} title="מה סטטוס ההזמנה?" />
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {/* An order already in another status (an old one, edited) keeps
                 it on offer, so editing never changes it unasked. */}
@@ -2110,31 +2171,33 @@ export default function NewOrderClient({
                 selected={orderStatus === option.value}
                 onClick={() => {
                   setOrderStatus(option.value);
-                  advanceTo("deliveryDate");
+                  advance("deliveryDate");
                 }}
               />
             ))}
           </div>
         </>
-      ) : step === "deliveryDate" ? (
+      ) : null}
+      {show("deliveryDate") ? (
         <>
-          <StepHeading title="תאריך אספקה מבוקש?" sub="רק אם הלקוח ביקש תאריך מסוים — לא חובה" />
+          <StepHeading compact={oneForm} title="תאריך אספקה מבוקש?" sub="רק אם הלקוח ביקש תאריך מסוים — לא חובה" />
           <DateInput
             value={requestedDeliveryDate}
             onChange={(e) => setRequestedDeliveryDate(e.target.value)}
             disabled={actionLocked}
           />
         </>
-      ) : step === "notes" ? (
+      ) : null}
+      {show("notes") ? (
         <>
-          <StepHeading title="הערות להזמנה?" sub="לא חובה" />
+          <StepHeading compact={oneForm} title="הערות להזמנה?" sub="לא חובה" />
           <div className="relative">
             <Textarea
               value={notes}
               disabled={actionLocked}
               onChange={(e) => setNotes(e.target.value)}
               rows={3}
-              autoFocus
+              autoFocus={!oneForm}
               className="pe-11"
             />
             <DictateButton
@@ -2290,7 +2353,7 @@ export default function NewOrderClient({
       ) : null}
 
       {/* Inline submit error for steps before review */}
-      {submitError && step !== "summary" ? <p className="text-sm text-destructive">{submitError}</p> : null}
+      {submitError && !oneForm && step !== "summary" ? <p className="text-sm text-destructive">{submitError}</p> : null}
       </StepWizard>
     </>
   );

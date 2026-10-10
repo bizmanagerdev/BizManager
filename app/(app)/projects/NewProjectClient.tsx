@@ -5,6 +5,7 @@ import { AddUserIcon, AiIcon, CardIcon, CheckIcon, CloseIcon, DocumentIcon, Edit
 import { StepWizard, WizardTitle, useStepFlow } from "@/components/ui/step-wizard";
 import { MetaRow } from "@/components/ui/meta-row";
 import { OptionRow, StepHeading } from "@/components/ui/option-row";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { SummaryRow, SummarySection } from "@/components/ui/summary";
 import { cn } from "@/lib/utils";
 import { offlineFetch, saveDraft, loadDraft, clearDraft } from "@/lib/offline-queue";
@@ -323,6 +324,9 @@ export default function NewProjectClient({
   dialogDescription?: string;
 }) {
   const isEditMode = mode === "edit" && initialProject !== null;
+  // An edit is one open form — every step's fields at once, Save always there
+  // (owner, 2026-10-09: "edit forms one form"); a new project goes step by step.
+  const oneForm = isEditMode;
 
   // Restore an in-progress create draft (offline / app-left / reload). Loaded
   // once on mount; never in edit mode (a stale draft must not clobber the row).
@@ -364,6 +368,7 @@ export default function NewProjectClient({
   } = useCustomerPicker<ProjectCustomerOption>({
     initial: customers,
     preselectedId: preselectedCustomerId,
+    startListCollapsed: oneForm,
     mapSearchResult: (entry) => mapProjectCustomer(entry as Row),
   });
 
@@ -570,9 +575,45 @@ export default function NewProjectClient({
     advanceTo,
   } = useStepFlow<Step>({ stepId: step, setStepId: setStep, steps: stepIds, isSatisfied });
 
+  // The current step's fields — or, in one form, every step's (the summary
+  // aside: the whole project is already on screen).
+  const show = (id: Step) => (oneForm ? id !== "summary" && stepIds.includes(id) : step === id);
+  // A pick moves a step form on; in one form it just sets the field.
+  const advance = (id: Step | undefined) => {
+    if (!oneForm && id) advanceTo(id);
+  };
+
+  // Changed? (closing then asks first.) A new project: once past its first
+  // step. An edit: once a field differs from what the project had.
+  const formSnapshot = oneForm
+    ? JSON.stringify([
+        customerId,
+        branchId,
+        name,
+        projectType,
+        status,
+        agreedBasePrice,
+        priceIncludesVat,
+        priceEntry,
+        noCharge,
+        expensesSeparately,
+        projectManagerId,
+        startDate,
+        endDate,
+        paymentTerms,
+        dueDate,
+        notes,
+        itemsToMove,
+        origin,
+        destination,
+        attachmentFiles.length,
+      ])
+    : "";
+  const [initialSnapshot] = useState(formSnapshot);
+  const dirty = oneForm ? formSnapshot !== initialSnapshot : stepIndex(step) > 0;
   useEffect(() => {
-    onDirtyChange?.(stepIndex(step) > 0);
-  }, [step, stepIndex, onDirtyChange]);
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
   // While the inline create/edit customer form is open the user must save or
   // cancel first — otherwise the in-progress edit would be abandoned. Wrapped
@@ -643,12 +684,12 @@ export default function NewProjectClient({
     const trimmedName = name.trim();
     if (!trimmedName) {
       setError("שם פרויקט הוא שדה חובה.");
-      setStep("name");
+      if (!oneForm) setStep("name");
       return;
     }
     if (!customerId) {
       setError("לקוח הוא שדה חובה.");
-      setStep("customer");
+      if (!oneForm) setStep("customer");
       return;
     }
     const typedPrice = agreedBasePrice.trim() ? Number(agreedBasePrice) : 0;
@@ -763,7 +804,8 @@ export default function NewProjectClient({
       title={
         dialogTitle ? <WizardTitle title={dialogTitle} description={dialogDescription ?? dialogTitle} /> : undefined
       }
-      progressVariant="bar"
+      progressVariant={oneForm ? "none" : "bar"}
+      showStepCounter={!oneForm}
       steps={wizardSteps}
       current={step}
       canClickStep={canClickStep}
@@ -772,11 +814,11 @@ export default function NewProjectClient({
       // Always embedded in a full-page mobile dialog now — the grab-bar
       // affordance for its swipe-to-dismiss (see ProjectsClient).
       grabber
-      onBack={stepIndex(step) > 0 ? goBack : undefined}
+      onBack={!oneForm && stepIndex(step) > 0 ? goBack : undefined}
       backDisabled={actionLocked}
-      onNext={() => (isLastStep ? void submit() : goNext())}
+      onNext={() => (oneForm || isLastStep ? void submit() : goNext())}
       nextLabel={
-        isLastStep
+        oneForm || isLastStep
           ? submitting
             ? isEditMode
               ? "שומר..."
@@ -787,11 +829,15 @@ export default function NewProjectClient({
           : undefined
       }
       nextDisabled={
-        isLastStep
-          ? submitting
-          : actionLocked || (step === "customer" ? customerFormOpen || !customerId : !isSatisfied(step))
+        oneForm
+          ? actionLocked || customerFormOpen || !customerId || !name.trim() || !startDate
+          : isLastStep
+            ? submitting
+            : actionLocked || (step === "customer" ? customerFormOpen || !customerId : !isSatisfied(step))
       }
-      isLastStep={isLastStep}
+      isLastStep={oneForm || isLastStep}
+      // Enter in a field moves a new project on, like the Next button.
+      nextOnEnter={!oneForm}
       error={error || undefined}
       bodyRef={bodyRef}
     >
@@ -800,9 +846,9 @@ export default function NewProjectClient({
         ) : null}
 
       {/* --------------------------------------------------------------- CUSTOMER */}
-      {step === "customer" ? (
+      {show("customer") ? (
         <div className="space-y-4">
-          <StepHeading title="איזה לקוח?" />
+          <StepHeading compact={oneForm} title="איזה לקוח?" className="mt-0 border-t-0 pt-0" />
           <div className="inline-flex rounded-2xl border border-border/60 bg-background/70 p-1 shadow-sm">
             <button
               type="button"
@@ -873,16 +919,18 @@ export default function NewProjectClient({
                         setCustomerQuery(e.target.value);
                         setMobileListCollapsed(false);
                       }}
+                      onFocus={() => setMobileListCollapsed(false)}
                       placeholder="חיפוש..."
                       aria-label="חיפוש לקוח"
+                      data-no-enter-next
                       className="pe-9"
                     />
                   </div>
                   {customerSearchLoading ? (
-                    <p className={cn("text-xs text-muted-foreground", mobileListCollapsed && "hidden lg:block")}>מחפש לקוחות...</p>
+                    <p className={cn("text-xs text-muted-foreground", mobileListCollapsed && (oneForm ? "hidden" : "hidden lg:block"))}>מחפש לקוחות...</p>
                   ) : null}
 
-                  <div className={cn("max-h-[24rem] space-y-2 overflow-auto pe-1", mobileListCollapsed && "hidden lg:block")}>
+                  <div className={cn("max-h-[24rem] space-y-2 overflow-auto pe-1", mobileListCollapsed && (oneForm ? "hidden" : "hidden lg:block"))}>
                     {filteredCustomers.map((customer) => {
                       const isSelected = customer.id === customerId;
                       return (
@@ -896,7 +944,8 @@ export default function NewProjectClient({
                             setPickedCustomer(customer);
                             setCustomerQuery("");
                             setEditingCustomer(false);
-                            if (typeof window !== "undefined" && window.innerWidth < 1024) {
+                            // One form folds it on every screen: the chosen customer is what's shown.
+                            if (oneForm || (typeof window !== "undefined" && window.innerWidth < 1024)) {
                               setMobileListCollapsed(true);
                             }
                           }}
@@ -1053,9 +1102,9 @@ export default function NewProjectClient({
       ) : null}
 
       {/* ------------------------------------------------------------------ BRANCH */}
-      {step === "branch" ? (
+      {show("branch") ? (
         <div className="space-y-4">
-          <StepHeading title="לאיזה סניף?" sub={`ל${selectedCustomer?.name ?? "הלקוח"} יש סניפים — לאיזה מהם הפרויקט?`} />
+          <StepHeading compact={oneForm} title="לאיזה סניף?" sub={`ל${selectedCustomer?.name ?? "הלקוח"} יש סניפים — לאיזה מהם הפרויקט?`} />
           <div className="space-y-2">
             <OptionRow
               label="ראשי"
@@ -1063,7 +1112,7 @@ export default function NewProjectClient({
               selected={branchId === ""}
               onClick={() => {
                 setBranchId("");
-                advanceTo("name");
+                advance("name");
               }}
             />
             {(selectedCustomer?.branches ?? []).map((branch) => (
@@ -1074,7 +1123,7 @@ export default function NewProjectClient({
                 selected={branchId === branch.id}
                 onClick={() => {
                   setBranchId(branch.id);
-                  advanceTo("name");
+                  advance("name");
                 }}
               />
             ))}
@@ -1083,14 +1132,15 @@ export default function NewProjectClient({
       ) : null}
 
       {/* ------------------------------------------------------------------ NAME */}
-      {step === "name" ? (
+      {show("name") ? (
         <fieldset disabled={submitting} className="contents">
-          <StepHeading title="מה שם הפרויקט?" />
-          <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+          <StepHeading compact={oneForm} title="מה שם הפרויקט?" />
+          <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus={!oneForm} />
         </fieldset>
-      ) : step === "projectType" ? (
+      ) : null}
+      {show("projectType") ? (
         <fieldset disabled={submitting} className="contents">
-          <StepHeading title="איזה סוג פרויקט?" />
+          <StepHeading compact={oneForm} title="איזה סוג פרויקט?" />
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {projectTypeOptions.map((v) => (
               <OptionRow
@@ -1099,15 +1149,16 @@ export default function NewProjectClient({
                 selected={projectType === v}
                 onClick={() => {
                   setProjectType(v);
-                  advanceTo("status");
+                  advance("status");
                 }}
               />
             ))}
           </div>
         </fieldset>
-      ) : step === "status" ? (
+      ) : null}
+      {show("status") ? (
         <fieldset disabled={submitting} className="contents">
-          <StepHeading title="מה הסטטוס?" />
+          <StepHeading compact={oneForm} title="מה הסטטוס?" />
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {statusOptions.map((v) => (
               <OptionRow
@@ -1116,15 +1167,16 @@ export default function NewProjectClient({
                 selected={status === v}
                 onClick={() => {
                   setStatus(v);
-                  advanceTo("dates");
+                  advance("dates");
                 }}
               />
             ))}
           </div>
         </fieldset>
-      ) : step === "dates" ? (
+      ) : null}
+      {show("dates") ? (
         <fieldset disabled={submitting} className="contents">
-          <StepHeading title="מתי הפרויקט?" />
+          <StepHeading compact={oneForm} title="מתי הפרויקט?" />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <label className="space-y-1.5 text-sm">
               <span className="font-medium">תאריך התחלה</span>
@@ -1147,47 +1199,65 @@ export default function NewProjectClient({
             </label>
           </div>
         </fieldset>
-      ) : step === "manager" ? (
+      ) : null}
+      {show("manager") ? (
         <fieldset disabled={submitting} className="contents">
-          <StepHeading title="מי מנהל הפרויקט?" sub="לא חובה" />
-          <div className="grid gap-3">
-            {defaultManager ? (
-              <OptionRow
-                label={defaultManager.label}
-                selected={projectManagerId === defaultManager.id}
-                onClick={() => {
-                  setProjectManagerId(defaultManager.id);
-                  advanceTo(stepIds[stepIndex("manager") + 1]);
-                }}
-              />
-            ) : null}
-            <Input value={managerQuery} onChange={(e) => setManagerQuery(e.target.value)} placeholder="חיפוש מנהל..." />
-            <div className="space-y-1">
-              <OptionRow
-                label="ללא שיוך"
-                selected={!projectManagerId}
-                onClick={() => {
-                  setProjectManagerId("");
-                  advanceTo(stepIds[stepIndex("manager") + 1]);
-                }}
-              />
-              {filteredManagers.map((m) => (
+          <StepHeading compact={oneForm} title="מי מנהל הפרויקט?" sub="לא חובה" />
+          {oneForm ? (
+            // One form: a picker — the whole staff list would run pages long here.
+            <SearchableSelect
+              options={[...(defaultManager ? [defaultManager] : []), ...managers.filter((m) => m.id !== defaultManager?.id)].map(
+                (m) => ({ value: m.id, label: m.label })
+              )}
+              value={projectManagerId}
+              onChange={setProjectManagerId}
+              emptyOptionLabel="ללא שיוך"
+              placeholder="ללא שיוך"
+              searchPlaceholder="חיפוש מנהל..."
+              ariaLabel="מנהל הפרויקט"
+              disabled={submitting}
+            />
+          ) : (
+            <div className="grid gap-3">
+              {defaultManager ? (
                 <OptionRow
-                  key={m.id}
-                  label={m.label}
-                  selected={projectManagerId === m.id}
+                  label={defaultManager.label}
+                  selected={projectManagerId === defaultManager.id}
                   onClick={() => {
-                    setProjectManagerId(m.id);
-                    advanceTo(stepIds[stepIndex("manager") + 1]);
+                    setProjectManagerId(defaultManager.id);
+                    advance(stepIds[stepIndex("manager") + 1]);
                   }}
                 />
-              ))}
+              ) : null}
+              <Input value={managerQuery} onChange={(e) => setManagerQuery(e.target.value)} placeholder="חיפוש מנהל..." data-no-enter-next />
+              <div className="space-y-1">
+                <OptionRow
+                  label="ללא שיוך"
+                  selected={!projectManagerId}
+                  onClick={() => {
+                    setProjectManagerId("");
+                    advance(stepIds[stepIndex("manager") + 1]);
+                  }}
+                />
+                {filteredManagers.map((m) => (
+                  <OptionRow
+                    key={m.id}
+                    label={m.label}
+                    selected={projectManagerId === m.id}
+                    onClick={() => {
+                      setProjectManagerId(m.id);
+                      advance(stepIds[stepIndex("manager") + 1]);
+                    }}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </fieldset>
-      ) : step === "moving" ? (
+      ) : null}
+      {show("moving") ? (
         <fieldset disabled={submitting} className="contents">
-          <StepHeading title="כתובות ההובלה" sub="לא חובה" />
+          <StepHeading compact={oneForm} title="כתובות ההובלה" sub="לא חובה" />
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <MovingEndpointFields title="מוצא (מאיפה)" value={origin} onChange={setOrigin} />
@@ -1212,20 +1282,22 @@ export default function NewProjectClient({
             </div>
           </div>
         </fieldset>
-      ) : step === "notes" ? (
+      ) : null}
+      {show("notes") ? (
         <fieldset disabled={submitting} className="contents">
-          <StepHeading title="תיאור / הערות?" sub="לא חובה" />
+          <StepHeading compact={oneForm} title="תיאור / הערות?" sub="לא חובה" />
           <div className="relative">
-            <Textarea autoFocus value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="pe-11" />
+            <Textarea autoFocus={!oneForm} value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="pe-11" />
             <DictateButton
               onTranscript={(text) => setNotes((prev) => appendDictatedText(prev, text))}
               className="absolute bottom-1 end-1 h-8 w-8"
             />
           </div>
         </fieldset>
-      ) : step === "attachments" ? (
+      ) : null}
+      {show("attachments") ? (
         <fieldset disabled={submitting} className="contents">
-          <StepHeading title="תמונות / מסמכים?" sub="לא חובה" />
+          <StepHeading compact={oneForm} title="תמונות / מסמכים?" sub="לא חובה" />
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
               <FileUploadActions
@@ -1249,12 +1321,13 @@ export default function NewProjectClient({
             ) : null}
           </div>
         </fieldset>
-      ) : step === "price" ? (
+      ) : null}
+      {show("price") ? (
         <fieldset disabled={submitting} className="contents">
-          <StepHeading title="מחיר בסיס מוסכם?" />
+          <StepHeading compact={oneForm} title="מחיר בסיס מוסכם?" />
           <div className="space-y-1.5 text-sm">
             <CurrencyInput
-              autoFocus
+              autoFocus={!oneForm}
               value={noCharge ? "0" : agreedBasePrice}
               onChange={(e) => setAgreedBasePrice(e.target.value)}
               disabled={noCharge}
@@ -1291,9 +1364,10 @@ export default function NewProjectClient({
             </label>
           </div>
         </fieldset>
-      ) : step === "paymentTerms" ? (
+      ) : null}
+      {show("paymentTerms") ? (
         <fieldset disabled={submitting} className="contents">
-          <StepHeading title="מהי צורת התשלום?" />
+          <StepHeading compact={oneForm} title="מהי צורת התשלום?" />
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {PAYMENT_TERMS_OPTIONS.map((option) => (
               <OptionRow
@@ -1304,27 +1378,29 @@ export default function NewProjectClient({
                   setPaymentTerms(option.value);
                   const computed = computeDueDate(startDate, option.value);
                   if (computed) setDueDate(computed);
-                  advanceTo("dueDate");
+                  advance("dueDate");
                 }}
               />
             ))}
           </div>
         </fieldset>
-      ) : step === "dueDate" ? (
+      ) : null}
+      {show("dueDate") ? (
         <fieldset disabled={submitting} className="contents">
-          <StepHeading title="תאריך פירעון?" />
+          <StepHeading compact={oneForm} title="תאריך פירעון?" />
           <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
         </fieldset>
-      ) : step === "expensesSeparately" ? (
+      ) : null}
+      {show("expensesSeparately") ? (
         <fieldset disabled={submitting} className="contents">
-          <StepHeading title="חיוב הוצאות בנפרד?" />
+          <StepHeading compact={oneForm} title="חיוב הוצאות בנפרד?" />
           <div className="grid grid-cols-2 gap-2">
             <OptionRow
               label="כן"
               selected={expensesSeparately}
               onClick={() => {
                 setExpensesSeparately(true);
-                advanceTo("summary");
+                advance("summary");
               }}
             />
             <OptionRow
@@ -1332,7 +1408,7 @@ export default function NewProjectClient({
               selected={!expensesSeparately}
               onClick={() => {
                 setExpensesSeparately(false);
-                advanceTo("summary");
+                advance("summary");
               }}
             />
           </div>
