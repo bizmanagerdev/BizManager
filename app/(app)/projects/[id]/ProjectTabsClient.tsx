@@ -1237,7 +1237,10 @@ export default function ProjectTabsClient({
   // Always present, paid or not — the project's money situation is one of the
   // things you come to this page for, so it gets a card that states it either
   // way (mirrors the order page's תשלום card, same component).
-  const settled = overview.no_charge === true || outstandingBalance === null || outstandingBalance <= 0.009;
+  // No agreed price yet: nothing to call "paid" — it read a green "שולם"
+  // with only the small badge saying otherwise (found by the tests, 2026-10-11).
+  const unpriced = overview.no_charge !== true && outstandingBalance === null;
+  const settled = overview.no_charge === true || (outstandingBalance !== null && outstandingBalance <= 0.009);
   const collectionStatusValue = collectionStatus ?? null;
 
   const collectionBand = (
@@ -1247,12 +1250,14 @@ export default function ProjectTabsClient({
       value={
         overview.no_charge === true
           ? "ללא חיוב"
-          : settled
-            ? "שולם"
-            : formatIls(outstandingBalance)
+          : unpriced
+            ? "לא סוכם מחיר"
+            : settled
+              ? "שולם"
+              : formatIls(outstandingBalance)
       }
       valueClassName={
-        overview.no_charge === true
+        overview.no_charge === true || unpriced
           ? "text-muted-foreground"
           : settled
             ? "text-success-soft-foreground"

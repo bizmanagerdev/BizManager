@@ -218,6 +218,49 @@ function buildOptimisticTask(fields: {
   };
 }
 
+// A quick-added card's id until the server answers with the real one (see
+// quickAdd). The server can't find it, so nothing on the board may send it.
+const UNSAVED_ID_PREFIX = "temp-";
+function isUnsavedCard(id: string) {
+  return id.startsWith(UNSAVED_ID_PREFIX);
+}
+
+/** A card as it was, and the card after it in the board's own order (what a tie in sort_order falls back on). */
+type CardPlace = { card: TaskBoardItem; nextId: string | null };
+function cardPlace(board: TaskBoardItem[], id: string): CardPlace | null {
+  const index = board.findIndex((task) => task.id === id);
+  return index === -1 ? null : { card: board[index], nextId: board[index + 1]?.id ?? null };
+}
+
+/**
+ * Undo of a delete or a snooze: that one card goes back to its list and place,
+ * and every other card stays as it is NOW. Undo used to put back the whole
+ * board as it was when the action began, so a card moved in the undo window —
+ * saved on the server — jumped back on screen until the next refresh (found
+ * by the tests, 2026-10-11). A board that already has the card again (a
+ * refresh brought it) is left alone.
+ */
+function putCardBack(board: TaskBoardItem[], place: CardPlace | null): TaskBoardItem[] {
+  if (!place || board.some((task) => task.id === place.card.id)) return board;
+  const at = place.nextId ? board.findIndex((task) => task.id === place.nextId) : -1;
+  return at === -1 ? [...board, place.card] : [...board.slice(0, at), place.card, ...board.slice(at)];
+}
+
+/**
+ * A move the server refused, taken back: only that card returns to where it
+ * was, and only if it's still where the move put it (a newer move of it
+ * stands). A failed drag used to put back the whole board as it was at drag
+ * time, wiping a newer board or another card's move (found by the tests,
+ * 2026-10-11).
+ */
+function undoMove(board: TaskBoardItem[], original: TaskBoardItem, moved: { status: string; sort_order: number }) {
+  return board.map((task) =>
+    task.id === original.id && task.status === moved.status && task.sort_order === moved.sort_order
+      ? { ...task, status: original.status, sort_order: original.sort_order, is_overdue: original.is_overdue }
+      : task
+  );
+}
+
 // ─── Card ──────────────────────────────────────────────────────────────────────
 // Memoized: a board re-render (search typing, filter panel, zoom toggle, menu
 // open/close…) used to re-render EVERY card in EVERY column even though most
@@ -249,7 +292,16 @@ const TaskCard = memo(function TaskCard({
   overview: boolean;
   locale: Locale;
 }) {
-  const { attributes, listeners, setNodeRef, isDragging, transform, transition } = useSortable({ id: task.id });
+  // A quick-added card the server hasn't given its id yet: greyed and inert —
+  // no opening, ticking, snoozing, menu or drag — until it has, the way the
+  // app shows anything not usable yet (RememberedCard). Each of those would
+  // send the stand-in id, which the server can't find (found by the tests,
+  // 2026-10-11).
+  const saving = isUnsavedCard(task.id);
+  const { attributes, listeners, setNodeRef, isDragging, transform, transition } = useSortable({
+    id: task.id,
+    disabled: { draggable: saving },
+  });
   const style = { transform: CSS.Transform.toString(transform), transition };
   const extraMembers = task.members.length > 3 ? task.members.length - 3 : 0;
   const isDone = task.status === "done";
@@ -324,9 +376,11 @@ const TaskCard = memo(function TaskCard({
       }}
       onPointerUp={cancelPress}
       onPointerCancel={cancelPress}
+      inert={saving}
+      aria-busy={saving || undefined}
       className={`group cursor-pointer select-none rounded-lg border bg-card p-[0.55em] text-[1em] shadow-card transition duration-150 ease-out hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-elevated active:translate-y-0 active:shadow-card ${
         isDragging ? "opacity-40 shadow-elevated" : ""
-      }`}
+      } ${saving ? "opacity-60" : ""}`}
     >
       {/* Title line carries the badge and the faces too — they used to cost a row
           each, which is why four cards filled a phone screen. */}
@@ -476,8 +530,8 @@ function BoardColumn({
   onToggleDone: (id: string, done: boolean) => void;
   onSnooze: (id: string, until: string | null) => void;
   onContextMenu: (id: string, x: number, y: number) => void;
-  /** One title per line — the box doubles as a list. */
-  onQuickAdd: (status: string, titles: string[]) => Promise<void>;
+  /** One title per line — the box doubles as a list. Resolves to the lines not added. */
+  onQuickAdd: (status: string, titles: string[]) => Promise<string[]>;
   colorIndexById: Map<string, number>;
   /** Lets the board find this column's box so it can centre it on screen. */
   onColumnRef: (status: string, node: HTMLElement | null) => void;
@@ -505,9 +559,16 @@ function BoardColumn({
     if (titles.length === 0 || busy) return;
     setBusy(true);
     try {
-      await onQuickAdd(status, titles);
-      setTitle("");
-      setAdding(null);
+      // Lines that weren't added stay in the box, to try again — closing it
+      // lost what was typed (found by the tests, 2026-10-11). If some went
+      // in, only the rest stay, so a retry doesn't add those twice.
+      const notAdded = await onQuickAdd(status, titles);
+      if (notAdded.length === 0) {
+        setTitle("");
+        setAdding(null);
+      } else if (notAdded.length < titles.length) {
+        setTitle(notAdded.join("\n"));
+      }
     } finally {
       setBusy(false);
     }
@@ -1096,13 +1157,13 @@ export default function TasksPageClient(props: Props) {
         const result = await saveTaskMove(taskId, targetStatus, newSortOrder);
         if (!result.queued && !result.ok) {
           toast.error(t(tasksDict, props.locale, "toastErrorUpdateStatus"), { description: toHebrewError(result.error, "") });
-          setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: task.status, sort_order: task.sort_order } : t)));
+          setTasks((prev) => undoMove(prev, task, { status: targetStatus, sort_order: newSortOrder }));
           return;
         }
         if (!result.queued && successMessage) toast.success(successMessage);
       } catch (error: unknown) {
         toast.error(t(tasksDict, props.locale, "toastErrorUpdateStatus"), { description: toHebrewError(error, "") });
-        setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: task.status, sort_order: task.sort_order } : t)));
+        setTasks((prev) => undoMove(prev, task, { status: targetStatus, sort_order: newSortOrder }));
       } finally {
         emitProgressActivityEnd();
       }
@@ -1146,7 +1207,7 @@ export default function TasksPageClient(props: Props) {
     // Card drag: reorder within a column, or move to another column at a
     // specific spot — persisted via sort_order (fractional indexing between
     // whichever two cards it lands between), not just an append.
-    if (overId === activeId) return;
+    if (overId === activeId || isUnsavedCard(activeId)) return;
     const draggedTask = tasks.find((task) => task.id === activeId);
     if (!draggedTask) return;
     const sourceStatus = draggedTask.status && tasksByStatus.has(draggedTask.status) ? draggedTask.status : "todo";
@@ -1176,7 +1237,6 @@ export default function TasksPageClient(props: Props) {
     );
     if (targetStatus === sourceStatus && draggedTask.sort_order === newSortOrder) return;
 
-    const previousTasks = tasks;
     setTasks((prev) =>
       prev.map((task) =>
         task.id === activeId
@@ -1197,11 +1257,11 @@ export default function TasksPageClient(props: Props) {
         const result = await saveTaskMove(activeId, targetStatus, newSortOrder);
         if (!result.queued && !result.ok) {
           toast.error(t(tasksDict, props.locale, "toastErrorUpdateStatus"), { description: toHebrewError(result.error, "") });
-          setTasks(previousTasks);
+          setTasks((prev) => undoMove(prev, draggedTask, { status: targetStatus, sort_order: newSortOrder }));
         }
       } catch (error: unknown) {
         toast.error(t(tasksDict, props.locale, "toastErrorUpdateStatus"), { description: toHebrewError(error, "") });
-        setTasks(previousTasks);
+        setTasks((prev) => undoMove(prev, draggedTask, { status: targetStatus, sort_order: newSortOrder }));
       }
     })();
   }
@@ -1211,9 +1271,11 @@ export default function TasksPageClient(props: Props) {
   // now React.memo'd — a fresh function identity here would re-render every
   // card on every render of this component regardless of whether that card's
   // own data changed, defeating the memo.
+  // Each ignores a card still waiting for its id (isUnsavedCard): the card is
+  // inert on screen, and this holds for any click that reaches it anyway.
   const openCard = useCallback(
     (id: string) => {
-      if (justDraggedRef.current) return;
+      if (justDraggedRef.current || isUnsavedCard(id)) return;
       setEditId(id);
     },
     [setEditId]
@@ -1221,6 +1283,7 @@ export default function TasksPageClient(props: Props) {
 
   const toggleDone = useCallback(
     (id: string, done: boolean) => {
+      if (isUnsavedCard(id)) return;
       const found = tasks.find((t) => t.id === id);
       const subject = found ? preferHe(found.subject, found.subject_he, props.locale, found.subject_ar) : t(tasksDict, props.locale, "taskFallbackWord");
       void moveTask(
@@ -1238,7 +1301,8 @@ export default function TasksPageClient(props: Props) {
   // saved when the undo window closes — on the device copy when there is one.
   const snoozeTask = useCallback(
     (id: string, until: string | null) => {
-      const previous = tasks;
+      if (isUnsavedCard(id)) return;
+      const place = cardPlace(tasks, id);
       const searching = Boolean(urlQ);
       scheduleDeferredAction({
         key: `task:snooze:${id}`,
@@ -1251,7 +1315,18 @@ export default function TasksPageClient(props: Props) {
               ? prev.filter((task) => task.id !== id)
               : prev.map((task) => (task.id === id ? { ...task, snoozed_until: until } : task))
           ),
-        onRevert: () => setTasks(previous),
+        // Only this card's snooze is undone (putCardBack): back on the board if
+        // it went off, or just unlit if a search kept it — moved since, it
+        // stays moved.
+        onRevert: () =>
+          setTasks((prev) =>
+            place
+              ? putCardBack(
+                  prev.map((task) => (task.id === id ? { ...task, snoozed_until: place.card.snoozed_until } : task)),
+                  place
+                )
+              : prev
+          ),
         onCommit: async () => {
           const result = await saveTaskSnooze(id, until, t(tasksDict, props.locale, "snoozeOfflineLabel"));
           if (!result.queued && !result.ok) {
@@ -1267,6 +1342,7 @@ export default function TasksPageClient(props: Props) {
 
   const openMenu = useCallback(
     (id: string, x: number, y: number) => {
+      if (isUnsavedCard(id)) return;
       setMenu({ id, x, y });
     },
     [setMenu]
@@ -1275,13 +1351,13 @@ export default function TasksPageClient(props: Props) {
   function performDeleteTask() {
     const id = deleteTaskId;
     if (!id) return;
-    const previous = tasks;
+    const place = cardPlace(tasks, id);
     setDeleteTaskId(null);
     scheduleDeferredAction({
       key: `task:delete:${id}`,
       message: t(tasksDict, props.locale, "toastTaskDeleted"),
       onApplyOptimistic: () => setTasks((prev) => prev.filter((t) => t.id !== id)),
-      onRevert: () => setTasks(previous),
+      onRevert: () => setTasks((prev) => putCardBack(prev, place)),
       onCommit: async () => {
         emitProgressActivityStart();
         try {
@@ -1305,13 +1381,15 @@ export default function TasksPageClient(props: Props) {
   // the rest of the details can be filled in later by opening the card.
   // One card per line: pasting or dictating a list into the column's add box
   // creates them all, rather than one card with a paragraph for a name.
-  async function quickAdd(status: string, titles: string[]) {
-    if (titles.length === 0) return;
+  // Resolves to the lines not added, which the add box keeps (see submitQuickAdd).
+  async function quickAdd(status: string, titles: string[]): Promise<string[]> {
+    if (titles.length === 0) return [];
     // On the device copy when there is one: each card is a real task at once
     // (the server gets it in the background, waiting for a connection if need
     // be) — the board, drawn from the copy, shows them by itself.
     const device = deviceTaskSaves();
     if (device) {
+      let added = 0;
       try {
         for (const subject of titles) {
           await device.create({
@@ -1321,11 +1399,12 @@ export default function TasksPageClient(props: Props) {
             priority: "medium",
             assigned_user_id: props.currentUserId,
           });
+          added += 1;
         }
       } catch (error: unknown) {
         toast.error(t(tasksDict, props.locale, "toastErrorCreateTask"), { description: toHebrewError(error, "") });
       }
-      return;
+      return titles.slice(added);
     }
     emitProgressActivityStart();
     try {
@@ -1337,7 +1416,7 @@ export default function TasksPageClient(props: Props) {
       // the last line typed ends up highest).
       let runningTop = (tasksByStatus.get(status) ?? [])[0]?.sort_order ?? null;
       for (const subject of titles) {
-        const tempId = `temp-${crypto.randomUUID()}`;
+        const tempId = `${UNSAVED_ID_PREFIX}${crypto.randomUUID()}`;
         const sortOrder = computeInsertSortOrder(null, runningTop);
         runningTop = sortOrder;
         // Shows the card immediately — no toast, no waiting on the request to
@@ -1368,8 +1447,19 @@ export default function TasksPageClient(props: Props) {
             { idempotent: true }
           );
           if (result.queued) queued += 1;
-          else if (result.ok) created += 1;
-          else {
+          else if (result.ok) {
+            created += 1;
+            // The server's id at once: the card can be opened and ticked now,
+            // not only after the refresh below lands.
+            const realId = (result.data as { task?: { id?: unknown } } | null)?.task?.id;
+            if (typeof realId === "string") {
+              setTasks((prev) =>
+                prev.some((task) => task.id === realId)
+                  ? prev.filter((task) => task.id !== tempId)
+                  : prev.map((task) => (task.id === tempId ? { ...task, id: realId } : task))
+              );
+            }
+          } else {
             failed.push(subject);
             setTasks((prev) => prev.filter((task) => task.id !== tempId));
           }
@@ -1390,6 +1480,8 @@ export default function TasksPageClient(props: Props) {
     } finally {
       emitProgressActivityEnd();
     }
+    // Here a refused line's toast names it, and the box closes as before.
+    return [];
   }
 
   // One definition of the filter controls, used by both the desktop toolbar and

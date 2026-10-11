@@ -1095,9 +1095,9 @@ describe("ProjectTabsClient — money cards", () => {
     expect(cardDetails(card)[0]).toBe("נגבה11,800₪מתוך11,800₪");
   });
 
-  it("an unpriced project with nothing paid reads 'שולם' in the value, 'לא סוכם תשלום' beside it", () => {
-    // Characterized as it stands: with no price there's no balance, and "no
-    // balance" is drawn as settled — the badge is what says no price was agreed.
+  it("an unpriced project reads 'לא סוכם מחיר', never 'שולם', with 'לא סוכם תשלום' beside it", () => {
+    // With no price there's no balance — and "no balance" used to be drawn as a
+    // green "שולם" (fixed 2026-10-11).
     render(
       <ProjectTabsClient
         {...props({
@@ -1108,7 +1108,7 @@ describe("ProjectTabsClient — money cards", () => {
       />
     );
     const card = paymentCard();
-    expect(cardValue(card)).toBe("שולם");
+    expect(cardValue(card)).toBe("לאסוכםמחיר"); // cardValue drops the spaces
     expect(within(card).getByText("לא סוכם תשלום")).toBeInTheDocument();
     expect(cardDetails(card)[0]).toBe("נגבה0₪מתוך—");
   });

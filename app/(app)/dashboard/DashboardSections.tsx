@@ -1,4 +1,4 @@
-import { Suspense, type CSSProperties, type ReactNode } from "react";
+import { Fragment, Suspense, type CSSProperties, type ReactNode } from "react";
 import { cookies } from "next/headers";
 import HeldHeight from "@/components/dashboard/HeldHeight";
 import { HELD_HEIGHTS_COOKIE, USUAL_HELD_HEIGHTS, parseHeldHeights } from "@/lib/ui/held-heights";
@@ -191,7 +191,7 @@ function splitTiers(items: WidgetItem[]): {
  * sibling of every other and sorts by it. On desktop it's a no-op: position
  * already comes from which tier the card landed in.
  */
-function Cell({
+export function Cell({
   item,
   fill,
   tier,
@@ -252,7 +252,14 @@ function Cell({
         } as CSSProperties
       }
     >
-      {item.node}
+      {/* The card alone in a Fragment, not loose in a list beside HeldHeight.
+          A card's code can still be loading when the browser hydrates it; React
+          then picks the card up again, and a card picked up again straight out
+          of a list loses its place in useId's numbering — every id under it
+          (the snooze menus in "המשימות שלי") came out different from the
+          server's. Keyed, because a Fragment without a key is dropped on its
+          way from the server. */}
+      <Fragment key="card">{item.node}</Fragment>
       <HeldHeight id={String(item.id)} />
     </div>
   );
@@ -366,6 +373,7 @@ async function AttendanceQueueSlowCell({
         projectOptions={options?.projectOptions ?? []}
         propertyOptions={options?.propertyOptions ?? []}
         locale={locale}
+        renderedAt={serverRenderedAt()}
       />
     </>
   );

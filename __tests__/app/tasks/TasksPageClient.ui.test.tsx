@@ -90,13 +90,14 @@ vi.mock("next/dynamic", () => ({
 // The clock's menu is a Radix dropdown (an open one stalls jsdom's timers);
 // these tests are about what the board does with the answer, so the clock is
 // a plain button that snoozes to a fixed morning, plus "back now" when lit.
+// Like the real one, a click on it stops there — it doesn't open the card too.
 const snooze = vi.hoisted(() => ({ until: "2026-10-20T05:00:00.000Z" }));
 vi.mock("@/components/tasks/TaskSnoozeButton", () => ({
   TaskSnoozeButton: ({ snoozedUntil, onSnooze }: { snoozedUntil: string | null; onSnooze: (until: string | null) => void }) => (
-    <>
+    <span onClick={(e) => e.stopPropagation()}>
       <button type="button" aria-label={snoozedUntil ? "חוזרת בקרוב" : "לטיפול בהמשך"} onClick={() => onSnooze(snooze.until)} />
       {snoozedUntil ? <button type="button" aria-label="חזרה עכשיו" onClick={() => onSnooze(null)} /> : null}
-    </>
+    </span>
   ),
 }));
 
@@ -766,6 +767,96 @@ describe("quick-add (הוספת כרטיס)", () => {
     await flush();
     expect(toasts.error).toHaveBeenCalledWith("שגיאה ביצירת משימה", expect.objectContaining({ description: expect.any(String) }));
   });
+
+  // Found by the tests, 2026-10-11: the box closed and what was typed was lost.
+  it("…and the box stays open with what was typed, to try again — which, once it goes in, closes it", async () => {
+    const create = vi.fn(async () => {}).mockRejectedValueOnce(new Error("db locked"));
+    device.saves = { create, move: vi.fn(), remove: vi.fn() };
+    renderBoard();
+    const todo = list("todo");
+    fireEvent.click(todo.getByText("הוספת כרטיס"));
+    fireEvent.change(todo.getByPlaceholderText("כותרת המשימה"), { target: { value: "לנסות שוב" } });
+    fireEvent.click(todo.getByRole("button", { name: "הוספה" }));
+    await flush();
+    expect(toasts.error).toHaveBeenCalledWith("שגיאה ביצירת משימה", expect.anything());
+    expect(todo.getByPlaceholderText("כותרת המשימה")).toHaveValue("לנסות שוב");
+
+    fireEvent.click(todo.getByRole("button", { name: "הוספה" }));
+    await flush();
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create).toHaveBeenLastCalledWith(expect.objectContaining({ subject: "לנסות שוב" }));
+    expect(todo.queryByPlaceholderText("כותרת המשימה")).toBeNull();
+  });
+
+  it("…of several lines, the box keeps only the ones not added, so a retry doesn't add any twice", async () => {
+    const create = vi.fn(async () => {});
+    create.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("db locked"));
+    device.saves = { create, move: vi.fn(), remove: vi.fn() };
+    renderBoard();
+    const todo = list("todo");
+    fireEvent.click(todo.getByText("הוספת כרטיס"));
+    fireEvent.change(todo.getByPlaceholderText("כותרת המשימה"), { target: { value: "אחת\nשתיים\nשלוש" } });
+    fireEvent.click(todo.getByRole("button", { name: "הוספת 3" }));
+    await flush();
+    // The first went in; the second failed, and the rest weren't tried.
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(todo.getByPlaceholderText("כותרת המשימה")).toHaveValue("שתיים\nשלוש");
+    expect(todo.getByRole("button", { name: "הוספת 2" })).toBeEnabled();
+  });
+
+  // Found by the tests, 2026-10-11: the card took clicks while it still had
+  // its stand-in id, and each sent that id to the server, which failed.
+  it("a new card is greyed and does nothing until the server gives it its id — then it opens and ticks under that id", async () => {
+    const uuid = vi.spyOn(crypto, "randomUUID").mockReturnValueOnce("00000000-0000-4000-8000-000000000001");
+    const answer = deferred<unknown>();
+    net.offlineFetch.mockReturnValueOnce(answer.promise);
+    renderBoard();
+    const todo = list("todo");
+    fireEvent.click(todo.getByText("הוספת כרטיס"));
+    fireEvent.change(todo.getByPlaceholderText("כותרת המשימה"), { target: { value: "לקנות מנורה" } });
+    fireEvent.click(todo.getByRole("button", { name: "הוספה" }));
+
+    const saving = card("לקנות מנורה");
+    expect(saving).toHaveAttribute("aria-busy", "true");
+    expect(saving).toHaveAttribute("inert");
+    expect(saving.className).toContain("opacity-60");
+    // Not draggable either.
+    expect(saving).toHaveAttribute("aria-disabled", "true");
+
+    fireEvent.click(saving);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(within(saving).getByRole("button", { name: "סימון כבוצע" }));
+    fireEvent.click(within(saving).getByRole("button", { name: "לטיפול בהמשך" }));
+    fireEvent.contextMenu(saving);
+    expect(screen.queryByRole("button", { name: "פתיחה" })).toBeNull();
+    act(() =>
+      dnd.onDragEnd!({
+        active: { id: "temp-00000000-0000-4000-8000-000000000001" },
+        over: { id: "column:done" },
+      } as unknown as DragEndEvent)
+    );
+    expect(list("todo").getByText("לקנות מנורה", NOT_TYPED)).toBeInTheDocument();
+    expect(undo.actions).toHaveLength(0);
+    // Nothing went to the server but the create itself.
+    expect(net.offlineFetch).toHaveBeenCalledTimes(1);
+
+    await act(async () => answer.resolve({ queued: false, ok: true, data: { task: { id: "real-1", subject: "לקנות מנורה" } } }));
+    const saved = card("לקנות מנורה");
+    expect(saved).not.toHaveAttribute("aria-busy");
+    expect(saved).not.toHaveAttribute("inert");
+    expect(saved).toHaveAttribute("aria-disabled", "false");
+
+    fireEvent.click(saved);
+    fireEvent.click(within(screen.getByRole("dialog", { name: "משימה real-1" })).getByRole("button", { name: "סגירה" }));
+    fireEvent.click(within(saved).getByRole("button", { name: "סימון כבוצע" }));
+    expect(net.offlineFetch).toHaveBeenLastCalledWith(
+      "/api/tasks/update-status",
+      expect.objectContaining({ id: "real-1", status: "done" }),
+      "עדכון סטטוס משימה"
+    );
+    await flush();
+    uuid.mockRestore();
+  });
 });
 
 describe("ticking a card done (and back)", () => {
@@ -905,6 +996,32 @@ describe("the card menu (right-click; hold on a phone)", () => {
     expect((result as { error?: string }).error).toMatch(/^שגיאה במחיקת משימה: /);
     act(() => undo.actions[0].onRevert());
     expect(list("in_progress").getByText("לתקן ברז")).toBeInTheDocument();
+  });
+
+  // Found by the tests, 2026-10-11: undo put back the whole board as it was
+  // when the delete began, so a move saved in the undo window vanished.
+  it("undo brings back only the deleted card, in its place — a card moved meanwhile stays moved", async () => {
+    const view = renderBoard();
+    fireEvent.contextMenu(card("להתקשר לספק"));
+    fireEvent.click(screen.getByRole("button", { name: "מחיקת המשימה" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "מחיקת משימה" })).getByRole("button", { name: "מחיקה" }));
+    expect(screen.queryByText("להתקשר לספק")).toBeNull();
+    // In the undo window another card is ticked done, and that is saved.
+    fireEvent.click(within(card("לתקן ברז")).getByRole("button", { name: "סימון כבוצע" }));
+    await flush();
+
+    act(() => undo.actions[0].onRevert());
+    expect(list("todo").getByText("להתקשר לספק")).toBeInTheDocument();
+    expect(isAbove("להתקשר לספק", "להזמין חומרים")).toBe(true);
+    expect(list("done").getByText("לתקן ברז")).toBeInTheDocument();
+
+    // A board from the server that already has the card again: undo doesn't add it twice.
+    fireEvent.contextMenu(card("להתקשר לספק"));
+    fireEvent.click(screen.getByRole("button", { name: "מחיקת המשימה" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "מחיקת משימה" })).getByRole("button", { name: "מחיקה" }));
+    view.arrive("", boardTasks());
+    act(() => undo.actions[1].onRevert());
+    expect(screen.getAllByText("להתקשר לספק")).toHaveLength(1);
   });
 
   it("with a device copy the delete is saved there; if it can't be, on the server", async () => {
@@ -1048,6 +1165,47 @@ describe("dragging", () => {
     expect(toasts.error).toHaveBeenCalledWith("שגיאה בעדכון סטטוס", expect.anything());
   });
 
+  // Found by the tests, 2026-10-11: a failed drag put back the whole board as
+  // it was at drag time, wiping whatever changed while it was saving.
+  it("a refused drag puts back only that card — a card moved while it was saving stays moved", async () => {
+    const answer = deferred<typeof failed>();
+    net.offlineFetch.mockReturnValueOnce(answer.promise);
+    renderBoard();
+    drop("t1", "column:blocked");
+    fireEvent.click(within(card("לתקן ברז")).getByRole("button", { name: "סימון כבוצע" }));
+    await flush();
+
+    await act(async () => answer.resolve(failed));
+    expect(list("todo").getByText("להתקשר לספק")).toBeInTheDocument();
+    expect(isAbove("להתקשר לספק", "להזמין חומרים")).toBe(true);
+    expect(list("done").getByText("לתקן ברז")).toBeInTheDocument();
+    expect(toasts.error).toHaveBeenCalledWith("שגיאה בעדכון סטטוס", expect.anything());
+  });
+
+  it("…nor does it wipe a newer board the server sent while it was saving", async () => {
+    const answer = deferred<typeof failed>();
+    net.offlineFetch.mockReturnValueOnce(answer.promise);
+    const view = renderBoard();
+    drop("t1", "column:blocked");
+    view.arrive("", [...boardTasks(), task({ id: "n1", subject: "חדשה מהשרת", status: "in_progress", sort_order: 300 })]);
+
+    await act(async () => answer.resolve(failed));
+    expect(list("in_progress").getByText("חדשה מהשרת")).toBeInTheDocument();
+    expect(list("todo").getByText("להתקשר לספק")).toBeInTheDocument();
+  });
+
+  it("…and a newer move of the same card, saved, stands", async () => {
+    const answer = deferred<typeof failed>();
+    net.offlineFetch.mockReturnValueOnce(answer.promise);
+    renderBoard();
+    drop("t1", "column:blocked");
+    fireEvent.click(within(card("להתקשר לספק")).getByRole("button", { name: "סימון כבוצע" }));
+    await flush();
+
+    await act(async () => answer.resolve(failed));
+    expect(list("done").getByText("להתקשר לספק")).toBeInTheDocument();
+  });
+
   it("dropped nowhere, on itself, or somewhere that isn't a list: nothing moves and nothing is saved", () => {
     renderBoard();
     drop("t1", null);
@@ -1124,6 +1282,34 @@ describe("snoozing (לטיפול בהמשך)", () => {
     expect((result as { error?: string }).error).toMatch(/^הדחייה לא נשמרה: /);
     act(() => undo.actions[0].onRevert());
     expect(list("todo").getByText("להתקשר לספק")).toBeInTheDocument();
+  });
+
+  // Found by the tests, 2026-10-11: undo put back the whole board as it was
+  // when the snooze began, so a move saved in the undo window vanished.
+  it("undo brings back only the snoozed card, in its place — a card moved meanwhile stays moved", async () => {
+    renderBoard();
+    fireEvent.click(within(card("להתקשר לספק")).getByRole("button", { name: "לטיפול בהמשך" }));
+    expect(screen.queryByText("להתקשר לספק")).toBeNull();
+    fireEvent.click(within(card("לתקן ברז")).getByRole("button", { name: "סימון כבוצע" }));
+    await flush();
+
+    act(() => undo.actions[0].onRevert());
+    expect(list("todo").getByText("להתקשר לספק")).toBeInTheDocument();
+    expect(isAbove("להתקשר לספק", "להזמין חומרים")).toBe(true);
+    expect(list("done").getByText("לתקן ברז")).toBeInTheDocument();
+  });
+
+  it("while searching, undo just unlights the card — moved in the meantime, it stays where it was moved", async () => {
+    renderBoard({}, "q=ספק");
+    fireEvent.click(within(card("להתקשר לספק")).getByRole("button", { name: "לטיפול בהמשך" }));
+    fireEvent.contextMenu(card("להתקשר לספק"));
+    fireEvent.click(screen.getAllByRole("button", { name: "חסום" })[0]);
+    await flush();
+
+    act(() => undo.actions[0].onRevert());
+    expect(list("blocked").getByText("להתקשר לספק")).toBeInTheDocument();
+    expect(within(card("להתקשר לספק")).getByRole("button", { name: "לטיפול בהמשך" })).toBeInTheDocument();
+    expect(within(card("להתקשר לספק")).queryByRole("button", { name: "חוזרת בקרוב" })).toBeNull();
   });
 
   it("while searching, a snoozed card stays where the search found it, lit — and can be brought back now", () => {

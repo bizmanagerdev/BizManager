@@ -2081,9 +2081,17 @@ export default function NewOrderClient({
                     onChange={(accountId) => updatePaymentDraft(index, { account_id: accountId })}
                     onLoaded={(list) => {
                       setPaymentAccountsList(list);
-                      if (!payment.account_id) {
-                        updatePaymentDraft(index, { account_id: defaultAccountForMethod(list, payment.payment_method) });
-                      }
+                      // The payment as it is NOW: the picker calls this once, with
+                      // the callback from its first render — a method chosen while
+                      // the accounts loaded never got its account, and the save was
+                      // refused (found by the tests, 2026-10-11).
+                      setNewPayments((prev) =>
+                        prev.map((draft, i) =>
+                          i === index && !draft.account_id
+                            ? { ...draft, account_id: defaultAccountForMethod(list, draft.payment_method) }
+                            : draft
+                        )
+                      );
                     }}
                   />
                   {payment.payment_method === "credit_card" ? (

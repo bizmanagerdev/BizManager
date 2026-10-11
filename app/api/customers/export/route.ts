@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CustomerFilterMode } from "@/app/(app)/customers/loadCustomers";
+import { chunkStrings } from "@/lib/financial/utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,6 +64,9 @@ async function fetchAllFilteredCustomers(
   return { rows: all, error: null };
 }
 
+/** Ids per WhatsApp lookup — short enough for one request's address. */
+const WHATSAPP_ID_BATCH = 150;
+
 function toNum(value: unknown) {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   if (typeof value === "string") {
@@ -94,12 +98,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error }, { status: 400 });
   }
 
-  // The view doesn't carry whatsapp — one batched lookup against the base
-  // table for the ids that survived the filter, same as the customers page.
+  // The view doesn't carry whatsapp — a lookup against the base table for the
+  // ids that survived the filter, in batches: all ~650 ids in one request made
+  // an address too long to send, the failure was ignored and the column came
+  // out empty (found 2026-10-11).
   const ids = overviewRows.map((row) => str(row.customer_id)).filter(Boolean);
   const whatsappById = new Map<string, string>();
-  if (ids.length > 0) {
-    const { data: customerRows } = await supabase.from("customers").select("id,whatsapp").in("id", ids);
+  const batches = chunkStrings(ids, WHATSAPP_ID_BATCH);
+  const lookups = await Promise.all(
+    batches.map((batch) => supabase.from("customers").select("id,whatsapp").in("id", batch))
+  );
+  for (const { data: customerRows } of lookups) {
     for (const row of (customerRows ?? []) as Row[]) {
       const id = str(row.id);
       const whatsapp = str(row.whatsapp);

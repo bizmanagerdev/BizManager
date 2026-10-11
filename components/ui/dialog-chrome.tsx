@@ -307,10 +307,13 @@ export function useDiscardGuard({
   open,
   onOpenChange,
   dirty: externalDirty = false,
+  saved = false,
 }: {
   open: boolean;
   onOpenChange: (next: boolean) => void;
   dirty?: boolean;
+  /** Everything is saved (or queued to send): closing never asks. */
+  saved?: boolean;
 }) {
   const touchedRef = useRef(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -326,7 +329,7 @@ export function useDiscardGuard({
   }
 
   function handleOpenChange(next: boolean) {
-    if (!next && (touchedRef.current || externalDirty)) {
+    if (!next && !saved && (touchedRef.current || externalDirty)) {
       setConfirmOpen(true);
       return;
     }

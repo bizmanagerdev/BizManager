@@ -559,6 +559,7 @@ export function StepWizardDialog<TStep extends string | number>({
   dialogDescription,
   kicker,
   fullScreen = false,
+  saved = false,
   ...wizard
 }: Omit<StepWizardProps<TStep>, "variant" | "title" | "onClose"> & {
   open: boolean;
@@ -573,6 +574,9 @@ export function StepWizardDialog<TStep extends string | number>({
    *  centered box — desktop is unchanged either way. Same mechanism as
    *  FormDialog's `fullScreen`. */
   fullScreen?: boolean;
+  /** The work is saved (or queued to send) — closing never asks about
+   *  unsaved changes, past the first step or not. */
+  saved?: boolean;
 }) {
   // No current caller passes its own `bodyRef` through StepWizardDialog (only
   // direct <StepWizard> use does, e.g. NewProjectClient), so this one just
@@ -583,7 +587,7 @@ export function StepWizardDialog<TStep extends string | number>({
   // so far was a tap (OptionRow, a date quick-pick) that fires no native
   // input/change event — see useDiscardGuard's `dirty` param.
   const pastFirstStep = wizard.steps.findIndex((s) => s.n === wizard.current) > 0;
-  const discardGuard = useDiscardGuard({ open, onOpenChange, dirty: pastFirstStep });
+  const discardGuard = useDiscardGuard({ open, onOpenChange, dirty: pastFirstStep, saved });
 
   const swipeProps = useSwipeToDismiss({
     enabled: fullScreen,

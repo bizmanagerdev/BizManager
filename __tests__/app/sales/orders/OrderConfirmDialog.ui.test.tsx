@@ -1463,6 +1463,20 @@ describe("confirming", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
+  // It's saved on the phone — the X closes it without asking about unsaved
+  // changes (it used to ask, though nothing could be lost).
+  it("once saved on the phone, the X closes it without asking", async () => {
+    saves.upload.mockResolvedValue({ queued: true, reason: "offline" });
+    await openOnItems();
+    await straightToReview();
+    await confirmDelivery();
+    await screen.findByRole("heading", { name: "אין כרגע חיבור לאינטרנט" });
+
+    fireEvent.click(screen.getByRole("button", { name: "סגירה" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.queryByText("יש שינויים שלא נשמרו")).not.toBeInTheDocument();
+  });
+
   it("a slow connection is told apart from no connection", async () => {
     saves.upload.mockResolvedValue({ queued: true, reason: "slow" });
     await openOnItems();

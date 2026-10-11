@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { ChevronDownIcon, ClockIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
@@ -52,6 +52,11 @@ const QUEUE_HREF = "/payroll/attendance";
 /** How many waiting reports the dashboard shows before deferring to the page. */
 const SHOWN_LIMIT = 4;
 
+// The on-shift hours count to "now", read from the clock on each render —
+// nothing to subscribe to. To the minute, so the reading holds still between reads.
+const noSubscribe = () => () => {};
+const MINUTE_MS = 60_000;
+
 /**
  * "נוכחות עובדים" — the head of the attendance queue, ACTIONABLE in place: each
  * waiting report is the same approve / reject / split card the queue page uses
@@ -72,6 +77,7 @@ export default function AttendanceApprovals({
   projectOptions,
   propertyOptions,
   locale,
+  renderedAt,
 }: {
   data: PhoneQueueData;
   /** Shifts started per day over the last week, oldest first. */
@@ -80,7 +86,19 @@ export default function AttendanceApprovals({
   projectOptions: SalaryCenterProjectOption[];
   propertyOptions: SalaryCenterProjectOption[];
   locale: Locale;
+  /** When the server drew the card (serverRenderedAt) — the on-shift hours' "now" for its HTML. */
+  renderedAt?: number;
 }) {
+  // The server's minute while hydrating, so the first paint says what its HTML
+  // said (it said 9:00, the browser a minute later 9:01, and React threw the
+  // card's HTML away), then this device's clock.
+  const nowMinute = useSyncExternalStore(
+    noSubscribe,
+    () => Math.floor(Date.now() / MINUTE_MS),
+    () => Math.floor((renderedAt ?? Date.now()) / MINUTE_MS)
+  );
+  const now = new Date(nowMinute * MINUTE_MS);
+
   // Which days are UNFOLDED. Days start CLOSED: the card opens as a short list of
   // "which days have shifts waiting, and how many", and you open the one you mean
   // to work through. Four open reports at full height is most of a column spent
@@ -170,7 +188,7 @@ export default function AttendanceApprovals({
                       </span>
                     </Link>
                     <span className="tabular-nums">
-                      {formatMinutes(minutesBetween(report.clock_in, new Date()))} {t(dashboardDict, locale, "hoursAbbrev")}
+                      {formatMinutes(minutesBetween(report.clock_in, now))} {t(dashboardDict, locale, "hoursAbbrev")}
                     </span>
                   </span>
                 ))}

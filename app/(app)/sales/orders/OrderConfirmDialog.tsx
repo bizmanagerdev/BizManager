@@ -1389,6 +1389,9 @@ export default function OrderConfirmDialog({
         canClickStep={() => false}
         onStepClick={() => {}}
         closeDisabled={submitting}
+        // Saved on the phone, waiting to send: closing it loses nothing — it
+        // used to ask "יש שינויים שלא נשמרו" here (found by the tests, 2026-10-11).
+        saved={queuedReason !== null}
         onBack={queuedReason ? undefined : stepIndex > 0 ? goBack : undefined}
         backDisabled={submitting}
         onNext={queuedReason ? () => setOpen(false) : isLastStep ? () => void submit() : goNext}

@@ -74,8 +74,17 @@ const catalog = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/orders/searchProducts", () => ({ searchProducts: catalog.searchProducts }));
 
-const accounts = vi.hoisted(() => ({ list: [] as Array<Record<string, unknown>> }));
-vi.mock("@/lib/accounts/accountsClient", () => ({ fetchAccountsDirect: async () => accounts.list }));
+const accounts = vi.hoisted(() => ({
+  list: [] as Array<Record<string, unknown>>,
+  /** Held to make the accounts arrive late (resolved by default). */
+  gate: Promise.resolve() as Promise<void>,
+}));
+vi.mock("@/lib/accounts/accountsClient", () => ({
+  fetchAccountsDirect: async () => {
+    await accounts.gate;
+    return accounts.list;
+  },
+}));
 
 const photos = vi.hoisted(() => ({
   upload: vi.fn(async (_items: Array<{ paymentId: string; files: File[] }>) => {}),
@@ -277,6 +286,7 @@ beforeEach(() => {
   catalog.searchProducts.mockReset().mockResolvedValue([]);
   photos.upload.mockClear();
   accounts.list = [];
+  accounts.gate = Promise.resolve();
   push.mockClear();
   refresh.mockClear();
   vi.mocked(toast.warning).mockClear();
@@ -840,6 +850,26 @@ describe("payments", () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
   }
+
+  it("a method picked before the accounts arrive still gets its account", async () => {
+    accounts.list = [CASH_ACCOUNT];
+    let arrive: () => void = () => {};
+    accounts.gate = new Promise<void>((resolve) => (arrive = resolve));
+    await renderForm();
+    chooseCustomerAndSand();
+    goOnTo("תשלומים");
+    fireEvent.click(screen.getByRole("button", { name: "תשלום" }));
+    fireEvent.change(paymentMethodSelect(), { target: { value: "cash" } });
+    await act(async () => {
+      arrive();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    goOnTo("לאשר ולשמור?");
+    fireEvent.click(createButton());
+    await waitFor(() => expect(push).toHaveBeenCalled());
+    expect(sentOrder().payments).toEqual([expect.objectContaining({ payment_method: "cash", account_id: "acc-cash" })]);
+  });
 
   it("starts a payment at the open balance; one cash account is its account; the order goes paid", async () => {
     accounts.list = [CASH_ACCOUNT];
