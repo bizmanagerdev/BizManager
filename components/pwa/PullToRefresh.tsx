@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { haptic, warmUpHaptics } from "@/lib/haptics";
 
 // Pull down to refresh, like every other app (owner, 2026-10-11). Only inside the
 // Android app: a phone browser (Chrome) already does this itself, and the app's
@@ -56,7 +57,10 @@ export default function PullToRefresh() {
     let cancelled = false;
     void import("@capacitor/core")
       .then(({ Capacitor }) => {
-        if (!cancelled && Capacitor.isNativePlatform()) setEnabled(true);
+        if (!cancelled && Capacitor.isNativePlatform()) {
+          setEnabled(true);
+          warmUpHaptics();
+        }
       })
       .catch(() => {});
     return () => {
@@ -93,7 +97,7 @@ export default function PullToRefresh() {
       });
 
       const nowReady = progress >= 1;
-      if (nowReady && !ready && !animate) navigator.vibrate?.(10);
+      if (nowReady && !ready && !animate) haptic("light");
       ready = nowReady;
       mark.style.transform = nowReady ? "scale(1.18)" : "scale(1)";
     };

@@ -41,6 +41,44 @@ function retryAfterSignIn(token: string, platform: string) {
   });
 }
 
+let localTapListenerAttached = false;
+
+// Show a pushed alert that arrived while the app is on screen, through the
+// phone's own notifications (@capacitor/local-notifications, APK 1.1.0+): the
+// same channel, icon and tap-to-open as an alert that arrives in the background.
+// Phones on the old APK don't have the helper and keep the old behaviour.
+async function showAlertWhileOpen(title: string | undefined, body: string | undefined, data: unknown) {
+  try {
+    const { Capacitor } = await import("@capacitor/core");
+    if (!Capacitor.isPluginAvailable("LocalNotifications")) return;
+    const { LocalNotifications } = await import("@capacitor/local-notifications");
+
+    if (!localTapListenerAttached) {
+      localTapListenerAttached = true;
+      await LocalNotifications.addListener("localNotificationActionPerformed", (action) => {
+        const url = (action.notification.extra as { url?: string } | undefined)?.url;
+        if (!url) return;
+        window.location.href = url.startsWith("http") ? url : window.location.origin + url;
+      });
+    }
+
+    const url = (data as { url?: string } | undefined)?.url;
+    await LocalNotifications.schedule({
+      notifications: [
+        {
+          id: Math.floor(Math.random() * 2_000_000_000),
+          title: title ?? "BizH",
+          body: body ?? "",
+          channelId: "bizh_alerts",
+          extra: { url },
+        },
+      ],
+    });
+  } catch {
+    // No helper or no permission: the alert stays in the app's inbox as before.
+  }
+}
+
 // True only inside the real Capacitor shell (the APK). False in every browser,
 // including an installed browser PWA.
 export async function isNativePlatform(): Promise<boolean> {
@@ -130,6 +168,15 @@ export async function enableNativePush(): Promise<NativeEnableResult> {
         const url = (action.notification.data as { url?: string } | undefined)?.url;
         if (!url) return;
         window.location.href = url.startsWith("http") ? url : window.location.origin + url;
+      });
+
+      // An alert that arrives while the app is open on screen. Android shows a
+      // pushed alert by itself only while the app is in the background; on
+      // screen it reaches this listener and nothing showed (owner, 2026-10-11:
+      // "I sent an alert and the phone didn't get it", sent from the phone's own
+      // Settings). From APK 1.1.0 it's shown as the same notification.
+      await PushNotifications.addListener("pushNotificationReceived", (notification) => {
+        void showAlertWhileOpen(notification.title, notification.body, notification.data);
       });
     }
 

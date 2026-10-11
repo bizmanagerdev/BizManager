@@ -60,6 +60,7 @@ import { tasksDict } from "@/lib/i18n/dictionaries/tasks";
 import { deviceTaskSaves, saveTaskSnooze } from "@/lib/tasks/device-task-saves";
 import { TaskSnoozeButton } from "@/components/tasks/TaskSnoozeButton";
 import { israelDateKey } from "@/lib/timezone";
+import { haptic } from "@/lib/haptics";
 
 // The card's checkbox and clock are 1.15em glyphs side by side — on a phone a
 // 17 px target each, easy to miss or to tick done instead of snoozing. Each
@@ -312,7 +313,7 @@ const TaskCard = memo(function TaskCard({
         cancelPress();
         pressTimerRef.current = setTimeout(() => {
           menuPendingRef.current = true;
-          navigator.vibrate?.(12);
+          haptic("medium");
         }, 420);
       }}
       onPointerMove={(e) => {
