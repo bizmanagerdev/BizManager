@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { DEFAULT_VAT_RATE } from "@/lib/settings/vat";
 import { baseFromPriceEntry, projectPriceSplit, type ProjectPriceEntry } from "@/lib/projects/vat";
 import { formatCurrency } from "@/lib/payroll";
+import { SEGMENT, SEGMENTED_GROUP, TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
+import { cn } from "@/lib/utils";
 
 // A project priced "base + VAT" stores the BASE, but the agreed figure is often
 // the full sum the customer pays. This says which one was typed and shows the
@@ -66,7 +68,11 @@ export function PriceVatEntry({
 
   return (
     <div className="space-y-1.5">
-      <div className="flex gap-1 rounded-lg border bg-secondary/40 p-1">
+      {/* The app's one "this | that" control (owner, 2026-10-11: "all the
+          toggles should be blue"): the chosen half is the blue fill. It was a white
+          tab on a sky tray. Full width here, a little tighter than the
+          default segment. */}
+      <div className={cn(SEGMENTED_GROUP, "flex gap-1")}>
         {([
           { value: "base" as const, label: "הסכום לפני מע״מ" },
           { value: "gross" as const, label: "הסכום כולל מע״מ" },
@@ -77,9 +83,11 @@ export function PriceVatEntry({
             disabled={disabled}
             aria-pressed={entry === option.value}
             onClick={() => onEntryChange(option.value)}
-            className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 ${
-              entry === option.value ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
-            }`}
+            className={cn(
+              SEGMENT,
+              "flex-1 px-3 py-1.5 disabled:opacity-50",
+              entry === option.value ? TOGGLE_ON : TOGGLE_OFF
+            )}
           >
             {option.label}
           </button>

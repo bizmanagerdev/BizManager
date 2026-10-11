@@ -295,9 +295,11 @@ export default function DeliveryImagesCard({
       {!needsDeliveryAction ? (
         <OrderConfirmDialog
           orderId={orderId}
-          // Already delivered, it opens the same screen to correct what was
-          // handed over — "אספקת הזמנה" read as if it hadn't been yet.
-          buttonLabel={deliveryConfirmedAt ? "עדכון אספקה" : "אספקת הזמנה"}
+          // Already confirmed, it opens the same screen to correct what was
+          // handed over — a different act, so its own name. Otherwise the
+          // dialog's one name for it, ✓ אישור אספקה (owner, 2026-10-11:
+          // "always the same name"; this one said "אספקת הזמנה").
+          buttonLabel={deliveryConfirmedAt ? "עדכון אספקה" : undefined}
           buttonClassName={FULL_SECONDARY_TRIGGER_CLASSES}
           authorName={authorName}
         />

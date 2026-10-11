@@ -35,6 +35,7 @@ import type { MorningLocalDocument } from "@/lib/morning/types";
 import type { FinancialAttachment } from "@/lib/payments";
 import { DeleteButton, EditButton } from "@/components/ui/icon-button";
 import { formatShortDate } from "@/lib/date";
+import { formatMoney } from "@/lib/money";
 
 export type PaymentItem = {
   id: string;
@@ -62,13 +63,10 @@ type Props = {
   canManage: boolean;
 };
 
+// ₪ first, the dashboard's way (owner, 2026-10-11) — lib/money.ts. A refund
+// is written "החזר" + its size, so no amount here is negative.
 function formatCurrency(value: number) {
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(value);
+  return formatMoney(value);
 }
 
 // dd/mm/yy in Israel time, like every other date on the order page (the
@@ -586,9 +584,10 @@ export function OrderPaymentActionsClient({
                         >
                           {deleteSubmitting ? "מוחק..." : "אשר מחיקה"}
                         </Button>
+                        {/* Grey, like every cancel (owner, 2026-10-11). */}
                         <Button
                           type="button"
-                          variant="ghost"
+                          variant="muted"
                           size="sm"
                           className="h-8 text-xs"
                           onClick={() => {

@@ -94,7 +94,7 @@ export function SummaryCard({
         type="button"
         onClick={onClick}
         aria-pressed={active}
-        className="block h-full w-full rounded-[1.125rem] p-5 text-right transition-colors hover:bg-secondary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="block h-full w-full rounded-card p-5 text-right transition-colors hover:bg-secondary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {body}
       </button>

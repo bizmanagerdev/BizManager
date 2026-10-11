@@ -303,12 +303,11 @@ function getCollectionStatusColor(status: string): StatusColor {
       return "warning";
     case "overdue":
       return "danger";
-    // "unpaid" reads amber, not red: it just means nothing is registered yet
-    // (often a brand-new immediate-terms order, not necessarily late by any
-    // measurable number of days). Sharing red with "overdue" made the two
-    // impossible to tell apart at a glance in a mixed list.
+    // "לא שולם" is red, always: the same red the projects list and the project
+    // page give it (owner, 2026-10-11: "I want the not paid to be red always").
+    // It used to be amber here, to tell it apart from "overdue".
     case "unpaid":
-      return "warning";
+      return "danger";
     default:
       return "danger";
   }

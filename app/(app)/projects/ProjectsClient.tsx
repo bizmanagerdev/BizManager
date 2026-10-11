@@ -76,6 +76,7 @@ import { EditButton } from "@/components/ui/icon-button";
 import { offlineFetch } from "@/lib/offline-queue";
 import { registerReversibleCreate } from "@/lib/undo-engine";
 import { formatShortDate } from "@/lib/date";
+import { formatMoneyRounded } from "@/lib/money";
 
 type ProjectRow = Record<string, unknown>;
 type Option = { id: string; label: string; phone?: string | null; whatsapp?: string | null; email?: string | null; name_for_invoice?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> };
@@ -191,14 +192,6 @@ function toBasicProjectRow(entry: ProjectSearchIndexEntry): ProjectRow {
 /** "הוצאות שלא שולמו" — what we still owe on the project (unpaid expenses + wages). */
 function weOweValue(row: ProjectRow) {
   return getNumber(row, "we_owe_amount") ?? 0;
-}
-
-function formatIls(amount: number) {
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    maximumFractionDigits: 0,
-  }).format(amount);
 }
 
 // dd/mm/yy in Israel time, like every other date in the app (the browser's
@@ -329,8 +322,8 @@ function PaymentDueCaption({
 }) {
   if (!canSeeMoney) return null;
   const segments = [
-    lateAmount > 0.009 ? { text: `באיחור ${formatIls(lateAmount)}`, danger: true } : null,
-    expectedAmount > 0.009 ? { text: `צפוי ${formatIls(expectedAmount)}`, danger: false } : null,
+    lateAmount > 0.009 ? { text: `באיחור ${formatMoneyRounded(lateAmount)}`, danger: true } : null,
+    expectedAmount > 0.009 ? { text: `צפוי ${formatMoneyRounded(expectedAmount)}`, danger: false } : null,
   ].filter((segment): segment is { text: string; danger: boolean } => segment !== null);
   if (segments.length === 0) return null;
   return (
@@ -1109,8 +1102,10 @@ export default function ProjectsClient({
             </NativeSelect>
           </div>
 
+          {/* Clearing is the quiet one, grey — it looked exactly like "הצגת
+              התוצאות" beside it (owner, 2026-10-11: cancel-type buttons grey). */}
           <div className="grid grid-cols-2 gap-2">
-            <Button type="button" variant="secondary" className="h-11" onClick={resetFilters}>
+            <Button type="button" variant="muted" className="h-11" onClick={resetFilters}>
               איפוס סינון
             </Button>
             <Button
@@ -1271,35 +1266,44 @@ export default function ProjectsClient({
                       </div>
                     </td>
                     <td className="px-4 py-4">
-                      <div>{clientDisplayName(row)}</div>
-                      {clientPhone(row) ? (
-                        <a
-                          href={`tel:${clientPhone(row)}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-xs text-muted-foreground hover:underline"
-                        >
-                          {clientPhone(row)}
-                        </a>
-                      ) : null}
+                      {/* The number as plain text and the green phone to call, as on
+                          the phone's cards (owner, 2026-10-11: one look for "call"
+                          everywhere) — the number was a tel: link of its own here. */}
+                      <div className="flex items-center gap-2">
+                        <div className="min-w-0">
+                          <div>{clientDisplayName(row)}</div>
+                          {clientPhone(row) ? (
+                            <div className="text-xs text-muted-foreground">
+                              <span dir="ltr">{clientPhone(row)}</span>
+                            </div>
+                          ) : null}
+                        </div>
+                        {clientPhone(row) ? (
+                          <CallIconButton phone={clientPhone(row)!} name={clientDisplayName(row)} className="ms-auto" />
+                        ) : null}
+                      </div>
                     </td>
                     {canSeeMoney ? (
                       <td className="px-4 py-4">
                         {currentStatus === "quote" ? (
-                          actualPrice === null ? "-" : formatIls(actualPrice)
+                          actualPrice === null ? "-" : formatMoneyRounded(actualPrice)
                         ) : (
                           <div className="space-y-0.5">
                             <div className="text-xs text-muted-foreground">
-                              מחיר: {actualPrice === null ? "-" : formatIls(actualPrice)}
+                              מחיר: {actualPrice === null ? "-" : formatMoneyRounded(actualPrice)}
                             </div>
+                            {/* ₪ first (owner, 2026-10-11). A loss reads "₪-500": its own
+                                left-to-right run, or the minus takes the number to the
+                                far side of the ₪. */}
                             <div className={profit !== null && profit < 0 ? "text-destructive" : ""}>
-                              רווח: {profit === null ? "-" : formatIls(profit)}
+                              רווח: {profit === null ? "-" : <span dir="ltr">{formatMoneyRounded(profit)}</span>}
                             </div>
                             {/* What WE still owe on it — unpaid expenses + wages (the
                                 breakdown is on the project page). Only when there is any. */}
                             {weOweValue(row) > 0.009 ? (
                               <div className="text-xs font-medium text-warning-strong">
                                 הוצאות שלא שולמו:{" "}
-                                <span className="whitespace-nowrap">{formatIls(weOweValue(row))}</span>
+                                <span className="whitespace-nowrap">{formatMoneyRounded(weOweValue(row))}</span>
                               </div>
                             ) : null}
                           </div>
@@ -1450,7 +1454,7 @@ export default function ProjectsClient({
                 return (
                   <SwipeActions
                     key={id}
-                    className="border border-border/70 shadow-sm"
+                    className="border border-border/70 shadow-card"
                     actions={actions}
                     open={swipedRow === id}
                     onOpenChange={(next) => setSwipedRow(next ? id : null)}
@@ -1540,7 +1544,8 @@ export default function ProjectsClient({
                                 <div
                                   className={`text-[0.765rem] font-semibold ${profit !== null && profit < 0 ? "text-destructive" : ""}`}
                                 >
-                                  {profit === null ? "-" : formatIls(profit)}
+                                  {/* Its own left-to-right run, so a loss reads "₪-500". */}
+                                  {profit === null ? "-" : <span dir="ltr">{formatMoneyRounded(profit)}</span>}
                                 </div>
                               </div>
                             ) : null}
@@ -1548,7 +1553,7 @@ export default function ProjectsClient({
                               <div className="whitespace-nowrap">
                                 <div className="text-[0.588rem] text-muted-foreground">מחיר</div>
                                 <div className="text-[0.765rem] font-semibold">
-                                  {actualPrice === null ? "-" : formatIls(actualPrice)}
+                                  {actualPrice === null ? "-" : formatMoneyRounded(actualPrice)}
                                 </div>
                               </div>
                             ) : null}
@@ -1556,7 +1561,7 @@ export default function ProjectsClient({
                               <div className="whitespace-nowrap">
                                 <div className="text-[0.588rem] text-muted-foreground">הוצאות שלא שולמו</div>
                                 <div className="text-[0.765rem] font-semibold text-warning-strong">
-                                  {formatIls(weOweValue(row))}
+                                  {formatMoneyRounded(weOweValue(row))}
                                 </div>
                               </div>
                             ) : null}

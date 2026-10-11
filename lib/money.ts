@@ -31,14 +31,22 @@ function toNumber(value: number | string | null | undefined): number {
   return 0;
 }
 
-/** `₪1,234.5` — the canonical display of an amount. */
+/** The sign ahead of the ₪: "-₪50". he-IL writes a negative with an invisible
+ *  left-to-right mark before its minus, which put the ₪ on the far side of
+ *  "-50" in a Hebrew line — the opposite side from every positive amount. */
+function withShekel(amount: number, digits: (abs: number) => string): string {
+  // abs on both sides: a rounded -0.4 is -0, which Intl writes as "-0".
+  return amount < 0 ? `-₪${digits(-amount)}` : `₪${digits(Math.abs(amount))}`;
+}
+
+/** `₪1,234.5` — the canonical display of an amount (`-₪50` below zero). */
 export function formatMoney(value: number | string | null | undefined): string {
-  return `₪${GROUPED.format(toNumber(value))}`;
+  return withShekel(toNumber(value), (abs) => GROUPED.format(abs));
 }
 
 /** The same, rounded to whole shekels — for axes, chips and other tight spots. */
 export function formatMoneyRounded(value: number | string | null | undefined): string {
-  return `₪${Math.round(toNumber(value)).toLocaleString("he-IL")}`;
+  return withShekel(Math.round(toNumber(value)), (abs) => abs.toLocaleString("he-IL"));
 }
 
 /* ---------------------------------------------------------------------------

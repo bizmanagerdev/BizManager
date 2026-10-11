@@ -1,6 +1,7 @@
 "use client";
 
 import { whatsappHref } from "@/lib/whatsapp";
+import { formatMoney } from "@/lib/money";
 
 export type ProjectShareData = {
   projectName: string;
@@ -18,15 +19,6 @@ export type ProjectShareData = {
   /** Null for viewers who may not see money. */
   money: { total: number; paid: number; balance: number } | null;
 };
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
 
 function escapeHtml(value: string) {
   return value
@@ -56,12 +48,13 @@ function buildShareText(project: ProjectShareData): string {
     lines.push("");
     lines.push(`הערות: ${project.notes}`);
   }
+  // ₪ first, like every amount in the app (owner, 2026-10-11) — it was "5,000 ₪".
   if (project.money) {
     lines.push("");
-    lines.push(`סה"כ: ${formatCurrency(project.money.total)}`);
+    lines.push(`סה"כ: ${formatMoney(project.money.total)}`);
     if (project.money.balance > 0.009) {
       lines.push(
-        `שולם: ${formatCurrency(project.money.paid)} · יתרה לתשלום: ${formatCurrency(project.money.balance)}`
+        `שולם: ${formatMoney(project.money.paid)} · יתרה לתשלום: ${formatMoney(project.money.balance)}`
       );
     } else {
       lines.push("שולם במלואו");
@@ -102,11 +95,11 @@ function buildPrintHtml(project: ProjectShareData): string {
 
   const moneyBlock = project.money
     ? `<div class="totals">
-         <div class="row bold"><span>סה"כ פרויקט</span><span>${formatCurrency(project.money.total)}</span></div>
+         <div class="row bold"><span>סה"כ פרויקט</span><span>${formatMoney(project.money.total)}</span></div>
          ${
            project.money.balance > 0.009
-             ? `<div class="row"><span>שולם</span><span>${formatCurrency(project.money.paid)}</span></div>
-                <div class="row bold"><span>יתרה לתשלום</span><span>${formatCurrency(project.money.balance)}</span></div>`
+             ? `<div class="row"><span>שולם</span><span>${formatMoney(project.money.paid)}</span></div>
+                <div class="row bold"><span>יתרה לתשלום</span><span>${formatMoney(project.money.balance)}</span></div>`
              : `<div class="row bold"><span>סטטוס</span><span>שולם במלואו</span></div>`
          }
        </div>`

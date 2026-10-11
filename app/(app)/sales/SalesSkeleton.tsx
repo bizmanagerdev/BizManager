@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import { PlainTableSkeleton, TableSkeleton, TextLineSkeleton } from "@/components/layout/loading-skeletons";
 import { PageHeaderToolbarSkeleton } from "@/components/layout/PageHeaderToolbarSkeleton";
 import { DELIVERY_REGIONS } from "@/lib/ui/cities";
@@ -95,7 +96,7 @@ function OrdersSkeleton() {
             <div className="grid grid-cols-1 gap-2">
               <p className="px-1 text-[0.647rem] text-muted-foreground">החלק כרטיס ימינה לפעולות · הקש לפתיחה</p>
               {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-background shadow-sm">
+                <div key={i} className="min-w-0 overflow-hidden rounded-card border border-border/70 bg-background shadow-card">
                   <div className="divide-y divide-border/60 p-3 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0 [&>*]:py-2">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1 space-y-1.5">
@@ -252,7 +253,7 @@ function DeliveriesSkeleton() {
               key={label}
               className={cn(
                 "rounded-full border px-3 py-1 text-sm",
-                active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground"
+                active ? `border-secondary ${TOGGLE_ON}` : `border-border bg-background ${TOGGLE_OFF}`
               )}
             >
               {label}
@@ -282,7 +283,7 @@ function DeliveriesSkeleton() {
               <Skeleton className="h-3 w-14" />
             </div>
             {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="relative overflow-hidden rounded-2xl border border-border bg-card ps-1.5 shadow-sm">
+              <div key={i} className="relative overflow-hidden rounded-card border border-border bg-card ps-1.5 shadow-card">
                 {/* The city's colour strip down the start edge. */}
                 <span aria-hidden className="absolute inset-y-0 start-0 w-1.5 bg-muted" />
                 <div className="flex items-start gap-3 p-3">
@@ -306,10 +307,10 @@ function DeliveriesSkeleton() {
                     <Skeleton className="h-6 w-16 rounded-full" />
                     <Skeleton className="h-6 w-14 rounded-full" />
                   </div>
-                  {/* "שליחה לנהג" and "סמן כסופק", side by side in the end corner. */}
+                  {/* "שליחה לנהג" and "✓ אישור אספקה", side by side in the end corner. */}
                   <div className="flex items-center justify-end gap-2 p-3">
                     <Skeleton className="h-[38px] w-[130px] rounded-xl" />
-                    <Skeleton className="h-[38px] w-[123px] rounded-xl" />
+                    <Skeleton className="h-[38px] w-[143px] rounded-xl" />
                   </div>
                 </div>
               </div>

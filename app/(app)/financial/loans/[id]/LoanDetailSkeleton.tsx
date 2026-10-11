@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { ChevronLeftIcon, ReceiptIcon, UserIcon } from "@/components/ui/icons";
+import { SectionCard } from "@/components/ui/section-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { TextLineSkeleton } from "@/components/layout/loading-skeletons";
@@ -12,18 +13,12 @@ import { ButtonSkeleton } from "@/app/(app)/financial/ButtonSkeleton";
 // planned payments box, the paid history and the record button. Shown while
 // the page streams (loading.tsx).
 
-// SectionCard's shell (components/ui/section-card.tsx).
+// SectionCard itself, so the stand-in can't drift from the real section's box.
 function Section({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (
-    <section className="scroll-mt-24 space-y-3 rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="text-primary">{icon}</span>
-          <h2 className="text-sm font-semibold">{title}</h2>
-        </div>
-      </div>
+    <SectionCard icon={icon} title={title}>
       {children}
-    </section>
+    </SectionCard>
   );
 }
 

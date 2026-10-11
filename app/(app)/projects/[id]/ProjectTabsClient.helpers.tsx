@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { AuditRecordInfo } from "@/lib/audit";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import { isGeneratedRecurringExpense } from "@/lib/expenses";
+import { formatMoneyRounded } from "@/lib/money";
 import { paymentStatusClasses, paymentStatusLabel } from "@/lib/orders/paymentStatus";
 import type { WorkSessionRow } from "@/lib/payroll";
 import type { FinancialAttachment, PaymentRow } from "@/lib/payments";
@@ -23,13 +24,14 @@ export function toNumber(value: unknown) {
   return null;
 }
 
+// Whole shekels, ₪ first — the app's one money format (owner, 2026-10-11: money
+// written the dashboard way, "₪5,000"; it was "5,000 ₪" here). A negative comes
+// out "₪-500", so a figure that can go below zero (the profit) is drawn inside
+// LtrInline: in a right-to-left line the minus carries the number to the other
+// side of the ₪.
 export function formatIls(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    maximumFractionDigits: 0,
-  }).format(value);
+  return formatMoneyRounded(value);
 }
 
 export function formatDate(value: string | null) {

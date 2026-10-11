@@ -14,8 +14,9 @@ import DashboardCardHeader from "@/components/dashboard/DashboardCardHeader";
 import DashboardCardFooter from "@/components/dashboard/DashboardCardFooter";
 import QuietCard from "@/components/dashboard/QuietCard";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { CountBadge } from "@/components/ui/count-badge";
+import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import { cn } from "@/lib/utils";
 import { formatShortDate } from "@/lib/date";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
@@ -46,12 +47,10 @@ function tabs(locale: Locale): { key: TabKey; label: string }[] {
 // Only the priorities worth a badge — same rule (and the same reason) as the
 // tasks board's SHOWN_PRIORITIES: "בינונית" on every row is a chip that says
 // nothing, and the badge earns its space only when the task deviates from normal.
-function priorityMeta(locale: Locale): Record<string, { label: string; variant: "destructive" | "warning" }> {
-  return {
-    urgent: { label: t(dashboardDict, locale, "priorityUrgent"), variant: "destructive" },
-    high: { label: t(dashboardDict, locale, "priorityHigh"), variant: "destructive" },
-  };
-}
+// Its colour and word are the board's own (StatusBadge → getTaskPriorityColor):
+// "גבוהה" is orange and only "דחופה" red (owner, 2026-10-11: priority colours
+// the same everywhere). This card used to paint "גבוהה" red too.
+const SHOWN_PRIORITIES = new Set(["high", "urgent"]);
 
 // Likewise for the status a dateless task falls back to: "לביצוע" is what every
 // open task is, so only a status that says something more is printed.
@@ -80,7 +79,6 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
   const [snoozedIds, setSnoozedIds] = useState<Set<string>>(() => new Set());
   const [tab, setTab] = useState<TabKey>("all");
   const TABS = tabs(locale);
-  const PRIORITY = priorityMeta(locale);
   const STATUS_LABEL = statusLabel(locale);
 
   // In the board's order: its lists as arranged there, each top to bottom
@@ -201,7 +199,7 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
       <Link
         href="/tasks"
         aria-label={t(dashboardDict, locale, "toTasksBoardAria")}
-        className="absolute inset-0 rounded-[1.125rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="absolute inset-0 rounded-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
 
       <div className="pointer-events-none relative flex min-h-0 flex-1 flex-col">
@@ -222,16 +220,22 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
             key={tab_.key}
             type="button"
             onClick={() => setTab(tab_.key)}
+            aria-pressed={tab === tab_.key}
             className={cn(
               "inline-flex items-center gap-1 whitespace-nowrap rounded-lg px-2 py-1 text-xs font-medium transition-colors",
-              tab === tab_.key
-                ? "bg-secondary/15 text-foreground ring-1 ring-secondary/40"
-                : "bg-muted text-muted-foreground hover:bg-secondary/10"
+              // The app's one toggle look: blue when on, quiet when off (owner,
+              // 2026-10-11: "all the toggles should be blue") — it was a sky tint + ring.
+              tab === tab_.key ? `${TOGGLE_ON} hover:bg-secondary/90` : TOGGLE_OFF
             )}
           >
             {tab_.label}
-            {/* An unselected chip is bg-muted itself, so its count is a white pill. */}
-            <CountBadge count={counts[tab_.key]} active={tab === tab_.key} className={tab === tab_.key ? undefined : "bg-background"} />
+            {/* The count's own "active" pill turns white on the pressed
+                (blue) chip. */}
+            <CountBadge
+              count={counts[tab_.key]}
+              active={tab === tab_.key}
+              className={tab === tab_.key ? "bg-secondary-foreground text-secondary" : undefined}
+            />
           </button>
         ))}
       </div>
@@ -244,7 +248,7 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
         {visible.length > 0 ? (
           <ul className="board-list divide-y">
             {visible.map((task) => {
-              const priority = PRIORITY[task.priority ?? ""] ?? null;
+              const priority = task.priority && SHOWN_PRIORITIES.has(task.priority) ? task.priority : null;
               const subject = displaySubject(task, locale);
               return (
                 <li
@@ -270,9 +274,8 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
                       where the task's name should be. The name wraps on its own
                       line now, and the detail sits under it. */}
                   <div className="flex items-start gap-2">
-                    {/* Same corner, same shape and the same past tense as the
-                        delivery card's "סופק". `relative` lifts it over the row
-                        link so its own click still lands. */}
+                    {/* The same tick as the "היום" card's rows. `relative` lifts
+                        it over the row link so its own click still lands. */}
                     <button
                       type="button"
                       onClick={() => markDone(task.id)}
@@ -294,9 +297,7 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
                       {priority || dueLabel(task) || task.project_name ? (
                         <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                           {priority ? (
-                            <Badge variant={priority.variant} className="shrink-0 text-[0.588rem]">
-                              {priority.label}
-                            </Badge>
+                            <StatusBadge value={priority} type="priority" locale={locale} className="shrink-0 text-[0.588rem]" />
                           ) : null}
                           {dueLabel(task) ? (
                             <span

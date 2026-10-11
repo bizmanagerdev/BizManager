@@ -118,7 +118,7 @@ export function PanelsFallback({ heldRaw }: { heldRaw?: string }) {
       className={cn("min-w-0", fill ? CARD_FILL_CLASS : CARD_NATURAL_CLASS)}
       style={{ "--held-h": `${height(id) ?? 64}px` } as CSSProperties}
     >
-      <Skeleton className={cn("h-[var(--held-h)] w-full rounded-[1.125rem]", fill && "xl:h-full")} />
+      <Skeleton className={cn("h-[var(--held-h)] w-full rounded-card", fill && "xl:h-full")} />
     </div>
   );
   return (
@@ -275,7 +275,7 @@ export function Cell({
  * swaps it out.
  */
 function SlowCardSkeleton() {
-  return <Skeleton className={cn("h-[var(--held-h,4rem)] w-full rounded-[1.125rem] xl:h-full", CARD_FILL_CLASS)} />;
+  return <Skeleton className={cn("h-[var(--held-h,4rem)] w-full rounded-card xl:h-full", CARD_FILL_CLASS)} />;
 }
 
 /**
@@ -895,7 +895,7 @@ export async function DashboardPanels({ forceServer = false }: { forceServer?: b
             // null fallback left the cell empty — hidden — so the clock pushed
             // every card under it down by its height when it came (a worker's
             // phone, 2026-10-09: 180 px at half a second).
-            <Suspense fallback={<Skeleton className="h-[var(--held-h,4rem)] w-full rounded-[1.125rem]" />}>
+            <Suspense fallback={<Skeleton className="h-[var(--held-h,4rem)] w-full rounded-card" />}>
               <WorkerShiftPanel userId={profile.id} locale={locale} />
             </Suspense>
           ),

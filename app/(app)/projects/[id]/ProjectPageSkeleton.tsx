@@ -83,13 +83,11 @@ const STATUS_CARD = (
   />
 );
 
+// The page's own section box, as on the page (a CollapsibleSection that never
+// folds, since 2026-10-11) — so the header's height is the real one.
 const SUMMARY_SECTION = (
-  <section className="rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
-    <div className="flex items-center gap-2 text-sm font-semibold">
-      <ChartIcon className="h-4 w-4 text-primary" />
-      סיכום כספי
-    </div>
-    <div className="mt-3 divide-y">
+  <CollapsibleSection collapsible={false} title="סיכום כספי" icon={<ChartIcon className="h-4 w-4 text-primary" />}>
+    <div className="divide-y">
       {[0, 1, 2, 3, 4, 5].map((i) => (
         <div key={i} className="flex h-[2.25rem] items-center justify-between gap-3">
           <Line className="w-24" />
@@ -97,7 +95,7 @@ const SUMMARY_SECTION = (
         </div>
       ))}
     </div>
-  </section>
+  </CollapsibleSection>
 );
 
 /** Everything under the heading (ProjectTabsClient's own layout). */
@@ -107,7 +105,7 @@ export function ProjectBodySkeleton() {
       <div className="mb-3 grid grid-cols-1 gap-3 lg:grid-cols-3 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)]">
         <div className="order-2 lg:order-none">
           {/* The job's card: its name (הובלה / פרטי העבודה / הערות) isn't known yet. */}
-          <div className="relative flex h-full flex-col gap-2.5 rounded-3xl border border-border/70 bg-card/80 p-3.5 shadow-sm">
+          <div className="brand-frame surface-panel relative flex h-full flex-col gap-2.5 rounded-card border border-border/60 p-3.5 shadow-card">
             <div className="flex items-start gap-2.5">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
                 <DeliveryIcon className="h-5 w-5" />

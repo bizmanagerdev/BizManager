@@ -18,6 +18,13 @@ describe("formatMoney", () => {
   it("rounds to whole shekels on request", () => {
     expect(formatMoneyRounded(1356.97)).toBe("₪1,357");
   });
+
+  it("puts a negative's sign ahead of the ₪, with no hidden direction marks", () => {
+    expect(formatMoney(-50)).toBe("-₪50");
+    expect(formatMoney(-1356.97)).toBe("-₪1,356.97");
+    expect(formatMoneyRounded(-1356.97)).toBe("-₪1,357");
+    expect(formatMoneyRounded(-0.4)).toBe("₪0");
+  });
 });
 
 describe("stripMoneyGrouping", () => {

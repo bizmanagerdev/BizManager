@@ -36,7 +36,7 @@ export default function QuietCard({
       <Link
         href={href}
         aria-label={label ?? title}
-        className="flex items-center gap-2.5 rounded-[1.125rem] px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex items-center gap-2.5 rounded-card px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {/* The same plain glyph DashboardCardHeader uses, so a quiet card reads
             as the same card — just with nothing in it. */}

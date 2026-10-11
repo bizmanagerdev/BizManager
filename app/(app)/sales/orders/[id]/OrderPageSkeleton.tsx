@@ -93,7 +93,9 @@ export default function OrderPageSkeleton({
             <div className="hidden lg:block">
               <ContactCardSkeleton />
             </div>
-            <div className="h-32 animate-pulse rounded-3xl border border-border/70 bg-muted/40" />
+            {/* Stand-ins for SectionCards: the Card's corner (rounded-card),
+                since SectionCard became the project page's box. */}
+            <div className="h-32 animate-pulse rounded-card border border-border/70 bg-muted/40" />
           </div>
           <div className="space-y-3 lg:order-1 lg:col-span-2">
             <SectionCard icon={<OrderIcon className="h-4 w-4" />} title="פריטים" aside={<Skeleton className="h-5 w-16 rounded-full" />}>
@@ -107,8 +109,8 @@ export default function OrderPageSkeleton({
               </div>
               <Skeleton className="h-11 w-full rounded-xl bg-muted/30" />
             </SectionCard>
-            <div className="h-24 animate-pulse rounded-3xl border border-border/70 bg-muted/40" />
-            <div className="h-24 animate-pulse rounded-3xl border border-border/70 bg-muted/40" />
+            <div className="h-24 animate-pulse rounded-card border border-border/70 bg-muted/40" />
+            <div className="h-24 animate-pulse rounded-card border border-border/70 bg-muted/40" />
           </div>
         </div>
       </section>

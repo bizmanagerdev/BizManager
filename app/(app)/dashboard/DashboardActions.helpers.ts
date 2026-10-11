@@ -2,6 +2,7 @@ import type { FinancialAttachment } from "@/lib/payments";
 import { offlineUpload } from "@/lib/offline-upload";
 import { isImageDocument } from "@/lib/documents";
 import { israelDateKey } from "@/lib/timezone";
+import { formatMoneyRounded } from "@/lib/money";
 
 // Pure date / number / formatting helpers + the attachment upload util, lifted
 // out of DashboardActions so the component file holds UI + state, not utilities.
@@ -49,13 +50,11 @@ export function durationHours(clockIn: string, clockOut: string) {
 // The week-LABEL helpers and colour palette that used to sit here went with the
 // "מה יש השבוע" dialog; the דשבורד's "מבט על היום" panel is the week view now.
 
+// The app's one money shape, ₪ first (owner, 2026-10-11: money is written the
+// dashboard way). Intl's ILS currency style put the ₪ after the number.
 export function formatIls(value: number | null) {
   if (value === null) return "—";
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    maximumFractionDigits: 0,
-  }).format(value);
+  return formatMoneyRounded(value);
 }
 
 export function isImageAttachment(attachment: Pick<FinancialAttachment, "file_name" | "document_type">) {

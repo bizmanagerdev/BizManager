@@ -49,9 +49,13 @@ describe("toPositiveInt / toNonNegativeInt", () => {
 });
 
 describe("formatCurrency", () => {
-  it("formats as he-IL ILS with no fixed decimals", () => {
-    expect(formatCurrency(1500)).toContain("1,500");
-    expect(formatCurrency(1500)).toContain("₪");
+  it("writes ₪ first with he-IL grouping, decimals only when present (the dashboard's format)", () => {
+    expect(formatCurrency(1500)).toBe("₪1,500");
+    expect(formatCurrency(1356.97)).toBe("₪1,356.97");
+  });
+
+  it("puts a negative amount's sign in front of the ₪ (a refund among the payments)", () => {
+    expect(formatCurrency(-50)).toBe("-₪50");
   });
 });
 

@@ -769,7 +769,9 @@ export function TaskRemindersPanel({
                     <Button type="button" size="sm" variant="secondary" onClick={() => onSetReminderStatus(reminder.id, "done")}>
                       {t(tasksDict, locale, "reminderDoneButton")}
                     </Button>
-                    <Button type="button" size="sm" variant="outline" onClick={() => onSetReminderStatus(reminder.id, "cancelled")}>
+                    {/* "ביטול" is grey wherever it is written (owner, 2026-10-11:
+                        cancel-type buttons grey) — here it calls the reminder off. */}
+                    <Button type="button" size="sm" variant="muted" onClick={() => onSetReminderStatus(reminder.id, "cancelled")}>
                       {t(tasksDict, locale, "reminderCancelButton")}
                     </Button>
                   </div>
@@ -788,8 +790,10 @@ export function TaskRemindersPanel({
           </div>
         </AdaptiveGrid>
         <div className="flex justify-end gap-1.5">
+          {/* Grey, never the look of the save beside it (owner, 2026-10-11:
+              cancel-type buttons grey). */}
           {editingReminderId ? (
-            <Button type="button" size="sm" variant="outline" disabled={addingReminder} onClick={onCancelEditReminder}>
+            <Button type="button" size="sm" variant="muted" disabled={addingReminder} onClick={onCancelEditReminder}>
               {t(tasksDict, locale, "cancelEditLabel")}
             </Button>
           ) : null}
@@ -951,8 +955,10 @@ export function TaskCommentsPanel({
                           className="absolute bottom-1 end-1 h-8 w-8"
                         />
                       </div>
+                      {/* Grey: it was the same sky fill as the save beside it
+                          (owner, 2026-10-11: cancel-type buttons grey). */}
                       <div className="flex justify-end gap-2">
-                        <Button type="button" size="sm" variant="secondary" disabled={savingEdit} onClick={() => setEditingId(null)}>
+                        <Button type="button" size="sm" variant="muted" disabled={savingEdit} onClick={() => setEditingId(null)}>
                           {t(tasksDict, locale, "cancelEditLabel")}
                         </Button>
                         <Button

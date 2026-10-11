@@ -73,7 +73,7 @@ export function ConfirmDialog({
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
         <DialogFooter className="mt-2">
-          <Button type="button" variant="secondary" disabled={loading} onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="muted" disabled={loading} onClick={() => onOpenChange(false)}>
             {cancelLabel}
           </Button>
           <Button

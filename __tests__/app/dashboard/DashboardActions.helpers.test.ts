@@ -58,6 +58,11 @@ describe("formatIls", () => {
     expect(formatIls(null)).toBe("—");
     expect(formatIls(1500)).toContain("1,500");
   });
+
+  it("puts the ₪ first, like every other amount in the app", () => {
+    expect(formatIls(1500)).toBe("₪1,500");
+    expect(formatIls(1499.6)).toBe("₪1,500");
+  });
 });
 
 describe("isImageAttachment", () => {

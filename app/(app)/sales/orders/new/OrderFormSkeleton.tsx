@@ -4,8 +4,10 @@ import Link from "next/link";
 import { StepWizard } from "@/components/ui/step-wizard";
 import { StepHeading } from "@/components/ui/option-row";
 import { Button } from "@/components/ui/button";
+import { SEGMENT, SEGMENTED_GROUP, TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UserIcon } from "@/components/ui/icons";
+import { cn } from "@/lib/utils";
 import { STEP_LABEL, type Step } from "./NewOrderClient.ui";
 
 // The order form's page (NewOrderClient, standalone) before it arrives: the
@@ -36,16 +38,16 @@ export default function OrderFormSkeleton({ cancelHref = "/sales" }: { cancelHre
         onNext={noop}
         nextDisabled
         footerStart={
-          <Button type="button" variant="secondary" asChild className="me-auto">
+          <Button type="button" variant="muted" asChild className="me-auto">
             <Link href={cancelHref}>ביטול</Link>
           </Button>
         }
       >
         <div className="space-y-4" aria-hidden>
           <StepHeading title="איזה לקוח?" />
-          <div className="inline-flex rounded-2xl border border-border/60 bg-background/70 p-1 shadow-sm">
-            <span className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm">לקוח קיים</span>
-            <span className="rounded-xl px-4 py-2 text-sm font-medium text-muted-foreground">לקוח חדש</span>
+          <div className={SEGMENTED_GROUP}>
+            <span className={cn(SEGMENT, TOGGLE_ON)}>לקוח קיים</span>
+            <span className={cn(SEGMENT, TOGGLE_OFF)}>לקוח חדש</span>
           </div>
           <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0">
             <div className="min-w-0 space-y-3">

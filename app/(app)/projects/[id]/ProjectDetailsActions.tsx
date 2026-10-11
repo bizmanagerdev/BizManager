@@ -791,8 +791,10 @@ export default function ProjectDetailsActions({
                   chooseVariant="outline"
                   size="sm"
                 />
+                {/* Grey: clearing the pick is a quiet button (owner, 2026-10-11:
+                    cancel-type buttons grey). */}
                 {attachmentFiles.length > 0 ? (
-                  <Button type="button" variant="secondary" size="sm" onClick={() => setAttachmentFiles([])}>
+                  <Button type="button" variant="muted" size="sm" onClick={() => setAttachmentFiles([])}>
                     נקה בחירה
                   </Button>
                 ) : null}

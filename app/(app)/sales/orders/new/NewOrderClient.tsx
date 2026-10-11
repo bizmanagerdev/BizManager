@@ -15,6 +15,7 @@ import { registerReversibleCreate } from "@/lib/undo-engine";
 import { EmptyState } from "@/components/ui/empty-state";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
+import { SEGMENT, SEGMENTED_GROUP, TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import { omitUnknownPlace } from "@/lib/ui/cities";
 import { getOrderStatusLabel } from "@/lib/ui/status-colors";
 import { Badge } from "@/components/ui/badge";
@@ -1204,7 +1205,9 @@ export default function NewOrderClient({
         error={oneForm ? (submitError ?? undefined) : undefined}
         footerStart={
           embedded ? undefined : (
-            <Button type="button" variant="secondary" asChild disabled={actionLocked} className="me-auto" onClick={handleCancel}>
+            // Grey: a cancel never wears the save's look (owner, 2026-10-11).
+            // OrderFormSkeleton draws the same button.
+            <Button type="button" variant="muted" asChild disabled={actionLocked} className="me-auto" onClick={handleCancel}>
               <Link href={cancelHref}>ביטול</Link>
             </Button>
           )
@@ -1235,28 +1238,21 @@ export default function NewOrderClient({
       {show("customer") ? (
         <div className="space-y-4">
           <StepHeading compact={oneForm} title="איזה לקוח?" className="mt-0 border-t-0 pt-0" />
-          <div className="inline-flex rounded-2xl border border-border/60 bg-background/70 p-1 shadow-sm">
+          {/* The app's one segmented toggle (filter-chip.tsx), blue when on. */}
+          <div className={SEGMENTED_GROUP}>
             <button
               type="button"
+              aria-pressed={customerTab === "existing"}
               onClick={() => setCustomerTab("existing")}
-              className={cn(
-                "rounded-xl px-4 py-2 text-sm font-medium transition-colors",
-                customerTab === "existing"
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
+              className={cn(SEGMENT, customerTab === "existing" ? TOGGLE_ON : TOGGLE_OFF)}
             >
               לקוח קיים
             </button>
             <button
               type="button"
+              aria-pressed={customerTab === "new"}
               onClick={() => setCustomerTab("new")}
-              className={cn(
-                "rounded-xl px-4 py-2 text-sm font-medium transition-colors",
-                customerTab === "new"
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
+              className={cn(SEGMENT, customerTab === "new" ? TOGGLE_ON : TOGGLE_OFF)}
             >
               לקוח חדש
             </button>
@@ -1423,10 +1419,12 @@ export default function NewOrderClient({
                           {selectedCustomer.requiresPrepayment ? (
                             <Badge variant="warning">תשלום מראש</Badge>
                           ) : null}
+                          {/* Open, it closes the form without saving — grey then,
+                              like every cancel (owner, 2026-10-11). */}
                           <Button
                             type="button"
                             size="icon"
-                            variant="secondary"
+                            variant={editingCustomer ? "muted" : "secondary"}
                             className="h-8 w-8"
                             onClick={() => setEditingCustomer((v) => !v)}
                             disabled={actionLocked}
@@ -1746,23 +1744,25 @@ export default function NewOrderClient({
                               />
                               <label className="text-xs text-muted-foreground">הנחה</label>
                               <div className="flex items-stretch gap-1.5">
-                                <div className="inline-flex shrink-0 overflow-hidden rounded-lg border border-input">
+                                <div className="inline-flex shrink-0 overflow-hidden rounded-lg border border-input bg-background">
                                   <button
                                     type="button"
+                                    aria-pressed={mode === "percent"}
                                     onClick={() => setLineDiscountModes((prev) => ({ ...prev, [line.product_id]: "percent" }))}
                                     className={cn(
                                       "px-2 text-xs font-medium transition-colors",
-                                      mode === "percent" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"
+                                      mode === "percent" ? TOGGLE_ON : TOGGLE_OFF
                                     )}
                                   >
                                     %
                                   </button>
                                   <button
                                     type="button"
+                                    aria-pressed={mode === "amount"}
                                     onClick={() => setLineDiscountModes((prev) => ({ ...prev, [line.product_id]: "amount" }))}
                                     className={cn(
                                       "px-2 text-xs font-medium transition-colors",
-                                      mode === "amount" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"
+                                      mode === "amount" ? TOGGLE_ON : TOGGLE_OFF
                                     )}
                                   >
                                     ₪
@@ -1815,23 +1815,25 @@ export default function NewOrderClient({
                   <div className="space-y-1.5 border-t border-border/70 pt-3 lg:shrink-0">
                     <label className="text-xs font-medium text-muted-foreground">הנחת הזמנה</label>
                     <div className="flex items-stretch gap-1.5">
-                      <div className="inline-flex shrink-0 overflow-hidden rounded-lg border border-input">
+                      <div className="inline-flex shrink-0 overflow-hidden rounded-lg border border-input bg-background">
                         <button
                           type="button"
+                          aria-pressed={orderDiscountMode === "percent"}
                           onClick={() => setOrderDiscountMode("percent")}
                           className={cn(
                             "px-2.5 text-xs font-medium transition-colors",
-                            orderDiscountMode === "percent" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"
+                            orderDiscountMode === "percent" ? TOGGLE_ON : TOGGLE_OFF
                           )}
                         >
                           %
                         </button>
                         <button
                           type="button"
+                          aria-pressed={orderDiscountMode === "amount"}
                           onClick={() => setOrderDiscountMode("amount")}
                           className={cn(
                             "px-2.5 text-xs font-medium transition-colors",
-                            orderDiscountMode === "amount" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"
+                            orderDiscountMode === "amount" ? TOGGLE_ON : TOGGLE_OFF
                           )}
                         >
                           ₪

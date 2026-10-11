@@ -345,7 +345,7 @@ export function FileUploadActions({
             ) : null}
           </div>
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setCameraOpen(false)}>
+            <Button type="button" variant="muted" onClick={() => setCameraOpen(false)}>
               ביטול
             </Button>
             <Button

@@ -20,11 +20,6 @@ export function escapeHtml(value: string) {
     .replace(/"/g, "&quot;");
 }
 
-export function formatIlsForSheet(value: number | null) {
-  if (value === null) return "—";
-  return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 }).format(value);
-}
-
 export function sheetGeneratedAt() {
   return new Intl.DateTimeFormat("he-IL", { dateStyle: "short", timeStyle: "short" }).format(new Date());
 }

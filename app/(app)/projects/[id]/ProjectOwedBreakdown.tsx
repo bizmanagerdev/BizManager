@@ -51,7 +51,8 @@ export default function ProjectOwedBreakdown({ owed }: { owed: ProjectOwed }) {
                     <LtrInline>{formatIls(expense.total)}</LtrInline>
                   </>
                 ) : (
-                  "לא שולם"
+                  // Red, as "לא שולם" is everywhere (owner, 2026-10-11).
+                  <span className="font-medium text-destructive">לא שולם</span>
                 )}
               </>
             }

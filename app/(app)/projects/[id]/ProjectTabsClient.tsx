@@ -14,6 +14,7 @@ import { ViewDialog } from "@/components/ui/view-dialog";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { StatActionCard, collectionStatusTextClass } from "@/components/ui/stat-action-card";
+import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import {
   AddIcon,
   ArrowDownIcon,
@@ -1149,16 +1150,19 @@ export default function ProjectTabsClient({
   // The money at a glance: what the project earns, and the four numbers that
   // make it. Headline first, breakdown under it — the same shape an order's
   // payment card uses.
+  // The same section box as its neighbours (תנועות, משימות, מסמכים) and the
+  // order page's (owner, 2026-10-11: "make the order page and the project page
+  // match the section boxes") — it was a hand-built box in the order page's old
+  // style: rounder, see-through, a smaller title. It never folds, as before.
   const financialSummarySection = (
-    <section className="rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
-      <div className="flex items-center gap-2 text-sm font-semibold">
-        <ChartIcon className="h-4 w-4 text-primary" />
-        סיכום כספי
-      </div>
-
+    <CollapsibleSection
+      collapsible={false}
+      title="סיכום כספי"
+      icon={<ChartIcon className="h-4 w-4 text-primary" />}
+    >
       {/* Line after line, the way the money actually builds up: base → what was
           re-charged → the resulting price → what it cost. */}
-      <dl className="mt-3 divide-y text-sm">
+      <dl className="divide-y text-sm">
         <div className="flex items-center justify-between gap-3 py-2">
           <dt className="text-muted-foreground">מחיר בסיס שסוכם</dt>
           <dd className="flex items-center gap-2 font-semibold">
@@ -1226,7 +1230,7 @@ export default function ProjectTabsClient({
           <LtrInline>{formatIls(vatCollectedTotal)}</LtrInline>
         </div>
       ) : null}
-    </section>
+    </CollapsibleSection>
   );
 
   // The collection band: beside the customer card when the project has no
@@ -1686,6 +1690,8 @@ export default function ProjectTabsClient({
                     ))}
                     <DropdownMenuSeparator />
                     <DropdownMenuLabel>מיון</DropdownMenuLabel>
+                    {/* The chosen sort is the app's selected-toggle look, as
+                        everywhere (owner, 2026-10-11: "all the toggles should be blue"). */}
                     {(["date", "amount", "status"] as const).map((field) => (
                       <div key={field} className="flex items-center justify-between gap-2 px-2 py-1.5 text-sm">
                         <span>{LEDGER_SORT_BY_LABELS[field]}</span>
@@ -1694,12 +1700,13 @@ export default function ProjectTabsClient({
                             type="button"
                             title={`${LEDGER_SORT_BY_LABELS[field]} · עולה`}
                             aria-label={`${LEDGER_SORT_BY_LABELS[field]} · עולה`}
+                            aria-pressed={ledgerPrefs.sortBy === field && ledgerPrefs.sortDirection === "asc"}
                             onClick={() => updateLedgerPrefs({ sortBy: field, sortDirection: "asc" })}
                             className={cn(
                               "flex h-6 w-6 items-center justify-center rounded-md border",
                               ledgerPrefs.sortBy === field && ledgerPrefs.sortDirection === "asc"
-                                ? "border-secondary bg-secondary text-secondary-foreground"
-                                : "border-border/70 text-muted-foreground hover:bg-accent/40"
+                                ? `border-secondary ${TOGGLE_ON}`
+                                : `border-border/70 ${TOGGLE_OFF}`
                             )}
                           >
                             <ArrowUpIcon className="h-3.5 w-3.5" />
@@ -1708,12 +1715,13 @@ export default function ProjectTabsClient({
                             type="button"
                             title={`${LEDGER_SORT_BY_LABELS[field]} · יורד`}
                             aria-label={`${LEDGER_SORT_BY_LABELS[field]} · יורד`}
+                            aria-pressed={ledgerPrefs.sortBy === field && ledgerPrefs.sortDirection === "desc"}
                             onClick={() => updateLedgerPrefs({ sortBy: field, sortDirection: "desc" })}
                             className={cn(
                               "flex h-6 w-6 items-center justify-center rounded-md border",
                               ledgerPrefs.sortBy === field && ledgerPrefs.sortDirection === "desc"
-                                ? "border-secondary bg-secondary text-secondary-foreground"
-                                : "border-border/70 text-muted-foreground hover:bg-accent/40"
+                                ? `border-secondary ${TOGGLE_ON}`
+                                : `border-border/70 ${TOGGLE_OFF}`
                             )}
                           >
                             <ArrowDownIcon className="h-3.5 w-3.5" />

@@ -3,6 +3,7 @@
 import { cloneElement, useCallback, useMemo, useState, type ReactElement } from "react";
 import { Button } from "@/components/ui/button";
 import { CountBadge } from "@/components/ui/count-badge";
+import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import { ViewDialog } from "@/components/ui/view-dialog";
 import { SpinnerIcon, WarehouseIcon } from "@/components/ui/icons";
 import { toHebrewError } from "@/lib/error-messages";
@@ -124,15 +125,16 @@ export default function PickingListDialog({
         size="formXl"
         headerBelow={
           cityCounts.length > 0 ? (
+            // The app's one toggle look, blue when on (filter-chip.tsx; owner,
+            // 2026-10-11) — the same as the deliveries' region pills.
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
+                aria-pressed={selectedCities === null}
                 onClick={() => setSelectedCities(null)}
                 className={[
                   "rounded-full border px-3 py-1 text-sm transition-colors",
-                  selectedCities === null
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
+                  selectedCities === null ? `border-secondary ${TOGGLE_ON}` : `border-border bg-background ${TOGGLE_OFF}`,
                 ].join(" ")}
               >
                 כל הערים
@@ -143,17 +145,16 @@ export default function PickingListDialog({
                   <button
                     key={city}
                     type="button"
+                    aria-pressed={active}
                     onClick={() => toggleCity(city)}
                     className={[
                       "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors",
-                      active
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
+                      active ? `border-secondary ${TOGGLE_ON}` : `border-border bg-background ${TOGGLE_OFF}`,
                     ].join(" ")}
                   >
                     {city}
                     {/* A selected chip is already bg-primary, so its count is a light tint. */}
-                    <CountBadge count={count} className={active ? "bg-primary-foreground/20 text-primary-foreground" : undefined} />
+                    <CountBadge count={count} className={active ? "bg-secondary-foreground/20 text-secondary-foreground" : undefined} />
                   </button>
                 );
               })}

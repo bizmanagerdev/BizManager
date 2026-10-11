@@ -5,13 +5,15 @@ import { ShareIcon, SpinnerIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import {
   escapeHtml,
-  formatIlsForSheet,
   sheetFileName,
   sheetGeneratedAt,
   shareSafeFileName,
   shareTableSheet,
   type TableSheet,
 } from "@/lib/share-pdf";
+// The page's own ₪-first amounts (owner, 2026-10-11: money written the
+// dashboard way).
+import { formatIls } from "./ProjectTabsClient.helpers";
 
 // Compact sheet for the "לחיוב לקוח" card: one line per charge
 // (תאריך · פירוט · סכום) and the total — without the on-screen detail
@@ -65,9 +67,9 @@ function buildSheet(data: BilledPrintData): TableSheet {
     theadHtml: `<tr><th style="${S.thDate}">תאריך</th><th style="${S.th}">פירוט</th><th style="${S.thAmount}">סכום</th></tr>`,
     rowsHtml: data.rows.map(
       (row) =>
-        `<tr><td style="${S.tdDate}">${escapeHtml(row.date)}</td><td style="${S.td}">${escapeHtml(row.title)}</td><td style="${S.tdAmount}">${formatIlsForSheet(row.amount)}</td></tr>`
+        `<tr><td style="${S.tdDate}">${escapeHtml(row.date)}</td><td style="${S.td}">${escapeHtml(row.title)}</td><td style="${S.tdAmount}">${formatIls(row.amount)}</td></tr>`
     ),
-    tfootHtml: `<tr><td style="${S.footLabel}" colspan="2">סה״כ לחיוב לקוח</td><td style="${S.footAmount}">${formatIlsForSheet(data.total)}</td></tr>`,
+    tfootHtml: `<tr><td style="${S.footLabel}" colspan="2">סה״כ לחיוב לקוח</td><td style="${S.footAmount}">${formatIls(data.total)}</td></tr>`,
     tableStyle: S.table,
   };
 }

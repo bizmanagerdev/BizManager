@@ -4,15 +4,17 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState, useTransition } from "react";
-import { CashIcon, CheckIcon, ChevronDownIcon, CommentIcon, LocationIcon, WarehouseIcon, WazeIcon } from "@/components/ui/icons";
+import { CashIcon, ChevronDownIcon, CommentIcon, LocationIcon, WarehouseIcon, WazeIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
+import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
+import { formatMoney } from "@/lib/money";
 import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
 import PickingListDialog from "@/app/(app)/sales/PickingListDialog";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AddressLink } from "@/components/ui/address-link";
-import { CallCircle, ContactLink, ContactTapZone } from "@/components/ui/contact-link";
+import { CallGlyph, CallIconButton, ContactTapZone } from "@/components/ui/contact-link";
 import { Card } from "@/components/ui/card";
 
 import { DELIVERY_REGIONS, formatDeliveryAddress, getCityRegion } from "@/lib/ui/cities";
@@ -135,14 +137,10 @@ function remainingDeliveryItems(items: DeliveryOrderItem[]) {
     .filter((item) => item.remaining > 0);
 }
 
+// ₪ first, the dashboard's way (owner, 2026-10-11) — lib/money.ts.
 function formatCurrency(value: number | null) {
   if (value === null) return "-";
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(value);
+  return formatMoney(value);
 }
 
 // The customer's own asked-for date, shown right on the queue card/row so a
@@ -222,7 +220,7 @@ export default function SalesDeliveriesQueue({
    * Whether the viewer may open the full order screen. False for a worker —
    * /sales is staff-only, so the link would bounce him to /no-access. He still
    * gets everything the drive needs: the item list, navigation, share, and
-   * "סמן כסופק" (which collects payment too).
+   * "אישור אספקה" (which collects payment too).
    */
   canOpenOrder?: boolean;
   /** When the server read these rows — an aged copy refreshes itself
@@ -340,9 +338,8 @@ export default function SalesDeliveriesQueue({
                 onClick={() => emitNavigationStart()}
                 className={[
                   "shrink-0 rounded-full border px-3 py-1 text-sm transition-colors",
-                  active
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
+                  // The app's one toggle look, blue when on (filter-chip.tsx).
+                  active ? `border-secondary ${TOGGLE_ON}` : `border-border bg-background ${TOGGLE_OFF}`,
                 ].join(" ")}
               >
                 {label}
@@ -371,9 +368,7 @@ export default function SalesDeliveriesQueue({
             onClick={() => emitNavigationStart()}
             className={[
               "rounded-full border px-3 py-1 text-sm transition-colors",
-              active
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
+              active ? `border-secondary ${TOGGLE_ON}` : `border-border bg-background ${TOGGLE_OFF}`,
             ].join(" ")}
           >
             {label}
@@ -458,12 +453,16 @@ export default function SalesDeliveriesQueue({
                             >
                               <td className="px-4 py-3">
                                 <div className="font-medium">{combinedCustomerName(group)}</div>
+                                {/* The number as text and the app's one call look beside
+                                    it, the green phone (owner, 2026-10-11: "make them
+                                    all the same"). It copies the number at a desk. */}
                                 {group.customerPhone ? (
-                                  <ContactLink
-                                    kind="tel"
-                                    value={group.customerPhone}
-                                    className="text-xs text-muted-foreground hover:underline"
-                                  />
+                                  <div className="mt-1 flex items-center gap-2">
+                                    <span dir="ltr" className="text-xs text-muted-foreground">
+                                      {group.customerPhone}
+                                    </span>
+                                    <CallIconButton phone={group.customerPhone} name={combinedCustomerName(group)} />
+                                  </div>
                                 ) : null}
                               </td>
                               <td className="whitespace-nowrap px-4 py-3">
@@ -580,17 +579,13 @@ export default function SalesDeliveriesQueue({
                                     variant="outline"
                                     className="shrink-0 gap-1.5"
                                   />
+                                  {/* ✓ אישור אספקה, the dialog's own name for it, in
+                                      the list's outline (owner, 2026-08-18: a list
+                                      isn't a column of blue blocks). */}
                                   <OrderConfirmDialog
                                     orderId={delivery.id}
                                     customerName={delivery.customerName}
-                                    buttonVariant="default"
                                     buttonClassName="gap-1.5"
-                                    buttonLabel={
-                                      <>
-                                        <CheckIcon className="h-4 w-4" />
-                                        סמן כסופק
-                                      </>
-                                    }
                                   />
                                 </div>
                               </td>
@@ -638,7 +633,7 @@ export default function SalesDeliveriesQueue({
 
                               return (
                                 <li key={customerKey}>
-                                  <div className="relative overflow-hidden rounded-2xl border border-border bg-card ps-1.5 shadow-sm">
+                                  <div className="relative overflow-hidden rounded-card border border-border bg-card ps-1.5 shadow-card">
                                     {/* The city's colour down the start edge — fixed per city
                                         (lib/deliveries/city-colours.ts), so a driver sees where
                                         one city's stops end. */}
@@ -725,7 +720,7 @@ export default function SalesDeliveriesQueue({
                                               one column of tap targets instead of zig-zagging
                                               across the card. */}
                                           {/* The app's one call look (contact-link.tsx). */}
-                                          <CallCircle />
+                                          <CallGlyph />
                                           <span className="min-w-0 flex-1">
                                             <span className="block text-sm font-semibold">
                                               {combinedCustomerName(group)}
@@ -843,12 +838,13 @@ export default function SalesDeliveriesQueue({
                                         {/* The delivery's two acts, side by side in the bottom
                                             corner: send it to the driver (a labelled button —
                                             owner, 2026-10-10: the bare share icon in the card's
-                                            corner was easy to miss) and the filled primary one.
-                                            Each order on a stop has its own pair. They wrap,
-                                            the second under the first, when a bigger text
-                                            size makes the pair wider than the card — side by
-                                            side they ran past its edge and "סמן כסופק" was
-                                            cut off. */}
+                                            corner was easy to miss) and ✓ אישור אספקה, the
+                                            dialog's own name for it. Both outline, as on every
+                                            list (owner, 2026-08-18). Each order on a stop has
+                                            its own pair. They wrap, the second under the
+                                            first, when a bigger text size makes the pair wider
+                                            than the card — side by side they ran past its edge
+                                            and the second was cut off. */}
                                         <div className="flex flex-wrap items-center justify-end gap-2 p-3">
                                           <DeliveryShareActions
                                             delivery={delivery}
@@ -859,14 +855,7 @@ export default function SalesDeliveriesQueue({
                                           <OrderConfirmDialog
                                             orderId={delivery.id}
                                             customerName={delivery.customerName}
-                                            buttonVariant="default"
                                             buttonClassName="gap-1.5"
-                                            buttonLabel={
-                                              <>
-                                                <CheckIcon className="h-4 w-4" />
-                                                סמן כסופק
-                                              </>
-                                            }
                                           />
                                         </div>
                                         </div>

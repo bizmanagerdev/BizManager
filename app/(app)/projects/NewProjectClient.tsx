@@ -8,6 +8,8 @@ import { OptionRow, StepHeading } from "@/components/ui/option-row";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { SummaryRow, SummarySection } from "@/components/ui/summary";
 import { cn } from "@/lib/utils";
+import { formatMoney } from "@/lib/money";
+import { SEGMENT, SEGMENTED_GROUP, TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import { offlineFetch, saveDraft, loadDraft, clearDraft } from "@/lib/offline-queue";
 import { uploadTogether } from "@/lib/upload-together";
 import { toHebrewError } from "@/lib/error-messages";
@@ -868,28 +870,23 @@ export default function NewProjectClient({
       {show("customer") ? (
         <div className="space-y-4">
           <StepHeading compact={oneForm} title="איזה לקוח?" className="mt-0 border-t-0 pt-0" />
-          <div className="inline-flex rounded-2xl border border-border/60 bg-background/70 p-1 shadow-sm">
+          {/* The app's one toggle look, from filter-chip (owner, 2026-10-11:
+              "all the toggles should be blue") — this one already was; the classes now
+              come from the one place that decides it. */}
+          <div className={SEGMENTED_GROUP}>
             <button
               type="button"
+              aria-pressed={customerTab === "existing"}
               onClick={() => setCustomerTab("existing")}
-              className={cn(
-                "rounded-xl px-4 py-2 text-sm font-medium transition-colors",
-                customerTab === "existing"
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
+              className={cn(SEGMENT, customerTab === "existing" ? TOGGLE_ON : TOGGLE_OFF)}
             >
               לקוח קיים
             </button>
             <button
               type="button"
+              aria-pressed={customerTab === "new"}
               onClick={() => setCustomerTab("new")}
-              className={cn(
-                "rounded-xl px-4 py-2 text-sm font-medium transition-colors",
-                customerTab === "new"
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
+              className={cn(SEGMENT, customerTab === "new" ? TOGGLE_ON : TOGGLE_OFF)}
             >
               לקוח חדש
             </button>
@@ -1327,8 +1324,10 @@ export default function NewProjectClient({
                 chooseVariant="outline"
                 size="sm"
               />
+              {/* Grey: clearing the pick is a quiet button (owner, 2026-10-11:
+                  cancel-type buttons grey). */}
               {attachmentFiles.length > 0 ? (
-                <Button type="button" variant="secondary" size="sm" onClick={() => setAttachmentFiles([])}>
+                <Button type="button" variant="muted" size="sm" onClick={() => setAttachmentFiles([])}>
                   נקה בחירה
                 </Button>
               ) : null}
@@ -1462,9 +1461,11 @@ export default function NewProjectClient({
           </SummarySection>
 
           <SummarySection icon={<CardIcon className="h-4 w-4" />} title="תשלום וחיוב" onEdit={() => goToStep("price")} editDisabled={actionLocked}>
+            {/* The app's money format, grouped — "₪12,000", not "₪12000"
+                (owner, 2026-10-11: money written the dashboard way). */}
             <SummaryRow
               label="מחיר מוסכם"
-              value={noCharge ? "ללא חיוב" : agreedBasePrice ? `₪${agreedBasePrice}` : ""}
+              value={noCharge ? "ללא חיוב" : agreedBasePrice ? formatMoney(agreedBasePrice) : ""}
             />
             <SummaryRow label="המחיר כולל מע״מ" value={priceIncludesVat ? "כן" : "לא"} />
             {priceIncludesVat && !noCharge && Number(agreedBasePrice) > 0 ? (
@@ -1475,7 +1476,7 @@ export default function NewProjectClient({
                     baseFromPriceEntry(Number(agreedBasePrice), priceEntry, vatRate),
                     vatRate
                   );
-                  return `₪${split.base} + ₪${split.vat} = ₪${split.gross}`;
+                  return `${formatMoney(split.base)} + ${formatMoney(split.vat)} = ${formatMoney(split.gross)}`;
                 })()}
               />
             ) : null}

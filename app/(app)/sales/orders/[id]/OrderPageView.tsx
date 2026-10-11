@@ -30,6 +30,7 @@ import { formatRelativeDateLabel, formatShortDate, formatShortDateTime } from "@
 import type { OrderPageCore } from "@/lib/orders/order-page";
 import type { OrderPageExtras } from "@/app/(app)/sales/orders/[id]/loadOrderPageExtras";
 import { israelDateKey } from "@/lib/timezone";
+import { formatMoney } from "@/lib/money";
 
 // An order's page, from what was read for it: the order itself
 // (lib/orders/order-page.ts — from the server, or from the device copy) and
@@ -57,13 +58,9 @@ function getNumber(row: Row, key: string) {
   return null;
 }
 
+// ₪ first, the dashboard's way (owner, 2026-10-11) — lib/money.ts.
 function formatCurrency(value: number) {
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(value);
+  return formatMoney(value);
 }
 
 function formatDate(value: string | null) {
@@ -380,9 +377,10 @@ export default function OrderPageView({
               ]}
               action={
                 needsDeliveryAction ? (
+                  // Its own name and ✓ (MARK_DELIVERED_LABEL), the same as on
+                  // every list; the page's one main button keeps its fill.
                   <OrderConfirmDialog
                     orderId={id}
-                    buttonLabel="אישור אספקה"
                     buttonClassName={FULL_SECONDARY_TRIGGER_CLASSES}
                     authorName={viewer.name}
                   />

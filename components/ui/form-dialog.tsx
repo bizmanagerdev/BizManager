@@ -131,7 +131,7 @@ export function FormDialog({
             {showCancel ? (
               <Button
                 type="button"
-                variant="secondary"
+                variant="muted"
                 onClick={() => onOpenChange(false)}
                 disabled={busy}
               >

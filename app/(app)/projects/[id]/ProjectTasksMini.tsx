@@ -12,6 +12,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { toHebrewError } from "@/lib/error-messages";
 import { formatShortDate } from "@/lib/date";
+import { getTaskPriorityColor, getTaskPriorityLabel } from "@/lib/ui/status-colors";
+import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
+import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
+import { cn } from "@/lib/utils";
 import type { AssignableUser } from "@/app/(app)/projects/[id]/ProjectTabsClient";
 
 const TaskUpsertDialog = dynamic(
@@ -29,19 +33,14 @@ function str(row: Row, keys: string[]) {
   return null;
 }
 
-const PRIORITY_LABEL: Record<string, string> = {
-  urgent: "דחוף",
-  high: "גבוה",
-  medium: "בינוני",
-  low: "נמוך",
-};
-
-const PRIORITY_CLASS: Record<string, string> = {
-  urgent: "border-destructive/40 bg-destructive-soft text-destructive",
-  high: "border-destructive/40 bg-destructive-soft text-destructive",
-  medium: "border-warning/40 bg-warning-soft text-warning-soft-foreground",
-  low: "border-border/70 bg-muted text-muted-foreground",
-};
+// A task's priority looks and reads the same here as on the tasks board
+// (owner, 2026-10-11: "the same everywhere"): the shared colour — urgent red,
+// high orange, medium blue, low grey — and the shared words, "דחופה / גבוהה /
+// בינונית / נמוכה". This list had its own: urgent AND high red, medium orange,
+// and the words in the masculine.
+function priorityPillClass(priority: string) {
+  return getStatusColorClasses(getTaskPriorityColor(priority));
+}
 
 export default function ProjectTasksMini({
   projectId,
@@ -136,16 +135,18 @@ export default function ProjectTasksMini({
             { key: "done", label: `הושלמו ${doneCount}` },
           ] as const
         ).map((chip) => (
+          // The app's one toggle look (owner, 2026-10-11: "all the toggles
+          // should be blue"): ON is the shared blue fill, OFF quiet — at this list's
+          // small size.
           <button
             key={chip.key}
             type="button"
+            aria-pressed={filter === chip.key}
             onClick={() => setFilter(chip.key)}
-            className={
-              "rounded-full border px-2.5 py-1 text-xs " +
-              (filter === chip.key
-                ? "border-transparent bg-sidebar text-white"
-                : "border-border/70 bg-background text-muted-foreground hover:bg-accent")
-            }
+            className={cn(
+              "rounded-full border px-2.5 py-1 text-xs transition-colors",
+              filter === chip.key ? `border-secondary ${TOGGLE_ON}` : `border-border/70 bg-background ${TOGGLE_OFF}`
+            )}
           >
             {chip.label}
           </button>
@@ -181,13 +182,8 @@ export default function ProjectTasksMini({
                 </span>
                 <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[0.6875rem] text-muted-foreground">
                   {row.priority ? (
-                    <span
-                      className={
-                        "rounded-full border px-1.5 py-0 " +
-                        (PRIORITY_CLASS[row.priority] ?? PRIORITY_CLASS.low)
-                      }
-                    >
-                      {PRIORITY_LABEL[row.priority] ?? row.priority}
+                    <span className={cn("rounded-full px-1.5 py-0", priorityPillClass(row.priority))}>
+                      {getTaskPriorityLabel(row.priority)}
                     </span>
                   ) : null}
                   {row.assignee ? <span>{row.assignee}</span> : null}

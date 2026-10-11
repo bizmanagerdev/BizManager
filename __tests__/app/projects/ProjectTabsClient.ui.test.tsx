@@ -480,8 +480,9 @@ function props(over: Partial<Props> = {}): Props {
   };
 }
 
-// he-IL currency text carries RTL/LTR marks and (narrow) no-break spaces around
-// the ₪ — compare amounts with all of that stripped: "1,200₪".
+// Amounts are ₪ first (lib/money; owner, 2026-10-11), and a he-IL negative
+// carries a left-to-right mark — compare text with marks and spaces stripped:
+// "₪1,200".
 function clean(text: string | null | undefined) {
   return (text ?? "").replace(/[\s\p{Cf}]/gu, "");
 }
@@ -530,7 +531,7 @@ function rowAction(name: string, action: "עריכה" | "מחיקה") {
 
 /** The תשלום (collection) card in the head row. */
 function paymentCard() {
-  return screen.getByText("תשלום", { selector: "div.text-muted-foreground" }).closest<HTMLElement>("div.rounded-3xl")!;
+  return screen.getByText("תשלום", { selector: "div.text-muted-foreground" }).closest<HTMLElement>("div.rounded-card")!;
 }
 
 function cardValue(card: HTMLElement) {
@@ -540,6 +541,15 @@ function cardValue(card: HTMLElement) {
 /** The card's label→value lines, each as one cleaned string. */
 function cardDetails(card: HTMLElement) {
   return Array.from(card.querySelectorAll(".border-t > div")).map((line) => clean(line.textContent));
+}
+
+/** The סיכום כספי section box (the first copy — it's rendered twice, phone +
+ *  desktop): the nearest box around its title that holds the money lines. */
+function financialSummary() {
+  let box: HTMLElement | null = screen.getAllByText("סיכום כספי")[0]!;
+  while (box && !box.querySelector("dl")) box = box.parentElement;
+  if (!box) throw new Error("no סיכום כספי box");
+  return box;
 }
 
 function sheetCells(html: string, wrapper: "tbody" | "tfoot") {
@@ -585,26 +595,26 @@ describe("ProjectTabsClient — תנועות ledger", () => {
     const bank = rowCells("אסמכתא 4411");
     expect(bank[3]).toBe("שולם");
     expect(bank[4]).toBe("בנקהפועלים");
-    expect(bank[6]).toBe("3,000₪");
+    expect(bank[6]).toBe("₪3,000");
     expect(bank[7]).toBe("—");
 
     const materials = rowCells("חומרי בניין");
     expect(materials[2]).toBe("חומריםחומריבנייןברזלומלט"); // category chip, name, note
-    expect(materials[5]).toBe("1,200₪"); // a pass-through expense bills its own amount
+    expect(materials[5]).toBe("₪1,200"); // a pass-through expense bills its own amount
     expect(materials[6]).toBe("—");
-    expect(materials[7]).toBe("1,200₪");
+    expect(materials[7]).toBe("₪1,200");
 
     const unbilled = rowCells("פינוי פסולת");
     expect(unbilled[5]).toBe("—");
-    expect(unbilled[7]).toBe("500₪");
+    expect(unbilled[7]).toBe("₪500");
 
     // A shift: its cost is the money out; what the customer is billed for it
     // (at a markup) has its own column. The account is the wage payment's.
     const shift = rowCells("אחמד חסן");
     expect(shift[2]).toBe("שכרעובדאחמדחסןהותקנוהדלתות"); // chip, worker, note
     expect(shift[4]).toBe("קופה");
-    expect(shift[5]).toBe("600₪");
-    expect(shift[7]).toBe("400₪");
+    expect(shift[5]).toBe("₪600");
+    expect(shift[7]).toBe("₪400");
   });
 
   it("totals the ins, the outs and what's billed to the customer in the footer", () => {
@@ -613,7 +623,7 @@ describe("ProjectTabsClient — תנועות ledger", () => {
     const cells = within(footer).getAllByRole("cell").map((cell) => clean(cell.textContent));
     // 3,000 + 2,000 in (a pending check counts here); 1,200 + 500 + 400 + 200
     // out; 1,200 + 600 billed.
-    expect(cells).toEqual(["", "סה״כ", "1,800₪", "5,000₪", "2,300₪", ""]);
+    expect(cells).toEqual(["", "סה״כ", "₪1,800", "₪5,000", "₪2,300", ""]);
   });
 
   it("a shift's Arabic note shows as its Hebrew translation; a note with no translation shows as written", () => {
@@ -676,7 +686,7 @@ describe("ProjectTabsClient — תנועות ledger", () => {
       ["לצ׳קבדףהצ׳קים←", "/checks?focus=p2"],
     ]);
     // A partly paid expense says how much of it was paid.
-    expect(details("שליח").facts).toEqual(["אמצעי:מזומן", "שולם:200₪", "נרשם:הוזןע״ידנה"]);
+    expect(details("שליח").facts).toEqual(["אמצעי:מזומן", "שולם:₪200", "נרשם:הוזןע״ידנה"]);
     // An hourly worker's shift shows its hours.
     expect(details("אחמד חסן").facts.map((fact) => fact.split(":")[0])).toEqual(["כניסה", "יציאה", "משך"]);
   });
@@ -690,6 +700,12 @@ describe("ProjectTabsClient — תנועות ledger", () => {
     expect(ledgerRowNames()).toEqual(["אסמכתא 4411", "תשלום", "חומרי בניין", "פינוי פסולת", "אחמד חסן", "יוסי כהן"]);
     fireEvent.click(within(menu).getByLabelText("סכום · עולה"));
     expect(ledgerRowNames()[0]).toBe("יוסי כהן");
+    // The chosen sort is the app's one toggle look, blue (owner, 2026-10-11:
+    // "all the toggles should be blue"); the others stay quiet.
+    expect(within(menu).getByLabelText("סכום · עולה")).toHaveAttribute("aria-pressed", "true");
+    expect(within(menu).getByLabelText("סכום · עולה")).toHaveClass("bg-secondary", "text-secondary-foreground");
+    expect(within(menu).getByLabelText("סכום · יורד")).toHaveAttribute("aria-pressed", "false");
+    expect(within(menu).getByLabelText("סכום · יורד")).not.toHaveClass("bg-secondary");
   });
 
   it("grouping by worker folds the shifts under each worker and saves the choice (debounced)", async () => {
@@ -779,8 +795,8 @@ describe("ProjectTabsClient — תנועות ledger", () => {
     expect(cells[1]).toBe("10/10/26"); // September's salary, paid on the 10th of October
     expect(cells[2]).toBe("משכורתחודשיתמוחמדעלי");
     expect(cells[3]).toBe("לאשולם");
-    expect(cells[5]).toBe("6,500₪");
-    expect(cells[7]).toBe("6,000₪");
+    expect(cells[5]).toBe("₪6,500");
+    expect(cells[7]).toBe("₪6,000");
     // No edit/delete menu on a payslip row.
     expect(within(within(ledgerTable()).getByText("מוחמד עלי").closest("tr")!).queryByRole("button", { name: "פעולות" })).toBeNull();
   });
@@ -806,12 +822,12 @@ describe("ProjectTabsClient — sharing the ledger as PDF", () => {
     // The shift row: its note in Hebrew, its billed and out amounts.
     const shift = rows.find((cells) => cells[1]?.startsWith("שכרעובד—אחמדחסן"))!;
     expect(shift[1]).toContain("הותקנוהדלתות");
-    expect(shift.slice(4)).toEqual(["600₪", "", "400₪"]);
+    expect(shift.slice(4)).toEqual(["₪600", "", "₪400"]);
     expect(sheet.rowsHtml.join("")).not.toContain("تم");
 
     expect(sheetCells(sheet.tfootHtml, "tfoot")).toEqual([
-      ["סה״כ", "1,800₪", "5,000₪", "2,300₪"],
-      ["נכנספחותיוצא", "2,700₪"],
+      ["סה״כ", "₪1,800", "₪5,000", "₪2,300"],
+      ["נכנספחותיוצא", "₪2,700"],
     ]);
   });
 
@@ -821,10 +837,10 @@ describe("ProjectTabsClient — sharing the ledger as PDF", () => {
     await waitFor(() => expect(h.shareTableSheet).toHaveBeenCalledTimes(1));
     const sheet = lastSheet();
     expect(sheetCells(sheet.rowsHtml.join(""), "tbody")).toEqual([
-      ["05/09/26", "חומריבניין", "1,200₪"],
-      ["03/09/26", "שכרעובד—אחמדחסן", "600₪"],
+      ["05/09/26", "חומריבניין", "₪1,200"],
+      ["03/09/26", "שכרעובד—אחמדחסן", "₪600"],
     ]);
-    expect(sheetCells(sheet.tfootHtml, "tfoot")).toEqual([["סה״כלחיובלקוח", "1,800₪"]]);
+    expect(sheetCells(sheet.tfootHtml, "tfoot")).toEqual([["סה״כלחיובלקוח", "₪1,800"]]);
   });
 
   it("a billed monthly salary joins the לחיוב לקוח sheet", async () => {
@@ -854,8 +870,8 @@ describe("ProjectTabsClient — sharing the ledger as PDF", () => {
     await waitFor(() => expect(h.shareTableSheet).toHaveBeenCalledTimes(1));
     const rows = sheetCells(lastSheet().rowsHtml.join(""), "tbody");
     // No agreement → paid on the 9th of the next month, by convention.
-    expect(rows.at(-1)).toEqual(["09/10/26", "שכר—מוחמדעלי", "6,500₪"]);
-    expect(sheetCells(lastSheet().tfootHtml, "tfoot")).toEqual([["סה״כלחיובלקוח", "8,300₪"]]);
+    expect(rows.at(-1)).toEqual(["09/10/26", "שכר—מוחמדעלי", "₪6,500"]);
+    expect(sheetCells(lastSheet().tfootHtml, "tfoot")).toEqual([["סה״כלחיובלקוח", "₪8,300"]]);
     // Paid in full, with no status of its own → reads as paid in the ledger.
     expect(rowCells("מוחמד עלי")[3]).toBe("שולם");
   });
@@ -877,7 +893,7 @@ describe("ProjectTabsClient — adding and editing money", () => {
     // old list) — then the new row is in the ledger.
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "דיאלוג הוצאה" })).not.toBeInTheDocument());
     expect(refresh).toHaveBeenCalled();
-    expect(rowCells("שכירות מנוף")[7]).toBe("900₪");
+    expect(rowCells("שכירות מנוף")[7]).toBe("₪900");
   });
 
   it("a saved shift that's new joins the ledger under its worker", async () => {
@@ -899,7 +915,7 @@ describe("ProjectTabsClient — adding and editing money", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "דיאלוג הוצאה" })).not.toBeInTheDocument());
     // The same row, updated — not a second one beside the old.
     expect(within(ledgerTable()).queryByText("חומרי בניין")).not.toBeInTheDocument();
-    expect(rowCells("חומרי בניין (מעודכן)")[7]).toBe("1,300₪");
+    expect(rowCells("חומרי בניין (מעודכן)")[7]).toBe("₪1,300");
     expect(ledgerRowNames()).toHaveLength(6);
   });
 
@@ -920,7 +936,7 @@ describe("ProjectTabsClient — adding and editing money", () => {
     expect(within(dialog).getByText("עריכת משמרת: s2")).toBeInTheDocument();
     await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "שמירת משמרת" })));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "דיאלוג הוצאה" })).not.toBeInTheDocument());
-    expect(rowCells("יוסי כהן")[7]).toBe("260₪");
+    expect(rowCells("יוסי כהן")[7]).toBe("₪260");
     expect(ledgerRowNames()).toHaveLength(6);
   });
 
@@ -937,7 +953,7 @@ describe("ProjectTabsClient — adding and editing money", () => {
     dialog = await screen.findByRole("dialog", { name: "דיאלוג הכנסה" });
     fireEvent.click(within(dialog).getByRole("button", { name: "שמירת הכנסה" }));
     expect(screen.queryByRole("dialog", { name: "דיאלוג הכנסה" })).not.toBeInTheDocument();
-    expect(rowCells("אסמכתא 7788")[6]).toBe("3,500₪");
+    expect(rowCells("אסמכתא 7788")[6]).toBe("₪3,500");
     expect(refresh).toHaveBeenCalled();
   });
 
@@ -953,7 +969,7 @@ describe("ProjectTabsClient — adding and editing money", () => {
     const dialog = await screen.findByRole("dialog", { name: "דיאלוג הכנסה" });
     expect(within(dialog).getByText("עריכת תשלום: p1")).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: "שמירת הכנסה" }));
-    expect(rowCells("אסמכתא 4411")[6]).toBe("3,300₪");
+    expect(rowCells("אסמכתא 4411")[6]).toBe("₪3,300");
     expect(ledgerRowNames()).toHaveLength(6);
   });
 });
@@ -998,7 +1014,7 @@ describe("ProjectTabsClient — deleting money rows", () => {
     const dialog = await requestDelete("אסמכתא 4411");
     // A payment is named by its amount and date.
     expect(within(dialog).getByText("מחיקת הכנסה")).toBeInTheDocument();
-    expect(clean(within(dialog).getByText(/01\/09\/26/).textContent)).toBe("3,000₪•01/09/26");
+    expect(clean(within(dialog).getByText(/01\/09\/26/).textContent)).toBe("₪3,000•01/09/26");
     fireEvent.click(within(dialog).getByRole("button", { name: "מחיקה" }));
     const deferred = lastDeferred();
     expect(deferred.key).toBe("project-payment:delete:p1");
@@ -1035,14 +1051,17 @@ describe("ProjectTabsClient — money cards", () => {
   it("סיכום כספי builds the price up line by line, with the gross profit and its share", () => {
     render(<ProjectTabsClient {...props()} />);
     // Rendered twice on purpose (phone tab + desktop side column) — read the first.
-    const summary = screen.getAllByText("סיכום כספי")[0]!.closest("section")!;
+    const summary = financialSummary();
+    // The page's own section box, like its neighbours (owner, 2026-10-11), and
+    // still one that never folds.
+    expect(screen.getAllByText("סיכום כספי")[0]!.closest("button")).toBeDisabled();
     const lines = Array.from(summary.querySelectorAll("dl > div")).map((line) => clean(line.textContent));
     expect(lines).toEqual([
-      "מחירבסיסשסוכם10,000₪עדכון",
-      "חיוביםללקוח1,800₪",
-      "מחירבפועל11,800₪",
-      "הוצאות2,300₪",
-      "רווחגולמי81%מהמחירבפועל9,500₪",
+      "מחירבסיסשסוכם₪10,000עדכון",
+      "חיוביםללקוח₪1,800",
+      "מחירבפועל₪11,800",
+      "הוצאות₪2,300",
+      "רווחגולמי81%מהמחירבפועל₪9,500",
     ]);
   });
 
@@ -1050,13 +1069,13 @@ describe("ProjectTabsClient — money cards", () => {
     render(<ProjectTabsClient {...props()} />);
     const card = paymentCard();
     // 11,800 price − 3,000 collected (the pending check isn't collected yet).
-    expect(cardValue(card)).toBe("8,800₪");
+    expect(cardValue(card)).toBe("₪8,800");
     // Part of it is in: partly paid, whatever is still expected.
     expect(within(card).getByText("שולם חלקית")).toBeInTheDocument();
     expect(cardDetails(card)).toEqual([
-      "נגבה3,000₪מתוך11,800₪",
+      "נגבה₪3,000מתוך₪11,800",
       "תשלומים2",
-      "צפוילגבייה2,000₪",
+      "צפוילגבייה₪2,000",
       "תנאיתשלוםשוטף+30·פירעון30/11/26",
     ]);
   });
@@ -1064,7 +1083,7 @@ describe("ProjectTabsClient — money cards", () => {
   it("nothing in yet but a future-dated check reads as expected payment", () => {
     render(<ProjectTabsClient {...props({ payments: [PAYMENTS[1]!] })} />);
     const card = paymentCard();
-    expect(cardValue(card)).toBe("11,800₪");
+    expect(cardValue(card)).toBe("₪11,800");
     expect(within(card).getByText("תשלום צפוי")).toBeInTheDocument();
   });
 
@@ -1077,7 +1096,7 @@ describe("ProjectTabsClient — money cards", () => {
     render(
       <ProjectTabsClient {...props({ payments: [PAYMENTS[0]!, { ...PAYMENTS[1]!, due_date: "2026-10-10" }] })} />
     );
-    expect(cardDetails(paymentCard())).toContain("צפוילגבייה2,000₪(2,000₪באיחור)");
+    expect(cardDetails(paymentCard())).toContain("צפוילגבייה₪2,000(₪2,000באיחור)");
   });
 
   it("a no-charge project says so, with its terms only, and offers no payment button", () => {
@@ -1092,7 +1111,7 @@ describe("ProjectTabsClient — money cards", () => {
     render(<ProjectTabsClient {...props({ payments: [payment({ amount_total: 11800 })] })} />);
     const card = paymentCard();
     expect(cardValue(card)).toBe("שולם");
-    expect(cardDetails(card)[0]).toBe("נגבה11,800₪מתוך11,800₪");
+    expect(cardDetails(card)[0]).toBe("נגבה₪11,800מתוך₪11,800");
   });
 
   it("an unpriced project reads 'לא סוכם מחיר', never 'שולם', with 'לא סוכם תשלום' beside it", () => {
@@ -1110,7 +1129,7 @@ describe("ProjectTabsClient — money cards", () => {
     const card = paymentCard();
     expect(cardValue(card)).toBe("לאסוכםמחיר"); // cardValue drops the spaces
     expect(within(card).getByText("לא סוכם תשלום")).toBeInTheDocument();
-    expect(cardDetails(card)[0]).toBe("נגבה0₪מתוך—");
+    expect(cardDetails(card)[0]).toBe("נגבה₪0מתוך—");
   });
 
   it("VAT collected on official payments is shown beside what actually arrived", () => {
@@ -1120,7 +1139,7 @@ describe("ProjectTabsClient — money cards", () => {
       />
     );
     const line = screen.getAllByText(/מע״מ שנגבה/)[0]!.parentElement!;
-    expect(clean(line.textContent)).toBe("סה״כהתקבלבפועל1,180₪·מע״משנגבה180₪");
+    expect(clean(line.textContent)).toBe("סה״כהתקבלבפועל₪1,180·מע״משנגבה₪180");
   });
 
   it("what we still owe on the project includes the wages from the worker balance", () => {
@@ -1146,13 +1165,13 @@ describe("ProjectTabsClient — money cards", () => {
 
     fireEvent.change(input, { target: { value: "12000" } });
     // 12,000 + 1,800 billed.
-    expect(clean(within(dialog).getByText(/המחיר בפועל שיוצג/).textContent)).toBe("המחירבפועלשיוצגלאחרהשמירה:13,800₪");
+    expect(clean(within(dialog).getByText(/המחיר בפועל שיוצג/).textContent)).toBe("המחירבפועלשיוצגלאחרהשמירה:₪13,800");
     fireEvent.click(within(dialog).getByRole("button", { name: "שמירה" }));
 
     // Optimistic: the summary shows the new price at once.
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    const summary = screen.getAllByText("סיכום כספי")[0]!.closest("section")!;
-    expect(clean(summary.querySelector("dl > div")?.textContent)).toBe("מחירבסיסשסוכם12,000₪עדכון");
+    const summary = financialSummary();
+    expect(clean(summary.querySelector("dl > div")?.textContent)).toBe("מחירבסיסשסוכם₪12,000עדכון");
 
     const deferred = h.scheduleDeferredAction.mock.calls.at(-1)![0] as {
       key: string;

@@ -25,6 +25,13 @@ const buttonVariants = cva(
           "border-secondary/30 bg-background text-secondary shadow-sm hover:bg-secondary/5 hover:border-secondary/50 hover:-translate-y-0.5",
         secondary:
           "bg-secondary text-secondary-foreground shadow-md shadow-secondary/20 hover:bg-secondary/90 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-secondary/25",
+        // The quiet button: cancel, close, clear a filter. Grey, no colour of its
+        // own, so it never competes with the action beside it (owner,
+        // 2026-10-11: "cancel button should always be like no color … a grey").
+        // `secondary` above is the sky fill, the same as default — a cancel in
+        // it looked exactly like the save next to it.
+        muted:
+          "bg-foreground/[0.06] text-foreground/80 hover:bg-foreground/10 hover:text-foreground",
         ghost:
           "text-secondary hover:bg-secondary/10",
         link: "text-secondary underline-offset-4 hover:underline",

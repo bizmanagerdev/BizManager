@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { BankIcon, ExpenseIcon, LaborIcon, ListIcon, ReportIcon, WalletIcon } from "@/components/ui/icons";
 import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
+import { SectionCard } from "@/components/ui/section-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
@@ -225,18 +226,16 @@ function ReportTabSkeleton() {
           </Card>
         ))}
       </div>
-      {/* SectionCard's shell — its title carries the count and the sum, so it's built here. */}
-      <section className="scroll-mt-24 space-y-3 rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="text-primary">
-              <ListIcon className="h-4 w-4" />
-            </span>
-            <h2 className="text-sm font-semibold">
-              כל החובות — <Skeleton className="inline-block h-[0.75em] w-24 align-middle" />
-            </h2>
-          </div>
-        </div>
+      {/* SectionCard itself — its title carries the count and the sum, so the
+          stand-in's title holds a bar where they'll be. */}
+      <SectionCard
+        icon={<ListIcon className="h-4 w-4" />}
+        title={
+          <>
+            כל החובות — <Skeleton className="inline-block h-[0.75em] w-24 align-middle" />
+          </>
+        }
+      >
         <Tabs dir="rtl" value="list">
           <TabsList>
             {["פירוט", "סוג", "חודש", "חשבון", "תחום"].map((label, i) => (
@@ -250,7 +249,7 @@ function ReportTabSkeleton() {
             <KindSectionSkeleton icon={<BankIcon className="h-4 w-4 text-primary" />} label={DEBT_KIND_LABEL.loan} rows={2} />
           </div>
         </Tabs>
-      </section>
+      </SectionCard>
     </div>
   );
 }

@@ -12,6 +12,7 @@ import DashboardCardHeader from "@/components/dashboard/DashboardCardHeader";
 import DashboardCardFooter from "@/components/dashboard/DashboardCardFooter";
 import { Badge } from "@/components/ui/badge";
 import { CountBadge } from "@/components/ui/count-badge";
+import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import { cn } from "@/lib/utils";
 import { toHebrewError } from "@/lib/error-messages";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
@@ -284,7 +285,7 @@ export default function TodayScheduleCard({
       <Link
         href="/calendar"
         aria-label={t(dashboardDict, locale, "toCalendarLabel")}
-        className="absolute inset-0 rounded-[1.125rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="absolute inset-0 rounded-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
 
       <div className="pointer-events-none relative flex min-h-0 flex-1 flex-col">
@@ -490,13 +491,17 @@ function FilterPill({
       aria-pressed={active}
       className={cn(
         "flex shrink-0 items-center gap-1 rounded-full border-2 px-2.5 py-1 text-xs font-medium transition-colors",
+        // The app's one toggle look: blue when on, quiet when off (owner,
+        // 2026-10-11: "all the toggles should be blue") — it was a sky tint. Off keeps
+        // the kind's coloured border, which is how the kinds tell apart.
         active
-          ? "border-secondary bg-secondary/10 text-secondary"
-          : cn(border ?? "border-border", "bg-background text-muted-foreground hover:bg-secondary/5")
+          ? cn("border-secondary hover:bg-secondary/90", TOGGLE_ON)
+          : cn(border ?? "border-border", "bg-background", TOGGLE_OFF)
       )}
     >
       <span>{label}</span>
-      <CountBadge count={count} active={active} />
+      {/* The count's own "active" pill turns white on the pressed (blue) pill. */}
+      <CountBadge count={count} active={active} className={active ? "bg-secondary-foreground text-secondary" : undefined} />
     </button>
   );
 }

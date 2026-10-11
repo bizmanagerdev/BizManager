@@ -1,6 +1,7 @@
 import { PAYMENT_TERMS_OPTIONS } from "@/lib/paymentTerms";
 import { omitUnknownPlace } from "@/lib/ui/cities";
 import { israelDateKey } from "@/lib/timezone";
+import { formatMoney } from "@/lib/money";
 
 // Pure helpers and option constants, lifted out of NewOrderClient so the
 // component file holds wizard state + orchestration only. No component state
@@ -67,13 +68,12 @@ export function toNonNegativeInt(value: number) {
   return Math.max(0, Math.round(value));
 }
 
+/** The app's money format, ₪ first: "₪5,000" (owner, 2026-10-11: money is
+ *  written the dashboard's way). Intl's currency style put it after. A refund
+ *  among an order's payments is negative: its sign goes in front ("-₪50"),
+ *  the shape of the discount lines, so the ₪ stays beside the digits. */
 export function formatCurrency(value: number) {
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(value);
+  return value < 0 ? `-${formatMoney(-value)}` : formatMoney(value);
 }
 
 export function getTodayDate() {

@@ -4,7 +4,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
-import { CheckIcon, ChevronDownIcon, CommentIcon, EditIcon, NotificationIcon, SearchIcon } from "@/components/ui/icons";
+import { ChevronDownIcon, CommentIcon, EditIcon, NotificationIcon, SearchIcon } from "@/components/ui/icons";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { useLocalListPager } from "@/components/powersync/LocalListPager";
 import { useOfflineRows } from "@/hooks/useOfflineRows";
@@ -57,6 +57,7 @@ import {
 } from "@/lib/orders/paymentStatus";
 import { computeSourceCollection } from "@/lib/collections";
 import { israelDateKey } from "@/lib/timezone";
+import { formatMoney } from "@/lib/money";
 
 const OrderConfirmDialog = dynamic(() => import("@/app/(app)/sales/orders/OrderConfirmDialog"), {
   loading: () => null,
@@ -266,14 +267,10 @@ function getNumber(row: Row, keys: string[]) {
   return null;
 }
 
+// ₪ first, the dashboard's way (owner, 2026-10-11) — lib/money.ts.
 function formatCurrency(value: number | null) {
   if (value === null) return "-";
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(value);
+  return formatMoney(value);
 }
 
 function normalizeOrderStatus(value: string | null) {
@@ -769,9 +766,10 @@ export default function SalesOrdersClient({
                   {PAYMENT_FILTER_OPTIONS.find((o) => o.value === paymentFilter)?.label}
                   &quot;.
                 </div>
+                {/* Grey, like every clear / cancel (owner, 2026-10-11). */}
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="muted"
                   size="sm"
                   onClick={() => setPaymentFilter("all")}
                 >
@@ -885,7 +883,20 @@ export default function SalesOrdersClient({
                           {row.customerNameForInvoice && row.customerNameForInvoice !== row.customerName ? (
                             <div className="text-xs text-muted-foreground">לחשבונית: {row.customerNameForInvoice}</div>
                           ) : null}
-                          <div className="mt-1 text-muted-foreground">{row.customerPhone ?? "-"}</div>
+                          {/* The number stays text — a click on it opens the order
+                              like the rest of the row — and the green phone beside
+                              it calls, or copies at a desk: the app's one call look
+                              (owner, 2026-10-11). This column had no way to call. */}
+                          {row.customerPhone ? (
+                            <div className="mt-1 flex items-center gap-2">
+                              <span dir="ltr" className="text-muted-foreground">
+                                {row.customerPhone}
+                              </span>
+                              <CallIconButton phone={row.customerPhone} name={row.customerName} />
+                            </div>
+                          ) : (
+                            <div className="mt-1 text-muted-foreground">-</div>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-4">
@@ -981,7 +992,7 @@ export default function SalesOrdersClient({
                             />
                           ) : null}
                           {isActiveOrder(row.status) ? (
-                            <OrderConfirmDialog orderId={row.id} buttonLabel="אישור אספקה" />
+                            <OrderConfirmDialog orderId={row.id} />
                           ) : shouldShowPaymentAction(row) ? (
                             <OrderPaymentDialog
                               orderId={row.id}
@@ -1010,18 +1021,19 @@ export default function SalesOrdersClient({
                         ? [
                             {
                               key: "confirm",
-                              className: "bg-secondary",
+                              // The dialog draws its own ✓ + "אישור אספקה", the one
+                              // name it has everywhere (owner, 2026-10-11); this tile
+                              // said "אספקה". Two words, so the tile lets them wrap,
+                              // centred, with the side padding the other tiles have —
+                              // the Button's own nowrap and padding would run them
+                              // past a 76px tile at a bigger text size.
+                              className:
+                                "bg-secondary [&_button]:whitespace-normal [&_button]:px-1 [&_button]:text-center [&_button]:leading-tight",
                               node: (
                                 <OrderConfirmDialog
                                   orderId={row.id}
                                   customerName={combinedCustomerName(row)}
                                   buttonVariant="default"
-                                  buttonLabel={
-                                    <>
-                                      <CheckIcon className="h-5 w-5" />
-                                      אספקה
-                                    </>
-                                  }
                                   buttonClassName="!bg-transparent"
                                 />
                               ),
@@ -1065,7 +1077,7 @@ export default function SalesOrdersClient({
                     return (
                       <SwipeActions
                         key={row.id}
-                        className={`shadow-sm ${
+                        className={`shadow-card ${
                           isUnpaidPrepayment(row.requiresPrepayment, row.remainingBalance)
                             ? `border-2 border-destructive ${PREPAYMENT_ROW_CLASSES}`
                             : "border border-border/70"

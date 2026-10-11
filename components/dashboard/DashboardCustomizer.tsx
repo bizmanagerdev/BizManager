@@ -20,6 +20,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { DragIcon, HideIcon, RefreshIcon, ShowIcon } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { TOGGLE_ON } from "@/components/ui/filter-chip";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import {
@@ -62,9 +63,10 @@ function SortableWidgetChip({
       style={style}
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full border py-1 pe-1.5 ps-2.5 transition-colors",
-        hidden
-          ? "border-dashed border-border bg-background text-muted-foreground"
-          : "border-secondary/40 bg-secondary/10 text-foreground",
+        // A shown card is a toggle that's ON: the app's one look for that, blue
+        // with white text (owner, 2026-10-11: "all the toggles should be blue") — it was
+        // a sky tint. Hidden stays the quiet dashed outline.
+        hidden ? "border-dashed border-border bg-background text-muted-foreground" : cn("border-secondary", TOGGLE_ON),
         isDragging && "shadow-lg"
       )}
     >
@@ -72,7 +74,12 @@ function SortableWidgetChip({
       <button
         type="button"
         ref={setActivatorNodeRef}
-        className="cursor-grab touch-none text-muted-foreground hover:text-foreground active:cursor-grabbing"
+        className={cn(
+          "cursor-grab touch-none active:cursor-grabbing",
+          hidden
+            ? "text-muted-foreground hover:text-foreground"
+            : "text-secondary-foreground/70 hover:text-secondary-foreground"
+        )}
         aria-label={`גרור לשינוי הסדר — ${widget.label}`}
         title="גרור לשינוי הסדר"
         {...attributes}
@@ -91,7 +98,7 @@ function SortableWidgetChip({
         title={hidden ? "מוסתר — לחצו להצגה" : "מוצג — לחצו להסתרה"}
         className={cn(
           "flex h-6 w-6 items-center justify-center rounded-full transition-colors",
-          hidden ? "text-muted-foreground hover:bg-muted" : "text-secondary hover:bg-secondary/20"
+          hidden ? "text-muted-foreground hover:bg-muted" : "text-secondary-foreground hover:bg-secondary-foreground/15"
         )}
       >
         {hidden ? <HideIcon className="h-4 w-4" /> : <ShowIcon className="h-4 w-4" />}
@@ -233,7 +240,9 @@ export default function DashboardCustomizer({
       </DndContext>
 
       <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3">
-        <Button type="button" variant="outline" size="sm" onClick={handleReset} disabled={saving}>
+        {/* Grey, like every clear/reset (owner, 2026-10-11: "cancel button
+            should always be … a grey") — it puts things back, it isn't an action. */}
+        <Button type="button" variant="muted" size="sm" onClick={handleReset} disabled={saving}>
           <RefreshIcon className="h-4 w-4" />
           ברירת מחדל
         </Button>

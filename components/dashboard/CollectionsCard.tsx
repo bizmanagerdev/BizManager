@@ -15,6 +15,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
 import { BOARD_CARD_BODY_CLASS, BOARD_ROW_CLASS, BOARD_ROW_MAIN_CLASS } from "@/lib/dashboard/widgets";
 import { CountBadge } from "@/components/ui/count-badge";
+import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import type { CollectionsDebtor, CollectionsSummary } from "@/lib/collections";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
 import { t } from "@/lib/i18n/t";
@@ -26,6 +27,14 @@ const COLLECTIONS_HREF = "/collections";
 
 /** How many rows either side of the switch ever draws. The footer counts the rest. */
 const SHOWN_LIMIT = 8;
+
+/** The pressed switch: the app's one toggle look (components/ui/filter-chip.tsx). */
+const SWITCH_ON = `${TOGGLE_ON} hover:bg-secondary/90`;
+
+/** The count's own "active" pill turns white on the pressed (blue) chip. */
+function switchCountClass(on: boolean) {
+  return on ? "bg-secondary-foreground text-secondary" : undefined;
+}
 
 /**
  * "גבייה" — money coming IN, built as the mirror of "תשלומים קרובים", which is
@@ -103,7 +112,7 @@ export default function CollectionsCard({ summary, locale }: { summary: Collecti
       <Link
         href={COLLECTIONS_HREF}
         aria-label={t(dashboardDict, locale, "collectionsAria")}
-        className="absolute inset-0 rounded-[1.125rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="absolute inset-0 rounded-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
 
       <div className="pointer-events-none relative flex min-h-0 flex-1 flex-col">
@@ -156,16 +165,25 @@ export default function CollectionsCard({ summary, locale }: { summary: Collecti
                           {payment.customer_phone ? ` · ${payment.customer_phone}` : ""}
                         </div>
                       </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="relative h-8 shrink-0 px-3 text-sm max-md:min-h-[44px]"
-                        onClick={() => markCollected(payment.id)}
-                        title={t(dashboardDict, locale, "markCollectedTitle")}
-                      >
-                        {t(dashboardDict, locale, "collectedButtonLabel")}
-                      </Button>
+                      <div className="relative flex shrink-0 items-center gap-1.5">
+                        {/* The number above stays text; this is how you ring them
+                            — the app's one call button, as on the debtor rows
+                            below (owner, 2026-10-11: one look for calling). The
+                            row had the number and no way to call it. */}
+                        {payment.customer_phone ? (
+                          <CallIconButton phone={payment.customer_phone} name={payment.customer_name} />
+                        ) : null}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 shrink-0 px-3 text-sm max-md:min-h-[44px]"
+                          onClick={() => markCollected(payment.id)}
+                          title={t(dashboardDict, locale, "markCollectedTitle")}
+                        >
+                          {t(dashboardDict, locale, "collectedButtonLabel")}
+                        </Button>
+                      </div>
                     </div>
                   </li>
                 ))}
@@ -184,7 +202,11 @@ export default function CollectionsCard({ summary, locale }: { summary: Collecti
           {/* ── The switch, and the list it chooses ───────────────────────── */}
           {summary.lateCount > 0 || summary.upcomingCount > 0 ? (
             <div className="border-t border-border/50">
-              {/* In a narrow card (BOARD_ROW_CLASS) each switch's amount goes under its label. */}
+              {/* In a narrow card (BOARD_ROW_CLASS) each switch's amount goes under its label.
+                  The pressed one is the app's one toggle look — blue, white text
+                  (owner, 2026-10-11: "all the toggles should be blue"); it was a tint with
+                  a ring. באיחור keeps its red dot, and its red words while it's
+                  not the one pressed. */}
               <div className="flex flex-wrap items-center gap-2 px-4 py-2">
                 {summary.lateCount > 0 ? (
                   <button
@@ -192,15 +214,13 @@ export default function CollectionsCard({ summary, locale }: { summary: Collecti
                     onClick={() => setTab("late")}
                     aria-pressed={tab === "late"}
                     className={cn(
-                      "flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold @max-[17rem]:flex-wrap @max-[17rem]:gap-y-0.5 text-destructive transition-colors",
-                      tab === "late"
-                        ? "bg-destructive/20 ring-1 ring-destructive/40"
-                        : "bg-destructive/10 hover:bg-destructive/15"
+                      "flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold @max-[17rem]:flex-wrap @max-[17rem]:gap-y-0.5 transition-colors",
+                      tab === "late" ? SWITCH_ON : "text-destructive hover:bg-accent/60"
                     )}
                   >
                     <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
                     {t(dashboardDict, locale, "lateLabel")}
-                    <CountBadge count={summary.lateCount} active={tab === "late"} />
+                    <CountBadge count={summary.lateCount} active={tab === "late"} className={switchCountClass(tab === "late")} />
                     <span className="tabular-nums">
                       <span className="@max-[17rem]:hidden">· </span>
                       {formatCurrency(summary.lateTotal)}
@@ -215,14 +235,17 @@ export default function CollectionsCard({ summary, locale }: { summary: Collecti
                     aria-pressed={tab === "upcoming"}
                     className={cn(
                       "flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold @max-[17rem]:flex-wrap @max-[17rem]:gap-y-0.5 transition-colors",
-                      tab === "upcoming"
-                        ? "bg-secondary/15 text-foreground ring-1 ring-secondary/40"
-                        : "bg-muted text-muted-foreground hover:bg-secondary/10"
+                      tab === "upcoming" ? SWITCH_ON : TOGGLE_OFF
                     )}
                   >
-                    <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
+                    <span
+                      className={cn(
+                        "h-1.5 w-1.5 rounded-full",
+                        tab === "upcoming" ? "bg-secondary-foreground/70" : "bg-muted-foreground/60"
+                      )}
+                    />
                     {t(dashboardDict, locale, "stageScheduled")}
-                    <CountBadge count={summary.upcomingCount} active={tab === "upcoming"} className={tab === "upcoming" ? undefined : "bg-background"} />
+                    <CountBadge count={summary.upcomingCount} active={tab === "upcoming"} className={switchCountClass(tab === "upcoming")} />
                     <span className="tabular-nums">
                       <span className="@max-[17rem]:hidden">· </span>
                       {formatCurrency(summary.upcomingTotal)}

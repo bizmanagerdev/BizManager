@@ -6,6 +6,12 @@
     "Segoe UI", "Noto Sans Hebrew", "Rubik", "Assistant", "Heebo", sans-serif;
   --font-mono:
     "Cascadia Code", "Fira Code", "JetBrains Mono", "Consolas", monospace;
+  /* THE card corner — `rounded-card`. Nearly square: the dashboard's phone
+     sections' corner, on every card now (owner, 2026-10-11: "it doesn't need
+     to be so round … the corners are rounded, but it's nearly a square"). It
+     was 1.125rem. Anything drawn to sit exactly over or in place of a card (an
+     overlay link, a skeleton) uses this too, so they can't drift apart. */
+  --radius-card: 0.5rem;
 }
 
 @layer base {
@@ -381,6 +387,10 @@
       0 14px 32px -24px rgb(var(--secondary-5) / 0.16);
     --shadow-xl: 0 34px 80px -34px rgb(var(--primary-4) / 0.32),
       0 18px 42px -28px rgb(var(--secondary-5) / 0.2);
+    /* A card's shadow: light, and all the way round rather than a drop below
+       it (owner, 2026-10-11: "I want a shadow around everything. A light
+       shadow"). It was --shadow-md, a long soft drop. */
+    --shadow-card: 0 1px 2px rgb(var(--primary-4) / 0.06), 0 2px 12px rgb(var(--primary-4) / 0.09);
   }
 
   * {
@@ -426,7 +436,7 @@
 
 @layer utilities {
   .shadow-card {
-    box-shadow: var(--shadow-md);
+    box-shadow: var(--shadow-card);
   }
   .shadow-elevated {
     box-shadow: var(--shadow-lg);
@@ -577,21 +587,22 @@ select:not([multiple]):not([size]) {
    PHONE: the dashboard's cards become full-bleed SECTIONS.
 
    OUTSIDE every @layer, on purpose. Inside `@layer utilities` this lost to the
-   card's own `rounded-[1.125rem]` / `border` utilities: cascade LAYERS are
-   resolved before specificity, so a same-layer utility written later in the
-   sheet wins no matter how specific the selector is. Unlayered rules beat every
-   layered one, which is exactly what a "the board overrides its cards here"
-   rule needs.
+   card's own `rounded-card` / `border` utilities: cascade LAYERS are resolved
+   before specificity, so a same-layer utility written later in the sheet wins
+   no matter how specific the selector is. Unlayered rules beat every layered
+   one, which is exactly what a "the board overrides its cards here" rule needs.
 
    One rule rather than a `max-md:` class on nine card components — every card
    wears .surface-panel (that IS Card), so the board says this once, for the
    cards it holds today and whatever gets added later.
 
    A card is a device for separating things that sit side by side. On a 390px
-   screen nothing does — so the ROUNDING, the shadow and the page gutter go, and
-   what's left is a bordered section edge to edge. What went too far and had to
-   come back: dropping the border entirely and pinning the headers. Sections with
-   nothing around them but a seam read as one long flow with lines in it.
+   screen nothing does — so the page gutter goes, and what's left is a bordered
+   section edge to edge (owner, 2026-10-11: "I want the dashboard to still be
+   edge to edge", after a few hours of floating cards). What went too far and
+   had to come back: dropping the border entirely and pinning the headers.
+   Sections with nothing around them but a seam read as one long flow with
+   lines in it.
    ───────────────────────────────────────────────────────────────────────────── */
 @media (max-width: 767px) {
   /* A stronger blue behind the board on a phone. On desktop the tint only has to
@@ -621,16 +632,16 @@ select:not([multiple]):not([size]) {
     gap: 1rem;
   }
 
-  /* A contained block: full border, a small radius, no shadow. Flatter and wider
-     than a card, but still visibly a thing with edges — the rounding is what
-     stops a bordered band from reading as a rule across the page.
+  /* A contained block: full border and the card's own small corner — flatter
+     and wider than a card, but still visibly a thing with edges; the rounding
+     is what stops a bordered band from reading as a rule across the page. It
+     keeps the card's light shadow (owner, 2026-10-11: "a shadow around
+     everything"); it used to have none.
      2px, DELIBERATELY heavier than the 1px rules between rows inside it: at the
      same weight the outline of a section and the line between two of its rows
      say the same thing, and the eye can't tell where one section ends. */
   .board-flush .surface-panel {
-    border-radius: 0.5rem;
     border-width: 2px;
-    box-shadow: none;
   }
 
   /* A phone shows the HEAD of each list — three rows — and the footer's count

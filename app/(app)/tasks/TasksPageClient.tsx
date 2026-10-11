@@ -42,6 +42,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedLines, parseTaskLines } from "@/components/tasks/taskLines.helpers";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import { CountBadge } from "@/components/ui/count-badge";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
@@ -607,7 +608,9 @@ function BoardColumn({
               ? `${t(tasksDict, locale, "addCountPrefix")} ${addLines.length}`
               : t(commonDict, locale, "add")}
         </Button>
-        <Button type="button" size="sm" variant="outline" onClick={() => { setAdding(null); setTitle(""); }}>
+        {/* Grey, never the look of the add beside it (owner, 2026-10-11:
+            cancel-type buttons grey). */}
+        <Button type="button" size="sm" variant="muted" onClick={() => { setAdding(null); setTitle(""); }}>
           {t(commonDict, locale, "cancel")}
         </Button>
         <DictateButton
@@ -1488,12 +1491,12 @@ export default function TasksPageClient(props: Props) {
   // the phone drop-down, so the two can't drift apart. Same field look as the
   // other pages' filters (customers, projects): a text-sm label over a
   // full-height control, so every field in the grid lines up.
+  // The scope's chosen half is the app's selected-toggle look, as everywhere
+  // (owner, 2026-10-11: "all the toggles should be blue"). Both copies of these
+  // fields sit on light panels hung over the board, outside the header the
+  // bar's dark tokens cover.
   const scopeButtonClass = (active: boolean) =>
-    `flex-1 px-3 font-medium transition-colors ${
-      active
-        ? "bg-secondary text-secondary-foreground"
-        : "bg-background text-muted-foreground hover:bg-secondary/5 hover:text-foreground"
-    }`;
+    `flex-1 px-3 font-medium transition-colors ${active ? TOGGLE_ON : `bg-background ${TOGGLE_OFF}`}`;
   const filterFields = (
     <>
       {canSeeAll ? (

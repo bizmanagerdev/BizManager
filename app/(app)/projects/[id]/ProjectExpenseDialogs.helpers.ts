@@ -6,6 +6,7 @@ import {
   EXPENSE_WORKER_WAGE_CATEGORY,
 } from "@/lib/expenses";
 import type { FinancialAttachment } from "@/lib/payments";
+import { formatMoneyRounded } from "@/lib/money";
 import { isImageDocument } from "@/lib/documents";
 import { israelDateKey } from "@/lib/timezone";
 
@@ -22,13 +23,10 @@ export function toNumber(value: unknown) {
   return null;
 }
 
+// ₪ first, whole shekels — the app's one money format (owner, 2026-10-11).
 export function formatIls(value: number | null) {
   if (value === null) return "—";
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    maximumFractionDigits: 0,
-  }).format(value);
+  return formatMoneyRounded(value);
 }
 
 export function getString(row: Record<string, unknown> | null, key: string) {

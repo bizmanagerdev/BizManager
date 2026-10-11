@@ -191,10 +191,11 @@ export default function OrderCommentsThread({
                       />
                     </div>
                     <div className="flex justify-end gap-2">
+                      {/* Grey, never the save's look (owner, 2026-10-11). */}
                       <Button
                         type="button"
                         size="sm"
-                        variant="secondary"
+                        variant="muted"
                         disabled={editBusy}
                         onClick={() => setEditingIndex(null)}
                       >

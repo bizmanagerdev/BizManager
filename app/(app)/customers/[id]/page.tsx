@@ -721,7 +721,7 @@ export default async function CustomerDetailsPage({
 
         {/* The one urgent fact first: debt bar (hidden entirely when nothing is owed). */}
         {openBalance > 0.009 ? (
-          <section className="grid grid-cols-1 overflow-hidden rounded-3xl border border-destructive/20 shadow-sm lg:grid-cols-[minmax(180px,1fr)_2fr_minmax(180px,1fr)]">
+          <section className="grid grid-cols-1 overflow-hidden rounded-card border border-destructive/20 shadow-card lg:grid-cols-[minmax(180px,1fr)_2fr_minmax(180px,1fr)]">
             <div className="space-y-1 bg-destructive-soft/60 p-4">
               <div className="flex items-center gap-1.5 text-sm font-semibold text-destructive">
                 <WarningIcon className="h-4 w-4 shrink-0" />
@@ -790,7 +790,7 @@ export default async function CustomerDetailsPage({
             orders, loans and payroll. Nothing is netted in the books; this is a
             reading. Salary sits below the net on purpose (see the lib). */}
         {showCounterpartyCard ? (
-          <section className="rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
+          <section className="brand-frame surface-panel rounded-card border border-border/60 p-4 shadow-card">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <UserIcon className="h-4 w-4 text-primary" />
@@ -1246,7 +1246,7 @@ export default async function CustomerDetailsPage({
 
           {/* Reference column: customer details, contacts, documents, notes, Morning */}
           <div className="space-y-3">
-            <div className="space-y-2 rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
+            <div className="space-y-2 brand-frame surface-panel rounded-card border border-border/60 p-4 shadow-card">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <UserIcon className="h-4 w-4 text-primary" />

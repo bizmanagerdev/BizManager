@@ -1482,6 +1482,11 @@ describe("filters", () => {
     const [all] = screen.getAllByRole("button", { name: "הכל" });
     expect(mine).toHaveAttribute("aria-pressed", "true");
     expect(all).toHaveAttribute("aria-pressed", "false");
+    // The chosen half is the app's one toggle look, blue (owner,
+    // 2026-10-11: "all the toggles should be blue").
+    expect(mine).toHaveClass("bg-secondary", "text-secondary-foreground");
+    expect(all).not.toHaveClass("bg-secondary");
+    expect(all).not.toHaveClass("bg-secondary");
     fireEvent.click(all);
     expect(push).toHaveBeenCalledWith("/tasks?scope=all");
   });

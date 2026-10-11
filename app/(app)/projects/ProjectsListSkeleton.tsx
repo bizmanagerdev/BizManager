@@ -93,7 +93,7 @@ export default function ProjectsListSkeleton() {
             <div className="grid gap-2.5">
               <p className="px-1 text-[0.647rem] text-muted-foreground">החלק כרטיס ימינה לפעולות · הקש לפתיחה</p>
               {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="relative min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-background shadow-sm">
+                <div key={i} className="relative min-w-0 overflow-hidden rounded-card border border-border/70 bg-background shadow-card">
                   <div className="space-y-3 p-4">
                     <div className="flex gap-1.5">
                       <Skeleton className="h-5 w-16 rounded-full" />

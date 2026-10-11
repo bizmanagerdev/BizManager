@@ -2,7 +2,7 @@ import * as React from "react";
 import Link from "next/link";
 import { UserIcon, WazeIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
-import { ContactTapZone } from "@/components/ui/contact-link";
+import { CallIconButton, ContactTapZone } from "@/components/ui/contact-link";
 import { AddressLink } from "@/components/ui/address-link";
 import { StatActionCard } from "@/components/ui/stat-action-card";
 import { MetaRow } from "@/components/ui/meta-row";
@@ -85,8 +85,9 @@ export function CustomerContactCard({
         // A <div> (ContactTapZone), not an <a href="tel:…"> — a real tel: link
         // claims the long-press gesture for the browser's own menu, which
         // doesn't surface a copy option everywhere this app runs. Plain text
-        // long-presses into normal selection instead; tapping still calls
-        // (mobile) or copies (desktop) via the same click handler either way.
+        // long-presses into normal selection instead; a click copies on a
+        // computer, like the email below. The way to call is the green phone
+        // on the button line (see `action`).
         <ContactTapZone kind="tel" value={phone} className="inline-block hover:text-secondary hover:underline">
           <span dir="ltr">{phone}</span>
         </ContactTapZone>
@@ -137,6 +138,21 @@ export function CustomerContactCard({
     });
   }
 
+  const cardAction =
+    logsCallsHere && entityType && entityId ? (
+      <LogCommunicationButton
+        entityType={entityType}
+        entityId={entityId}
+        customerId={customerId ?? undefined}
+        defaultTopic="general"
+        className="h-9 w-full"
+      />
+    ) : customerId ? (
+      <Button asChild size="sm" variant="outline" className="w-full">
+        <Link href={`/customers/${customerId}`}>כרטיס הלקוח</Link>
+      </Button>
+    ) : null;
+
   return (
     <StatActionCard
       icon={<UserIcon className="h-5 w-5" />}
@@ -147,19 +163,20 @@ export function CustomerContactCard({
       cornerHref={logsCallsHere && customerId ? `/customers/${customerId}` : undefined}
       cornerLabel="כרטיס הלקוח"
       action={
-        logsCallsHere && entityType && entityId ? (
-          <LogCommunicationButton
-            entityType={entityType}
-            entityId={entityId}
-            customerId={customerId ?? undefined}
-            defaultTopic="general"
-            className="h-9 w-full"
-          />
-        ) : customerId ? (
-          <Button asChild size="sm" variant="outline" className="w-full">
-            <Link href={`/customers/${customerId}`}>כרטיס הלקוח</Link>
-          </Button>
-        ) : null
+        // The app's one call button — the green phone (owner, 2026-10-11:
+        // "make them all the same, so the user knows: when I see this, it means
+        // to call"). On the button line, beside "תיעוד שיחה": the circle is as
+        // tall as the button, so the card keeps the height its loading
+        // placeholder has (OrderPageSkeleton); in the "טלפון" row it would have
+        // made the card taller.
+        phone ? (
+          <div className="flex items-center gap-2">
+            <CallIconButton phone={phone} name={name} />
+            {cardAction ? <div className="min-w-0 flex-1">{cardAction}</div> : null}
+          </div>
+        ) : (
+          cardAction
+        )
       }
     />
   );

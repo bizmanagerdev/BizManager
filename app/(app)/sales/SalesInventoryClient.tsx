@@ -869,10 +869,11 @@ export default function SalesInventoryClient({
                 <option value="manual_product">יצירת מוצר</option>
               </NativeSelect>
               {movementsFiltered ? (
+                // Grey, like every clear / cancel (owner, 2026-10-11).
                 <Button
                   type="button"
                   size="sm"
-                  variant="secondary"
+                  variant="muted"
                   className="h-9"
                   onClick={() => {
                     setMovProduct("");

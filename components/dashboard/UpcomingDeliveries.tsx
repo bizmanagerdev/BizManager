@@ -9,7 +9,7 @@ import DashboardCardHeader from "@/components/dashboard/DashboardCardHeader";
 import DashboardCardFooter from "@/components/dashboard/DashboardCardFooter";
 import Sparkline from "@/components/charts/Sparkline";
 import QuietCard from "@/components/dashboard/QuietCard";
-import { ContactTapZone } from "@/components/ui/contact-link";
+import { CallIconButton } from "@/components/ui/contact-link";
 import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
 import PickingListDialog from "@/app/(app)/sales/PickingListDialog";
 import { clickableRowProps } from "@/lib/ui/row-navigation";
@@ -32,9 +32,10 @@ const OrderConfirmDialog = dynamic(() => import("@/app/(app)/sales/orders/OrderC
  * the card around it opens the queue unfocused. No status badge either — this
  * list is open deliveries by definition, so the badge said "פתוח" on every line.
  *
- * The two things you'd actually do to a delivery ride on the row: share the slip
- * (DeliveryShareActions) and confirm it (OrderConfirmDialog, "סמן כסופק"). Both
- * are the queue's own components, so the two surfaces can't drift.
+ * The things you'd actually do to a delivery ride on the row: call the customer
+ * (CallIconButton), share the slip (DeliveryShareActions) and confirm it
+ * (OrderConfirmDialog, "סופק" here). The last two are the queue's own
+ * components, so the two surfaces can't drift.
  *
  * The order id (#a1b2c3d4) and the initials circle were both dropped — the id is
  * an internal handle nobody reads off a dashboard, and the circle was built from
@@ -89,7 +90,7 @@ export default function UpcomingDeliveries({
       <Link
         href={allHref}
         aria-label="כל המשלוחים"
-        className="absolute inset-0 rounded-[1.125rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="absolute inset-0 rounded-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
 
       <div className="pointer-events-none relative flex min-h-0 flex-1 flex-col">
@@ -162,33 +163,27 @@ export default function UpcomingDeliveries({
                       {delivery.customerPhone ? (
                         <>
                           {" · "}
-                          {/* A <div>, not an <a href="tel:…"> — an actual tel:
-                              link claims long-press for the browser's OWN menu,
-                              which on this row wasn't surfacing a copy option at
-                              all. Plain text long-presses into normal selection
-                              instead (same as the name beside it), and tapping
-                              still calls/copies via JS. The wrapping span stops
-                              that tap/Enter from also bubbling into the row's
-                              own navigate handler — ContactTapZone doesn't take
-                              an onClick override of its own to do this itself. */}
-                          <span
-                            className="inline-block"
-                            onClick={(event) => event.stopPropagation()}
-                            onKeyDown={(event) => event.stopPropagation()}
-                          >
-                            <ContactTapZone kind="tel" value={delivery.customerPhone} className="inline-block">
-                              <span dir="ltr" className="tabular-nums">
-                                {delivery.customerPhone}
-                              </span>
-                            </ContactTapZone>
+                          {/* Plain text: it long-presses into normal selection,
+                              like the name above it, and a tap on it is a tap on
+                              the row. Calling is the green phone in the corner
+                              (owner, 2026-10-11: one look for calling) — the
+                              number itself used to be the tap-to-call. */}
+                          <span dir="ltr" className="tabular-nums">
+                            {delivery.customerPhone}
                           </span>
                         </>
                       ) : null}
                     </div>
                   </div>
-                  {/* Both actions ride in the corner the status badge used to
+                  {/* The actions ride in the corner the status badge used to
                       occupy, on the customer's line. */}
                   <div className="flex shrink-0 items-center gap-1.5">
+                    {/* The app's one call button (contact-link.tsx), as on the
+                        debtor rows. 36px — no taller than the row's text, so the
+                        row keeps its height. */}
+                    {delivery.customerPhone ? (
+                      <CallIconButton phone={delivery.customerPhone} name={delivery.customerName} />
+                    ) : null}
                     {/* A bare glyph, no button plate — an icon-only control, which
                         is the one thing exempt from "every button gets a fill". */}
                     <DeliveryShareActions
@@ -197,16 +192,17 @@ export default function UpcomingDeliveries({
                       variant="ghost"
                       className="h-8 w-8 p-0 shadow-none max-md:min-h-[44px] max-md:min-w-[44px]"
                     />
-                    {/* OUTLINE, not filled (user, 2026-08-18, from a reference
-                        board): one filled button per row down four cards made the
-                        board a column of blue blocks, with the action shouting
-                        louder than the delivery it belonged to. */}
+                    {/* "סופק", the dashboard's own short word, where every other
+                        page says "✓ אישור אספקה" (owner, 2026-10-11: "change it
+                        back to סופק, it's the dashboard, it can be a little
+                        different" — the long name pushed call, share and the
+                        button to ~240px and squeezed the name). Filled, like the
+                        button everywhere ("it should be fill"). */}
                     <OrderConfirmDialog
                       orderId={delivery.id}
                       customerName={delivery.customerName}
-                      buttonVariant="outline"
-                      buttonClassName="h-8 px-3 text-sm max-md:min-h-[44px]"
                       buttonLabel="סופק"
+                      buttonClassName="h-8 px-3 text-sm max-md:min-h-[44px]"
                     />
                   </div>
                 </div>

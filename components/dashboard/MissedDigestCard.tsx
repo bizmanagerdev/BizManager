@@ -242,7 +242,7 @@ function MissedDigestCard({
       <Link
         href="/activity"
         aria-label={t(dashboardDict, locale, "digestAria")}
-        className="absolute inset-0 rounded-[1.125rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="absolute inset-0 rounded-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
 
       <div className="pointer-events-none relative flex min-h-0 flex-1 flex-col">
@@ -251,8 +251,10 @@ function MissedDigestCard({
         title={t(dashboardDict, locale, "digestCardTitle")}
         count={total}
         action={
+          // Grey, the quiet button: a dismiss, like every cancel/close
+          // (owner, 2026-10-11: "cancel button should always be … a grey").
           <Button
-            variant="ghost"
+            variant="muted"
             size="icon-sm"
             className="pointer-events-auto -me-1 -mt-1"
             onClick={onDismiss}

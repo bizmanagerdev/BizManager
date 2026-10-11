@@ -51,7 +51,9 @@ export function StatActionCard({
       className={cn(
         // h-full: the three cards in a row are one block, so they share the
         // tallest one's height and their buttons land on the same line.
-        "relative flex h-full flex-col gap-2.5 rounded-3xl border border-border/70 bg-card/80 p-3.5 shadow-sm",
+        // The card look (rounded-card, white, light all-round shadow), as every
+        // card — it was its own rounder, see-through box (owner, 2026-10-11).
+        "brand-frame surface-panel relative flex h-full flex-col gap-2.5 rounded-card border border-border/60 p-3.5 shadow-card",
         className
       )}
     >

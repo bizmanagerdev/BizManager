@@ -5,6 +5,7 @@ import { CashIcon, DeliveryIcon, LocationIcon, NoteIcon, PhoneIcon, ProductIcon,
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { formatMoney } from "@/lib/money";
 import { toHebrewError } from "@/lib/error-messages";
 import { formatDeliveryAddress } from "@/lib/ui/cities";
 import { paymentStatusLabel } from "@/lib/orders/paymentStatus";
@@ -13,14 +14,11 @@ import { isNativePlatform, shareImageNative } from "@/lib/native-share";
 import { armNativeSurfaceGuard } from "@/components/ui/native-surface";
 import { combinedCustomerName, type DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
 
+// ₪ first, as on the screen (owner, 2026-10-11: money is written the
+// dashboard's way) — the shared slip and its text too.
 function formatCurrency(value: number | null) {
   if (value === null) return "-";
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(value);
+  return formatMoney(value);
 }
 
 function formatItem(item: DeliveryItem["items"][number]) {

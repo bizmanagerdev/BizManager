@@ -3,6 +3,7 @@
 import { PrintIcon, ShareIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { whatsappHref } from "@/lib/whatsapp";
+import { formatMoney } from "@/lib/money";
 
 export type OrderShareItem = { name: string; quantity: number; lineTotal: number };
 
@@ -18,13 +19,10 @@ export type OrderShareData = {
   remainingBalance: number;
 };
 
+// ₪ first, as on the screen (owner, 2026-10-11: money is written the
+// dashboard's way) — the WhatsApp text and the printed sheet too.
 function formatCurrency(value: number) {
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(value);
+  return formatMoney(value);
 }
 
 function escapeHtml(value: string) {

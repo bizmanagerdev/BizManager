@@ -24,6 +24,7 @@ import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { uploadCheckPhotos, queueFinancialAttachmentsAfter } from "@/lib/payments/uploadCheckPhotos";
 import { offlineFetch } from "@/lib/offline-queue";
 import { israelDateKey } from "@/lib/timezone";
+import { formatMoney } from "@/lib/money";
 
 type CreatedPayment = {
   id?: string;
@@ -35,13 +36,11 @@ type CreatedPayment = {
   created_at?: string | null;
 };
 
+// ₪ first, the dashboard's way (owner, 2026-10-11) — lib/money.ts. A refund
+// bigger than what was paid takes the preview below zero: the sign goes in
+// front ("-₪50"), so the ₪ stays beside the digits as on every other amount.
 function formatCurrency(value: number) {
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(value);
+  return value < 0 ? `-${formatMoney(-value)}` : formatMoney(value);
 }
 
 export default function OrderPaymentDialog({

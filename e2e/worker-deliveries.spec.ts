@@ -12,7 +12,7 @@ import {
 } from "./db";
 
 // Delivery confirmation + payment (app/(app)/sales/orders/OrderConfirmDialog.tsx,
-// opened from /deliveries as "סמן כסופק") is the highest-risk worker flow in
+// opened from /deliveries as "אישור אספקה") is the highest-risk worker flow in
 // the app — two real RLS bugs were fixed in it within the last two days
 // (20260908202057 + 20260909200005, see foundation-hardening memory) and a
 // third, client-side bug (the review step showing "שולם" for a check payment
@@ -177,7 +177,7 @@ test.describe("worker role scoping — delivery confirmation & payment", () => {
       await page.goto("/deliveries");
 
       const row = page.locator("tr", { hasText: customer.name });
-      await row.getByRole("button", { name: "סמן כסופק" }).click();
+      await row.getByRole("button", { name: "אישור אספקה" }).click();
 
       // items step already defaults every line to "delivered now" = fully owed.
       await page.getByRole("button", { name: "הבא" }).click();

@@ -18,6 +18,7 @@ import {
 import { AdaptivePageDialog } from "@/components/layout/page-layout";
 import { DIALOG_CHROME_CONTENT_PAGE, useSwipeToDismiss } from "@/components/ui/dialog-chrome";
 import { Button } from "@/components/ui/button";
+import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ViewDialog } from "@/components/ui/view-dialog";
 import { DictateButton } from "@/components/ui/dictate-button";
@@ -1726,17 +1727,24 @@ export function TaskUpsertDialog(rawProps: Props) {
             </div>
             {/* Icon only — the word "הפוך לפרטי" cost the name field a third of
                 the row on a phone. Filled lock = private, outlined open lock =
-                not; the title carries the wording. */}
+                not; the title carries the wording. ON is the app's one toggle
+                look, blue (owner, 2026-10-11: "all the toggles should be
+                blue"). */}
             {viewerIsCreator ? (
               <Button
                 type="button"
-                variant={isPrivate ? "default" : "outline"}
+                variant="outline"
                 size="icon-sm"
                 disabled={loading}
                 onClick={() => void togglePrivate()}
                 aria-label={t(tasksDict, props.locale, isPrivate ? "cancelPrivateAria" : "makePrivateAria")}
                 title={t(tasksDict, props.locale, isPrivate ? "privateActiveTitle" : "privateInactiveTitle")}
-                className="shrink-0"
+                className={cn(
+                  "shrink-0",
+                  isPrivate
+                    ? `border-secondary ${TOGGLE_ON} hover:border-secondary hover:bg-secondary/90 hover:text-secondary-foreground`
+                    : `border-input ${TOGGLE_OFF} hover:border-input`
+                )}
               >
                 {isPrivate ? <LockIcon /> : <UnlockIcon />}
               </Button>

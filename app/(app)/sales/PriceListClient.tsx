@@ -10,8 +10,11 @@ import { loadMorePriceList } from "@/app/(app)/sales/actions";
 import type { ProductsFilters } from "@/app/(app)/sales/loadProducts";
 import { AddIcon, FilterIcon, SearchIcon, SendIcon, SpinnerIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
+import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Field } from "@/components/ui/field";
+import { formatMoney } from "@/lib/money";
+import { cn } from "@/lib/utils";
 import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 import { toHebrewError } from "@/lib/error-messages";
 import { Input } from "@/components/ui/input";
@@ -50,14 +53,11 @@ type ProductRow = {
   active?: boolean;
 };
 
+// ₪ first, the dashboard's way (owner, 2026-10-11) — lib/money.ts. The shared
+// price-list PDF too.
 function formatCurrency(value: number | null) {
   if (value === null) return "-";
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(value);
+  return formatMoney(value);
 }
 
 export default function PriceListClient({
@@ -837,17 +837,23 @@ export default function PriceListClient({
               className="h-10 w-full rounded-xl ps-9"
             />
           </div>
-          {/* Filter reads as ON via a sky fill; recessed while off, so it doesn't
-              compete with the primary add button. Badge marks an active category. */}
+          {/* An on/off toggle, so the app's one toggle look: blue while the
+              filters are open or a category narrows the list, quiet while off
+              (owner, 2026-10-11: "all the toggles should be blue"). Both states used to
+              be the same sky fill as the add button beside it. Badge marks an
+              active category. */}
           <Button
             type="button"
             size="icon"
+            variant="outline"
             aria-label={filtersOpen ? "הסתר מסננים" : "הצג מסננים"}
-            className={
+            aria-pressed={filtersOpen}
+            className={cn(
+              "relative h-10 w-10 shrink-0 rounded-xl",
               filtersOpen || categoryFilter
-                ? "relative h-10 w-10 shrink-0 rounded-xl"
-                : "relative h-10 w-10 shrink-0 rounded-xl "
-            }
+                ? `border-secondary ${TOGGLE_ON} hover:bg-secondary/90 hover:text-secondary-foreground`
+                : `border-input ${TOGGLE_OFF}`
+            )}
             onClick={() => setFiltersOpen((x) => !x)}
           >
             <FilterIcon className="h-4 w-4" />

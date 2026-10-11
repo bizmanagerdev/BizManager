@@ -159,16 +159,20 @@ export default ContactLink;
 /**
  * THE look for "call" everywhere in the app (owner, 2026-10-11: "make them all
  * the same, so the user knows: when I see this, it means to call") — a green
- * circle with a white phone. CallIconButton wears it; a bigger tap zone that
- * calls (a delivery stop's name + number) shows it as its glyph.
+ * phone, the icon alone ("change all phones to be just an icon with no circle
+ * around"; it was a white phone in a green circle). CallIconButton wears it; a
+ * bigger tap zone that calls (a delivery stop's name + number) shows it as its
+ * glyph. The 36px box is the tap target, not something drawn.
  */
-export const CALL_CIRCLE_CLASS =
-  "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-success text-success-foreground shadow-sm";
+export const CALL_ICON_CLASS =
+  "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-success";
 
-export function CallCircle({ className }: { className?: string }) {
+const CALL_GLYPH_CLASS = "h-5 w-5";
+
+export function CallGlyph({ className }: { className?: string }) {
   return (
-    <span aria-hidden className={cn(CALL_CIRCLE_CLASS, className)}>
-      <PhoneIcon className="h-[1.1em] w-[1.1em]" />
+    <span aria-hidden className={cn(CALL_ICON_CLASS, className)}>
+      <PhoneIcon className={CALL_GLYPH_CLASS} />
     </span>
   );
 }
@@ -204,14 +208,14 @@ export function CallIconButton({ phone, name, className }: { phone: string; name
       onKeyDown={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
       className={cn(
-        CALL_CIRCLE_CLASS,
-        // 36px to see, ~44px to tap (the ::before reaches past the edge) — a
-        // full-size target that doesn't make the card taller than it needs.
-        "relative transition-transform before:absolute before:-inset-1 before:content-[''] active:scale-95",
+        CALL_ICON_CLASS,
+        // ~44px to tap (the ::before reaches past the 36px box) — a full-size
+        // target that doesn't make the card taller than it needs.
+        "relative transition-transform before:absolute before:-inset-1 before:content-[''] hover:bg-success/10 active:scale-95",
         className
       )}
     >
-      <PhoneIcon className="h-[1.1em] w-[1.1em]" aria-hidden />
+      <PhoneIcon className={CALL_GLYPH_CLASS} aria-hidden />
     </a>
   );
 }

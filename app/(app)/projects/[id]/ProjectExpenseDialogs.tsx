@@ -22,6 +22,7 @@ import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { toHebrewError } from "@/lib/error-messages";
 import { runTogether, uploadTogether } from "@/lib/upload-together";
 import { appendDictatedText } from "@/lib/dictation";
+import { formatMoney } from "@/lib/money";
 import { mapProjectTypeToExpenseDomain } from "@/lib/expenses";
 import { registerReversibleCreate } from "@/lib/undo-engine";
 import { devicePaymentSaves, PAYMENT_NOT_SENT_YET } from "@/lib/payments/device-payment-saves";
@@ -496,17 +497,12 @@ export function AddIncomeDialog({
                     const gross = Number(amount);
                     const net = Math.round((gross / (1 + vatRate)) * 100) / 100;
                     const vat = Math.round((gross - net) * 100) / 100;
-                    const fmt = (n: number) =>
-                      new Intl.NumberFormat("he-IL", {
-                        style: "currency",
-                        currency: "ILS",
-                        minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-                      }).format(n);
+                    // ₪ first, agorot when there are any (owner, 2026-10-11:
+                    // money written the dashboard way).
                     return (
                       <div className="rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                        מתוך {fmt(gross)} — <span className="font-medium text-foreground">{fmt(net)}</span> ייזקפו
-                        למחיר הפרויקט · {fmt(vat)} מע״מ.
+                        מתוך {formatMoney(gross)} — <span className="font-medium text-foreground">{formatMoney(net)}</span> ייזקפו
+                        למחיר הפרויקט · {formatMoney(vat)} מע״מ.
                       </div>
                     );
                   })()
@@ -541,8 +537,10 @@ export function AddIncomeDialog({
                 chooseVariant="outline"
                 size="sm"
               />
+              {/* Grey: clearing the pick is a quiet button (owner, 2026-10-11:
+                  cancel-type buttons grey). */}
               {attachmentFiles.length > 0 ? (
-                <Button type="button" variant="secondary" size="sm" onClick={() => setAttachmentFiles([])}>
+                <Button type="button" variant="muted" size="sm" onClick={() => setAttachmentFiles([])}>
                   נקה בחירה
                 </Button>
               ) : null}

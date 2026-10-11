@@ -3,11 +3,13 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { BackspaceIcon, LocationIcon, SpinnerIcon, SyncIcon, WarningIcon } from "@/components/ui/icons";
+import { BackspaceIcon, CheckIcon, LocationIcon, SpinnerIcon, SyncIcon, WarningIcon } from "@/components/ui/icons";
 import { withSentry } from "@/lib/sentry-lazy";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
+import { TOGGLE_OFF, TOGGLE_ON } from "@/components/ui/filter-chip";
+import { formatMoney } from "@/lib/money";
 import { offlineUpload } from "@/lib/offline-upload";
 import { offlineFetch } from "@/lib/offline-queue";
 import { readyLocalDatabase, useLocalViewer } from "@/lib/powersync/store";
@@ -134,13 +136,9 @@ async function deviceArrival(
   }
 }
 
+// ₪ first, the dashboard's way (owner, 2026-10-11) — lib/money.ts.
 function formatCurrency(value: number) {
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(value);
+  return formatMoney(value);
 }
 
 function formatDate(value: string | null) {
@@ -180,11 +178,23 @@ const STEP_META: Record<string, { eyebrow: string; title: string; description?: 
   review: { eyebrow: "אישור", title: "לאשר את האספקה?", description: "בדוק את הסיכום ואשר. המלאי, התשלום והסטטוס יתעדכנו." },
 };
 
+/**
+ * THE name of "mark as delivered" where it's offered: the deliveries list,
+ * the orders list and its swipe, the order page (owner, 2026-10-11: "mark as
+ * delivered should always be the same wording and always the same name"). It
+ * went by five: סופק, סמן כסופק, אספקה, אספקת הזמנה and this one. The trigger
+ * draws it with its ✓, as a FILLED button ("the confirm delivery should not be
+ * outline it should be fill"), unless a caller names a different action: the
+ * order page's "עדכון אספקה" once it's delivered, and the dashboard's short
+ * "סופק" ("it's the dashboard, it can be a little different").
+ */
+export const MARK_DELIVERED_LABEL = "אישור אספקה";
+
 export default function OrderConfirmDialog({
   orderId,
-  buttonLabel = "אישור אספקה",
+  buttonLabel,
   buttonClassName,
-  buttonVariant = "outline",
+  buttonVariant = "default",
   title = "אישור אספקת הזמנה",
   description = "עדכון כמויות שנמסרו, תשלום, החזר והוכחת אספקה במסך אחד.",
   customerName,
@@ -958,18 +968,22 @@ export default function OrderConfirmDialog({
         );
       case "paidChoice":
         return (
+          // The chosen answer wears the app's one "on" look, a solid blue fill
+          // (owner, 2026-10-11: "all the toggles should be blue"); it was a tint.
           <div className="mx-auto flex max-w-sm flex-col gap-2">
             <button
               type="button"
+              aria-pressed={paidNow}
               onClick={() => choosePaid(true)}
-              className={`rounded-xl border p-4 text-center text-sm font-semibold transition-colors ${paidNow ? "border-primary bg-primary/10 text-primary" : "border-input hover:bg-muted"}`}
+              className={`rounded-xl border p-4 text-center text-sm font-semibold transition-colors ${paidNow ? `border-secondary ${TOGGLE_ON}` : `border-input bg-background ${TOGGLE_OFF}`}`}
             >
               כן, נגבה תשלום
             </button>
             <button
               type="button"
+              aria-pressed={!paidNow}
               onClick={() => choosePaid(false)}
-              className={`rounded-xl border p-4 text-center text-sm font-semibold transition-colors ${!paidNow ? "border-primary bg-primary/10 text-primary" : "border-input hover:bg-muted"}`}
+              className={`rounded-xl border p-4 text-center text-sm font-semibold transition-colors ${!paidNow ? `border-secondary ${TOGGLE_ON}` : `border-input bg-background ${TOGGLE_OFF}`}`}
             >
               לא נגבה תשלום
             </button>
@@ -997,10 +1011,11 @@ export default function OrderConfirmDialog({
               יתרה לתשלום:{" "}
               <span className="font-semibold text-foreground">{formatCurrency(outstanding)}</span> · אפשר להשאיר 0
             </p>
-            {/* Amount hero — ₪ on the right with the amount right next to it */}
+            {/* Amount hero — the ₪ on the amount's left, as in every written
+                amount ("₪5,000"; owner, 2026-10-11: money the dashboard way). */}
             <div className="flex items-baseline justify-start gap-2 rounded-lg border border-border/60 bg-muted/10 px-4 py-1.5">
-              <span className="text-lg text-muted-foreground">₪</span>
               <span className="text-2xl font-bold tabular-nums">{paymentAmount || "0"}</span>
+              <span className="text-lg text-muted-foreground">₪</span>
             </div>
             {/* Quick amounts */}
             <div className="grid grid-cols-3 gap-1.5">
@@ -1368,7 +1383,12 @@ export default function OrderConfirmDialog({
         className={buttonClassName ?? "w-full sm:w-auto"}
         onClick={() => setOpen(true)}
       >
-        {buttonLabel}
+        {buttonLabel ?? (
+          <>
+            <CheckIcon className="h-4 w-4" />
+            {MARK_DELIVERED_LABEL}
+          </>
+        )}
       </Button>
 
       <StepWizardDialog

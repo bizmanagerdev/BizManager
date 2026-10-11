@@ -57,6 +57,9 @@ function buildSheet(
     },
     { in: 0, out: 0, billed: 0 }
   );
+  // Amounts are ₪ first (owner, 2026-10-11). "נכנס פחות יוצא" can go below
+  // zero — "₪-500" — so it gets its own left-to-right run, or the right-to-left
+  // sheet moves the minus and the number to the other side of the ₪.
   return {
     headerHtml: sheetHeaderHtml(`תנועות · ${movements.length}`, projectName, customerName),
     theadHtml: `<tr>
@@ -72,7 +75,7 @@ function buildSheet(
     </tr>
     <tr>
       <td style="${S.td}border-bottom:0;font-weight:700;" colspan="5">נכנס פחות יוצא</td>
-      <td style="${tdEnd}border-bottom:0;font-weight:700;" colspan="2">${formatIls(totals.in - totals.out)}</td>
+      <td style="${tdEnd}border-bottom:0;font-weight:700;" colspan="2"><span dir="ltr">${formatIls(totals.in - totals.out)}</span></td>
     </tr>`,
     tableStyle: S.table,
   };

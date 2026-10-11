@@ -118,7 +118,8 @@ export function SwipeActions({
     // gesture handlers (useSwipeNavigation, which pages tabs) look for this and
     // keep out — otherwise swiping a row open and back also flicked the page to
     // the next tab, because both were reading the same finger.
-    <div data-swipe-owner="" className={cn("relative min-w-0 overflow-hidden rounded-2xl", className)}>
+    // rounded-card: a phone list card has the same corner as every card.
+    <div data-swipe-owner="" className={cn("relative min-w-0 overflow-hidden rounded-card", className)}>
       {/* The strip sits UNDER the card, pinned to the left (RTL end) edge. */}
       <div className="absolute inset-y-0 left-0 flex" style={{ width: stripWidth }} aria-hidden={!isOpen}>
         {actions.map((action) =>

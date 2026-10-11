@@ -4,7 +4,7 @@ import { act, fireEvent, render, renderHook, screen, waitFor, within } from "@te
 import type { OfflineUploadResult } from "@/lib/offline-upload";
 import type { Account } from "@/lib/accounts";
 
-// The "סמן כסופק" wizard (deliveries queue, dashboard, the order's page): what
+// The "אישור אספקה" wizard (deliveries queue, dashboard, the order's page): what
 // the driver sees step by step, and exactly what goes out when they confirm.
 // Mocked only at the edges — the phone's copy (PowerSync), the server (fetch),
 // the send queue (offlineUpload / offlineFetch), and Supabase behind the
@@ -100,7 +100,7 @@ vi.mock("@/lib/images", async (importOriginal) => ({
   compressImageFiles: async (files: File[]) => files,
 }));
 
-import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
+import OrderConfirmDialog, { MARK_DELIVERED_LABEL } from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import { invalidateAccountsCache } from "@/components/financial/AccountSelect";
 import { useConfirmedDeliveries } from "@/lib/orders/confirmed-deliveries";
 import { parseOrderComments } from "@/lib/orders/comments";
@@ -205,13 +205,9 @@ const fetchMock = vi.fn(async (input: string, _init?: unknown) => {
   return json({}, 404);
 });
 
-const money = (value: number) =>
-  new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(value);
+// The app's money format (lib/money.ts): ₪ first, he-IL grouping, decimals
+// only when present — "₪350" (owner, 2026-10-11: the dashboard's way).
+const money = (value: number) => `₪${value.toLocaleString("he-IL", { maximumFractionDigits: 2 })}`;
 
 beforeEach(() => {
   localStorage.clear();
@@ -295,7 +291,7 @@ function press(...keys: string[]) {
 
 /** What the amount keypad shows, beside its ₪. */
 function amountShown() {
-  return screen.getByText("₪").nextElementSibling?.textContent;
+  return screen.getByText("₪").previousElementSibling?.textContent;
 }
 
 /** A date field shows dd/mm/yy; today's, as it appears before anything is typed. */
@@ -369,6 +365,13 @@ describe("opening", () => {
     // Step 1 has nowhere to go back to.
     expect(screen.queryByRole("button", { name: "חזרה" })).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/orders/o1/edit-data?scope=confirm", { cache: "no-store" });
+  });
+
+  it("names its button ✓ אישור אספקה when the caller gives none — the one name every list uses", () => {
+    render(<OrderConfirmDialog orderId="o1" />);
+    const trigger = screen.getByRole("button", { name: MARK_DELIVERED_LABEL });
+    expect(MARK_DELIVERED_LABEL).toBe("אישור אספקה");
+    expect(trigger.querySelector("svg")).not.toBeNull();
   });
 
   it("falls back to the default title when no customer name is given", async () => {

@@ -458,7 +458,7 @@ export function StepWizard<TStep extends string | number>({
         {onBack ? (
           <Button
             type="button"
-            variant="secondary"
+            variant="muted"
             onClick={onBack}
             disabled={backDisabled}
             className={cn("me-auto min-w-0 shrink", FOOTER_BUTTON_CLASS)}
