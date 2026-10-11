@@ -19,6 +19,27 @@ async function currentAuthUserId(): Promise<string | null> {
   return user?.id ?? null;
 }
 
+/**
+ * The user agent kept with a phone's token, plus "BizHApp/<build>" inside the
+ * phone app: the server reads the build to know which alerts the phone can show
+ * (lib/fcm.ts — task alerts with buttons need APK 1.2, build 6). A phone app
+ * without the App helper (1.0.x) says nothing and keeps the plain alerts.
+ */
+async function deviceUserAgent(): Promise<string | null> {
+  if (typeof navigator === "undefined") return null;
+  try {
+    const { Capacitor } = await import("@capacitor/core");
+    if (Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("App")) {
+      const { App } = await import("@capacitor/app");
+      const { build } = await App.getInfo();
+      if (build) return `${navigator.userAgent} BizHApp/${build}`;
+    }
+  } catch {
+    // Not inside the phone app.
+  }
+  return navigator.userAgent;
+}
+
 /** Returns the failure reason too — `registerFcmToken` used to collapse a
  *  real Postgres/RLS error into a bare `false`, so the one Sentry event this
  *  ever produced ("fcm token registration failed") never said WHY. Confirmed
@@ -36,7 +57,7 @@ export async function registerFcmToken(
       user_id: userId,
       token,
       platform,
-      user_agent: typeof navigator === "undefined" ? null : navigator.userAgent,
+      user_agent: await deviceUserAgent(),
       last_seen_at: new Date().toISOString(),
     },
     { onConflict: "token" }

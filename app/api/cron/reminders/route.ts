@@ -212,7 +212,7 @@ export async function GET(req: Request) {
       const title = titleRaw ?? (subject ? `🔔 תזכורת: ${subject}` : "🔔 תזכורת");
       const body = str(row, "content") ?? (subject ? "הגיע מועד התזכורת למשימה." : "הגיע מועד התזכורת.");
       const url = str(row, "url") ?? (taskId ? `/tasks/${taskId}` : "/tasks");
-      const payload: PushPayload = { title, body, url, tag: `reminder-${id}` };
+      const payload: PushPayload = { title, body, url, tag: `reminder-${id}`, ...(taskId ? { taskId } : {}) };
 
       const assigned = str(row, "assigned_to") ?? str(row, "created_by");
       const category = reminderBucket({ source: str(row, "source"), category: str(row, "category"), dedupeKey: str(row, "dedupe_key") });

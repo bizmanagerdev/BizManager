@@ -4,6 +4,7 @@ import { useState } from "react";
 import { OfflineIcon, SpinnerIcon, SyncIcon, WarningIcon } from "@/components/ui/icons";
 import { useOfflineStatus } from "@/hooks/useOfflineStatus";
 import PendingSyncPanel from "@/components/layout/PendingSyncPanel";
+import { useDeviceSavesWaiting } from "@/lib/powersync/device-saves-waiting";
 import { cn } from "@/lib/utils";
 
 export default function OfflineBanner() {
@@ -17,13 +18,18 @@ export default function OfflineBanner() {
     clearFailed,
   } = useOfflineStatus();
   const [panelOpen, setPanelOpen] = useState(false);
+  // Saves made on the phone's own copy (tasks and the rest, PowerSync), which
+  // wait in a queue of their own. With a connection they leave within moments,
+  // so online they count only once they've been stuck a while.
+  const deviceSaves = useDeviceSavesWaiting();
+  const waitingCount = queueLength + (!isOnline || deviceSaves.stuck ? deviceSaves.count : 0);
 
-  if (isOnline && queueLength === 0 && failedLength === 0) return null;
+  if (isOnline && waitingCount === 0 && failedLength === 0) return null;
 
   return (
     <div dir="rtl" className="flex flex-col">
       {/* Offline / pending-sync state */}
-      {(!isOnline || queueLength > 0) && (
+      {(!isOnline || waitingCount > 0) && (
         <div
           className={cn(
             "flex items-center justify-between gap-3 px-4 py-2 text-sm font-medium",
@@ -39,11 +45,11 @@ export default function OfflineBanner() {
               <OfflineIcon className="h-4 w-4 shrink-0" />
             )}
             <span>
-              {!isOnline && queueLength === 0 &&
+              {!isOnline && waitingCount === 0 &&
                 "אין חיבור לאינטרנט — פעולות שמירה יישמרו ויישלחו כשיחזור החיבור"}
-              {!isOnline && queueLength > 0 &&
-                `אין חיבור — ${queueLength} פעולות נשמרו ויישלחו כשיחזור החיבור`}
-              {isOnline && queueLength > 0 && `${queueLength} פעולות ממתינות לשליחה`}
+              {!isOnline && waitingCount > 0 &&
+                `אין חיבור — ${waitingCount} פעולות נשמרו ויישלחו כשיחזור החיבור`}
+              {isOnline && waitingCount > 0 && `${waitingCount} פעולות ממתינות לשליחה`}
             </span>
           </div>
           <div className="flex items-center gap-1.5">

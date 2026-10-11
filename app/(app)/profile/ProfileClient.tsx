@@ -16,6 +16,7 @@ import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import NotificationPrefs from "@/components/notifications/NotificationPrefs";
 import PushSubscribeButton from "@/components/notifications/PushSubscribeButton";
+import FingerprintSettings from "@/components/auth/FingerprintSettings";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -1066,6 +1067,10 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
           )}
         </CardContent>
       </Card>
+
+      {/* Fingerprint sign-in and the app lock, for this phone (phone app 1.2+;
+          renders nothing in a browser). Next to the password it stands in for. */}
+      <FingerprintSettings email={profile.email ?? null} locale={locale} />
 
       {/* «התאמת לוח» lives here rather than on the dashboard itself (user,
           2026-08-17): it's a personal display preference like the two below it,

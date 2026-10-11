@@ -15,7 +15,7 @@ export async function notifyTaskAssignees(taskId: string, subject: string, userI
     await deliverPush(
       admin,
       authIds,
-      { title: "📋 משימה חדשה", body: subject, url: `/tasks/${taskId}`, tag: `task-${taskId}` },
+      { title: "📋 משימה חדשה", body: subject, url: `/tasks/${taskId}`, tag: `task-${taskId}`, taskId },
       "tasks"
     );
   } catch {

@@ -44,6 +44,11 @@ export type PushPayload = {
    * urgent alerts, or everything feels "stuck".
    */
   requireInteraction?: boolean;
+  /**
+   * The task this alert is about. The phone app (APK 1.2+) then shows it with
+   * "בוצע" / "לטיפול מחר" / "פתיחה" buttons (lib/fcm.ts).
+   */
+  taskId?: string;
 };
 
 type SubscriptionRow = {

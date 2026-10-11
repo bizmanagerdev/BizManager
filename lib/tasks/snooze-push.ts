@@ -46,7 +46,7 @@ export async function announceReturnedSnoozes(supabase: SupabaseClient, now: Dat
       const result = await deliverPush(
         supabase,
         [authId],
-        { title: `⏰ לטיפול: ${subject}`, body: "המשימה חזרה לרשימה שלך.", url: `/tasks/${taskId}`, tag: `snooze-${str(row, "id")}` },
+        { title: `⏰ לטיפול: ${subject}`, body: "המשימה חזרה לרשימה שלך.", url: `/tasks/${taskId}`, tag: `snooze-${str(row, "id")}`, taskId },
         "tasks",
         // The person chose this time — like a reminder they set, it pings then.
         { alwaysPush: true }

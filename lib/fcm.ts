@@ -53,7 +53,27 @@ async function getMessaging(): Promise<Messaging | null> {
   }
 }
 
-type TokenRow = { id: string; token: string; user_id: string };
+type TokenRow = { id: string; token: string; user_id: string; user_agent?: string | null };
+
+/**
+ * The first phone app build (APK 1.2) that shows an alert about a task itself,
+ * with "בוצע" / "לטיפול מחר" / "פתיחה" buttons (BizMessagingService → TaskAlert).
+ * Such an alert has to go as a data-only message: Android shows a message that
+ * carries a notification by itself, without buttons, and never hands it to the
+ * app. Older builds would drop a data-only message in the background, so they
+ * keep getting the plain alert.
+ */
+export const TASK_ALERT_BUTTONS_BUILD = 6;
+
+/**
+ * The phone app build a token's phone runs: its registration (lib/notifications/
+ * pushTokens.ts) adds "BizHApp/<build>" to the user agent it stores. 0 when it
+ * doesn't say (a build before 1.2's website change, or not known yet).
+ */
+export function appBuildOf(userAgent: string | null | undefined): number {
+  const match = /BizHApp\/(\d+)/.exec(userAgent ?? "");
+  return match ? Number(match[1]) : 0;
+}
 
 // Send a payload to a specific list of user IDs' native devices. Mirrors the
 // web-push sendPushToRecipients contract: returns { sent, failed } and prunes
@@ -66,16 +86,26 @@ export async function sendFcmToRecipients(
   const messaging = await getMessaging();
   if (!messaging) return { sent: 0, failed: 0 };
 
-  let query = supabase.from("fcm_tokens").select("id,token,user_id");
+  let query = supabase.from("fcm_tokens").select("id,token,user_id,user_agent");
   // Empty recipient list means "everyone" (matches sendPushToRecipients).
   if (recipientUserIds.length > 0) query = query.in("user_id", recipientUserIds);
 
   const { data: rows, error } = await query;
   if (error || !rows?.length) return { sent: 0, failed: 0 };
 
-  const tokens = (rows as TokenRow[]).map((r) => r.token);
+  const all = rows as TokenRow[];
+  const withButtons = payload.taskId ? all.filter((r) => appBuildOf(r.user_agent) >= TASK_ALERT_BUTTONS_BUILD) : [];
+  const plain = withButtons.length ? all.filter((r) => !withButtons.includes(r)) : all;
 
-  const message: MulticastMessage = {
+  const results = await Promise.all([
+    sendBatch(supabase, messaging, plain, (tokens) => plainMessage(tokens, payload)),
+    sendBatch(supabase, messaging, withButtons, (tokens) => taskAlertMessage(tokens, payload)),
+  ]);
+  return { sent: results[0].sent + results[1].sent, failed: results[0].failed + results[1].failed };
+}
+
+function plainMessage(tokens: string[], payload: PushPayload): MulticastMessage {
+  return {
     tokens,
     notification: { title: payload.title, body: payload.body ?? "" },
     android: {
@@ -93,10 +123,33 @@ export async function sendFcmToRecipients(
     // Carried through to the tap handler (NativePushRegistration) for deep-link.
     data: { url: payload.url ?? "/inbox" },
   };
+}
+
+/** A task alert for APK 1.2+: data only, drawn by the app with its buttons. */
+function taskAlertMessage(tokens: string[], payload: PushPayload): MulticastMessage {
+  const data: Record<string, string> = {
+    type: "task_alert",
+    title: payload.title,
+    body: payload.body ?? "",
+    url: payload.url ?? "/tasks",
+    taskId: payload.taskId ?? "",
+  };
+  if (payload.tag) data.tag = payload.tag;
+  return { tokens, android: { priority: "high" }, data };
+}
+
+async function sendBatch(
+  supabase: SupabaseClient,
+  messaging: Messaging,
+  rows: TokenRow[],
+  build: (tokens: string[]) => MulticastMessage
+): Promise<{ sent: number; failed: number }> {
+  if (rows.length === 0) return { sent: 0, failed: 0 };
+  const tokens = rows.map((r) => r.token);
 
   let res;
   try {
-    res = await messaging.sendEachForMulticast(message);
+    res = await messaging.sendEachForMulticast(build(tokens));
   } catch {
     return { sent: 0, failed: tokens.length };
   }
@@ -118,7 +171,7 @@ export async function sendFcmToRecipients(
       code === "messaging/invalid-registration-token" ||
       code === "messaging/invalid-argument"
     ) {
-      staleIds.push((rows as TokenRow[])[i].id);
+      staleIds.push(rows[i].id);
     }
   });
 

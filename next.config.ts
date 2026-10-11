@@ -71,6 +71,22 @@ const nextConfig: NextConfig = {
   // pointer so a future attempt doesn't retry the same dead end — the actual
   // fix belongs in e2e/global-setup.ts's warmup instead (wait for the
   // dialog's own content, not a fixed timeout).
+  async redirects() {
+    return [
+      {
+        // The short address (biz-h.com, no www) goes to the site's real one, as
+        // Vercel's own domain redirect did until APK 1.2 — except Android's App
+        // Links file. Android doesn't follow a redirect when it checks that file,
+        // so with the domain-level redirect a short link (WhatsApp) opened the
+        // browser first and only then the app (owner, 2026-10-11). Same 307, same
+        // path and query.
+        source: "/:path((?!\\.well-known/).*)",
+        has: [{ type: "host", value: "biz-h.com" }],
+        destination: "https://www.biz-h.com/:path",
+        permanent: false,
+      },
+    ];
+  },
   async headers() {
     return [
       {

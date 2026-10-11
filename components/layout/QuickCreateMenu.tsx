@@ -34,6 +34,10 @@ import type { Locale } from "@/lib/i18n/types";
 import { deleteSnapshot, loadSnapshot, saveSnapshot } from "@/lib/offline-cache";
 import { readyLocalDatabase, whenLocalDatabaseReady } from "@/lib/powersync/store";
 import { OPEN_TASK_EVENT, registerTaskOpener } from "@/lib/tasks/open-task-here";
+import { takeQuickParam } from "@/lib/quick-link";
+
+/** The forms a ?quick= link may open (the phone app's shortcuts). */
+const QUICK_LINK_ACTIONS: readonly QuickCreateAction[] = ["task", "order", "reminder", "expense", "income", "customer", "project"];
 
 // The dialogs (order wizard, project wizard, expense form…) are a big chunk of
 // JS. Nobody pays for it until the + menu is first opened.
@@ -397,6 +401,10 @@ export function QuickCreateMenu({
     }
     window.addEventListener(OPEN_TASK_EVENT, onOpenTask);
     const unregister = registerTaskOpener();
+    // A link that opens a form straight away: the phone app's long-press
+    // shortcuts ("משימה חדשה" → /dashboard?quick=task, "הזמנה חדשה" → ?quick=order).
+    const linked = takeQuickParam(QUICK_LINK_ACTIONS);
+    if (linked) onQuickCreate(new CustomEvent("bizh:quick-create", { detail: { action: linked } }));
     return () => {
       window.removeEventListener("bizh:quick-create", onQuickCreate);
       window.removeEventListener(OPEN_TASK_EVENT, onOpenTask);

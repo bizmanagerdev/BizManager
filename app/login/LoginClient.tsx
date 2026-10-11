@@ -2,12 +2,24 @@
 
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
-import { HideIcon, ShowIcon } from "@/components/ui/icons";
+import { FingerprintIcon, HideIcon, ShowIcon } from "@/components/ui/icons";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AuthScreen } from "@/components/auth/AuthScreen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toHebrewError } from "@/lib/error-messages";
+import {
+  deleteFingerprintSignIn,
+  fingerprintSignIn,
+  fingerprintStatus,
+  saveFingerprintSignIn,
+  type FingerprintStatus,
+} from "@/lib/native-fingerprint";
+
+/** "Not now" on the offer to sign in with a fingerprint: asked once per phone (the profile page can still turn it on). */
+const FINGERPRINT_OFFER_DECLINED_KEY = "bizh-fingerprint-offer-declined";
+/** The login API's answer to a wrong email or password (app/api/auth/login). */
+const WRONG_PASSWORD_ERROR = "Invalid email or password.";
 
 export default function LoginClient() {
   const router = useRouter();
@@ -38,6 +50,111 @@ export default function LoginClient() {
   const [loading, setLoading] = useState<boolean>(false);
   const [navTarget, setNavTarget] = useState<"forgot" | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  // Fingerprint sign-in (phone app 1.2+, lib/native-fingerprint.ts): null in a
+  // browser or an older app, and then nothing below shows.
+  const [fingerprint, setFingerprint] = useState<FingerprintStatus | null>(null);
+  // After a password sign-in on a phone that could use the fingerprint: the
+  // one-time offer to turn it on, holding what was just typed.
+  const [fingerprintOffer, setFingerprintOffer] = useState<{ email: string; password: string } | null>(null);
+  const autoPrompted = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fingerprintStatus().then((status) => {
+      if (cancelled || !status) return;
+      setFingerprint(status);
+      // A saved sign-in: ask for the fingerprint straight away, once per visit
+      // (cancel → the password form, as always).
+      if (status.signInSaved && !autoPrompted.current) {
+        autoPrompted.current = true;
+        void signInWithFingerprint();
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Once, on mount: signInWithFingerprint is a plain function of this render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function goToDashboard() {
+    emitNavigationStart();
+    router.replace("/dashboard");
+    router.refresh();
+  }
+
+  /** Sends the sign-in; null when signed in, else the server's error ("" when it couldn't be reached). */
+  async function submitLogin(loginEmail: string, loginPassword: string): Promise<string | null> {
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+      });
+      if (res.ok) return null;
+      const data = (await res.json().catch(() => ({}))) as Partial<{ error: string }>;
+      return data.error ?? "";
+    } catch {
+      return "";
+    }
+  }
+
+  async function signInWithFingerprint() {
+    if (loading) return;
+    setErr(null);
+    const saved = await fingerprintSignIn();
+    if (typeof saved === "string") {
+      if (saved === "invalidated") {
+        setFingerprint((prev) => (prev ? { ...prev, signInSaved: false, signInEmail: null } : prev));
+        setErr("טביעות האצבע בטלפון השתנו, ולכן הכניסה בטביעת אצבע כובתה. יש להיכנס עם הסיסמה, ואפשר להפעיל אותה שוב.");
+      } else if (saved === "lockout") {
+        setErr("יותר מדי ניסיונות. יש להיכנס עם הסיסמה.");
+      }
+      // Cancelled ("סיסמה"): the form is right there.
+      return;
+    }
+    setEmail(saved.email);
+    setLoading(true);
+    const error = await submitLogin(saved.email, saved.password);
+    if (error === null) {
+      goToDashboard();
+      return;
+    }
+    if (error === WRONG_PASSWORD_ERROR) {
+      // The password was changed since it was saved: forget it.
+      await deleteFingerprintSignIn();
+      setFingerprint((prev) => (prev ? { ...prev, signInSaved: false, signInEmail: null } : prev));
+      setErr("הסיסמה השתנתה מאז שהופעלה טביעת האצבע. יש להיכנס עם הסיסמה החדשה, ואפשר להפעיל אותה שוב.");
+    } else {
+      setErr(toHebrewError(error || undefined, "ההתחברות נכשלה."));
+    }
+    setLoading(false);
+  }
+
+  function fingerprintOfferDeclined(): boolean {
+    try {
+      return window.localStorage.getItem(FINGERPRINT_OFFER_DECLINED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  }
+
+  async function answerFingerprintOffer(yes: boolean) {
+    const offer = fingerprintOffer;
+    if (!offer) return;
+    if (yes) {
+      // Whatever happens at the prompt, the sign-in itself is done.
+      await saveFingerprintSignIn(offer.email, offer.password);
+    } else {
+      try {
+        window.localStorage.setItem(FINGERPRINT_OFFER_DECLINED_KEY, "1");
+      } catch {
+        // No storage: it may ask again next time.
+      }
+    }
+    setFingerprintOffer(null);
+    goToDashboard();
+  }
 
   function navigateWithProgress(href: string) {
     if (loading) return;
@@ -60,27 +177,19 @@ export default function LoginClient() {
       return;
     }
 
-    try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: trimmedEmail, password }),
-      });
-
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as Partial<{ error: string }>;
-        setErr(toHebrewError(data.error, "ההתחברות נכשלה."));
-        setLoading(false);
-        return;
-      }
-
-      emitNavigationStart();
-      router.replace("/dashboard");
-      router.refresh();
-    } catch {
-      setErr("ההתחברות נכשלה.");
+    const error = await submitLogin(trimmedEmail, password);
+    if (error !== null) {
+      setErr(toHebrewError(error || undefined, "ההתחברות נכשלה."));
       setLoading(false);
+      return;
     }
+
+    // On a phone with a fingerprint and no fingerprint sign-in yet: offer it, once.
+    if (fingerprint?.canSignIn && !fingerprint.signInSaved && !fingerprintOfferDeclined()) {
+      setFingerprintOffer({ email: trimmedEmail, password });
+      return;
+    }
+    goToDashboard();
   }
 
   function onEmailChange(e: ChangeEvent<HTMLInputElement>) {
@@ -91,11 +200,51 @@ export default function LoginClient() {
     setPassword(e.target.value);
   }
 
+  if (fingerprintOffer) {
+    return (
+      <AuthScreen title="כניסה עם טביעת אצבע" description="בפעם הבאה אפשר להיכנס בלי להקליד סיסמה.">
+        <div className="space-y-4">
+          <div className="flex justify-center text-primary">
+            <FingerprintIcon className="h-14 w-14" />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            הסיסמה נשמרת מוצפנת בטלפון הזה בלבד, ורק טביעת האצבע שלך פותחת אותה. הכניסה עם הסיסמה תמיד עובדת גם.
+          </p>
+          <Button type="button" className="w-full" onClick={() => void answerFingerprintOffer(true)}>
+            כן, להפעיל
+          </Button>
+          <Button type="button" variant="outline" className="w-full" onClick={() => void answerFingerprintOffer(false)}>
+            לא עכשיו
+          </Button>
+        </div>
+      </AuthScreen>
+    );
+  }
+
   return (
     <AuthScreen
       title="התחברות"
       description="גישה מהירה למערכת וניהול העסק ממקום אחד."
     >
+      {fingerprint?.signInSaved ? (
+        <div className="mb-4 space-y-2">
+          <Button
+            type="button"
+            variant="secondary"
+            className="w-full gap-2"
+            disabled={loading}
+            onClick={() => void signInWithFingerprint()}
+          >
+            <FingerprintIcon className="h-5 w-5" />
+            כניסה עם טביעת אצבע
+          </Button>
+          {fingerprint.signInEmail ? (
+            <p className="text-center text-xs text-muted-foreground" dir="ltr">
+              {fingerprint.signInEmail}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <form
         className="space-y-4"
         onSubmit={(e) => {

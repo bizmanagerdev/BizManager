@@ -29,6 +29,7 @@ import { PAGE_HEADER_TOOLBAR_ID } from "@/components/layout/PageHeaderToolbar";
 import { AlertBar } from "@/components/reminders/AlertBar";
 import type { RememberedAlertBar } from "@/lib/ui/alert-bar-memory";
 import { localDataEnabledFor } from "@/lib/powersync/config";
+import NativeShortcuts from "@/components/pwa/NativeShortcuts";
 
 // The on-device copy (PowerSync). Browser-only, and only loaded for the people
 // it's switched on for — nobody else downloads the SDK.
@@ -117,6 +118,8 @@ export default function AppShell({
         <UndoHotkeyListener />
         <ConnectionTelemetry />
         <LayoutShiftReport />
+        {/* The phone app's long-press shortcuts, per person (APK 1.2+). */}
+        <NativeShortcuts role={viewerRole} locale={viewerLocale} access={viewerSectionAccess} />
         {localDataEnabledFor(viewerRole) ? (
           <LocalDataHost
             viewer={

@@ -44,7 +44,12 @@ export async function startNativeAppBridge(): Promise<void> {
 
   // Both are in every APK from 1.1.0 on, so they're switched on together.
   if (Capacitor.isPluginAvailable("BizHNative") && Capacitor.isPluginAvailable("Printer")) {
-    const bizh = registerPlugin<BizHNativePlugin>("BizHNative");
+    // One registration for the whole page (lib/native-fingerprint.ts may have made it).
+    const bizh =
+      ((window as unknown as { Capacitor?: { Plugins?: Record<string, unknown> } }).Capacitor?.Plugins?.BizHNative as
+        | BizHNativePlugin
+        | undefined) ??
+      registerPlugin<BizHNativePlugin>("BizHNative");
     tellOpeningScreenReady(bizh);
     installDownloads(bizh);
     void installPrinting(bizh);

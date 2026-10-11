@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { highlightText, MatchReason } from "@/components/search/highlightMatch";
 import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import type { GlobalSearchResponse } from "@/lib/global-search";
+import { takeQuickParam } from "@/lib/quick-link";
 
 type Props = {
   className?: string;
@@ -185,6 +186,13 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
       window.setTimeout(() => mobileInputRef.current?.focus(), 20);
     }
   }, [mobileOpen]);
+
+  // The phone app's "חיפוש" shortcut (/dashboard?quick=search): open with the
+  // box ready to type in. A one-time read of the address on mount.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (takeQuickParam(["search"] as const)) setMobileOpen(true);
+  }, []);
 
   useEffect(() => {
     const normalized = deferredQuery.trim();

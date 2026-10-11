@@ -23,6 +23,17 @@ import {
   type UploadEntry,
 } from "@/lib/offline-upload";
 import { ViewDialog } from "@/components/ui/view-dialog";
+import { useLocalDatabase } from "@/lib/powersync/store";
+import { readDeviceSavesWaiting, type DeviceSaveWaiting } from "@/lib/powersync/device-saves-waiting";
+
+const DEVICE_CHANGE_WORD: Record<DeviceSaveWaiting["change"], string> = {
+  new: "חדש",
+  changed: "שינוי",
+  removed: "מחיקה",
+};
+
+/** How often the phone-copy part is read again while the list is open. */
+const DEVICE_REFRESH_MS = 2500;
 
 function formatTime(ts?: number) {
   if (!ts) return "";
@@ -58,6 +69,9 @@ const EMPTY: Snapshot = { pendingWrites: [], pendingUploads: [], failedWrites: [
  * "מה ממתין לשליחה" — a concrete view of the offline queues so a field user can
  * SEE that the photo/action they just took is safely saved (and retry or discard
  * anything that permanently failed), instead of only a count in the banner.
+ * Every kind: the offline queue, files, and the saves made on the phone's own
+ * copy (tasks and the rest — lib/powersync/device-saves-waiting.ts), which
+ * PowerSync sends by itself once the connection is back.
  */
 export default function PendingSyncPanel({
   open,
@@ -67,6 +81,29 @@ export default function PendingSyncPanel({
   onOpenChange: (open: boolean) => void;
 }) {
   const [snap, setSnap] = useState<Snapshot>(EMPTY);
+  const localDb = useLocalDatabase();
+  const [deviceSaves, setDeviceSaves] = useState<DeviceSaveWaiting[]>([]);
+
+  // The phone-copy part: read when the list opens, then again every few
+  // seconds — its queue raises no event of its own.
+  useEffect(() => {
+    if (!open || !localDb) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDeviceSaves([]);
+      return;
+    }
+    let cancelled = false;
+    const read = () =>
+      void readDeviceSavesWaiting(localDb).then((lines) => {
+        if (!cancelled) setDeviceSaves(lines);
+      });
+    read();
+    const timer = window.setInterval(read, DEVICE_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [open, localDb]);
 
   const refresh = useCallback(async () => {
     const [pendingUploads, failedUploads] = await Promise.all([getUploadQueue(), getUploadFailed()]);
@@ -102,7 +139,7 @@ export default function PendingSyncPanel({
     });
   }, []);
 
-  const pendingCount = snap.pendingWrites.length + snap.pendingUploads.length;
+  const pendingCount = snap.pendingWrites.length + snap.pendingUploads.length + deviceSaves.length;
   const failedCount = snap.failedWrites.length + snap.failedUploads.length;
 
   return (
@@ -131,6 +168,9 @@ export default function PendingSyncPanel({
             ))}
             {snap.pendingWrites.map((entry) => (
               <Row key={entry.id} label={entry.label} meta={`נשמר ${formatTime(entry.queuedAt)}`} />
+            ))}
+            {deviceSaves.map((line) => (
+              <Row key={line.key} label={line.label} meta={`${DEVICE_CHANGE_WORD[line.change]} · נשמר בטלפון, יישלח לבד`} />
             ))}
           </div>
         ) : null}
