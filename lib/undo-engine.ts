@@ -100,6 +100,9 @@ async function fire(key: string) {
   const entry = pending.get(key);
   if (!entry) return;
   finish(key);
+  // Its "בטל" has nothing left to undo — the toast goes with the window, not
+  // only when the toast library's own countdown (pausable) says so.
+  toast.dismiss(key);
   notify();
   if (entry.kind === "deferred") {
     const result = await entry.onCommit().catch(
@@ -191,7 +194,11 @@ export function registerReversibleAction(args: {
   view?: { label: string; onClick: () => void };
 }) {
   const windowMs = args.windowMs ?? DEFAULT_WINDOW_MS;
-  const timer = setTimeout(() => finish(args.key), windowMs);
+  const timer = setTimeout(() => {
+    finish(args.key);
+    // The undo window is over: "בטל" would do nothing now, so the toast goes too.
+    toast.dismiss(args.key);
+  }, windowMs);
   pushEntry(args.key, {
     kind: "reversible",
     key: args.key,

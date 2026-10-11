@@ -94,8 +94,40 @@ function useResponsivePosition() {
   return position;
 }
 
+/**
+ * On a touch screen a toast's countdown must still run out. Sonner pauses every
+ * toast while the pointer is over the stack, and a tap reads to it as the mouse
+ * arriving — a mouse that never leaves — so after one tap on a toast ("צפייה",
+ * or just a touch) every toast stayed up for good (owner's screenshot,
+ * 2026-10-11: "ההכנסה נשמרה" with בטל / צפייה, hours on). Sonner has no switch
+ * for that pause, so on a touch device each toast is closed here once its own
+ * time is up (and a moment more), whatever the pause says. A toast that sets
+ * no end (Infinity) and a loading toast keep theirs.
+ */
+function useTouchToastTimeouts() {
+  React.useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia?.("(pointer: coarse)").matches) return;
+    // By the toast object: an update in place (same id, new content) is a new object and starts afresh.
+    const firstSeen = new WeakMap<object, number>();
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      for (const shown of toast.getToasts()) {
+        const data = shown as { id: string | number; type?: string; duration?: number };
+        if (data.type === "loading") continue;
+        if (!firstSeen.has(shown)) firstSeen.set(shown, now);
+        const duration =
+          data.duration ?? (data.type === "error" || data.type === "warning" ? TOAST_READ_DURATION_MS : TOAST_DURATION_MS);
+        if (!Number.isFinite(duration)) continue;
+        if (now - firstSeen.get(shown)! > duration + 1500) toast.dismiss(data.id);
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+}
+
 export function Toaster(props: ToasterProps) {
   const position = useResponsivePosition();
+  useTouchToastTimeouts();
   return (
     <Sonner
       theme="light"
