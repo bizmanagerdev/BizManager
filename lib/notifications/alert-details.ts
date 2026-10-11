@@ -1,15 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { formatMoney } from "@/lib/money";
 import { israelDateKey } from "@/lib/timezone";
-import { PROJECT_TYPE_LABELS } from "@/lib/search/projectTypeLabels";
 
-// The few details that make an alert worth reading on its own (owner,
-// 2026-10-11: "when you put in an order, just say what items they ordered and
-// what the price of the order was … not all, just a little more"). Each alert
-// is a title plus up to two short lines: the first is what matters most, as
-// it's the one a collapsed notification shows; the second says when and who.
-// Read with the admin client after the save (the caller runs it after the
-// response); anything that can't be read is left out, never the alert.
+// The few details that make an alert worth reading on its own — and no more
+// (owner, 2026-10-11: first "just say what items they ordered … just a little
+// more", then "a little too much details": an order is its items and who
+// entered it, no price; a project its name, start date and who opened it; a
+// task its name, due date, whether it's urgent and who gave it). A title plus
+// a short line or two. Read with the admin client after the save (the caller
+// runs it after the response); anything that can't be read is left out, never
+// the alert.
 
 type Row = Record<string, unknown>;
 export type AlertText = { title: string; body: string };
@@ -23,10 +22,13 @@ export function formatQuantity(value: unknown): string {
   return String(Math.round(n * 100) / 100);
 }
 
-/** "מזרן ×2, מיטה ×1, כרית ×4 ועוד 2". */
+/**
+ * "1 פח, 2 מזרן, 4 כרית ועוד 2": every item with its number, a single one too
+ * (owner: "if there's one garbage … just say the number one").
+ */
 export function itemsSummary(items: Array<{ name: string; quantity: string }>, max = 3): string | null {
   if (items.length === 0) return null;
-  const shown = items.slice(0, max).map((item) => (item.quantity && item.quantity !== "1" ? `${item.name} ×${item.quantity}` : item.name));
+  const shown = items.slice(0, max).map((item) => (item.quantity ? `${item.quantity} ${item.name}` : item.name));
   const rest = items.length - max;
   return rest > 0 ? `${shown.join(", ")} ועוד ${rest}` : shown.join(", ");
 }
@@ -57,7 +59,7 @@ function lines(...rows: string[]): string {
   return rows.filter(Boolean).join("\n");
 }
 
-async function nameOf(admin: SupabaseClient, table: "customers" | "users" | "projects", id: unknown): Promise<string | null> {
+async function nameOf(admin: SupabaseClient, table: "customers" | "users", id: unknown): Promise<string | null> {
   const key = text(id);
   if (!key) return null;
   const column = table === "users" ? "full_name" : "name";
@@ -66,23 +68,21 @@ async function nameOf(admin: SupabaseClient, table: "customers" | "users" | "pro
 }
 
 /**
- * A new order: the customer in the title; the total and what was ordered;
- * the delivery day asked for and who put it in.
+ * A new order: the customer in the title; what was ordered; who entered it.
  *   🧾 הזמנה חדשה: כהן משה
- *   ₪3,250 · מזרן ×2, מיטה זוגית, כרית ×4 ועוד 2
- *   אספקה מחר · הוזנה ע״י דוד
+ *   2 מזרן, 1 פח, 4 כרית ועוד 2
+ *   הוזנה ע״י דוד
  */
 export async function newOrderAlert(admin: SupabaseClient, orderId: string, creatorUserId: string | null): Promise<AlertText> {
   const [{ data: order }, { data: itemRows }, creator] = await Promise.all([
-    admin.from("orders").select("customer_id,total_amount,requested_delivery_date").eq("id", orderId).maybeSingle(),
+    admin.from("orders").select("customer_id").eq("id", orderId).maybeSingle(),
     admin.from("order_items").select("product_id,description,quantity_ordered").eq("order_id", orderId).range(0, 199),
     nameOf(admin, "users", creatorUserId),
   ]);
-  const row = (order ?? {}) as Row;
   const items = (itemRows ?? []) as Row[];
   const productIds = [...new Set(items.map((item) => text(item.product_id)).filter((id): id is string => Boolean(id)))];
   const [customer, { data: products }] = await Promise.all([
-    nameOf(admin, "customers", row.customer_id),
+    nameOf(admin, "customers", ((order ?? {}) as Row).customer_id),
     productIds.length
       ? admin.from("products").select("id,name").in("id", productIds)
       : Promise.resolve({ data: [] as Row[] }),
@@ -94,52 +94,41 @@ export async function newOrderAlert(admin: SupabaseClient, orderId: string, crea
       quantity: formatQuantity(item.quantity_ordered),
     }))
   );
-  const total = row.total_amount != null && row.total_amount !== "" ? formatMoney(row.total_amount as string | number) : null;
-  const delivery = shortDay(text(row.requested_delivery_date));
   const by = firstName(creator);
   return {
     title: customer ? `🧾 הזמנה חדשה: ${customer}` : "🧾 הזמנה חדשה",
-    body:
-      lines(joinParts([total, summary]), joinParts([delivery && `אספקה ${delivery}`, by && `הוזנה ע״י ${by}`])) ||
-      "נוספה הזמנה חדשה למערכת.",
+    body: lines(summary ?? "", by ? `הוזנה ע״י ${by}` : "") || "נוספה הזמנה חדשה למערכת.",
   };
 }
 
 /**
- * A new project: its name in the title; the customer, the kind and the agreed
- * price; when it starts and who opened it.
+ * A new project: its name in the title; when it starts and who opened it.
  *   📁 פרויקט חדש: דירת כהן
- *   כהן משה · הובלה · ₪8,000
  *   מתחיל 14.10 · נפתח ע״י דוד
  */
 export async function newProjectAlert(admin: SupabaseClient, projectId: string, creatorUserId: string | null): Promise<AlertText> {
   const [{ data: project }, creator] = await Promise.all([
-    admin.from("projects").select("name,customer_id,project_type,agreed_base_price,start_date").eq("id", projectId).maybeSingle(),
+    admin.from("projects").select("name,start_date").eq("id", projectId).maybeSingle(),
     nameOf(admin, "users", creatorUserId),
   ]);
   const row = (project ?? {}) as Row;
-  const customer = await nameOf(admin, "customers", row.customer_id);
   const name = text(row.name);
-  const type = PROJECT_TYPE_LABELS[text(row.project_type) ?? ""] ?? null;
-  const price = Number(row.agreed_base_price) > 0 ? formatMoney(row.agreed_base_price as string | number) : null;
   const start = shortDay(text(row.start_date));
   const by = firstName(creator);
   return {
     title: name ? `📁 פרויקט חדש: ${name}` : "📁 פרויקט חדש",
-    body:
-      lines(joinParts([customer, type, price]), joinParts([start && `מתחיל ${start}`, by && `נפתח ע״י ${by}`])) ||
-      "נוסף פרויקט חדש למערכת.",
+    body: joinParts([start && `מתחיל ${start}`, by && `נפתח ע״י ${by}`]) || "נוסף פרויקט חדש למערכת.",
   };
 }
 
 const URGENT = new Set(["high", "urgent"]);
 
 /**
- * A task given to someone: the task itself; when it's due, whether it's urgent,
- * whose it's about and who gave it.
+ * A task given to someone: the task; when it's due, whether it's urgent, and
+ * who gave it.
  *   📋 משימה חדשה
  *   להתקשר לספק על המזרנים
- *   עד מחר 10:00 · דחוף · כהן משה · מדוד
+ *   עד מחר 10:00 · דחוף · מדוד
  */
 export async function newTaskAlert(
   admin: SupabaseClient,
@@ -148,14 +137,10 @@ export async function newTaskAlert(
   actorUserId: string | null
 ): Promise<AlertText> {
   const [{ data: task }, actor] = await Promise.all([
-    admin.from("tasks").select("due_date,due_time,priority,customer_id,project_id").eq("id", taskId).maybeSingle(),
+    admin.from("tasks").select("due_date,due_time,priority").eq("id", taskId).maybeSingle(),
     nameOf(admin, "users", actorUserId),
   ]);
   const row = (task ?? {}) as Row;
-  const [customer, project] = await Promise.all([
-    nameOf(admin, "customers", row.customer_id),
-    text(row.customer_id) ? Promise.resolve(null) : nameOf(admin, "projects", row.project_id),
-  ]);
   const due = shortDay(text(row.due_date));
   const time = text(row.due_time)?.slice(0, 5) ?? null;
   const by = firstName(actor);
@@ -163,12 +148,7 @@ export async function newTaskAlert(
     title: "📋 משימה חדשה",
     body: lines(
       subject,
-      joinParts([
-        due && `עד ${due}${time ? ` ${time}` : ""}`,
-        URGENT.has(text(row.priority) ?? "") && "דחוף",
-        customer ?? project,
-        by && `מ${by}`,
-      ])
+      joinParts([due && `עד ${due}${time ? ` ${time}` : ""}`, URGENT.has(text(row.priority) ?? "") && "דחוף", by && `מ${by}`])
     ),
   };
 }

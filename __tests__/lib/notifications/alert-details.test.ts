@@ -10,8 +10,9 @@ import {
   shortDay,
 } from "@/lib/notifications/alert-details";
 
-// Alerts carry a little more (owner, 2026-10-11: "when you put in an order,
-// just say what items they ordered and what the price of the order was").
+// Alerts carry a little more, and no more (owner, 2026-10-11: an order is its
+// items and who entered it, no price; a project its name, start and who opened
+// it; a task its name, due date, urgency and who gave it).
 
 type Rows = Record<string, Array<Record<string, unknown>>>;
 
@@ -46,16 +47,17 @@ describe("the small helpers", () => {
     expect(formatQuantity(3)).toBe("3");
   });
 
-  it("lists up to three items, then how many more", () => {
+  it("lists up to three items, each with its number (a single one too), then how many more", () => {
     expect(
       itemsSummary([
         { name: "מזרן", quantity: "2" },
-        { name: "מיטה זוגית", quantity: "1" },
+        { name: "פח", quantity: "1" },
         { name: "כרית", quantity: "4" },
         { name: "שמיכה", quantity: "1" },
         { name: "סדין", quantity: "2" },
       ])
-    ).toBe("מזרן ×2, מיטה זוגית, כרית ×4 ועוד 2");
+    ).toBe("2 מזרן, 1 פח, 4 כרית ועוד 2");
+    expect(itemsSummary([{ name: "התקנה", quantity: "" }])).toBe("התקנה");
     expect(itemsSummary([])).toBeNull();
   });
 
@@ -84,16 +86,16 @@ describe("newOrderAlert", () => {
     ],
     products: [
       { id: "p1", name: "מזרן" },
-      { id: "p2", name: "מיטה זוגית" },
+      { id: "p2", name: "פח" },
     ],
     customers: [{ id: "c1", name: "כהן משה" }],
     users: [{ id: "u1", full_name: "דוד לוי" }],
   };
 
-  it("says who it's for, the total, what was ordered, when and by whom", async () => {
+  it("says who it's for, what was ordered and who entered it — no price", async () => {
     const alert = await newOrderAlert(fakeAdmin(rows), "o1", "u1");
     expect(alert.title).toBe("🧾 הזמנה חדשה: כהן משה");
-    expect(alert.body).toBe("₪3,250 · מזרן ×2, מיטה זוגית, התקנה\nאספקה 5.1 · הוזנה ע״י דוד");
+    expect(alert.body).toBe("2 מזרן, 1 פח, 1 התקנה\nהוזנה ע״י דוד");
   });
 
   it("an order it can't read still alerts", async () => {
@@ -103,34 +105,31 @@ describe("newOrderAlert", () => {
 });
 
 describe("newProjectAlert", () => {
-  it("the customer, the kind and the agreed price; when it starts and who opened it", async () => {
+  it("its name, when it starts and who opened it", async () => {
     const alert = await newProjectAlert(
       fakeAdmin({
         projects: [{ id: "pr1", name: "דירת כהן", customer_id: "c1", project_type: "moving", agreed_base_price: "8000", start_date: "2030-03-14" }],
-        customers: [{ id: "c1", name: "כהן משה" }],
         users: [{ id: "u1", full_name: "דוד" }],
       }),
       "pr1",
       "u1"
     );
-    expect(alert.title).toBe("📁 פרויקט חדש: דירת כהן");
-    expect(alert.body).toBe("כהן משה · הובלה · ₪8,000\nמתחיל 14.3 · נפתח ע״י דוד");
+    expect(alert).toEqual({ title: "📁 פרויקט חדש: דירת כהן", body: "מתחיל 14.3 · נפתח ע״י דוד" });
   });
 });
 
 describe("newTaskAlert", () => {
-  it("the task, then when it's due, urgency, whose it's about and who gave it", async () => {
+  it("the task, then when it's due, whether it's urgent and who gave it", async () => {
     const alert = await newTaskAlert(
       fakeAdmin({
-        tasks: [{ id: "t1", due_date: "2030-02-01", due_time: "10:00:00", priority: "urgent", customer_id: "c1", project_id: null }],
-        customers: [{ id: "c1", name: "כהן משה" }],
+        tasks: [{ id: "t1", due_date: "2030-02-01", due_time: "10:00:00", priority: "urgent", customer_id: "c1" }],
         users: [{ id: "u1", full_name: "דוד לוי" }],
       }),
       "t1",
       "להתקשר לספק",
       "u1"
     );
-    expect(alert).toEqual({ title: "📋 משימה חדשה", body: "להתקשר לספק\nעד 1.2 10:00 · דחוף · כהן משה · מדוד" });
+    expect(alert).toEqual({ title: "📋 משימה חדשה", body: "להתקשר לספק\nעד 1.2 10:00 · דחוף · מדוד" });
   });
 
   it("a plain task is just its subject", async () => {
