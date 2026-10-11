@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ClockIcon, SpinnerIcon } from "@/components/ui/icons";
@@ -24,6 +24,64 @@ import { scheduleDeferredAction } from "@/lib/undo-engine";
 import { IsraelTimeNote } from "@/components/ui/israel-time-note";
 import { israelLocalValueToIso, nowIsraelLocalValue } from "@/lib/timezone";
 import { offlineFetch } from "@/lib/offline-queue";
+import { readyLocalDatabase } from "@/lib/powersync/store";
+import { localClient } from "@/lib/powersync/local-results";
+
+// A clock-in made with no signal waits in the send queue (owner, 2026-10-11:
+// "it would be nice if it could be offline"), and is kept here meanwhile so
+// the card shows the shift as open — after a reload too — until the server's
+// own copy has it. Cleared once the server shows an open shift, or after a day.
+const PENDING_SHIFT_KEY = "bizh-pending-shift";
+const PENDING_SHIFT_EVENT = "bizh:pending-shift";
+const PENDING_SHIFT_KEEP_MS = 20 * 60 * 60 * 1000;
+type PendingShift = { clock_in: string; notes: string | null; at: number };
+
+function readPendingShift(): string {
+  try {
+    const raw = localStorage.getItem(PENDING_SHIFT_KEY);
+    if (!raw) return "";
+    const parsed = JSON.parse(raw) as PendingShift;
+    return Date.now() - parsed.at < PENDING_SHIFT_KEEP_MS ? raw : "";
+  } catch {
+    return "";
+  }
+}
+
+function writePendingShift(next: PendingShift | null) {
+  try {
+    if (next) localStorage.setItem(PENDING_SHIFT_KEY, JSON.stringify(next));
+    else localStorage.removeItem(PENDING_SHIFT_KEY);
+  } catch {
+    // Storage blocked: the card shows it once the server has it.
+  }
+  window.dispatchEvent(new Event(PENDING_SHIFT_EVENT));
+}
+
+function subscribePendingShift(onChange: () => void) {
+  window.addEventListener(PENDING_SHIFT_EVENT, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(PENDING_SHIFT_EVENT, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+/** Is there a shift open for this person on the phone's copy (their own reports — sync rules v1.10)? */
+async function openShiftOnDevice(userId: string | undefined): Promise<boolean> {
+  const db = readyLocalDatabase();
+  if (!db || !userId) return false;
+  try {
+    const { data } = await (await localClient(db))
+      .from("phone_attendance_reports")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("status", "open")
+      .limit(1);
+    return Array.isArray(data) && data.length > 0;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * The worker's own clock: open a shift, and when the day is done submit it.
@@ -36,8 +94,11 @@ export default function MyShiftCard({
   openShift: openShiftProp,
   pendingCount,
   locale = "he",
+  userId,
 }: {
   openShift: MyShiftReport | null;
+  /** Whose clock this is — to check the phone's copy for an open shift before a clock-in with no signal. */
+  userId?: string;
   /** Submitted shifts still waiting for the boss, so he knows it went through. */
   pendingCount: number;
   /** Office/admin are always "he"; only a worker ever sees "ar". */
@@ -50,7 +111,29 @@ export default function MyShiftCard({
   // Closing is deferred (see closeShift): the card reflects "not on shift"
   // immediately, before the real close call has actually gone out.
   const [closedOptimistically, setClosedOptimistically] = useState(false);
-  const openShift = closedOptimistically ? null : openShiftProp;
+  // A clock-in still waiting for the connection, shown as the open shift
+  // until the server's own copy has one.
+  const pendingRaw = useSyncExternalStore(subscribePendingShift, readPendingShift, () => "");
+  useEffect(() => {
+    if (openShiftProp && pendingRaw) writePendingShift(null);
+  }, [openShiftProp, pendingRaw]);
+  // Built once per stored entry: the minute ticker below restarts whenever the
+  // open shift is a new object, and a new one every render never settles.
+  const pendingOpen = useMemo<MyShiftReport | null>(() => {
+    if (!pendingRaw) return null;
+    const pendingShift = JSON.parse(pendingRaw) as PendingShift;
+    return {
+      id: "pending",
+      clock_in: pendingShift.clock_in,
+      clock_out: null,
+      worked_minutes: null,
+      status: "open",
+      source: "app",
+      notes: pendingShift.notes,
+      created_at: new Date(pendingShift.at).toISOString(),
+    };
+  }, [pendingRaw]);
+  const openShift = closedOptimistically ? null : (openShiftProp ?? pendingOpen);
   // "עכשיו" or a time he types in — a driver who only remembers to clock in at
   // 10:00 shouldn't lose the two hours he already worked, and one who remembers
   // to clock out at 20:00 shouldn't be paid for the three he spent at home.
@@ -78,9 +161,44 @@ export default function MyShiftCard({
   const elapsedMinutes =
     openShift && now ? minutesBetween(openShift.clock_in, new Date(now)) : null;
 
+  function resetForm() {
+    setNote("");
+    setStartMode("now");
+    setStartLocal("");
+    setFullEndLocal("");
+    setEndMode("now");
+    setEndLocal("");
+    setClosing(false);
+  }
+
   async function call(path: string, successMessage: string, extra?: Record<string, unknown>) {
     setBusy(true);
     try {
+      // No signal: into the send queue with the time it was pressed (the
+      // server would otherwise take its own "now", hours later). A clock-in
+      // first checks the phone's copy for a shift already open, and then shows
+      // as open at once (PENDING_SHIFT_KEY).
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        const isStart = path === "/api/attendance/my/start";
+        if (isStart && (await openShiftOnDevice(userId))) {
+          toast.error(t(profileDict, locale, "shiftAlreadyOpen"));
+          return;
+        }
+        const notes = note.trim() || null;
+        const pressedAt = new Date().toISOString();
+        const body: Record<string, unknown> = isStart ? { notes, clock_in: pressedAt, ...extra } : { notes, ...extra };
+        const result = await offlineFetch(path, body, isStart ? "פתיחת המשמרת" : "דיווח המשמרת");
+        if (!result.queued && !result.ok) {
+          toast.error(toHebrewError(result.error ?? "", t(profileDict, locale, "actionFailed")));
+          return;
+        }
+        if (isStart && result.queued) {
+          writePendingShift({ clock_in: typeof body.clock_in === "string" ? body.clock_in : pressedAt, notes, at: Date.now() });
+        }
+        resetForm();
+        toast.success(successMessage);
+        return;
+      }
       const response = await fetch(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -91,13 +209,7 @@ export default function MyShiftCard({
         toast.error(toHebrewError(json.error ?? "", t(profileDict, locale, "actionFailed")));
         return;
       }
-      setNote("");
-      setStartMode("now");
-      setStartLocal("");
-      setFullEndLocal("");
-      setEndMode("now");
-      setEndLocal("");
-      setClosing(false);
+      resetForm();
       toast.success(successMessage);
       startSaving(() => router.refresh());
     } catch (error: unknown) {
@@ -162,7 +274,12 @@ export default function MyShiftCard({
     scheduleDeferredAction({
       key: `phone-report:close:${openShift.id}`,
       message: t(profileDict, locale, "shiftSubmittedToast"),
-      onApplyOptimistic: () => setClosedOptimistically(true),
+      onApplyOptimistic: () => {
+        setClosedOptimistically(true);
+        // A clock-in still waiting to be sent is closed with it (the queue
+        // sends the opening first, then this).
+        if (openShift.id === "pending") writePendingShift(null);
+      },
       onRevert: () => setClosedOptimistically(false),
       onCommit: async () => {
         // Through the send queue: with no signal the clock-out waits for the

@@ -180,6 +180,7 @@ export type ProfileKey =
   | "loadingEllipsis"
   // MyShiftCard
   | "shiftOpenedToast"
+  | "shiftAlreadyOpen"
   | "errSelectStartTime"
   | "errSelectEndTime"
   | "shiftSubmittedToast"
@@ -433,6 +434,7 @@ export const profileDict: Dictionary<ProfileKey> = {
     noServerConnection: "אין חיבור לשרת.",
     loadingEllipsis: "...",
     shiftOpenedToast: "המשמרת נפתחה.",
+    shiftAlreadyOpen: "כבר יש לך משמרת פתוחה.",
     errSelectStartTime: "יש לבחור שעת התחלה.",
     errSelectEndTime: "יש לבחור שעת סיום.",
     shiftSubmittedToast: "המשמרת נשלחה לאישור.",
@@ -682,6 +684,7 @@ export const profileDict: Dictionary<ProfileKey> = {
     noServerConnection: "لا يوجد اتصال بالخادم.",
     loadingEllipsis: "...",
     shiftOpenedToast: "تم فتح المناوبة.",
+    shiftAlreadyOpen: "لديك مناوبة مفتوحة بالفعل.",
     errSelectStartTime: "يجب اختيار وقت البدء.",
     errSelectEndTime: "يجب اختيار وقت الانتهاء.",
     shiftSubmittedToast: "أُرسلت المناوبة للموافقة.",

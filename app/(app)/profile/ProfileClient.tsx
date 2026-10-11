@@ -1218,7 +1218,7 @@ export default function ProfileClient({ profile, locale = "he", initialFontScale
               labelled "this month" showing the last month that had any. */}
           {isWorker ? (
             <>
-              <MyShiftCard openShift={openShiftReport} pendingCount={pendingShiftReports.length} locale={locale} />
+              <MyShiftCard openShift={openShiftReport} pendingCount={pendingShiftReports.length} locale={locale} userId={profile.id ?? undefined} />
               {/* Right under the clock: "I marked my hours, and I also got a
                   ₪300 bonus that day" is one thought, not two screens. */}
               <MyBonusCard bonuses={myBonuses} locale={locale} />

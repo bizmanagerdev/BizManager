@@ -11,5 +11,5 @@ import type { Locale } from "@/lib/i18n/types";
 export default async function WorkerShiftPanel({ userId, locale }: { userId: string; locale: Locale }) {
   const supabase = await createSupabaseServerClient();
   const state = await loadMyShiftState(supabase, userId, { limit: 10 });
-  return <MyShiftCard openShift={state.open} pendingCount={state.pending.length} locale={locale} />;
+  return <MyShiftCard openShift={state.open} pendingCount={state.pending.length} locale={locale} userId={userId} />;
 }

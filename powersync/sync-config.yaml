@@ -1,4 +1,7 @@
-# BizManager — PowerSync Sync Streams, v1.9 (2026-10-09): each person's own
+# BizManager — PowerSync Sync Streams, v1.10 (2026-10-11): each worker's own
+# shift reports, open and waiting for approval — so a clock-in with no signal
+# can check the phone for a shift already open (worker_attendance).
+# v1.9 (2026-10-09): each person's own
 # task snoozes ("לטיפול בהמשך" — task_snoozes), and the task reminders already
 # marked done (a far-off task their reminder brought onto the board stays on
 # it once the reminder is done — lib/tasks/visibility.ts).
@@ -277,3 +280,12 @@ streams:
       - |
         SELECT payments.* FROM payments, worker_deliveries_gate AS bucket
         WHERE payments.order_id IN (SELECT id FROM orders WHERE status != 'closed' AND status != 'cancelled' AND status != 'סגורה' AND status != 'בוטלה')
+
+  # His own shift reports, open and waiting for approval (the server's RLS lets
+  # a worker read his own) — the clock checks the phone for a shift already
+  # open before a clock-in that has to wait for a connection (owner, 2026-10-11).
+  worker_attendance:
+    auto_subscribe: true
+    queries:
+      - SELECT * FROM phone_attendance_reports WHERE user_id IN worker_me AND status = 'open'
+      - SELECT * FROM phone_attendance_reports WHERE user_id IN worker_me AND status = 'pending_review'
