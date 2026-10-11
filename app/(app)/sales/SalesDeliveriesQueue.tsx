@@ -487,13 +487,15 @@ export default function SalesDeliveriesQueue({
                                       נקודה
                                     </a>
                                   ) : displayAddress ? (
+                                    // The icon alone (owner, 2026-10-11: "remove the word waze …
+                                    // leave just the icon") — the Waze glyph says it, as on the phone.
                                     <AddressLink
                                       address={group.address}
                                       city={city}
-                                      className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-secondary px-2 py-1 text-xs text-secondary-foreground no-underline hover:!text-secondary-foreground hover:!no-underline"
+                                      aria-label="נווט עם Waze"
+                                      className="inline-flex shrink-0 items-center rounded-lg bg-secondary px-2 py-1 text-xs text-secondary-foreground no-underline hover:!text-secondary-foreground hover:!no-underline"
                                     >
                                       <WazeIcon className="h-3.5 w-3.5" />
-                                      וייז
                                     </AddressLink>
                                   ) : null}
                                   <span className="min-w-0">{displayAddress || "-"}</span>

@@ -56,14 +56,19 @@ export default function DashboardCardHeader({
     // see the comment on its Card). A data attribute survives that; reaching
     // three DOM levels deep with a positional `[&>*>*>*]` selector wouldn't.
     <div data-card-header className={cn("border-b border-border/50 px-4 py-3", className)}>
-      <div className={cn("flex items-start justify-between gap-2", nowrap ? "flex-nowrap" : "flex-wrap")}>
-        <div className="flex min-w-0 items-center gap-2">
+      {/* `nowrap`: the title's basis is its narrowest (its longest word), so the
+          action stays on the title's line and the title wraps beside it — and
+          only when even that doesn't fit does the action drop under it. It used
+          to be squeezed below its longest word instead, and at a bigger text
+          size "הכנסות" was painted over the month picker. */}
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className={cn("flex items-center gap-2", nowrap ? "grow basis-[min-content]" : "min-w-0")}>
           {/* A PLAIN glyph, no tinted chip behind it (user, 2026-08-18: "drop the
               title hue"). Seven blue chips down a board is seven small blocks of
               colour competing with the names beside them; the glyph alone still
               tells the card apart. */}
           <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <h3 className={cn("text-base font-semibold leading-tight", nowrap && "min-w-0")}>{title}</h3>
+          <h3 className="text-base font-semibold leading-tight">{title}</h3>
         </div>
         {/* min-w-0 by default, NOT shrink-0: an action as wide as the tasks
             card's filter strip has to be allowed to wrap inside the header — at a
