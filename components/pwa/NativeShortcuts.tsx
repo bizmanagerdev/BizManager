@@ -4,9 +4,10 @@ import { useEffect } from "react";
 import { hasDeliveriesAccess, type SectionAccess } from "@/lib/auth/sections";
 import type { UserRole } from "@/lib/auth/requireProfile";
 
-// The phone app's long-press shortcuts (APK 1.2), per person. The app starts
-// with the owner's four (משלוחים, הזמנה חדשה, משימה חדשה, חיפוש — AppShortcuts.java);
-// a worker can't create an order or use the search, so his are what he can do.
+// The phone app's long-press shortcuts (APK 1.2), per person; Android shows 4.
+// The app starts with משלוחים, הזמנה חדשה, משימה חדשה, חיפוש (AppShortcuts.java);
+// from here staff get הוצאה חדשה instead of חיפוש, and a worker, who can't
+// create an order or an expense or use the search, gets what he can do.
 // Set from here, through BizHNative.setShortcuts, so they can change without a
 // new APK. Renders nothing; does nothing in a browser or an older app.
 
@@ -19,7 +20,10 @@ export function shortcutsFor(role: string | undefined, locale: string | null | u
       { id: "deliveries", label: "משלוחים", url: "/deliveries", icon: "delivery" },
       { id: "new-order", label: "הזמנה חדשה", url: "/dashboard?quick=order", icon: "order" },
       { id: "new-task", label: "משימה חדשה", url: "/dashboard?quick=task", icon: "task" },
-      { id: "search", label: "חיפוש", url: "/dashboard?quick=search", icon: "search" },
+      // Owner, 2026-10-11: "I want the new expense also as one of the quick
+      // actions". Android shows 4, so it took חיפוש's place (owner's choice;
+      // the search is one tap away in the top bar, and ?quick=search still works).
+      { id: "new-expense", label: "הוצאה חדשה", url: "/dashboard?quick=expense", icon: "expense" },
     ];
   }
   const arabic = locale === "ar";

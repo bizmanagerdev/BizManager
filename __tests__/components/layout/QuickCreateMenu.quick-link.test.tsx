@@ -47,6 +47,11 @@ describe("?quick= links open a + menu form", () => {
     await waitFor(() => expect(screen.getByTestId("quick-form").textContent).toBe("task"), { timeout: 8000 });
   });
 
+  it("?quick=expense opens the new expense (the הוצאה חדשה shortcut)", async () => {
+    await openWith("/dashboard?quick=expense", "admin");
+    await waitFor(() => expect(screen.getByTestId("quick-form").textContent).toBe("expense"), { timeout: 8000 });
+  });
+
   it("a worker's ?quick=order opens a task instead (an order isn't his to create)", async () => {
     await openWith("/dashboard?quick=order", "worker");
     await waitFor(() => expect(screen.getByTestId("quick-form").textContent).toBe("task"), { timeout: 8000 });
