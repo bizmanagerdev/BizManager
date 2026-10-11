@@ -34,7 +34,7 @@ export async function devicePageOn(
 // server version is also worked out, streamed after the page so it never
 // holds the page up, and compared on the device.
 
-export type DeviceCheckPage = "dashboard" | "tasks" | "projects" | "sales" | "orders" | "projectPage";
+export type DeviceCheckPage = "dashboard" | "tasks" | "projects" | "sales" | "orders" | "projectPage" | "deliveries";
 
 /** The cookie a device sets once it has compared `page` today. */
 export function deviceCheckCookie(page: DeviceCheckPage): string {

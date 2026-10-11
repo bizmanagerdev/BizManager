@@ -60,6 +60,10 @@ export const LOCAL_DATA_PAGES = {
   // Off for everyone but the people trying it out until the comparisons come
   // out clean.
   dashboardMoney: false,
+  // The drivers' deliveries page (/deliveries) — owner, 2026-10-11: "let's
+  // download that also to the phone", so a run works with no signal. The same
+  // list as the deliveries tab (/sales, on for staff above).
+  deliveries: true,
 } as const;
 
 /**
@@ -72,7 +76,7 @@ export const LOCAL_DATA_PREVIEW_USERS: readonly string[] = [
 ];
 
 /** Workers' pages that have a device version (the others are staff-only pages). */
-const WORKER_DEVICE_PAGES: ReadonlySet<keyof typeof LOCAL_DATA_PAGES> = new Set(["dashboard", "tasks"]);
+const WORKER_DEVICE_PAGES: ReadonlySet<keyof typeof LOCAL_DATA_PAGES> = new Set(["dashboard", "tasks", "deliveries"]);
 
 /**
  * Does everyone with this role (and, for a worker, this locale) get the device

@@ -5,6 +5,10 @@ import PageTitle from "@/components/layout/PageTitle";
 import SalesDeliveriesQueue from "@/app/(app)/sales/SalesDeliveriesQueue";
 import { DELIVERY_REGIONS } from "@/lib/ui/cities";
 import { loadDeliveriesPage } from "@/app/(app)/sales/loadDeliveries";
+import DeviceFrameMark from "@/components/powersync/DeviceFrameMark";
+import { devicePageOn } from "@/lib/powersync/device-check";
+import { serverRenderedAt } from "@/lib/loaded-at";
+import LocalDeliveriesPage from "./LocalDeliveriesPage";
 
 export const revalidate = 30;
 
@@ -22,7 +26,7 @@ export const revalidate = 30;
 export default async function DeliveriesPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ region?: string; customer_id?: string }>;
+  searchParams?: Promise<{ region?: string; customer_id?: string; data?: string }>;
 }) {
   const params = (await searchParams) ?? {};
   const regionFilter =
@@ -36,6 +40,21 @@ export default async function DeliveriesPage({
 
   const { profile, supabase } = await requireProfile();
   if (!hasDeliveriesAccess(profile.role, profile.section_access)) redirect("/no-access");
+
+  // The phone's version (LOCAL_DATA_PAGES.deliveries): the run drawn from the
+  // driver's own copy — at once, and with no signal too. ?data=server is the
+  // way back when the copy can't serve it.
+  if (params.data !== "server" && (await devicePageOn("deliveries", profile))) {
+    return (
+      <>
+        <DeviceFrameMark page="deliveries" renderedAt={serverRenderedAt()} />
+        <LocalDeliveriesPage
+          viewer={{ userId: profile.id, role: profile.role ?? "", locale: profile.locale }}
+          canOpenOrder={isStaffRole(profile.role)}
+        />
+      </>
+    );
+  }
   const { deliveries, totalCount, hasMore, error } = await loadDeliveriesPage(supabase, {
     page: 1,
     filters: { customerId },

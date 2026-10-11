@@ -472,7 +472,11 @@ const OFFLINE_HTML = `<!doctype html>
 // a search, or the server version (?data=server). Cleared on every deploy
 // (versioned name), at logout and when someone else signs in
 // (lib/powersync/device-frames.ts).
-const FRAME_PATHS = new Set(["/dashboard", "/tasks", "/projects", "/sales"]);
+const FRAME_PATHS = new Set(["/dashboard", "/tasks", "/projects", "/sales", "/deliveries"]);
+// Frames that read their filters from the address themselves (the drivers'
+// /deliveries reads its region on the phone): one saved frame serves every
+// region, so a region never opened online still opens with no signal.
+const ANY_QUERY_FRAME_PATHS = new Set(["/deliveries"]);
 const FRAME_MARK = 'data-device-page="';
 // A navigation to a frame this soon after one was served is a reload — the
 // page found a newer version on the server, or the person pulled to refresh
@@ -488,7 +492,11 @@ function isFrameRequest(url) {
 
 async function matchFrame(request) {
   try {
-    return (await (await caches.open(FRAMES_CACHE)).match(request)) ?? null;
+    const cache = await caches.open(FRAMES_CACHE);
+    const exact = await cache.match(request);
+    if (exact) return exact;
+    const url = new URL(request.url);
+    return ANY_QUERY_FRAME_PATHS.has(url.pathname) ? ((await cache.match(request, { ignoreSearch: true })) ?? null) : null;
   } catch {
     return null;
   }

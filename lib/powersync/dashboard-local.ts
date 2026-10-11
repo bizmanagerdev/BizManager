@@ -74,6 +74,8 @@ export type LocalDashboardCards = {
   /** /sales tabs, first page, for the given filters. */
   salesOrders: { filters: OrdersFilters; rows: Record<string, unknown>[]; hasMore: boolean };
   salesDeliveries: { filters: DeliveriesFilters; deliveries: DeliveryItem[]; hasMore: boolean };
+  /** The drivers' /deliveries page: the deliveries tab's list, with its total for the title. */
+  deliveriesRun: { filters: DeliveriesFilters; deliveries: DeliveryItem[]; hasMore: boolean; totalCount: number };
   salesPriceList: { filters: ProductsFilters } & Pick<PriceListPageResult, "products" | "categories" | "hasMore">;
   salesInventory: { filters: ProductsFilters } & Pick<
     InventoryListPageResult,
@@ -131,6 +133,7 @@ export const LOCAL_CARD_TABLES: Record<LocalCardKind, string[]> = {
   projectsExtras: ["projects", "users", "user_directory", "customers"],
   salesOrders: ["orders", "customers", "users", "user_directory", "customer_branches", "payments", "order_items", "products", "inventory"],
   salesDeliveries: ["orders", "customers", "customer_branches", "order_items", "products", "inventory", "payments"],
+  deliveriesRun: ["orders", "customers", "customer_branches", "order_items", "products", "inventory", "payments"],
   salesPriceList: ["products", "inventory", "inventory_movements", "product_categories"],
   salesInventory: ["products", "inventory", "inventory_movements", "product_categories", "orders", "customers", "users", "user_directory"],
   salesCounts: ["orders", "products", "payments", "customers", "customer_branches"],
@@ -291,6 +294,17 @@ export async function computeLocalCard<K extends LocalCardKind>(
       const result = await loadDeliveriesPage(local, { page: 1, filters: deliveryFilters });
       if (result.error) throw new Error(result.error);
       return { filters: deliveryFilters, deliveries: result.deliveries, hasMore: result.hasMore } as LocalDashboardCards[K];
+    }
+    case "deliveriesRun": {
+      const deliveryFilters = need<DeliveriesFilters>();
+      const result = await loadDeliveriesPage(local, { page: 1, filters: deliveryFilters });
+      if (result.error) throw new Error(result.error);
+      return {
+        filters: deliveryFilters,
+        deliveries: result.deliveries,
+        hasMore: result.hasMore,
+        totalCount: result.totalCount,
+      } as LocalDashboardCards[K];
     }
     case "salesPriceList": {
       const productFilters = need<ProductsFilters>();
