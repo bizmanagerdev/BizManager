@@ -3,6 +3,8 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import PwaRegistration from "@/components/pwa/PwaRegistration";
 import NativePushRegistration from "@/components/pwa/NativePushRegistration";
+import NativeAppBridge from "@/components/pwa/NativeAppBridge";
+import PullToRefresh from "@/components/pwa/PullToRefresh";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
 export const metadata: Metadata = {
@@ -31,7 +33,7 @@ export const metadata: Metadata = {
       { url: "/icon.svg?v=4", type: "image/svg+xml" },
     ],
     shortcut: "/favicon.ico?v=4",
-    apple: "/apple-touch-icon.png?v=2",
+    apple: "/apple-touch-icon.png?v=3",
   },
   appleWebApp: {
     capable: true,
@@ -45,6 +47,11 @@ export const viewport: Viewport = {
   // SAME navy — this is --primary (#0A1020). Next metadata can't read a CSS
   // variable, so if --primary ever changes, change this literal with it.
   themeColor: "#0A1020",
+  // When the phone's keyboard opens, the page shrinks to the space above it
+  // instead of the keyboard covering the bottom of a dialog (owner, 2026-10-11:
+  // "keyboard covering dialogues"). The Android app does the same natively
+  // (adjustResize); this is for the site in a phone browser.
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({
@@ -117,6 +124,8 @@ export default function RootLayout({
       <body className="antialiased">
         <PwaRegistration />
         <NativePushRegistration />
+        <NativeAppBridge />
+        <PullToRefresh />
         {children}
         <Toaster />
         {/* Root-caused via a real CI e2e run's captured network evidence:

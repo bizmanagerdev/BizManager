@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.bizh.app",
+      "sha256_cert_fingerprints": [
+        "30:FE:59:3B:CD:56:DF:BD:AB:2F:E1:2A:0E:DE:4C:A8:DB:05:47:43:A3:A2:BC:0D:B5:8A:26:F1:00:E6:C9:E9"
+      ]
+    }
+  }
+]

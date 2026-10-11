@@ -7,24 +7,24 @@
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#f8fafc",
+  "background_color": "#ECF5FE",
   "theme_color": "#0A1020",
   "prefer_related_applications": false,
   "icons": [
     {
-      "src": "/icon-192.png?v=2",
+      "src": "/icon-192.png?v=3",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/icon-512.png?v=2",
+      "src": "/icon-512.png?v=3",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/brand/heller-tile.svg?v=2",
+      "src": "/brand/heller-tile.svg?v=3",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"

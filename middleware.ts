@@ -77,5 +77,7 @@ export const config = {
   // powersync/: the on-device database's library files (public, versioned,
   // cached for a year) — never behind the login redirect, or a phone could
   // keep a cached redirect in place of the file.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|powersync/).*)"],
+  // .well-known/: assetlinks.json, which Android fetches (signed out) to let
+  // biz-h.com links open in the phone app; a login redirect there fails it.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|powersync/|\\.well-known/).*)"],
 };
