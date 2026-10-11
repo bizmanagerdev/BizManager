@@ -6,6 +6,8 @@ import { propertyDisplayName } from "@/lib/properties";
 import { earliestReminderByTask, isTaskWaitingForLater } from "@/lib/tasks/visibility";
 import { snoozedTasks } from "@/lib/tasks/snooze";
 import { israelDateKey } from "@/lib/timezone";
+import { fetchAllPagedResult } from "@/lib/supabase/paginate";
+import { chunkStrings } from "@/lib/financial/utils";
 
 type Row = Record<string, unknown>;
 
@@ -61,9 +63,25 @@ export type TasksFilters = {
 export const BOARD_STATUSES = ["todo", "in_progress", "done", "blocked"] as const;
 export type BoardStatus = (typeof BOARD_STATUSES)[number];
 
-// Keep the done column light — only recently-touched done cards.
-const DONE_LIMIT = 60;
+// The done column shows EVERY done task (owner, 2026-10-11: "in the done list
+// I don't want to limit to 60, I want to show all"), read a page at a time
+// past the database's 1000-row answer cap.
 const OPEN_LIMIT = 1000;
+
+// The reads that follow the tasks (members, comments, reminders, files, names)
+// go out in batches of ids: every task id in one address outgrows what a URL
+// can carry once the done column holds hundreds of tasks. Each batch pages too.
+const ID_BATCH = 150;
+
+async function readByIds<T = Row>(
+  ids: string[],
+  read: (batch: string[], from: number, to: number) => PromiseLike<{ data: unknown; error: unknown }>
+): Promise<{ data: T[] }> {
+  const results = await Promise.all(
+    chunkStrings(ids, ID_BATCH).map((batch) => fetchAllPagedResult<T>((from, to) => read(batch, from, to)))
+  );
+  return { data: results.flatMap((result) => result.data ?? []) };
+}
 
 const TASK_SELECT =
   "id,subject,subject_he,subject_ar,status,priority,due_date,due_time,city,business_domain,project_id,property_id,customer_id,assigned_user_id,is_private,private_owner_id,sort_order";
@@ -134,12 +152,12 @@ export async function loadTasksBoard(
   // (filters must come before order/range, which return a transform builder
   // without filter methods).
   //
-  // Selection order stays as before (recency) — it only decides WHICH rows make
-  // the cut (the done column is capped to the most recently touched). Display
-  // order within each column comes from sort_order (see the re-sort below), so a
-  // manual drag-reorder (or "newest on top" for a card nobody has moved) is what
-  // the board shows.
-  const readColumn = (column: "open" | "done", part: "all" | "assignedOrOwned" | "member") => {
+  // Selection order stays as before (recency) — it only decides WHICH open rows
+  // make the cut (the done column takes them all). Display order within each
+  // column comes from sort_order (see the re-sort below), so a manual
+  // drag-reorder (or "newest on top" for a card nobody has moved) is what the
+  // board shows. A fresh builder per call: the done column pages through it.
+  const buildColumn = (column: "open" | "done", part: "all" | "assignedOrOwned" | "member") => {
     let query =
       part === "member"
         ? // Tasks I'm a member of, through the membership row itself — no
@@ -154,10 +172,14 @@ export async function loadTasksBoard(
       query = query.eq(domain === "logistics_projects" ? "project_id" : "property_id", linkedId);
     }
     if (q) query = query.ilike("subject", `%${q.replace(/[%,]/g, " ")}%`);
-    return column === "open"
-      ? query.order("created_at", { ascending: false, nullsFirst: false }).range(0, OPEN_LIMIT - 1)
-      : query.order("updated_at", { ascending: false }).range(0, DONE_LIMIT - 1);
+    return query;
   };
+  const readColumn = (column: "open" | "done", part: "all" | "assignedOrOwned" | "member") =>
+    column === "open"
+      ? buildColumn("open", part).order("created_at", { ascending: false, nullsFirst: false }).range(0, OPEN_LIMIT - 1)
+      : fetchAllPagedResult((from, to) =>
+          buildColumn("done", part).order("updated_at", { ascending: false }).order("id").range(from, to)
+        );
 
   // Mine = assigned to me, a member of, or a private task I own: the
   // assigned/owned read and the member read go out together, and their union
@@ -177,7 +199,7 @@ export async function loadTasksBoard(
     const rankKey = column === "open" ? "created_at" : "updated_at";
     return [...byId.values()]
       .sort((a, b) => (b[rankKey] ?? "").localeCompare(a[rankKey] ?? ""))
-      .slice(0, column === "open" ? OPEN_LIMIT : DONE_LIMIT);
+      .slice(0, column === "open" ? OPEN_LIMIT : undefined);
   };
   const bySortOrder = (a: TaskRow, b: TaskRow) =>
     (a.sort_order ?? Number.MAX_SAFE_INTEGER) - (b.sort_order ?? Number.MAX_SAFE_INTEGER);
@@ -219,41 +241,43 @@ export async function loadTasksBoard(
 
   const [projectsRes, propertiesRes, customersRes, membersRes, usersRes, commentsRes, remindersRes, attachmentsRes, snoozed] =
     await Promise.all([
-    projectIds.length
-      ? supabase.from("project_dashboard_view").select("id,name").in("id", projectIds)
-      : Promise.resolve({ data: [] as Row[] }),
+    readByIds(projectIds, (batch, from, to) =>
+      supabase.from("project_dashboard_view").select("id,name").in("id", batch).range(from, to)
+    ),
     propertyIds.length
       ? supabase.rpc("property_directory").in("id", propertyIds)
       : Promise.resolve({ data: [] as Row[] }),
     // Direct id lookup (name + phone) — never resolved through a capped picker list.
-    customerIds.length
-      ? supabase.from("customers").select("id,name,phone").in("id", customerIds)
-      : Promise.resolve({ data: [] as Row[] }),
-    supabase.from("task_members").select("task_id,user_id").in("task_id", taskIds),
+    readByIds(customerIds, (batch, from, to) =>
+      supabase.from("customers").select("id,name,phone").in("id", batch).range(from, to)
+    ),
+    readByIds(taskIds, (batch, from, to) =>
+      supabase.from("task_members").select("task_id,user_id").in("task_id", batch).range(from, to)
+    ),
     // Everyone's name and colour (a few dozen rows), alongside the members —
     // their ids aren't known before this round.
     supabase.rpc("user_directory"),
-    supabase.from("task_comments").select("task_id").in("task_id", taskIds).range(0, 9999),
+    readByIds(taskIds, (batch, from, to) =>
+      supabase.from("task_comments").select("task_id").in("task_id", batch).range(from, to)
+    ),
     // Open reminders (the card's bell) and done ones: a far-off task its
     // reminder brought onto the board stays there once the reminder is done
     // (owner, 2026-10-09 — it used to go back into hiding).
-    supabase
-      .from("reminders")
-      .select("task_id,remind_at,status")
-      .in("task_id", taskIds)
-      .in("status", ["pending", "done"])
-      .range(0, 9999),
+    readByIds(taskIds, (batch, from, to) =>
+      supabase
+        .from("reminders")
+        .select("task_id,remind_at,status")
+        .in("task_id", batch)
+        .in("status", ["pending", "done"])
+        .range(from, to)
+    ),
     // Attachments are documents linked polymorphically, not a task column — so
     // the card's paperclip comes from document_links, same shape the card's
     // comment/reminder indicators use. Tolerant: a failure here must not take
     // down the board over an icon.
-    supabase
-      .from("document_links")
-      .select("entity_id")
-      .eq("entity_type", "task")
-      .in("entity_id", taskIds)
-      .range(0, 9999)
-      .then((r) => r, () => ({ data: [] as Row[] })),
+    readByIds(taskIds, (batch, from, to) =>
+      supabase.from("document_links").select("entity_id").eq("entity_type", "task").in("entity_id", batch).range(from, to)
+    ),
     // The viewer's own snoozed tasks (lib/tasks/snooze.ts).
     snoozedTasks(supabase, userId),
   ]);
