@@ -2,6 +2,11 @@ import { toHebrewError } from "@/lib/error-messages";
 
 const QUEUE_KEY = "biz_offline_queue";
 const FAILED_KEY = "biz_offline_failed";
+// What a queued save's replay answered (by its idempotency key) — the new
+// row's id, for the saves that wait on it (files, contacts — see `after`).
+const RESULTS_KEY = "biz_offline_results";
+const RESULT_KEEP_MS = 14 * 24 * 60 * 60 * 1000;
+const MAX_RESULTS = 200;
 const DRAFT_PREFIX = "biz_draft:";
 
 // How long a single online write may run before we stop waiting, assume the
@@ -96,7 +101,68 @@ export type QueueEntry = {
   idempotencyKey?: string;
   // Last error surfaced when the entry was parked as failed.
   lastError?: string;
+  // Sent only once the queued save with this key has gone out: its answer's
+  // `idPath` (e.g. "customer.id") fills every "{id}" in the body. A follow-up
+  // of a create that waited for the connection (a new customer's contacts).
+  after?: QueueAfter;
 };
+
+/** A queued save that waits for another one (by its idempotency key) and uses the id it was given. */
+export type QueueAfter = { key: string; idPath: string };
+
+/** The id a queued save was given, once its replay has gone out — else null. */
+export function queuedResultId(key: string, idPath: string): string | null {
+  const entry = readResults()[key];
+  if (!entry) return null;
+  let value: unknown = entry.data;
+  for (const part of idPath.split(".")) {
+    value = value && typeof value === "object" ? (value as Record<string, unknown>)[part] : undefined;
+  }
+  return typeof value === "string" && value ? value : null;
+}
+
+/** Did the queued save with this key fail for good (parked)? Then what waits on it can't go. */
+export function queuedKeyFailed(key: string): boolean {
+  return readFailed().some((entry) => entry.idempotencyKey === key);
+}
+
+/** Every "{id}" in a body (at any depth) replaced by the id. */
+function withId<T>(value: T, id: string): T {
+  if (value === "{id}") return id as T;
+  if (Array.isArray(value)) return value.map((item) => withId(item, id)) as T;
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, withId(v, id)])) as T;
+  }
+  return value;
+}
+
+function readResults(): Record<string, { data: unknown; at: number }> {
+  try {
+    const raw = localStorage.getItem(RESULTS_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, { data: unknown; at: number }>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function rememberResult(key: string, data: unknown): void {
+  try {
+    const now = Date.now();
+    const kept = Object.entries(readResults())
+      .filter(([, entry]) => now - entry.at < RESULT_KEEP_MS)
+      .slice(-(MAX_RESULTS - 1));
+    localStorage.setItem(RESULTS_KEY, JSON.stringify(Object.fromEntries([...kept, [key, { data, at: now }]])));
+  } catch {}
+}
+
+/**
+ * Queue a save that has to wait for another queued one — it goes out right
+ * after, with the id that one was given (every "{id}" in `body`). For the
+ * follow-ups of a create that waited for the connection.
+ */
+export function enqueueAfter(after: QueueAfter, entry: { url: string; body: Record<string, unknown>; label: string }): void {
+  enqueue({ ...entry, idempotencyKey: crypto.randomUUID(), after });
+}
 
 function readQueue(): QueueEntry[] {
   try {
@@ -213,7 +279,8 @@ function failEntry(entry: QueueEntry, lastError: string): void {
 // ── Smart fetch ───────────────────────────────────────────────────────────────
 
 export type OfflineFetchResult =
-  | { queued: true; reason: "offline" | "slow" }
+  /** `key`: the queued save's idempotency key (an `idempotent` save) — what a follow-up waits on (QueueAfter). */
+  | { queued: true; reason: "offline" | "slow"; key?: string }
   | { queued: false; ok: true; data: unknown }
   | { queued: false; ok: false; status: number; error: string };
 
@@ -253,7 +320,7 @@ export async function offlineFetch(
   if (typeof navigator !== "undefined" && !navigator.onLine) {
     enqueue({ url, body, label, idempotencyKey });
     emit(CONNECTION_EVENTS.queued, { label, reason: "offline" });
-    return { queued: true, reason: "offline" };
+    return { queued: true, reason: "offline", key: idempotencyKey };
   }
 
   // A write with an idempotency key is kept on the device first: if the app is
@@ -310,7 +377,7 @@ export async function offlineFetch(
       enqueue({ url, body, label, idempotencyKey });
     }
     emit(CONNECTION_EVENTS.queued, { label, reason: "slow" });
-    return { queued: true, reason: "slow" };
+    return { queued: true, reason: "slow", key: idempotencyKey };
   }
 }
 
@@ -331,14 +398,34 @@ export async function processQueue(): Promise<ProcessResult> {
   for (let entry = waiting()[0]; entry; entry = waiting()[0]) {
     if (typeof navigator !== "undefined" && !navigator.onLine) break;
 
+    let body = entry.body;
+    if (entry.after) {
+      const id = queuedResultId(entry.after.key, entry.after.idPath);
+      if (!id) {
+        if (queuedKeyFailed(entry.after.key)) {
+          failEntry(entry, "השמירה שזה שייך אליה לא נקלטה.");
+          failed++;
+          continue;
+        }
+        // What it waits for hasn't gone out yet — a later pass sends both.
+        break;
+      }
+      body = withId(entry.body, id);
+    }
+
     try {
       const response = await fetch(entry.url, {
         method: "POST",
         headers: buildHeaders(entry.idempotencyKey),
-        body: JSON.stringify(entry.body),
+        body: JSON.stringify(body),
       });
 
       if (response.ok) {
+        // Kept for whatever waits on this save (its new row's id).
+        if (entry.idempotencyKey) {
+          const data = await response.json().catch(() => null);
+          if (data) rememberResult(entry.idempotencyKey, data);
+        }
         dequeue(entry.id);
         processed++;
         continue;

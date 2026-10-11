@@ -52,7 +52,10 @@ export function useOfflineStatus() {
     processingRef.current = true;
     setIsProcessing(true);
     try {
-      const [jsonResult] = await Promise.all([doProcessQueue(), processUploadQueue()]);
+      // The saves first, then the files: a file can wait on a save that was
+      // queued with it (queueUploadsAfter) and needs its new id.
+      const jsonResult = await doProcessQueue();
+      await processUploadQueue();
       refreshCounts();
       return jsonResult;
     } finally {

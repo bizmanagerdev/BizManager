@@ -9,6 +9,11 @@ import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { offlineUpload } from "@/lib/offline-upload";
+import { offlineFetch } from "@/lib/offline-queue";
+import { readyLocalDatabase } from "@/lib/powersync/store";
+import { localClient } from "@/lib/powersync/local-results";
+import { loadOrderEditData } from "@/lib/orders/order-edit-data";
+import { markDeliveryConfirmed } from "@/lib/orders/confirmed-deliveries";
 import { toHebrewError } from "@/lib/error-messages";
 import { DateInput } from "@/components/ui/date-input";
 import { StepWizardDialog } from "@/components/ui/step-wizard";
@@ -92,6 +97,42 @@ type EditPayload = {
   deliveryImages?: DeliveryImage[];
 };
 
+/** The order as the confirmation needs it, from the phone's copy — null when there's no copy or the order isn't in it. */
+async function deviceConfirmData(orderId: string): Promise<EditPayload | null> {
+  const db = readyLocalDatabase();
+  if (!db) return null;
+  try {
+    const result = await loadOrderEditData(await localClient(db), orderId, { confirm: true, deliveryImages: false });
+    return result.ok ? (result.data as unknown as EditPayload) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A customer's saved arrival details from the phone's copy, in the route's own shape. */
+async function deviceArrival(
+  customerId: string
+): Promise<{ instructions: string | null; lat: number | null; lng: number | null } | null> {
+  const db = readyLocalDatabase();
+  if (!db) return null;
+  try {
+    const { data } = await (await localClient(db))
+      .from("customers")
+      .select("delivery_instructions,delivery_lat,delivery_lng")
+      .eq("id", customerId)
+      .maybeSingle();
+    if (!data) return null;
+    const row = data as {
+      delivery_instructions?: string | null;
+      delivery_lat?: number | null;
+      delivery_lng?: number | null;
+    };
+    return { instructions: row.delivery_instructions ?? null, lat: row.delivery_lat ?? null, lng: row.delivery_lng ?? null };
+  } catch {
+    return null;
+  }
+}
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("he-IL", {
     style: "currency",
@@ -172,6 +213,9 @@ export default function OrderConfirmDialog({
   // close the dialog, leaving only an easy-to-miss toast as the difference).
   const [queuedReason, setQueuedReason] = useState<"offline" | "slow" | null>(null);
   const [data, setData] = useState<EditPayload | null>(null);
+  // The order's delivery photos already taken — fetched from the server
+  // beside an order read from the phone's copy (which has no signed links).
+  const [serverImages, setServerImages] = useState<DeliveryImage[] | null>(null);
   const [lines, setLines] = useState<ConfirmLine[]>([]);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(israelDateKey());
@@ -266,7 +310,27 @@ export default function OrderConfirmDialog({
     async function load() {
       setLoading(true);
       setError(null);
+      setServerImages(null);
       try {
+        // From the phone's copy first (owner, 2026-10-11): at once, and with no
+        // signal too — a driver's phone holds the open orders, their lines and
+        // payments (the server's own loader, over the copy). The server only
+        // adds the delivery photos already taken, in the background.
+        const onDevice = await deviceConfirmData(orderId);
+        if (onDevice) {
+          if (!cancelled) setData(onDevice);
+          if (typeof navigator === "undefined" || navigator.onLine) {
+            void fetch(`/api/orders/${orderId}/edit-data?scope=confirm`, { cache: "no-store" })
+              .then((res) => (res.ok ? (res.json() as Promise<EditPayload>) : null))
+              .then((json) => {
+                if (!cancelled && json?.deliveryImages) setServerImages(json.deliveryImages);
+              })
+              .catch(() => {
+                /* the photos are extra — the confirmation doesn't need them */
+              });
+          }
+          return;
+        }
         // scope=confirm skips the customer list + product catalog/stock queries
         // this dialog never uses (see edit-data route) — that's what made loads slow.
         const res = await fetch(`/api/orders/${orderId}/edit-data?scope=confirm`, { cache: "no-store" });
@@ -275,7 +339,15 @@ export default function OrderConfirmDialog({
         if (!cancelled) setData(json);
       } catch (err: unknown) {
         if (!cancelled) {
-          setError(toHebrewError(err, "טעינת נתוני האישור נכשלה."));
+          // No copy of this order on the phone and no connection: say so —
+          // not the generic offline line, which promises the action "will be
+          // sent" (nothing was).
+          const offline = typeof navigator !== "undefined" && !navigator.onLine;
+          setError(
+            offline
+              ? "אין חיבור, וההזמנה הזו לא שמורה בטלפון — אפשר לאשר אותה כשיחזור החיבור."
+              : toHebrewError(err, "טעינת נתוני האישור נכשלה.")
+          );
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -344,10 +416,17 @@ export default function OrderConfirmDialog({
   useEffect(() => {
     if (!open || !arrivalCustomerId) return;
     let active = true;
-    void fetch(`/api/customers/delivery-location?customer_id=${encodeURIComponent(arrivalCustomerId)}`, {
-      cache: "no-store",
-    })
-      .then((response) => (response.ok ? response.json() : null))
+    // The phone's copy first (it holds every customer's arrival details), so
+    // a driver with no signal edits what's saved instead of starting empty —
+    // a change written from an empty start would wipe the saved pin.
+    void deviceArrival(arrivalCustomerId)
+      .then(
+        (onDevice) =>
+          onDevice ??
+          fetch(`/api/customers/delivery-location?customer_id=${encodeURIComponent(arrivalCustomerId)}`, {
+            cache: "no-store",
+          }).then((response) => (response.ok ? response.json() : null))
+      )
       .then((json: { instructions?: string | null; lat?: number | null; lng?: number | null } | null) => {
         if (!active || !json) return;
         const pin = pinFrom(json.lat, json.lng);
@@ -527,19 +606,21 @@ export default function OrderConfirmDialog({
       const orderId = data.initialOrder.id;
 
       // Arrival details belong to the customer, so they go to their own endpoint
-      // before the order save. Fire-and-forget on failure: a GPS pin not sticking
-      // must never block confirming a delivery that physically happened.
+      // before the order save. Never awaited: a GPS pin not sticking must never
+      // block confirming a delivery that physically happened. Through the send
+      // queue, so with no signal they wait for the connection instead of being
+      // dropped (setting the same values again is harmless if both arrive).
       if (arrivalChanged && data.initialOrder.customer_id) {
-        void fetch("/api/customers/delivery-location", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
+        void offlineFetch(
+          "/api/customers/delivery-location",
+          {
             customer_id: data.initialOrder.customer_id,
             instructions: arrivalInstructions.trim() || null,
             lat: arrivalPin?.lat ?? null,
             lng: arrivalPin?.lng ?? null,
-          }),
-        }).catch(() => {
+          },
+          "עדכון פרטי ההגעה"
+        ).catch(() => {
           /* best-effort — the delivery confirmation is what matters here */
         });
       }
@@ -618,6 +699,11 @@ export default function OrderConfirmDialog({
         files: deliveryImages.map((image) => ({ fieldName: "delivery_images", file: image })),
         label: "אישור האספקה",
       });
+
+      // Fully delivered: off the deliveries lists on this phone at once, even
+      // while the confirmation waits for a connection — so it can't be
+      // confirmed (and paid) a second time from a list that hasn't caught up.
+      if ((result.queued || result.ok) && finalStatus === "delivered") markDeliveryConfirmed(orderId);
 
       if (result.queued) {
         // Don't close silently — that looked identical to a real success. Show
@@ -1116,11 +1202,11 @@ export default function OrderConfirmDialog({
               />
               <p className="text-xs text-muted-foreground">אפשר לצרף הוכחת אספקה חדשה בלי למחוק תמונות קיימות.</p>
             </div>
-            {(data.deliveryImages ?? []).length > 0 ? (
+            {(serverImages ?? data.deliveryImages ?? []).length > 0 ? (
               <div className="space-y-2">
                 <div className="text-sm font-medium">תמונות קיימות</div>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {(data.deliveryImages ?? []).map((image) => (
+                  {(serverImages ?? data.deliveryImages ?? []).map((image) => (
                     <a
                       key={image.id}
                       href={image.url ?? "#"}

@@ -14,6 +14,8 @@ import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
 import PickingListDialog from "@/app/(app)/sales/PickingListDialog";
 import { clickableRowProps } from "@/lib/ui/row-navigation";
 import type { DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
+import { cityColour } from "@/lib/deliveries/city-colours";
+import { useConfirmedDeliveries } from "@/lib/orders/confirmed-deliveries";
 
 const OrderConfirmDialog = dynamic(() => import("@/app/(app)/sales/orders/OrderConfirmDialog"), {
   loading: () => null,
@@ -38,7 +40,7 @@ const OrderConfirmDialog = dynamic(() => import("@/app/(app)/sales/orders/OrderC
  * two-letter blobs that identified nothing.
  */
 export default function UpcomingDeliveries({
-  deliveries,
+  deliveries: allDeliveries,
   spark,
   canOpenOrder = true,
 }: {
@@ -49,6 +51,10 @@ export default function UpcomingDeliveries({
   canOpenOrder?: boolean;
 }) {
   const router = useRouter();
+  // Orders just confirmed on this phone leave at once, even before the
+  // confirmation reaches the server (lib/orders/confirmed-deliveries.ts).
+  const confirmed = useConfirmedDeliveries();
+  const deliveries = confirmed.size > 0 ? allDeliveries.filter((delivery) => !confirmed.has(delivery.id)) : allDeliveries;
 
   // Nothing open → one quiet line rather than a card that disappears. See
   // QuietCard for why an absent card is worse than an empty one.
@@ -141,6 +147,15 @@ export default function UpcomingDeliveries({
                       {delivery.customerName}
                     </div>
                     <div className="truncate text-xs text-muted-foreground">
+                      {/* The city's colour, the same as on the deliveries list
+                          (lib/deliveries/city-colours.ts). */}
+                      {delivery.city ? (
+                        <span
+                          aria-hidden
+                          className="me-1.5 inline-block h-2 w-2 rounded-full align-middle"
+                          style={{ backgroundColor: cityColour(delivery.city) }}
+                        />
+                      ) : null}
                       {delivery.city}
                       {delivery.customerPhone ? (
                         <>

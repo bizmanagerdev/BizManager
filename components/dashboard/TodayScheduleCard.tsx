@@ -23,6 +23,7 @@ import type { CalendarEntry } from "@/lib/projectSchedule";
 import { t } from "@/lib/i18n/t";
 import { dashboardDict } from "@/lib/i18n/dictionaries/dashboard";
 import type { Locale } from "@/lib/i18n/types";
+import { offlineFetch } from "@/lib/offline-queue";
 
 // A row can be resolved in place (task done / reminder done) without leaving
 // the card — projects can't (no single "done" for a date range), so they stay
@@ -227,13 +228,14 @@ export default function TodayScheduleCard({
           // On the device copy too when there is one (lib/reminders/device-reminder-saves.ts).
           onDevice = await reminderActionOnDevice(entry.id, "done");
           if (!onDevice) {
-            const res = await fetch("/api/reminders/action", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ id: entry.id, action: "done" }),
-            });
-            const json = (await res.json().catch(() => ({}))) as { error?: string };
-            if (!res.ok) return { ok: false, error: toHebrewError(json.error, t(dashboardDict, locale, "actionFailed")) };
+            // Through the send queue: with no signal it waits for the
+            // connection instead of reverting after the toast said "done".
+            const result = await offlineFetch("/api/reminders/action", { id: entry.id, action: "done" }, "סימון התזכורת כבוצעה");
+            if (!result.queued && !result.ok) {
+              return { ok: false, error: toHebrewError(result.error, t(dashboardDict, locale, "actionFailed")) };
+            }
+            // Waiting to be sent: a refresh now would only reload the page offline.
+            if (result.queued) onDevice = true;
           }
         }
         refreshAlerts();

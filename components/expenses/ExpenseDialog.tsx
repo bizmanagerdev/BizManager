@@ -48,6 +48,7 @@ import { getBusinessDomainIcon } from "@/components/financial/DomainSelect";
 import { offlineFetch } from "@/lib/offline-queue";
 import { registerReversibleCreate } from "@/lib/undo-engine";
 import { offlineUpload } from "@/lib/offline-upload";
+import { queueFinancialAttachmentsAfter } from "@/lib/payments/uploadCheckPhotos";
 import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
 import { PAYMENT_METHOD_OPTIONS, type FinancialAttachment } from "@/lib/payments";
@@ -1315,6 +1316,9 @@ export function ExpenseDialog({
       } else {
         const result = await offlineFetch("/api/expenses/create", payload, "הוצאה חדשה", { idempotent: true });
         if (result.queued) {
+          // The receipts wait on the device with it, and go up once it has
+          // reached the server (they used to be dropped here).
+          if (showAttachments) await queueFinancialAttachmentsAfter(result.key, "expense.id", "expense", attachmentFiles);
           onOpenChange(false);
           onSaved({ expenseId: "", sourceType: "expense", expense: {}, projectExpense: null, attachments: [] });
           return;

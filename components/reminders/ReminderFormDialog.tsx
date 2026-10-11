@@ -11,6 +11,7 @@ import { AssigneeSelect } from "@/components/collections/AssigneeSelect";
 import { useAssignableUsers } from "@/hooks/useAssignableUsers";
 import { toHebrewError } from "@/lib/error-messages";
 import { registerReversibleCreate, scheduleDeferredEdit } from "@/lib/undo-engine";
+import { offlineFetch } from "@/lib/offline-queue";
 
 // One dialog for BOTH creating and editing a reminder — reused across the order
 // panel, the worklist, and anywhere else. Create posts to /api/reminders/create
@@ -174,13 +175,14 @@ export default function ReminderFormDialog({
         message: "התזכורת עודכנה.",
         patch: { remindAt: remindIso, content: noteValue, assignedTo: assigneeValue },
         onCommit: async () => {
-          const res = await fetch("/api/reminders/update", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id, remind_at: remindIso, content: noteValue, assigned_to: assigneeValue }),
-          });
-          const json = (await res.json().catch(() => ({}))) as { error?: string };
-          if (!res.ok) return { ok: false, error: toHebrewError(json.error, "עדכון התזכורת נכשל.") };
+          // Through the send queue: with no signal the edit waits for the
+          // connection instead of reverting (and losing what was typed).
+          const result = await offlineFetch(
+            "/api/reminders/update",
+            { id, remind_at: remindIso, content: noteValue, assigned_to: assigneeValue },
+            "עדכון התזכורת"
+          );
+          if (!result.queued && !result.ok) return { ok: false, error: toHebrewError(result.error, "עדכון התזכורת נכשל.") };
           return { ok: true };
         },
       });

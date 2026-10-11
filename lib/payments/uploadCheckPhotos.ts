@@ -1,4 +1,4 @@
-import { offlineUpload } from "@/lib/offline-upload";
+import { offlineUpload, queueUploadsAfter } from "@/lib/offline-upload";
 import { uploadTogether } from "@/lib/upload-together";
 
 /**
@@ -48,4 +48,29 @@ export async function uploadCheckPhotosForPayments(
     else failed += 1;
   }
   return { uploaded, failed, queued };
+}
+
+/**
+ * The files of a payment or expense whose save waited for the connection
+ * (offlineFetch's queued result): kept on the device and attached once that
+ * save has reached the server — `idPath` is where its answer holds the new id
+ * ("payment.id", "expense.id"). They used to be dropped (owner, 2026-10-11).
+ * No key (a save without an idempotency key): nothing to wait on — dropped.
+ */
+export async function queueFinancialAttachmentsAfter(
+  key: string | undefined,
+  idPath: string,
+  entityType: "expense" | "payment" | "session",
+  files: File[]
+): Promise<void> {
+  if (!key || files.length === 0) return;
+  await queueUploadsAfter(
+    { key, idPath },
+    files.map((file) => ({
+      url: "/api/financial-attachments/upload",
+      fields: { entity_type: entityType, entity_id: "{id}" },
+      file,
+      label: file.name || "קובץ",
+    }))
+  );
 }

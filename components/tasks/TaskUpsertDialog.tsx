@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ComponentType, type ReactNode } from "react";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
-import { offlineUpload } from "@/lib/offline-upload";
+import { offlineUpload, queueUploadsAfter } from "@/lib/offline-upload";
 import { uploadTogether } from "@/lib/upload-together";
 import { toHebrewError } from "@/lib/error-messages";
 import { toast } from "sonner";
@@ -924,9 +924,21 @@ export function TaskUpsertDialog(rawProps: Props) {
         { idempotent: true }
       );
       if (result.queued) {
-        // Queued offline → no task id yet, so staged files can't be attached.
-        // Say so rather than dropping them silently.
-        if (pendingFiles.length > 0) toast.warning(t(tasksDict, props.locale, "filesNotAttachedOffline"));
+        // Queued offline → no task id yet. The staged files wait on the device
+        // and go up once the task has reached the server, with its id (they
+        // used to be dropped, with a warning).
+        if (pendingFiles.length > 0 && result.key) {
+          await queueUploadsAfter(
+            { key: result.key, idPath: "task.id" },
+            pendingFiles.map((file) => ({
+              url: "/api/tasks/attachments/upload",
+              fields: { task_id: "{id}" },
+              file,
+              label: file.name || "קובץ",
+            }))
+          );
+          setPendingFiles([]);
+        }
         clearDraft("task-create");
         announceIfWaiting(payload.status, payload.due_date, payload.reminders.map((r) => r.remind_at));
         props.onSaved?.();

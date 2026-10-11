@@ -61,7 +61,9 @@ const EXACT_MATCH: Record<string, string> = {
   "Customer not found": "הלקוח לא נמצא.",
   "Customer name is required": "יש להזין שם לקוח.",
   "Customer was not updated": "עדכון פרטי הלקוח נכשל.",
-  "offline": "אין חיבור לאינטרנט. הפעולה תישלח כשיחזור החיבור.",
+  // The service worker's answer to a READ it couldn't make (public/sw.js only
+  // handles GET) — nothing is waiting to be sent, so don't promise it is.
+  "offline": "אין חיבור לאינטרנט — אי אפשר לטעון את זה עכשיו. נסו שוב כשיחזור החיבור.",
   // Auth
   "Email and password are required.": "יש להזין דוא״ל וסיסמה.",
   "Invalid email or password.": "דוא״ל או סיסמה שגויים.",

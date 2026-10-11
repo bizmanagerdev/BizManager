@@ -40,6 +40,7 @@ import { whenDeviceSavesSent } from "@/lib/powersync/store";
 import { deviceProjectSaves } from "@/lib/projects/device-project-saves";
 import type { ProjectRowFields } from "@/lib/projects/project-input";
 import { israelDateKey } from "@/lib/timezone";
+import { offlineUpload, queueUploadsAfter } from "@/lib/offline-upload";
 
 type Row = Record<string, unknown>;
 type Step =
@@ -756,8 +757,26 @@ export default function NewProjectClient({
         : await offlineFetch("/api/projects/create", payload, "פרויקט חדש", { idempotent: true });
 
       if (result.queued) {
-        // Saved on the device; will sync on reconnect. Attached files can't be
-        // uploaded offline and would need re-attaching after sync.
+        // Saved on the device; will sync on reconnect. The attached files wait
+        // on the device too (they used to be dropped): a new project's go up
+        // once it has reached the server, with its id; an edited one's
+        // straight into the upload queue.
+        if (attachmentFiles.length > 0) {
+          const uploads = attachmentFiles.map((file) => ({
+            url: "/api/projects/documents/upload",
+            fields: {
+              project_id: isEditMode ? initialProject!.id : "{id}",
+              category: file.type.startsWith("image/") ? "project_photo" : "project_document",
+            },
+            file,
+            label: file.name || "קובץ",
+          }));
+          if (isEditMode) {
+            for (const upload of uploads) await offlineUpload(upload.url, { fields: upload.fields, file: upload.file, label: upload.label });
+          } else if (result.key) {
+            await queueUploadsAfter({ key: result.key, idPath: "project.id" }, uploads);
+          }
+        }
         if (canDraft) clearDraft(draftKey!);
         onSubmitted({});
         return;

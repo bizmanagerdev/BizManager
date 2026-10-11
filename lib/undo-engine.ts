@@ -122,6 +122,25 @@ async function fire(key: string) {
   // reversible (create) entries need no action on natural expiry — already committed.
 }
 
+/**
+ * The page is going away — closed, reloaded, or navigated in full (with no
+ * signal every router.push becomes a full page load, Next 16): commit every
+ * deferred action now instead of letting its timer die with the page. The
+ * toast already said it's done ("ההזמנה נמחקה"); dropping it silently was the
+ * bug (offline audit, 2026-10-11). A commit through the send queue
+ * (offlineFetch) is written to the device before any network wait, so it
+ * still reaches the server on the next start if this page is gone first.
+ */
+function commitAllOnPageHide() {
+  for (const key of [...order]) {
+    const entry = pending.get(key);
+    if (!entry || entry.kind !== "deferred") continue;
+    clearTimeout(entry.timer);
+    void fire(key);
+  }
+}
+if (typeof window !== "undefined") window.addEventListener("pagehide", commitAllOnPageHide);
+
 function pushEntry(key: string, entry: Entry) {
   const existing = pending.get(key);
   if (existing) clearTimeout(existing.timer);

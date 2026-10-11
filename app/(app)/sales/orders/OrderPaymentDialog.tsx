@@ -21,7 +21,7 @@ import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { nextMonthTenth, parseInstallments, splitCardInstallments } from "@/lib/payments";
 import { CardInstallmentsField } from "@/components/financial/CardInstallmentsField";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
-import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
+import { uploadCheckPhotos, queueFinancialAttachmentsAfter } from "@/lib/payments/uploadCheckPhotos";
 import { offlineFetch } from "@/lib/offline-queue";
 import { israelDateKey } from "@/lib/timezone";
 
@@ -208,8 +208,12 @@ export default function OrderPaymentDialog({
 
       if (result.queued) {
         // Saved on the device; it will sync when the connection returns. Reflect
-        // it optimistically so the order total updates now. (A check photo, if
-        // any, can't be uploaded offline and will need re-attaching later.)
+        // it optimistically so the order total updates now. A check's photos
+        // wait with it and go up once it has reached the server (they used to
+        // be dropped here).
+        if (paymentMethod === "check") {
+          await queueFinancialAttachmentsAfter(result.key, "payment.id", "payment", checkPhotoFiles);
+        }
         onCreated?.({
           payment: null,
           paymentStatus: preview.nextStatus,

@@ -18,6 +18,7 @@ import { scheduleDeferredAction } from "@/lib/undo-engine";
 import { t } from "@/lib/i18n/t";
 import { dashboardDict } from "@/lib/i18n/dictionaries/dashboard";
 import type { Locale } from "@/lib/i18n/types";
+import { offlineFetch } from "@/lib/offline-queue";
 
 const COLLECTIONS_HREF = "/collections";
 
@@ -81,14 +82,13 @@ export default function CollectionsCard({ summary, locale }: { summary: Collecti
           return next;
         }),
       onCommit: async () => {
-        const res = await fetch("/api/payments/mark-collected", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id, collected: true }),
-        });
-        const json = (await res.json().catch(() => ({}))) as { error?: string };
-        if (!res.ok) return { ok: false, error: toHebrewError(json.error, t(dashboardDict, locale, "markCollectedError")) };
-        startTransition(() => { router.refresh(); });
+        // Through the send queue: with no signal it waits for the connection
+        // instead of coming back after the toast said "נגבה".
+        const result = await offlineFetch("/api/payments/mark-collected", { id, collected: true }, "סימון התשלום כנגבה");
+        if (!result.queued && !result.ok) {
+          return { ok: false, error: toHebrewError(result.error, t(dashboardDict, locale, "markCollectedError")) };
+        }
+        if (!result.queued) startTransition(() => { router.refresh(); });
         return { ok: true };
       },
     });
@@ -105,7 +105,13 @@ export default function CollectionsCard({ summary, locale }: { summary: Collecti
       />
 
       <div className="pointer-events-none relative flex min-h-0 flex-1 flex-col">
-        <DashboardCardHeader icon={CoinsIcon} title={t(dashboardDict, locale, "collectionsCardTitle")} count={summary.lateCount} />
+        {/* The same number as the footer's link, like every other card (owner,
+            2026-10-11) — the overdue part is already its own red pill below. */}
+        <DashboardCardHeader
+          icon={CoinsIcon}
+          title={t(dashboardDict, locale, "collectionsCardTitle")}
+          count={summary.lateCount + summary.upcomingCount}
+        />
 
         <CardContent className="pointer-events-auto min-h-0 flex-1 overflow-y-auto p-0">
           {/* ── היום — the only rows you can finish from here ─────────────── */}

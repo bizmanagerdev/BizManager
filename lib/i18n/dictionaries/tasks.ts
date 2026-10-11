@@ -67,7 +67,6 @@ export type TasksKey =
   | "toastPrivacyOff"
   | "tasksFailedRetrySuffix"
   | "filesNotAttachedManual"
-  | "filesNotAttachedOffline"
   | "updateTaskOfflineLabel"
   | "toastErrorUpdateTask"
   | "toastTaskUpdated"
@@ -273,7 +272,6 @@ export const tasksDict: Dictionary<TasksKey> = {
     toastPrivacyOff: "המשימה אינה פרטית יותר",
     tasksFailedRetrySuffix: "משימות לא נוצרו — נסה שוב",
     filesNotAttachedManual: "הקבצים לא צורפו — אפשר לצרף אותם לכרטיס המתאים",
-    filesNotAttachedOffline: "הקבצים לא צורפו — המשימה תיווצר כשהחיבור יחזור",
     updateTaskOfflineLabel: "עדכון משימה",
     toastErrorUpdateTask: "שגיאה בעדכון משימה",
     toastTaskUpdated: "המשימה עודכנה",
@@ -479,7 +477,6 @@ export const tasksDict: Dictionary<TasksKey> = {
     toastPrivacyOff: "لم تعد المهمة خاصة",
     tasksFailedRetrySuffix: "مهام لم يتم إنشاؤها — حاول مجدداً",
     filesNotAttachedManual: "لم يتم إرفاق الملفات — يمكن إرفاقها بالبطاقة المناسبة",
-    filesNotAttachedOffline: "لم يتم إرفاق الملفات — ستُنشأ المهمة عند عودة الاتصال",
     updateTaskOfflineLabel: "تحديث المهمة",
     toastErrorUpdateTask: "خطأ في تحديث المهمة",
     toastTaskUpdated: "تم تحديث المهمة",

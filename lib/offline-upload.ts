@@ -1,5 +1,5 @@
 import { toHebrewError } from "@/lib/error-messages";
-import { CONNECTION_EVENTS, slowNotice } from "@/lib/offline-queue";
+import { CONNECTION_EVENTS, queuedKeyFailed, queuedResultId, slowNotice, type QueueAfter } from "@/lib/offline-queue";
 
 // ── Offline file-upload queue ─────────────────────────────────────────────────
 // The JSON write queue (lib/offline-queue.ts) can't hold binary, so photo/file
@@ -49,6 +49,8 @@ export type UploadEntry = {
   attempts: number;
   queuedAt: number;
   lastError?: string;
+  /** Sent only once that queued save has gone out, with its new row's id in every "{id}" field (queueUploadsAfter). */
+  after?: QueueAfter;
 };
 
 function idbAvailable(): boolean {
@@ -363,6 +365,29 @@ export async function offlineUpload(
   }
 }
 
+/**
+ * Files of a save that waited for the connection (a new expense, project,
+ * payment…): kept on the device and sent once that save has gone out, with
+ * the id it was given in every "{id}" field (owner, 2026-10-11 — they used to
+ * be dropped). `after.key`: the save's idempotency key (offlineFetch's
+ * queued result); `after.idPath`: where its answer holds the new id.
+ */
+export async function queueUploadsAfter(
+  after: QueueAfter,
+  uploads: Array<{ url: string; fields: Record<string, string>; file: File; label: string }>
+): Promise<void> {
+  for (const upload of uploads) {
+    await enqueueUpload({
+      url: upload.url,
+      fields: upload.fields,
+      parts: toParts({ file: upload.file, label: upload.label }),
+      label: upload.label,
+      idempotencyKey: crypto.randomUUID(),
+      after,
+    });
+  }
+}
+
 // ── Queue processor ───────────────────────────────────────────────────────────
 
 export type ProcessResult = { processed: number; failed: number; remaining: number };
@@ -384,17 +409,28 @@ export async function processUploadQueue(): Promise<ProcessResult> {
   let failed = 0;
 
   try {
-    for (;;) {
+    for (const entry of await waiting()) {
       if (typeof navigator !== "undefined" && !navigator.onLine) break;
-      const queue = await waiting();
-      const entry = queue[0];
-      if (!entry) break;
+
+      // Files waiting for their save: sent once it has gone out, with its id.
+      let fields = entry.fields;
+      if (entry.after) {
+        const id = queuedResultId(entry.after.key, entry.after.idPath);
+        if (!id) {
+          if (queuedKeyFailed(entry.after.key)) {
+            await failUpload(entry, "השמירה שהקובץ שייך אליה לא נקלטה.");
+            failed++;
+          }
+          continue;
+        }
+        fields = Object.fromEntries(Object.entries(entry.fields).map(([k, v]) => [k, v === "{id}" ? id : v]));
+      }
 
       try {
         const response = await fetch(entry.url, {
           method: "POST",
           headers: { "Idempotency-Key": entry.idempotencyKey },
-          body: buildForm(entry.fields, entry.parts),
+          body: buildForm(fields, entry.parts),
         });
 
         if (response.ok) {

@@ -20,7 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { appendDictatedText } from "@/lib/dictation";
 import { WorkerLinkField } from "@/components/customers/WorkerLinkField";
-import { offlineFetch } from "@/lib/offline-queue";
+import { offlineFetch, enqueueAfter } from "@/lib/offline-queue";
 import { deviceCustomerSaves } from "@/lib/customers/device-customer-saves";
 
 export type CreatedCustomer = {
@@ -521,10 +521,20 @@ export function CreateCustomerDialog({
       );
 
       if (result.queued) {
-        // The customer is queued for creation on reconnect. We can't create its
-        // contacts now (they need the new customer's id) or hand a real id to the
-        // parent, so just close — the global toast tells the user it's saved and
-        // it will appear in the list after sync.
+        // The customer is queued for creation on reconnect. Its contacts and
+        // branches wait right behind it and go out with the id it's given
+        // (they used to be dropped). No real id to hand the parent yet, so just
+        // close — the global toast tells the user it's saved and it will
+        // appear in the list after sync.
+        if (result.key) {
+          const after = { key: result.key, idPath: "customer.id" };
+          for (const contact of normalized) {
+            enqueueAfter(after, { url: "/api/customer-contacts/create", body: { customer_id: "{id}", ...contact }, label: "איש קשר חדש" });
+          }
+          for (const branch of preparedBranches) {
+            enqueueAfter(after, { url: "/api/customer-branches/create", body: { customer_id: "{id}", ...branch }, label: "סניף חדש" });
+          }
+        }
         reset();
         onOpenChange(false);
         return;

@@ -356,6 +356,19 @@ export default function ProjectDetailsActions({
         // Uploads need a live connection; only attempt them when actually online.
         // All files go up together (lib/upload-together.ts), not one by one.
         await uploadTogether(attachmentFiles, (file) => uploadProjectDocument(project.id, file));
+      } else {
+        // The edit waits for the connection: its files wait on the device too
+        // and go up with it (they used to be dropped).
+        for (const file of attachmentFiles) {
+          await offlineUpload("/api/projects/documents/upload", {
+            fields: {
+              project_id: project.id,
+              category: file.type.startsWith("image/") ? "project_photo" : "project_document",
+            },
+            file,
+            label: file.name || "קובץ",
+          });
+        }
       }
 
       setEditOpen(false);

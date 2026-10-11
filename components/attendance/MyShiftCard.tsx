@@ -23,6 +23,7 @@ import { profileDict } from "@/lib/i18n/dictionaries/profile";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
 import { IsraelTimeNote } from "@/components/ui/israel-time-note";
 import { israelLocalValueToIso, nowIsraelLocalValue } from "@/lib/timezone";
+import { offlineFetch } from "@/lib/offline-queue";
 
 /**
  * The worker's own clock: open a shift, and when the day is done submit it.
@@ -151,6 +152,9 @@ export default function MyShiftCard({
       clockOutIso = parsed;
     }
     const noteSnapshot = note.trim();
+    // The moment it was pressed, not when the server hears of it — a clock-out
+    // that waits for a connection must still end the shift at this time.
+    const endIso = clockOutIso ?? new Date().toISOString();
     setNote("");
     setEndMode("now");
     setEndLocal("");
@@ -161,14 +165,17 @@ export default function MyShiftCard({
       onApplyOptimistic: () => setClosedOptimistically(true),
       onRevert: () => setClosedOptimistically(false),
       onCommit: async () => {
-        const response = await fetch("/api/attendance/my/close", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ notes: noteSnapshot || null, ...(clockOutIso ? { clock_out: clockOutIso } : {}) }),
-        });
-        const json = (await response.json().catch(() => ({}))) as { error?: string };
-        if (!response.ok) return { ok: false, error: toHebrewError(json.error ?? "", t(profileDict, locale, "actionFailed")) };
-        startSaving(() => router.refresh());
+        // Through the send queue: with no signal the clock-out waits for the
+        // connection instead of reverting and losing the note and end time.
+        const result = await offlineFetch(
+          "/api/attendance/my/close",
+          { notes: noteSnapshot || null, clock_out: endIso },
+          "סיום המשמרת"
+        );
+        if (!result.queued && !result.ok) {
+          return { ok: false, error: toHebrewError(result.error ?? "", t(profileDict, locale, "actionFailed")) };
+        }
+        if (!result.queued) startSaving(() => router.refresh());
         return { ok: true };
       },
     });

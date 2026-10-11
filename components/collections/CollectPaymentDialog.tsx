@@ -35,7 +35,7 @@ import { formatCurrency } from "@/lib/payroll";
 import type { CustomerReceivable } from "@/lib/collections";
 import { offlineFetch } from "@/lib/offline-queue";
 import { runTogether } from "@/lib/upload-together";
-import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
+import { uploadCheckPhotos, queueFinancialAttachmentsAfter } from "@/lib/payments/uploadCheckPhotos";
 import { toHebrewError } from "@/lib/error-messages";
 import { appendDictatedText } from "@/lib/dictation";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
@@ -430,6 +430,12 @@ export function CollectPaymentDialog({
         return;
       }
       if (results.every((result) => result.queued)) {
+        // The check's photos wait with it and go up once it has reached the
+        // server (they used to be dropped here).
+        const first = results[0];
+        if (method === "check" && first?.queued) {
+          await queueFinancialAttachmentsAfter(first.key, "payment.id", "payment", checkPhotoFiles);
+        }
         onOpenChange(false);
         reset();
         return;

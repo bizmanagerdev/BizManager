@@ -31,6 +31,7 @@ import { DomainSelect } from "@/components/financial/DomainSelect";
 import type { TaskOption, TaskPriority, TaskStatus, UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { getTaskPriorityLabel, getTaskStatusLabel } from "@/lib/ui/status-colors";
 import { formatShortDate } from "@/lib/date";
+import { offlineFetch } from "@/lib/offline-queue";
 
 type TemplateItem = {
   id: string;
@@ -219,16 +220,18 @@ export default function RecurringTasksClient(props: Props) {
         message: "המשימה הקבועה נשמרה",
         patch: templatePatchFromForm(form),
         onCommit: async () => {
-          const res = await fetch("/api/recurring-tasks/save", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(payload),
-          });
-          const json = await res.json().catch(() => ({}));
-          if (!res.ok) return { ok: false, error: toHebrewError(json?.error, "שגיאה בשמירת משימה קבועה") };
-          startTransition(() => {
-            router.refresh();
-          });
+          // Through the send queue: with no signal the edit waits for the
+          // connection instead of reverting (and losing the form) after
+          // "נשמרה". Saving the same template again is harmless.
+          const result = await offlineFetch("/api/recurring-tasks/save", payload, "עדכון המשימה הקבועה");
+          if (!result.queued && !result.ok) {
+            return { ok: false, error: toHebrewError(result.error, "שגיאה בשמירת משימה קבועה") };
+          }
+          if (!result.queued) {
+            startTransition(() => {
+              router.refresh();
+            });
+          }
           return { ok: true };
         },
       });

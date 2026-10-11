@@ -32,6 +32,7 @@ import { pinFrom, wazeLinkForPin, type DeliveryPin } from "@/lib/delivery-locati
 import { dueUrgencyChipClass, formatShortDate, getDueUrgency } from "@/lib/date";
 import { DeliveryLocationDialog } from "@/components/orders/DeliveryLocationDialog";
 import { cityColour } from "@/lib/deliveries/city-colours";
+import { useConfirmedDeliveries } from "@/lib/orders/confirmed-deliveries";
 import { rowNavigateProps } from "@/lib/ui/row-navigation";
 import { ResponsiveDataView } from "@/components/ui/responsive-data-view";
 
@@ -257,9 +258,16 @@ export default function SalesDeliveriesQueue({
     loadedAt,
   });
 
+  // Orders just confirmed on this phone leave the list at once, even while
+  // the confirmation waits for a connection (lib/orders/confirmed-deliveries.ts).
+  const confirmed = useConfirmedDeliveries();
   const deliveriesByRegion = useMemo(
-    () => groupDeliveries(deliveries, regionFilter),
-    [deliveries, regionFilter]
+    () =>
+      groupDeliveries(
+        confirmed.size > 0 ? deliveries.filter((delivery) => !confirmed.has(delivery.id)) : deliveries,
+        regionFilter
+      ),
+    [deliveries, regionFilter, confirmed]
   );
 
   const totalVisible = deliveriesByRegion.reduce(

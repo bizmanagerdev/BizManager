@@ -49,6 +49,7 @@ import {
   uploadFinancialAttachment,
 } from "@/app/(app)/dashboard/DashboardActions.helpers";
 import { runTogether, uploadTogether } from "@/lib/upload-together";
+import { queueFinancialAttachmentsAfter } from "@/lib/payments/uploadCheckPhotos";
 import { buildIncomePayload, validateIncomeForm } from "@/app/(app)/dashboard/DashboardActions.forms";
 import { SummaryRow, SummarySection } from "@/components/ui/summary";
 import { formatCurrency } from "@/lib/payroll";
@@ -441,6 +442,17 @@ export function IncomeDialog({
         if (partId) createdIds.push(partId);
       }
       if (!json?.payment) {
+        // Every installment waits for the connection: the files wait with the
+        // first one, and go up once it has reached the server.
+        const first = results[0];
+        if (first?.queued) {
+          await queueFinancialAttachmentsAfter(
+            first.key,
+            "payment.id",
+            "payment",
+            method === "check" ? [...attachmentFiles, ...checkPhotoFiles] : attachmentFiles
+          );
+        }
         handleOpenChange(false);
         return;
       }
