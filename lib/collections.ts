@@ -504,12 +504,17 @@ function pickCurrentLeaseCandidate(candidates: RentLeaseCandidate[], today: stri
  * property's own page). Best-effort — returns [] if nothing owed or on error.
  */
 async function buildRentSourceRows(supabase: SupabaseClient, today: string): Promise<CollectionSourceRow[]> {
-  const { data: paymentRows } = await supabase
-    .from("payments")
-    .select("property_id,amount_total,due_date,payment_status")
-    .eq("business_domain", "property_management")
-    .not("property_id", "is", null);
-  const rows = (paymentRows ?? []) as Row[];
+  // Paged: every rent payment ever is summed here, and past the database's
+  // 1000-row answer cap the totals were silently short (scale study, 2026-10-11).
+  const rows = await fetchAllPaged<Row>((from, to) =>
+    supabase
+      .from("payments")
+      .select("property_id,amount_total,due_date,payment_status")
+      .eq("business_domain", "property_management")
+      .not("property_id", "is", null)
+      .order("id")
+      .range(from, to)
+  ).catch(() => [] as Row[]);
   if (rows.length === 0) return [];
 
   type Agg = { collected: number; pending: number; overdue: number; nextDueDate: string | null };

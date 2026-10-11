@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fetchAllPagedResult } from "@/lib/supabase/paginate";
 import { splitPaymentAmounts } from "@/lib/orders/paymentStatus";
 import { applyProjectVatToBase } from "@/lib/projects/vat";
 import { withLinkColumn } from "@/lib/customers/workerLink";
@@ -355,9 +356,6 @@ export type CustomerSearchIndexEntry = {
   branches: Array<{ id: string; name: string; address: string | null; phone: string | null }>;
 };
 
-const SEARCH_INDEX_CUSTOMER_CAP = 10000;
-const SEARCH_INDEX_CONTACT_CAP = 20000;
-const SEARCH_INDEX_BRANCH_CAP = 20000;
 
 /**
  * Load EVERY customer (lightweight, with contacts) for the client-side search
@@ -367,22 +365,34 @@ const SEARCH_INDEX_BRANCH_CAP = 20000;
 export async function loadCustomerSearchIndexRows(
   supabase: SupabaseClient
 ): Promise<CustomerSearchIndexEntry[]> {
+  // Paged: the database answers at most 1000 rows and drops the rest without
+  // a word — past 1000 customers the ones later in the alphabet couldn't be
+  // found or picked in the order form (scale study, 2026-10-11).
   const [{ data: customerRows }, { data: contactRows }, { data: branchRows }] = await Promise.all([
-    supabase
-      .from("customers")
-      .select("id,name,name_for_invoice,phone,whatsapp,email,address,active,requires_prepayment")
-      .order("name", { ascending: true })
-      .range(0, SEARCH_INDEX_CUSTOMER_CAP - 1),
-    supabase
-      .from("contacts")
-      .select("customer_id,full_name,phone,email,whatsapp")
-      .eq("active", true)
-      .range(0, SEARCH_INDEX_CONTACT_CAP - 1),
-    supabase
-      .from("customer_branches")
-      .select("id,customer_id,name,address,phone")
-      .eq("active", true)
-      .range(0, SEARCH_INDEX_BRANCH_CAP - 1),
+    fetchAllPagedResult((from, to) =>
+      supabase
+        .from("customers")
+        .select("id,name,name_for_invoice,phone,whatsapp,email,address,active,requires_prepayment")
+        .order("name", { ascending: true })
+        .order("id")
+        .range(from, to)
+    ),
+    fetchAllPagedResult((from, to) =>
+      supabase
+        .from("contacts")
+        .select("customer_id,full_name,phone,email,whatsapp")
+        .eq("active", true)
+        .order("id")
+        .range(from, to)
+    ),
+    fetchAllPagedResult((from, to) =>
+      supabase
+        .from("customer_branches")
+        .select("id,customer_id,name,address,phone")
+        .eq("active", true)
+        .order("id")
+        .range(from, to)
+    ),
   ]);
 
   const contactsByCustomer = new Map<string, CustomerSearchIndexEntry["contacts"]>();

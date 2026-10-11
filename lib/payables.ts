@@ -7,6 +7,7 @@ import {
 } from "@/lib/financial";
 import { getBusinessDomainLabel, type ExpenseBusinessDomain } from "@/lib/expenses";
 import { withOpenAmount } from "@/lib/financial/expenseOpen";
+import { fetchAllPagedResult } from "@/lib/supabase/paginate";
 import { loadOutflowSourceSettings } from "@/lib/outflow-sources";
 import { sourceSettingKey, type OutflowSourceSettings, type OutflowSourceSettingsRecord } from "@/lib/outflow-source-settings";
 
@@ -369,10 +370,17 @@ export async function loadProjectedRecurringExpenses(
   };
 
   // Which template+period pairs already exist as real expense rows → skip those.
-  const { data: existingRows } = await supabase
-    .from("expenses")
-    .select("recurring_expense_template_id,recurrence_key")
-    .in("recurring_expense_template_id", templates.map((t) => t.id));
+  // Paged: every month adds rows here, and past the database's 1000-row answer
+  // cap the rest were silently missing — a bill already paid came back as a
+  // pending one (scale study, 2026-10-11).
+  const { data: existingRows } = await fetchAllPagedResult((from, to) =>
+    supabase
+      .from("expenses")
+      .select("recurring_expense_template_id,recurrence_key")
+      .in("recurring_expense_template_id", templates.map((t) => t.id))
+      .order("id")
+      .range(from, to)
+  );
   const materialized = new Set<string>();
   for (const row of (existingRows ?? []) as Array<{ recurring_expense_template_id: string | null; recurrence_key: string | null }>) {
     if (row.recurring_expense_template_id && row.recurrence_key) {
@@ -694,9 +702,21 @@ export async function loadProjectedOutflowEntries(
  */
 export async function loadCardChargedExpenseIds(supabase: SupabaseClient): Promise<Set<string>> {
   try {
+    // Paged: every imported card line ever is here (791 on 2026-10-11), and
+    // past the database's 1000-row answer cap the rest were silently missing —
+    // their purchases would have shown twice, itemized and in the lump sum.
     const [{ data: rowData, error: rowError }, { data: chargeData, error: chargeError }] = await Promise.all([
-      supabase.from("card_statement_rows").select("expense_id,statement_id,card_label,category").not("expense_id", "is", null),
-      supabase.from("card_statement_charges").select("statement_id,card_label"),
+      fetchAllPagedResult((from, to) =>
+        supabase
+          .from("card_statement_rows")
+          .select("expense_id,statement_id,card_label,category")
+          .not("expense_id", "is", null)
+          .order("id")
+          .range(from, to)
+      ),
+      fetchAllPagedResult((from, to) =>
+        supabase.from("card_statement_charges").select("statement_id,card_label").order("id").range(from, to)
+      ),
     ]);
     if (rowError || chargeError) return new Set();
 

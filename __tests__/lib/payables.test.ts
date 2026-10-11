@@ -365,14 +365,19 @@ describe("loadCardChargeItems — real charges + one-per-card forecast", () => {
 
 describe("loadCardChargedExpenseIds — hide itemized detail once a lump charge covers it", () => {
   function makeSupabase(tables: { card_statement_rows: Record<string, unknown>[]; card_statement_charges: Record<string, unknown>[] }) {
+    // Both reads page through their table (.order().range()) — a page past
+    // the end comes back short, which is how the paging knows to stop.
     return {
-      from: (table: "card_statement_rows" | "card_statement_charges") => ({
-        select: () => ({
-          not: () => Promise.resolve({ data: tables[table], error: null }),
-          then: (onF: (v: { data: unknown; error: null }) => unknown) =>
-            Promise.resolve({ data: tables[table], error: null }).then(onF),
-        }),
-      }),
+      from: (table: "card_statement_rows" | "card_statement_charges") => {
+        const builder = {
+          select: () => builder,
+          not: () => builder,
+          order: () => builder,
+          range: (from: number, to: number) =>
+            Promise.resolve({ data: tables[table].slice(from, to + 1), error: null }),
+        };
+        return builder;
+      },
     } as never;
   }
 

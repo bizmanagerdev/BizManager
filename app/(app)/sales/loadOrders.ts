@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fetchAllPagedResult } from "@/lib/supabase/paginate";
 import { fetchOrderDueDates } from "@/lib/collections";
 import { findMatchingCustomers } from "@/lib/search/findMatchingCustomers";
 import { findOrderIdsMatchingContent } from "@/lib/search/findMatchingChildIds";
@@ -381,7 +382,6 @@ export type OrderSearchIndexEntry = {
   invoice_sent_at: string | null;
 };
 
-const SEARCH_INDEX_ORDER_CAP = 20000;
 
 /**
  * Load EVERY order (lightweight — identity fields only, no payment
@@ -393,13 +393,18 @@ const SEARCH_INDEX_ORDER_CAP = 20000;
  * doesn't need.
  */
 export async function loadOrderSearchIndexRows(supabase: SupabaseClient): Promise<OrderSearchIndexEntry[]> {
-  const { data } = await supabase
-    .from("orders")
-    .select(
-      "id,customer_id,branch_id,status,order_date,needs_invoice,invoice_sent_at,customers(name),customer_branches(name)"
-    )
-    .order("order_date", { ascending: false })
-    .range(0, SEARCH_INDEX_ORDER_CAP - 1);
+  // Paged: the database answers at most 1000 rows — past 1000 orders a search
+  // by customer name missed every older one (scale study, 2026-10-11).
+  const { data } = await fetchAllPagedResult((from, to) =>
+    supabase
+      .from("orders")
+      .select(
+        "id,customer_id,branch_id,status,order_date,needs_invoice,invoice_sent_at,customers(name),customer_branches(name)"
+      )
+      .order("order_date", { ascending: false })
+      .order("id")
+      .range(from, to)
+  );
 
   return ((data ?? []) as Row[])
     .map((row) => {

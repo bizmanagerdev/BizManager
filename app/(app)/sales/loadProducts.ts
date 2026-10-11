@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fetchAllPagedResult } from "@/lib/supabase/paginate";
 import { resolveUserDisplayNamesForValues } from "@/lib/audit";
 
 type Row = Record<string, unknown>;
@@ -110,29 +111,44 @@ async function loadProductPageData(
           .select("product_id,quantity_on_hand,quantity_reserved,updated_at")
           .in("product_id", productIds)
       : Promise.resolve({ data: [], error: null }),
+    // The three movement reads are summed into "purchased" / "sold" /
+    // "returned" — paged, since past the database's 1000-row answer cap the
+    // totals came out silently short (scale study, 2026-10-11).
     productIds.length > 0
-      ? supabase
-          .from("inventory_movements")
-          .select("product_id,movement_type,quantity")
-          .eq("movement_type", "in")
-          .in("product_id", productIds)
+      ? fetchAllPagedResult((from, to) =>
+          supabase
+            .from("inventory_movements")
+            .select("product_id,movement_type,quantity")
+            .eq("movement_type", "in")
+            .in("product_id", productIds)
+            .order("id")
+            .range(from, to)
+        )
       : Promise.resolve({ data: [], error: null }),
     productIds.length > 0
-      ? supabase
-          .from("inventory_movements")
-          .select("product_id,movement_type,quantity,source_type")
-          .eq("movement_type", "out")
-          .eq("source_type", "order")
-          .in("product_id", productIds)
+      ? fetchAllPagedResult((from, to) =>
+          supabase
+            .from("inventory_movements")
+            .select("product_id,movement_type,quantity,source_type")
+            .eq("movement_type", "out")
+            .eq("source_type", "order")
+            .in("product_id", productIds)
+            .order("id")
+            .range(from, to)
+        )
       : Promise.resolve({ data: [], error: null }),
     productIds.length > 0
-      ? supabase
-          .from("inventory_movements")
-          .select("product_id,movement_type,quantity,source_type,notes")
-          .eq("movement_type", "in")
-          .eq("source_type", "manual_adjustment")
-          .in("product_id", productIds)
-          .or("notes.ilike.%החזרת לקוח%,notes.ilike.%customer return%")
+      ? fetchAllPagedResult((from, to) =>
+          supabase
+            .from("inventory_movements")
+            .select("product_id,movement_type,quantity,source_type,notes")
+            .eq("movement_type", "in")
+            .eq("source_type", "manual_adjustment")
+            .in("product_id", productIds)
+            .or("notes.ilike.%החזרת לקוח%,notes.ilike.%customer return%")
+            .order("id")
+            .range(from, to)
+        )
       : Promise.resolve({ data: [], error: null }),
     supabase.from("product_categories").select("id,name,active").order("name", { ascending: true }),
     productIds.length > 0

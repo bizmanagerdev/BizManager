@@ -284,6 +284,18 @@ function compareValues(a: Value, b: Value): number {
   return sa < sb ? -1 : sa > sb ? 1 : 0;
 }
 
+// Each `in` filter's candidates as text, built once and reused for every row.
+const IN_VALUE_SETS = new WeakMap<Extract<Filter, { kind: "in" }>, Set<string>>();
+
+function inValueSet(filter: Extract<Filter, { kind: "in" }>): Set<string> {
+  let set = IN_VALUE_SETS.get(filter);
+  if (!set) {
+    set = new Set(filter.values.map((candidate) => String(candidate)));
+    IN_VALUE_SETS.set(filter, set);
+  }
+  return set;
+}
+
 function sameValue(rowValue: Value, filterValue: Value): boolean {
   if (typeof rowValue === "boolean") return rowValue === (filterValue === true || filterValue === "true");
   if (typeof rowValue === "number") return rowValue === Number(filterValue);
@@ -322,6 +334,15 @@ function evaluate(filter: Filter, row: Row): boolean | null {
     case "in": {
       const value = row[filter.column];
       if (value === null || value === undefined) return null;
+      // A list of ids is looked up, not walked: one candidate at a time, an
+      // `in` over K ids on an N-row table was N×K comparisons — the projects
+      // list's "owed" join alone ~1.7M today, ~170M at ten times the data
+      // (scale study, 2026-10-11). The same text is the same value; a boolean,
+      // a number or a date written another way still goes through sameValue.
+      if (typeof value === "string") {
+        if (inValueSet(filter).has(value)) return true;
+        if (!ISO_DATE_OR_TIME.test(value)) return false;
+      }
       return filter.values.some((candidate) => sameValue(value, candidate));
     }
     case "is": {

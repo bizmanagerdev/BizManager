@@ -75,6 +75,14 @@ export async function GET(req: Request) {
     )
     .eq("status", "pending")
     .is("notified_at", null)
+    // Only what this job may push. A silent or 'info' system reminder is
+    // skipped below and never marked, so it stayed pending-and-unnotified for
+    // good — oldest first, they would fill these 500 rows in time and every
+    // newer reminder would never be pushed (scale study, 2026-10-11). Same
+    // rules as the loop: no source = manual, no behavior/severity = pushable.
+    .or(
+      "source.is.null,source.neq.system,and(or(behavior.is.null,behavior.neq.silent),or(severity.is.null,severity.neq.info))"
+    )
     .order("remind_at", { ascending: true })
     .range(0, 499);
 
