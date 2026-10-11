@@ -221,7 +221,7 @@ export function startProjectPageReads(supabase: SupabaseClient, id: string): Pro
     supabase
       .from("attendance_sessions")
       .select(
-        "id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id"
+        "id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,notes_he,business_domain,project_id,property_id"
       )
       .eq("project_id", id)
       .order("clock_in", { ascending: false })

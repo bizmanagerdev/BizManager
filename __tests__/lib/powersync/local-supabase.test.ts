@@ -697,7 +697,7 @@ describe("the money views, worked out on the device", () => {
             "expense_date,payment_method,payment_status,paid_amount,category,description,business_domain,notes,account_id,recorded_by,created_at,updated_at,recurring_expense_template_id"
           ),
           project_expenses: pad(tables.project_expenses, "included_in_base_price,notes"),
-          attendance_sessions: pad(tables.attendance_sessions, "clock_out,billing_status,notes"),
+          attendance_sessions: pad(tables.attendance_sessions, "clock_out,billing_status,notes,notes_he"),
           payments: pad(
             tables.payments.map((p) => ({ ...p, recorded_by: "boss" })),
             "payment_method,reference_number,check_number,amount_including_vat,amount_before_vat,vat_rate,business_domain,order_id,property_id,requires_split,recorded_by,notes,account_id,created_at,updated_at"

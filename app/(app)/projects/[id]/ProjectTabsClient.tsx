@@ -72,6 +72,7 @@ import {
 import type { ExpenseWorkerOption } from "@/components/expenses/ExpenseDialog";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
 import BilledCustomerPrintButton from "./BilledCustomerPrintButton";
+import ProjectMovementsPdfButton from "./ProjectMovementsPdfButton";
 import ProjectMovements, { type Movement } from "./ProjectMovements";
 import ProjectOwedBreakdown from "./ProjectOwedBreakdown";
 import { emptyProjectOwed, withWorkerBalance, type ProjectOwed } from "@/lib/projects/owed";
@@ -1477,8 +1478,12 @@ export default function ProjectTabsClient({
         account: session
           ? accountName(wageAccountIdsBySource[`session:${session.id}`])
           : accountName([getString(item.expense, "account_id")]),
+        // A worker's own note is in Arabic when he writes in Arabic; the office
+        // reads its Hebrew translation (notes_he), as attendance does — here and
+        // in the shared PDF (owner, 2026-10-11: "whatever faces a Hebrew person
+        // should be in Hebrew"). The original only where there's no translation.
         hint: session
-          ? session.notes?.trim() || null
+          ? session.notes_he?.trim() || session.notes?.trim() || null
           : getString(item.expense, "notes") ?? null,
         extras,
         attachments: session
@@ -1625,6 +1630,17 @@ export default function ProjectTabsClient({
                       rows: billedCustomerPrintRows,
                       total: billedExpensesTotal,
                     }}
+                  />
+                ) : null}
+                {/* The whole card — every movement in and out, with its totals —
+                    as one PDF to share (owner, 2026-10-11). */}
+                {movements.length > 0 ? (
+                  <ProjectMovementsPdfButton
+                    movements={movements}
+                    sortBy={ledgerPrefs.sortBy}
+                    sortDirection={ledgerPrefs.sortDirection}
+                    projectName={overview.name}
+                    customerName={overview.customer_name ?? null}
                   />
                 ) : null}
                 {/* A separator between the +/share buttons and תצוגה only
@@ -1790,7 +1806,10 @@ export default function ProjectTabsClient({
               // escape valve for a card too narrow to fit all of them — the
               // row scrolls horizontally instead of the card's own
               // overflow-hidden silently clipping buttons to invisible.
-              <div className="hidden flex-nowrap items-center gap-1.5 overflow-x-auto lg:flex">
+              // -m-1 p-1: room inside the scroll box for a button's hover lift
+              // and shadow — a box that scrolls sideways clips above and below
+              // too, and hovering cut the buttons' tops off (owner, 2026-10-11).
+              <div className="-m-1 hidden flex-nowrap items-center gap-1.5 overflow-x-auto p-1 lg:flex">
                 {movementActions}
               </div>
             }

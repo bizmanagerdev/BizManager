@@ -413,7 +413,7 @@ function compareMovements(a: Movement, b: Movement, sortBy: LedgerSortBy): numbe
   }
 }
 
-function sortMovements(movements: Movement[], sortBy: LedgerSortBy, direction: LedgerSortDirection): Movement[] {
+export function sortMovements(movements: Movement[], sortBy: LedgerSortBy, direction: LedgerSortDirection): Movement[] {
   const sorted = [...movements].sort((a, b) => compareMovements(a, b, sortBy));
   if (direction === "desc") sorted.reverse();
   return sorted;

@@ -280,7 +280,10 @@ describe("WorkerSummaryExport — share / download", () => {
 
     await waitFor(() => expect(share).toHaveBeenCalledTimes(1));
     const sharedFile = share.mock.calls[0]?.[0]?.files[0];
-    expect(sharedFile?.name).toBe("סיכום עבודה - נתן סמוכה - אוגוסט 2026.pdf");
+    // Shared under a plain-letters name (a Hebrew one reached WhatsApp garbled);
+    // the Hebrew goes in the message text.
+    expect(sharedFile?.name).toMatch(/^BizH-work-summary-\d{4}-\d{2}-\d{2}\.pdf$/);
+    expect(share.mock.calls[0]?.[0]).toMatchObject({ text: "סיכום עבודה - נתן סמוכה - אוגוסט 2026" });
     expect(createObjectURL).not.toHaveBeenCalled();
 
     Reflect.deleteProperty(navigator, "share");

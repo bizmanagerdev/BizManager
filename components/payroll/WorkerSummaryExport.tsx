@@ -34,6 +34,7 @@ import { t } from "@/lib/i18n/t";
 import type { Locale } from "@/lib/i18n/types";
 import { profileDict } from "@/lib/i18n/dictionaries/profile";
 import { armNativeSurfaceGuard } from "@/components/ui/native-surface";
+import { shareSafeFileName } from "@/lib/share-pdf";
 
 // The same "סיכום עבודה ותשלומים לעובד" report an admin can print for any
 // worker from the salary center — here scoped to the signed-in worker's own
@@ -309,8 +310,11 @@ export default function WorkerSummaryExport(props: ReportInputs & { locale?: Loc
 
       const pdfBlob = pdf.output("blob");
       const fileName = pdfFileName(props.workerName, props.monthLabel);
-      const file = new File([pdfBlob], fileName, { type: "application/pdf" });
-      const shareData = { title: fileName, text: fileName, files: [file] };
+      // Shared under a plain-letters name — a Hebrew one reached WhatsApp
+      // garbled (lib/share-pdf.ts shareSafeFileName); the Hebrew rides in the
+      // message text. A download keeps the Hebrew name.
+      const file = new File([pdfBlob], shareSafeFileName("work-summary"), { type: "application/pdf" });
+      const shareData = { title: fileName, text: fileName.replace(/\.pdf$/, ""), files: [file] };
 
       if (
         typeof navigator !== "undefined" &&

@@ -38,15 +38,21 @@ function blobToBase64(blob: Blob): Promise<string> {
 }
 
 /**
- * Share an image via Android's native share sheet — the same one every other
- * app on the phone uses, so the person sharing picks WhatsApp / email /
- * whatever themselves. Writes the blob to the app's cache dir first (Share
- * needs a file URI, not a raw blob) and cleans it up after.
+ * Share a file via Android's native share sheet — the same one every other app
+ * on the phone uses, so the person sharing picks WhatsApp / email / whatever
+ * themselves. Writes the blob to the app's cache dir first (Share needs a file
+ * URI, not a raw blob) and cleans it up after.
+ *
+ * The file keeps its real name this way, Hebrew included: the WebView's own
+ * navigator.share hands a Hebrew name on mangled — a PDF reached WhatsApp as
+ * "×—×™×•×‘ ×œ×§×•×—.pdf" (owner, 2026-10-11) while the message text beside it
+ * read fine.
  */
-export async function shareImageNative(
+export async function shareFileNative(
   blob: Blob,
   fileName: string,
-  title: string
+  title: string,
+  text?: string
 ): Promise<NativeShareResult> {
   try {
     const { Capacitor } = await import("@capacitor/core");
@@ -63,7 +69,7 @@ export async function shareImageNative(
       // The share sheet is an OS surface over the page, and dismissing it hands
       // the tap back down — see components/ui/native-surface.ts.
       armNativeSurfaceGuard();
-      await Share.share({ title, files: [uri] });
+      await Share.share(text ? { title, text, files: [uri] } : { title, files: [uri] });
       return "shared";
     } finally {
       // Best-effort cleanup — a leftover cache file is harmless, but don't let
@@ -77,4 +83,9 @@ export async function shareImageNative(
     if (error instanceof Error && /cancel/i.test(error.message)) return "cancelled";
     return "unavailable";
   }
+}
+
+/** An image through the native share sheet (shareFileNative). */
+export function shareImageNative(blob: Blob, fileName: string, title: string): Promise<NativeShareResult> {
+  return shareFileNative(blob, fileName, title);
 }
