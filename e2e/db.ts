@@ -83,13 +83,16 @@ export async function getProjectStatus(id: string): Promise<string> {
 
 export type TestOrder = { id: string };
 
-export async function createTestOrder(customerId: string): Promise<TestOrder> {
+export async function createTestOrder(
+  customerId: string,
+  { status = "draft" }: { status?: "draft" | "delivered" } = {}
+): Promise<TestOrder> {
   const createdBy = await getAdminUserId();
   const { data, error } = await adminClient()
     .from("orders")
     .insert({
       customer_id: customerId,
-      status: "draft",
+      status,
       payment_status: "unpaid",
       created_by: createdBy,
     })

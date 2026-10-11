@@ -20,6 +20,10 @@ import { createTestCustomer, deleteTestCustomer, createTestOrder, deleteTestOrde
 // (pending_amount) — a bare unpaid order never reaches either bucket. A
 // pending payment row tied to the order is what actually gets it there.
 //
+// And the order is DELIVERED: an open order's debt is never late
+// (computeSourceCollection's blockOverdue, applied to the card since
+// 5a98c9db) — on a draft order the debtor fell out of both lists.
+//
 // due_date is YESTERDAY, not today: getPaymentsDueToday (lib/collections.ts)
 // exact-matches due_date = today for the card's separate "TODAY" collect
 // list (its own "נגבה" row, unrelated to this test) — a due_date of today
@@ -31,7 +35,7 @@ test.describe("admin — dashboard collections card", () => {
   test("clicking a debtor row on the dashboard opens their customer page", async ({ page }) => {
     test.setTimeout(60_000);
     const customer = await createTestCustomer({ name: `E2E debtor dash ${Date.now()}` });
-    const order = await createTestOrder(customer.id);
+    const order = await createTestOrder(customer.id, { status: "delivered" });
     await createTestOrderItem(order.id, { unitPrice: 350, quantityOrdered: 1 });
     const yesterdayIso = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
     await createTestPayment({ orderId: order.id, paymentStatus: "pending", dueDate: yesterdayIso, amount: 350 });

@@ -22,7 +22,11 @@ test.describe("admin — dashboard deliveries card", () => {
 
       const row = page.getByRole("link", { name: `פרטי המשלוח — ${customer.name}`, exact: true });
       await expect(row).toBeVisible();
-      await row.getByText(customer.name).click();
+      // The row itself, inside its top padding — not the name: in the board's
+      // narrowest cells (a 1280px window, four cards to a row) the name column
+      // can shrink to nothing beside the row's two buttons, and what's under
+      // test is the ROW's navigation.
+      await row.click({ position: { x: 6, y: 4 } });
 
       await page.waitForURL((url) => url.pathname === "/sales" && url.searchParams.get("focus") === order.id);
       await expect(page.locator(`[data-focus-id="${order.id}"]:visible`).first()).toBeVisible();

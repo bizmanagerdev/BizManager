@@ -32,7 +32,9 @@ test.describe("admin — payroll attendance approval", () => {
       await expect(card).toBeVisible();
 
       await card.locator('[aria-label="תחום עסקי"]').click();
-      await page.getByRole("button", { name: "שוטף", exact: true }).click();
+      // The searchable picker's choices are options in a listbox (since the
+      // keyboard work in components/ui/searchable-select.tsx), not buttons.
+      await page.getByRole("option", { name: "שוטף", exact: true }).click();
 
       await card.getByRole("button", { name: "אישור" }).click();
 
