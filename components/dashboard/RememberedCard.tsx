@@ -56,7 +56,7 @@ export function RememberedCardFallback({
   const entry = useMemo(() => (raw ? (JSON.parse(raw) as RememberedEntry<unknown>) : null), [raw]);
 
   // As tall as this card last stood on this device (the cell's --held-h).
-  if (!entry) return <Skeleton className={cn("h-[var(--held-h,4rem)] w-full rounded-[1.125rem] 3xl:h-full", className)} />;
+  if (!entry) return <Skeleton className={cn("h-[var(--held-h,4rem)] w-full rounded-[1.125rem] xl:h-full", className)} />;
 
   return (
     <div inert aria-busy="true" className="contents [&>*]:opacity-60">

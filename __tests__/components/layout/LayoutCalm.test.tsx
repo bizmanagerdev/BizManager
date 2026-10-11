@@ -31,8 +31,8 @@ describe("remembered card heights", () => {
     expect(parseHeldHeights(raw)).toEqual({ myTasks: 280, todaySchedule: 404 });
   });
 
-  it("never on the full-screen board (fixed cells there, from 1800px), never nonsense", () => {
-    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1920 });
+  it("never on the desktop layout (fixed cells there), never nonsense", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440 });
     rememberHeldHeight("myTasks", 300);
     expect(document.cookie).not.toContain(HELD_HEIGHTS_COOKIE);
     expect(parseHeldHeights("myTasks:12;bad id:300;deliveries:9999;payments:abc;todayAlerts:120")).toEqual({ todayAlerts: 120 });
