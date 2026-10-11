@@ -1748,10 +1748,14 @@ export function TaskUpsertDialog(rawProps: Props) {
                 all the sections (user, 2026-10-04), so the name gets the row. */}
           </div>
           <DialogDescription className="sr-only">{t(tasksDict, props.locale, "dialogDescriptionSr")}</DialogDescription>
-          {/* When it was created / last touched — always visible, no click needed. */}
-          {isEditing && (createdAt || updatedAt) ? (
+          {/* When it was created / last touched — always visible, no click needed.
+              Its line is there from the first frame, empty until the task's
+              details arrive: appearing ~0.5s after the dialog opened, it pushed
+              the whole body down 21px (owner, 2026-10-11: "it opens, then
+              something shifts and it jumps again"). */}
+          {isEditing ? (
             <div className="mt-1 text-[0.647rem] text-muted-foreground">
-              {createdAt ? `${t(tasksDict, props.locale, "createdAtLabel")} ${formatShortDateTime(createdAt)}` : ""}
+              {createdAt ? `${t(tasksDict, props.locale, "createdAtLabel")} ${formatShortDateTime(createdAt)}` : "\u00a0"}
               {updatedAt && updatedAt !== createdAt
                 ? ` · ${t(tasksDict, props.locale, "updatedAtLabel")} ${formatShortDateTime(updatedAt)}`
                 : ""}
