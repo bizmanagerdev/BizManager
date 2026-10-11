@@ -51,12 +51,16 @@ function toPositiveInt(value: unknown) {
 /** The lines as the routes take them (quantity_delivered only when sent). */
 export function normalizeOrderItems(items: unknown): OrderItem[] {
   return (Array.isArray(items) ? (items as OrderItemInput[]) : []).map((item) => {
+    const quantity = toPositiveInt(item.quantity_ordered);
+    const unitPrice = toNonNegativeInt(item.unit_price);
     const base = {
       product_id: typeof item.product_id === "string" ? item.product_id : "",
       description: typeof item.description === "string" ? item.description.trim() : "",
-      quantity_ordered: toPositiveInt(item.quantity_ordered),
-      unit_price: toNonNegativeInt(item.unit_price),
-      discount_amount: toNonNegativeInt(item.discount_amount ?? 0),
+      quantity_ordered: quantity,
+      unit_price: unitPrice,
+      // Never more than the line itself — a larger discount made the line, and
+      // the order, negative (the form's cap is here too, for any caller).
+      discount_amount: Math.min(toNonNegativeInt(item.discount_amount ?? 0), quantity * unitPrice),
       notes: typeof item.notes === "string" ? item.notes.trim() : null,
     };
     if (item.quantity_delivered !== undefined && item.quantity_delivered !== null) {

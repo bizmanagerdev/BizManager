@@ -99,7 +99,19 @@ describe("the order edit form's load", () => {
       expect.objectContaining({ product_id: "", description: "הובלה", product_name: "הובלה", quantity_ordered: 1, notes: "ערב" }),
     ]);
     expect(result.data.initialPayments).toEqual([
-      { id: "pay1", payment_date: "2026-10-08", amount_total: 60, payment_method: "cash", reference_number: "", notes: "" },
+      {
+        id: "pay1",
+        payment_date: "2026-10-08",
+        amount_total: 60,
+        // Read so the delivery dialog counts only money received (a pending
+        // check isn't) — not set on this fixture's payment.
+        net_amount: null,
+        payment_status: null,
+        due_date: null,
+        payment_method: "cash",
+        reference_number: "",
+        notes: "",
+      },
     ]);
     expect(result.data.customers.map((c) => c.id)).toEqual(["c1"]);
     expect(result.data.products).toEqual([expect.objectContaining({ id: "p1", available_quantity: 70 })]);

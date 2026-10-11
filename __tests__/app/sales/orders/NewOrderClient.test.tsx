@@ -432,6 +432,25 @@ describe("the products step", () => {
     ]);
   });
 
+  it("a lower quantity never leaves a line's discount bigger than the line", async () => {
+    await renderForm();
+    chooseCustomerAndSand();
+    tap("שקית חול");
+    fireEvent.change(screen.getAllByPlaceholderText("0")[0], { target: { value: "200" } });
+    expect(besides("סה״כ")).toEqual([shekels(40)]);
+
+    // ₪200 off one ₪120 bag would be −₪80: the discount comes down with the line.
+    fireEvent.click(screen.getByLabelText("הפחתת כמות של שקית חול"));
+    expect(besides("סה״כ")).toEqual([shekels(0)]);
+
+    goOnTo("לאשר ולשמור?");
+    fireEvent.click(createButton());
+    await waitFor(() => expect(push).toHaveBeenCalled());
+    expect(sentOrder().items).toEqual([
+      expect.objectContaining({ quantity_ordered: 1, unit_price: 120, discount_amount: 120 }),
+    ]);
+  });
+
   it("warns when an order takes more than is in stock — and says it again at save", async () => {
     await renderForm();
     tap("משכן משה");

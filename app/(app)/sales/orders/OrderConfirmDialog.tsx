@@ -30,6 +30,7 @@ import {
   derivePaymentStatus,
   paymentStatusClasses,
   paymentStatusLabel,
+  splitPaymentAmounts,
 } from "@/lib/orders/paymentStatus";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
@@ -382,6 +383,9 @@ export default function OrderConfirmDialog({
     setRefundNotes("");
     setPaymentAccountId("");
     setRefundAccountId("");
+    // Back to one payment: a number of card instalments left from the last
+    // time split the next card payment again without anyone choosing it.
+    setInstallments("1");
     // Start EMPTY: this box is a NEW delivery note, not the existing order thread.
     // Seeding it from data.initialOrder.notes (which is the attributed comment log)
     // and writing it back on confirm used to overwrite the whole thread.
@@ -396,8 +400,12 @@ export default function OrderConfirmDialog({
     setQueuedReason(null);
   }, [data]);
 
+  // Money already RECEIVED, by the server's own rule (splitPaymentAmounts): a
+  // pending (post-dated) check or a bounced payment isn't — counting them made
+  // the dialog show nothing left to collect, and cash taken on top opened a
+  // refund for money not yet in hand (found by the tests, 2026-10-11).
   const existingPaid = useMemo(
-    () => (data?.initialPayments ?? []).reduce((sum, payment) => sum + (payment.amount_total || 0), 0),
+    () => splitPaymentAmounts(data?.initialPayments ?? []).collected,
     [data]
   );
 

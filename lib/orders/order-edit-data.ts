@@ -67,6 +67,11 @@ export type OrderEditData = {
     id: string;
     payment_date: string | null;
     amount_total: number;
+    /** What the payment counts toward the price (the server's rule), and its
+     *  status: a pending check or a bounced payment is no money received yet. */
+    net_amount: number | null;
+    payment_status: string | null;
+    due_date: string | null;
     payment_method: string;
     reference_number: string;
     notes: string;
@@ -107,7 +112,7 @@ export async function loadOrderEditData(
       .eq("order_id", id),
     supabase
       .from("payments")
-      .select("id,payment_date,amount_total,payment_method,reference_number,notes")
+      .select("id,payment_date,amount_total,net_amount,payment_status,due_date,payment_method,reference_number,notes")
       .eq("order_id", id)
       .order("payment_date", { ascending: false }),
     isConfirmScope
@@ -241,6 +246,9 @@ export async function loadOrderEditData(
     id: getString(payment as Row, ["id"]) ?? "",
     payment_date: getString(payment as Row, ["payment_date"]),
     amount_total: getNumber(payment as Row, ["amount_total"]) ?? 0,
+    net_amount: getNumber(payment as Row, ["net_amount"]),
+    payment_status: getString(payment as Row, ["payment_status"]),
+    due_date: getString(payment as Row, ["due_date"]),
     payment_method: getString(payment as Row, ["payment_method"]) ?? "",
     reference_number: getString(payment as Row, ["reference_number"]) ?? "",
     notes: getString(payment as Row, ["notes"]) ?? "",

@@ -693,11 +693,17 @@ export default function NewOrderClient({
 
   function decrementLine(index: number) {
     setLines((prev) =>
-      prev.map((line, i) =>
-        i === index
-          ? { ...line, quantity_ordered: Math.max(1, line.quantity_ordered - 1) }
-          : line
-      )
+      prev.map((line, i) => {
+        if (i !== index) return line;
+        const quantity = Math.max(1, line.quantity_ordered - 1);
+        // updateLine's cap too: a ₪ discount larger than the smaller line drove
+        // it below zero (₪200 off 2×₪120, then − → −₪80; found by the tests).
+        return {
+          ...line,
+          quantity_ordered: quantity,
+          discount_amount: Math.min(line.discount_amount, quantity * line.unit_price),
+        };
+      })
     );
   }
 

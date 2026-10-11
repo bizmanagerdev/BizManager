@@ -126,7 +126,7 @@ const EXISTING_NOTE = "משרד · 05.10.2026, 09:00\nלהשאיר ליד הדל
 function makeOrder(
   overrides: {
     items?: Line[];
-    payments?: { amount_total: number }[];
+    payments?: { amount_total: number; payment_method?: string; payment_status?: string; due_date?: string }[];
     requested_delivery_date?: string | null;
     deliveryImages?: { id: string; file_name: string | null; uploaded_at: string | null; url: string | null }[];
   } = {}
@@ -827,6 +827,23 @@ describe("payment", () => {
     expect(amountShown()).toBe("250");
   });
 
+  // The server counts only money received (splitPaymentAmounts) — a check not
+  // yet cleared or a bounced payment isn't, so the whole 350 is still to collect.
+  it("an earlier check not yet cleared, or a bounced payment, is not money received", async () => {
+    net.order = makeOrder({
+      payments: [
+        { amount_total: 100, payment_method: "check", payment_status: "pending", due_date: "2026-11-01" },
+        { amount_total: 50, payment_status: "rejected" },
+      ],
+    });
+    await openOnItems();
+    await startPayment();
+
+    expect(screen.getByText(/יתרה לתשלום/)).toHaveTextContent(money(350).replace(/\s/g, " "));
+    press("הכל");
+    expect(amountShown()).toBe("350");
+  });
+
   it("the keypad types an amount, one decimal point at most, and erases", async () => {
     await openOnItems();
     await startPayment();
@@ -909,6 +926,31 @@ describe("payment", () => {
         expect.objectContaining({ amount_total: 100, payment_date: "2026-11-15", due_date: "2026-12-10", notes: "תשלום 2/3" }),
         expect.objectContaining({ amount_total: 100, payment_date: "2026-12-15", due_date: "2027-01-10", notes: "תשלום 3/3" }),
       ]);
+    });
+
+    it("opening the dialog again starts the card back at one payment", async () => {
+      await openOnItems();
+      await startPayment();
+      press("3", "0", "0");
+      await next("מתי שולם?");
+      await next("באיזה אמצעי תשלום?");
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "credit_card" } });
+      fireEvent.change(screen.getByLabelText("מספר תשלומים"), { target: { value: "3" } });
+
+      // Closed without saving, then opened again for the same order.
+      fireEvent.click(screen.getByRole("button", { name: "סגירה" }));
+      const ask = await screen.findByRole("dialog", { name: "יש שינויים שלא נשמרו" });
+      fireEvent.click(within(ask).getByRole("button", { name: "סגור בלי לשמור" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      fireEvent.click(screen.getByRole("button", { name: "סמן כסופק" }));
+      await screen.findByRole("heading", { name: "מה נמסר בפועל?" });
+
+      await startPayment();
+      press("3", "0", "0");
+      await next("מתי שולם?");
+      await next("באיזה אמצעי תשלום?");
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "credit_card" } });
+      expect(screen.getByLabelText("מספר תשלומים")).toHaveValue("1");
     });
 
     it("an impossible number of installments won't move on", async () => {
