@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The icon of the "משימה חדשה" shortcut (AppShortcuts.java): the website's own glyph
+     (lucide-react, as in components/ui/icons.ts), 24 units drawn at 48 on the 108dp
+     adaptive-icon canvas, inside its 72dp safe circle. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="2"
+        android:scaleY="2"
+        android:translateX="30"
+        android:translateY="30">
+        <path
+            android:pathData="M4,5h4a1,1 0 0 1 1,1v4a1,1 0 0 1 -1,1h-4a1,1 0 0 1 -1,-1v-4a1,1 0 0 1 1,-1z"
+            android:strokeColor="#0369A1"
+            android:strokeWidth="2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M3,17l2,2l4,-4"
+            android:strokeColor="#0369A1"
+            android:strokeWidth="2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M13,6h8"
+            android:strokeColor="#0369A1"
+            android:strokeWidth="2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M13,12h8"
+            android:strokeColor="#0369A1"
+            android:strokeWidth="2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M13,18h8"
+            android:strokeColor="#0369A1"
+            android:strokeWidth="2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+</vector>

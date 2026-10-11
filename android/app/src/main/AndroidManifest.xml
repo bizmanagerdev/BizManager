@@ -5,6 +5,7 @@
     <!-- requestLegacyExternalStorage: Android 10 only, so saving a download into
          the shared Downloads folder works there as on 11+. -->
     <application
+        android:name=".BizHApplication"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -30,14 +31,18 @@
             </intent-filter>
 
             <!-- Links to the site open in the app (Android App Links). Verified
-                 against https://www.biz-h.com/.well-known/assetlinks.json. Only www:
-                 the apex redirects, and Android doesn't follow redirects to verify. -->
+                 against /.well-known/assetlinks.json on each host. The short address
+                 (biz-h.com, no www) since APK 1.2: it serves that file itself now
+                 instead of redirecting it (next.config.ts), so a short link from
+                 WhatsApp opens the app directly instead of the browser first.
+                 MainActivity opens either one on www. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" />
                 <data android:host="www.biz-h.com" />
+                <data android:host="biz-h.com" />
             </intent-filter>
 
             <!-- Share into BizH: the app shows up in the phone's Share menu for
@@ -90,6 +95,11 @@
             android:name=".CallActionReceiver"
             android:exported="false" />
 
+        <!-- "בוצע" / "לטיפול מחר" on a task alert (TaskAlert, APK 1.2). -->
+        <receiver
+            android:name=".TaskActionReceiver"
+            android:exported="false" />
+
         <!-- Push: the push plugin's receiver, plus ringing calls. Replaces the
              plugin's own service, because Android hands each push to one receiver. -->
         <service
@@ -124,6 +134,32 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_color"
             android:resource="@color/bizh_secondary" />
+
+        <!-- Crash reports from the app itself (APK 1.2): Sentry, started by
+             BizHApplication with these settings, into the website's own project
+             (its public address, the same one the website's pages carry). Only
+             crashes, native crashes and "not responding" freezes: no screenshots,
+             no page recordings, no personal details, no performance tracing (none
+             is set up). Each report names the release as com.bizh.app@1.2.0+6. -->
+        <meta-data
+            android:name="io.sentry.dsn"
+            android:value="https://e786770a113936c44a57b5c9fd81a5f9@o4511591279034368.ingest.de.sentry.io/4511591284605008" />
+        <meta-data
+            android:name="io.sentry.environment"
+            android:value="production" />
+        <meta-data
+            android:name="io.sentry.send-default-pii"
+            android:value="false" />
+        <meta-data
+            android:name="io.sentry.attach-screenshot"
+            android:value="false" />
+        <meta-data
+            android:name="io.sentry.attach-view-hierarchy"
+            android:value="false" />
+        <!-- Started by BizHApplication (it adds a setting the manifest can't hold). -->
+        <meta-data
+            android:name="io.sentry.auto-init"
+            android:value="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

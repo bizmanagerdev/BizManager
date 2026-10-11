@@ -10,12 +10,17 @@ if (keystorePropsFile.exists()) {
 android {
     namespace "com.bizh.app"
     compileSdk rootProject.ext.compileSdkVersion
+    // BuildConfig.VERSION_CODE: the app tells the server its build (task alerts'
+    // buttons) and sets its shortcuts once per new version.
+    buildFeatures {
+        buildConfig true
+    }
     defaultConfig {
         applicationId "com.bizh.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 5
-        versionName "1.1.1"
+        versionCode 6
+        versionName "1.2.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -56,6 +61,14 @@ dependencies {
     // BizMessagingService extends the push plugin's receiver (ringing calls), so the
     // app compiles against Firebase Messaging too; same version as the plugin.
     implementation "com.google.firebase:firebase-messaging:$firebaseMessagingVersion"
+    // Fingerprint sign-in and the app lock (Fingerprint.java); the same version the
+    // biometric-auth plugin already brings in.
+    implementation "androidx.biometric:biometric:$androidxBiometricVersion"
+    // Crash reports from the app itself (Java/Kotlin crashes, native crashes, "app
+    // not responding") into the website's Sentry project; set up from the manifest.
+    // Not the "sentry-android" bundle: that adds session replay, which isn't wanted.
+    implementation "io.sentry:sentry-android-core:$sentryAndroidVersion"
+    implementation "io.sentry:sentry-android-ndk:$sentryAndroidVersion"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"

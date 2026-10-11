@@ -14,4 +14,6 @@ ext {
     androidxEspressoCoreVersion = '3.6.1'
     cordovaAndroidVersion = '10.1.1'
     firebaseMessagingVersion = '24.1.0'
+    androidxBiometricVersion = '1.1.0'
+    sentryAndroidVersion = '8.57.0'
 }

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The icon of the "חיפוש" shortcut (AppShortcuts.java): the website's own glyph
+     (lucide-react, as in components/ui/icons.ts), 24 units drawn at 48 on the 108dp
+     adaptive-icon canvas, inside its 72dp safe circle. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="2"
+        android:scaleY="2"
+        android:translateX="30"
+        android:translateY="30">
+        <path
+            android:pathData="M21,21l-4.34,-4.34"
+            android:strokeColor="#0369A1"
+            android:strokeWidth="2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M3,11a8,8 0 1,0 16,0a8,8 0 1,0 -16,0"
+            android:strokeColor="#0369A1"
+            android:strokeWidth="2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+</vector>

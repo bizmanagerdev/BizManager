@@ -8,12 +8,18 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
 import android.webkit.URLUtil;
 import android.webkit.WebView;
 import android.widget.Toast;
+import androidx.activity.OnBackPressedCallback;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.biometric.BiometricPrompt;
+import androidx.core.content.ContextCompat;
 import androidx.core.splashscreen.SplashScreen;
 import androidx.core.view.WindowCompat;
 import com.getcapacitor.BridgeActivity;
@@ -38,8 +44,31 @@ public class MainActivity extends BridgeActivity {
      */
     private static final long SPLASH_AFTER_LOAD_MS = 700;
 
+    /**
+     * With the app lock on, it locks again after being away this long (and on
+     * every fresh start). Short trips out (the camera, a file picker, the share
+     * sheet, a quick look at WhatsApp) don't ask again.
+     */
+    private static final long LOCK_AFTER_MS = 5 * 60 * 1000;
+
     private final Handler handler = new Handler(Looper.getMainLooper());
     private SplashOverlayView splashOverlay;
+
+    private BiometricPrompt biometricPrompt;
+    @Nullable
+    private BiometricPrompt.AuthenticationCallback authCallback;
+    private LockOverlayView lockOverlay;
+    private boolean locked;
+    /** A lock prompt is on screen. */
+    private boolean unlocking;
+    /** When the app last went to the background (elapsedRealtime), 0 while it's on screen. */
+    private long backgroundSince;
+    private final OnBackPressedCallback lockBack = new OnBackPressedCallback(false) {
+        @Override
+        public void handleOnBackPressed() {
+            moveTaskToBack(true);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -55,6 +84,9 @@ public class MainActivity extends BridgeActivity {
 
         showSplashOverlay(splashScreen);
         setUpDownloads();
+        setUpFingerprintPrompt();
+        if (Fingerprint.appLockOn(this)) showLock();
+        AppShortcuts.setDefaultsOnce(this);
     }
 
     // ---------------------------------------------------------------- opening screen
@@ -213,6 +245,143 @@ public class MainActivity extends BridgeActivity {
     public void onPause() {
         super.onPause();
         CookieManager.getInstance().flush();
+    }
+
+    // ---------------------------------------------------------------- fingerprint and the app lock
+
+    /**
+     * One prompt for the whole app, made here in onCreate as androidx.biometric
+     * asks; each request (the lock, fingerprint sign-in) hands it its own callback.
+     */
+    private void setUpFingerprintPrompt() {
+        biometricPrompt = new BiometricPrompt(
+            this,
+            ContextCompat.getMainExecutor(this),
+            new BiometricPrompt.AuthenticationCallback() {
+                @Override
+                public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
+                    BiometricPrompt.AuthenticationCallback callback = takeAuthCallback();
+                    if (callback != null) callback.onAuthenticationSucceeded(result);
+                }
+
+                @Override
+                public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
+                    BiometricPrompt.AuthenticationCallback callback = takeAuthCallback();
+                    if (callback != null) callback.onAuthenticationError(errorCode, errString);
+                }
+            }
+        );
+        // While locked, Back leaves the app instead of reaching the page behind the lock.
+        getOnBackPressedDispatcher().addCallback(this, lockBack);
+    }
+
+    private BiometricPrompt.AuthenticationCallback takeAuthCallback() {
+        BiometricPrompt.AuthenticationCallback callback = authCallback;
+        authCallback = null;
+        return callback;
+    }
+
+    /**
+     * Show the prompt. Fails at once with ERROR_CANCELED if another one is
+     * already up (the lock and a sign-in never need two at a time).
+     */
+    void authenticate(
+        BiometricPrompt.PromptInfo info,
+        @Nullable BiometricPrompt.CryptoObject crypto,
+        BiometricPrompt.AuthenticationCallback callback
+    ) {
+        runOnUiThread(() -> {
+            if (authCallback != null || biometricPrompt == null || isFinishing()) {
+                callback.onAuthenticationError(BiometricPrompt.ERROR_CANCELED, "busy");
+                return;
+            }
+            authCallback = callback;
+            try {
+                if (crypto != null) biometricPrompt.authenticate(info, crypto);
+                else biometricPrompt.authenticate(info);
+            } catch (Exception e) {
+                authCallback = null;
+                callback.onAuthenticationError(BiometricPrompt.ERROR_HW_UNAVAILABLE, String.valueOf(e.getMessage()));
+            }
+        });
+    }
+
+    /** Cover the app until it's unlocked. */
+    private void showLock() {
+        locked = true;
+        lockBack.setEnabled(true);
+        if (lockOverlay != null) return;
+        lockOverlay = new LockOverlayView(this, this::promptUnlock);
+        ((ViewGroup) getWindow().getDecorView()).addView(
+            lockOverlay,
+            new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        );
+    }
+
+    private void unlock() {
+        locked = false;
+        lockBack.setEnabled(false);
+        if (lockOverlay != null) {
+            ((ViewGroup) getWindow().getDecorView()).removeView(lockOverlay);
+            lockOverlay = null;
+        }
+    }
+
+    private void promptUnlock() {
+        if (!locked || unlocking) return;
+        // The phone's own lock was turned off since: nothing left to ask for, and
+        // the app mustn't stay shut for good. The lock goes off with it.
+        if (!Fingerprint.canLock(this)) {
+            Fingerprint.setAppLock(this, false);
+            unlock();
+            return;
+        }
+        unlocking = true;
+        BiometricPrompt.PromptInfo info = new BiometricPrompt.PromptInfo.Builder()
+            .setTitle("BizH נעולה")
+            .setSubtitle("פתיחה בטביעת אצבע או בקוד הטלפון")
+            .setAllowedAuthenticators(Fingerprint.LOCK_AUTHENTICATORS)
+            .setConfirmationRequired(false)
+            .build();
+        authenticate(
+            info,
+            null,
+            new BiometricPrompt.AuthenticationCallback() {
+                @Override
+                public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
+                    unlocking = false;
+                    unlock();
+                }
+
+                @Override
+                public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
+                    unlocking = false;
+                    if (errorCode == BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL) {
+                        Fingerprint.setAppLock(MainActivity.this, false);
+                        unlock();
+                    }
+                    // Otherwise the lock stays, with its "פתיחה" button to try again.
+                }
+            }
+        );
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (!locked && Fingerprint.appLockOn(this) && backgroundSince > 0 &&
+            SystemClock.elapsedRealtime() - backgroundSince >= LOCK_AFTER_MS) {
+            showLock();
+        }
+        backgroundSince = 0;
+        if (locked) promptUnlock();
+    }
+
+    @Override
+    public void onStop() {
+        super.onStop();
+        // Not while a prompt is up: the phone's PIN screen is an activity of its own.
+        if (!unlocking) backgroundSince = SystemClock.elapsedRealtime();
     }
 
     @Override

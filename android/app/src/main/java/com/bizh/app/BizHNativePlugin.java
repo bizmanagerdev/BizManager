@@ -16,9 +16,14 @@ import android.print.PrintDocumentAdapter;
 import android.print.PrintManager;
 import android.provider.MediaStore;
 import android.provider.Settings;
+import android.security.keystore.KeyPermanentlyInvalidatedException;
 import android.util.Base64;
 import android.widget.Toast;
+import androidx.annotation.NonNull;
+import androidx.biometric.BiometricManager;
+import androidx.biometric.BiometricPrompt;
 import androidx.core.content.FileProvider;
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -30,8 +35,12 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import javax.crypto.Cipher;
+import org.json.JSONObject;
 
 /**
  * The app's own helper for the website: window.Capacitor.Plugins.BizHNative.
@@ -46,6 +55,17 @@ import java.util.Map;
  *   endIncomingCall({callId})       stop ringing
  *   canUseFullScreenCalls() / openFullScreenCallSettings()
  *                                   Android 14+: may the ringing call cover the lock screen?
+ *
+ * From APK 1.2 (build 6):
+ *   showTaskAlert({title, body, url, tag, taskId})
+ *                                   a task alert with בוצע / לטיפול מחר / פתיחה
+ *   fingerprintStatus()             {canSignIn, signInSaved, signInEmail, canLock, lockOn}
+ *   saveFingerprintSignIn({email, password})
+ *                                   keep the sign-in, sealed by the fingerprint (asks for it now)
+ *   fingerprintSignIn()             {email, password} once the fingerprint matches
+ *   deleteFingerprintSignIn()       forget it
+ *   setAppLock({on})                the lock when the app opens (turning on asks once)
+ *   setShortcuts({items})           the long-press shortcuts on the icon
  */
 @CapacitorPlugin(name = "BizHNative")
 public class BizHNativePlugin extends Plugin {
@@ -320,5 +340,265 @@ public class BizHNativePlugin extends Plugin {
             getContext().startActivity(settings);
         }
         call.resolve();
+    }
+
+    // ---------------------------------------------------------------- task alerts
+
+    /**
+     * Show a task alert with its buttons now, the same as a pushed one
+     * ({title, body, url, tag, taskId}) — for alerts the website raises itself.
+     */
+    @PluginMethod
+    public void showTaskAlert(PluginCall call) {
+        Map<String, String> data = new HashMap<>();
+        for (String key : new String[] { "title", "body", "url", "tag", "taskId" }) {
+            String value = call.getString(key);
+            if (value != null) data.put(key, value);
+        }
+        TaskAlert.show(getContext(), data);
+        call.resolve();
+    }
+
+    // ---------------------------------------------------------------- fingerprint and the app lock
+
+    /** {canSignIn, signInSaved, signInEmail, canLock, lockOn} — what the login page and settings show. */
+    @PluginMethod
+    public void fingerprintStatus(PluginCall call) {
+        Context context = getContext();
+        JSObject ret = new JSObject();
+        ret.put("canSignIn", Fingerprint.canSignIn(context));
+        ret.put("signInSaved", Fingerprint.hasSignIn(context));
+        ret.put("signInEmail", Fingerprint.signInEmail(context));
+        ret.put("canLock", Fingerprint.canLock(context));
+        ret.put("lockOn", Fingerprint.appLockOn(context));
+        call.resolve(ret);
+    }
+
+    /**
+     * Keep {email, password} for fingerprint sign-in. The fingerprint is asked for
+     * now, to seal them; rejects with code "cancelled" if the person backs out.
+     */
+    @PluginMethod
+    public void saveFingerprintSignIn(PluginCall call) {
+        String email = call.getString("email");
+        String password = call.getString("password");
+        MainActivity activity = mainActivity();
+        if (email == null || email.isEmpty() || password == null || password.isEmpty() || activity == null) {
+            call.reject("Missing email or password", "invalid");
+            return;
+        }
+        Cipher cipher;
+        try {
+            cipher = Fingerprint.encryptCipher();
+        } catch (Exception e) {
+            call.reject("No fingerprint on this phone", "unavailable", e);
+            return;
+        }
+        BiometricPrompt.PromptInfo info = new BiometricPrompt.PromptInfo.Builder()
+            .setTitle("כניסה עם טביעת אצבע")
+            .setSubtitle(email)
+            .setDescription("הניחו את האצבע כדי להפעיל כניסה בטביעת אצבע בטלפון הזה")
+            .setNegativeButtonText("ביטול")
+            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+            .setConfirmationRequired(false)
+            .build();
+        activity.authenticate(
+            info,
+            new BiometricPrompt.CryptoObject(cipher),
+            new BiometricPrompt.AuthenticationCallback() {
+                @Override
+                public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
+                    try {
+                        BiometricPrompt.CryptoObject crypto = result.getCryptoObject();
+                        if (crypto == null || crypto.getCipher() == null) throw new IllegalStateException("No cipher");
+                        String secret = new JSONObject().put("email", email).put("password", password).toString();
+                        Fingerprint.saveSignIn(getContext(), email, crypto.getCipher(), secret);
+                        JSObject ret = new JSObject();
+                        ret.put("saved", true);
+                        call.resolve(ret);
+                    } catch (Exception e) {
+                        Fingerprint.deleteSignIn(getContext());
+                        call.reject("Could not save", "failed", e);
+                    }
+                }
+
+                @Override
+                public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
+                    Fingerprint.deleteSignIn(getContext());
+                    call.reject(errString.toString(), promptErrorCode(errorCode));
+                }
+            }
+        );
+    }
+
+    /**
+     * The saved {email, password}, after the fingerprint matches. Rejects with
+     * "none" (nothing saved), "invalidated" (a fingerprint was added or removed
+     * since: the saved sign-in is gone), "cancelled" (the person chose the
+     * password), "lockout" (too many tries) or "error".
+     */
+    @PluginMethod
+    public void fingerprintSignIn(PluginCall call) {
+        Context context = getContext();
+        MainActivity activity = mainActivity();
+        if (!Fingerprint.hasSignIn(context) || activity == null) {
+            call.reject("Nothing saved", "none");
+            return;
+        }
+        Cipher cipher;
+        try {
+            cipher = Fingerprint.decryptCipher(context);
+        } catch (KeyPermanentlyInvalidatedException e) {
+            Fingerprint.deleteSignIn(context);
+            call.reject("Fingerprints changed", "invalidated");
+            return;
+        } catch (Exception e) {
+            Fingerprint.deleteSignIn(context);
+            call.reject("Saved sign-in unreadable", "invalidated", e);
+            return;
+        }
+        BiometricPrompt.PromptInfo info = new BiometricPrompt.PromptInfo.Builder()
+            .setTitle("כניסה ל-BizH")
+            .setSubtitle(Fingerprint.signInEmail(context))
+            .setNegativeButtonText("סיסמה")
+            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+            .setConfirmationRequired(false)
+            .build();
+        activity.authenticate(
+            info,
+            new BiometricPrompt.CryptoObject(cipher),
+            new BiometricPrompt.AuthenticationCallback() {
+                @Override
+                public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
+                    try {
+                        BiometricPrompt.CryptoObject crypto = result.getCryptoObject();
+                        if (crypto == null || crypto.getCipher() == null) throw new IllegalStateException("No cipher");
+                        JSONObject secret = new JSONObject(Fingerprint.readSignIn(context, crypto.getCipher()));
+                        JSObject ret = new JSObject();
+                        ret.put("email", secret.getString("email"));
+                        ret.put("password", secret.getString("password"));
+                        call.resolve(ret);
+                    } catch (Exception e) {
+                        Fingerprint.deleteSignIn(context);
+                        call.reject("Saved sign-in unreadable", "invalidated", e);
+                    }
+                }
+
+                @Override
+                public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
+                    call.reject(errString.toString(), promptErrorCode(errorCode));
+                }
+            }
+        );
+    }
+
+    @PluginMethod
+    public void deleteFingerprintSignIn(PluginCall call) {
+        Fingerprint.deleteSignIn(getContext());
+        call.resolve();
+    }
+
+    /**
+     * Turn the app lock on ({on: true}: asks for the fingerprint / PIN once, so the
+     * person knows it works; rejects "cancelled" if they back out) or off.
+     */
+    @PluginMethod
+    public void setAppLock(PluginCall call) {
+        Context context = getContext();
+        boolean on = Boolean.TRUE.equals(call.getBoolean("on", false));
+        if (!on) {
+            Fingerprint.setAppLock(context, false);
+            call.resolve(lockResult(false));
+            return;
+        }
+        MainActivity activity = mainActivity();
+        if (!Fingerprint.canLock(context) || activity == null) {
+            call.reject("No screen lock on this phone", "unavailable");
+            return;
+        }
+        BiometricPrompt.PromptInfo info = new BiometricPrompt.PromptInfo.Builder()
+            .setTitle("נעילת BizH")
+            .setSubtitle("אישור כדי להפעיל את הנעילה")
+            .setAllowedAuthenticators(Fingerprint.LOCK_AUTHENTICATORS)
+            .setConfirmationRequired(false)
+            .build();
+        activity.authenticate(
+            info,
+            null,
+            new BiometricPrompt.AuthenticationCallback() {
+                @Override
+                public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
+                    Fingerprint.setAppLock(context, true);
+                    call.resolve(lockResult(true));
+                }
+
+                @Override
+                public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
+                    call.reject(errString.toString(), promptErrorCode(errorCode));
+                }
+            }
+        );
+    }
+
+    private static JSObject lockResult(boolean on) {
+        JSObject ret = new JSObject();
+        ret.put("lockOn", on);
+        return ret;
+    }
+
+    private static String promptErrorCode(int errorCode) {
+        switch (errorCode) {
+            case BiometricPrompt.ERROR_NEGATIVE_BUTTON:
+            case BiometricPrompt.ERROR_USER_CANCELED:
+            case BiometricPrompt.ERROR_CANCELED:
+                return "cancelled";
+            case BiometricPrompt.ERROR_LOCKOUT:
+            case BiometricPrompt.ERROR_LOCKOUT_PERMANENT:
+                return "lockout";
+            case BiometricPrompt.ERROR_NO_BIOMETRICS:
+            case BiometricPrompt.ERROR_HW_NOT_PRESENT:
+            case BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL:
+                return "unavailable";
+            default:
+                return "error";
+        }
+    }
+
+    private MainActivity mainActivity() {
+        Activity activity = getActivity();
+        return activity instanceof MainActivity ? (MainActivity) activity : null;
+    }
+
+    // ---------------------------------------------------------------- shortcuts
+
+    /**
+     * Replace the long-press shortcuts: {items: [{id, label, url, icon}]}, url a
+     * path of the site, icon one of task / order / delivery / search / reminder /
+     * calendar / customer / project / payment / dashboard / attendance / income /
+     * expense (anything else: the BizH mark). Shown in this order, as many as the
+     * launcher allows.
+     */
+    @PluginMethod
+    public void setShortcuts(PluginCall call) {
+        JSArray items = call.getArray("items");
+        if (items == null) {
+            call.reject("Missing items", "invalid");
+            return;
+        }
+        try {
+            List<AppShortcuts.Item> list = new ArrayList<>();
+            for (int i = 0; i < items.length(); i++) {
+                JSONObject item = items.getJSONObject(i);
+                String id = item.optString("id");
+                String label = item.optString("label");
+                String url = item.optString("url");
+                if (id.isEmpty() || label.isEmpty() || url.isEmpty()) continue;
+                list.add(new AppShortcuts.Item(id, label, url, item.optString("icon")));
+            }
+            AppShortcuts.set(getContext(), list);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Could not set the shortcuts", "error", e);
+        }
     }
 }
