@@ -6,10 +6,14 @@ import { israelDateKey } from "@/lib/timezone";
 // reminder, until FAR_FUTURE_DAYS before it's due. Whichever comes first: once
 // it's due within FAR_FUTURE_DAYS it always shows.
 //
+// A week, not a month (2026-10-11): a rent task due 1/12 with a reminder on
+// 29/11 announced it would show from 1/11 — "I don't need more than a week
+// before". It now shows from 24/11, and the reminder still goes off on 29/11.
+//
 // Only "לביצוע" (todo, or the legacy null status) waits — a task someone has
 // started or flagged as blocked is being dealt with, so it stays in its list.
 // Searching the board still finds a waiting task (see loadTasksBoard).
-export const FAR_FUTURE_DAYS = 30;
+export const FAR_FUTURE_DAYS = 7;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -33,7 +37,7 @@ export function earliestReminderByTask(rows: Array<Record<string, unknown>>): Ma
 
 /**
  * The Israel date (YYYY-MM-DD) a waiting task comes back onto the board — its
- * reminder's day or 30 days before it's due, whichever is sooner. Null when it
+ * reminder's day or FAR_FUTURE_DAYS before it's due, whichever is sooner. Null when it
  * isn't waiting (it shows now).
  */
 export function taskShowsFromDate(args: Parameters<typeof isTaskWaitingForLater>[0]): string | null {

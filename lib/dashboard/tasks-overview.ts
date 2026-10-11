@@ -131,7 +131,7 @@ export async function getMyTasks(
   const now = new Date();
 
   // Same rules as the board: a far-future to-do waits until its reminder, or
-  // until 30 days before it's due (lib/tasks/visibility.ts); a task this
+  // until a week before it's due (lib/tasks/visibility.ts); a task this
   // person snoozed waits until it's back (lib/tasks/snooze.ts).
   const visibleRows = rows.filter(
     (t) =>

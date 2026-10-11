@@ -5,13 +5,13 @@ import { earliestReminderByTask, isTaskWaitingForLater, taskShowsFromDate } from
 const NOW = new Date("2026-10-04T09:00:00.000Z");
 
 describe("isTaskWaitingForLater — far-future tasks wait until their time", () => {
-  it("a to-do due more than 30 days out, with no reminder, waits", () => {
+  it("a to-do due more than a week out, with no reminder, waits", () => {
     expect(isTaskWaitingForLater({ status: "todo", dueDate: "2026-11-10", nextReminderAt: null, now: NOW })).toBe(true);
   });
 
-  it("…and shows from 30 days before it's due", () => {
-    expect(isTaskWaitingForLater({ status: "todo", dueDate: "2026-11-03", nextReminderAt: null, now: NOW })).toBe(false);
-    expect(isTaskWaitingForLater({ status: "todo", dueDate: "2026-11-04", nextReminderAt: null, now: NOW })).toBe(true);
+  it("…and shows from a week before it's due", () => {
+    expect(isTaskWaitingForLater({ status: "todo", dueDate: "2026-10-11", nextReminderAt: null, now: NOW })).toBe(false);
+    expect(isTaskWaitingForLater({ status: "todo", dueDate: "2026-10-12", nextReminderAt: null, now: NOW })).toBe(true);
   });
 
   it("a reminder still to come keeps it waiting; once the reminder time arrives it shows", () => {
@@ -20,9 +20,9 @@ describe("isTaskWaitingForLater — far-future tasks wait until their time", () 
     expect(isTaskWaitingForLater({ status: "todo", dueDate: due, nextReminderAt: "2026-10-04T08:00:00.000Z", now: NOW })).toBe(false);
   });
 
-  it("a reminder later than 30-days-before-due doesn't hold it back past that point", () => {
-    // Due in 20 days, reminder in 25 days → due soon, so it shows.
-    expect(isTaskWaitingForLater({ status: "todo", dueDate: "2026-10-24", nextReminderAt: "2026-10-29T07:00:00.000Z", now: NOW })).toBe(false);
+  it("a reminder later than a-week-before-due doesn't hold it back past that point", () => {
+    // Due in 5 days, reminder in 6 days → due soon, so it shows.
+    expect(isTaskWaitingForLater({ status: "todo", dueDate: "2026-10-09", nextReminderAt: "2026-10-10T07:00:00.000Z", now: NOW })).toBe(false);
   });
 
   it("only to-do waits — started, blocked and done tasks always show", () => {
@@ -41,10 +41,15 @@ describe("isTaskWaitingForLater — far-future tasks wait until their time", () 
 
 describe("taskShowsFromDate", () => {
   it("is null for a task that shows now", () => {
-    expect(taskShowsFromDate({ status: "todo", dueDate: "2026-10-20", nextReminderAt: null, now: NOW })).toBeNull();
+    expect(taskShowsFromDate({ status: "todo", dueDate: "2026-10-08", nextReminderAt: null, now: NOW })).toBeNull();
   });
-  it("is 30 days before the due date without a reminder", () => {
-    expect(taskShowsFromDate({ status: "todo", dueDate: "2027-01-31", nextReminderAt: null, now: NOW })).toBe("2027-01-01");
+  it("is a week before the due date without a reminder", () => {
+    expect(taskShowsFromDate({ status: "todo", dueDate: "2027-01-31", nextReminderAt: null, now: NOW })).toBe("2027-01-24");
+  });
+  it("a rent task due 1/12 with a reminder on 29/11 shows from 24/11, not 1/11 (2026-10-11)", () => {
+    expect(
+      taskShowsFromDate({ status: "todo", dueDate: "2026-12-01", nextReminderAt: "2026-11-29T07:00:00.000Z", now: NOW })
+    ).toBe("2026-11-24");
   });
   it("is the reminder's (Israel) day when that comes sooner", () => {
     // 23:30 UTC on Nov 30 is already Dec 1 in Israel.

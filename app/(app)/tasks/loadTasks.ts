@@ -309,8 +309,8 @@ export async function loadTasksBoard(
 
   const now = new Date();
   const items: TaskBoardItem[] = taskRows
-    // A far-future to-do waits off the board until its reminder, or until 30
-    // days before it's due (lib/tasks/visibility.ts). A search still finds it —
+    // A far-future to-do waits off the board until its reminder, or until a
+    // week before it's due (lib/tasks/visibility.ts). A search still finds it —
     // looking for a task by name means you want it, whenever it's due.
     // Nor does a task the viewer snoozed ("לטיפול בהמשך") show before it's back.
     .filter(
