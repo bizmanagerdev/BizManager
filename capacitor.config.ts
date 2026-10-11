@@ -23,9 +23,13 @@ const config: CapacitorConfig = {
     androidScheme: 'https',
     // Only load secure content; never fall back to cleartext HTTP.
     cleartext: false,
-    // Shown instead of Android's "Webpage not available" when neither the site
-    // nor its offline copy loads (served from the app itself, capacitor-shell/).
-    errorPath: 'offline.html',
+    // No `errorPath`: with one, Capacitor swaps the page for that file on ANY
+    // main-frame load error, including the one Android reports while the site's
+    // service worker is still answering from its saved copy. In APK 1.1.0 that
+    // threw the app out to a local "no connection" page offline, even with the
+    // page saved (owner, 2026-10-11: "if I click something that wasn't open
+    // before it went offline … I lose the whole app"). Offline belongs to the
+    // service worker (public/sw.js), which keeps the user inside the app.
   },
   android: {
     allowMixedContent: false,
