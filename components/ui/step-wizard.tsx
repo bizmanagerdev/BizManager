@@ -121,6 +121,11 @@ export function useStepFlow<TStep extends string>({
   };
 }
 
+/** Back/next: as tall as their label needs (two lines at the bigger text sizes). */
+const FOOTER_BUTTON_CLASS = "h-auto min-h-11 py-1.5";
+/** The label wraps between words rather than being cut (see the footer row). */
+const FOOTER_LABEL_CLASS = "min-w-0 whitespace-normal text-balance break-words leading-tight";
+
 /**
  * A wizard's visible title, centered against the WHOLE header — not just
  * within its own slot, which is narrower than the header by the close X's
@@ -148,7 +153,9 @@ export function WizardTitle({
         <div className="w-11 shrink-0" aria-hidden />
         <div className="min-w-0 flex-1 text-center">
           {kicker ? <div className="text-xs font-medium text-muted-foreground">{kicker}</div> : null}
-          <DialogTitle className="truncate text-base font-semibold">{title}</DialogTitle>
+          {/* Wraps, never cut with "…" (owner, 2026-10-11): at the bigger
+              text sizes "אישור אספקת הזמנה" lost its last word on a phone. */}
+          <DialogTitle className="text-balance break-words text-base font-semibold leading-snug">{title}</DialogTitle>
         </div>
       </div>
       <DialogDescription className="sr-only">{description}</DialogDescription>
@@ -444,8 +451,9 @@ export function StepWizard<TStep extends string | number>({
 
       {/* Back and next ALWAYS share this one row, however large the text gets
           (e.g. the accessibility font-scale setting) — never flex-wrap here, so
-          back can never end up stacked above next. Each button shrinks and
-          truncates its own label instead. */}
+          back can never end up stacked above next. Each button shrinks and its
+          label wraps onto a second line inside it, never cut with "…" (owner,
+          2026-10-11: at the bigger text sizes "אישור אספקה" read "אישור אספק…"). */}
       <div className="flex flex-nowrap items-center gap-2">
         {onBack ? (
           <Button
@@ -453,10 +461,10 @@ export function StepWizard<TStep extends string | number>({
             variant="secondary"
             onClick={onBack}
             disabled={backDisabled}
-            className="me-auto min-w-0 shrink"
+            className={cn("me-auto min-w-0 shrink", FOOTER_BUTTON_CLASS)}
           >
             <ChevronRightIcon className="h-4 w-4 shrink-0" />
-            <span className="min-w-0 truncate">{backLabel}</span>
+            <span className={FOOTER_LABEL_CLASS}>{backLabel}</span>
           </Button>
         ) : (
           (footerStart ?? <div className="me-auto" />)
@@ -475,10 +483,10 @@ export function StepWizard<TStep extends string | number>({
           type={submitOnEnter ? "submit" : "button"}
           onClick={submitOnEnter ? undefined : onNext}
           disabled={nextDisabled}
-          className="min-w-0 shrink"
+          className={cn("min-w-0 shrink", FOOTER_BUTTON_CLASS)}
         >
           {isLastStep ? <CheckIcon className="h-4 w-4 shrink-0" /> : null}
-          <span className="min-w-0 truncate">{resolvedNextLabel}</span>
+          <span className={FOOTER_LABEL_CLASS}>{resolvedNextLabel}</span>
           {isLastStep ? null : <ChevronLeftIcon className="h-4 w-4 shrink-0" />}
         </Button>
       </div>

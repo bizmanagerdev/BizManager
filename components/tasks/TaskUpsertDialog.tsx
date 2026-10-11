@@ -98,6 +98,11 @@ type Mode = "create" | "edit";
 // long after the last change, so typing a name is one save, not one per letter.
 const AUTOSAVE_DELAY_MS = 700;
 
+// The header's done and "לטיפול בהמשך" icons are 20px; an invisible ::before
+// makes each ~37px to tap on a phone (dialog audit, 2026-10-11). They sit 8px
+// apart, so no wider than that.
+const HEADER_ICON_TAP_CLASS = "relative before:absolute before:-inset-2 before:content-['']";
+
 // Bidirectional: subject_he/description_he are only ever set when the
 // AUTHOR's own locale was 'ar' (see app/api/tasks/create), so their presence
 // means `original` is already Arabic. translatedAr is the reverse: a
@@ -1653,7 +1658,7 @@ export function TaskUpsertDialog(rawProps: Props) {
                 title={t(tasksDict, props.locale, status === "done" ? "undoDoneTitle" : "markDoneAria")}
                 disabled={loading}
                 onClick={() => setStatus(status === "done" ? "todo" : "done")}
-                className="shrink-0 text-muted-foreground transition-colors hover:text-success disabled:opacity-40"
+                className={cn("shrink-0 text-muted-foreground transition-colors hover:text-success disabled:opacity-40", HEADER_ICON_TAP_CLASS)}
               >
                 {status === "done" ? (
                   <SuccessIcon className="h-5 w-5 text-success" />
@@ -1668,6 +1673,7 @@ export function TaskUpsertDialog(rawProps: Props) {
                 snoozedUntil={snoozedUntil}
                 onSnooze={(until) => void snoozeFromDialog(until)}
                 locale={props.locale}
+                className={HEADER_ICON_TAP_CLASS}
                 iconClassName="h-5 w-5"
               />
             ) : null}

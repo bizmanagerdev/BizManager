@@ -163,6 +163,12 @@ function openNativePicker(ref: React.RefObject<HTMLInputElement | null>) {
   }
 }
 
+// The calendar icon is the only way to the picker, and its glyph is 16px: the
+// invisible ::before makes it ~36px to tap on a phone (dialog audit,
+// 2026-10-11) while staying inside the field's pr-9 padding.
+const PICKER_BUTTON_CLASS =
+  "absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors focus:outline-none before:absolute before:-inset-2.5 before:content-['']";
+
 export const DateInput = React.forwardRef<HTMLInputElement, DateInputProps>(
   ({ value, onChange, onBlur, placeholder = "dd/mm/yy", className, inputMode = "numeric", ...props }, ref) => {
     const [displayValue, setDisplayValue] = React.useState(() => formatIsoForDisplay(value));
@@ -219,7 +225,7 @@ export const DateInput = React.forwardRef<HTMLInputElement, DateInputProps>(
           tabIndex={-1}
           aria-label="בחר תאריך"
           onClick={() => openNativePicker(pickerRef)}
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors focus:outline-none"
+          className={PICKER_BUTTON_CLASS}
         >
           <CalendarIcon className="h-4 w-4" />
         </button>
@@ -303,7 +309,7 @@ export const DateTimeInput = React.forwardRef<HTMLInputElement, DateTimeInputPro
           tabIndex={-1}
           aria-label="בחר תאריך ושעה"
           onClick={() => openNativePicker(pickerRef)}
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors focus:outline-none"
+          className={PICKER_BUTTON_CLASS}
         >
           <CalendarIcon className="h-4 w-4" />
         </button>

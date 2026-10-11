@@ -27,6 +27,12 @@ export const DialogTrigger = DialogPrimitive.Trigger;
 export const DialogPortal = DialogPrimitive.Portal;
 export const DialogClose = DialogPrimitive.Close;
 
+// Every dialog's X. The glyph is 16px; the invisible ::before around it makes
+// the tap target ~40px — on a phone a 17px X took aim, more so at the bigger
+// text sizes (dialog audit, 2026-10-11).
+const CLOSE_BUTTON_CLASS =
+  "absolute left-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity before:absolute before:-inset-3 before:content-[''] hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary";
+
 export const DialogOverlay = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
@@ -73,7 +79,7 @@ export const DialogContent = React.forwardRef<
     >
       {children}
       {hideClose ? null : (
-        <DialogPrimitive.Close className="absolute left-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
+        <DialogPrimitive.Close className={CLOSE_BUTTON_CLASS}>
           <CloseIcon className="h-4 w-4" />
           <span className="sr-only">סגור</span>
         </DialogPrimitive.Close>
@@ -116,7 +122,7 @@ export const ResponsiveSheetContent = React.forwardRef<
     >
       {children}
       {hideClose ? null : (
-        <DialogPrimitive.Close className="absolute left-4 top-4 z-10 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
+        <DialogPrimitive.Close className={cn(CLOSE_BUTTON_CLASS, "z-10")}>
           <CloseIcon className="h-4 w-4" />
           <span className="sr-only">סגור</span>
         </DialogPrimitive.Close>
@@ -165,7 +171,7 @@ export const FullScreenDialogContent = React.forwardRef<
     >
       {children}
       {hideClose ? null : (
-        <DialogPrimitive.Close className="absolute left-4 top-4 z-10 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
+        <DialogPrimitive.Close className={cn(CLOSE_BUTTON_CLASS, "z-10")}>
           <CloseIcon className="h-4 w-4" />
           <span className="sr-only">סגור</span>
         </DialogPrimitive.Close>

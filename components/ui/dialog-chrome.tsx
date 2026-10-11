@@ -22,8 +22,14 @@ import { cn } from "@/lib/utils";
  *  floor taller than the viewport there would clip the action bar instead of
  *  scrolling to it. min-h-0 stays the mobile default: it's what lets this
  *  flex-1 body shrink below its content size and actually scroll internally
- *  when a tall step is squeezed under a short viewport. */
-export const DIALOG_BODY_MIN_HEIGHT = "min-h-0 sm:min-h-[22rem]";
+ *  when a tall step is squeezed under a short viewport.
+ *
+ *  And never more than half the screen: 22rem grows with the text size, and at
+ *  the biggest one on a 768px laptop it was 561px — with the header and the
+ *  action bar that is past the dialog's 92svh, so the bar was clipped off the
+ *  bottom, out of reach (dialog audit, 2026-10-11). At normal text on a laptop
+ *  22rem is the smaller of the two, so nothing changes there. */
+export const DIALOG_BODY_MIN_HEIGHT = "min-h-0 sm:min-h-[min(22rem,50svh)]";
 
 /** The className every dialog passes to AdaptiveDialog: a fixed-height column
  *  whose middle section is the only thing that scrolls. */
