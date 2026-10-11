@@ -10,7 +10,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { offlineUpload } from "@/lib/offline-upload";
 import { offlineFetch } from "@/lib/offline-queue";
-import { readyLocalDatabase } from "@/lib/powersync/store";
+import { readyLocalDatabase, useLocalViewer } from "@/lib/powersync/store";
 import { localClient } from "@/lib/powersync/local-results";
 import { loadOrderEditData } from "@/lib/orders/order-edit-data";
 import { markDeliveryConfirmed } from "@/lib/orders/confirmed-deliveries";
@@ -201,6 +201,12 @@ export default function OrderConfirmDialog({
   authorName?: string | null;
 }) {
   const router = useRouter();
+  // The note's author: the page's own name for the viewer, else the person
+  // signed in on this device. Six of the eight places that open this dialog
+  // passed none, and the note was saved under "משתמש" (owner, 2026-10-11:
+  // "why does it say user here and not the user's name").
+  const signedIn = useLocalViewer();
+  const writerName = authorName ?? signedIn?.name ?? null;
   const [, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [stepId, setStepId] = useState("items");
@@ -638,7 +644,7 @@ export default function OrderConfirmDialog({
       const trimmedDeliveryNote = deliveryNotes.trim();
       const mergedNotes = trimmedDeliveryNote
         ? appendOrderComment(data.initialOrder.notes ?? "", {
-            author_name: authorName ?? null,
+            author_name: writerName,
             created_at: formatOrderCommentTimestamp(new Date()),
             body: trimmedDeliveryNote,
           })

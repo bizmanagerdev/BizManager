@@ -28,8 +28,10 @@ const device = vi.hoisted(() => ({
   customer: null as Record<string, unknown> | null,
   /** The copy can't be read (a closed or broken database). */
   customerReadFails: false,
+  /** Who is signed in on this device (LocalDataHost's viewer). */
+  viewer: null as { id: string; role: string; locale: string; name: string | null } | null,
 }));
-vi.mock("@/lib/powersync/store", () => ({ readyLocalDatabase: () => device.db }));
+vi.mock("@/lib/powersync/store", () => ({ readyLocalDatabase: () => device.db, useLocalViewer: () => device.viewer }));
 vi.mock("@/lib/powersync/local-results", () => ({
   localClient: async () => ({
     from: () => ({
@@ -217,6 +219,7 @@ beforeEach(() => {
   device.order = null;
   device.customer = null;
   device.customerReadFails = false;
+  device.viewer = null;
   net.online = true;
   net.order = makeOrder();
   net.orderStatus = 200;
@@ -1210,6 +1213,27 @@ describe("delivery details", () => {
     expect(comments).toHaveLength(2);
     expect(comments[0]).toMatchObject({ author_name: "משרד", body: "להשאיר ליד הדלת" });
     expect(comments[1]).toMatchObject({ author_name: "דנה", body: "חסר קרטון אחד" });
+  });
+
+  // Six of the eight places that open the dialog pass no name; the note then
+  // takes the person signed in on this device, never a bare "משתמש".
+  it("with no name from the page, the note is signed by whoever is signed in", async () => {
+    device.viewer = { id: "u1", role: "worker", locale: "he", name: "יוסי הנהג" };
+    openDialog({ authorName: undefined });
+    await screen.findByRole("heading", { name: "מה נמסר בפועל?" });
+    await next("האם נגבה תשלום במסירה?");
+    await next("מתי סופק?");
+    await next("צירוף תמונות");
+    await next("הערות למסירה");
+    fireEvent.change(screen.getByPlaceholderText("הערות למסירה, חוסרים, מצב אספקה..."), {
+      target: { value: "איסוף עצמי" },
+    });
+    await next("איך מגיעים למקום?");
+    await next("לאשר את האספקה?");
+
+    await confirmDelivery();
+    const comments = parseOrderComments(sentPayload().notes);
+    expect(comments[comments.length - 1]).toMatchObject({ author_name: "יוסי הנהג", body: "איסוף עצמי" });
   });
 
   it("a dictated note carries on from what was typed", async () => {
