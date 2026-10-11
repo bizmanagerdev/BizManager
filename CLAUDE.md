@@ -31,3 +31,20 @@ commit, propose the grouping and the exact message, and commit only what was
 approved — never sweep in unrelated working-tree changes.
 
 See also the persistent memory note `feedback-ask-before-committing`.
+
+## Keep the Trello board in step with the work
+
+The BizManager Trello board (lists: to do / in progress / completed) is the
+owner's to-do list — it is what they follow to know what is left. A card left
+in "to do" after its work is done means that list never ends.
+
+- **Before starting** any piece of work, search the board (to do and in
+  progress) for cards it covers — ideas often come from cards. Move each to
+  **in progress** as soon as work on it starts.
+- **When it's done** — built, verified and committed — move the card to
+  **completed** with a short comment: what was done and the commit hash.
+- Built but waiting for the commit OK, or waiting on the owner's answer: the
+  card stays in **in progress** with a comment saying what it waits for.
+- Work that isn't on the board yet gets a card (or a checklist item on the
+  card it belongs to). Checklist items are ticked as they're built and verified.
+- Everything written on Trello is in English.
