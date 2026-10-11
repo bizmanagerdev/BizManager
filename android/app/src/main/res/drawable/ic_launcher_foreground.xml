@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher icon, foreground layer: the white mark at 56% of the visible 72dp icon (owner's pick D, 2026-10-11). The blue layer is @color/ic_launcher_background.
+     The mark is the three chevrons of public/brand/heller-mark.svg (viewBox 100 x 90.92);
+     keep the paths in sync with components/ui/brand-mark.tsx. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="0.403"
+        android:scaleY="0.403"
+        android:translateX="33.85"
+        android:translateY="35.68">
+        <path android:fillColor="#FFFFFF" android:pathData="M 99.54 31.20 L 87.41 38.81 L 49.96 15.30 L 12.40 38.88 L 0.16 31.20 L 49.85 0.00 Z" />
+        <path android:fillColor="#FFFFFF" android:pathData="M 0.00 41.88 L 12.29 49.60 L 49.85 26.02 L 87.39 49.59 L 100.00 41.68 L 100.00 57.04 L 87.49 64.90 L 75.25 57.22 L 49.96 41.32 L 12.40 64.90 L 0.16 57.22 L 0.00 57.11 Z" />
+        <path android:fillColor="#FFFFFF" android:pathData="M 0.00 67.90 L 12.29 75.62 L 49.85 52.04 L 87.39 75.61 L 100.00 67.70 L 100.00 83.06 L 87.49 90.92 L 75.25 83.23 L 49.96 67.33 L 12.40 90.92 L 0.16 83.23 L 0.00 83.13 Z" />
+    </group>
+</vector>

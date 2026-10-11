@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The phone's icon (owner's pick D, 2026-10-11): the white mark on blue #0369A1.
+     monochrome = the Android 13+ "themed icons" version. Phones below Android 8 use
+     the mipmap-*/ic_launcher*.png images (scripts/gen-android-icons.mjs). -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background"/>
-    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+    <foreground android:drawable="@drawable/ic_launcher_foreground"/>
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome"/>
 </adaptive-icon>

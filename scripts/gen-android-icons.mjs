@@ -1,5 +1,8 @@
 // Generate Android launcher icons for the Capacitor shell from public/icon-512.png.
-// Produces legacy square, round, and adaptive-icon foreground assets at every density.
+// Produces the legacy square and round PNGs (phones before Android 8) at every density.
+// Android 8+ uses the adaptive icon instead: res/mipmap-anydpi-v26/ic_launcher.xml,
+// built from vector drawables (drawable/ic_launcher_foreground.xml + the blue
+// @color/ic_launcher_background), so no foreground PNGs are generated any more.
 import sharp from "sharp";
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -9,8 +12,6 @@ const RES = path.resolve("android/app/src/main/res");
 
 // Legacy + round launcher sizes (full-bleed square in px).
 const LEGACY = { mdpi: 48, hdpi: 72, xhdpi: 96, xxhdpi: 144, xxxhdpi: 192 };
-// Adaptive foreground canvas sizes (108dp). The logo sits in the ~66% safe zone.
-const FG = { mdpi: 108, hdpi: 162, xhdpi: 216, xxhdpi: 324, xxxhdpi: 432 };
 
 async function main() {
   const src = await fs.readFile(SRC);
@@ -31,23 +32,6 @@ async function main() {
       .png()
       .toBuffer();
     await fs.writeFile(path.join(dir, "ic_launcher_round.png"), round);
-  }
-
-  for (const [density, canvas] of Object.entries(FG)) {
-    const dir = path.join(RES, `mipmap-${density}`);
-    // Fit the logo into the inner 66% safe zone, centered on a transparent canvas.
-    const inner = Math.round(canvas * 0.66);
-    const logo = await sharp(src)
-      .resize(inner, inner, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
-      .toBuffer();
-    const pad = Math.round((canvas - inner) / 2);
-    const fg = await sharp({
-      create: { width: canvas, height: canvas, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
-    })
-      .composite([{ input: logo, top: pad, left: pad }])
-      .png()
-      .toBuffer();
-    await fs.writeFile(path.join(dir, "ic_launcher_foreground.png"), fg);
   }
 
   console.log("Icons generated for densities:", Object.keys(LEGACY).join(", "));

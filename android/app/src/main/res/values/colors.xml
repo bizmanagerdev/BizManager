@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand colours (app/globals.css): primary navy, secondary blue, and the phone
+         dashboard's light blue, which the opening screen and the window behind the
+         web view wear so the app never flashes black or white while it opens. -->
+    <color name="bizh_primary">#0A1020</color>
+    <color name="bizh_secondary">#0369A1</color>
+    <color name="bizh_board">#ECF5FE</color>
+    <!-- The dashboard's chevron texture colour (#161C2B) at 4.5%: the "clear" strength
+         the owner picked for the opening screen (2026-10-11). -->
+    <color name="bizh_board_texture">#0B161C2B</color>
+    <color name="bizh_white">#FFFFFF</color>
+</resources>

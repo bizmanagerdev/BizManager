@@ -1,20 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- requestLegacyExternalStorage: Android 10 only, so saving a download into
+         the shared Downloads folder works there as on 11+. -->
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:requestLegacyExternalStorage="true"
         android:theme="@style/AppTheme">
 
+        <!-- adjustResize: the page shrinks when the keyboard opens, so a field at the
+             bottom of a dialog stays reachable (the keyboard used to cover it). -->
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation"
             android:name=".MainActivity"
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
             android:exported="true">
 
             <intent-filter>
@@ -22,7 +29,86 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Links to the site open in the app (Android App Links). Verified
+                 against https://www.biz-h.com/.well-known/assetlinks.json. Only www:
+                 the apex redirects, and Android doesn't follow redirects to verify. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="www.biz-h.com" />
+            </intent-filter>
+
+            <!-- Share into BizH: the app shows up in the phone's Share menu for
+                 text, links, pictures, PDFs and other files (@capgo/capacitor-share-target). -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="video/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/*" />
+            </intent-filter>
+
         </activity>
+
+        <!-- The ringing call screen for calls to the business number (IncomingCall). -->
+        <activity
+            android:name=".IncomingCallActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:showWhenLocked="true"
+            android:taskAffinity=""
+            android:theme="@style/AppTheme.IncomingCall"
+            android:turnScreenOn="true" />
+
+        <receiver
+            android:name=".CallActionReceiver"
+            android:exported="false" />
+
+        <!-- Push: the push plugin's receiver, plus ringing calls. Replaces the
+             plugin's own service, because Android hands each push to one receiver. -->
+        <service
+            android:name="com.capacitorjs.plugins.pushnotifications.MessagingService"
+            tools:node="remove" />
+        <service
+            android:name=".BizMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- Keep working with the screen off: long recordings and the phone's own
+             location updates (@capawesome-team/capacitor-android-foreground-service). -->
+        <receiver android:name="io.capawesome.capacitorjs.plugins.foregroundservice.NotificationActionBroadcastReceiver" />
+        <service
+            android:name="io.capawesome.capacitorjs.plugins.foregroundservice.AndroidForegroundService"
+            android:foregroundServiceType="location|microphone" />
 
         <!-- FCM: route background notifications to our HIGH-importance channel
              (also created in JS via PushNotifications.createChannel) so they
@@ -30,6 +116,14 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="bizh_alerts" />
+        <!-- The white mark as every notification's small icon, tinted blue inside the
+             notification. Without it Android drew a plain shape. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_bizh" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/bizh_secondary" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -42,10 +136,161 @@
         </provider>
     </application>
 
-    <!-- Permissions -->
+    <!-- ===== Permissions =====
+         The full list for the coming months (Trello card "features for next apk
+         update", section 4). Listing one costs nothing: Android asks the user only
+         the first time a feature actually uses it. -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Notices when the signal drops and comes back (offline mode, syncing). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Required on Android 13+ (S25 Ultra) so the app can request the runtime
          notification permission and FCM can display heads-up notifications. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Location: the GPS buttons on orders and deliveries, clock-in location. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- Location in the background (following a delivery, arrival alerts); Android
+         asks for it separately, only if that feature is ever turned on. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+    <!-- Camera: delivery photos, "take a photo" in file pickers, video, scanners. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Microphone: voice notes, dictation, video with sound, calls in the app. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!-- Photos and videos beyond picking one file (Android's picker needs none). -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <!-- Saving downloads on Android 9 and older. -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
+    <!-- Vibration feedback (the tasks board's tap buzz). -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Reminders the phone keeps itself: on time, and again after a restart. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Keeping the screen on while it's needed. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Contacts: pick a number, save a customer so their name shows when they call. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.WRITE_CONTACTS" />
+    <!-- Calendar: meetings, tasks and payment dates in the phone's own calendar. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <!-- Fingerprint / face to unlock the app. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+
+    <!-- Bluetooth: portable printers, scales, car and headset audio for calls. -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- NFC: tapping tags and cards. -->
+    <uses-permission android:name="android.permission.NFC" />
+
+    <!-- Installing its own updates ("allow BizH to install apps", asked once). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- Working with the screen off: recordings, uploads, syncs, location. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
+    <!-- Phone calls through the business phone system: the ringing call screen over
+         the lock screen, calls in the app that behave like real calls, and knowing
+         when a regular call is already going on. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+
+    <!-- None of this hardware is required: a phone or tablet without one still
+         installs the app (the plugins' own entries are overridden here). -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
+    <uses-feature
+        android:name="android.hardware.location.gps"
+        android:required="false"
+        tools:replace="android:required" />
+    <uses-feature android:name="android.hardware.location.network" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <uses-feature
+        android:name="android.hardware.bluetooth_le"
+        android:required="false"
+        tools:replace="android:required" />
+    <uses-feature
+        android:name="android.hardware.nfc"
+        android:required="false"
+        tools:replace="android:required" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+
+    <!-- Apps BizH may open or check for (Android 11+ hides other apps otherwise). -->
+    <queries>
+        <package android:name="com.whatsapp" />
+        <package android:name="com.whatsapp.w4b" />
+        <package android:name="com.waze" />
+        <package android:name="com.google.android.apps.maps" />
+        <!-- Bit, PayBox, Google Wallet: paying by card or app. -->
+        <package android:name="com.bnhp.payments.paymentsapp" />
+        <package android:name="com.payboxapp" />
+        <package android:name="com.google.android.apps.walletnfcrel" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="mailto" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="smsto" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="waze" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="whatsapp" />
+        </intent>
+        <!-- Any app that can show a saved download (PDF, spreadsheet, picture). -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="*/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="*/*" />
+        </intent>
+        <!-- In-app browser (Custom Tabs) for payment pages and outside links. -->
+        <intent>
+            <action android:name="android.support.customtabs.action.CustomTabsService" />
+        </intent>
+    </queries>
 </manifest>

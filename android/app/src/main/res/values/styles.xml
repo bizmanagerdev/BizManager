@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Base application theme. -->
     <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
@@ -18,11 +18,38 @@
              nav overlap the phone's gesture bar. Opt out so content stays inside
              the normal window insets. -->
         <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+        <!-- The window behind the web view wears the opening screen's light blue,
+             never DayNight's black: between the opening screen and the page's first
+             paint there is nothing else on screen (the black screen on dark-mode
+             phones, 2026-10-07). -->
+        <item name="android:windowBackground">@color/bizh_board</item>
+        <!-- The bars follow the dashboard (the first page) until the website sets
+             them per page through @capacitor/status-bar. -->
+        <item name="android:statusBarColor">@color/bizh_board</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">@color/bizh_white</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="27">true</item>
     </style>
 
 
+    <!-- The opening screen (owner's pick, 2026-10-11): the phone dashboard's light
+         blue with one big blue chevron in the middle and no circle behind it.
+         Android draws this part itself from the first moment; MainActivity then
+         lays SplashOverlayView over it (the same mark, plus the small chevrons
+         going up) and keeps it until the dashboard has drawn. -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <item name="android:background">@drawable/splash</item>
+        <item name="windowSplashScreenBackground">@color/bizh_board</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_mark</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+    </style>
+
+    <!-- The ringing call screen (IncomingCallActivity): navy from edge to edge. -->
+    <style name="AppTheme.IncomingCall" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@color/bizh_primary</item>
+        <item name="android:statusBarColor">@color/bizh_primary</item>
+        <item name="android:navigationBarColor">@color/bizh_primary</item>
         <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
     </style>
 </resources>
