@@ -36,10 +36,10 @@ describe("the device copy's switches", () => {
     expect(localDataPageOn("projectPage", { id: "someone", role: "admin" })).toBe(true);
   });
 
-  it("a page still switched off (the money cards, until their comparisons): only the people trying it out", () => {
-    expect(LOCAL_DATA_PAGES.dashboardMoney).toBe(false);
-    expect(localDataPageOn("dashboardMoney", { id: "someone", role: "admin" })).toBe(false);
-    expect(localDataPageOn("dashboardMoney", { id: LOCAL_DATA_PREVIEW_USERS[0], role: "admin" })).toBe(true);
+  it("the dashboard's money cards: on for every admin and office user (from 2026-10-11)", () => {
+    expect(LOCAL_DATA_PAGES.dashboardMoney).toBe(true);
+    expect(localDataPageOn("dashboardMoney", { id: "someone", role: "admin" })).toBe(true);
+    expect(localDataPageOn("dashboardMoney", { id: "someone", role: "office" })).toBe(true);
   });
 
   it("workers: their dashboard and tasks from the device — in Hebrew; reading Arabic, on the server", () => {

@@ -57,9 +57,11 @@ export const LOCAL_DATA_PAGES = {
   // The dashboard's money cards (payments, collections, the income/expenses
   // chart) — needs sync rules v1.8 on the device (loans, card statements,
   // settlements…; only a copy that has them draws them, see money-copy.ts).
-  // Off for everyone but the people trying it out until the comparisons come
-  // out clean.
-  dashboardMoney: false,
+  // On for every admin and office user from 2026-10-11 (the owner's call, after
+  // a week of comparisons: the two differences found were two same-day bills
+  // in a different order, since fixed, and a check taken 1.4s after an income
+  // was saved — the server's page was drawn just before it).
+  dashboardMoney: true,
   // The drivers' deliveries page (/deliveries) — owner, 2026-10-11: "let's
   // download that also to the phone", so a run works with no signal. The same
   // list as the deliveries tab (/sales, on for staff above).
