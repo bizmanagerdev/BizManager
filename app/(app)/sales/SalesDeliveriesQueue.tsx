@@ -4,7 +4,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState, useTransition } from "react";
-import { CashIcon, CheckIcon, ChevronDownIcon, CommentIcon, LocationIcon, PhoneIcon, WarehouseIcon, WazeIcon } from "@/components/ui/icons";
+import { CashIcon, CheckIcon, ChevronDownIcon, CommentIcon, LocationIcon, WarehouseIcon, WazeIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
 import PickingListDialog from "@/app/(app)/sales/PickingListDialog";
@@ -12,7 +12,7 @@ import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AddressLink } from "@/components/ui/address-link";
-import { ContactLink, ContactTapZone } from "@/components/ui/contact-link";
+import { CallCircle, ContactLink, ContactTapZone } from "@/components/ui/contact-link";
 import { Card } from "@/components/ui/card";
 
 import { DELIVERY_REGIONS, formatDeliveryAddress, getCityRegion } from "@/lib/ui/cities";
@@ -724,9 +724,8 @@ export default function SalesDeliveriesQueue({
                                               tile: the two things you do at a stop line up in
                                               one column of tap targets instead of zig-zagging
                                               across the card. */}
-                                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-success text-success-foreground">
-                                            <PhoneIcon className="h-4 w-4" />
-                                          </span>
+                                          {/* The app's one call look (contact-link.tsx). */}
+                                          <CallCircle />
                                           <span className="min-w-0 flex-1">
                                             <span className="block text-sm font-semibold">
                                               {combinedCustomerName(group)}

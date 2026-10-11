@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CoinsIcon, PhoneIcon, SuccessIcon } from "@/components/ui/icons";
+import { CoinsIcon, SuccessIcon } from "@/components/ui/icons";
+import { CallIconButton } from "@/components/ui/contact-link";
 import { Card, CardContent } from "@/components/ui/card";
 import DashboardCardHeader from "@/components/dashboard/DashboardCardHeader";
 import DashboardCardFooter from "@/components/dashboard/DashboardCardFooter";
@@ -287,18 +288,8 @@ function DebtorRow({ debtor, late, locale }: { debtor: CollectionsDebtor; late: 
         </div>
 
         <div className="relative flex shrink-0 items-center gap-1.5">
-          {debtor.customerPhone ? (
-            <Button
-              asChild
-              variant="ghost"
-              className="h-8 w-8 p-0 shadow-none max-md:min-h-[44px] max-md:min-w-[44px]"
-              title={`${t(dashboardDict, locale, "callPrefix")}${debtor.customerName}`}
-            >
-              <a href={`tel:${debtor.customerPhone}`} aria-label={`${t(dashboardDict, locale, "callPrefix")}${debtor.customerName}`}>
-                <PhoneIcon className="h-4 w-4" />
-              </a>
-            </Button>
-          ) : null}
+          {/* The app's one call button (contact-link.tsx), as on every card. */}
+          {debtor.customerPhone ? <CallIconButton phone={debtor.customerPhone} name={debtor.customerName} /> : null}
           <span
             className={cn(
               "text-sm font-semibold tabular-nums",

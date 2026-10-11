@@ -23,7 +23,7 @@ import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ContactTapZone } from "@/components/ui/contact-link";
+import { CallIconButton } from "@/components/ui/contact-link";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1103,24 +1103,24 @@ export default function SalesOrdersClient({
                               ) : null}
                               {row.customerPhone || row.customerCity ? (
                                 <div className="text-xs text-muted-foreground">
-                                  {/* A <div> (ContactTapZone), not an <a href="tel:…"> — a
-                                      real tel: link claims the long-press gesture for the
-                                      browser's own menu, which doesn't surface a copy option
-                                      everywhere this app runs. Plain text long-presses into
-                                      normal selection instead — see contact-link.tsx. */}
-                                  {row.customerPhone ? (
-                                    <ContactTapZone kind="tel" value={row.customerPhone} className="inline-block hover:underline">
-                                      <span dir="ltr">{row.customerPhone}</span>
-                                    </ContactTapZone>
-                                  ) : null}
+                                  {/* Plain text — tapping it opens the order like the rest
+                                      of the card. As a call link right under the name it took
+                                      the taps meant for the order (owner, 2026-10-11); the
+                                      call button in the corner dials instead. */}
+                                  {row.customerPhone ? <span dir="ltr">{row.customerPhone}</span> : null}
                                   {row.customerPhone && row.customerCity ? " · " : null}
                                   {row.customerCity}
                                 </div>
                               ) : null}
                             </div>
-                            <span className="shrink-0 text-[0.588rem] leading-4 text-muted-foreground">
-                              {formatOrderDate(row.orderDate)}
-                            </span>
+                            {/* The far corner: the date, and under it the one control
+                                that calls the customer. */}
+                            <div className="flex shrink-0 flex-col items-end gap-1.5">
+                              <span className="text-[0.588rem] leading-4 text-muted-foreground">
+                                {formatOrderDate(row.orderDate)}
+                              </span>
+                              {row.customerPhone ? <CallIconButton phone={row.customerPhone} name={row.customerName} /> : null}
+                            </div>
                           </div>
 
                           {/* Only what's EXCEPTIONAL about the order — a status that isn't

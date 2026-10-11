@@ -15,6 +15,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { PhoneIcon } from "@/components/ui/icons";
 
 export type ContactKind = "tel" | "mailto";
 
@@ -154,3 +155,63 @@ export function ContactTapZone({
 }
 
 export default ContactLink;
+
+/**
+ * THE look for "call" everywhere in the app (owner, 2026-10-11: "make them all
+ * the same, so the user knows: when I see this, it means to call") — a green
+ * circle with a white phone. CallIconButton wears it; a bigger tap zone that
+ * calls (a delivery stop's name + number) shows it as its glyph.
+ */
+export const CALL_CIRCLE_CLASS =
+  "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-success text-success-foreground shadow-sm";
+
+export function CallCircle({ className }: { className?: string }) {
+  return (
+    <span aria-hidden className={cn(CALL_CIRCLE_CLASS, className)}>
+      <PhoneIcon className="h-[1.1em] w-[1.1em]" />
+    </span>
+  );
+}
+
+/**
+ * The call button for a card that opens something when tapped — an order, a
+ * project, a debtor. The number itself stays plain text on those cards: as a
+ * link right under the name it took the taps meant for the card, and opened
+ * the dialer instead of the order "half the times" (owner, 2026-10-11).
+ *
+ * A real tel: link, so a phone opens its dialer the way the old number did
+ * (the Android app hands tel: links to the phone app); a computer copies the
+ * number instead (ContactLink). Its tap never reaches the card under it.
+ */
+export function CallIconButton({ phone, name, className }: { phone: string; name?: string | null; className?: string }) {
+  const [isDesktop, setIsDesktop] = React.useState(false);
+  React.useEffect(() => setIsDesktop(usesMouse()), []);
+  const label = name ? `חיוג אל ${name}` : "חיוג";
+
+  return (
+    <a
+      href={telHref(phone)}
+      aria-label={label}
+      title={isDesktop ? `${label} · לחיצה מעתיקה` : label}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (!isDesktop || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        void copyContactValue("tel", phone);
+      }}
+      // The card navigates on keydown and pointer events too — none of this
+      // link's own may reach it.
+      onKeyDown={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+      className={cn(
+        CALL_CIRCLE_CLASS,
+        // 36px to see, ~44px to tap (the ::before reaches past the edge) — a
+        // full-size target that doesn't make the card taller than it needs.
+        "relative transition-transform before:absolute before:-inset-1 before:content-[''] active:scale-95",
+        className
+      )}
+    >
+      <PhoneIcon className="h-[1.1em] w-[1.1em]" aria-hidden />
+    </a>
+  );
+}

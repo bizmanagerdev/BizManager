@@ -61,6 +61,7 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { Button } from "@/components/ui/button";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { Badge } from "@/components/ui/badge";
+import { CallIconButton } from "@/components/ui/contact-link";
 import { ProjectStatusPicker } from "@/components/projects/ProjectStatusPicker";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog } from "@/components/ui/dialog";
@@ -1479,6 +1480,11 @@ export default function ProjectsClient({
                           <Badge className={cn(paymentStatusBadgeClasses(paymentStatus), CARD_BADGE)}>
                             {paymentStatusLabel(paymentStatus)}
                           </Badge>
+                          {/* The top corner, away from the name: the one control that
+                              calls the customer (owner, 2026-10-11). */}
+                          {clientPhone(row) ? (
+                            <CallIconButton phone={clientPhone(row)!} name={clientDisplayName(row)} className="ms-auto" />
+                          ) : null}
                         </div>
                         <PaymentDueCaption
                           lateAmount={lateAmount}
@@ -1490,18 +1496,16 @@ export default function ProjectsClient({
                             scan down. Centring every card turns the column into tiles. */}
                         <div>
                           <div className="text-base font-semibold leading-snug">{projectDisplayName(row)}</div>
+                          {/* The number as plain text — tapping it opens the project
+                              like the rest of the card. As a call link under the name
+                              it took the taps meant for the project (owner, 2026-10-11);
+                              the call button in the top corner dials instead. */}
                           <div className="mt-0.5 text-xs text-muted-foreground">
                             {clientDisplayName(row)}
                             {clientPhone(row) ? (
                               <>
                                 {" · "}
-                                <a
-                                  href={`tel:${clientPhone(row)}`}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="hover:underline"
-                                >
-                                  {clientPhone(row)}
-                                </a>
+                                <span dir="ltr">{clientPhone(row)}</span>
                               </>
                             ) : null}
                           </div>
