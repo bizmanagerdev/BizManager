@@ -329,6 +329,24 @@ export const CARD_FILL_CLASS = "xl:min-h-[8rem] xl:min-w-0 xl:grow xl:basis-0";
 export const CARD_NATURAL_CLASS = "xl:shrink-0 xl:grow-0 xl:basis-auto";
 
 /**
+ * A card's list rows, in a card of any width. A row is two halves side by side —
+ * the name with its line of details, and the amount or the buttons — until the
+ * card is narrower than 17rem: the one-page board's bottom row on a 1280–1366px
+ * laptop gives a card about 180px, where the name was cut to "S…" and the
+ * delivery's name shrank to nothing beside its two buttons. There the name gets
+ * the card's whole width and the rest goes on the line under it (owner,
+ * 2026-10-11). Measured on the card, not the screen, so it follows the board's
+ * cells and the text size (17rem grows with it).
+ *
+ * BOARD_CARD_BODY_CLASS goes on the card's scrolling body (the container),
+ * BOARD_ROW_CLASS on the row's two halves, BOARD_ROW_MAIN_CLASS on the name half.
+ */
+export const BOARD_CARD_BODY_CLASS = "@container";
+export const BOARD_ROW_CLASS =
+  "flex items-center justify-between gap-3 @max-[17rem]:flex-col @max-[17rem]:items-start @max-[17rem]:gap-1.5";
+export const BOARD_ROW_MAIN_CLASS = "min-w-0 flex-1 space-y-0.5 @max-[17rem]:self-stretch";
+
+/**
  * How many of the cards AFTER the hero go in the secondary band vs the tertiary
  * band — from the one number that varies: how many are left (`remaining`).
  * Every viewer shows a different set of widgets (role, and what they've hidden

@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/payroll";
 import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
+import { BOARD_CARD_BODY_CLASS, BOARD_ROW_CLASS, BOARD_ROW_MAIN_CLASS } from "@/lib/dashboard/widgets";
 import { CountBadge } from "@/components/ui/count-badge";
 import type { CollectionsDebtor, CollectionsSummary } from "@/lib/collections";
 import { scheduleDeferredAction } from "@/lib/undo-engine";
@@ -114,7 +115,7 @@ export default function CollectionsCard({ summary, locale }: { summary: Collecti
           count={summary.lateCount + summary.upcomingCount}
         />
 
-        <CardContent className="pointer-events-auto min-h-0 flex-1 overflow-y-auto p-0">
+        <CardContent className={cn("pointer-events-auto min-h-0 flex-1 overflow-y-auto p-0", BOARD_CARD_BODY_CLASS)}>
           {/* ── היום — the only rows you can finish from here ─────────────── */}
           {/* Always present, like the payments card's: with nothing due today the
               card was jumping straight to the באיחור/צפוי switch, and "so is
@@ -138,8 +139,8 @@ export default function CollectionsCard({ summary, locale }: { summary: Collecti
                         className="absolute inset-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       />
                     ) : null}
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0 flex-1 space-y-0.5">
+                    <div className={BOARD_ROW_CLASS}>
+                      <div className={BOARD_ROW_MAIN_CLASS}>
                         {/* Wraps on a phone and a tablet — the never-truncate rule (only
                             the deliveries card cuts with "…", see UpcomingDeliveries): with
                             a bigger text size a cut name lost most of itself, and a cut
@@ -183,6 +184,7 @@ export default function CollectionsCard({ summary, locale }: { summary: Collecti
           {/* ── The switch, and the list it chooses ───────────────────────── */}
           {summary.lateCount > 0 || summary.upcomingCount > 0 ? (
             <div className="border-t border-border/50">
+              {/* In a narrow card (BOARD_ROW_CLASS) each switch's amount goes under its label. */}
               <div className="flex flex-wrap items-center gap-2 px-4 py-2">
                 {summary.lateCount > 0 ? (
                   <button
@@ -190,7 +192,7 @@ export default function CollectionsCard({ summary, locale }: { summary: Collecti
                     onClick={() => setTab("late")}
                     aria-pressed={tab === "late"}
                     className={cn(
-                      "flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-destructive transition-colors",
+                      "flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold @max-[17rem]:flex-wrap @max-[17rem]:gap-y-0.5 text-destructive transition-colors",
                       tab === "late"
                         ? "bg-destructive/20 ring-1 ring-destructive/40"
                         : "bg-destructive/10 hover:bg-destructive/15"
@@ -199,7 +201,10 @@ export default function CollectionsCard({ summary, locale }: { summary: Collecti
                     <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
                     {t(dashboardDict, locale, "lateLabel")}
                     <CountBadge count={summary.lateCount} active={tab === "late"} />
-                    <span className="tabular-nums">· {formatCurrency(summary.lateTotal)}</span>
+                    <span className="tabular-nums">
+                      <span className="@max-[17rem]:hidden">· </span>
+                      {formatCurrency(summary.lateTotal)}
+                    </span>
                   </button>
                 ) : null}
 
@@ -209,7 +214,7 @@ export default function CollectionsCard({ summary, locale }: { summary: Collecti
                     onClick={() => setTab("upcoming")}
                     aria-pressed={tab === "upcoming"}
                     className={cn(
-                      "flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold transition-colors",
+                      "flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold @max-[17rem]:flex-wrap @max-[17rem]:gap-y-0.5 transition-colors",
                       tab === "upcoming"
                         ? "bg-secondary/15 text-foreground ring-1 ring-secondary/40"
                         : "bg-muted text-muted-foreground hover:bg-secondary/10"
@@ -218,7 +223,10 @@ export default function CollectionsCard({ summary, locale }: { summary: Collecti
                     <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
                     {t(dashboardDict, locale, "stageScheduled")}
                     <CountBadge count={summary.upcomingCount} active={tab === "upcoming"} className={tab === "upcoming" ? undefined : "bg-background"} />
-                    <span className="tabular-nums">· {formatCurrency(summary.upcomingTotal)}</span>
+                    <span className="tabular-nums">
+                      <span className="@max-[17rem]:hidden">· </span>
+                      {formatCurrency(summary.upcomingTotal)}
+                    </span>
                   </button>
                 ) : null}
               </div>
@@ -276,8 +284,8 @@ function DebtorRow({ debtor, late, locale }: { debtor: CollectionsDebtor; late: 
         className="absolute inset-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
 
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0 flex-1 space-y-0.5">
+      <div className={BOARD_ROW_CLASS}>
+        <div className={BOARD_ROW_MAIN_CLASS}>
           {/* Wraps below the one-page board, cuts on it (see the today rows above). */}
           <div className="text-sm font-medium xl:truncate" title={debtor.customerName}>
             {debtor.customerName}

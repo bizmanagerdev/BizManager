@@ -16,6 +16,8 @@ import { clickableRowProps } from "@/lib/ui/row-navigation";
 import type { DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
 import { cityColour } from "@/lib/deliveries/city-colours";
 import { useConfirmedDeliveries } from "@/lib/orders/confirmed-deliveries";
+import { BOARD_CARD_BODY_CLASS, BOARD_ROW_CLASS, BOARD_ROW_MAIN_CLASS } from "@/lib/dashboard/widgets";
+import { cn } from "@/lib/utils";
 
 const OrderConfirmDialog = dynamic(() => import("@/app/(app)/sales/orders/OrderConfirmDialog"), {
   loading: () => null,
@@ -123,7 +125,7 @@ export default function UpcomingDeliveries({
           }
         />
 
-        <CardContent className="pointer-events-auto min-h-0 flex-1 overflow-y-auto p-0">
+        <CardContent className={cn("pointer-events-auto min-h-0 flex-1 overflow-y-auto p-0", BOARD_CARD_BODY_CLASS)}>
           <ul className="board-list divide-y">
             {rows.map((delivery) => (
               <li
@@ -134,8 +136,8 @@ export default function UpcomingDeliveries({
               >
                 {/* items-center: the action reads as belonging to the whole row,
                     not to its first line. */}
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0 flex-1 space-y-0.5">
+                <div className={BOARD_ROW_CLASS}>
+                  <div className={BOARD_ROW_MAIN_CLASS}>
                     {/* The ONE place in the app that truncates (user, 2026-08-18:
                         "if the name doesn't fit put 3 dots so all rows are
                         consistent"). Every other surface wraps — see the
