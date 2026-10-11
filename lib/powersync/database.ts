@@ -9,6 +9,7 @@ import {
 } from "@powersync/web";
 import { withSentry } from "@/lib/sentry-lazy";
 import { BizConnector } from "./connector";
+import { isConnectionDrop } from "./connection-drop";
 import { POWERSYNC_ASSETS_BASE } from "./config";
 import { AppSchema } from "./schema";
 import { setLocalDatabase, setLocalSyncStatus, type LocalSyncStatus } from "./store";
@@ -59,7 +60,8 @@ async function chooseVfs(): Promise<WASQLiteVFS> {
 }
 
 // Errors to Sentry, each kind once per page load ("Sync error" repeats every
-// 5 seconds while it lasts); everything at info and up as a breadcrumb.
+// 5 seconds while it lasts), a dropped connection as a warning
+// (connection-drop.ts); everything at info and up as a breadcrumb.
 const reported = new Set<string>();
 
 /** What went wrong, readably — errors from the sync worker arrive as plain objects, not Errors. */
@@ -78,8 +80,10 @@ function report(message: string, error: unknown) {
   if (typeof navigator !== "undefined" && !navigator.onLine) return; // offline isn't a bug
   if (reported.has(message)) return;
   reported.add(message);
+  const description = describeError(error);
   withSentry((Sentry) =>
-    Sentry.captureException(error instanceof Error ? error : new Error(`${message}: ${describeError(error)}`), {
+    Sentry.captureException(error instanceof Error ? error : new Error(`${message}: ${description}`), {
+      level: isConnectionDrop(message, description) ? "warning" : "error",
       tags: { area: "powersync" },
       fingerprint: ["powersync", message],
     })
