@@ -602,7 +602,7 @@ export default function VehicleActivityClient({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Expenses */}
         <Card>
-          <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
             <div>
               <CardTitle className="text-base">הוצאות ({expenses.length})</CardTitle>
               {expenses.length > 0 ? (
@@ -640,7 +640,7 @@ export default function VehicleActivityClient({
 
         {/* Tasks */}
         <Card>
-          <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
             <div>
               <CardTitle className="flex items-center gap-1 text-base">
                 <TaskIcon className="h-4 w-4" />
@@ -728,7 +728,7 @@ export default function VehicleActivityClient({
 
         {/* Documents */}
         <Card className="lg:col-span-2">
-          <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
             <CardTitle className="flex items-center gap-1 text-base">
               <DocumentIcon className="h-4 w-4" />
               מסמכים ({documents.length})

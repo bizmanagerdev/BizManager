@@ -1057,9 +1057,16 @@ export default function FinancialPageClient({
     .map((key) => ({ key, label: getBusinessDomainLabel(key) }));
 
   const reportControls = (
-    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 print:hidden">
+    // basis-64: below 16rem it takes a line of its own under the "מסננים
+    // גלובליים" label instead of being squeezed beside it — at a bigger text
+    // size on a phone it was 119px wide, narrower than the basis switch.
+    <div className="flex min-w-0 grow basis-64 flex-wrap items-center gap-2 print:hidden">
       {periodControls}
-      <div className="flex h-9 overflow-hidden rounded-lg border text-sm">
+      {/* shrink-0 and nowrap on each control: squeezed onto one row with a
+          bigger text size, the switch was clipped ("הרווחתי" cut off) and the
+          labels wrapped out of their boxes — now a control that doesn't fit
+          moves to the next row whole. */}
+      <div className="flex h-9 shrink-0 overflow-hidden whitespace-nowrap rounded-lg border text-sm">
         <button
           type="button"
           onClick={() => setReportBasis("cash")}
@@ -1080,7 +1087,7 @@ export default function FinancialPageClient({
       {/* Open debts only apply on the cash basis — hide it entirely in earned mode
           rather than showing a greyed-out control. */}
       {reportBasis !== "earned" ? (
-        <label className="flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border bg-background px-2.5 text-sm">
+        <label className="flex h-9 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border bg-background px-2.5 text-sm">
           <input
             type="checkbox"
             className="h-4 w-4 accent-primary"
@@ -1090,7 +1097,7 @@ export default function FinancialPageClient({
           <span>כולל פתוחים</span>
         </label>
       ) : null}
-      <label className="flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border bg-background px-2.5 text-sm">
+      <label className="flex h-9 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border bg-background px-2.5 text-sm">
         <input
           type="checkbox"
           className="h-4 w-4 accent-primary"
@@ -1099,7 +1106,7 @@ export default function FinancialPageClient({
         />
         <span>כולל בית וצדקה</span>
       </label>
-      <label className="flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border bg-background px-2.5 text-sm">
+      <label className="flex h-9 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border bg-background px-2.5 text-sm">
         <input
           type="checkbox"
           className="h-4 w-4 accent-primary"

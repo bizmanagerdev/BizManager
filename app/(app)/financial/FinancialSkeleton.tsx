@@ -191,15 +191,15 @@ export function ReportsSkeleton({ routeLoading = false }: { routeLoading?: boole
             מסננים גלובליים
           </span>
           <span className="mx-1 hidden h-5 w-px self-center bg-border sm:block" />
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <div className="flex min-w-0 grow basis-64 flex-wrap items-center gap-2">
             <Skeleton className="h-9 w-36 rounded-lg" />
             {/* The basis switch opens on הרווחתי; כולל פתוחים only exists on the cash basis. */}
-            <div className="flex h-9 overflow-hidden rounded-lg border text-sm">
+            <div className="flex h-9 shrink-0 overflow-hidden whitespace-nowrap rounded-lg border text-sm">
               <span className="flex items-center bg-background px-3">נכנס בפועל</span>
               <span className="flex items-center bg-primary px-3 text-primary-foreground">הרווחתי</span>
             </div>
             {["כולל בית וצדקה", "כולל ניהול נכסים"].map((label) => (
-              <span key={label} className="flex h-9 items-center gap-1.5 rounded-lg border bg-background px-2.5 text-sm">
+              <span key={label} className="flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border bg-background px-2.5 text-sm">
                 <span className="h-4 w-4 rounded-sm border border-input" />
                 <span>{label}</span>
               </span>

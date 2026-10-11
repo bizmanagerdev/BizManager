@@ -25,7 +25,7 @@ export default function PropertiesSkeleton() {
         <Skeleton className="h-11 rounded-xl sm:w-[7.5rem]" />
       </div>
 
-      <AdaptiveGrid variant="customerStats">
+      <AdaptiveGrid variant="entityCards">
         {Array.from({ length: 4 }).map((_, i) => (
           <Card key={i} className="flex flex-col">
             <CardContent className="flex flex-1 flex-col gap-3 p-4">

@@ -25,6 +25,8 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
+import { TOPBAR_ICON_BUTTON, TOPBAR_ICON_STROKE } from "@/components/layout/topbar-icon";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -413,9 +415,13 @@ export default function CalendarView({
               date (right), then the labeled count filters. */}
           <div className="-mx-3 shrink-0 space-y-1.5 border-b bg-background px-2 py-1.5 lg:hidden">
             <div className="flex items-center justify-between gap-2 px-1">
-              <span className="min-w-0 overflow-hidden whitespace-nowrap text-sm">
-                <span className="font-semibold text-foreground">{fmtFullDay(selected)}</span>
-                <span className="text-muted-foreground"> · {hebShort}</span>
+              {/* The Hebrew date drops to a second line when the two don't fit
+                  side by side (a bigger text size on a phone) — it used to be
+                  clipped mid-word. Each half stays whole. */}
+              <span className="min-w-0 text-sm">
+                <span className="whitespace-nowrap font-semibold text-foreground">{fmtFullDay(selected)}</span>
+                <span className="text-muted-foreground"> · </span>
+                <span className="whitespace-nowrap text-muted-foreground">{hebShort}</span>
               </span>
               <button
                 type="button"
@@ -642,13 +648,20 @@ function HeaderMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button
+        {/* The bar's own icon button (topbar-icon.ts), in fixed px: a rem-sized
+            one grew with a bigger text size and squeezed the month's name until
+            it was cut off. 34px, the size it always had at the normal text
+            size — the standard 40 took the month's name 6px it needs on a
+            360px phone. */}
+        <Button
           type="button"
+          variant="ghost"
+          size="icon-sm"
           aria-label={t(calendarDict, locale, "optionsAria")}
-          className="flex h-8 w-8 items-center justify-center rounded-md text-sidebar-foreground transition-colors hover:bg-white/10"
+          className={`${TOPBAR_ICON_BUTTON} !h-[34px] !w-[34px]`}
         >
-          <MoreIcon className="h-5 w-5" />
-        </button>
+          <MoreIcon strokeWidth={TOPBAR_ICON_STROKE} />
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="text-right">
         <DropdownMenuItem onSelect={onSearch} className="gap-2">

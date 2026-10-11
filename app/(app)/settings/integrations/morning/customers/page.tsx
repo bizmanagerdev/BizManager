@@ -39,8 +39,11 @@ export default async function MorningCustomersSettingsPage() {
                   סטטוס Morning: {customer.morning_match_status ?? "unmatched"}
                   {customer.morning_client_id ? ` • לקוח Morning: ${customer.morning_client_id}` : ""}
                 </div>
+                {/* A raw error from Morning can hold long unbroken tokens
+                    ("key=value…"); they break anywhere rather than run past the
+                    card on a phone. */}
                 {customer.morning_last_sync_error ? (
-                  <div className="mt-1 text-destructive">{customer.morning_last_sync_error}</div>
+                  <div className="mt-1 text-destructive [overflow-wrap:anywhere]">{customer.morning_last_sync_error}</div>
                 ) : null}
               </div>
             ))}

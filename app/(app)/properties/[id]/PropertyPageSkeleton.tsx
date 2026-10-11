@@ -41,7 +41,7 @@ function SectionSkeleton({
 }) {
   return (
     <Card className={className}>
-      <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+      <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         {title}
         <div className="flex shrink-0 items-center gap-1">{actions}</div>
       </CardHeader>
@@ -92,7 +92,7 @@ export function PropertyDetailBodySkeleton() {
       </SectionSkeleton>
 
       <Card>
-        <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
           <CardTitle className="text-base">שכירות</CardTitle>
           {button("w-[6.5rem]")}
         </CardHeader>

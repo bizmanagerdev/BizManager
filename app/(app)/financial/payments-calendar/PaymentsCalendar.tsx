@@ -34,6 +34,8 @@ import {
   STAGE_DOT,
   STAGE_ORDER,
   amountLabel,
+  compactAmount,
+  dayStageCompactText,
   dayStageText,
   filterByDirection,
   fmtIls,
@@ -220,6 +222,23 @@ export default function PaymentsCalendar({ items: allItems, todayIso, projects, 
     );
   }
 
+  // A day cell's amount: the full figure where the cell has room (a computer),
+  // the short one on a phone, where the full one was cut to "…65". The row is
+  // the container the switch measures (`@container`, by its own width).
+  function cellAmount(full: string, compact: string) {
+    // "משתנה" is short already — one label, not the same word twice.
+    if (compact === full) return <span className="truncate">{full}</span>;
+    return (
+      <>
+        <span className="truncate @max-[64px]:hidden">{full}</span>
+        {/* ltr: "~56K" read as "56K~" in the Hebrew line. */}
+        <span dir="ltr" className="hidden whitespace-nowrap @max-[64px]:inline">
+          {compact}
+        </span>
+      </>
+    );
+  }
+
   function renderDayContent({ day, holiday }: DayContext) {
     const dayItems = itemsOnDay(day);
     const holidayLabel = holiday ? (
@@ -237,15 +256,15 @@ export default function PaymentsCalendar({ items: allItems, todayIso, projects, 
         <>
           {holidayLabel}
           {totals.in > 0 ? (
-            <span className="flex max-w-full items-center gap-1 text-[10px] font-semibold leading-tight text-foreground">
+            <span className="@container flex w-full items-center gap-1 text-[10px] font-semibold leading-tight text-foreground">
               <span className={`${MONEY_SIGN} text-success`}>+</span>
-              <span className="truncate">{fmtIls(totals.in)}</span>
+              {cellAmount(fmtIls(totals.in), compactAmount(totals.in))}
             </span>
           ) : null}
           {totals.out > 0 ? (
-            <span className="flex max-w-full items-center gap-1 text-[10px] font-semibold leading-tight text-foreground">
+            <span className="@container flex w-full items-center gap-1 text-[10px] font-semibold leading-tight text-foreground">
               <span className={`${MONEY_SIGN} text-destructive`}>−</span>
-              <span className="truncate">{fmtIls(totals.out)}</span>
+              {cellAmount(fmtIls(totals.out), compactAmount(totals.out))}
             </span>
           ) : null}
         </>
@@ -260,9 +279,9 @@ export default function PaymentsCalendar({ items: allItems, todayIso, projects, 
           const text = dayStageText(byStage.get(s)!);
           if (!text) return null;
           return (
-            <span key={s} className="flex max-w-full items-center gap-1 text-[10px] font-semibold leading-tight text-foreground">
+            <span key={s} className="@container flex w-full items-center gap-1 text-[10px] font-semibold leading-tight text-foreground">
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STAGE_DOT[s]}`} />
-              <span className="truncate">{text}</span>
+              {cellAmount(text, dayStageCompactText(byStage.get(s)!) ?? text)}
             </span>
           );
         })}

@@ -17,14 +17,14 @@ export default function ImportSkeleton({
 }) {
   return (
     <div className="space-y-4 text-right" dir="rtl" data-route-loading={routeLoading ? "true" : undefined} aria-busy="true">
-      <div className="flex items-center justify-between gap-3">
-        <div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0 flex-1 basis-64">
           <h1 className="text-lg font-semibold">העלאת פירוט אשראי</h1>
           <p className="text-sm text-muted-foreground">
             העלאת Excel/CSV/PDF ושמירת הפירוט. שיוך התחומים העסקיים ויצירת ההוצאות נעשים אחר כך בעמוד הפירוט.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <ButtonSkeleton label="פירוטים שנשמרו" size="sm" />
           <ButtonSkeleton label="חזרה לפיננסי" size="sm" />
         </div>

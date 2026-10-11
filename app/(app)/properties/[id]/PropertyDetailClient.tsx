@@ -899,7 +899,7 @@ export default function PropertyDetailClient({
 
       {/* Leases */}
       <Card>
-        <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
           <CardTitle className="text-base">שכירות</CardTitle>
           <Button size="sm" onClick={openAddLease}>
             <AddIcon className="h-4 w-4" />
@@ -1001,7 +1001,7 @@ export default function PropertyDetailClient({
             lib/properties.ts). One merged, date-sorted list; a filter lets you
             isolate either kind when there's more than one on the property. */}
         <Card>
-          <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
             <CardTitle className="text-base">הוצאות ({activityExpenses.length + activitySessions.length})</CardTitle>
             <Button size="sm" onClick={openAddExpense}>
               <AddIcon className="h-4 w-4" />
@@ -1105,7 +1105,7 @@ export default function PropertyDetailClient({
 
         {/* Income (non-check — rent checks live in the rent-schedule section below) */}
         <Card>
-          <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
             <CardTitle className="text-base">הכנסות אחרות ({otherPayments.length})</CardTitle>
             <Button size="sm" onClick={() => setIncomeOpen(true)}>
               <AddIcon className="h-4 w-4" />
@@ -1141,7 +1141,7 @@ export default function PropertyDetailClient({
 
         {/* Tasks */}
         <Card>
-          <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
             <CardTitle className="flex items-center gap-1 text-base">
               <TaskIcon className="h-4 w-4" />
               משימות ({activityTasks.length})
@@ -1174,7 +1174,7 @@ export default function PropertyDetailClient({
 
         {/* Recurring charges — water/electricity/arnona/vaad bayit etc. */}
         <Card>
-          <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
             <CardTitle className="text-base">הוצאות קבועות ({activityTemplates.length})</CardTitle>
             <Button size="sm" onClick={openAddTemplate}>
               <AddIcon className="h-4 w-4" />
@@ -1230,7 +1230,7 @@ export default function PropertyDetailClient({
 
         {/* Photo gallery */}
         <Card>
-          <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
             <CardTitle className="text-base">תמונות הנכס ({photos.length})</CardTitle>
             <Button size="sm" onClick={openAddPhotos}>
               <AddIcon className="h-4 w-4" />
@@ -1274,7 +1274,7 @@ export default function PropertyDetailClient({
 
         {/* Documents */}
         <Card className="lg:col-span-2">
-          <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
             <CardTitle className="flex items-center gap-1 text-base">
               <DocumentIcon className="h-4 w-4" />
               מסמכים ({otherDocuments.length})

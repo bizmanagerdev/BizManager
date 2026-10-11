@@ -82,7 +82,7 @@ export default function VehiclePageSkeleton({ routeLoading = false }: { routeLoa
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2" aria-hidden>
         <Card>
-          <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
             <div>
               <Title>הוצאות</Title>
               <TextLineSkeleton className="text-xs" barClassName="w-28" />
@@ -109,7 +109,7 @@ export default function VehiclePageSkeleton({ routeLoading = false }: { routeLoa
         </Card>
 
         <Card>
-          <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
             <div>
               <Title icon={<TaskIcon className="h-4 w-4" />}>משימות</Title>
               <TextLineSkeleton className="text-xs" barClassName="w-16" />
@@ -133,7 +133,7 @@ export default function VehiclePageSkeleton({ routeLoading = false }: { routeLoa
         </Card>
 
         <Card className="lg:col-span-2">
-          <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
             <Title icon={<DocumentIcon className="h-4 w-4" />}>מסמכים</Title>
             {ADD_BUTTON}
           </CardHeader>

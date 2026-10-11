@@ -211,7 +211,7 @@ export default function VehiclesClient({ vehicles: vehiclesProp }: { vehicles: V
           </CardContent>
         </Card>
       ) : (
-        <AdaptiveGrid variant="customerStats">
+        <AdaptiveGrid variant="entityCards">
           {vehicles.map((v) => {
             return (
               <Card

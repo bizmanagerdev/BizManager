@@ -204,7 +204,7 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
           </CardContent>
         </Card>
       ) : (
-        <AdaptiveGrid variant="customerStats">
+        <AdaptiveGrid variant="entityCards">
           {properties.map((p) => {
             const net = p.rollup.totalIncomeAmount - p.rollup.paidExpenseAmount;
             return (

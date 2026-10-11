@@ -115,7 +115,7 @@ export default function PropertyPurchaseCard({
 
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+      <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <CardTitle className="text-base">רכישת הנכס</CardTitle>
         {editing ? null : (
           <div className="flex shrink-0 items-center gap-1">

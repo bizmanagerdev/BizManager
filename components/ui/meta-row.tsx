@@ -36,7 +36,13 @@ export function MetaRow({ items, children, className, fallback, as: Tag = "div",
       {...props}
     >
       {values.map((value, i) => (
-        <span key={i}>{value}</span>
+        // <bdi>: each value takes its own direction, so an email or an English
+        // name reads left-to-right inside a Hebrew row — "5810838@gmail.com"
+        // showed as "gmail.com@5810838". Inside the span, so the "·" before it
+        // stays on the row's side.
+        <span key={i}>
+          <bdi>{value}</bdi>
+        </span>
       ))}
     </Tag>
   );

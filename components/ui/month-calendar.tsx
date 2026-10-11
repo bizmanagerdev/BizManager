@@ -358,7 +358,7 @@ export default function MonthCalendar({
                 }
                 onMouseLeave={renderDayHover ? scheduleClose : undefined}
                 title={holiday ?? undefined}
-                className={`flex min-h-[4.5rem] flex-col gap-1 px-1.5 py-1.5 transition-colors ${
+                className={`flex min-h-[4.5rem] flex-col gap-1 px-1 py-1.5 transition-colors sm:px-1.5 ${
                   !inMonth
                     ? "bg-muted/20 text-muted-foreground/45"
                     : isHoliday
@@ -366,10 +366,15 @@ export default function MonthCalendar({
                       : "bg-background"
                 } ${isSelected ? "z-10 ring-2 ring-inset ring-primary" : "hover:bg-secondary/10"}`}
               >
-                {/* Date header — Gregorian number + Hebrew numeral on ONE row */}
-                <div className="flex w-full items-center justify-between gap-1">
+                {/* Date header — Gregorian number + Hebrew numeral on one row,
+                    the numeral wrapping under the number when a phone's cell
+                    can't hold both (a bigger text size): side by side they ran
+                    past the cell and the outer column's were cut off at the
+                    screen's edge. Tighter below sm so they share a row on a
+                    360px phone at the normal size. */}
+                <div className="flex w-full flex-wrap items-center justify-between gap-0.5 sm:gap-1">
                   <span
-                    className={`flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-sm font-medium transition-colors ${
+                    className={`flex h-6 min-w-5 items-center justify-center rounded-full px-0.5 text-sm font-medium transition-colors sm:min-w-6 sm:px-1 ${
                       isToday
                         ? "bg-primary text-primary-foreground"
                         : isSelected

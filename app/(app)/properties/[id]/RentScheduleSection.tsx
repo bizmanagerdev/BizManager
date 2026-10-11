@@ -282,7 +282,7 @@ export default function RentScheduleSection({
 
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+      <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <CardTitle className="text-base">תשלומי שכירות ({payments.length})</CardTitle>
         <Button size="sm" onClick={openGenerator} disabled={!currentLease}>
           <AddIcon className="h-4 w-4" />

@@ -387,6 +387,26 @@ export function dayStageText(s: DayStageSummary): string | null {
   return s.amount > 0 ? `${s.variable ? "~" : ""}${fmtIls(s.amount)}` : s.unknown ? "משתנה" : null;
 }
 
+/**
+ * An amount short enough for a phone's day cell — about 34px wide on a 360px
+ * screen, where "‏168,705 ‏₪" showed as "…65": "169K", "4.6K", "340". The cell
+ * is all money, so no ₪; the day's panel below has the exact figures.
+ */
+export function compactAmount(value: number): string {
+  const v = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  const oneDecimal = (n: number) => String(Math.round(n * 10) / 10);
+  if (v < 1000) return `${sign}${Math.round(v)}`;
+  if (v < 10_000) return `${sign}${oneDecimal(v / 1000)}K`;
+  if (v < 1_000_000) return `${sign}${Math.round(v / 1000)}K`;
+  return `${sign}${oneDecimal(v / 1_000_000)}M`;
+}
+
+/** dayStageText for a phone's day cell (compactAmount). */
+export function dayStageCompactText(s: DayStageSummary): string | null {
+  return s.amount > 0 ? `${s.variable ? "~" : ""}${compactAmount(s.amount)}` : s.unknown ? "משתנה" : null;
+}
+
 // ── Late payments (the header chip) ─────────────────────────────────────────────
 // Only payments past their date and still unpaid. Auto-paid (הוראת קבע) bills
 // need no action, so they're never "late". Planned loan installments (origin

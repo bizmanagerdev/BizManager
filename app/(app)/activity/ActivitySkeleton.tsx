@@ -109,70 +109,73 @@ export default function ActivitySkeleton() {
         </span>
       </div>
 
-      {/* md+: the feed's table, its own columns. */}
-      <div className="hidden rounded-b-lg border border-border/60 bg-card shadow-sm md:block">
-        <table className="w-full table-fixed border-collapse text-sm">
-          <colgroup>
-            <col className="w-[6rem]" />
-            <col className="w-[13rem]" />
-            <col className="w-[11rem]" />
-            <col />
-            <col className="w-[9rem]" />
-            <col className="w-[8.5rem]" />
-          </colgroup>
-          <thead>
-            <tr className="border-b-2 border-border bg-[rgb(var(--secondary-10))] text-sm font-semibold text-foreground shadow-sm">
-              {COLUMNS.map((column) => (
-                <th key={column} className="whitespace-nowrap px-3 py-3.5 text-right">
-                  {column}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {Array.from({ length: 10 }).map((_, i) => (
-              <tr key={i} className="border-b border-border/40 last:border-0">
-                <td className="px-3 py-2 align-middle">{BADGE}</td>
-                <td className="px-3 py-2 align-middle">
-                  <Skeleton className="h-4 w-4/5" />
-                </td>
-                <td className="px-3 py-2 align-middle text-xs">
-                  <ActorSkeleton />
-                </td>
-                <td className="px-3 py-2 align-middle">
-                  <Skeleton className="h-3 w-3/4" />
-                </td>
-                <td className="px-3 py-2 align-middle">
-                  <Skeleton className="h-3 w-1/2" />
-                </td>
-                <td className="px-3 py-2 align-middle">
-                  <Skeleton className="h-3 w-20" />
-                </td>
+      {/* md+: the feed's table, its own columns — or the cards, where a bigger
+          text size leaves the table too little width (as ActivityClient). */}
+      <div className="@container">
+        <div className="hidden rounded-b-lg border border-border/60 bg-card shadow-sm md:@min-[54rem]:block">
+          <table className="w-full table-fixed border-collapse text-sm">
+            <colgroup>
+              <col className="w-[6rem]" />
+              <col className="w-[13rem]" />
+              <col className="w-[11rem]" />
+              <col />
+              <col className="w-[9rem]" />
+              <col className="w-[8.5rem]" />
+            </colgroup>
+            <thead>
+              <tr className="border-b-2 border-border bg-[rgb(var(--secondary-10))] text-sm font-semibold text-foreground shadow-sm">
+                {COLUMNS.map((column) => (
+                  <th key={column} className="whitespace-nowrap px-3 py-3.5 text-right">
+                    {column}
+                  </th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {Array.from({ length: 10 }).map((_, i) => (
+                <tr key={i} className="border-b border-border/40 last:border-0">
+                  <td className="px-3 py-2 align-middle">{BADGE}</td>
+                  <td className="px-3 py-2 align-middle">
+                    <Skeleton className="h-4 w-4/5" />
+                  </td>
+                  <td className="px-3 py-2 align-middle text-xs">
+                    <ActorSkeleton />
+                  </td>
+                  <td className="px-3 py-2 align-middle">
+                    <Skeleton className="h-3 w-3/4" />
+                  </td>
+                  <td className="px-3 py-2 align-middle">
+                    <Skeleton className="h-3 w-1/2" />
+                  </td>
+                  <td className="px-3 py-2 align-middle">
+                    <Skeleton className="h-3 w-20" />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
-      {/* Phone: the feed's cards — badge and time, record, actor, details. */}
-      <div className="space-y-1.5 md:hidden">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <Card key={i}>
-            <CardContent className="py-2 px-4">
-              <div className="flex flex-col gap-0.5">
-                <div className="flex items-center justify-between gap-2">
-                  {BADGE}
-                  <Skeleton className="h-3 w-16" />
+        {/* Phone: the feed's cards — badge and time, record, actor, details. */}
+        <div className="space-y-1.5 md:@min-[54rem]:hidden">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <Card key={i}>
+              <CardContent className="py-2 px-4">
+                <div className="flex flex-col gap-0.5">
+                  <div className="flex items-center justify-between gap-2">
+                    {BADGE}
+                    <Skeleton className="h-3 w-16" />
+                  </div>
+                  <TextLineSkeleton className="text-sm leading-tight" barClassName="w-3/4" />
+                  <div className="text-xs">
+                    <ActorSkeleton />
+                  </div>
+                  <TextLineSkeleton className="text-xs leading-tight" barClassName="w-1/2" />
                 </div>
-                <TextLineSkeleton className="text-sm leading-tight" barClassName="w-3/4" />
-                <div className="text-xs">
-                  <ActorSkeleton />
-                </div>
-                <TextLineSkeleton className="text-xs leading-tight" barClassName="w-1/2" />
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </div>
     </div>
   );

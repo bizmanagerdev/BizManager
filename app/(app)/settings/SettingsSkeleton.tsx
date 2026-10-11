@@ -186,11 +186,11 @@ export default function SettingsSkeleton() {
   const activeTab = tabOf(useSearchParams()?.get("tab") ?? null);
   return (
     <div className="space-y-4" aria-busy="true">
-      <div className="flex gap-1 rounded-xl border bg-secondary/40 p-1">
+      <div className="flex flex-wrap gap-1 rounded-xl border bg-secondary/40 p-1">
         {TABS.map((tab) => (
           <span
             key={tab.key}
-            className={`flex-1 rounded-lg px-3 py-1.5 text-center text-sm font-medium ${
+            className={`flex-auto whitespace-nowrap rounded-lg px-2 py-1.5 text-center text-sm font-medium sm:px-3 ${
               activeTab === tab.key ? "bg-background shadow-sm" : "text-muted-foreground"
             }`}
           >

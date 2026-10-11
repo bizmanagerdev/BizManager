@@ -19,6 +19,11 @@ const gridVariants = {
   customersFilters: "grid gap-3 lg:grid-cols-4",
   customerCard: "grid gap-2 p-2.5 md:grid-cols-[1fr_auto] md:items-center",
   customerStats: "grid gap-4 md:grid-cols-2 xl:grid-cols-4",
+  // A record's card (a property, a vehicle): up to four across, never narrower
+  // than its content needs (14rem — rem, so a bigger text size means fewer,
+  // wider cards). Fixed columns squeezed them below that at a bigger size and
+  // their content ran past the card's edge.
+  entityCards: "grid gap-4 grid-cols-[repeat(auto-fill,minmax(max(14rem,calc((100%-3rem)/4)),1fr))]",
   customerPanels: "grid gap-4 lg:grid-cols-2",
   projectsToolbarControls: "grid grid-cols-1 gap-3 sm:grid-cols-3 lg:w-auto",
   projectCardMeta: "grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2 xl:grid-cols-3",

@@ -224,15 +224,15 @@ function CalendarSkeleton({ direction, monthParam }: { direction: Direction; mon
                       <div
                         key={cell.key}
                         className={cn(
-                          "flex min-h-[4.5rem] flex-col gap-1 px-1.5 py-1.5",
+                          "flex min-h-[4.5rem] flex-col gap-1 px-1 py-1.5 sm:px-1.5",
                           cell.inMonth ? "bg-background" : "bg-muted/20 text-muted-foreground/45",
                           cell.isToday && "z-10 ring-2 ring-inset ring-primary"
                         )}
                       >
-                        <div className="flex w-full items-center justify-between gap-1">
+                        <div className="flex w-full flex-wrap items-center justify-between gap-0.5 sm:gap-1">
                           <span
                             className={cn(
-                              "flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-sm font-medium",
+                              "flex h-6 min-w-5 items-center justify-center rounded-full px-0.5 text-sm font-medium sm:min-w-6 sm:px-1",
                               cell.isToday && "bg-primary text-primary-foreground"
                             )}
                           >

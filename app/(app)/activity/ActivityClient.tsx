@@ -777,263 +777,269 @@ export default function ActivityClient({
         </Card>
       )}
 
-      {/* Desktop: a compact table — same data as the cards, far less vertical space. */}
-      {!error && displayItems.length > 0 && (
-        <div
-          className={`hidden rounded-b-lg border border-border/60 bg-card shadow-sm md:block ${
-            isPending ? "opacity-60 transition-opacity" : ""
-          }`}
-        >
-          {/* table-fixed: column widths come from this colgroup alone, computed
-              once — not from every currently-rendered row's content. Without it
-              the browser re-measures all cells on every re-render (new rows
-              arriving via infinite scroll, the 15s refresh, realtime inserts),
-              so columns — and the whole table — visibly resize/shift each time. */}
-          <table className="w-full table-fixed border-collapse text-sm">
-            <colgroup>
-              <col className="w-[6rem]" />
-              <col className="w-[13rem]" />
-              <col className="w-[11rem]" />
-              <col />
-              <col className="w-[9rem]" />
-              {/* Wide enough for the full "09.08.26 21:54" stamp at text-xs. */}
-              <col className="w-[8.5rem]" />
-            </colgroup>
-            {/* Sticky under the 60px top bar (z-20 keeps it below the bar's z-30).
-                The wrapper can't clip with overflow-hidden or the header wouldn't
-                stick, so the header stays square (the card only rounds at the
-                bottom) instead of trying to match a corner it can't clip to. */}
-            <thead className="sticky top-[60px] z-20">
-              <tr className="border-b-2 border-border bg-[rgb(var(--secondary-10))] text-sm font-semibold text-foreground shadow-sm">
-                <th className="px-3 py-3.5 text-right">פעולה</th>
-                <th className="px-3 py-3.5 text-right">רשומה</th>
-                <th className="px-3 py-3.5 text-right">משתמש</th>
-                <th className="px-3 py-3.5 text-right">פרטים</th>
-                <th className="px-3 py-3.5 text-right">לפני</th>
-                <th className="whitespace-nowrap px-3 py-3.5 text-right">זמן</th>
-              </tr>
-            </thead>
-            <tbody>
-              {renderNodes.map((node) => {
-                if (node.type === "sysBatch") {
-                  const isExpanded = expanded.has(node.id);
-                  return (
-                    <Fragment key={node.id}>
-                      <tr className="border-b border-border/40 last:border-0">
-                        <td
-                          className="px-3 py-1.5 align-middle"
-                          style={{ boxShadow: `inset -3px 0 0 0 rgb(${accentColorVar(node.rows[0])})` }}
-                        >
-                          <span className="inline-block rounded bg-info-soft px-2 py-0.5 text-xs font-medium text-info-soft-foreground">
-                            עודכן
-                          </span>
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2 align-middle">
-                          <button
-                            type="button"
-                            onClick={() => toggleExpanded(node.id)}
-                            className="inline-flex items-center gap-1 text-sm font-medium text-foreground hover:text-secondary"
+      {/* The table or the cards by the width there is, measured in the text's
+          own size (rem, @container): with a bigger text size the table's fixed
+          columns outgrew the page beside the sidebar and "זמן" fell off its
+          edge — there, the cards a phone gets. */}
+      <div className="@container">
+        {/* Desktop: a compact table — same data as the cards, far less vertical space. */}
+        {!error && displayItems.length > 0 && (
+          <div
+            className={`hidden rounded-b-lg border border-border/60 bg-card shadow-sm md:@min-[54rem]:block ${
+              isPending ? "opacity-60 transition-opacity" : ""
+            }`}
+          >
+            {/* table-fixed: column widths come from this colgroup alone, computed
+                once — not from every currently-rendered row's content. Without it
+                the browser re-measures all cells on every re-render (new rows
+                arriving via infinite scroll, the 15s refresh, realtime inserts),
+                so columns — and the whole table — visibly resize/shift each time. */}
+            <table className="w-full table-fixed border-collapse text-sm">
+              <colgroup>
+                <col className="w-[6rem]" />
+                <col className="w-[13rem]" />
+                <col className="w-[11rem]" />
+                <col />
+                <col className="w-[9rem]" />
+                {/* Wide enough for the full "09.08.26 21:54" stamp at text-xs. */}
+                <col className="w-[8.5rem]" />
+              </colgroup>
+              {/* Sticky under the 60px top bar (z-20 keeps it below the bar's z-30).
+                  The wrapper can't clip with overflow-hidden or the header wouldn't
+                  stick, so the header stays square (the card only rounds at the
+                  bottom) instead of trying to match a corner it can't clip to. */}
+              <thead className="sticky top-[60px] z-20">
+                <tr className="border-b-2 border-border bg-[rgb(var(--secondary-10))] text-sm font-semibold text-foreground shadow-sm">
+                  <th className="px-3 py-3.5 text-right">פעולה</th>
+                  <th className="px-3 py-3.5 text-right">רשומה</th>
+                  <th className="px-3 py-3.5 text-right">משתמש</th>
+                  <th className="px-3 py-3.5 text-right">פרטים</th>
+                  <th className="px-3 py-3.5 text-right">לפני</th>
+                  <th className="whitespace-nowrap px-3 py-3.5 text-right">זמן</th>
+                </tr>
+              </thead>
+              <tbody>
+                {renderNodes.map((node) => {
+                  if (node.type === "sysBatch") {
+                    const isExpanded = expanded.has(node.id);
+                    return (
+                      <Fragment key={node.id}>
+                        <tr className="border-b border-border/40 last:border-0">
+                          <td
+                            className="px-3 py-1.5 align-middle"
+                            style={{ boxShadow: `inset -3px 0 0 0 rgb(${accentColorVar(node.rows[0])})` }}
                           >
-                            <ChevronDownIcon
-                              className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                            />
-                            {`${node.rows.length} עדכוני מערכת`}
-                          </button>
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2 align-middle">
-                          <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-medium">
-                              מ
+                            <span className="inline-block rounded bg-info-soft px-2 py-0.5 text-xs font-medium text-info-soft-foreground">
+                              עודכן
                             </span>
-                            <span>מערכת</span>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 align-middle">
+                            <button
+                              type="button"
+                              onClick={() => toggleExpanded(node.id)}
+                              className="inline-flex items-center gap-1 text-sm font-medium text-foreground hover:text-secondary"
+                            >
+                              <ChevronDownIcon
+                                className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                              />
+                              {`${node.rows.length} עדכוני מערכת`}
+                            </button>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 align-middle">
+                            <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-medium">
+                                מ
+                              </span>
+                              <span>מערכת</span>
+                            </span>
+                          </td>
+                          <td className="px-3 py-2" />
+                          <td className="px-3 py-2" />
+                          <td
+                            dir="ltr"
+                            className="whitespace-nowrap px-3 py-2 text-right align-middle text-xs tabular-nums text-muted-foreground"
+                            title={formatFullDate(node.latest)}
+                          >
+                            {formatActivityTime(node.latest)}
+                          </td>
+                        </tr>
+                        {isExpanded &&
+                          node.rows.map((r) => <ActivityTableChildRow key={r.id} item={r} />)}
+                      </Fragment>
+                    );
+                  }
+
+                  const { header, children } = node.group;
+                  const isExpanded = expanded.has(header.id);
+                  const clickable = !!header.href;
+                  return (
+                    <Fragment key={header.id}>
+                      {/* Only a row that actually leads somewhere reacts to the
+                          pointer. A row with no destination (a login/logout, say)
+                          stays flat — a hover tint on it reads as "clickable" and
+                          then nothing happens. */}
+                      <tr
+                        className={`border-b border-border/40 last:border-0 ${
+                          clickable ? "cursor-pointer hover:bg-secondary/15" : ""
+                        }`}
+                        onClick={clickable ? () => router.push(header.href!) : undefined}
+                      >
+                        <td
+                          className="px-3 py-2 align-middle"
+                          style={{ boxShadow: `inset -3px 0 0 0 rgb(${accentColorVar(header)})` }}
+                        >
+                          <span
+                            className={`inline-block shrink-0 rounded px-2 py-0.5 text-xs font-medium ${badgeColor(header)}`}
+                          >
+                            {header.actionLabel}
                           </span>
                         </td>
-                        <td className="px-3 py-2" />
-                        <td className="px-3 py-2" />
+                        <td className="px-3 py-2 align-middle">
+                          <div className="leading-tight">
+                            <span className="font-medium text-foreground">{header.entityLabel}</span>
+                            {header.title && (
+                              <>
+                                <span className="text-muted-foreground"> · </span>
+                                <span className="font-semibold text-foreground">
+                                  <WrappedTokens text={header.title} />
+                                </span>
+                              </>
+                            )}
+                            {children.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleExpanded(header.id);
+                                }}
+                                className="ms-2 inline-flex items-center gap-0.5 align-middle text-xs text-muted-foreground hover:text-foreground"
+                              >
+                                <ChevronDownIcon
+                                  className={`h-3 w-3 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                                />
+                                {isExpanded ? "הסתר" : `+${children.length}`}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 align-middle text-xs text-muted-foreground">
+                          <ActorCell item={header} />
+                        </td>
+                        <td className="max-w-[22rem] px-3 py-2 align-middle text-xs text-foreground/70">
+                          <div className="flex flex-col gap-0.5">
+                            {header.baseDetails ? (
+                              <DetailsText text={header.baseDetails} className="leading-tight" />
+                            ) : null}
+                            <ChangeStack item={header} side="after" />
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 align-middle text-xs">
+                          <ChangeStack item={header} side="before" />
+                        </td>
                         <td
                           dir="ltr"
                           className="whitespace-nowrap px-3 py-2 text-right align-middle text-xs tabular-nums text-muted-foreground"
-                          title={formatFullDate(node.latest)}
+                          title={formatFullDate(header.createdAt)}
                         >
-                          {formatActivityTime(node.latest)}
+                          {formatActivityTime(header.createdAt)}
                         </td>
                       </tr>
                       {isExpanded &&
-                        node.rows.map((r) => <ActivityTableChildRow key={r.id} item={r} />)}
+                        children.map((child) => (
+                          <ActivityTableChildRow key={child.id} item={child} />
+                        ))}
                     </Fragment>
                   );
-                }
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
 
-                const { header, children } = node.group;
-                const isExpanded = expanded.has(header.id);
-                const clickable = !!header.href;
+        {/* Mobile: cards. */}
+        {!error && displayItems.length > 0 && (
+          <div className="space-y-1.5 md:@min-[54rem]:hidden">
+            {renderNodes.map((node) => {
+              // A batch of automated system rows → one collapsed, expandable card.
+              if (node.type === "sysBatch") {
+                const isExpanded = expanded.has(node.id);
                 return (
-                  <Fragment key={header.id}>
-                    {/* Only a row that actually leads somewhere reacts to the
-                        pointer. A row with no destination (a login/logout, say)
-                        stays flat — a hover tint on it reads as "clickable" and
-                        then nothing happens. */}
-                    <tr
-                      className={`border-b border-border/40 last:border-0 ${
-                        clickable ? "cursor-pointer hover:bg-secondary/15" : ""
-                      }`}
-                      onClick={clickable ? () => router.push(header.href!) : undefined}
-                    >
-                      <td
-                        className="px-3 py-2 align-middle"
-                        style={{ boxShadow: `inset -3px 0 0 0 rgb(${accentColorVar(header)})` }}
-                      >
-                        <span
-                          className={`inline-block shrink-0 rounded px-2 py-0.5 text-xs font-medium ${badgeColor(header)}`}
+                  <Card key={node.id} className={isPending ? "opacity-60 transition-opacity" : ""}>
+                    <CardContent className="py-2 px-4">
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="shrink-0 rounded px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground">
+                            מערכת
+                          </span>
+                          <time
+                            className="shrink-0 text-xs text-muted-foreground whitespace-nowrap tabular-nums"
+                            title={formatFullDate(node.latest)}
+                          >
+                            {formatActivityTime(node.latest)}
+                          </time>
+                        </div>
+                        <div className="text-sm font-medium leading-tight">
+                          {`${node.rows.length} עדכוני מערכת`}
+                        </div>
+                      </div>
+                      <div className="mt-1.5 border-t pt-1.5">
+                        <button
+                          type="button"
+                          onClick={() => toggleExpanded(node.id)}
+                          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                         >
-                          {header.actionLabel}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 align-middle">
-                        <div className="leading-tight">
-                          <span className="font-medium text-foreground">{header.entityLabel}</span>
-                          {header.title && (
-                            <>
-                              <span className="text-muted-foreground"> · </span>
-                              <span className="font-semibold text-foreground">
-                                <WrappedTokens text={header.title} />
-                              </span>
-                            </>
-                          )}
-                          {children.length > 0 && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleExpanded(header.id);
-                              }}
-                              className="ms-2 inline-flex items-center gap-0.5 align-middle text-xs text-muted-foreground hover:text-foreground"
-                            >
-                              <ChevronDownIcon
-                                className={`h-3 w-3 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                              />
-                              {isExpanded ? "הסתר" : `+${children.length}`}
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2 align-middle text-xs text-muted-foreground">
-                        <ActorCell item={header} />
-                      </td>
-                      <td className="max-w-[22rem] px-3 py-2 align-middle text-xs text-foreground/70">
-                        <div className="flex flex-col gap-0.5">
-                          {header.baseDetails ? (
-                            <DetailsText text={header.baseDetails} className="leading-tight" />
-                          ) : null}
-                          <ChangeStack item={header} side="after" />
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 align-middle text-xs">
-                        <ChangeStack item={header} side="before" />
-                      </td>
-                      <td
-                        dir="ltr"
-                        className="whitespace-nowrap px-3 py-2 text-right align-middle text-xs tabular-nums text-muted-foreground"
-                        title={formatFullDate(header.createdAt)}
-                      >
-                        {formatActivityTime(header.createdAt)}
-                      </td>
-                    </tr>
-                    {isExpanded &&
-                      children.map((child) => (
-                        <ActivityTableChildRow key={child.id} item={child} />
-                      ))}
-                  </Fragment>
+                          <ChevronDownIcon
+                            className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                          />
+                          {isExpanded ? "הסתר" : `הצג ${node.rows.length} עדכונים`}
+                        </button>
+                        {isExpanded && (
+                          <div className="mt-2 space-y-1.5 pr-2">
+                            {node.rows.map((r) => (
+                              <ActivityChildRow key={r.id} item={r} />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
                 );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+              }
 
-      {/* Mobile: cards. */}
-      {!error && displayItems.length > 0 && (
-        <div className="space-y-1.5 md:hidden">
-          {renderNodes.map((node) => {
-            // A batch of automated system rows → one collapsed, expandable card.
-            if (node.type === "sysBatch") {
-              const isExpanded = expanded.has(node.id);
+              const { header, children } = node.group;
+              const isExpanded = expanded.has(header.id);
               return (
-                <Card key={node.id} className={isPending ? "opacity-60 transition-opacity" : ""}>
+                <Card key={header.id} className={isPending ? "opacity-60 transition-opacity" : ""}>
                   <CardContent className="py-2 px-4">
-                    <div className="flex flex-col gap-0.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="shrink-0 rounded px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground">
-                          מערכת
-                        </span>
-                        <time
-                          className="shrink-0 text-xs text-muted-foreground whitespace-nowrap tabular-nums"
-                          title={formatFullDate(node.latest)}
+                    <ActivityRow item={header} />
+                    {children.length > 0 && (
+                      <div className="mt-1.5 border-t pt-1.5">
+                        <button
+                          type="button"
+                          onClick={() => toggleExpanded(header.id)}
+                          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                         >
-                          {formatActivityTime(node.latest)}
-                        </time>
+                          <ChevronDownIcon
+                            className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                          />
+                          {isExpanded ? "הסתר שינויים" : `ועוד ${children.length} שינויים נלווים`}
+                        </button>
+                        {isExpanded && (
+                          <div className="mt-2 space-y-1.5 pr-2">
+                            {children.map((child) => (
+                              <ActivityChildRow key={child.id} item={child} />
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <div className="text-sm font-medium leading-tight">
-                        {`${node.rows.length} עדכוני מערכת`}
-                      </div>
-                    </div>
-                    <div className="mt-1.5 border-t pt-1.5">
-                      <button
-                        type="button"
-                        onClick={() => toggleExpanded(node.id)}
-                        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                      >
-                        <ChevronDownIcon
-                          className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                        />
-                        {isExpanded ? "הסתר" : `הצג ${node.rows.length} עדכונים`}
-                      </button>
-                      {isExpanded && (
-                        <div className="mt-2 space-y-1.5 pr-2">
-                          {node.rows.map((r) => (
-                            <ActivityChildRow key={r.id} item={r} />
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                    )}
                   </CardContent>
                 </Card>
               );
-            }
-
-            const { header, children } = node.group;
-            const isExpanded = expanded.has(header.id);
-            return (
-              <Card key={header.id} className={isPending ? "opacity-60 transition-opacity" : ""}>
-                <CardContent className="py-2 px-4">
-                  <ActivityRow item={header} />
-                  {children.length > 0 && (
-                    <div className="mt-1.5 border-t pt-1.5">
-                      <button
-                        type="button"
-                        onClick={() => toggleExpanded(header.id)}
-                        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                      >
-                        <ChevronDownIcon
-                          className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                        />
-                        {isExpanded ? "הסתר שינויים" : `ועוד ${children.length} שינויים נלווים`}
-                      </button>
-                      {isExpanded && (
-                        <div className="mt-2 space-y-1.5 pr-2">
-                          {children.map((child) => (
-                            <ActivityChildRow key={child.id} item={child} />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+            })}
+          </div>
+        )}
+      </div>
 
       {!error && hasMore ? <div ref={sentinelRef} className="h-1" /> : null}
 

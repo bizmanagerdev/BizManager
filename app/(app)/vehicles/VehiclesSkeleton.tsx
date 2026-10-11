@@ -55,7 +55,7 @@ export default function VehiclesSkeleton() {
       <div className="flex items-center justify-end">
         <Skeleton className="h-9 w-28 rounded-xl" />
       </div>
-      <AdaptiveGrid variant="customerStats">
+      <AdaptiveGrid variant="entityCards">
         {Array.from({ length: 4 }).map((_, i) => (
           <Card key={i} className="flex flex-col">
             <CardContent className="flex flex-1 flex-col gap-3 p-4">

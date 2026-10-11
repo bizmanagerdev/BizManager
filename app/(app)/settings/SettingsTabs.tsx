@@ -75,13 +75,16 @@ export default function SettingsTabs(props: Props) {
   return (
     <div className="space-y-4">
       {/* Tab bar */}
-      <div className="flex gap-1 rounded-xl border bg-secondary/40 p-1">
+      {/* Wraps to a second row rather than running off a phone's edge: five
+          tabs side by side didn't fit 360px ("מערכת" was off the screen), and a
+          bigger text size makes them wider still. */}
+      <div className="flex flex-wrap gap-1 rounded-xl border bg-secondary/40 p-1">
         {tabs.map((tab) => (
           <button
             key={tab.key}
             type="button"
             onClick={() => setActiveTab(tab.key)}
-            className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+            className={`flex-auto whitespace-nowrap rounded-lg px-2 py-1.5 text-sm font-medium transition-colors sm:px-3 ${
               activeTab === tab.key
                 ? "bg-background shadow-sm"
                 : "text-muted-foreground hover:text-foreground"

@@ -1695,11 +1695,15 @@ export function TaskUpsertDialog(rawProps: Props) {
                 placeholder={t(tasksDict, props.locale, "subjectPlaceholder")}
                 disabled={loading}
                 rows={Math.min(Math.max(subjectLines.length, 1), 8)}
+                // The whole name, however many lines it wraps to (up to about
+                // eight, then it scrolls): `rows` counts typed lines only, so a
+                // long one-line name showed its first line and hid the rest.
+                autoGrow
                 // Bordered like any other field: without a box it read as a
                 // heading, not as the thing you're meant to type the name into.
                 // min-h-10 (not min-h-0): one line of text-lg is shorter than the
                 // mic sitting in the corner, so the button poked out of the field.
-                className="min-h-10 w-full resize-none px-3 py-1.5 pe-11 text-lg font-semibold leading-snug"
+                className="max-h-[11em] min-h-10 w-full resize-none px-3 py-1.5 pe-11 text-lg font-semibold leading-snug"
               />
               <DictateButton
                 onTranscript={(text) =>

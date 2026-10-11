@@ -843,13 +843,17 @@ export default function SalesDeliveriesQueue({
                                             corner: send it to the driver (a labelled button —
                                             owner, 2026-10-10: the bare share icon in the card's
                                             corner was easy to miss) and the filled primary one.
-                                            Each order on a stop has its own pair. */}
-                                        <div className="flex items-center gap-2 p-3">
+                                            Each order on a stop has its own pair. They wrap,
+                                            the second under the first, when a bigger text
+                                            size makes the pair wider than the card — side by
+                                            side they ran past its edge and "סמן כסופק" was
+                                            cut off. */}
+                                        <div className="flex flex-wrap items-center justify-end gap-2 p-3">
                                           <DeliveryShareActions
                                             delivery={delivery}
                                             label="שליחה לנהג"
                                             variant="outline"
-                                            className="ms-auto gap-1.5"
+                                            className="gap-1.5"
                                           />
                                           <OrderConfirmDialog
                                             orderId={delivery.id}

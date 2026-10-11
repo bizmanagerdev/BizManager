@@ -1557,7 +1557,10 @@ export default function NewOrderClient({
                     : "lg:max-h-[28rem] lg:overflow-auto"
                 }
               >
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {/* Up to three across, none narrower than 6.5rem (rem, so a bigger
+                    text size means fewer, wider cards): three fixed columns were
+                    137px wide at the biggest size and a name was cut inside them. */}
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(max(6.5rem,calc((100%-1rem)/3)),1fr))] gap-2">
                   {filteredProducts.map((product) => {
                     const selected = selectedLineByProductId.get(product.id);
                     return (

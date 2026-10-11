@@ -17,14 +17,16 @@ export default function CardsPageClient({
 }) {
   return (
     <Tabs defaultValue="monthly" dir="rtl" className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
+      {/* Wraps: the two buttons beside the tabs ran off a phone's edge at a
+          bigger text size ("חזרה לפיננסי" was cut off). */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
           <TabsList variant="underline">
             <TabsTrigger value="monthly"><CalendarIcon className="h-4 w-4 shrink-0" />סיכום חודשי</TabsTrigger>
             <TabsTrigger value="statements"><DocumentIcon className="h-4 w-4 shrink-0" />פירוטים שהועלו</TabsTrigger>
           </TabsList>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button asChild size="sm">
             <Link href="/financial/import">העלאת פירוט חדש</Link>
           </Button>

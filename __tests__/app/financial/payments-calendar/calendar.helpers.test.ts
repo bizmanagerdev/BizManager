@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { buildSplitRequestBody, partialPaidNote } from "@/app/(app)/financial/payments-calendar/calendar.helpers";
+import {
+  buildSplitRequestBody,
+  compactAmount,
+  dayStageCompactText,
+  partialPaidNote,
+} from "@/app/(app)/financial/payments-calendar/calendar.helpers";
 import type { PaymentCalendarItem } from "@/lib/payables";
 
 function item(overrides: Partial<PaymentCalendarItem> = {}): PaymentCalendarItem {
@@ -96,5 +101,24 @@ describe("buildSplitRequestBody", () => {
 
   it("an unknown domain falls back to שוטף", () => {
     expect(buildSplitRequestBody(item({ businessDomain: "nope" }), []).business_domain).toBe("general_business");
+  });
+});
+
+// A phone's day cell is ~34px wide: "‏168,705 ‏₪" showed as "…65".
+describe("compactAmount", () => {
+  it("keeps small amounts whole and shortens the rest", () => {
+    expect(compactAmount(340)).toBe("340");
+    expect(compactAmount(999.4)).toBe("999");
+    expect(compactAmount(4_600)).toBe("4.6K");
+    expect(compactAmount(9_000)).toBe("9K");
+    expect(compactAmount(168_705)).toBe("169K");
+    expect(compactAmount(1_250_000)).toBe("1.3M");
+    expect(compactAmount(-5_900)).toBe("-5.9K");
+  });
+
+  it("keeps the estimate mark and the unknown label", () => {
+    expect(dayStageCompactText({ amount: 55_634, variable: true, unknown: false })).toBe("~56K");
+    expect(dayStageCompactText({ amount: 0, variable: false, unknown: true })).toBe("משתנה");
+    expect(dayStageCompactText({ amount: 0, variable: false, unknown: false })).toBeNull();
   });
 });
