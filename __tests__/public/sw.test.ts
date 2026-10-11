@@ -105,10 +105,14 @@ function loadWorkerWithCaches(network: () => Response | Promise<Response>, saved
       if (!stores.has(name)) stores.set(name, new Map());
       const store = stores.get(name)!;
       return {
-        put: async (request: { url: string }, response: Response) => void store.set(keyOf(request), response),
+        // As the browser's Cache: saving a page again moves it to the end of keys().
+        put: async (request: { url: string }, response: Response) => {
+          store.delete(keyOf(request));
+          store.set(keyOf(request), response);
+        },
         match: async (request: { url: string }) => store.get(keyOf(request))?.clone(),
         delete: async (request: { url: string }) => store.delete(keyOf(request)),
-        keys: async () => [...store.keys()],
+        keys: async () => [...store.keys()].map((url) => ({ url })),
         add: async () => {},
       };
     },
@@ -270,6 +274,56 @@ describe("service worker: the device pages' frames", () => {
     await open(worker, "https://biz-h.com/tasks?data=server");
     await open(worker, "https://biz-h.com/projects?q=דנה");
     await open(worker, "https://biz-h.com/customers");
+    expect(worker.frames().size).toBe(0);
+  });
+
+  // A project's page and an order's page: one frame each, the last 40 opened.
+  const projectUrl = (n: number) => `https://biz-h.com/projects/00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+  const orderUrl = (n: number) => `https://biz-h.com/sales/orders/00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+
+  it("saves a frame per project and per order, and opens a project seen before at once", async () => {
+    const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
+    await open(worker, projectUrl(1));
+    await open(worker, orderUrl(1));
+    expect(worker.frames().has(projectUrl(1))).toBe(true);
+    expect(worker.frames().has(orderUrl(1))).toBe(true);
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.now() + 60_000));
+    try {
+      worker.fetchMock.mockClear();
+      expect(await open(worker, projectUrl(1))).toBe(FRAME);
+      // Answered from the frame; the one fetch is the fresh copy saved behind it.
+      expect(worker.fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps only the 40 projects and orders opened last, never touching the main pages' frames", async () => {
+    const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
+    await open(worker, "https://biz-h.com/tasks");
+    for (let n = 1; n <= 30; n++) await open(worker, projectUrl(n));
+    for (let n = 1; n <= 15; n++) await open(worker, orderUrl(n));
+    // Project 1 opened again: it moves to the newest, so it stays.
+    await open(worker, projectUrl(1));
+
+    const saved = [...worker.frames().keys()];
+    expect(saved.filter((url) => url !== "https://biz-h.com/tasks")).toHaveLength(40);
+    expect(saved).toContain("https://biz-h.com/tasks");
+    expect(saved).toContain(projectUrl(1));
+    expect(saved).not.toContain(projectUrl(2));
+    expect(saved).not.toContain(projectUrl(6));
+    expect(saved).toContain(projectUrl(7));
+    expect(saved).toContain(orderUrl(15));
+  });
+
+  it("leaves a project's other pages and a new order alone", async () => {
+    const worker = loadWorkerWithCaches(() => new Response(FRAME, { status: 200 }));
+    await open(worker, `${projectUrl(1)}/export?mode=worker`);
+    await open(worker, `${orderUrl(1)}/edit`);
+    await open(worker, "https://biz-h.com/sales/orders/new");
+    await open(worker, `${projectUrl(1)}?data=server`);
     expect(worker.frames().size).toBe(0);
   });
 });

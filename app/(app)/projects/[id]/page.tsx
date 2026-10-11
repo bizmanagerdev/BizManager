@@ -10,6 +10,8 @@ import { loadProjectPageExtras } from "@/app/(app)/projects/[id]/loadProjectPage
 import { ProjectPageStreamed } from "@/app/(app)/projects/[id]/ProjectPageView";
 import LocalProjectPage from "@/app/(app)/projects/[id]/LocalProjectPage";
 import ProjectServerCheck from "@/app/(app)/projects/[id]/ProjectServerCheck";
+import DeviceFrameMark from "@/components/powersync/DeviceFrameMark";
+import { serverRenderedAt } from "@/lib/loaded-at";
 
 export default async function ProjectPage({
   params,
@@ -69,6 +71,8 @@ export default async function ProjectPage({
     const checkDue = LOCAL_DATA_SHADOW.projectPage && (await deviceCheckDue("projectPage"));
     return (
       <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
+        {/* Saved by the service worker, so this project opens at once next time (public/sw.js). */}
+        <DeviceFrameMark page={`project:${id}`} renderedAt={serverRenderedAt()} />
         <LocalProjectPage
           id={id}
           viewer={{ userId: profile.id, role: profile.role ?? "", locale: profile.locale, ledgerPrefs }}

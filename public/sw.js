@@ -473,6 +473,14 @@ const OFFLINE_HTML = `<!doctype html>
 // (versioned name), at logout and when someone else signs in
 // (lib/powersync/device-frames.ts).
 const FRAME_PATHS = new Set(["/dashboard", "/tasks", "/projects", "/sales", "/deliveries"]);
+// A project's page and an order's page are device pages too (LocalProjectPage,
+// LocalOrderPage): one frame per project and per order opened, so opening one
+// seen before doesn't wait for the server either (owner, 2026-10-11: the
+// project page scored 49 on phones, its first byte 1.9 s while the server
+// woke). Only the last DETAIL_FRAMES_MAX opened are kept — a year of orders
+// mustn't fill the phone.
+const DETAIL_FRAME_PATHS = [/^\/projects\/[0-9a-f-]{36}$/i, /^\/sales\/orders\/[0-9a-f-]{36}$/i];
+const DETAIL_FRAMES_MAX = 40;
 // Frames that read their filters from the address themselves (the drivers'
 // /deliveries reads its region on the phone): one saved frame serves every
 // region, so a region never opened online still opens with no signal.
@@ -486,8 +494,23 @@ const FRAME_RELOAD_WINDOW_MS = 20 * 1000;
 // When each URL's frame was last served (this worker's lifetime is enough).
 const frameServedAt = new Map();
 
+function isDetailFramePath(pathname) {
+  return DETAIL_FRAME_PATHS.some((pattern) => pattern.test(pathname));
+}
+
 function isFrameRequest(url) {
-  return FRAME_PATHS.has(url.pathname) && !url.searchParams.has("data") && !url.searchParams.has("q");
+  return (
+    (FRAME_PATHS.has(url.pathname) || isDetailFramePath(url.pathname)) &&
+    !url.searchParams.has("data") &&
+    !url.searchParams.has("q")
+  );
+}
+
+// keys() lists the oldest saved first — saving a page again moves it to the end.
+async function trimDetailFrames(cache) {
+  const detail = (await cache.keys()).filter((request) => isDetailFramePath(new URL(request.url).pathname));
+  const extra = detail.length - DETAIL_FRAMES_MAX;
+  if (extra > 0) await Promise.all(detail.slice(0, extra).map((request) => cache.delete(request)));
 }
 
 async function matchFrame(request) {
@@ -524,6 +547,7 @@ async function saveFrame(request, response, { ahead = false } = {}) {
     };
     if (build) headers["X-Bizh-Build"] = build;
     await cache.put(request, new Response(html, { headers }));
+    if (isDetailFramePath(new URL(request.url).pathname)) await trimDetailFrames(cache);
     if (ahead && build && build !== V) await fetchAhead(html);
   } catch {
     // Not saved — the next open just waits for the server, as before.

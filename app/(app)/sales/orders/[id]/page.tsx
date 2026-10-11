@@ -8,6 +8,8 @@ import { LOCAL_DATA_PAGES, LOCAL_DATA_SHADOW } from "@/lib/powersync/config";
 import { loadOrderPageExtras } from "@/app/(app)/sales/orders/[id]/loadOrderPageExtras";
 import OrderPageView from "@/app/(app)/sales/orders/[id]/OrderPageView";
 import LocalOrderPage from "@/app/(app)/sales/orders/[id]/LocalOrderPage";
+import DeviceFrameMark from "@/components/powersync/DeviceFrameMark";
+import { serverRenderedAt } from "@/lib/loaded-at";
 import OrderServerCheck from "@/app/(app)/sales/orders/[id]/OrderServerCheck";
 
 export default async function SalesOrderPage({
@@ -69,6 +71,8 @@ export default async function SalesOrderPage({
     const checkDue = LOCAL_DATA_SHADOW.orders && (await deviceCheckDue("orders"));
     return (
       <AppShell userName={viewerName ?? undefined} viewerRole={profile.role}>
+        {/* Saved by the service worker, so this order opens at once next time (public/sw.js). */}
+        <DeviceFrameMark page={`order:${id}`} renderedAt={serverRenderedAt()} />
         <LocalOrderPage
           id={id}
           viewer={{ userId: profile.id, role: profile.role ?? "", locale: profile.locale, name: viewerName }}
