@@ -7,8 +7,10 @@
 
 export const HELD_HEIGHTS_COOKIE = "bizh-held";
 
-/** Below this width the board is a plain stack of natural-height cards (DashboardSections). */
-export const HELD_HEIGHTS_MAX_WIDTH = 1280;
+/** Below this width the board's cards are their content's height — one column
+ *  on a phone and a tablet, two from lg — so their heights are worth keeping (DashboardSections;
+ *  the full-screen board with fixed cells starts at 3xl, 1800px). */
+export const HELD_HEIGHTS_MAX_WIDTH = 1800;
 
 /**
  * Each card's usual height on a phone (the owner's board, 2026-10-07) — the

@@ -118,7 +118,7 @@ export function PanelsFallback({ heldRaw }: { heldRaw?: string }) {
       className={cn("min-w-0", fill ? CARD_FILL_CLASS : CARD_NATURAL_CLASS)}
       style={{ "--held-h": `${height(id) ?? 64}px` } as CSSProperties}
     >
-      <Skeleton className={cn("h-[var(--held-h)] w-full rounded-[1.125rem]", fill && "xl:h-full")} />
+      <Skeleton className={cn("h-[var(--held-h)] w-full rounded-[1.125rem]", fill && "3xl:h-full")} />
     </div>
   );
   return (
@@ -268,7 +268,7 @@ function Cell({
  * swaps it out.
  */
 function SlowCardSkeleton() {
-  return <Skeleton className={cn("h-[var(--held-h,4rem)] w-full rounded-[1.125rem] xl:h-full", CARD_FILL_CLASS)} />;
+  return <Skeleton className={cn("h-[var(--held-h,4rem)] w-full rounded-[1.125rem] 3xl:h-full", CARD_FILL_CLASS)} />;
 }
 
 /**

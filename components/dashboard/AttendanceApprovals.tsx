@@ -34,7 +34,7 @@ function dayLabel(iso: string) {
   return `${hebrewWeekday(iso)} ${formatShortDate(iso)}`;
 }
 
-/** One entry per day, in the order the reports already came in (newest first). */
+/** One entry per day, in the order the reports came in — oldest first, the queue's own order (owner, 2026-10-11: keep it). */
 function groupByDay(reports: PendingPhoneReport[]): Array<[string, PendingPhoneReport[]]> {
   const byDay = new Map<string, PendingPhoneReport[]>();
   for (const report of reports) {
@@ -184,6 +184,13 @@ export default function AttendanceApprovals({
               divide-y on the GROUPS as well as on the rows: `divide-y` only draws
               BETWEEN children, so the last row of a day had nothing under it and
               the next date heading floated in a gap. */}
+          {/* What the days below are (owner, 2026-10-11): they read as a history
+              of shifts, not as reports waiting for someone to approve them. */}
+          {shown.length > 0 ? (
+            <div className="px-4 pb-1.5 pt-3 text-xs font-medium text-muted-foreground">
+              {t(dashboardDict, locale, "attendancePendingLabel")}
+            </div>
+          ) : null}
           {shown.length > 0 ? (
             <div className="divide-y divide-border/50">
               {groupByDay(shown).map(([day, reports]) => {

@@ -1,6 +1,12 @@
 @config "../tailwind.config.cjs";
 @import "tailwindcss";
 
+/* 3xl (1800px): where the dashboard's full-screen board has room for its
+   four-card bottom row (lib/dashboard/widgets.ts); below it, two columns. */
+@theme {
+  --breakpoint-3xl: 112.5rem;
+}
+
 @theme inline {
   --font-sans:
     "Segoe UI", "Noto Sans Hebrew", "Rubik", "Assistant", "Heebo", sans-serif;

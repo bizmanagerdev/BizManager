@@ -109,6 +109,7 @@ export type DashboardKey =
   // AttendanceApprovals
   | "attendanceCardTitle"
   | "attendanceEmptyNote"
+  | "attendancePendingLabel"
   | "attendanceQueueAria"
   | "onShiftLabel"
   | "workerFallback"
@@ -211,6 +212,7 @@ export const dashboardDict: Dictionary<DashboardKey> = {
     noCashMovementsLabel: "אין תנועות כספים בחודש זה.",
     attendanceCardTitle: "נוכחות עובדים",
     attendanceEmptyNote: "אין דיווחים לאישור",
+    attendancePendingLabel: "ממתינים לאישור",
     attendanceQueueAria: "פתיחת תור דיווחי הנוכחות",
     onShiftLabel: "במשמרת",
     workerFallback: "עובד",
@@ -312,6 +314,7 @@ export const dashboardDict: Dictionary<DashboardKey> = {
     noCashMovementsLabel: "لا حركات مالية في هذا الشهر.",
     attendanceCardTitle: "حضور العمال",
     attendanceEmptyNote: "لا تقارير للموافقة",
+    attendancePendingLabel: "بانتظار الموافقة",
     attendanceQueueAria: "فتح قائمة تقارير الحضور",
     onShiftLabel: "في المناوبة",
     workerFallback: "عامل",

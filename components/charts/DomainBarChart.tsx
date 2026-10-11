@@ -57,6 +57,15 @@ function CustomTooltip({
   );
 }
 
+function LegendKey({ swatch, label }: { swatch: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: swatch }} />
+      {label}
+    </span>
+  );
+}
+
 export default function DomainBarChart({
   data,
   height = 260,
@@ -110,9 +119,21 @@ export default function DomainBarChart({
             width={60}
           />
           <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgb(var(--muted))", opacity: 0.4 }} />
+          {/* Our own legend, so it can name the faint bars too (owner,
+              2026-10-11): on a phone there's no hover to tell you they're last
+              month. */}
           <Legend
-            formatter={(value) => (
-              <span style={{ fontSize: 12, color: "rgb(var(--foreground))" }}>{value}</span>
+            content={() => (
+              <div dir="rtl" className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 pt-1 text-xs text-foreground">
+                <LegendKey swatch="rgb(var(--success))" label="הכנסות" />
+                <LegendKey swatch="rgb(var(--destructive))" label="הוצאות" />
+                {hasBaseline ? (
+                  <LegendKey
+                    swatch="linear-gradient(90deg, rgb(var(--success) / 0.22) 50%, rgb(var(--destructive) / 0.22) 50%)"
+                    label="חודש קודם"
+                  />
+                ) : null}
+              </div>
             )}
           />
           {/* LAST MONTH, behind this one. The overlap is the trick: a second,
@@ -120,9 +141,8 @@ export default function DomainBarChart({
               band layout, so they sit centred on the same domain instead of
               beside it. Wider and faint, they read as a watermark of where the
               month was standing — which is the only thing that makes a single
-              month's bar mean anything. Declared FIRST so they paint underneath,
-              and out of the legend (two entries, not four; the tooltip names
-              them in full). */}
+              month's bar mean anything. Declared FIRST so they paint underneath;
+              the legend names them once, as "חודש קודם" (the tooltip in full). */}
           {hasBaseline ? (
             <>
               <Bar

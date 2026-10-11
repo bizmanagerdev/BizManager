@@ -128,8 +128,11 @@ export default function DomainChartCard({
               the board's fixed row gives the card one and `h-full` resolves; below
               xl the board is a plain stack, the card is auto-height, and a
               percentage there resolves to zero — which is why the card rendered as
-              a header over blank space on a phone. Hence the fixed 16rem. */}
-          <div className={pending ? "h-64 opacity-50 transition-opacity xl:h-full" : "h-64 xl:h-full"}>
+              a header over blank space on a phone. Hence the fixed 16rem. From lg the
+              board is two columns, whose rows stretch every card to the row's
+              height, so there it fills the card (at least 16rem) instead of
+              leaving the bottom of a taller card empty. */}
+          <div className={pending ? "h-64 opacity-50 transition-opacity lg:h-full lg:min-h-64" : "h-64 lg:h-full lg:min-h-64"}>
             {bars.length > 0 ? (
               <DomainBarChart data={bars} height="100%" />
             ) : (

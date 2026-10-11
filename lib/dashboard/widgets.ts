@@ -123,7 +123,11 @@ export const DASHBOARD_BOARD_CLASS =
   // so the rounded box, the two side borders and the 12px gutter were paying for
   // a separation the single column already had, out of the width the content
   // needed. Above md they're cards again, because there they earn it.
-  "board-flush flex flex-col gap-4 xl:grid xl:h-[calc(100dvh-61px-3rem)] xl:gap-4";
+  // From lg to 3xl (1024–1799px: laptops, a tablet on its side) two even columns of cards,
+  // each its content's height — the full-screen board below needs ~1800px: at
+  // 1366 its bottom row was four 194px cards with names cut to 45px (owner,
+  // 2026-10-11: "we use many different screen sizes … make it work for all").
+  "board-flush flex flex-col gap-4 lg:grid lg:grid-cols-2 lg:items-stretch lg:gap-4 3xl:h-[calc(100dvh-61px-3rem)] 3xl:gap-4";
 
 /**
  * THE BOARD IS A HERO PLUS A REST COLUMN (2026-08-19b) — the hero is TALL, the
@@ -154,23 +158,23 @@ export const DASHBOARD_BOARD_CLASS =
 // holds and long content wraps or scrolls INSIDE its card instead (every card
 // already does this — see CARD_FILL_CLASS's `min-w-0`).
 export const BOARD_GRID_CLASS =
-  "xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(0,3fr)] xl:grid-rows-1 xl:gap-4";
+  "3xl:grid 3xl:grid-cols-[minmax(0,1fr)_minmax(0,3fr)] 3xl:grid-rows-1 3xl:gap-4";
 /** When nothing follows the hero: it simply takes the whole board. */
-export const HERO_ONLY_CLASS = "xl:grid xl:grid-cols-1 xl:grid-rows-1";
+export const HERO_ONLY_CLASS = "lg:grid-cols-1 3xl:grid 3xl:grid-cols-1 3xl:grid-rows-1";
 
 // Shared by every cell below: a grid/flex item's own default minimum size is
 // its content's natural size too (the same trap as the tracks above, one layer
 // in) — without `min-w-0`/`min-h-0` a cell refuses to shrink below its widest
 // or tallest child no matter what the track allows. `contents` on a phone, so
 // the cell disappears and its cards fall straight into the board's one column.
-const CELL_BASE = "contents xl:flex xl:min-h-0 xl:min-w-0 xl:gap-4";
+const CELL_BASE = "contents 3xl:flex 3xl:min-h-0 3xl:min-w-0 3xl:gap-4";
 
 /**
  * The hero's own cell: the hero card (fills it), and — worker only — the
  * clock-in strip UNDER it (user, 2026-08-18: "I want the clock under today").
  * Column 1, the board's only row — always the full board height.
  */
-export const HERO_CELL_CLASS = `${CELL_BASE} xl:flex-col xl:col-start-1 xl:row-start-1`;
+export const HERO_CELL_CLASS = `${CELL_BASE} 3xl:flex-col 3xl:col-start-1 3xl:row-start-1`;
 
 /**
  * The rest column: secondary above tertiary, SHARING the hero's full height —
@@ -190,16 +194,16 @@ export const HERO_CELL_CLASS = `${CELL_BASE} xl:flex-col xl:col-start-1 xl:row-s
 // what they needed was more height, so this gives secondary and tertiary the
 // rest column's height straight down the middle instead of favoring either.
 export const REST_COLUMN_BOTH_CLASS =
-  "contents xl:grid xl:min-h-0 xl:min-w-0 xl:grid-rows-[minmax(0,1fr)_minmax(0,1fr)] xl:gap-4 xl:col-start-2 xl:row-start-1";
+  "contents 3xl:grid 3xl:min-h-0 3xl:min-w-0 3xl:grid-rows-[minmax(0,1fr)_minmax(0,1fr)] 3xl:gap-4 3xl:col-start-2 3xl:row-start-1";
 export const REST_COLUMN_SECONDARY_ONLY_CLASS =
-  "contents xl:grid xl:min-h-0 xl:min-w-0 xl:grid-rows-1 xl:gap-4 xl:col-start-2 xl:row-start-1";
+  "contents 3xl:grid 3xl:min-h-0 3xl:min-w-0 3xl:grid-rows-1 3xl:gap-4 3xl:col-start-2 3xl:row-start-1";
 
 /** The secondary row: a few cards, the rest column's top share. */
-export const SECONDARY_CELL_CLASS = `${CELL_BASE} xl:flex-row xl:row-start-1`;
+export const SECONDARY_CELL_CLASS = `${CELL_BASE} 3xl:flex-row 3xl:row-start-1`;
 /** The tertiary row: everything else, the rest column's bottom share. Only
  *  rendered when tierCounts() gives it cards; pair with REST_COLUMN_BOTH_CLASS,
  *  not the …_SECONDARY_ONLY variant (there is no row 2 to land in otherwise). */
-export const TERTIARY_CELL_CLASS = `${CELL_BASE} xl:flex-row xl:row-start-2`;
+export const TERTIARY_CELL_CLASS = `${CELL_BASE} 3xl:flex-row 3xl:row-start-2`;
 
 /**
  * The secondary row's own emphasis — one step down from the hero's border
@@ -325,8 +329,8 @@ export const HERO_EMPHASIS_HEADER_CLASS =
  * Both only at xl — on a phone every card is its own content's height, in one
  * scrolling column.
  */
-export const CARD_FILL_CLASS = "xl:min-h-[8rem] xl:min-w-0 xl:grow xl:basis-0";
-export const CARD_NATURAL_CLASS = "xl:shrink-0 xl:grow-0 xl:basis-auto";
+export const CARD_FILL_CLASS = "3xl:min-h-[8rem] 3xl:min-w-0 3xl:grow 3xl:basis-0";
+export const CARD_NATURAL_CLASS = "3xl:shrink-0 3xl:grow-0 3xl:basis-auto";
 
 /**
  * How many of the cards AFTER the hero go in the secondary band vs the tertiary
