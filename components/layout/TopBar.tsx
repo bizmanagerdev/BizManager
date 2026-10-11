@@ -31,6 +31,7 @@ import { clearRememberedCards } from "@/lib/ui/remembered-cards";
 import { clearStoredResults } from "@/lib/powersync/stored-results";
 import { clearDeviceFrames } from "@/lib/powersync/device-frames";
 import { LocalSyncStatusLine } from "@/components/powersync/LocalSyncStatusLine";
+import { BarSubtitle, BarTitle } from "@/components/layout/BarTitle";
 import { t } from "@/lib/i18n/t";
 import { topbarDict } from "@/lib/i18n/dictionaries/topbar";
 import { commonDict } from "@/lib/i18n/dictionaries/common";
@@ -229,7 +230,11 @@ export function TopBar({
     // background as the page, with nothing between them, is what makes the two
     // read as one surface. It stays OPAQUE (not /95) so content scrolling under
     // it disappears cleanly instead of ghosting through.
-    <header className="sticky top-0 z-30 flex h-[60px] shrink-0 items-center gap-[8px] bg-background px-[16px] text-foreground">
+    // Tighter on a phone (gap 4, sides 12): the space between the icons was
+    // white the record's name couldn't use, and the name was cut with "…"
+    // (owner, 2026-10-11: "a lot of padding between the search and the three
+    // dots … that doesn't let the text live in"). Every icon keeps its 40px.
+    <header className="sticky top-0 z-30 flex h-[60px] shrink-0 items-center gap-[4px] bg-background px-[12px] text-foreground md:gap-[8px] md:px-[16px]">
       {/* RTL: the first child sits on the RIGHT. The brand corner is the top of
           the SIDEBAR, not part of the bar — same dark surface, so the rail reads
           as one column from the logo down. Its width tracks the rail's so the two
@@ -299,11 +304,10 @@ export function TopBar({
       {headerTitle ? (
         <div
           className={cn(
-            // px-[4px]: the search cluster beyond it keeps its own 12px
-            // (ms-[12px]) plus the bar's gap, so more padding here only took
-            // width from the title — a record's name next to a page's ⋮ was
-            // cut to one word a line on a phone with larger text.
-            "flex min-w-0 flex-1 flex-col justify-center overflow-hidden px-[4px] leading-tight",
+            // No padding of its own on a phone: the icons' 40px boxes already
+            // hold their glyphs 11px in from each side, so padding here only
+            // took width from the record's name.
+            "flex min-w-0 flex-1 flex-col justify-center overflow-hidden leading-tight md:px-[4px]",
             // PHONE ONLY, unless the page asks otherwise (user, 2026-08-19).
             // There's no sidebar on a phone, so the bar has to say where you are;
             // past `lg` the sidebar says it, and repeating it in a bar that is
@@ -326,16 +330,16 @@ export function TopBar({
               buttons they used to also ignore, so at a big scale the "floor" and
               "ceiling" both rose and the title stopped shrinking at exactly the
               size it needed to. */}
-          <span className="w-full whitespace-nowrap text-[clamp(12.75px,3.4vw,18px)] font-semibold text-foreground">
+          {/* …and steps down a little more (to 11px) rather than be cut, where
+              even the floor doesn't fit (BarTitle). */}
+          <BarTitle className="w-full whitespace-nowrap text-[clamp(12.75px,3.4vw,18px)] font-semibold text-foreground">
             {headerTitle.title}
-          </span>
+          </BarTitle>
           {headerTitle.subtitle ? (
-            // Wraps to a second line instead of clipping — record names live here
-            // (e.g. a project's name) and half a name reads as a bug — including
-            // a name split mid-word, so no break-words here either.
-            <span className="line-clamp-2 w-full text-[12px] leading-tight text-muted-foreground">
-              {headerTitle.subtitle}
-            </span>
+            // The record's name (a project, an order's customer), always whole:
+            // two lines, then three a little smaller (BarSubtitle) — never cut
+            // with "…", and never split mid-word (no break-words).
+            <BarSubtitle text={headerTitle.subtitle} className="w-full text-muted-foreground" />
           ) : null}
         </div>
       ) : null}
@@ -358,16 +362,14 @@ export function TopBar({
           headerAction above) — e.g. חשבונות' "ניהול חשבונות" button. */}
       {trailingAction ? <div className="shrink-0">{trailingAction}</div> : null}
 
-      {/* ms-[12px] (RTL → space on the RIGHT, i.e. toward the title): the search
-          glyph leads this cluster on a phone and sat flush against the page
-          title, so the magnifier read as part of the words. The gap lives here
-          rather than as yet more title padding so it only ever separates the
-          title from the icons — the icons keep their own tighter gap-[4px]
-          between themselves. PX, not rem: this row is bar chrome (see
-          topbar-icon.ts) — a rem gap would widen at a big text scale and eat
-          into the title's space instead of leaving the icons "squished"
-          together the way chrome should stay. */}
-      <div className="ms-[12px] flex items-center gap-[4px]">
+      {/* ms (RTL → space on the RIGHT, i.e. toward the title): the search glyph
+          leads this cluster on a phone and sat flush against the page title,
+          so the magnifier read as part of the words. On a phone 4px here plus
+          the bar's 4px gap and the glyph's own 11px inset — enough to part
+          them, while the name gets the rest (it was 12 + 8, and the name was
+          cut). PX, not rem: this row is bar chrome (see topbar-icon.ts) — a rem
+          gap would widen at a big text scale and eat into the title's space. */}
+      <div className="ms-[4px] flex items-center gap-[2px] md:ms-[12px] md:gap-[4px]">
         {/* Search is a GLYPH at every width now — the 20rem desktop box is gone and
             the middle slot belongs to the title. The magnifier opens the same
             full-screen search dialog on a phone and on a desktop. */}
