@@ -121,7 +121,7 @@ describe("POST /api/tasks/update", () => {
   it("alerts a NEW assignee", async () => {
     grant(makeSupabase());
     await post({ assigned_user_id: "u9" });
-    expect(notifyTaskAssignees).toHaveBeenCalledWith("t1", "לתקן דלת", ["u9"]);
+    expect(notifyTaskAssignees).toHaveBeenCalledWith("t1", "לתקן דלת", ["u9"], "u1");
   });
 
   it("diffs members: deletes only the removed, inserts only the added, alerts only the added", async () => {
@@ -133,7 +133,7 @@ describe("POST /api/tasks/update", () => {
       { table: "task_members", op: "delete", filters: [["eq", "task_id", "t1"], ["in", "user_id", ["a"]]] },
       { table: "task_members", op: "insert", values: [{ task_id: "t1", user_id: "c" }], filters: [] },
     ]);
-    expect(notifyTaskAssignees).toHaveBeenCalledWith("t1", "לתקן דלת", ["c"]);
+    expect(notifyTaskAssignees).toHaveBeenCalledWith("t1", "לתקן דלת", ["c"], "u1");
   });
 
   it("an unchanged member list writes nothing", async () => {

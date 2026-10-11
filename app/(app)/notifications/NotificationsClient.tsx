@@ -128,7 +128,7 @@ export default function NotificationsClient({
                       <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${isUnread ? "bg-primary" : "bg-transparent"}`} />
                       <div className="min-w-0 flex-1">
                         <div className={`text-sm ${isUnread ? "font-semibold" : "font-medium text-muted-foreground"}`}>{n.title}</div>
-                        {n.body ? <div className="text-xs text-muted-foreground">{n.body}</div> : null}
+                        {n.body ? <div className="whitespace-pre-line text-xs text-muted-foreground">{n.body}</div> : null}
                         <div className="mt-0.5 text-[0.647rem] text-muted-foreground">{formatShortDateTime(n.created_at, "-")}</div>
                       </div>
                     </Link>

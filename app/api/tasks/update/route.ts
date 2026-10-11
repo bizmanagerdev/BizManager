@@ -296,7 +296,7 @@ export async function POST(req: Request) {
         const addedMembers = added.filter((m) => m !== profile.id);
         if (addedMembers.length > 0) {
           const subject = typeof taskRow?.subject === "string" ? taskRow.subject : "משימה";
-          runAfterResponse("tasks/update notify members", () => notifyTaskAssignees(id, subject, addedMembers));
+          runAfterResponse("tasks/update notify members", () => notifyTaskAssignees(id, subject, addedMembers, profile.id));
         }
         return null;
       })(),
@@ -330,7 +330,7 @@ export async function POST(req: Request) {
       "assigned_user_id" in body && typeof data?.assigned_user_id === "string" ? data.assigned_user_id : null;
     if (newAssignee && newAssignee !== previousAssignee && newAssignee !== profile.id) {
       const subject = typeof data?.subject === "string" ? data.subject : "משימה";
-      runAfterResponse("tasks/update notify assignee", () => notifyTaskAssignees(id, subject, [newAssignee]));
+      runAfterResponse("tasks/update notify assignee", () => notifyTaskAssignees(id, subject, [newAssignee], profile.id));
     }
 
     return NextResponse.json({ task: data });

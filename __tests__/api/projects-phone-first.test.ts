@@ -220,7 +220,7 @@ describe("a project saved on the phone first", () => {
     expect(((await res.json()) as { project: { id: string } }).project.id).toBe(ID);
     const insert = calls.find((c) => c.method === "insert")?.args[0] as Record<string, unknown>;
     expect(insert).toMatchObject({ id: ID, name: "הובלת משרד", vat_rate: 0.18, items_to_move: ["ארון"], due_date: "2026-10-31" });
-    expect(notifyNewEntity).toHaveBeenCalledWith(expect.objectContaining({ kind: "project", entityId: ID, name: "הובלת משרד" }));
+    expect(notifyNewEntity).toHaveBeenCalledWith(expect.objectContaining({ kind: "project", entityId: ID }));
   });
 
   it("the same project again (its first answer lost): answered with it — no second alert", async () => {

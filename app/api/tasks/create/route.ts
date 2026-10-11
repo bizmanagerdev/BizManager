@@ -234,7 +234,7 @@ export async function POST(req: Request) {
       // After the response: the push goes to them, not to whoever pressed Save.
       const taskId = data.id;
       const recipients = [assignedUserId, ...memberIds].filter((uid) => uid && uid !== profile.id);
-      runAfterResponse("tasks/create notify", () => notifyTaskAssignees(taskId, subject, recipients));
+      runAfterResponse("tasks/create notify", () => notifyTaskAssignees(taskId, subject, recipients, profile.id));
     }
 
     return NextResponse.json({ task: data });

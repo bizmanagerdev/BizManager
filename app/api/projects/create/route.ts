@@ -69,7 +69,7 @@ export async function POST(req: Request) {
     // response, so the dialog doesn't wait on their push notifications.
     const projectId = created.id;
     runAfterResponse("projects/create notify", () =>
-      notifyNewEntity({ kind: "project", entityId: projectId, creatorUserId: profile.id, name: row.name })
+      notifyNewEntity({ kind: "project", entityId: projectId, creatorUserId: profile.id })
     );
 
     return NextResponse.json({ project: dashboardRow ?? created });

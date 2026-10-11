@@ -234,7 +234,7 @@ export async function POST(req: Request) {
 
     // Alert back-office (admin + office) that a new order came in.
     runAfterResponse("orders/create notify", () =>
-      notifyNewEntity({ kind: "order", entityId: orderId, creatorUserId: profile.id, customerId })
+      notifyNewEntity({ kind: "order", entityId: orderId, creatorUserId: profile.id })
     );
 
     return NextResponse.json({

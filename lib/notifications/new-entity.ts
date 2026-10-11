@@ -1,5 +1,6 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { deliverPush } from "@/lib/notifications/deliver";
+import { newOrderAlert, newProjectAlert } from "@/lib/notifications/alert-details";
 
 // Push a "new order / new project" alert to all active admin + office users
 // (except the creator). Best-effort — never fail the create because push failed.
@@ -7,8 +8,6 @@ export async function notifyNewEntity(opts: {
   kind: "order" | "project";
   entityId: string;
   creatorUserId: string | null; // users.id
-  customerId?: string | null; // orders → resolve the customer name for the body
-  name?: string | null; // projects → the project name for the body
 }): Promise<void> {
   try {
     const admin = createSupabaseAdminClient();
@@ -26,19 +25,19 @@ export async function notifyNewEntity(opts: {
       .filter((v): v is string => Boolean(v));
     if (authIds.length === 0) return;
 
-    let label = opts.name ?? "";
-    if (!label && opts.customerId) {
-      const { data: c } = await admin.from("customers").select("name").eq("id", opts.customerId).maybeSingle();
-      label = (c as { name?: string | null } | null)?.name ?? "";
-    }
-
+    // The few details that make it worth reading: for an order what was
+    // ordered and the total, for a project the customer, kind and price
+    // (lib/notifications/alert-details.ts).
     const isOrder = opts.kind === "order";
+    const text = isOrder
+      ? await newOrderAlert(admin, opts.entityId, opts.creatorUserId)
+      : await newProjectAlert(admin, opts.entityId, opts.creatorUserId);
     await deliverPush(
       admin,
       authIds,
       {
-        title: isOrder ? "🧾 הזמנה חדשה" : "📁 פרויקט חדש",
-        body: label || (isOrder ? "נוספה הזמנה חדשה למערכת." : "נוסף פרויקט חדש למערכת."),
+        title: text.title,
+        body: text.body,
         url: isOrder ? `/sales/orders/${opts.entityId}` : `/projects/${opts.entityId}`,
         tag: `${opts.kind}-new-${opts.entityId}`,
       },
