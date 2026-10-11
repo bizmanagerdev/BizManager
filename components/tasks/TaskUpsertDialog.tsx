@@ -1750,7 +1750,7 @@ export function TaskUpsertDialog(rawProps: Props) {
           <DialogDescription className="sr-only">{t(tasksDict, props.locale, "dialogDescriptionSr")}</DialogDescription>
           {/* When it was created / last touched — always visible, no click needed. */}
           {isEditing && (createdAt || updatedAt) ? (
-            <div className="mt-1 text-[11px] text-muted-foreground">
+            <div className="mt-1 text-[0.647rem] text-muted-foreground">
               {createdAt ? `${t(tasksDict, props.locale, "createdAtLabel")} ${formatShortDateTime(createdAt)}` : ""}
               {updatedAt && updatedAt !== createdAt
                 ? ` · ${t(tasksDict, props.locale, "updatedAtLabel")} ${formatShortDateTime(updatedAt)}`

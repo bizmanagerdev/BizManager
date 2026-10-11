@@ -323,7 +323,7 @@ export default function PaymentsCalendar({ items: allItems, todayIso, projects, 
               <span className="min-w-0 flex-1">
                 <span className="break-words">{item.label}</span>
                 {item.sourceLabel ? (
-                  <span className="block break-words text-[11px] leading-tight text-muted-foreground">{item.sourceLabel}</span>
+                  <span className="block break-words text-[0.647rem] leading-tight text-muted-foreground">{item.sourceLabel}</span>
                 ) : null}
               </span>
               <span className="shrink-0 font-medium">

@@ -621,7 +621,7 @@ export function CollectPaymentDialog({
           <label className="space-y-2 text-sm">
           <CurrencyInput value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
           {selectedReceivable ? (
-            <span className="block text-[11px] text-muted-foreground">
+            <span className="block text-[0.647rem] text-muted-foreground">
               החוב הפתוח: {formatCurrency(selectedReceivable.outstanding_amount)}
             </span>
           ) : null}

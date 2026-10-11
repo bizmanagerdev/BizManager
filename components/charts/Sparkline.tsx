@@ -66,7 +66,7 @@ export default function Sparkline({
       <div className="flex items-center gap-2.5">
         <div className="shrink-0 leading-none">
           <div className="text-xl font-bold tabular-nums">{anchor}</div>
-          {valueLabel ? <div className="mt-0.5 text-[11px] text-muted-foreground">{valueLabel}</div> : null}
+          {valueLabel ? <div className="mt-0.5 text-[0.647rem] text-muted-foreground">{valueLabel}</div> : null}
         </div>
         <svg
           viewBox={`0 0 ${width} ${height}`}
@@ -114,7 +114,7 @@ export default function Sparkline({
           )}
         </svg>
       </div>
-      {label ? <div className="mt-0.5 text-[11px] text-muted-foreground">{label}</div> : null}
+      {label ? <div className="mt-0.5 text-[0.647rem] text-muted-foreground">{label}</div> : null}
     </div>
   );
 }

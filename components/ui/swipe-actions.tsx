@@ -130,7 +130,7 @@ export function SwipeActions({
                 // dropped in via `node` brings its own variant (e.g. "outline" is
                 // bg-background), which otherwise sits opaque on top of this
                 // tile's own colored background and hides white text behind it.
-                "flex h-full items-center justify-center [&_button]:h-full [&_button]:w-full [&_button]:flex-col [&_button]:gap-1 [&_button]:rounded-none [&_button]:!border-0 [&_button]:!bg-transparent [&_button]:!text-[11px] [&_button]:!font-semibold [&_button]:!text-white [&_button]:!shadow-none [&>div]:h-full [&>div]:w-full [&>div]:space-y-0",
+                "flex h-full items-center justify-center [&_button]:h-full [&_button]:w-full [&_button]:flex-col [&_button]:gap-1 [&_button]:rounded-none [&_button]:!border-0 [&_button]:!bg-transparent [&_button]:!text-[0.647rem] [&_button]:!font-semibold [&_button]:!text-white [&_button]:!shadow-none [&>div]:h-full [&>div]:w-full [&>div]:space-y-0",
                 action.className ?? "bg-secondary"
               )}
               style={{ width: actionWidth }}
@@ -147,7 +147,7 @@ export function SwipeActions({
                 action.onSelect?.();
               }}
               className={cn(
-                "flex h-full flex-col items-center justify-center gap-1 text-[11px] font-semibold text-white transition-opacity",
+                "flex h-full flex-col items-center justify-center gap-1 text-[0.647rem] font-semibold text-white transition-opacity",
                 action.className ?? "bg-secondary"
               )}
               style={{ width: actionWidth }}

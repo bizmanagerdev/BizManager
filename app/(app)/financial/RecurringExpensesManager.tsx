@@ -561,7 +561,7 @@ export default function RecurringExpensesManager(props: Props) {
   // card charge (אוטומטי) needs no confirmation — worth a word, not a column.
   const amountCell = (row: UnifiedRow) => {
     const auto = row.kind === "template" ? (row.template.auto_paid ? "הוראת קבע" : null) : row.source.kind === "card" ? "אוטומטי" : null;
-    const caption = auto ? <div className="text-[11px] font-normal text-muted-foreground">{auto}</div> : null;
+    const caption = auto ? <div className="text-[0.647rem] font-normal text-muted-foreground">{auto}</div> : null;
     if (row.kind === "template") {
       const t = row.template;
       return (
@@ -591,7 +591,7 @@ export default function RecurringExpensesManager(props: Props) {
             The line wraps: the amount column doesn't, so it would push the
             table into a side scroll. */}
         {s.kind === "settlement" && s.amount ? (
-          <div className="whitespace-normal text-[11px] font-normal text-muted-foreground">מתעדכן לפי התקבולים</div>
+          <div className="whitespace-normal text-[0.647rem] font-normal text-muted-foreground">מתעדכן לפי התקבולים</div>
         ) : null}
       </div>
     );

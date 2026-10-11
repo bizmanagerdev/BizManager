@@ -40,8 +40,8 @@ export function textColorForBackground(hex: string): string {
 const SIZES = {
   // xs is for dense rows (a board card's title line) where a 28px circle would
   // set the row height on its own.
-  xs: "h-5 w-5 text-[9px]",
-  sm: "h-7 w-7 text-[11px]",
+  xs: "h-5 w-5 text-[0.53rem]",
+  sm: "h-7 w-7 text-[0.647rem]",
   md: "h-9 w-9 text-xs",
 } as const;
 

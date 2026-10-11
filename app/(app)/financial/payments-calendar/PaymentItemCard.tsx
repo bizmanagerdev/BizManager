@@ -93,7 +93,7 @@ export default function PaymentItemCard({
         ) : null}
         {partialText ? (
           <div className="mt-1.5 text-xs text-muted-foreground">
-            <Badge variant="warning" className="me-1.5 px-2 py-0 text-[10px]">שולם חלקית</Badge>
+            <Badge variant="warning" className="me-1.5 px-2 py-0 text-[0.588rem]">שולם חלקית</Badge>
             {partialText}
           </div>
         ) : null}

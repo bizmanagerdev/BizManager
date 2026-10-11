@@ -224,7 +224,7 @@ export default function OnlineUsersCard({ roster }: { roster: PresenceRosterUser
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-sm font-medium">{u.name}</span>
             {u.role && (
-              <span className="shrink-0 rounded bg-muted px-1.5 py-px text-[10px] text-muted-foreground">
+              <span className="shrink-0 rounded bg-muted px-1.5 py-px text-[0.588rem] text-muted-foreground">
                 {u.role}
               </span>
             )}
@@ -266,9 +266,9 @@ export default function OnlineUsersCard({ roster }: { roster: PresenceRosterUser
           )}
         </span>
         <span className="text-xs font-medium">{u.name}</span>
-        {u.role && <span className="text-[10px] text-muted-foreground">{u.role}</span>}
+        {u.role && <span className="text-[0.588rem] text-muted-foreground">{u.role}</span>}
         <span
-          className={`text-[11px] tabular-nums ${
+          className={`text-[0.647rem] tabular-nums ${
             u.activeNow ? "text-success-soft-foreground" : "text-muted-foreground"
           }`}
         >

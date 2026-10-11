@@ -333,13 +333,13 @@ export function WorkerPaymentDialog({
           <label className="space-y-2 text-sm">
             <CurrencyInput autoFocus value={amount} onChange={(e) => setAmount(e.target.value)} />
             {debtLoading ? (
-              <span className="block text-[11px] text-muted-foreground">טוען יתרה...</span>
+              <span className="block text-[0.647rem] text-muted-foreground">טוען יתרה...</span>
             ) : openOwed > 0 ? (
-              <span className="block text-[11px] text-muted-foreground">
+              <span className="block text-[0.647rem] text-muted-foreground">
                 יתרה פתוחה: {formatCurrency(openOwed)} • {debtItems.length} פריטים פתוחים
               </span>
             ) : (
-              <span className="block text-[11px] text-muted-foreground">
+              <span className="block text-[0.647rem] text-muted-foreground">
                 אין יתרה פתוחה לעובד זה. תשלום שיירשם יישמר כמקדמה ללא קיזוז.
               </span>
             )}

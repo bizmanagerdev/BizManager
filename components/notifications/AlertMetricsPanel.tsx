@@ -19,7 +19,7 @@ const RULE_LABEL: Record<string, string> = {
   promise_broken: "הבטחות תשלום שהופרו",
   recurring_expense_confirm: "אישור הוצאות קבועות",
   wage_overdue: "שכר עובדים באיחור",
-  vehicle_expiry: "רכבים — טסט/ביטוח/רישוי",
+  vehicle_expiry: "רכבים — טסט / ביטוח / רישוי",
   low_stock: "מלאי נמוך",
   unprocessed_items: "הוצאות לא מעובדות",
   nightly_review: "סקירת לילה",
@@ -76,7 +76,7 @@ export default function AlertMetricsPanel() {
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="text-sm font-semibold">איכות ההתראות</div>
-          <div className="text-[11px] text-muted-foreground">אילו התראות עובדות ואילו רק מרעישות — לפי נתוני השימוש.</div>
+          <div className="text-[0.647rem] text-muted-foreground">אילו התראות עובדות ואילו רק מרעישות — לפי נתוני השימוש.</div>
         </div>
         <div className="flex rounded-lg border bg-background p-0.5 text-xs">
           {PERIODS.map((p) => (
@@ -99,7 +99,7 @@ export default function AlertMetricsPanel() {
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[560px] text-right text-xs">
-            <thead className="text-[11px] text-muted-foreground">
+            <thead className="text-[0.647rem] text-muted-foreground">
               <tr className="border-b">
                 <th className="py-1.5 pe-2 font-medium">התראה</th>
                 <th className="px-2 py-1.5 font-medium">נשלחו</th>
@@ -126,7 +126,7 @@ export default function AlertMetricsPanel() {
                     </td>
                     <td className="ps-2 py-2">
                       <span
-                        className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] ${meta.cls}`}
+                        className={`inline-flex rounded-full border px-2 py-0.5 text-[0.588rem] ${meta.cls}`}
                         title={v.reasons.join(" · ") || undefined}
                       >
                         {meta.label}
@@ -142,13 +142,13 @@ export default function AlertMetricsPanel() {
 
       {read.length > 0 ? (
         <div className="mt-3 border-t pt-2">
-          <div className="mb-1 text-[11px] font-semibold text-muted-foreground">אחוז קריאה לפי סוג (במרכז ההתראות)</div>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+          <div className="mb-1 text-[0.647rem] font-semibold text-muted-foreground">אחוז קריאה לפי סוג (במרכז ההתראות)</div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[0.647rem]">
             {read.map((r) => (
               <span key={r.category} className="text-muted-foreground">
                 {BUCKET_LABEL[r.category] ?? r.category}:{" "}
                 <span className="font-medium text-foreground">{Math.round(readRate(r) * 100)}%</span>{" "}
-                <span className="text-[10px]">({r.read_count}/{r.delivered})</span>
+                <span className="text-[0.588rem]">({r.read_count}/{r.delivered})</span>
               </span>
             ))}
           </div>

@@ -158,7 +158,7 @@ export default function PayrollSkeleton() {
       </div>
 
       <Card>
-        <CardContent className="grid grid-cols-2 gap-2 py-3 sm:grid-cols-3 lg:grid-cols-5">
+        <CardContent className="grid grid-cols-[repeat(auto-fit,minmax(max(8.5rem,calc((100%-2rem)/5)),1fr))] gap-2 py-3">
           <MiniStat label="עלות עבודה החודש" value={VALUE} strong />
           <MiniStat label="יתרה לעובדים" value={VALUE} strong />
           <MiniStat label="קבלנות" value={VALUE} />

@@ -1774,7 +1774,7 @@ export default function FinancialPageClient({
                           <div dir="ltr" className="tabular-nums">
                             {formatShortDate(entry.flowDate)}
                           </div>
-                          <div className="text-[11px] text-muted-foreground">
+                          <div className="text-[0.647rem] text-muted-foreground">
                             {formatRelativeDateLabel(entry.flowDate, "-", data.todayIso)}
                           </div>
                         </td>
@@ -1788,12 +1788,12 @@ export default function FinancialPageClient({
                           )}
                         </td>
                         <td className="px-2 py-2 align-top">
-                          <Badge className="px-2 py-0.5 text-[11px]" variant={typeVariant(entry.type)}>
+                          <Badge className="px-2 py-0.5 text-[0.647rem]" variant={typeVariant(entry.type)}>
                             {typeLabel(entry.type)}
                           </Badge>
                         </td>
                         <td className="px-2 py-2 align-top">
-                          <Badge className="px-2 py-0.5 text-[11px]" variant={stageVariant(entry.stage)}>
+                          <Badge className="px-2 py-0.5 text-[0.647rem]" variant={stageVariant(entry.stage)}>
                             {stageLabel(entry.stage)}
                           </Badge>
                         </td>
@@ -1815,11 +1815,11 @@ export default function FinancialPageClient({
                               <span dir="auto">{entry.sourceLabel}</span>
                             )}
                           </div>
-                          <div className="text-[11px] text-muted-foreground">{sourceTypeTitle(entry.sourceKind)}</div>
+                          <div className="text-[0.647rem] text-muted-foreground">{sourceTypeTitle(entry.sourceKind)}</div>
                         </td>
                         <td className="px-2 py-2 align-top">
                           <div className="text-xs font-medium">{entry.description}</div>
-                          <div className="text-[11px] text-muted-foreground">
+                          <div className="text-[0.647rem] text-muted-foreground">
                             {[
                               entry.paymentMethodLabel,
                               entry.reference,
@@ -1833,7 +1833,7 @@ export default function FinancialPageClient({
                           {entry.origin === "expense" ? (
                             <div className="mt-1 flex flex-wrap items-center gap-1.5">
                               <span className={cn(
-                                "inline-block rounded-full border px-2 py-0.5 text-[10px] font-medium",
+                                "inline-block rounded-full border px-2 py-0.5 text-[0.588rem] font-medium",
                                 (entry.paymentStatus ?? "not_paid") === "paid" ? "border-success/40 bg-success/10 text-success" :
                                 (entry.paymentStatus ?? "not_paid") === "partial" ? "border-warning/40 bg-warning/15 text-warning-strong" :
                                 "border-destructive/40 bg-destructive/10 text-destructive"
@@ -1852,7 +1852,7 @@ export default function FinancialPageClient({
                                 if (st === "partial" && entry.expensePaidAmount != null && entry.expensePaidAmount > 0) parts.push(`שולם ${formatCurrency(entry.expensePaidAmount)}`);
                                 if (methodLabel) parts.push(methodLabel);
                                 if (!parts.length) return null;
-                                return <span className="text-[10px] text-muted-foreground">{parts.join(" • ")}</span>;
+                                return <span className="text-[0.588rem] text-muted-foreground">{parts.join(" • ")}</span>;
                               })()}
                             </div>
                           ) : null}
@@ -2151,7 +2151,7 @@ export default function FinancialPageClient({
                           {entry.origin === "expense" ? (
                             <div className="mt-1 flex flex-wrap items-center gap-1.5">
                               <span className={cn(
-                                "inline-block rounded-full border px-2 py-0.5 text-[10px] font-medium",
+                                "inline-block rounded-full border px-2 py-0.5 text-[0.588rem] font-medium",
                                 (entry.paymentStatus ?? "not_paid") === "paid" ? "border-success/40 bg-success/10 text-success" :
                                 (entry.paymentStatus ?? "not_paid") === "partial" ? "border-warning/40 bg-warning/15 text-warning-strong" :
                                 "border-destructive/40 bg-destructive/10 text-destructive"
@@ -2170,7 +2170,7 @@ export default function FinancialPageClient({
                                 if (st === "partial" && entry.expensePaidAmount != null && entry.expensePaidAmount > 0) parts.push(`שולם ${formatCurrency(entry.expensePaidAmount)}`);
                                 if (methodLabel) parts.push(methodLabel);
                                 if (!parts.length) return null;
-                                return <span className="text-[10px] text-muted-foreground">{parts.join(" • ")}</span>;
+                                return <span className="text-[0.588rem] text-muted-foreground">{parts.join(" • ")}</span>;
                               })()}
                             </div>
                           ) : null}
@@ -2418,7 +2418,7 @@ export default function FinancialPageClient({
                   }
                 />
                 {incomeCreateForm.paymentMethod !== "check" ? (
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-[0.647rem] text-muted-foreground">
                     לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
                   </p>
                 ) : null}

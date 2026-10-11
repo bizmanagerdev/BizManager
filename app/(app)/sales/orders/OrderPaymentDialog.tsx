@@ -382,7 +382,7 @@ export default function OrderPaymentDialog({
                 </label>
                 <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
                 {paymentMethod !== "check" ? (
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-[0.647rem] text-muted-foreground">
                     לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
                   </p>
                 ) : null}

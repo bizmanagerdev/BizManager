@@ -62,7 +62,7 @@ const baseToast = [
   "animate-in fade-in-0 slide-in-from-top-4 md:slide-in-from-bottom-4 md:slide-in-from-top-0 duration-300",
 ].join(" ");
 
-const baseTitle = "text-[15px] font-bold leading-tight text-white";
+const baseTitle = "text-[0.882rem] font-bold leading-tight text-white";
 const baseDescription = "text-sm leading-snug text-white/90";
 const baseIcon = [
   "absolute start-5 top-4 size-9 shrink-0",

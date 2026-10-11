@@ -205,7 +205,7 @@ export default function DocumentCategoriesEditor() {
       {orphans.length > 0 ? (
         <div className="rounded-xl border border-warning/40 bg-warning/5 p-3">
           <div className="text-sm font-medium">קטגוריות שאינן ברשימה</div>
-          <p className="mt-1 text-[11px] text-muted-foreground">
+          <p className="mt-1 text-[0.647rem] text-muted-foreground">
             הערכים האלה מופיעים על מסמכים קיימים אבל אין להם שורה כאן, ולכן הם לא עושים כלום. אפשר
             להוסיף אותם כקטגוריה או לשנות את הקטגוריה של המסמכים בארכיון.
           </p>
@@ -225,7 +225,7 @@ export default function DocumentCategoriesEditor() {
           <summary className="cursor-pointer text-xs font-medium">
             קטגוריות מערכת ({systemRows.length})
           </summary>
-          <p className="mt-2 text-[11px] text-muted-foreground">
+          <p className="mt-2 text-[0.647rem] text-muted-foreground">
             אלה נכתבות אוטומטית על ידי המערכת (צרופות, צילומי משלוח, מסמכי מורנינג) ולא ניתן לבחור בהן
             בהעלאה. אפשר לשנות את השם שמוצג, אבל לא את הקוד — הקוד של צילום רכב למשל קובע מי רשאי
             לראות את הקובץ.
@@ -239,7 +239,7 @@ export default function DocumentCategoriesEditor() {
                   className="min-w-0 flex-1"
                   aria-label={`שם הקטגוריה ${row.code}`}
                 />
-                <code className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                <code className="rounded bg-muted px-1.5 py-0.5 text-[0.647rem] text-muted-foreground">
                   {row.code}
                 </code>
               </div>

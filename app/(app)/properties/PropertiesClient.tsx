@@ -246,7 +246,10 @@ export default function PropertiesClient({ properties: propertiesProp }: { prope
                     ))}
                   </div>
 
-                  <div className="mt-auto grid grid-cols-3 gap-2 text-center text-sm">
+                  {/* Three across where they fit, fewer where a figure wouldn't (5.5rem
+                      each — rem, so it follows the text size): "₪-416,275.23" ran out of
+                      its third of the card. */}
+                  <div className="mt-auto grid grid-cols-[repeat(auto-fit,minmax(5.5rem,1fr))] gap-2 text-center text-sm">
                     <div className="min-w-0">
                       <div className="text-xs text-muted-foreground">הוצאות</div>
                       <div className="whitespace-nowrap text-xs font-semibold tabular-nums text-destructive">

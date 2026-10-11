@@ -10,7 +10,7 @@ export function CountBadge({ count, active = false, className }: { count: number
   return (
     <span
       className={cn(
-        "inline-flex min-w-4 shrink-0 items-center justify-center rounded-full px-1 text-[10px] font-semibold leading-4 tabular-nums",
+        "inline-flex min-w-4 shrink-0 items-center justify-center rounded-full px-1 text-[0.588rem] font-semibold leading-4 tabular-nums",
         active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
         className
       )}

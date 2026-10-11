@@ -101,7 +101,7 @@ function SearchResults({
       <div className="space-y-1 p-2">
         {results.groups.map((group) => (
           <section key={group.key} className="space-y-1">
-            <div className="px-2 pt-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            <div className="px-2 pt-2 text-[0.647rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               {group.label}
             </div>
             {group.results.map((result) => (
@@ -132,13 +132,13 @@ function SearchResults({
                     ) : null}
                   </div>
                   {!compact ? (
-                    <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-[10px] font-medium text-muted-foreground">
+                    <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-[0.588rem] font-medium text-muted-foreground">
                       {result.groupLabel}
                     </span>
                   ) : null}
                 </div>
                 {result.meta.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
+                  <div className="mt-2 flex flex-wrap gap-1.5 text-[0.647rem] text-muted-foreground">
                     {result.meta.slice(0, compact ? 2 : 3).map((item) => {
                       const translated = translateSearchMetaItem(item);
                       return (

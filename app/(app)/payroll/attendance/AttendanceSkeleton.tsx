@@ -55,7 +55,7 @@ function ReportCardSkeleton() {
               <span className="block text-xs">
                 <Skeleton className="inline-block h-2.5 w-14 align-middle" />
               </span>
-              <span className="block text-[11px]">
+              <span className="block text-[0.647rem]">
                 <Skeleton className="inline-block h-2 w-20 align-middle" />
               </span>
             </span>
@@ -88,7 +88,7 @@ export default function AttendanceSkeleton() {
   return (
     <div className="space-y-3" aria-busy="true">
       <div className="space-y-2 rounded-2xl border border-secondary/25 bg-secondary/5 px-3 py-3 sm:px-4">
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,9rem),1fr))] gap-2 sm:flex sm:flex-wrap sm:items-center">
           {STATS.map(({ icon: Icon, label }) => (
             <div key={label} className="rounded-xl border bg-background px-2.5 py-1.5">
               <div className="flex items-center gap-1.5">

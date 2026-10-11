@@ -937,7 +937,7 @@ export default function SalesOrdersClient({
                             {orderCollectionStatusLabel(row.collectionStatus)}
                           </Badge>
                           {row.pendingMethods.includes("check") ? (
-                            <Badge variant="info" className="gap-1 text-[10px]">
+                            <Badge variant="info" className="gap-1 text-[0.588rem]">
                               צ׳ק{row.pendingCheckNumber ? ` מס׳ ${row.pendingCheckNumber}` : ""}
                             </Badge>
                           ) : null}
@@ -999,7 +999,7 @@ export default function SalesOrdersClient({
               mobile={
                 <>
                 <div className="grid grid-cols-1 gap-2">
-                  <p className="px-1 text-[11px] text-muted-foreground">
+                  <p className="px-1 text-[0.647rem] text-muted-foreground">
                     החלק כרטיס ימינה לפעולות · הקש לפתיחה
                   </p>
                   {filteredRows.map((row) => {
@@ -1118,7 +1118,7 @@ export default function SalesOrdersClient({
                                 </div>
                               ) : null}
                             </div>
-                            <span className="shrink-0 text-[10px] leading-4 text-muted-foreground">
+                            <span className="shrink-0 text-[0.588rem] leading-4 text-muted-foreground">
                               {formatOrderDate(row.orderDate)}
                             </span>
                           </div>
@@ -1132,14 +1132,14 @@ export default function SalesOrdersClient({
                                 <StatusBadge
                                   value={row.status}
                                   type="order"
-                                  className={`${orderStatusBadgeClasses(row.status)} px-2 py-0 text-[11px]`}
+                                  className={`${orderStatusBadgeClasses(row.status)} px-2 py-0 text-[0.647rem]`}
                                 />
                               ) : null}
                               {row.outOfStock ? (
                                 <>
-                                  <Badge className={`${outOfStockBadgeClasses} px-2 py-0 text-[11px]`}>חוסר במלאי</Badge>
+                                  <Badge className={`${outOfStockBadgeClasses} px-2 py-0 text-[0.647rem]`}>חוסר במלאי</Badge>
                                   {row.outOfStockItems.length > 0 ? (
-                                    <span className="text-[11px] font-medium text-destructive-soft-foreground">
+                                    <span className="text-[0.647rem] font-medium text-destructive-soft-foreground">
                                       {row.outOfStockItems.join(", ")}
                                     </span>
                                   ) : null}
@@ -1164,15 +1164,15 @@ export default function SalesOrdersClient({
                             {/* Paid-or-not sits WITH the figure it describes — pushed to
                                 the far edge it read as unrelated to the amount. */}
                             {isUnpaidPrepayment(row.requiresPrepayment, row.remainingBalance) ? (
-                              <Badge className={`${prepaymentBadgeClasses} px-2 py-0 text-[11px]`}>
+                              <Badge className={`${prepaymentBadgeClasses} px-2 py-0 text-[0.647rem]`}>
                                 {PREPAYMENT_UNPAID_LABEL}
                               </Badge>
                             ) : null}
-                            <Badge className={`${collectionStatusClasses(row.collectionStatus)} px-2 py-0 text-[11px]`}>
+                            <Badge className={`${collectionStatusClasses(row.collectionStatus)} px-2 py-0 text-[0.647rem]`}>
                               {orderCollectionStatusLabel(row.collectionStatus)}
                             </Badge>
                             {row.pendingMethods.includes("check") ? (
-                              <Badge variant="info" className="px-2 py-0 text-[11px]">
+                              <Badge variant="info" className="px-2 py-0 text-[0.647rem]">
                                 צ׳ק{row.pendingCheckNumber ? ` ${row.pendingCheckNumber}` : ""}
                               </Badge>
                             ) : null}
@@ -1196,7 +1196,7 @@ export default function SalesOrdersClient({
                               button — the label anchors it, and the footer position keeps
                               the control out of the content you scan. */}
                           <div className="flex items-center gap-2">
-                            <span className="text-[11px] text-muted-foreground">סטטוס הנפקה:</span>
+                            <span className="text-[0.647rem] text-muted-foreground">סטטוס הנפקה:</span>
                             <InvoiceQuickMenu
                               orderId={row.id}
                               needsInvoice={row.needsInvoice}

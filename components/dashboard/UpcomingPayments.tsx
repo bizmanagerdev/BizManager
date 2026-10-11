@@ -90,17 +90,21 @@ function PaymentRow({ item, late, locale }: { item: PaymentCalendarItem; late?: 
 
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0 flex-1 space-y-0.5">
-          <div className="truncate text-sm font-medium" title={item.label}>
+          {/* Wraps on a phone and a tablet — the never-truncate rule (only the
+              deliveries card cuts with "…", see UpcomingDeliveries): "החזר הלוואה
+              מתוכנן (…)" lost the lender's name, more so with a bigger text size.
+              On the one-page board (xl) it still cuts, so the board fits one screen. */}
+          <div className="text-sm font-medium xl:truncate" title={item.label}>
             {item.label}
           </div>
-          <div className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+          <div className="flex items-start gap-1.5 text-xs text-muted-foreground xl:items-center xl:truncate">
             <span
               className={cn(
-                "h-1.5 w-1.5 shrink-0 rounded-full",
+                "mt-[0.45em] h-1.5 w-1.5 shrink-0 rounded-full xl:mt-0",
                 late ? "bg-destructive" : STAGE_DOT[item.stage]
               )}
             />
-            <span className="truncate">
+            <span className="min-w-0 xl:truncate">
               {late ? t(dashboardDict, locale, "lateLabel") : STAGE_LABEL[item.stage] ?? ""}
               {" · "}
               {formatShortDate(item.date)}

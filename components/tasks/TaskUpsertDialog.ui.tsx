@@ -497,7 +497,7 @@ export function TaskPendingFilesSection({
               <DeleteButton label={`${t(tasksDict, locale, "removeFileAriaPrefix")} ${file.name}`} onClick={() => onRemove(index)} />
             </div>
           ))}
-          <div className="text-[11px] text-muted-foreground">
+          <div className="text-[0.647rem] text-muted-foreground">
             {files.length} {t(tasksDict, locale, "filesWillUploadSuffix")}
           </div>
         </div>
@@ -569,7 +569,7 @@ export function TaskAttachmentsSection({
                     className="h-9 w-9 shrink-0 rounded object-cover"
                   />
                 ) : (
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-muted text-[10px] text-muted-foreground">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-muted text-[0.588rem] text-muted-foreground">
                     {attachment.kind === "video" ? t(tasksDict, locale, "videoWord") : t(tasksDict, locale, "fileWord")}
                   </span>
                 )}
@@ -579,7 +579,7 @@ export function TaskAttachmentsSection({
                   </span>
                   <MetaRow
                     as="span"
-                    className="text-[11px] text-muted-foreground"
+                    className="text-[0.647rem] text-muted-foreground"
                     items={[
                       attachment.created_at ? formatShortDateTime(attachment.created_at) : null,
                       attachment.uploader_name
@@ -867,7 +867,7 @@ export function TaskCommentsPanel({
                 {note.stamp && note.author ? (
                   <div className="flex flex-wrap items-baseline gap-x-2">
                     <span className="text-sm font-medium">{note.author}</span>
-                    <span className="text-[11px] text-muted-foreground">{note.stamp}</span>
+                    <span className="text-[0.647rem] text-muted-foreground">{note.stamp}</span>
                   </div>
                 ) : null}
                 <div className="mt-0.5 whitespace-pre-wrap text-sm">{note.message ?? note.raw}</div>
@@ -880,7 +880,7 @@ export function TaskCommentsPanel({
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
                       <span className="text-sm font-medium">{comment.author_name ?? t(tasksDict, locale, "unknownUserWord")}</span>
-                      <span className="text-[11px] text-muted-foreground">
+                      <span className="text-[0.647rem] text-muted-foreground">
                         {formatShortDateTime(comment.created_at)}
                         {wasEdited(comment) ? ` · ${t(tasksDict, locale, "commentEditedWord")}` : ""}
                       </span>
@@ -1008,7 +1008,7 @@ export function TaskHistorySection({ history, locale }: { history: HistoryItem[]
         <div key={item.id} className="rounded-md border bg-muted/20 px-3 py-2">
           <div className="flex flex-wrap items-baseline gap-x-2">
             <span className="text-sm font-medium">{item.actor_name ?? t(tasksDict, locale, "unknownUserWord")}</span>
-            <span className="text-[11px] text-muted-foreground">{formatShortDateTime(item.created_at)}</span>
+            <span className="text-[0.647rem] text-muted-foreground">{formatShortDateTime(item.created_at)}</span>
           </div>
           <div className="mt-0.5 text-sm text-muted-foreground">
             {item.action_label}

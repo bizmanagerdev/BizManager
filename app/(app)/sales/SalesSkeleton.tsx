@@ -93,7 +93,7 @@ function OrdersSkeleton() {
           desktop={<TableSkeleton headers={ORDER_COLUMNS} rows={4} rowClassName="h-[10rem]" />}
           mobile={
             <div className="grid grid-cols-1 gap-2">
-              <p className="px-1 text-[11px] text-muted-foreground">החלק כרטיס ימינה לפעולות · הקש לפתיחה</p>
+              <p className="px-1 text-[0.647rem] text-muted-foreground">החלק כרטיס ימינה לפעולות · הקש לפתיחה</p>
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-background shadow-sm">
                   <div className="divide-y divide-border/60 p-3 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0 [&>*]:py-2">

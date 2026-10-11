@@ -118,7 +118,7 @@ function AccountSummaryCard({
         {kindLabel.trim() !== account.name.trim() && (
           <span
             className={cn(
-              "shrink-0 rounded-full border px-1.5 py-0 text-[10px]",
+              "shrink-0 rounded-full border px-1.5 py-0 text-[0.588rem]",
               selected ? "border-primary-foreground/30 text-primary-foreground/80" : "text-muted-foreground"
             )}
           >
@@ -264,7 +264,7 @@ export default function BankClient({
       // items-center was landing it almost flush with the top edge (user,
       // 2026-08-31: "a drop more space on top of the total and the button").
       <div className="hidden mt-1.5 text-right leading-tight sm:block">
-        <div className="text-[10px] text-muted-foreground">סך נזילות</div>
+        <div className="text-[0.588rem] text-muted-foreground">סך נזילות</div>
         {/* Whole figure colored red/green here — a deliberate exception to
             the sign-only treatment on the account tiles (user, 2026-08-31:
             "the top number should be red or green reflecting the amount

@@ -20,7 +20,7 @@ function CardSkeleton() {
         <TextLineSkeleton className="text-sm font-semibold" barClassName="w-3/4" />
         <TextLineSkeleton className="mt-0.5 text-xs" barClassName="w-1/2" />
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-          <TextLineSkeleton className="text-[11px]" barClassName="w-28" />
+          <TextLineSkeleton className="text-[0.647rem]" barClassName="w-28" />
           <span className="flex items-center gap-0.5">
             <Skeleton className="h-6 w-14 rounded-lg" />
             <Skeleton className="h-7 w-7" />

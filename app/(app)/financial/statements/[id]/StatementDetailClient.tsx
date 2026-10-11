@@ -1413,7 +1413,7 @@ export default function StatementDetailClient({
                               <span className="inline-block rounded bg-warning-soft px-1.5 py-0.5 text-xs font-medium text-warning-soft-foreground">
                                 כפילות אפשרית
                               </span>
-                              <div className="rounded border border-warning-soft/50 bg-warning-soft/10 px-2 py-1 text-[11px] leading-snug">
+                              <div className="rounded border border-warning-soft/50 bg-warning-soft/10 px-2 py-1 text-[0.647rem] leading-snug">
                                 <div className="font-medium text-foreground">{dup.description || "—"}</div>
                                 <div className="text-muted-foreground">
                                   {formatIsoDisplay(dup.transaction_date || dup.expense_date)} · {formatCurrency(dup.amount)}
@@ -1424,7 +1424,7 @@ export default function StatementDetailClient({
                                   type="button"
                                   onClick={() => void markExisting(row, dup)}
                                   disabled={savingRowId === row.id}
-                                  className="block w-full whitespace-nowrap rounded border border-input px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted disabled:opacity-50"
+                                  className="block w-full whitespace-nowrap rounded border border-input px-2 py-0.5 text-[0.647rem] text-muted-foreground hover:bg-muted disabled:opacity-50"
                                 >
                                   כן, כבר קיים
                                 </button>
@@ -1432,7 +1432,7 @@ export default function StatementDetailClient({
                               <button
                                 type="button"
                                 onClick={() => ignoreDup(row.id)}
-                                className="block w-full whitespace-nowrap rounded border border-input px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted"
+                                className="block w-full whitespace-nowrap rounded border border-input px-2 py-0.5 text-[0.647rem] text-muted-foreground hover:bg-muted"
                               >
                                 לא כפילות
                               </button>

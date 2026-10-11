@@ -139,10 +139,16 @@ export default function CollectionsCard({ summary, locale }: { summary: Collecti
                     ) : null}
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0 flex-1 space-y-0.5">
-                        <div className="truncate text-sm font-medium" title={payment.customer_name}>
+                        {/* Wraps on a phone and a tablet — the never-truncate rule (only
+                            the deliveries card cuts with "…", see UpcomingDeliveries): with
+                            a bigger text size a cut name lost most of itself, and a cut
+                            phone number its first digits. On the one-page board (xl) the
+                            row is narrow and everything must fit one screen, so there it
+                            still cuts, with the whole name on hover. */}
+                        <div className="text-sm font-medium xl:truncate" title={payment.customer_name}>
                           {payment.customer_name}
                         </div>
-                        <div className="truncate text-xs text-muted-foreground">
+                        <div className="text-xs text-muted-foreground xl:truncate">
                           {formatCurrency(payment.amount)}
                           {payment.check_number ? ` · ${t(dashboardDict, locale, "checkAbbrev")} ${payment.check_number}` : ""}
                           {payment.customer_phone ? ` · ${payment.customer_phone}` : ""}
@@ -271,10 +277,11 @@ function DebtorRow({ debtor, late, locale }: { debtor: CollectionsDebtor; late: 
 
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0 flex-1 space-y-0.5">
-          <div className="truncate text-sm font-medium" title={debtor.customerName}>
+          {/* Wraps below the one-page board, cuts on it (see the today rows above). */}
+          <div className="text-sm font-medium xl:truncate" title={debtor.customerName}>
             {debtor.customerName}
           </div>
-          <div className="truncate text-xs text-muted-foreground" title={meta}>
+          <div className="text-xs text-muted-foreground xl:truncate" title={meta}>
             {meta}
           </div>
         </div>

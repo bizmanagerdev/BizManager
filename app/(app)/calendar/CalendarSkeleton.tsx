@@ -84,7 +84,7 @@ export default function CalendarSkeleton() {
                 <span className="text-muted-foreground"> · </span>
                 <span className="whitespace-nowrap text-muted-foreground">{hebShort}</span>
               </span>
-              <span className="flex shrink-0 items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-[11px] font-semibold text-secondary-foreground">
+              <span className="flex shrink-0 items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-[0.647rem] font-semibold text-secondary-foreground">
                 <CalendarIcon className="h-3.5 w-3.5" />
                 היום
               </span>

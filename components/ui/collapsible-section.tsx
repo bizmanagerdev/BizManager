@@ -81,11 +81,12 @@ export function CollapsibleSection({
           aria-expanded={open}
           aria-controls={contentId}
           disabled={!collapsible}
-          className="flex min-w-0 flex-1 items-center gap-2 text-start disabled:cursor-default"
+          className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5 text-start disabled:cursor-default"
         >
           {icon}
           {/* Wraps rather than truncates — a section header ending in "…" tells
-              the reader nothing. */}
+              the reader nothing. The total wraps too, under the title, where a
+              bigger text size makes the two wider than the row. */}
           <CardTitle className="text-base">{title}</CardTitle>
           {summary !== undefined && summary !== null ? (
             <span className="ms-auto shrink-0 text-sm font-medium">{summary}</span>

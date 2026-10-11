@@ -269,7 +269,7 @@ export default function InboxClient({
           {item.content ? <p className="mt-0.5 text-xs text-muted-foreground">{item.content}</p> : null}
 
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+            <span className="flex items-center gap-1 text-[0.647rem] text-muted-foreground">
               <ClockIcon className="h-3 w-3 shrink-0" />
               {timeAgo(item.remindAt, locale)}
               {item.customerName ? <span>· {item.customerName}</span> : null}
@@ -397,7 +397,7 @@ export default function InboxClient({
               {c.label}
               <span
                 className={cn(
-                  "rounded-full px-1.5 text-[10px] font-semibold",
+                  "rounded-full px-1.5 text-[0.588rem] font-semibold",
                   bucket === c.key ? "bg-primary-foreground/20" : "bg-muted text-muted-foreground"
                 )}
               >
@@ -472,7 +472,7 @@ export default function InboxClient({
                     <Link href={item.url} className="text-sm font-medium hover:underline">
                       {item.title}
                     </Link>
-                    <div className="text-[11px] text-muted-foreground">
+                    <div className="text-[0.647rem] text-muted-foreground">
                       {item.snoozedUntil
                         ? `${t(inboxDict, locale, "snoozedReturnsPrefix")} ${timeAgo(item.snoozedUntil, locale)}`
                         : t(inboxDict, locale, "snoozedLabel")}

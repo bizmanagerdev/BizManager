@@ -102,7 +102,7 @@ export function FormDialog({
           <DialogTitle>{title}</DialogTitle>
           {/* Always rendered: Radix warns without a description, and screen
               readers announce the dialog's purpose from it. */}
-          <DialogDescription className={cn("text-[11px] leading-snug", !description && "sr-only")}>
+          <DialogDescription className={cn("text-[0.647rem] leading-snug", !description && "sr-only")}>
             {description ?? title}
           </DialogDescription>
         </DialogHeader>

@@ -16,13 +16,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 const COLUMNS: { label: string; width: string }[] = [
   { label: "לקוח", width: "w-[17%]" },
   { label: "טלפון ואימייל", width: "w-[15%]" },
-  { label: "כתובת", width: "w-[14%]" },
-  { label: "Morning", width: "w-[6%]" },
-  { label: "הזמנות", width: "w-[6%]" },
-  { label: "פרויקטים", width: "w-[6%]" },
-  { label: "יתרה פתוחה", width: "w-[9%]" },
+  { label: "כתובת", width: "w-[12.5%]" },
+  { label: "Morning", width: "w-[7%]" },
+  { label: "הזמנות", width: "w-[5.7%]" },
+  { label: "פרויקטים", width: "w-[6.3%]" },
+  { label: "יתרה פתוחה", width: "w-[10%]" },
   { label: "סטטוס", width: "w-[11%]" },
-  { label: "פעולות", width: "w-[16%]" },
+  { label: "פעולות", width: "w-[15.5%]" },
 ];
 
 /** The phone strip's search, filter and export buttons, as the list puts them there. */
@@ -56,7 +56,7 @@ export default function CustomersSkeleton() {
         breakpoint="xl"
         mobile={
           <div className="grid grid-cols-1 gap-2">
-            <p className="px-1 text-[11px] text-muted-foreground">החלק כרטיס ימינה לפעולות · הקש לפרטים</p>
+            <p className="px-1 text-[0.647rem] text-muted-foreground">החלק כרטיס ימינה לפעולות · הקש לפרטים</p>
             {Array.from({ length: 7 }).map((_, i) => (
               <div key={i} className="relative min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
                 <div className="flex w-full min-w-0 items-center gap-3 p-3">
@@ -76,7 +76,7 @@ export default function CustomersSkeleton() {
         }
         desktop={
           <DataTableShell
-            tableClassName="table-fixed"
+            tableClassName="table-fixed min-w-[65rem]"
             colgroup={COLUMNS.map((column) => (
               <col key={column.label} className={column.width} />
             ))}

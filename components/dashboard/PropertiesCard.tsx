@@ -93,8 +93,9 @@ export default function PropertiesCard({ summary, locale }: { summary: Propertie
                       />
                       <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0 flex-1 space-y-0.5">
-                          <div className="truncate text-sm font-medium">{lease.label}</div>
-                          <div className="truncate text-xs text-muted-foreground">
+                          {/* Wraps below the one-page board, cuts on it (see CollectionsCard). */}
+                          <div className="text-sm font-medium xl:truncate">{lease.label}</div>
+                          <div className="text-xs text-muted-foreground xl:truncate">
                             {[
                               lease.tenantName,
                               ended

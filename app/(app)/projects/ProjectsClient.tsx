@@ -209,7 +209,7 @@ const formatDateShort = formatDate;
 
 // Badges on the mobile card sit as a caption above the title, so they're dialled
 // down from the standalone badge: tighter padding, smaller text, medium weight.
-const CARD_BADGE = "px-2 py-0.5 text-[11px] font-medium";
+const CARD_BADGE = "px-2 py-0.5 text-[0.647rem] font-medium";
 
 function projectDisplayName(row: ProjectRow) {
   return getString(row, "name") ?? "פרויקט";
@@ -1396,7 +1396,7 @@ export default function ProjectsClient({
         mobile={
           <>
             <div className="grid gap-2.5">
-              <p className="px-1 text-[11px] text-muted-foreground">
+              <p className="px-1 text-[0.647rem] text-muted-foreground">
                 החלק כרטיס ימינה לפעולות · הקש לפתיחה
               </p>
               {rows.map((row) => {
@@ -1517,7 +1517,7 @@ export default function ProjectsClient({
                                 style={{ width: `${Math.round((completedTasks / totalTasks) * 100)}%` }}
                               />
                             </div>
-                            <span className="shrink-0 text-[11px] text-muted-foreground">
+                            <span className="shrink-0 text-[0.647rem] text-muted-foreground">
                               {completedTasks}/{totalTasks} משימות
                             </span>
                           </div>
@@ -1525,14 +1525,16 @@ export default function ProjectsClient({
 
                         {/* Nothing truncates here: the figures are short and fixed-shape,
                             so they get whitespace-nowrap and the row spreads them out.
-                            Truncating money to "0,780…" is worse than no figure at all. */}
+                            Truncating money to "0,780…" is worse than no figure at all.
+                            They wrap, a figure to a second line, where a bigger text
+                            size makes the four wider than the card. */}
                         <div className="flex items-center gap-3 border-t border-border/60 pt-2.5">
-                          <div className="flex flex-1 items-center justify-between gap-3">
+                          <div className="flex flex-1 flex-wrap items-center justify-between gap-x-3 gap-y-2">
                             {canSeeMoney ? (
                               <div className="whitespace-nowrap">
-                                <div className="text-[10px] text-muted-foreground">רווח</div>
+                                <div className="text-[0.588rem] text-muted-foreground">רווח</div>
                                 <div
-                                  className={`text-[13px] font-semibold ${profit !== null && profit < 0 ? "text-destructive" : ""}`}
+                                  className={`text-[0.765rem] font-semibold ${profit !== null && profit < 0 ? "text-destructive" : ""}`}
                                 >
                                   {profit === null ? "-" : formatIls(profit)}
                                 </div>
@@ -1540,23 +1542,23 @@ export default function ProjectsClient({
                             ) : null}
                             {canSeeMoney ? (
                               <div className="whitespace-nowrap">
-                                <div className="text-[10px] text-muted-foreground">מחיר</div>
-                                <div className="text-[13px] font-semibold">
+                                <div className="text-[0.588rem] text-muted-foreground">מחיר</div>
+                                <div className="text-[0.765rem] font-semibold">
                                   {actualPrice === null ? "-" : formatIls(actualPrice)}
                                 </div>
                               </div>
                             ) : null}
                             {canSeeMoney && currentStatus !== "quote" && weOweValue(row) > 0.009 ? (
                               <div className="whitespace-nowrap">
-                                <div className="text-[10px] text-muted-foreground">הוצאות שלא שולמו</div>
-                                <div className="text-[13px] font-semibold text-warning-strong">
+                                <div className="text-[0.588rem] text-muted-foreground">הוצאות שלא שולמו</div>
+                                <div className="text-[0.765rem] font-semibold text-warning-strong">
                                   {formatIls(weOweValue(row))}
                                 </div>
                               </div>
                             ) : null}
                             <div className="whitespace-nowrap">
-                              <div className="text-[10px] text-muted-foreground">התחלה</div>
-                              <div className="text-[13px] font-semibold">{startDate}</div>
+                              <div className="text-[0.588rem] text-muted-foreground">התחלה</div>
+                              <div className="text-[0.765rem] font-semibold">{startDate}</div>
                             </div>
                           </div>
                         </div>

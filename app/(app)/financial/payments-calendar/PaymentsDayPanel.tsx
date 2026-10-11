@@ -63,7 +63,7 @@ export default function PaymentsDayPanel({
       {/* Header — a header: eyebrow, the date large, its Hebrew date and holiday
           small, the day's total on its own line, and a rule before the list. */}
       <div className="border-b pb-3">
-        {isToday ? <div className="text-[11px] font-semibold text-primary">היום</div> : null}
+        {isToday ? <div className="text-[0.647rem] font-semibold text-primary">היום</div> : null}
         <div className="mt-0.5 text-xl font-bold leading-tight">{fmtFullDay(day)}</div>
         <div className="mt-1 text-xs text-muted-foreground">{hebrewFullDate(day)}</div>
         {holiday ? <div className="mt-0.5 text-xs font-medium text-secondary">{holiday}</div> : null}

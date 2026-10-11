@@ -211,7 +211,7 @@ export default function AttendanceApprovals({
                         className={cn("h-3.5 w-3.5 shrink-0 transition-transform", isOpen ? "rotate-0" : "rotate-90")}
                       />
                       <span>{dayLabel(reports[0].clock_in)}</span>
-                      <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums">{reports.length}</span>
+                      <span className="rounded-full bg-muted px-1.5 text-[0.588rem] tabular-nums">{reports.length}</span>
                     </button>
                     {isOpen ? (
                       // divide-y-2, not the day-groups' hairline divide-y/50 above:

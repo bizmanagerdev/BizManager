@@ -456,7 +456,7 @@ export default function ProfitLossPanel({
                         <td dir="ltr" className="px-3 py-2.5 text-right tabular-nums text-success">
                           {formatCurrency(row.earnedShare)}
                           {row.monthsInSpan > 1 ? (
-                            <span className="ms-1 text-[10px] text-muted-foreground">
+                            <span className="ms-1 text-[0.588rem] text-muted-foreground">
                               ({row.monthsInPeriod}/{row.monthsInSpan})
                             </span>
                           ) : null}

@@ -154,7 +154,7 @@ function RequestedDeliveryDateBadge({ date }: { date: string | null }) {
   const urgencyClass = dueUrgencyChipClass(getDueUrgency(date));
   return (
     <span
-      className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+      className={`rounded-full border px-2 py-0.5 text-[0.647rem] font-medium ${
         urgencyClass || "border-border bg-muted/40 text-muted-foreground"
       }`}
     >
@@ -179,7 +179,7 @@ function DeliveryComments({ notes, className = "" }: { notes: string | null; cla
           <div className="min-w-0">
             <p className="whitespace-pre-wrap break-words">{comment.body}</p>
             {comment.author_name || comment.created_at ? (
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[0.647rem] text-muted-foreground">
                 {[comment.author_name, comment.created_at].filter(Boolean).join(" · ")}
               </p>
             ) : null}
@@ -197,7 +197,7 @@ const lowStockBadgeClasses = getStatusColorClasses("danger");
 function LowStockBadge({ outOfStock }: { outOfStock: boolean }) {
   if (!outOfStock) return null;
   return (
-    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${lowStockBadgeClasses}`}>חוסר במלאי</span>
+    <span className={`rounded-full px-2 py-0.5 text-[0.647rem] font-medium ${lowStockBadgeClasses}`}>חוסר במלאי</span>
   );
 }
 
@@ -502,7 +502,7 @@ export default function SalesDeliveriesQueue({
                               <td className="px-4 py-3">
                                 <div className="flex flex-wrap items-center gap-1 text-xs">
                                   {partiallyDelivered ? (
-                                    <span className="rounded-full border border-warning bg-warning-soft px-2 py-0.5 text-[11px] font-semibold text-warning-soft-foreground">
+                                    <span className="rounded-full border border-warning bg-warning-soft px-2 py-0.5 text-[0.647rem] font-semibold text-warning-soft-foreground">
                                       יתרת אספקה
                                     </span>
                                   ) : null}
@@ -551,18 +551,18 @@ export default function SalesDeliveriesQueue({
                                     <LowStockBadge outOfStock={delivery.outOfStock} />
                                     {unpaidPrepayment ? (
                                       <span
-                                        className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${prepaymentBadgeClasses}`}
+                                        className={`rounded-full px-2 py-0.5 text-[0.647rem] font-semibold ${prepaymentBadgeClasses}`}
                                       >
                                         תשלום מראש — לא נגבה
                                       </span>
                                     ) : null}
                                     <span
-                                      className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${paymentStatusClasses(delivery.paymentStatus)}`}
+                                      className={`rounded-full border px-2 py-0.5 text-[0.647rem] font-medium ${paymentStatusClasses(delivery.paymentStatus)}`}
                                     >
                                       {getPaymentStatusLabel(delivery.paymentStatus)}
                                     </span>
                                     {delivery.collectOnDelivery ? (
-                                      <span className="inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-semibold text-warning-soft-foreground">
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 text-[0.647rem] font-semibold text-warning-soft-foreground">
                                         <CashIcon className="h-3.5 w-3.5 shrink-0" />
                                         גבייה במסירה
                                       </span>
@@ -656,7 +656,7 @@ export default function SalesDeliveriesQueue({
                                           className="flex shrink-0 flex-col items-center gap-0.5 rounded-xl bg-secondary px-2.5 py-1.5 text-secondary-foreground no-underline"
                                         >
                                           <WazeIcon className="h-4 w-4" />
-                                          <span className="text-[10px] font-semibold leading-none">נקודה</span>
+                                          <span className="text-[0.588rem] font-semibold leading-none">נקודה</span>
                                         </a>
                                       ) : displayAddress ? (
                                         <AddressLink
@@ -675,7 +675,7 @@ export default function SalesDeliveriesQueue({
                                           <div className="text-xs text-muted-foreground">{combinedCustomerName(group)}</div>
                                         ) : null}
                                         {hasMultipleOrders ? (
-                                          <span className="mt-1 inline-flex rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                                          <span className="mt-1 inline-flex rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[0.647rem] font-medium text-muted-foreground">
                                             {group.orders.length} משלוחים
                                           </span>
                                         ) : null}
@@ -766,19 +766,19 @@ export default function SalesDeliveriesQueue({
                                               the goods before it's paid. */}
                                           {unpaidPrepayment ? (
                                             <span
-                                              className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${prepaymentBadgeClasses}`}
+                                              className={`rounded-full px-2 py-0.5 text-[0.647rem] font-semibold ${prepaymentBadgeClasses}`}
                                             >
                                               תשלום מראש — לא נגבה
                                             </span>
                                           ) : null}
                                           <span
-                                            className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${paymentStatusClasses(delivery.paymentStatus)}`}
+                                            className={`rounded-full border px-2 py-0.5 text-[0.647rem] font-medium ${paymentStatusClasses(delivery.paymentStatus)}`}
                                           >
                                             {getPaymentStatusLabel(delivery.paymentStatus)}
                                           </span>
                                           {/* The one thing the driver must not miss. */}
                                           {delivery.collectOnDelivery ? (
-                                            <span className="inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-semibold text-warning-soft-foreground">
+                                            <span className="inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 text-[0.647rem] font-semibold text-warning-soft-foreground">
                                               <CashIcon className="h-3.5 w-3.5 shrink-0" />
                                               גבייה במסירה
                                             </span>
@@ -798,7 +798,7 @@ export default function SalesDeliveriesQueue({
                                             {/* The remaining-delivery flag lives WITH the products —
                                                 that's what it qualifies (what's still owed). */}
                                             {partiallyDelivered ? (
-                                              <span className="rounded-full border border-warning bg-warning-soft px-2 py-0.5 text-[11px] font-semibold text-warning-soft-foreground">
+                                              <span className="rounded-full border border-warning bg-warning-soft px-2 py-0.5 text-[0.647rem] font-semibold text-warning-soft-foreground">
                                                 יתרת אספקה
                                               </span>
                                             ) : null}

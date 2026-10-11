@@ -91,7 +91,7 @@ export default function ProjectsListSkeleton() {
           desktop={<TableSkeleton headers={COLUMNS} rows={8} rowClassName="h-[8.25rem]" />}
           mobile={
             <div className="grid gap-2.5">
-              <p className="px-1 text-[11px] text-muted-foreground">החלק כרטיס ימינה לפעולות · הקש לפתיחה</p>
+              <p className="px-1 text-[0.647rem] text-muted-foreground">החלק כרטיס ימינה לפעולות · הקש לפתיחה</p>
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="relative min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-background shadow-sm">
                   <div className="space-y-3 p-4">

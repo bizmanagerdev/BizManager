@@ -47,7 +47,7 @@ export default function PropertiesSkeleton() {
                 <Skeleton className="h-[1.625rem] w-14 rounded-full" />
               </div>
 
-              <div className="mt-auto grid grid-cols-3 gap-2 text-center text-sm">
+              <div className="mt-auto grid grid-cols-[repeat(auto-fit,minmax(5.5rem,1fr))] gap-2 text-center text-sm">
                 {["הוצאות", "הכנסות", "נטו"].map((label) => (
                   <div key={label} className="min-w-0">
                     <div className="text-xs text-muted-foreground">{label}</div>

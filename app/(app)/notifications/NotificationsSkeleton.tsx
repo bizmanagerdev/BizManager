@@ -27,7 +27,7 @@ export default function NotificationsSkeleton() {
                   <div className="min-w-0 flex-1">
                     <TextLineSkeleton className="text-sm" barClassName="w-2/3" />
                     <TextLineSkeleton className="text-xs" barClassName="w-1/2" />
-                    <TextLineSkeleton className="mt-0.5 text-[11px]" barClassName="w-20" />
+                    <TextLineSkeleton className="mt-0.5 text-[0.647rem]" barClassName="w-20" />
                   </div>
                 </li>
               ))}

@@ -373,7 +373,7 @@ export function EditPaymentDialog({
               </label>
               <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
               {paymentMethod !== "check" ? (
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-[0.647rem] text-muted-foreground">
                   לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
                 </p>
               ) : null}
@@ -553,7 +553,7 @@ export function OrderPaymentActionsClient({
                   </span>
                   <span className="text-muted-foreground">{formatDate(payment.payment_date)}</span>
                   {collectionChip ? (
-                    <span className={`rounded-full border px-2 py-0.5 text-[11px] ${collectionChip.classes}`}>
+                    <span className={`rounded-full border px-2 py-0.5 text-[0.647rem] ${collectionChip.classes}`}>
                       {collectionChip.label}
                     </span>
                   ) : null}

@@ -35,9 +35,9 @@ const TRIGGER_CLASSES: Record<TabsVariant, string> = {
 // button with bg-primary, so its badge uses a translucent primary-foreground
 // tint there instead of literally bg-primary (which would just disappear).
 const COUNT_BADGE_CLASSES: Record<TabsVariant, string> = {
-  pill: "ms-1 inline-flex min-w-4 items-center justify-center rounded-full bg-background/60 px-1 text-[10px] font-semibold leading-4 text-muted-foreground group-data-[state=active]:bg-primary-foreground/20 group-data-[state=active]:text-primary-foreground",
+  pill: "ms-1 inline-flex min-w-4 items-center justify-center rounded-full bg-background/60 px-1 text-[0.588rem] font-semibold leading-4 text-muted-foreground group-data-[state=active]:bg-primary-foreground/20 group-data-[state=active]:text-primary-foreground",
   underline:
-    "inline-flex min-w-4 items-center justify-center rounded-full bg-muted px-1 text-[10px] font-semibold leading-4 text-muted-foreground group-data-[state=active]:bg-primary group-data-[state=active]:text-primary-foreground",
+    "inline-flex min-w-4 items-center justify-center rounded-full bg-muted px-1 text-[0.588rem] font-semibold leading-4 text-muted-foreground group-data-[state=active]:bg-primary group-data-[state=active]:text-primary-foreground",
 };
 
 export const TabsList = React.forwardRef<

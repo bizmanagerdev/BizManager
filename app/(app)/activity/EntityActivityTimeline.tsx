@@ -65,14 +65,14 @@ export default function EntityActivityTimeline({
                   <span className="text-muted-foreground">{` · ${item.entityLabel}`}</span>
                 ) : null}
               </span>
-              <time className="shrink-0 text-[11px] text-muted-foreground whitespace-nowrap">
+              <time className="shrink-0 text-[0.647rem] text-muted-foreground whitespace-nowrap">
                 {formatShortDateTime(item.createdAt, "-")}
               </time>
             </div>
             {item.details ? (
               <div className="mt-0.5 text-xs text-foreground/70">{item.details}</div>
             ) : null}
-            <div className="mt-0.5 text-[11px] text-muted-foreground">{item.actorName}</div>
+            <div className="mt-0.5 text-[0.647rem] text-muted-foreground">{item.actorName}</div>
           </div>
         </li>
       ))}

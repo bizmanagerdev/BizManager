@@ -164,7 +164,7 @@ export default function OrderCommentsThread({
                   <div className="flex flex-wrap items-baseline gap-x-2">
                     <span className="text-sm font-medium">{comment.author_name ?? "הערת הזמנה"}</span>
                     {comment.created_at ? (
-                      <span className="text-[11px] text-muted-foreground">{comment.created_at}</span>
+                      <span className="text-[0.647rem] text-muted-foreground">{comment.created_at}</span>
                     ) : null}
                   </div>
                   {editingIndex === index ? null : (

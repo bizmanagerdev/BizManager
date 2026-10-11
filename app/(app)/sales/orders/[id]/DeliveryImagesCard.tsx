@@ -276,7 +276,7 @@ export default function DeliveryImagesCard({
                 </a>
               ) : null}
               <div className="flex items-center justify-between gap-1 px-2 py-1">
-                <span className="text-[10px] text-muted-foreground">{formatShortDate(image.uploaded_at)}</span>
+                <span className="text-[0.588rem] text-muted-foreground">{formatShortDate(image.uploaded_at)}</span>
                 <div className="flex shrink-0 gap-1">
                   <EditButton
                     label="החלפת תמונה"

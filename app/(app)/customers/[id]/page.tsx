@@ -914,7 +914,7 @@ export default async function CustomerDetailsPage({
                 icon={<OrderIcon className="h-4 w-4" />}
                 title="הזמנות"
                 aside={
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <CountPill>{orders.length} הזמנות</CountPill>
                     <Button asChild size="sm" className="h-9 px-4 text-base font-semibold">
                       <Link href={newOrderHref}>+ הזמנה</Link>
@@ -995,7 +995,7 @@ export default async function CustomerDetailsPage({
                 icon={<ProjectIcon className="h-4 w-4" />}
                 title="פרויקטים"
                 aside={
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <CountPill>{projectInfos.length} פרויקטים</CountPill>
                     <Button asChild size="sm" variant="secondary" className={SOFT_ADD_BUTTON_CLASSES}>
                       <Link href={newProjectHref}>+ פרויקט</Link>
@@ -1374,7 +1374,7 @@ export default async function CustomerDetailsPage({
                 icon={<UserIcon className="h-4 w-4" />}
                 title="אנשי קשר"
                 aside={
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {activeContacts.length > 0 ? (
                       <CountPill>{activeContacts.length} אנשי קשר</CountPill>
                     ) : null}
@@ -1441,7 +1441,7 @@ export default async function CustomerDetailsPage({
                 icon={<StoreIcon className="h-4 w-4" />}
                 title="סניפים"
                 aside={
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <CountPill>{activeBranches.length} סניפים</CountPill>
                     <EditCustomerButton customer={editButtonCustomer} />
                   </div>
@@ -1480,7 +1480,7 @@ export default async function CustomerDetailsPage({
                 icon={<DocumentIcon className="h-4 w-4" />}
                 title="מסמכים"
                 aside={
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <CountPill>{totalDocumentsCount} מסמכים</CountPill>
                     <AddCustomerDocumentButton customerId={id} customerName={customerName} />
                   </div>

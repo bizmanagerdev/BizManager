@@ -75,7 +75,7 @@ export function OptionRow({
       {badge != null ? (
         <span
           className={cn(
-            "flex h-5 w-5 flex-none items-center justify-center rounded border text-[11px] font-bold tabular-nums",
+            "flex h-5 w-5 flex-none items-center justify-center rounded border text-[0.647rem] font-bold tabular-nums",
             selected ? "border-current/30" : "text-muted-foreground"
           )}
         >

@@ -370,7 +370,7 @@ const TaskCard = memo(function TaskCard({
               <InitialsAvatar key={member.id} name={member.name} color={member.color} colorKey={member.id} colorIndex={colorIndexById.get(member.id)} size="xs" className="ring-2 ring-background" />
             ))}
             {extraMembers > 0 ? (
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[9px] font-medium ring-2 ring-background">
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[0.53rem] font-medium ring-2 ring-background">
                 +{extraMembers}
               </span>
             ) : null}
@@ -556,7 +556,7 @@ function BoardColumn({
         />
       </div>
       {addLines.length > 1 ? (
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.647rem] text-muted-foreground">
           {addLines.length} {t(tasksDict, locale, "linesCountMid")} {addLines.length} {t(tasksDict, locale, "tasksWord")}
         </p>
       ) : null}
@@ -1520,7 +1520,7 @@ export default function TasksPageClient(props: Props) {
             <FilterIcon className="h-4 w-4" />
             {t(tasksDict, props.locale, "filtersLabel")}
             {activeFilterCount > 0 ? (
-              <span className="rounded-full bg-white/25 px-1.5 text-[11px] leading-5">{activeFilterCount}</span>
+              <span className="rounded-full bg-white/25 px-1.5 text-[0.647rem] leading-5">{activeFilterCount}</span>
             ) : null}
           </Button>
           {/* Recurring tasks is a button here, with its name on it (user,
@@ -1823,7 +1823,7 @@ export default function TasksPageClient(props: Props) {
                     as a filter or a label, not as "move it there". Always
                     exactly three (the four lists minus the one it's in), so they
                     fit one row. */}
-                <div className="px-1 pb-1 text-[11px] text-muted-foreground">{t(tasksDict, props.locale, "moveToListLabel")}</div>
+                <div className="px-1 pb-1 text-[0.647rem] text-muted-foreground">{t(tasksDict, props.locale, "moveToListLabel")}</div>
                 <div className="grid grid-cols-3 gap-1.5">
                   {moveTargets.map((target) => (
                     <button
@@ -1856,7 +1856,7 @@ export default function TasksPageClient(props: Props) {
                   {t(tasksDict, props.locale, "openLabel")}
                 </button>
                 <div className="my-1 border-t" />
-                <div className="px-3 pb-0.5 text-[11px] text-muted-foreground">{t(tasksDict, props.locale, "moveToEllipsisLabel")}</div>
+                <div className="px-3 pb-0.5 text-[0.647rem] text-muted-foreground">{t(tasksDict, props.locale, "moveToEllipsisLabel")}</div>
                 {moveTargets.map((target) => (
                   <button
                     key={target}

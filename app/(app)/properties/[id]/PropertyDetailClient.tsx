@@ -1080,7 +1080,7 @@ export default function PropertyDetailClient({
                           fallback="—"
                         />
                         {row.data.paymentStatus && row.data.paymentStatus !== "paid" ? (
-                          <span className="mt-1 inline-block rounded-full border border-warning/40 bg-warning/15 px-2 py-0.5 text-[10px] font-medium text-warning-strong">
+                          <span className="mt-1 inline-block rounded-full border border-warning/40 bg-warning/15 px-2 py-0.5 text-[0.588rem] font-medium text-warning-strong">
                             צפוי
                           </span>
                         ) : null}
@@ -1262,7 +1262,7 @@ export default function PropertyDetailClient({
                       )}
                     </a>
                     <div className="flex items-center justify-between gap-1">
-                      <span className="truncate text-[11px] text-muted-foreground">{fmtDate(photo.uploadedAt)}</span>
+                      <span className="truncate text-[0.647rem] text-muted-foreground">{fmtDate(photo.uploadedAt)}</span>
                       <DeleteButton onClick={() => setDel({ kind: "document", id: photo.id, label: photo.title || "תמונה" })} label="מחיקת תמונה" />
                     </div>
                   </div>

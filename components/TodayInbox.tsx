@@ -99,7 +99,7 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
               className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-background/60 p-2 text-sm"
             >
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                <Badge variant="warning" className="gap-1 text-[10px]">
+                <Badge variant="warning" className="gap-1 text-[0.588rem]">
                   <TaskIcon className="h-3 w-3" /> משימה
                 </Badge>
                 <Link href={`/tasks/${task.id}`} className="font-medium hover:underline">
@@ -147,7 +147,7 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
               className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-background/60 p-2 text-sm"
             >
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                <Badge variant="info" className="gap-1 text-[10px]">
+                <Badge variant="info" className="gap-1 text-[0.588rem]">
                   <NotificationIcon className="h-3 w-3" /> תזכורת
                 </Badge>
                 {r.task_subject ? (
@@ -202,7 +202,7 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
             className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-background/60 p-2 text-sm"
           >
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-              <Badge variant="success" className="gap-1 text-[10px]">
+              <Badge variant="success" className="gap-1 text-[0.588rem]">
                 <WalletIcon className="h-3 w-3" /> לגבייה
               </Badge>
               {p.customer_id ? (
@@ -219,7 +219,7 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
               ) : null}
               <span className="font-semibold">{formatCurrency(p.amount)}</span>
               {p.payment_method === "check" ? (
-                <Badge variant="info" className="gap-1 text-[10px]">
+                <Badge variant="info" className="gap-1 text-[0.588rem]">
                   צ׳ק{p.check_number ? ` מס׳ ${p.check_number}` : ""} — להפקדה
                 </Badge>
               ) : p.payment_method ? (

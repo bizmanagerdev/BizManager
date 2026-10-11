@@ -127,7 +127,7 @@ export default function InvoiceQuickMenu({
         </DropdownMenuContent>
       </DropdownMenu>
       {showSentDate && state === "needs_sent" && invoiceSentAt ? (
-        <div className="text-[11px] text-muted-foreground">{formatOrderDate(invoiceSentAt)}</div>
+        <div className="text-[0.647rem] text-muted-foreground">{formatOrderDate(invoiceSentAt)}</div>
       ) : null}
     </div>
   );

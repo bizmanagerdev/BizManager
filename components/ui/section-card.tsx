@@ -30,7 +30,9 @@ export function SectionCard({
         className
       )}
     >
-      <div className="flex items-center justify-between gap-2">
+      {/* Wraps: the aside (a count, a "+" button) drops under the title rather
+          than running off a phone's edge at a bigger text size. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="text-primary">{icon}</span>
           <h2 className="text-sm font-semibold">{title}</h2>

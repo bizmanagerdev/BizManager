@@ -294,7 +294,7 @@ export default function MyTasksPanel({ tasks: initialTasks, locale }: { tasks: D
                       {priority || dueLabel(task) || task.project_name ? (
                         <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                           {priority ? (
-                            <Badge variant={priority.variant} className="shrink-0 text-[10px]">
+                            <Badge variant={priority.variant} className="shrink-0 text-[0.588rem]">
                               {priority.label}
                             </Badge>
                           ) : null}

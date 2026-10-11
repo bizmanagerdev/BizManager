@@ -426,7 +426,7 @@ export default function CalendarView({
               <button
                 type="button"
                 onClick={scrollToToday}
-                className="flex shrink-0 items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-[11px] font-semibold text-secondary-foreground transition-colors hover:bg-secondary/90"
+                className="flex shrink-0 items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-[0.647rem] font-semibold text-secondary-foreground transition-colors hover:bg-secondary/90"
               >
                 <CalendarIcon className="h-3.5 w-3.5" />
                 {t(commonDict, locale, "today")}
@@ -1018,7 +1018,7 @@ function DayDetail({
             >
               <div className="flex items-start gap-2">
                 <span className="min-w-0 flex-1 font-medium">{entry.title}</span>
-                <span className="shrink-0 text-[11px] text-muted-foreground">
+                <span className="shrink-0 text-[0.647rem] text-muted-foreground">
                   {kindLabel(locale, entry.kind)}
                 </span>
               </div>

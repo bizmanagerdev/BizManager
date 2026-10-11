@@ -152,7 +152,7 @@ export function WorkerHead({
               string of digits. */}
           <span className="ms-auto shrink-0 text-end leading-tight">
             <span className="block text-xs font-semibold tabular-nums text-foreground">{duration}</span>
-            <span className="block text-[11px] tabular-nums text-muted-foreground">
+            <span className="block text-[0.647rem] tabular-nums text-muted-foreground">
               {shiftHoursText(clockIn, clockOut)}
             </span>
           </span>

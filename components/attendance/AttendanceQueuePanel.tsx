@@ -196,7 +196,10 @@ export default function AttendanceQueuePanel({
         {/* Totals first — they're what you read; the controls sit under them.
             A GRID on phones, not wrap: four chips of different widths wrapping
             produced a right-aligned staircase. */}
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+        {/* Two across on a phone, one where a bigger text size leaves a half too
+            narrow for its number (9rem — rem, so it follows the text size):
+            "₪10,141.01" ran out of its tile. */}
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,9rem),1fr))] gap-2 sm:flex sm:flex-wrap sm:items-center">
           <QueueStat
             icon={PendingIcon}
             label="ממתינים לאישור"

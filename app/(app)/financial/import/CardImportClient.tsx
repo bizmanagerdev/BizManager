@@ -771,7 +771,7 @@ export default function CardImportClient({
                             {row.amount < 0 ? (
                               <span
                                 title="זיכוי/החזר — לא ייווצר כהוצאה כברירת מחדל"
-                                className="ms-1 inline-block rounded bg-success-soft px-1 py-0.5 text-[10px] font-medium text-success-soft-foreground"
+                                className="ms-1 inline-block rounded bg-success-soft px-1 py-0.5 text-[0.588rem] font-medium text-success-soft-foreground"
                               >
                                 זיכוי
                               </span>

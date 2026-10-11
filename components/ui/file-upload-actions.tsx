@@ -297,7 +297,7 @@ export function FileUploadActions({
                 ) : (
                   <div className="flex h-full w-full flex-col items-center justify-center gap-1 px-1 text-center text-muted-foreground">
                     <DocumentIcon className="h-7 w-7" />
-                    <span className="text-[10px]">קובץ</span>
+                    <span className="text-[0.588rem]">קובץ</span>
                   </div>
                 )}
                 {!disabled ? (
@@ -311,7 +311,7 @@ export function FileUploadActions({
                   </button>
                 ) : null}
               </div>
-              <div className="mt-1 text-[11px] text-muted-foreground">
+              <div className="mt-1 text-[0.647rem] text-muted-foreground">
                 {preview.file.name}
               </div>
             </div>

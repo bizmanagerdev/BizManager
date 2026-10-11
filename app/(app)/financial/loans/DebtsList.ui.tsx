@@ -53,7 +53,7 @@ function DueText({ date, daysLate, compact = false }: { date: string | null; day
   return (
     <span className={compact ? "text-xs" : undefined}>
       <span className={daysLate > 0 ? "font-medium text-destructive" : "text-muted-foreground"}>{formatShortDate(date)}</span>
-      {daysLate > 0 ? <span className="block text-[11px] text-destructive">{daysLate} ימים באיחור</span> : null}
+      {daysLate > 0 ? <span className="block text-[0.647rem] text-destructive">{daysLate} ימים באיחור</span> : null}
     </span>
   );
 }
@@ -66,7 +66,7 @@ function OpenAmount({ item, large = false }: { item: Pick<DebtItem, "open" | "pa
         {formatIls(item.open)}
       </span>
       {item.paid > 0.009 && item.total > item.open + 0.009 ? (
-        <span className="text-[11px] text-muted-foreground">
+        <span className="text-[0.647rem] text-muted-foreground">
           שולם {formatIls(item.paid)} מתוך {formatIls(item.total)}
         </span>
       ) : null}
@@ -379,7 +379,7 @@ export function KindSection({
         <div className="flex items-center gap-2">
           <Icon className="h-4 w-4 text-primary" />
           <h2 className="text-sm font-semibold">{DEBT_KIND_LABEL[kind]}</h2>
-          <Badge variant="neutral" className="px-2 py-0 text-[11px]">{items.length}</Badge>
+          <Badge variant="neutral" className="px-2 py-0 text-[0.647rem]">{items.length}</Badge>
           {overdue > 0 ? (
             <span className="text-xs font-medium text-destructive">{overdue} באיחור</span>
           ) : null}

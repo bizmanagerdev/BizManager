@@ -1206,7 +1206,7 @@ export default function NewOrderClient({
         footerCenter={
           lines.length > 0 ? (
             <div className="order-first w-full text-center leading-tight sm:order-none sm:w-auto sm:text-end">
-              <div className="whitespace-nowrap text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              <div className="whitespace-nowrap text-[0.588rem] font-medium uppercase tracking-wide text-muted-foreground">
                 {effectiveOrderDiscount > 0 ? "סכום לתשלום" : "סכום ביניים"}
               </div>
               <div className="whitespace-nowrap text-base font-bold text-foreground">
@@ -1583,7 +1583,7 @@ export default function NewOrderClient({
                               {product.name}
                             </div>
                             {selected ? (
-                              <span className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">
+                              <span className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[0.647rem] font-semibold text-primary-foreground">
                                 {selected.line.quantity_ordered}
                               </span>
                             ) : null}
@@ -2100,7 +2100,7 @@ export default function NewOrderClient({
                       onChange={(e) => updatePaymentDraft(index, { due_date: e.target.value })}
                     />
                     {payment.payment_method !== "check" ? (
-                      <p className="text-[11px] text-muted-foreground">
+                      <p className="text-[0.647rem] text-muted-foreground">
                         לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
                       </p>
                     ) : null}

@@ -443,7 +443,7 @@ export default function SalesInventoryClient({
       const inner = (
         <span className="inline-flex items-center gap-1">
           {customer || "הזמנה"}
-          {updated ? <span className="text-[10px] text-muted-foreground">· עודכן</span> : null}
+          {updated ? <span className="text-[0.588rem] text-muted-foreground">· עודכן</span> : null}
         </span>
       );
       return orderId ? (
@@ -589,7 +589,7 @@ export default function SalesInventoryClient({
                             <span className="inline-flex items-center gap-1.5">
                               {item.available}
                               {item.available < 0 ? (
-                                <span className="rounded border border-destructive/40 bg-destructive-soft px-1.5 py-0.5 text-[11px] font-medium text-destructive">
+                                <span className="rounded border border-destructive/40 bg-destructive-soft px-1.5 py-0.5 text-[0.647rem] font-medium text-destructive">
                                   חוסר
                                 </span>
                               ) : null}
@@ -656,7 +656,7 @@ export default function SalesInventoryClient({
                         <span className="text-muted-foreground">
                           זמין: <span className={`font-medium ${isLow ? "text-destructive" : "text-foreground"}`}>{item.available}</span>
                           {item.available < 0 ? (
-                            <span className="ms-1 rounded border border-destructive/40 bg-destructive-soft px-1 py-0.5 text-[10px] font-medium text-destructive">
+                            <span className="ms-1 rounded border border-destructive/40 bg-destructive-soft px-1 py-0.5 text-[0.588rem] font-medium text-destructive">
                               חוסר
                             </span>
                           ) : null}

@@ -568,7 +568,7 @@ export default function CustomersClient({
         mobile={
           <>
             <div className="grid grid-cols-1 gap-2">
-              <p className="px-1 text-[11px] text-muted-foreground">
+              <p className="px-1 text-[0.647rem] text-muted-foreground">
                 החלק כרטיס ימינה לפעולות · הקש לפרטים
               </p>
               {filtered.map((row) => {
@@ -630,22 +630,22 @@ export default function CustomersClient({
                         ) : null}
                         <div className="flex flex-wrap items-center gap-1.5">
                           {ordersCount > 0 ? (
-                            <Badge variant="outline" className="px-1.5 py-0 text-[10px]">{ordersCount} הזמנות</Badge>
+                            <Badge variant="outline" className="px-1.5 py-0 text-[0.588rem]">{ordersCount} הזמנות</Badge>
                           ) : null}
                           {projectsCount > 0 ? (
-                            <Badge variant="outline" className="px-1.5 py-0 text-[10px]">{projectsCount} פרויקטים</Badge>
+                            <Badge variant="outline" className="px-1.5 py-0 text-[0.588rem]">{projectsCount} פרויקטים</Badge>
                           ) : null}
                           {row.linked_user_id ? (
-                            <Badge className={`${customerFlagBadgeClass("info")} px-1.5 py-0 text-[10px]`}>עובד</Badge>
+                            <Badge className={`${customerFlagBadgeClass("info")} px-1.5 py-0 text-[0.588rem]`}>עובד</Badge>
                           ) : null}
                           {row.requires_prepayment === true ? (
-                            <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>תשלום מראש</Badge>
+                            <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[0.588rem]`}>תשלום מראש</Badge>
                           ) : null}
                           {row.active === false ? (
-                            <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>לא פעיל</Badge>
+                            <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[0.588rem]`}>לא פעיל</Badge>
                           ) : null}
                           {linkedMorningClientId ? (
-                            <Badge className={`${customerFlagBadgeClass("success")} px-1.5 py-0 text-[10px]`}>Morning</Badge>
+                            <Badge className={`${customerFlagBadgeClass("success")} px-1.5 py-0 text-[0.588rem]`}>Morning</Badge>
                           ) : null}
                         </div>
                       </div>
@@ -654,7 +654,7 @@ export default function CustomersClient({
                           <div className="whitespace-nowrap text-sm font-semibold tabular-nums text-destructive">
                             {ils(openBalance)}
                           </div>
-                          <div className="text-[10px] text-muted-foreground">יתרה</div>
+                          <div className="text-[0.588rem] text-muted-foreground">יתרה</div>
                         </div>
                       ) : null}
                       <ChevronLeftIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -669,18 +669,21 @@ export default function CustomersClient({
         desktop={
           <DataTableShell
             ref={scrollRef}
-            tableClassName="table-fixed"
+            // min-w in rem: with a bigger text size the columns kept their share
+            // of the page while their text grew, so emails and balances ran into
+            // the next column — now the table widens and scrolls inside its card.
+            tableClassName="table-fixed min-w-[65rem]"
             colgroup={
               <>
                 <col className="w-[17%]" />
                 <col className="w-[15%]" />
-                <col className="w-[14%]" />
-                <col className="w-[6%]" />
-                <col className="w-[6%]" />
-                <col className="w-[6%]" />
-                <col className="w-[9%]" />
+                <col className="w-[12.5%]" />
+                <col className="w-[7%]" />
+                <col className="w-[5.7%]" />
+                <col className="w-[6.3%]" />
+                <col className="w-[10%]" />
                 <col className="w-[11%]" />
-                <col className="w-[16%]" />
+                <col className="w-[15.5%]" />
               </>
             }
             header={
@@ -719,9 +722,10 @@ export default function CustomersClient({
                     ) : null}
                   </td>
                   <td className="px-2 py-1.5">
-                    <div className="leading-tight">{s(row, "phone") || "-"}</div>
+                    {/* The phone field sometimes holds an email: it breaks inside the cell. */}
+                    <div className="leading-tight [overflow-wrap:anywhere]">{s(row, "phone") || "-"}</div>
                     {s(row, "email") ? (
-                      <div className="text-xs leading-tight text-muted-foreground">{s(row, "email")}</div>
+                      <div className="text-xs leading-tight text-muted-foreground [overflow-wrap:anywhere]">{s(row, "email")}</div>
                     ) : null}
                   </td>
                   <td className="px-2 py-1.5">
@@ -742,10 +746,10 @@ export default function CustomersClient({
                   <td className="px-2 py-1.5">
                     {linkedMorningClientId ? (
                       <a href={morningClientUrl(linkedMorningClientId)} target="_blank" rel="noreferrer">
-                        <Badge className={`${customerFlagBadgeClass("success")} px-1.5 py-0 text-[10px]`}>Morning</Badge>
+                        <Badge className={`${customerFlagBadgeClass("success")} px-1.5 py-0 text-[0.588rem]`}>Morning</Badge>
                       </a>
                     ) : (
-                      <Badge className={`${customerFlagBadgeClass("neutral")} px-1.5 py-0 text-[10px]`}>ללא</Badge>
+                      <Badge className={`${customerFlagBadgeClass("neutral")} px-1.5 py-0 text-[0.588rem]`}>ללא</Badge>
                     )}
                   </td>
                   <td className="px-2 py-1.5">{n(row, "orders_count")}</td>
@@ -758,18 +762,18 @@ export default function CustomersClient({
                   <td className="px-2 py-1.5">
                     <div className="flex flex-wrap gap-1">
                       {row.linked_user_id ? (
-                        <Badge className={`${customerFlagBadgeClass("info")} px-1.5 py-0 text-[10px]`}>עובד</Badge>
+                        <Badge className={`${customerFlagBadgeClass("info")} px-1.5 py-0 text-[0.588rem]`}>עובד</Badge>
                       ) : null}
                       {row.requires_prepayment === true ? (
-                        <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>תשלום מראש</Badge>
+                        <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[0.588rem]`}>תשלום מראש</Badge>
                       ) : null}
                       {openBalance > 0 ? (
-                        <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>חוב פתוח</Badge>
+                        <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[0.588rem]`}>חוב פתוח</Badge>
                       ) : null}
                       {row.active === false ? (
-                        <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>לא פעיל</Badge>
+                        <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[0.588rem]`}>לא פעיל</Badge>
                       ) : (
-                        <Badge className={`${customerFlagBadgeClass("success")} px-1.5 py-0 text-[10px]`}>פעיל</Badge>
+                        <Badge className={`${customerFlagBadgeClass("success")} px-1.5 py-0 text-[0.588rem]`}>פעיל</Badge>
                       )}
                     </div>
                   </td>

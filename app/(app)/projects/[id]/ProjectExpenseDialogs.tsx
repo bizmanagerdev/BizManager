@@ -444,7 +444,7 @@ export function AddIncomeDialog({
               {dueDateError ? (
                 <div className="text-xs text-destructive">{dueDateError}</div>
               ) : !requiresDueDate ? (
-                <div className="text-[11px] text-muted-foreground">
+                <div className="text-[0.647rem] text-muted-foreground">
                   לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
                 </div>
               ) : null}

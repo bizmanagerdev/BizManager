@@ -67,7 +67,7 @@ export default function DunningStagesEditor() {
   return (
     <div className="rounded-xl border bg-muted/20 p-3">
       <div className="mb-1 text-xs font-semibold">סולם גבייה — מדרג תזכורות אוטומטי לפי ימי איחור</div>
-      <div className="mb-2 text-[11px] text-muted-foreground">
+      <div className="mb-2 text-[0.647rem] text-muted-foreground">
         לכל חוב באיחור נוצרת תזכורת בשלב הנוכחי (השלב הגבוה ביותר שימי האיחור עברו אותו), עם הסלמה ככל שהחוב מזדקן.
       </div>
 

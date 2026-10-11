@@ -113,7 +113,7 @@ export default function NotificationsClient({
         {groups.map(([category, rows]) => (
           <div key={category}>
             <div className="mb-1 text-xs font-semibold text-muted-foreground">
-              {CATEGORY_LABEL[category] ?? category} <span className="text-[10px]">({rows.length})</span>
+              {CATEGORY_LABEL[category] ?? category} <span className="text-[0.588rem]">({rows.length})</span>
             </div>
             <ul className="divide-y rounded-xl border">
               {rows.map((n) => {
@@ -129,7 +129,7 @@ export default function NotificationsClient({
                       <div className="min-w-0 flex-1">
                         <div className={`text-sm ${isUnread ? "font-semibold" : "font-medium text-muted-foreground"}`}>{n.title}</div>
                         {n.body ? <div className="text-xs text-muted-foreground">{n.body}</div> : null}
-                        <div className="mt-0.5 text-[11px] text-muted-foreground">{formatShortDateTime(n.created_at, "-")}</div>
+                        <div className="mt-0.5 text-[0.647rem] text-muted-foreground">{formatShortDateTime(n.created_at, "-")}</div>
                       </div>
                     </Link>
                   </li>

@@ -71,7 +71,7 @@ function LastContactSignal({
 }) {
   if (!lastContactAt) {
     if (!overdue) return <span className="text-muted-foreground/40">—</span>;
-    return <span className="text-[11px] font-medium text-warning-strong"><WarningIcon className="inline h-3 w-3 align-text-bottom" /> טרם נוצר קשר</span>;
+    return <span className="text-[0.647rem] font-medium text-warning-strong"><WarningIcon className="inline h-3 w-3 align-text-bottom" /> טרם נוצר קשר</span>;
   }
   const days = daysSince(lastContactAt);
   const label = compact
@@ -414,7 +414,7 @@ function SourceDetail({ source }: { source: CollectionCustomerGroup["sources"][n
           {collectionStatusLabel(source.collection_status)}
         </Badge>
         {checkPayment ? (
-          <Badge variant="info" className="gap-1 text-[10px]">
+          <Badge variant="info" className="gap-1 text-[0.588rem]">
             צ׳ק{checkPayment.check_number ? ` מס׳ ${checkPayment.check_number}` : ""}
           </Badge>
         ) : null}
@@ -526,7 +526,7 @@ const CustomerCard = memo(function CustomerCard({
               />
               <span className="font-semibold">{group.customer_name}</span>
               {groupHasPendingCheck(group) ? (
-                <Badge variant="info" className="gap-1 text-[10px]">צ׳ק</Badge>
+                <Badge variant="info" className="gap-1 text-[0.588rem]">צ׳ק</Badge>
               ) : null}
             </div>
             {group.customer_phone ? (
@@ -634,9 +634,9 @@ function ExpectedReceiptRow({ receipt }: { receipt: ExpectedReceipt }) {
         <span className="text-lg font-semibold">{formatCurrency(receipt.amount)}</span>
         <div className="flex items-center gap-1">
           {receipt.isScheduled ? (
-            <Badge variant="info" className="gap-1 text-[10px]">{paymentMethodLabel(receipt.methodRaw)}</Badge>
+            <Badge variant="info" className="gap-1 text-[0.588rem]">{paymentMethodLabel(receipt.methodRaw)}</Badge>
           ) : (
-            <Badge variant="neutral" className="gap-1 text-[10px]">לא נקבע</Badge>
+            <Badge variant="neutral" className="gap-1 text-[0.588rem]">לא נקבע</Badge>
           )}
           {receipt.overdue ? (
             <Badge className={collectionStatusClasses("overdue")}>{collectionStatusLabel("overdue")}</Badge>
@@ -676,9 +676,9 @@ function ExpectedReceiptTableRow({ receipt }: { receipt: ExpectedReceipt }) {
     <tr className="border-b border-border/50 hover:bg-muted/30">
       <td className="px-3 py-2">
         {receipt.isScheduled ? (
-          <Badge variant="info" className="gap-1 text-[10px]">{paymentMethodLabel(receipt.methodRaw)}</Badge>
+          <Badge variant="info" className="gap-1 text-[0.588rem]">{paymentMethodLabel(receipt.methodRaw)}</Badge>
         ) : (
-          <Badge variant="neutral" className="gap-1 text-[10px]">לא נקבע</Badge>
+          <Badge variant="neutral" className="gap-1 text-[0.588rem]">לא נקבע</Badge>
         )}
         {receipt.checkNumber ? (
           <div className="mt-0.5 text-xs text-muted-foreground">מס׳ צ׳ק {receipt.checkNumber}</div>
@@ -1378,10 +1378,10 @@ const FragmentRow = memo(function FragmentRow({
               {collectionStatusLabel(group.status)}
             </Badge>
             {groupHasPendingCheck(group) ? (
-              <Badge variant="info" className="gap-1 text-[10px]">צ׳ק</Badge>
+              <Badge variant="info" className="gap-1 text-[0.588rem]">צ׳ק</Badge>
             ) : null}
           </div>
-          <DaysLateSummary group={group} className="mt-0.5 text-[11px] text-destructive" />
+          <DaysLateSummary group={group} className="mt-0.5 text-[0.647rem] text-destructive" />
         </td>
         <td className="px-3 py-2">
           <LastContactSignal

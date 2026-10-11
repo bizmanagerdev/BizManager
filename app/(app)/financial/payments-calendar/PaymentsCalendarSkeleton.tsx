@@ -253,7 +253,7 @@ function CalendarSkeleton({ direction, monthParam }: { direction: Direction; mon
               <div className="flex h-full flex-col rounded-2xl border bg-card p-4">
                 <div className="border-b pb-3">
                   {/* The panel opens on today, whichever month is on show. */}
-                  <div className="text-[11px] font-semibold text-primary">היום</div>
+                  <div className="text-[0.647rem] font-semibold text-primary">היום</div>
                   <TextLineSkeleton className="mt-0.5 text-xl font-bold leading-tight" barClassName="w-40" />
                   <TextLineSkeleton className="mt-1 text-xs" barClassName="w-24" />
                 </div>

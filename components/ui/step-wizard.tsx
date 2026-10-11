@@ -205,7 +205,7 @@ export function WizardStepper<TStep extends string | number>({
                 disabled={!clickable}
                 onClick={() => clickable && onStepClick(s.n)}
                 className={cn(
-                  "flex h-5 w-5 items-center justify-center rounded-full border-2 text-[10px] font-semibold transition-colors",
+                  "flex h-5 w-5 items-center justify-center rounded-full border-2 text-[0.588rem] font-semibold transition-colors",
                   active && "border-primary text-primary",
                   done && "border-primary bg-primary text-primary-foreground",
                   !active && !done && "border-border text-muted-foreground",
@@ -217,7 +217,7 @@ export function WizardStepper<TStep extends string | number>({
               <div
                 className={cn(
                   // Narrower on a phone: four labels + the X have to fit 360px.
-                  "w-11 text-center text-[10px] font-medium leading-tight sm:w-14",
+                  "w-11 text-center text-[0.588rem] font-medium leading-tight sm:w-14",
                   active || done ? "text-foreground" : "text-muted-foreground"
                 )}
               >

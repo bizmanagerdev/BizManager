@@ -738,7 +738,7 @@ export function IncomeDialog({
               {"צ'ק יירשם כממתין לפירעון עד תאריך הפירעון."}
             </span>
           ) : (
-            <span className="block text-[11px] text-muted-foreground">
+            <span className="block text-[0.647rem] text-muted-foreground">
               לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
             </span>
           )}

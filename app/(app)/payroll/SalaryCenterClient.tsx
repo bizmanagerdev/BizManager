@@ -2603,7 +2603,10 @@ export default function SalaryCenterClient({
         onUnlockSuccess={loadProtectedData}
         fallback={
           <Card>
-            <CardContent className="grid grid-cols-2 gap-2 py-3 sm:grid-cols-3 lg:grid-cols-5">
+            {/* Up to five across, never under 8.5rem (rem, so it follows the text
+                size): two fixed columns on a phone ran "₪178,844.64" out of its tile
+                at a bigger size. */}
+            <CardContent className="grid grid-cols-[repeat(auto-fit,minmax(max(8.5rem,calc((100%-2rem)/5)),1fr))] gap-2 py-3">
               <MiniStat label="עלות עבודה החודש" value="מוגן" strong />
               <MiniStat label="יתרה לעובדים" value="מוגן" strong />
               <MiniStat label="קבלנות" value="מוגן" />
@@ -2614,7 +2617,7 @@ export default function SalaryCenterClient({
         }
       >
         <Card>
-          <CardContent className="grid grid-cols-2 gap-2 py-3 sm:grid-cols-3 lg:grid-cols-5">
+          <CardContent className="grid grid-cols-[repeat(auto-fit,minmax(max(8.5rem,calc((100%-2rem)/5)),1fr))] gap-2 py-3">
             <MiniStat
               label="עלות עבודה החודש"
               loading={protectedLoading}
@@ -2685,7 +2688,7 @@ export default function SalaryCenterClient({
                               <div className="min-w-0">
                                 <div className="font-semibold">{worker.full_name ?? worker.email ?? "עובד"}</div>
                                 {worker.phone ? <div className="text-sm text-muted-foreground" dir="ltr">{worker.phone}</div> : null}
-                                {worker.email ? <div className="text-xs text-muted-foreground" dir="ltr">{worker.email}</div> : null}
+                                {worker.email ? <div className="text-xs text-muted-foreground [overflow-wrap:anywhere]" dir="ltr">{worker.email}</div> : null}
                                 {!worker.email && !worker.phone ? <div className="text-xs text-muted-foreground">{"ללא פרטי קשר"}</div> : null}
                               </div>
                               <StatusPill tone={worker.active === false ? "muted" : "success"}>
@@ -2929,7 +2932,7 @@ export default function SalaryCenterClient({
                               <div className="min-w-0">
                                 <div className="font-semibold">{worker.full_name ?? worker.email ?? "פועל"}</div>
                                 {worker.phone ? <div className="text-sm text-muted-foreground" dir="ltr">{worker.phone}</div> : null}
-                                {worker.email ? <div className="text-xs text-muted-foreground" dir="ltr">{worker.email}</div> : null}
+                                {worker.email ? <div className="text-xs text-muted-foreground [overflow-wrap:anywhere]" dir="ltr">{worker.email}</div> : null}
                                 {!worker.email && !worker.phone ? <div className="text-xs text-muted-foreground">{"ללא פרטי קשר"}</div> : null}
                               </div>
                               <StatusPill tone={worker.active === false ? "muted" : "success"}>

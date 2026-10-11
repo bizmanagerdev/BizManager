@@ -268,7 +268,10 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
   function AlertRowItem({ alert, mode }: { alert: AlertRow; mode: AlertMode }) {
     const isBuiltin = alert.alert_type && (BUILTIN_ALERT_TYPES as readonly string[]).includes(alert.alert_type);
     return (
-      <div className="flex items-center gap-3 px-4 py-3">
+      // Wraps: the title keeps at least 8rem and the edit / delete buttons take
+      // a second line when they don't fit beside it — inside the card's padding
+      // on a phone at a bigger text size the title was squeezed to 22px.
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
         <button
           type="button"
           onClick={() => void toggleEnabled(alert)}
@@ -280,28 +283,34 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
           />
         </button>
 
-        <div className="min-w-0 flex-1">
-          <div className={`text-sm font-medium ${alert.enabled ? "" : "text-muted-foreground"}`}>{alert.title}</div>
+        <div className="min-w-[8rem] flex-1">
+          {/* A break is allowed after "/" — "טסט/ביטוח/רישוי" is one word to the
+              browser, and at a bigger text size it ran out of the row. */}
+          <div className={`text-sm font-medium ${alert.enabled ? "" : "text-muted-foreground"}`}>
+            {alert.title.replace(/\//g, "/\u200b")}
+          </div>
           <div className="mt-0.5 flex items-center gap-1.5">
             {isBuiltin && (
-              <span className="rounded bg-info-soft px-1.5 py-px text-[10px] text-info-soft-foreground">
+              <span className="rounded bg-info-soft px-1.5 py-px text-[0.588rem] text-info-soft-foreground">
                 {BUILTIN_LABELS[alert.alert_type!] ?? alert.alert_type}
               </span>
             )}
-            <span className="text-[11px] text-muted-foreground">{metaFor(alert, mode)}</span>
+            <span className="text-[0.647rem] text-muted-foreground">{metaFor(alert, mode)}</span>
           </div>
         </div>
 
-        <EditButton onClick={() => openEdit(alert)} label="עריכת התראה" />
+        <div className="ms-auto flex items-center gap-3">
+          <EditButton onClick={() => openEdit(alert)} label="עריכת התראה" />
 
-        {/* System rules (rule_key) aren't deletable — only toggled/edited. */}
-        {!alert.rule_key ? (
-          <DeleteButton
-            label="מחיקת התראה"
-            loading={deleting === alert.id}
-            onClick={() => setConfirmDelete(alert)}
-          />
-        ) : null}
+          {/* System rules (rule_key) aren't deletable — only toggled/edited. */}
+          {!alert.rule_key ? (
+            <DeleteButton
+              label="מחיקת התראה"
+              loading={deleting === alert.id}
+              onClick={() => setConfirmDelete(alert)}
+            />
+          ) : null}
+        </div>
       </div>
     );
   }
@@ -356,7 +365,9 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
               })
             : null}
 
-          <div className="flex items-center justify-end gap-2">
+          {/* Wraps: the two buttons side by side ran off a phone's edge at a
+              bigger text size. */}
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {testResult && <span className="text-xs text-muted-foreground">{testResult}</span>}
             <Button variant="secondary" size="sm" onClick={sendTest} disabled={testSending}>
               {testSending ? "שולח..." : "שלח בדיקה לנייד"}
@@ -498,7 +509,7 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
                         emptyLabel="לפי התפקיד"
                       />
                     </Field>
-                    <p className="rounded-lg bg-muted/40 p-2 text-[11px] leading-relaxed text-muted-foreground">
+                    <p className="rounded-lg bg-muted/40 p-2 text-[0.647rem] leading-relaxed text-muted-foreground">
                       זה קובע <strong className="text-foreground">של מי</strong> ההתראה — כלומר למי היא מתריעה
                       לנייד. ניהול רואה בתיבה גם התראות של המשרד בכל מקרה; זה רק לא מצלצל להם.
                       התראות שיש להן אחראי (משימה, פרויקט) הולכות תמיד לאחראי עצמו.
@@ -624,7 +635,7 @@ function DropdownRow({
       }`}
     >
       <span
-        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${
+        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[0.588rem] ${
           checked ? "border-primary bg-primary text-white" : "border-border"
         }`}
       >
@@ -703,7 +714,7 @@ function UrlPicker({ value, onChange }: { value: string; onChange: (url: string)
       {/* Specific item picker — shown when section supports drill-down */}
       {activeSection?.optionsType && (
         <div className="rounded-lg border bg-muted/20 p-2 space-y-1.5">
-          <div className="text-[11px] text-muted-foreground">בחר פריט ספציפי (אופציונלי)</div>
+          <div className="text-[0.647rem] text-muted-foreground">בחר פריט ספציפי (אופציונלי)</div>
 
           {/* Search */}
           <input
@@ -750,7 +761,7 @@ function UrlPicker({ value, onChange }: { value: string; onChange: (url: string)
       )}
 
       {/* Final URL preview */}
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-[0.647rem] text-muted-foreground">
         <span>קישור:</span>
         <span dir="ltr" className="font-mono text-foreground">{value}</span>
       </div>

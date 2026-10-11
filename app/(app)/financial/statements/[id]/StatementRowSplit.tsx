@@ -66,7 +66,7 @@ export function StatementRowSplit({
                   <div className={`text-sm font-semibold tabular-nums ${remainder > 0 ? "" : "text-destructive"}`}>
                     {ils(remainder)}
                   </div>
-                  <div className="text-[11px] text-muted-foreground">השאר</div>
+                  <div className="text-[0.647rem] text-muted-foreground">השאר</div>
                 </div>
               ) : (
                 <CurrencyInput

@@ -176,7 +176,7 @@ function DocumentYearGroup({
                       // mid-string (bidi reordering) instead of at the true end.
                       // Small and muted on purpose: it's a secondary detail now,
                       // not the row's primary line the way it used to be.
-                      <div dir="ltr" className="break-words text-right text-[11px] text-muted-foreground/70">
+                      <div dir="ltr" className="break-words text-right text-[0.647rem] text-muted-foreground/70">
                         {d.fileName}
                       </div>
                     ) : null}

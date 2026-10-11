@@ -336,7 +336,7 @@ export default function RecurringTasksClient(props: Props) {
           <div className="space-y-2 md:hidden">
             {/* Same hint the customers list carries — a swipe is invisible until
                 someone tells you it's there. */}
-            <p className="px-1 text-[11px] text-muted-foreground">החלק כרטיס ימינה לעריכה ומחיקה</p>
+            <p className="px-1 text-[0.647rem] text-muted-foreground">החלק כרטיס ימינה לעריכה ומחיקה</p>
             {templates.map((template) => {
               const linkedLabel =
                 template.project_id
