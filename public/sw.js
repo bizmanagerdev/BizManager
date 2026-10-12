@@ -347,6 +347,15 @@ const NAV_TIMEOUT_MS = 8000;
 // gets that copy after this long instead of a blank screen; the copy says
 // it's a saved one and reloads itself once the server answers.
 const SAVED_COPY_AFTER_MS = 3000;
+// ...unless the server has just shown it's there, only slow. When a page we
+// gave up on after SAVED_COPY_AFTER_MS arrives after all, the connection works
+// — a filtered office line, a busy moment — and for a while navigations get
+// the full NAV_TIMEOUT_MS instead. Without this, the saved copy's own reload
+// raced the same 3 seconds and landed on the saved copy again, over and over
+// (owner, 2026-10-12: the yellow strip on every reload of the accounts page,
+// which takes the server 1–2 s to build, behind an office filter).
+const SLOW_SERVER_PATIENCE_MS = 10 * 60 * 1000;
+let slowServerUntil = 0;
 
 /** "v123" from "bizh-pages-v123" — null for caches that aren't the app's. */
 function versionOf(cacheName) {
@@ -708,11 +717,14 @@ self.addEventListener("fetch", (event) => {
         // With a saved copy to fall back on, a hanging connection is given
         // less time before the copy shows (SAVED_COPY_AFTER_MS).
         const saved = await savedCopyFor(request, frame);
+        const patient = Date.now() < slowServerUntil;
         let res = null;
         try {
           res = await Promise.race([
             network,
-            new Promise((resolve) => setTimeout(() => resolve(null), saved ? SAVED_COPY_AFTER_MS : NAV_TIMEOUT_MS)),
+            new Promise((resolve) =>
+              setTimeout(() => resolve(null), saved && !patient ? SAVED_COPY_AFTER_MS : NAV_TIMEOUT_MS)
+            ),
           ]);
         } catch {
           res = null; // network rejected outright — fall through to cache
@@ -721,7 +733,13 @@ self.addEventListener("fetch", (event) => {
 
         // Timed out: leave the request in flight so a merely-slow network still
         // warms PAGES_CACHE for the next launch, but stop waiting on it here.
-        network.catch(() => {});
+        // If it does arrive, the server is there, only slow: be patient for a
+        // while (SLOW_SERVER_PATIENCE_MS).
+        network
+          .then((late) => {
+            if (late && late.ok) slowServerUntil = Date.now() + SLOW_SERVER_PATIENCE_MS;
+          })
+          .catch(() => {});
 
         // This page's saved copy (a device page's frame first — the phone fills
         // it from its own copy), else somewhere to land; marked as a saved copy.

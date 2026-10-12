@@ -355,6 +355,43 @@ describe("service worker: when the connection hangs or drops", () => {
     }
   });
 
+  it("a server that answers, only slowly: after the first saved copy, reloads wait for the real page", async () => {
+    // The accounts page behind an office filter (2026-10-12): ~4 s to arrive.
+    // The first opening shows the saved copy at 3 s; the page then arrives, so
+    // the server is there — the saved copy's reload (and any opening in the next
+    // ten minutes) waits for it instead of landing on the saved copy again.
+    vi.useFakeTimers();
+    try {
+      const slow = () =>
+        new Promise<Response>((resolve) =>
+          setTimeout(() => resolve(new Response("<html><body>עדכני</body></html>", { status: 200 })), 4000)
+        );
+      const worker = loadWorkerWithCaches(slow, { "bizh-pages-test": { "https://biz-h.com/financial/bank": PAGE } });
+
+      let first: string | null = null;
+      void open(worker, "https://biz-h.com/financial/bank").then((t) => (first = t));
+      await vi.advanceTimersByTimeAsync(3100);
+      expect(first).toMatch(/^<html data-bizh-saved="\d+">/);
+      await vi.advanceTimersByTimeAsync(1000); // the real page arrives, late
+
+      let reload: string | null = null;
+      void open(worker, "https://biz-h.com/financial/bank").then((t) => (reload = t));
+      await vi.advanceTimersByTimeAsync(3100);
+      expect(reload).toBeNull(); // still waiting — no saved copy this time
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(reload).toBe("<html><body>עדכני</body></html>");
+
+      // Ten minutes on, a hang gets the saved copy at 3 s again.
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+      let later: string | null = null;
+      void open(worker, "https://biz-h.com/financial/bank").then((t) => (later = t));
+      await vi.advanceTimersByTimeAsync(3100);
+      expect(later).toMatch(/^<html data-bizh-saved="\d+">/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("no saved copy: waits the full 8 seconds, then the offline page — which tries again by itself", async () => {
     vi.useFakeTimers();
     try {
