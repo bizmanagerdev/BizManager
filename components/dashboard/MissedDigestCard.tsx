@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AiIcon, ChevronDownIcon, CloseIcon } from "@/components/ui/icons";
@@ -17,19 +17,9 @@ import { t } from "@/lib/i18n/t";
 import { dashboardDict } from "@/lib/i18n/dictionaries/dashboard";
 import type { Locale } from "@/lib/i18n/types";
 
-// Tables that feed the digest — a relative realtime INSERT triggers a refetch
-// (the server re-applies role + since-anchor + exclude-self filtering).
-const DIGEST_TABLES = new Set([
-  "orders",
-  "projects",
-  "customers",
-  "payments",
-  "expenses",
-  "worker_payments",
-  "attendance_sessions",
-  "users",
-  "accounts",
-]);
+/** How often an open dashboard asks what others did (/api/dashboard/digest,
+ *  which applies the role, the since-anchor and the exclude-self filtering). */
+const DIGEST_POLL_MS = 60_000;
 
 // Section label + display order per entity type.
 function typeLabel(locale: Locale): Record<string, string> {
@@ -78,7 +68,6 @@ export default function MissedDigestCell({
   const [dismissed, setDismissed] = useState(false);
   // Which topics are expanded — none to begin with, so the card lands compact.
   const [openTopics, setOpenTopics] = useState<Set<string>>(() => new Set());
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Fold cascades (order + its items/payment → one row), then bucket by type.
   const typed = useMemo<TypeBucket[]>(() => {
@@ -121,32 +110,20 @@ export default function MissedDigestCell({
     }
   }, [planned, router]);
 
+  // What others did is fetched once a minute while the board is on screen,
+  // and the moment it comes back into view — not pushed. A live listener on
+  // audit_logs had the database match every saved row (every save writes
+  // one) against every open dashboard; the activity page's twin of it froze
+  // the database on 2026-10-12 (owner: "yes do it", for this card too).
   useEffect(() => {
-    const supabase = createSupabaseBrowserClient();
-    let channel: ReturnType<typeof supabase.channel> | null = null;
-    let cancelled = false;
-
-    void (async () => {
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
-      if (token) supabase.realtime.setAuth(token);
-      if (cancelled) return;
-
-      channel = supabase
-        .channel("dashboard-digest")
-        .on("postgres_changes", { event: "INSERT", schema: "public", table: "audit_logs" }, (payload) => {
-          const row = payload.new as { table_name?: string } | null;
-          if (!row?.table_name || !DIGEST_TABLES.has(row.table_name)) return;
-          if (timerRef.current) clearTimeout(timerRef.current);
-          timerRef.current = setTimeout(() => void refetch(), 1500);
-        })
-        .subscribe();
-    })();
-
+    const tick = () => {
+      if (document.visibilityState === "visible") void refetch();
+    };
+    const id = setInterval(tick, DIGEST_POLL_MS);
+    document.addEventListener("visibilitychange", tick);
     return () => {
-      cancelled = true;
-      if (timerRef.current) clearTimeout(timerRef.current);
-      if (channel) void supabase.removeChannel(channel);
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
     };
   }, [refetch]);
 
