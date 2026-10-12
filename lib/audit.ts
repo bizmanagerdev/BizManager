@@ -4,7 +4,6 @@ import { formatMoney } from "@/lib/money";
 import { ORDER_NOTES_SEPARATOR } from "@/lib/orders/comments";
 import { getSalaryTypeLabel } from "@/lib/payroll";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { israelDateKey, israelWallClockToUtc } from "@/lib/timezone";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type AuditLogPrimitive = string | number | boolean | null;
@@ -83,6 +82,30 @@ export type AuditFeedItem = {
   // True for low-level side-effect rows (order_items, inventory movements,
   // document links, payment allocations) that should fold under their parent.
   isChild: boolean;
+  // The raw facts the activity page builds its sentences from (the amount, the
+  // payment method, a status that moved, an order line). Empty on a private
+  // task's rows, like everything else about them.
+  facts?: AuditFacts;
+};
+
+// One order line as the row recorded it: which product (or free-text line), how
+// many, and — on an edit of the line itself — how many before. `name` starts as
+// the line's own description and is replaced by the product's name when the
+// page resolves it (enrichOrderLineNames).
+export type AuditOrderLine = { key: string; name: string | null; qty: number; qtyBefore: number | null };
+
+export type AuditFacts = {
+  amount: number | null;
+  /** The payment method in Hebrew ("צ׳ק", "מזומן"…). */
+  method: string | null;
+  /** A status that changed on this update — raw stored values. */
+  statusFrom: string | null;
+  statusTo: string | null;
+  /** A work session that got its clock-out on this update. */
+  clockedOut: boolean;
+  line: AuditOrderLine | null;
+  /** On a user's update: the columns that changed (to tell settings from permissions). */
+  userFields: string[] | null;
 };
 
 // A header row plus the side-effect rows that collapse beneath it.
@@ -503,6 +526,11 @@ const CHILD_TABLES = new Set([
   "recurring_task_template_assignees",
 ]);
 
+/** A table whose rows are another action's plumbing (see CHILD_TABLES), not an action of their own. */
+export function isChildAuditTable(tableName: string): boolean {
+  return CHILD_TABLES.has(tableName);
+}
+
 function recordData(
   newData: AuditLogValue,
   oldData: AuditLogValue
@@ -592,7 +620,7 @@ export async function resolvePrivateTaskIds(
 
 // Shown instead of the real details/title on a redacted row — confirms
 // something happened without saying what.
-const PRIVATE_TASK_LABEL = "משימה פרטית";
+export const PRIVATE_TASK_LABEL = "משימה פרטית";
 
 // Resolve a "<type>:<uuid>" parent key to a viewable route.
 function hrefFromParentKey(parentKey: string | null): string | null {
@@ -1215,6 +1243,9 @@ export async function resolveAuditTitles(
       case "projects":
         title = inline(d, "name");
         break;
+      case "users":
+        title = inline(d, "full_name");
+        break;
       case "tasks":
         title = inline(d, "subject") ?? inline(d, "title");
         break;
@@ -1377,6 +1408,8 @@ const STATUS_VALUE_LABELS: Record<string, string> = {
   approved: "אושר", rejected: "נדחה", sent: "נשלח", overdue: "באיחור", pending_review: "ממתין לאישור",
   issued: "הונפק", needs_invoice: "דורש חשבונית", scheduled: "מתוזמן",
   failed: "נכשל", success: "הצליח", contacted: "נוצר קשר", promised: "הובטח",
+  // a payment's / a check's own status (as the checks page says them)
+  cleared: "נפרע", bounced: "חזר",
   // payment methods
   cash: "מזומן", credit: "אשראי", credit_card: "אשראי", card: "אשראי",
   check: "צ׳ק", cheque: "צ׳ק", bank_transfer: "העברה בנקאית", transfer: "העברה",
@@ -1757,6 +1790,7 @@ export function buildAuditFeedItem(
   const parentKey = isPrivate
     ? null
     : buildParentKey(row.table_name, row.record_id, row.new_data ?? null, row.old_data ?? null);
+  const facts = isPrivate ? EMPTY_FACTS : buildFacts(row.table_name, row.action, row.new_data ?? null, row.old_data ?? null);
 
   return {
     id: row.id,
@@ -1777,7 +1811,96 @@ export function buildAuditFeedItem(
     parentKey,
     href: isPrivate ? null : buildHref(row.table_name, row.record_id, parentKey, data),
     isChild: CHILD_TABLES.has(row.table_name),
+    facts,
   };
+}
+
+const EMPTY_FACTS: AuditFacts = {
+  amount: null,
+  method: null,
+  statusFrom: null,
+  statusTo: null,
+  clockedOut: false,
+  line: null,
+  userFields: null,
+};
+
+// Where each table keeps the money a row is about. payments' is amount_total
+// (gross — see buildDetails), an order's its total.
+const AMOUNT_FIELDS: Record<string, string[]> = {
+  payments: ["amount_total"],
+  orders: ["total_amount", "total_price"],
+  expenses: ["amount"],
+  worker_payments: ["amount"],
+  account_transfers: ["amount"],
+  payment_promises: ["amount"],
+  loans: ["amount"],
+  loan_repayments: ["amount"],
+  morning_documents: ["amount"],
+};
+
+export function buildFacts(
+  tableName: string,
+  action: string,
+  newData: AuditLogValue,
+  oldData: AuditLogValue
+): AuditFacts {
+  const asRecord = (v: AuditLogValue) =>
+    v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, AuditLogValue>) : null;
+  const n = asRecord(newData);
+  const o = asRecord(oldData);
+  const d = n ?? o;
+
+  let amount: number | null = null;
+  for (const field of AMOUNT_FIELDS[tableName] ?? []) {
+    const value = Number(d?.[field]);
+    if (d?.[field] !== null && d?.[field] !== undefined && Number.isFinite(value)) {
+      amount = value;
+      break;
+    }
+  }
+
+  const rawMethod = typeof d?.payment_method === "string" ? d.payment_method : null;
+  const method = rawMethod ? STATUS_VALUE_LABELS[rawMethod] ?? rawMethod : null;
+
+  let statusFrom: string | null = null;
+  let statusTo: string | null = null;
+  let clockedOut = false;
+  if (isUpdateAction(action) && n && o) {
+    const before = typeof o.status === "string" ? o.status : null;
+    const after = typeof n.status === "string" ? n.status : null;
+    if (before !== after) {
+      statusFrom = before;
+      statusTo = after;
+    }
+    clockedOut = tableName === "attendance_sessions" && !o.clock_out && Boolean(n.clock_out);
+  }
+
+  let line: AuditOrderLine | null = null;
+  if (tableName === "order_items" && d) {
+    const productId = typeof d.product_id === "string" && d.product_id ? d.product_id : null;
+    const description = typeof d.description === "string" && d.description.trim() ? d.description.trim() : null;
+    const key = productId ?? (description ? `text:${description}` : null);
+    if (key) {
+      const qty = Number(d.quantity_ordered);
+      const qtyBefore = isUpdateAction(action) && o ? Number(o.quantity_ordered) : NaN;
+      line = {
+        key,
+        name: description,
+        qty: Number.isFinite(qty) ? qty : 0,
+        qtyBefore: Number.isFinite(qtyBefore) ? qtyBefore : null,
+      };
+    }
+  }
+
+  let userFields: string[] | null = null;
+  if (tableName === "users" && isUpdateAction(action) && n && o) {
+    userFields = Object.keys(n).filter(
+      (key) => key !== "updated_at" && JSON.stringify(n[key] ?? null) !== JSON.stringify(o[key] ?? null)
+    );
+  }
+
+  return { amount, method, statusFrom, statusTo, clockedOut, line, userFields };
 }
 
 function normalizeAuditRows(
@@ -2214,7 +2337,9 @@ export async function getEntityAuditTrail(
   return { items: normalizeAuditRows(rows, actorInfo.names, titles, actorInfo.colors), error: null };
 }
 
-export const AUDIT_PAGE_SIZE = 50;
+// Rows per page. An order with a dozen lines writes some 35 rows that fold into
+// one entry, so a page of 50 could show only a handful of entries.
+export const AUDIT_PAGE_SIZE = 100;
 
 export const AUDIT_TABLE_OPTIONS = [
   { value: "", label: "כל הסוגים" },
@@ -2236,6 +2361,20 @@ export const AUDIT_TABLE_OPTIONS = [
   { value: "users", label: "משתמשים" },
   { value: "auth", label: "כניסות למערכת" },
 ] as const;
+
+/**
+ * The stored actions a filter choice stands for. The database's own log writes
+ * INSERT / UPDATE / DELETE, the app's writes create / update / delete — so
+ * "יצירה" must match both, or it showed only the app's few rows.
+ */
+export function auditActionValues(action: string): string[] {
+  switch (action) {
+    case "create": return ["create", "INSERT"];
+    case "update": return ["update", "UPDATE"];
+    case "delete": return ["delete", "DELETE"];
+    default: return [action];
+  }
+}
 
 export const AUDIT_ACTION_OPTIONS = [
   { value: "", label: "כל הפעולות" },
@@ -2548,8 +2687,13 @@ export async function enrichDocumentLinks(supabase: SupabaseClient, items: Audit
 // print order summary in OrderShareActions. Mutates the passed items; a no-op
 // when the page has no order rows or an order currently has no line items
 // (e.g. it was deleted and its items cascaded away).
+//
+// Only on a NEW order: an edit shows what changed in it instead — its line
+// changes (lib/activity/order-lines.ts) and the field changes, e.g. the total.
 async function enrichOrderItemsSummary(supabase: SupabaseClient, items: AuditFeedItem[]): Promise<void> {
-  const orderItems = items.filter((i) => i.tableName === "orders" && i.recordId);
+  const orderItems = items.filter(
+    (i) => i.tableName === "orders" && i.recordId && (i.action === "INSERT" || i.action === "create")
+  );
   if (orderItems.length === 0) return;
 
   const orderIds = Array.from(new Set(orderItems.map((i) => i.recordId)));
@@ -2606,52 +2750,39 @@ async function enrichOrderItemsSummary(supabase: SupabaseClient, items: AuditFee
   }
 }
 
-export async function getAuditFeedPaginated(
-  supabase: SupabaseClient,
-  {
-    page = 1,
-    tableName,
-    action,
-    changedBy,
-    changedByValues,
-  }: {
-    page?: number;
-    tableName?: string | null;
-    action?: string | null;
-    // A users.id to filter by. Resolved to its (id + auth_user_id) pair here when
-    // changedByValues isn't already supplied by the caller.
-    changedBy?: string | null;
-    // Pre-resolved changed_by values (id + auth_user_id) — pass these to avoid a
-    // per-page lookup (the infinite-scroll caller already has them).
-    changedByValues?: string[] | null;
-  } = {}
-) {
-  const safePage = Math.max(1, Math.floor(page));
-  const offset = (safePage - 1) * AUDIT_PAGE_SIZE;
-
-  let query = supabase
-    .from("audit_logs")
-    .select("id,table_name,record_id,action,changed_by,user_role,created_at,new_data,old_data", { count: "exact" })
-    .order("created_at", { ascending: false })
-    .range(offset, offset + AUDIT_PAGE_SIZE - 1);
-
-  if (tableName) query = query.eq("table_name", tableName);
-  if (action) query = query.eq("action", action);
-  const actorValues =
-    changedByValues && changedByValues.length
-      ? changedByValues
-      : changedBy
-        ? await resolveActorFilterValues(supabase, changedBy)
-        : [];
-  if (actorValues.length) query = query.in("changed_by", actorValues);
-
-  const { data, error, count } = await query;
-
-  if (error) {
-    return { items: [] as AuditFeedItem[], totalCount: 0, page: safePage, totalPages: 1, error: toHebrewError(error.message) };
+// An order line's product name, in place of its free-text description (which
+// is empty on a catalogue line). Mutates the passed items; no query when the
+// page has no order lines.
+async function enrichOrderLineNames(supabase: SupabaseClient, items: AuditFeedItem[]): Promise<void> {
+  const productIds = Array.from(
+    new Set(
+      items
+        .map((i) => i.facts?.line?.key)
+        .filter((key): key is string => typeof key === "string" && !key.startsWith("text:"))
+    )
+  );
+  if (productIds.length === 0) return;
+  const { data } = await supabase.from("products").select("id,name").in("id", productIds);
+  const names = new Map<string, string>();
+  for (const p of (data ?? []) as { id?: string; name?: string }[]) {
+    if (typeof p.id === "string" && typeof p.name === "string" && p.name.trim()) names.set(p.id, p.name.trim());
   }
+  for (const item of items) {
+    const line = item.facts?.line;
+    if (line && names.has(line.key)) line.name = names.get(line.key) ?? line.name;
+  }
+}
 
-  const rows = (data ?? []) as AuditLogRow[];
+const FEED_SELECT = "id,table_name,record_id,action,changed_by,user_role,created_at,new_data,old_data";
+
+/**
+ * Raw log rows → the feed's items: who did it (name and color), what it's about
+ * (titles), private tasks redacted, and the extra lookups a row needs to read
+ * well (how long a visit lasted, what a document is attached to, an order's
+ * lines and their products). One batch of queries for the whole set.
+ */
+export async function buildAuditFeedItems(supabase: SupabaseClient, rows: AuditLogRow[]): Promise<AuditFeedItem[]> {
+  if (rows.length === 0) return [];
   const actorIds = Array.from(
     new Set(rows.map((r) => r.changed_by).filter((v): v is string => typeof v === "string" && Boolean(v)))
   );
@@ -2660,36 +2791,80 @@ export async function getAuditFeedPaginated(
     resolveAuditTitles(supabase, rows),
     resolvePrivateTaskIds(supabase, rows),
   ]);
-  const totalCount = count ?? 0;
-  const totalPages = Math.max(1, Math.ceil(totalCount / AUDIT_PAGE_SIZE));
-
   const items = normalizeAuditRows(rows, actorInfo.names, titles, actorInfo.colors, privateTaskIds);
   await Promise.all([
     enrichLogoutDurations(supabase, items),
     enrichDocumentLinks(supabase, items),
     enrichOrderItemsSummary(supabase, items),
+    enrichOrderLineNames(supabase, items),
   ]);
-
-  return {
-    items,
-    totalCount,
-    page: safePage,
-    totalPages,
-    error: null as string | null,
-  };
+  return items;
 }
 
-// Count of audit rows recorded since midnight in Israel — the "N פעולות היום"
-// the activity header shows (the server's own midnight is UTC's, two or three
-// hours later). A head-only count query, so it's cheap. Returns 0 on error
-// rather than throwing; the subtitle just shows "0 פעולות היום".
-export async function getAuditActionsTodayCount(supabase: SupabaseClient): Promise<number> {
-  const [year, month, day] = israelDateKey().split("-").map(Number);
-  const start = israelWallClockToUtc(year, month, day, 0, 0);
-  const { count, error } = await supabase
+/** A place in the feed: the newest-first order is (created_at, id), both descending. */
+export type AuditCursor = { createdAt: string; id: string };
+
+export function cursorOf(item: Pick<AuditFeedItem, "createdAt" | "id"> | undefined | null): AuditCursor | null {
+  return item?.createdAt ? { createdAt: item.createdAt, id: item.id } : null;
+}
+
+export type AuditFeedPage = {
+  items: AuditFeedItem[];
+  /** True when there are older rows past this page. */
+  hasMore: boolean;
+  error: string | null;
+};
+
+/**
+ * One page of the activity log, newest first, filtered by table / action /
+ * person. Paged by date (`before`: the oldest row already shown) rather than
+ * by position: a live feed gains rows at the top all the time, and counting
+ * past them made every page re-read the whole log and shift under the reader.
+ * `after` instead returns what arrived since the newest row shown (the live
+ * refresh), newest first.
+ */
+export async function getAuditFeed(
+  supabase: SupabaseClient,
+  {
+    before = null,
+    after = null,
+    tableName,
+    action,
+    changedByValues,
+    limit = AUDIT_PAGE_SIZE,
+  }: {
+    before?: AuditCursor | null;
+    after?: AuditCursor | null;
+    tableName?: string | null;
+    action?: string | null;
+    /** The person's changed_by values (users.id + auth_user_id, see resolveActorFilterValues). */
+    changedByValues?: string[] | null;
+    limit?: number;
+  } = {}
+): Promise<AuditFeedPage> {
+  let query = supabase
     .from("audit_logs")
-    .select("id", { count: "exact", head: true })
-    .gte("created_at", start.toISOString());
-  if (error) return 0;
-  return count ?? 0;
+    .select(FEED_SELECT)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(limit + 1);
+
+  // Quoted: a timestamp carries characters PostgREST's filter syntax reserves.
+  if (before) {
+    query = query.or(`created_at.lt."${before.createdAt}",and(created_at.eq."${before.createdAt}",id.lt.${before.id})`);
+  }
+  if (after) {
+    query = query.or(`created_at.gt."${after.createdAt}",and(created_at.eq."${after.createdAt}",id.gt.${after.id})`);
+  }
+  if (tableName) query = query.eq("table_name", tableName);
+  if (action) query = query.in("action", auditActionValues(action));
+  if (changedByValues && changedByValues.length) query = query.in("changed_by", changedByValues);
+
+  const { data, error } = await query;
+  if (error) return { items: [], hasMore: false, error: toHebrewError(error.message) };
+
+  const rows = (data ?? []) as AuditLogRow[];
+  const hasMore = rows.length > limit;
+  const items = await buildAuditFeedItems(supabase, rows.slice(0, limit));
+  return { items, hasMore, error: null };
 }

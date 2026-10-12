@@ -6,12 +6,14 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   AUDIT_ACTION_OPTIONS,
   AUDIT_TABLE_OPTIONS,
-  getAuditActionsTodayCount,
   getAuditActorOptions,
-  getAuditFeedPaginated,
+  getAuditFeed,
   getUserPresenceRoster,
   resolveActorFilterValues,
 } from "@/lib/audit";
+import { searchActivity } from "@/lib/activity/search";
+import { loadActivityToday } from "@/lib/activity/today";
+import { israelDateKey } from "@/lib/timezone";
 import ActivitySkeleton, { ActivityStripSkeleton } from "./ActivitySkeleton";
 
 // The same placeholder as loading.tsx while the client's code loads, so the
@@ -39,47 +41,48 @@ export default async function ActivityPage({
   }
 
   const params = await searchParams;
-  const page = Math.max(1, Number(params.page) || 1);
   const tableName = typeof params.table === "string" ? params.table : "";
   const action = typeof params.action === "string" ? params.action : "";
   const worker = typeof params.worker === "string" ? params.worker : "";
+  const query = typeof params.q === "string" ? params.q.trim() : "";
 
   const actorFilterValues = worker ? await resolveActorFilterValues(supabase, worker) : [];
 
   // Roster reads every user's session/last-seen — use the service-role client so
   // RLS (users self/office-only SELECT) doesn't hide colleagues from the bar.
   const rosterClient = createSupabaseAdminClient() ?? supabase;
+  const todayKey = israelDateKey();
+  const filters = {
+    tableName: tableName || null,
+    action: action || null,
+    changedByValues: actorFilterValues.length ? actorFilterValues : null,
+  };
 
-  const [result, workerOptions, roster, todayCount] = await Promise.all([
-    getAuditFeedPaginated(supabase, {
-      page,
-      tableName: tableName || null,
-      action: action || null,
-      changedByValues: actorFilterValues.length ? actorFilterValues : null,
-    }),
+  const [feed, workerOptions, roster, today] = await Promise.all([
+    query ? searchActivity(supabase, query, filters) : getAuditFeed(supabase, filters),
     getAuditActorOptions(supabase),
     getUserPresenceRoster(rosterClient),
-    getAuditActionsTodayCount(supabase),
+    loadActivityToday(supabase, todayKey),
   ]);
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <ActivityClient
-        key={`${tableName}|${action}|${worker}|${result.page}`}
-        items={result.items}
-        totalCount={result.totalCount}
-        page={result.page}
-        totalPages={result.totalPages}
-        error={result.error}
+        feedKey={`${tableName}|${action}|${worker}|${query}`}
+        items={feed.items}
+        hasMore={feed.hasMore}
+        error={feed.error}
         tableOptions={[...AUDIT_TABLE_OPTIONS]}
         actionOptions={[...AUDIT_ACTION_OPTIONS]}
         workerOptions={[{ value: "", label: "כל המשתמשים" }, ...workerOptions]}
         currentTable={tableName}
         currentAction={action}
         currentWorker={worker}
+        currentQuery={query}
         actorFilterValues={actorFilterValues}
         roster={roster}
-        todayCount={todayCount}
+        today={today}
+        todayKey={todayKey}
       />
     </AppShell>
   );

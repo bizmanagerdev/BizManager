@@ -1,10 +1,10 @@
 import AppShell from "@/components/layout/AppShell";
 import ActivitySkeleton, { ActivityStripSkeleton } from "./ActivitySkeleton";
 
-// Streamed instantly while the audit feed + presence roster load, so TTFB =
-// time-to-shell. The page's own shape (ActivitySkeleton) — the users card, the
-// filter row, the feed's table / cards — with the phone strip held open with
-// its live indicator and filter button, so nothing moves when the page arrives.
+// Streamed instantly while the feed, the people and today's numbers load, so
+// TTFB = time-to-shell. The page's own shape (ActivitySkeleton) — "היום בעסק",
+// "מי עובד עכשיו", the feed — with the phone strip held open with its search
+// field and filter button, so nothing moves when the page arrives.
 export default function ActivityLoading() {
   return (
     <AppShell>

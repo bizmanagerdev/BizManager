@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   buildAuditFeedItem,
@@ -6,7 +6,9 @@ import {
   buildFocusHref,
   buildHref,
   buildParentKey,
-  getAuditActionsTodayCount,
+  auditActionValues,
+  buildFacts,
+  getAuditFeed,
   invalidateAuditFlagCache,
   logAuditEvent,
   resolvePrivateTaskIds,
@@ -587,30 +589,101 @@ describe("resolveUserDisplayNamesForValues — names through user_labels()", () 
   });
 });
 
-describe("getAuditActionsTodayCount — 'actions today' starts at midnight in Israel", () => {
-  function countingClient() {
-    const gte = vi.fn(async () => ({ count: 3, error: null }));
-    const client = { from: vi.fn(() => ({ select: vi.fn(() => ({ gte })) })) };
-    return { client: client as unknown as SupabaseClient, gte };
+describe("buildFacts — the raw facts the activity sentences are built from", () => {
+  it("reads a payment's amount (amount_total) and its method in Hebrew", () => {
+    const facts = buildFacts("payments", "INSERT", { amount_total: 1500, payment_method: "check" }, null);
+    expect(facts.amount).toBe(1500);
+    expect(facts.method).toBe("צ׳ק");
+  });
+
+  it("reads a deleted row's amount from old_data", () => {
+    expect(buildFacts("expenses", "DELETE", null, { amount: 320 }).amount).toBe(320);
+  });
+
+  it("records a status that moved on an update — and nothing when it didn't", () => {
+    const moved = buildFacts("orders", "UPDATE", { status: "delivered" }, { status: "draft" });
+    expect([moved.statusFrom, moved.statusTo]).toEqual(["draft", "delivered"]);
+    const same = buildFacts("orders", "UPDATE", { status: "delivered", total_amount: 5 }, { status: "delivered", total_amount: 4 });
+    expect([same.statusFrom, same.statusTo]).toEqual([null, null]);
+  });
+
+  it("notices a work session's clock-out", () => {
+    expect(buildFacts("attendance_sessions", "UPDATE", { clock_out: "2026-10-11T15:00:00Z" }, { clock_out: null }).clockedOut).toBe(true);
+    expect(buildFacts("attendance_sessions", "UPDATE", { notes: "x" }, { notes: "" }).clockedOut).toBe(false);
+  });
+
+  it("keeps an order line's product, quantity and — on an edit of the line — the quantity before", () => {
+    const line = buildFacts("order_items", "UPDATE", { product_id: "p1", quantity_ordered: 3 }, { product_id: "p1", quantity_ordered: 2 }).line;
+    expect(line).toEqual({ key: "p1", name: null, qty: 3, qtyBefore: 2 });
+    const text = buildFacts("order_items", "INSERT", { description: "הובלה", quantity_ordered: 1 }, null).line;
+    expect(text?.key).toBe("text:הובלה");
+    expect(text?.name).toBe("הובלה");
+  });
+
+  it("leaves a private task's row with no facts at all", () => {
+    const item = buildAuditFeedItem(
+      { id: "a", table_name: "tasks", record_id: "t", action: "UPDATE", changed_by: "u", user_role: "admin", created_at: "2026-10-11T08:00:00Z", new_data: { is_private: true, status: "done" }, old_data: { is_private: true, status: "todo" } },
+      "דני"
+    );
+    expect(item.facts?.statusTo).toBeNull();
+  });
+});
+
+describe("auditActionValues — the action filter matches the database's rows too", () => {
+  it("'יצירה' matches both the app's create and the database's INSERT", () => {
+    expect(auditActionValues("create")).toEqual(["create", "INSERT"]);
+    expect(auditActionValues("update")).toEqual(["update", "UPDATE"]);
+    expect(auditActionValues("delete")).toEqual(["delete", "DELETE"]);
+  });
+  it("leaves a named action as it is", () => {
+    expect(auditActionValues("login")).toEqual(["login"]);
+  });
+});
+
+describe("getAuditFeed — paged by date, not by position", () => {
+  function feedClient(rows: AuditLogRow[]) {
+    const calls: { method: string; args: unknown[] }[] = [];
+    const builder: Record<string, unknown> = {};
+    for (const method of ["select", "order", "limit", "or", "eq", "in"]) {
+      builder[method] = (...args: unknown[]) => {
+        calls.push({ method, args });
+        return builder;
+      };
+    }
+    builder.then = (resolve: (v: unknown) => void) => resolve({ data: rows, error: null });
+    const client = {
+      from: (table: string) => (table === "audit_logs" ? builder : emptyQuery()),
+      rpc: () => Promise.resolve({ data: [], error: null }),
+    };
+    return { client: client as unknown as SupabaseClient, calls };
   }
-
-  afterEach(() => {
-    vi.useRealTimers();
+  function emptyQuery() {
+    const q: Record<string, unknown> = {};
+    for (const method of ["select", "in", "eq", "lte", "gte", "order", "range", "is"]) q[method] = () => q;
+    q.then = (resolve: (v: unknown) => void) => resolve({ data: [], error: null });
+    return q;
+  }
+  const row = (id: string, at: string): AuditLogRow => ({
+    id, table_name: "auth", record_id: "u", action: "login", changed_by: null, user_role: null, created_at: at,
   });
 
-  it("summer: at 02:00 on 8 Oct it counts from 00:00 Israel (21:00Z on the 7th), not from the server's UTC midnight", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-10-07T23:00:00Z"));
-    const { client, gte } = countingClient();
-    expect(await getAuditActionsTodayCount(client)).toBe(3);
-    expect(gte).toHaveBeenCalledWith("created_at", "2026-10-07T21:00:00.000Z");
+  it("asks for the rows older than the last one shown, ties broken by id", async () => {
+    const { client, calls } = feedClient([]);
+    await getAuditFeed(client, { before: { createdAt: "2026-10-11T08:00:00.000Z", id: "abc" } });
+    const or = calls.find((c) => c.method === "or");
+    expect(or?.args[0]).toBe('created_at.lt."2026-10-11T08:00:00.000Z",and(created_at.eq."2026-10-11T08:00:00.000Z",id.lt.abc)');
   });
 
-  it("winter: Israel's midnight is 22:00Z the day before", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-01-15T10:00:00Z"));
-    const { client, gte } = countingClient();
-    await getAuditActionsTodayCount(client);
-    expect(gte).toHaveBeenCalledWith("created_at", "2026-01-14T22:00:00.000Z");
+  it("filters 'יצירה' by both stored forms", async () => {
+    const { client, calls } = feedClient([]);
+    await getAuditFeed(client, { action: "create" });
+    expect(calls.find((c) => c.method === "in")?.args).toEqual(["action", ["create", "INSERT"]]);
+  });
+
+  it("says there's more when the database has a row past the page", async () => {
+    const { client } = feedClient([row("1", "2026-10-11T09:00:00Z"), row("2", "2026-10-11T08:00:00Z"), row("3", "2026-10-11T07:00:00Z")]);
+    const page = await getAuditFeed(client, { limit: 2 });
+    expect(page.items.map((i) => i.id)).toEqual(["1", "2"]);
+    expect(page.hasMore).toBe(true);
   });
 });

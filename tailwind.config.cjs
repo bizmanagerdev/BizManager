@@ -143,6 +143,11 @@ module.exports = {
           "50%": { transform: "translateX(0%) scaleX(0.55)" },
           "100%": { transform: "translateX(100%) scaleX(0.35)" },
         },
+        // An activity entry that just arrived: a light sky wash that fades out.
+        "activity-flash": {
+          "0%": { backgroundColor: "rgb(var(--secondary-10))" },
+          "100%": { backgroundColor: "transparent" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -150,6 +155,7 @@ module.exports = {
         "caret-blink": "caret-blink 1.25s ease-out infinite",
         "bell-ring": "bell-ring 2.5s ease-in-out infinite",
         "progress-indeterminate": "progress-indeterminate 1.1s ease-in-out infinite",
+        "activity-flash": "activity-flash 2.4s ease-out 1",
       },
     },
   },
