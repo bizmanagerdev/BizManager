@@ -3,25 +3,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpIcon } from "@/components/ui/icons";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  auditActionValues,
-  cursorOf,
-  getAuditFeed,
-  groupAuditFeedItems,
-  type AuditFeedItem,
-  type AuditLogRow,
-} from "@/lib/audit";
+import { cursorOf, getAuditFeed, groupAuditFeedItems, type AuditFeedItem } from "@/lib/audit";
 import { searchActivity } from "@/lib/activity/search";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import ActivityFeed, { batchSystemGroups } from "./ActivityFeed";
 
 // The feed's rows and how they move: older pages as the bottom comes into
-// view, new actions as they happen. A new action slides in at the top when
+// view, new actions within a minute (fetched, not pushed — see the effect
+// below). A new action slides in at the top when
 // the reader is there; further down, it waits behind a "N חדשות" button, so
 // the list never jumps under someone's finger.
 
 const NEAR_TOP_PX = 240;
 const FRESH_MS = 3000;
+/** How often an open feed asks for actions newer than its top row. */
+const FEED_POLL_MS = 60_000;
 
 /** Two lists as one, each row once, newest first. */
 function merge(a: AuditFeedItem[], b: AuditFeedItem[]): AuditFeedItem[] {
@@ -172,51 +168,47 @@ export default function ActivityFeedList({
       onLiveChange(false);
       return;
     }
+    // New actions are FETCHED once a minute while the page is on screen, and
+    // the moment it comes back into view — not pushed. A live listener on
+    // audit_logs had the database match every saved row (every save writes
+    // one) against every open screen; with hours of entering expenses and
+    // incomes one after another it froze the database (2026-10-12, 13:26–
+    // 13:34; owner: "if activity caused this then revert the change").
     const supabase = createSupabaseBrowserClient();
-    let channel: ReturnType<typeof supabase.channel> | null = null;
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const actions = action ? auditActionValues(action) : null;
+    let inFlight = false;
 
     const fetchNewer = async () => {
-      timer = null;
-      const newest = [...pendingRef.current, ...itemsRef.current].sort(newestFirst)[0];
-      const page = await getAuditFeed(supabase, {
-        after: cursorOf(newest),
-        tableName: table || null,
-        action: action || null,
-        changedByValues: actorFilterValues,
-        limit: 200,
-      });
-      if (cancelled || page.error) return;
-      arrive(page.items);
-      onArrivals();
+      if (inFlight || document.visibilityState !== "visible") return;
+      inFlight = true;
+      try {
+        const newest = [...pendingRef.current, ...itemsRef.current].sort(newestFirst)[0];
+        const page = await getAuditFeed(supabase, {
+          after: cursorOf(newest),
+          tableName: table || null,
+          action: action || null,
+          changedByValues: actorFilterValues,
+          limit: 200,
+        });
+        if (cancelled || page.error || page.items.length === 0) return;
+        arrive(page.items);
+        onArrivals();
+      } finally {
+        inFlight = false;
+      }
     };
 
-    void (async () => {
-      const { data } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
-      const token = data.session?.access_token;
-      if (token) supabase.realtime.setAuth(token);
-      if (cancelled) return;
-      channel = supabase
-        .channel("activity-feed")
-        .on("postgres_changes", { event: "INSERT", schema: "public", table: "audit_logs" }, (payload) => {
-          const row = payload.new as AuditLogRow;
-          if (!row?.id) return;
-          if (table && row.table_name !== table) return;
-          if (actions && !actions.includes(row.action)) return;
-          if (actorFilterValues.length && !(row.changed_by && actorFilterValues.includes(row.changed_by))) return;
-          if (!timer) timer = setTimeout(() => void fetchNewer(), 800);
-        })
-        .subscribe((status) => {
-          if (!cancelled) onLiveChange(status === "SUBSCRIBED");
-        });
-    })();
+    onLiveChange(true);
+    const poll = setInterval(() => void fetchNewer(), FEED_POLL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void fetchNewer();
+    };
+    document.addEventListener("visibilitychange", onVisible);
 
     return () => {
       cancelled = true;
-      if (timer) clearTimeout(timer);
-      if (channel) void supabase.removeChannel(channel);
+      clearInterval(poll);
+      document.removeEventListener("visibilitychange", onVisible);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searching, error, table, action, actorKey]);

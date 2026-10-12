@@ -103,10 +103,15 @@ export default function ActivityClient({
     return () => clearTimeout(id);
   }, [query, currentQuery, updateParams]);
 
-  // The numbers and the people stay current: every 15 s (a safety net if the
-  // live socket is ever blocked), and soon after new actions arrive.
+  // The numbers and the people stay current: once a minute while the page is
+  // on screen, and soon after the feed finds new actions. It was every 15 s —
+  // each a full server render of the page and its queries — and 2.5 s after
+  // every new action as well; with hours of data entry that, with the feed's
+  // live listener, froze the database (2026-10-12).
   useEffect(() => {
-    const id = setInterval(() => startTransition(() => router.refresh()), 15_000);
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") startTransition(() => router.refresh());
+    }, 60_000);
     return () => clearInterval(id);
   }, [router]);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
