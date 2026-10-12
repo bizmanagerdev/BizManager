@@ -13,6 +13,7 @@ import { isConnectionDrop } from "./connection-drop";
 import { POWERSYNC_ASSETS_BASE } from "./config";
 import { AppSchema } from "./schema";
 import { setLocalDatabase, setLocalSyncStatus, type LocalSyncStatus } from "./store";
+import { createTransportWatch, storedTransport, type SyncTransport, type TransportWatch } from "./sync-transport";
 
 // Opens, connects and closes the on-device database. Browser only — loaded
 // through LocalDataHost (dynamic import, ssr: false), never on the server.
@@ -90,12 +91,25 @@ function report(message: string, error: unknown) {
   );
 }
 
+// The open copy's way of connecting (sync-transport.ts) — told of every failed
+// connection, from the log and from the status.
+let transportWatch: TransportWatch | null = null;
+
 const logger: PowerSyncLogger = {
   log({ level, message, error }) {
-    if (level >= LogLevels.error) report(message, error);
-    else if (level >= LogLevels.info) withSentry((Sentry) => Sentry.addBreadcrumb({ category: "powersync", message }));
+    if (level >= LogLevels.error) {
+      report(message, error);
+      if (isConnectionDrop(message, describeError(error))) transportWatch?.failed();
+    } else if (level >= LogLevels.info) withSentry((Sentry) => Sentry.addBreadcrumb({ category: "powersync", message }));
   },
 };
+
+function connectOptions(transport: SyncTransport) {
+  return {
+    connectionMethod: transport === "http" ? SyncStreamConnectionMethod.HTTP : SyncStreamConnectionMethod.WEB_SOCKET,
+    appMetadata: { build: process.env.NEXT_PUBLIC_BUILD_ID ?? "dev" },
+  };
+}
 
 function toLocalStatus(status: SyncStatus): LocalSyncStatus {
   const error = status.downloadError ?? status.uploadError;
@@ -148,10 +162,30 @@ export async function openLocalDatabase(authUid: string): Promise<CommonPowerSyn
     // Ask the browser not to evict the copy under storage pressure.
     void navigator.storage?.persist?.().catch(() => {});
 
+    // The WebSocket, unless this device found it doesn't work here; a few
+    // failed connections in a row switch to the other way (sync-transport.ts).
+    const connector = new BizConnector();
+    const watch = createTransportWatch(storedTransport(), (next) => {
+      withSentry((Sentry) =>
+        Sentry.captureMessage(`PowerSync: switched the sync to ${next === "http" ? "HTTP streaming" : "the WebSocket"}`, {
+          level: "info",
+          tags: { area: "powersync" },
+          fingerprint: ["powersync", "transport-switch", next],
+        })
+      );
+      // A second connect() replaces the running one.
+      void db.connect(connector, connectOptions(next));
+    });
+    transportWatch = watch;
+
     const stopListening = db.registerListener({
       statusChanged: (status) => {
         setLocalSyncStatus(toLocalStatus(status));
-        if (status.downloadError) report("Sync download error", status.downloadError);
+        if (status.connected) watch.connected();
+        if (status.downloadError) {
+          report("Sync download error", status.downloadError);
+          if (!status.connected) watch.failed();
+        }
       },
     });
     setLocalSyncStatus(toLocalStatus(db.currentStatus));
@@ -159,10 +193,7 @@ export async function openLocalDatabase(authUid: string): Promise<CommonPowerSyn
     // Connect once for the session. connect() reports trouble through the
     // status and the logger, and keeps retrying on its own (every 5 s) —
     // including after the phone drops its connection in the background.
-    void db.connect(new BizConnector(), {
-      connectionMethod: SyncStreamConnectionMethod.WEB_SOCKET,
-      appMetadata: { build: process.env.NEXT_PUBLIC_BUILD_ID ?? "dev" },
-    });
+    void db.connect(connector, connectOptions(watch.transport));
 
     current = { authUid, db, stopListening };
     setLocalDatabase(db);
@@ -183,6 +214,7 @@ export async function closeLocalDatabase({ wipe }: { wipe: boolean }): Promise<v
   const open = current;
   if (!open) return;
   current = null;
+  transportWatch = null;
   setLocalDatabase(null);
   open.stopListening();
   try {

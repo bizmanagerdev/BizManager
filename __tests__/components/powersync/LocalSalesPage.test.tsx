@@ -21,6 +21,7 @@ const device = vi.hoisted(() => ({ db: null as unknown }));
 vi.mock("@/lib/powersync/store", () => ({
   useLocalDatabase: () => device.db,
   useLocalSyncStatus: () => ({ hasSynced: true }),
+  useLocalCopyBehind: () => false,
 }));
 vi.mock("@/lib/sentry-lazy", () => ({ withSentry: () => {} }));
 

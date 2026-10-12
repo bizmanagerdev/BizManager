@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { useLocalDatabase, useLocalSyncStatus } from "@/lib/powersync/store";
+import { toast } from "sonner";
+import { useLocalCopyBehind, useLocalDatabase, useLocalSyncStatus } from "@/lib/powersync/store";
 import { peekResult, resultKey, watchResult } from "@/lib/powersync/local-results";
 import { parseStoredResult, readStoredResultRaw, storedResultJson } from "@/lib/powersync/stored-results";
 import { deviceCopyPending, setDeviceCopyPending } from "@/lib/powersync/device-pending";
@@ -29,13 +30,21 @@ const FALLBACK_AFTER_MS = 8000;
 /** Pages that fell back to the server version this session (reported once each). */
 const fellBack = new Set<string>();
 
+/** Said once a session: the device's copy isn't updating, so pages come from the server. */
+let toldBehind = false;
+
 function fallBackToServer(router: ReturnType<typeof useRouter>, page: string, href: string, reason: string) {
   if (reason === "not-synced") setDeviceCopyPending(true);
+  if (reason === "behind" && !toldBehind) {
+    toldBehind = true;
+    toast.info("העותק במכשיר לא מתעדכן כרגע — הדפים מוצגים מהשרת", { id: "copy-behind" });
+  }
   if (!fellBack.has(page)) {
     fellBack.add(page);
     withSentry((Sentry) =>
       Sentry.captureMessage(`PowerSync: ${page} fell back to the server version`, {
-        level: "warning",
+        // Behind: the connection's fault, not the copy's — not worth an email.
+        level: reason === "behind" ? "info" : "warning",
         tags: { area: "powersync" },
         fingerprint: ["powersync", `${page}-fallback`, reason],
         extra: { reason },
@@ -43,6 +52,16 @@ function fallBackToServer(router: ReturnType<typeof useRouter>, page: string, hr
     );
   }
   router.replace(href);
+}
+
+/** Does the server answer now? A connection that hangs (a worker in the field) keeps the copy. */
+async function serverAnswers(): Promise<boolean> {
+  try {
+    const res = await fetch("/api/ping", { cache: "no-store", signal: AbortSignal.timeout(4000) });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 const neverChanges = () => () => {};
@@ -144,6 +163,22 @@ export function useLocalCard<K extends LocalCardKind>({
     );
     return () => clearTimeout(timer);
   }, [answered, ready, copyIncomplete, statusKnown, router, page]);
+
+  // Online, but the copy's sync has been down a while: the copy is missing
+  // whatever changed since — a new order showed on the phone but not in the
+  // office computer's orders list (owner, 2026-10-12). The server version,
+  // once the server answers; with no answer the copy is still the best there is.
+  const behind = useLocalCopyBehind();
+  useEffect(() => {
+    if (!behind) return;
+    let cancelled = false;
+    void serverAnswers().then((ok) => {
+      if (ok && !cancelled) fallBackToServer(router, page, serverHrefRef.current, "behind");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [behind, router, page]);
 
   const { userId, role, locale } = viewer;
   useEffect(() => {

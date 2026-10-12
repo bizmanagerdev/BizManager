@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { CommonPowerSyncDatabase } from "@powersync/web";
 import { localDataPageOn, type LOCAL_DATA_PAGES } from "./config";
 import type { Locale } from "@/lib/i18n/types";
@@ -115,8 +115,38 @@ export function setLocalDatabase(db: CommonPowerSyncDatabase | null) {
   emit({ db, status: db ? state.status : null });
 }
 
+// Since when a complete copy has been without its sync connection (null:
+// connected, or no complete copy). A copy that can't connect keeps what it had
+// and misses everything since — the office computer's orders list lacked a new
+// order the phone already showed (owner, 2026-10-12).
+let disconnectedSince: number | null = null;
+
 export function setLocalSyncStatus(status: LocalSyncStatus | null) {
+  if (status?.hasSynced && !status.connected) disconnectedSince ??= Date.now();
+  else disconnectedSince = null;
   emit({ ...state, status });
+}
+
+/** How long the sync may be down (opening counts — it connects in a few seconds) before the copy counts as behind. */
+export const COPY_BEHIND_AFTER_MS = 30_000;
+
+/**
+ * True when this device is online but its complete copy has had no sync
+ * connection for `afterMs`: the copy is out of date, and pages drawn from it
+ * should show the server version instead (useLocalCard). Offline it stays
+ * false — then the copy is the whole point.
+ */
+export function useLocalCopyBehind(afterMs = COPY_BEHIND_AFTER_MS): boolean {
+  const since = useSyncExternalStore(subscribe, () => disconnectedSince, () => null);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (since === null) return;
+    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, since + afterMs - Date.now()));
+    return () => clearTimeout(timer);
+  }, [since, afterMs]);
+  if (since === null) return false;
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return false;
+  return now - since >= afterMs;
 }
 
 /** The open database, or null (not switched on for this person, or still opening). */
