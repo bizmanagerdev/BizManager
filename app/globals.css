@@ -6,12 +6,20 @@
     "Segoe UI", "Noto Sans Hebrew", "Rubik", "Assistant", "Heebo", sans-serif;
   --font-mono:
     "Cascadia Code", "Fira Code", "JetBrains Mono", "Consolas", monospace;
-  /* THE card corner — `rounded-card`. Nearly square: the dashboard's phone
-     sections' corner, on every card now (owner, 2026-10-11: "it doesn't need
-     to be so round … the corners are rounded, but it's nearly a square"). It
-     was 1.125rem. Anything drawn to sit exactly over or in place of a card (an
-     overlay link, a skeleton) uses this too, so they can't drift apart. */
-  --radius-card: 0.5rem;
+  /* THE corners, one scale for the whole app (owner, 2026-10-12, "in
+     between": cards 12px, buttons and inputs 8px). A card that was nearly
+     square (0.5rem) held buttons and tiles rounder than itself (13–17px), and
+     the two didn't match.
+     `rounded-card` — cards and dialogs. Anything drawn to sit exactly over or
+     in place of a card (an overlay link, a skeleton) uses it too.
+     Everything inside a card is a step less round: Tailwind's xl and 2xl are
+     redefined to the 8px of a button, so the ~140 places that spell them out
+     follow without being touched; lg/md/sm come from --radius (below, and
+     tailwind.config.cjs). Pills, counts and avatars stay rounded-full. */
+  --radius-card: 0.75rem;
+  --radius-xl: 0.5rem;
+  --radius-2xl: 0.5rem;
+  --radius-3xl: 0.75rem;
 }
 
 @layer base {
@@ -353,7 +361,9 @@
     --input: var(--secondary-9);
     --ring: var(--secondary-5);
 
-    --radius: 0.9rem;
+    /* rounded-lg (and md, sm a step under it) — the 8px of a button or an
+       input (owner, 2026-10-12: corners "in between"). It was 0.9rem. */
+    --radius: 0.5rem;
 
     /* Chrome (sidebar + top bar) is THE primary color — the same navy as every
        primary button, not a darker tone of it. It used to point at --primary-1,

@@ -8,8 +8,9 @@ export const Card = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      // `rounded-card` (0.5rem, globals.css): nearly square, on every card
-      // (owner, 2026-10-11 — it was 1.125rem, and 1.5 before that). Every
+      // `rounded-card` (0.75rem, globals.css): the one card corner, on every card
+      // (owner, 2026-10-12, corners "in between" — 1.125rem until 2026-10-11,
+      // then 0.5rem for a day). Every
       // overlay link and skeleton that has to match a card's corner uses the
       // same token, so changing it there changes them all.
       "brand-frame surface-panel rounded-card border border-border/60 text-card-foreground shadow-card",

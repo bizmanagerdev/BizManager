@@ -62,7 +62,7 @@ export const DialogContent = React.forwardRef<
         // large --font-scale) scrolls inside its own box instead of overflowing
         // off the top/bottom of a vertically-centred, fixed element with no way to
         // reach the header/footer. Per-dialog className overrides this via twMerge.
-        "fixed left-1/2 top-1/2 z-50 max-h-[90dvh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 rounded-lg",
+        "fixed left-1/2 top-1/2 z-50 max-h-[90dvh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 rounded-card",
         className
       )}
       // Radix portals the dialog to <body>, but React still bubbles its events
@@ -106,10 +106,10 @@ export const ResponsiveSheetContent = React.forwardRef<
       ref={ref}
       onInteractOutside={withNativeSurfaceGuard(onInteractOutside)}
       className={cn(
-        "fixed inset-x-0 bottom-0 top-auto z-50 flex max-h-[92svh] w-full translate-x-0 translate-y-0 flex-col gap-0 rounded-t-2xl border bg-background p-0 shadow-lg duration-200",
+        "fixed inset-x-0 bottom-0 top-auto z-50 flex max-h-[92svh] w-full translate-x-0 translate-y-0 flex-col gap-0 rounded-t-card border bg-background p-0 shadow-lg duration-200",
         "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
         "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
-        "sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:w-[calc(100%-1rem)] sm:max-w-lg sm:max-h-[85vh] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg",
+        "sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:w-[calc(100%-1rem)] sm:max-w-lg sm:max-h-[85vh] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-card",
         "sm:data-[state=closed]:slide-out-to-bottom-0 sm:data-[state=open]:slide-in-from-bottom-0",
         "sm:data-[state=closed]:zoom-out-95 sm:data-[state=open]:zoom-in-95",
         className
@@ -155,10 +155,10 @@ export const FullScreenDialogContent = React.forwardRef<
       ref={ref}
       onInteractOutside={withNativeSurfaceGuard(onInteractOutside)}
       className={cn(
-        "fixed inset-x-0 bottom-0 top-3 z-50 w-full overflow-hidden rounded-t-2xl border-0 bg-background shadow-2xl duration-200",
+        "fixed inset-x-0 bottom-0 top-3 z-50 w-full overflow-hidden rounded-t-card border-0 bg-background shadow-2xl duration-200",
         "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
         "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
-        "sm:inset-auto sm:left-1/2 sm:top-1/2 sm:w-[calc(100%-1rem)] sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border sm:shadow-lg",
+        "sm:inset-auto sm:left-1/2 sm:top-1/2 sm:w-[calc(100%-1rem)] sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-card sm:border sm:shadow-lg",
         "sm:data-[state=closed]:slide-out-to-bottom-0 sm:data-[state=open]:slide-in-from-bottom-0",
         "sm:data-[state=closed]:zoom-out-95 sm:data-[state=open]:zoom-in-95",
         className
